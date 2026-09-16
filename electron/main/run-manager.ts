@@ -155,7 +155,7 @@ export class RunManager {
       }
       if (run.stopping || this.disposed) return this.finishCancelled(run)
       if (process.platform === 'win32') {
-        const launch = windowsLaunch(binary, args, env, request.kind === 'shell' ? request.input : undefined)
+        const launch = windowsLaunch(binary, args, env, request.kind === 'shell' ? request.input : undefined, workspace.path)
         binary = launch.binary
         args = launch.args
         env = launch.env

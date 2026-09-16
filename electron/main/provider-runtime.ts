@@ -66,7 +66,7 @@ async function probe<T>(command: ProviderCommand, args: string[], timeoutMs: num
       cancel = () => reject(new Error('Provider lookup cancelled'))
       const env = providerEnvironment()
       const childArgs = [...command.argsPrefix, ...args]
-      const launch = process.platform === 'win32' ? windowsLaunch(command.binary!, childArgs, env) : { binary: command.binary!, args: childArgs, env }
+      const launch = process.platform === 'win32' ? windowsLaunch(command.binary!, childArgs, env, undefined, tmpdir()) : { binary: command.binary!, args: childArgs, env }
       child = spawn(launch.binary, launch.args, { cwd: tmpdir(), env: launch.env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] })
       const send = (message: unknown): void => { child?.stdin.write(`${JSON.stringify(message)}\n`) }
       let outputBytes = 0
