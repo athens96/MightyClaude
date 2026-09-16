@@ -8,6 +8,7 @@ import { join } from 'node:path'
  */
 const JOB_RUNNER = String.raw`
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 try {
   Add-Type -TypeDefinition @'
 using System;
@@ -35,6 +36,7 @@ public static class MightyJob {
   [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int type, ref ExtendedLimits info, uint length);
   [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
   [DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
+  [DllImport("kernel32.dll", SetLastError = true)] static extern uint GetConsoleCP();
   [DllImport("kernel32.dll", SetLastError = true)] static extern bool AllocConsole();
   [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int id);
   [DllImport("kernel32.dll")] static extern bool SetStdHandle(int id, IntPtr handle);
@@ -48,9 +50,14 @@ public static class MightyJob {
     limits.Basic.Flags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
     if (job == IntPtr.Zero || !SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf(limits)) || !AssignProcessToJobObject(job, Process.GetCurrentProcess().Handle))
       throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Could not create the command process group");
-    if (GetConsoleWindow() == IntPtr.Zero) {
+    // A headless console can be attached without a visible window. Allocating
+    // another console in that case fails; query the attached console itself.
+    if (GetConsoleCP() == 0) {
       var input = GetStdHandle(-10); var output = GetStdHandle(-11); var error = GetStdHandle(-12);
-      if (!AllocConsole()) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Could not prepare the command console");
+      if (!AllocConsole()) {
+        var code = Marshal.GetLastWin32Error();
+        throw new System.ComponentModel.Win32Exception(code, "Could not prepare the command console (Win32 " + code + ")");
+      }
       ShowWindow(GetConsoleWindow(), 0);
       SetStdHandle(-10, input); SetStdHandle(-11, output); SetStdHandle(-12, error);
     }

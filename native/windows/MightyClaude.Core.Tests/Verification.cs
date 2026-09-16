@@ -354,7 +354,7 @@ internal static class Verification
             await Test("Windows Job Object handles Unicode and kills descendants after parent exits", async () =>
             {
                 var directory = Temp(); var pid = Path.Combine(directory, "descendant.pid");
-                ChildProcess? tree = null; var failures = new List<Exception>(); var phase = "Unicode output";
+                ChildProcess? tree = null; var failures = new List<Exception>(); var phase = "Unicode output"; var jobExitVerified = false;
                 try
                 {
                     var command = "echo 안녕하세요";
@@ -374,13 +374,26 @@ internal static class Verification
                     phase = "job disposal";
                     await tree.DisposeAsync(); tree = null;
                     Check(!Alive(processId), "Job disposal returned while its descendant was alive");
+                    jobExitVerified = true;
                 }
                 catch (Exception error) { failures.Add(new InvalidOperationException("Windows child fixture failed during " + phase, error)); }
                 finally
                 {
                     // Always terminate the job before deleting its cwd, including assertion failures.
                     if (tree is not null) try { await tree.DisposeAsync(); } catch (Exception error) { failures.Add(error); }
-                    try { Directory.Delete(directory, true); } catch (Exception error) { failures.Add(new IOException("Windows fixture directory cleanup failed", error)); }
+                    try
+                    {
+                        var cleanup = Stopwatch.StartNew();
+                        while (true)
+                        {
+                            try { Directory.Delete(directory, true); break; }
+                            // Only after the empty job and dead descendant assertions passed:
+                            // Windows may briefly retain directory handles outside that job.
+                            catch (IOException error) when (jobExitVerified && ((error.HResult & 0xffff) is 32 or 145) && cleanup.Elapsed < TimeSpan.FromSeconds(3))
+                            { await Task.Delay(40); }
+                        }
+                    }
+                    catch (Exception error) { failures.Add(new IOException("Windows fixture directory cleanup failed", error)); }
                 }
                 if (failures.Count > 0) throw new AggregateException("Windows child verification failed", failures);
             });
