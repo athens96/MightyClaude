@@ -292,7 +292,8 @@ describe('remote client controller', () => {
     const connected = await connect(client.controller, shared)
     const workspace = imported(connected.connections[0]!.id, connected.connections[0]!.workspaces[0]!)
     await client.controller.startRun({ ...baseRequest, workspaceId: workspace.id, input: 'echo MIGHTY_REMOTE_OK' }, workspace)
-    await vi.waitFor(() => expect(client.events.some((event) => event.type === 'status' && event.status === 'completed')).toBe(true), { timeout: 5000, interval: 20 })
+    await vi.waitFor(() => expect(client.events.some((event) => event.type === 'status' && event.status !== 'running')).toBe(true), { timeout: 5000, interval: 20 })
+    expect(client.events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(client.events)).toBe(true)
     expect(client.events.some((event) => event.type === 'log' && event.entry.text.includes('MIGHTY_REMOTE_OK'))).toBe(true)
     const second = { ...baseRequest, sessionId: 'long-pane', workspaceId: workspace.id, input: `"${process.execPath}" -e "console.log('MIGHTY_REMOTE_RUNNING');setInterval(()=>{},1000)"` }
     await client.controller.startRun(second, workspace)

@@ -118,7 +118,13 @@ private final class AttachmentEvents: @unchecked Sendable {
         /bin/cat > "$folder/input"
         previous=''
         for value in "$@"; do
-          if [ "$previous" = '--include-directories' ]; then printf '%s' "$value" > "$folder/stage"; /bin/cat "$value"/* > "$folder/copied"; fi
+          if [ "$previous" = '--include-directories' ]; then
+            /bin/cat "$value"/* > "$folder/copied" || exit 1
+            # Publish readiness only after the bytes have been copied. The HOLD
+            # case stops this process as soon as the stage marker appears.
+            printf '%s' "$value" > "$folder/stage.ready"
+            /bin/mv "$folder/stage.ready" "$folder/stage"
+          fi
           previous="$value"
         done
         if /usr/bin/grep -q HOLD "$folder/input"; then /bin/sleep 60; fi
@@ -140,6 +146,7 @@ private final class AttachmentEvents: @unchecked Sendable {
                 try await wait { events.values().contains { $0.sessionId == prompt && $0.status == status } }
                 #expect(try Data(contentsOf: root.appendingPathComponent("copied")) == png)
                 let stage = try String(contentsOf: root.appendingPathComponent("stage"))
+                #expect(!stage.isEmpty && stage.hasPrefix("/"))
                 #expect(!FileManager.default.fileExists(atPath: stage))
                 #expect(try String(contentsOf: root.appendingPathComponent("input")).contains("@/"))
             }

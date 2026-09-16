@@ -354,12 +354,35 @@ internal static class Verification
             await Test("Windows Job Object handles Unicode and kills descendants after parent exits", async () =>
             {
                 var directory = Temp(); var pid = Path.Combine(directory, "descendant.pid");
+                ChildProcess? tree = null; var failures = new List<Exception>(); var phase = "Unicode output";
                 try
                 {
-                    var command = "echo 안녕하세요"; await using (var child = ChildProcess.Start(ChildProcess.StartInfo(Environment.GetEnvironmentVariable("ComSpec")!, ["/d", "/s", "/c", command], directory), command)) { child.Input.Close(); var output = await child.Output.ReadToEndAsync(); await child.Completion; Check(output.Contains("안녕하세요")); }
-                    var start = "start \"\" /b " + LongCommand(pid); var tree = ChildProcess.Start(ChildProcess.StartInfo(Environment.GetEnvironmentVariable("ComSpec")!, ["/d", "/s", "/c", start], directory), start); tree.Input.Close(); await Until(() => File.Exists(pid)); var processId = int.Parse(await File.ReadAllTextAsync(pid)); await tree.Completion; await tree.DisposeAsync(); await Until(() => !Alive(processId));
+                    var command = "echo 안녕하세요";
+                    await using (var child = ChildProcess.Start(ChildProcess.StartInfo(Environment.GetEnvironmentVariable("ComSpec")!, ["/d", "/s", "/c", command], directory), command))
+                    {
+                        child.Input.Close(); var output = await child.Output.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                        Check(await child.Completion.WaitAsync(TimeSpan.FromSeconds(5)) == 0, "Unicode shell failed");
+                        Check(output.Contains("안녕하세요"), "Unicode shell output changed: " + JsonSerializer.Serialize(output));
+                    }
+                    phase = "descendant startup";
+                    var start = "start \"\" /b " + LongCommand(pid);
+                    tree = ChildProcess.Start(ChildProcess.StartInfo(Environment.GetEnvironmentVariable("ComSpec")!, ["/d", "/s", "/c", start], directory), start);
+                    tree.Input.Close(); await Until(() => File.Exists(pid)); var processId = int.Parse(await File.ReadAllTextAsync(pid));
+                    phase = "parent exit";
+                    Check(await tree.Completion.WaitAsync(TimeSpan.FromSeconds(5)) == 0, "Parent shell failed");
+                    Check(Alive(processId), "The fixture descendant must outlive its parent before job disposal");
+                    phase = "job disposal";
+                    await tree.DisposeAsync(); tree = null;
+                    Check(!Alive(processId), "Job disposal returned while its descendant was alive");
                 }
-                finally { Directory.Delete(directory, true); }
+                catch (Exception error) { failures.Add(new InvalidOperationException("Windows child fixture failed during " + phase, error)); }
+                finally
+                {
+                    // Always terminate the job before deleting its cwd, including assertion failures.
+                    if (tree is not null) try { await tree.DisposeAsync(); } catch (Exception error) { failures.Add(error); }
+                    try { Directory.Delete(directory, true); } catch (Exception error) { failures.Add(new IOException("Windows fixture directory cleanup failed", error)); }
+                }
+                if (failures.Count > 0) throw new AggregateException("Windows child verification failed", failures);
             });
         }
         else { skipped++; Console.WriteLine("SKIP Windows Job Object / UTF-8 console (requires Windows)"); }

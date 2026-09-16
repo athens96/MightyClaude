@@ -26,7 +26,11 @@ public sealed class ChildProcess : IAsyncDisposable
     private ChildProcess(nint process, nint jobHandle, int pid, StreamWriter input, StreamReader output, StreamReader error)
     {
         nativeProcess = process; job = jobHandle; Id = pid; Input = input; Output = output; Error = error;
-        Completion = Task.Run(() => { Native.WaitForSingleObject(process, uint.MaxValue); Native.GetExitCodeProcess(process, out var code); return unchecked((int)code); });
+        Completion = Task.Run(() =>
+        {
+            if (Native.WaitForSingleObject(process, uint.MaxValue) != 0 || !Native.GetExitCodeProcess(process, out var code)) throw new System.ComponentModel.Win32Exception();
+            return unchecked((int)code);
+        });
     }
     private static async Task<int> WaitManagedAsync(Process process) { await process.WaitForExitAsync(); return process.ExitCode; }
     public static ProcessStartInfo StartInfo(string binary, IEnumerable<string> arguments, string cwd, IDictionary<string, string>? environment = null)
@@ -51,10 +55,40 @@ public sealed class ChildProcess : IAsyncDisposable
     {
         if (disposed) return; disposed = true;
         Kill();
-        try { await Completion.WaitAsync(TimeSpan.FromSeconds(3)); } catch (TimeoutException) { }
-        Input.Dispose(); Output.Dispose(); Error.Dispose(); managed?.Dispose();
-        if (job != 0) { Native.CloseHandle(job); job = 0; }
-        if (nativeProcess != 0) { Native.CloseHandle(nativeProcess); nativeProcess = 0; }
+        try
+        {
+            await Completion.WaitAsync(TimeSpan.FromSeconds(3));
+            ReleaseProcessHandle();
+            // TerminateJobObject is asynchronous. The parent can already have exited
+            // while a descendant still owns the workspace or attachment files.
+            if (job != 0)
+            {
+                var deadline = Stopwatch.StartNew();
+                while (true)
+                {
+                    if (!Native.QueryInformationJobObject(job, 1, out var state, (uint)Marshal.SizeOf<Native.BasicAccounting>(), 0)) throw new System.ComponentModel.Win32Exception();
+                    if (state.ActiveProcesses == 0) break;
+                    if (deadline.Elapsed >= TimeSpan.FromSeconds(3)) throw new TimeoutException($"Windows 실행의 자식 프로세스 {state.ActiveProcesses}개가 아직 종료 중입니다.");
+                    await Task.Delay(10);
+                }
+            }
+        }
+        finally
+        {
+            try { Input.Dispose(); Output.Dispose(); Error.Dispose(); managed?.Dispose(); }
+            finally
+            {
+                if (job != 0) { Native.CloseHandle(job); job = 0; }
+                ReleaseProcessHandle();
+            }
+        }
+    }
+    private void ReleaseProcessHandle()
+    {
+        if (nativeProcess == 0) return;
+        var handle = nativeProcess; nativeProcess = 0;
+        if (Completion.IsCompleted) Native.CloseHandle(handle);
+        else _ = Completion.ContinueWith(_ => Native.CloseHandle(handle), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
     public static string QuoteWindows(string argument)
     {
@@ -108,6 +142,7 @@ public sealed class ChildProcess : IAsyncDisposable
         [StructLayout(LayoutKind.Sequential)] internal struct SecurityAttributes { public int Length; public nint Descriptor; public int InheritHandle; }
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] internal struct StartupInfo { public int Size; public string? Reserved, Desktop, Title; public int X, Y, XSize, YSize, XCountChars, YCountChars, FillAttribute, Flags; public short ShowWindow, Reserved2Size; public nint Reserved2, StdInput, StdOutput, StdError; }
         [StructLayout(LayoutKind.Sequential)] internal struct ProcessInformation { public nint Process, Thread; public int ProcessId, ThreadId; }
+        [StructLayout(LayoutKind.Sequential)] internal struct BasicAccounting { public long UserTime, KernelTime, PeriodUserTime, PeriodKernelTime; public uint PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses; }
         [StructLayout(LayoutKind.Sequential)] internal struct BasicLimits { public long UserTime, JobTime; public uint LimitFlags; public nuint MinimumWorkingSet, MaximumWorkingSet; public uint ActiveProcesses; public nuint Affinity; public uint Priority, Scheduling; }
         [StructLayout(LayoutKind.Sequential)] internal struct IoCounters { public ulong ReadOperations, WriteOperations, OtherOperations, ReadBytes, WriteBytes, OtherBytes; }
         [StructLayout(LayoutKind.Sequential)] internal struct ExtendedLimits { public BasicLimits Basic; public IoCounters Io; public nuint ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory; }
@@ -115,11 +150,12 @@ public sealed class ChildProcess : IAsyncDisposable
         [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetHandleInformation(nint handle, uint mask, uint flags);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern nint CreateJobObject(nint attributes, string? name);
         [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetInformationJobObject(nint job, int type, ref ExtendedLimits limits, uint length);
+        [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool QueryInformationJobObject(nint job, int type, out BasicAccounting state, uint length, nint returnedLength);
         [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool AssignProcessToJobObject(nint job, nint process);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateProcessW")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool CreateProcess(string application, StringBuilder command, nint processAttributes, nint threadAttributes, bool inherit, uint flags, nint environment, string directory, ref StartupInfo startup, out ProcessInformation child);
         [DllImport("kernel32.dll")] internal static extern uint ResumeThread(nint thread);
-        [DllImport("kernel32.dll")] internal static extern uint WaitForSingleObject(nint handle, uint milliseconds);
-        [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetExitCodeProcess(nint process, out uint code);
+        [DllImport("kernel32.dll", SetLastError = true)] internal static extern uint WaitForSingleObject(nint handle, uint milliseconds);
+        [DllImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetExitCodeProcess(nint process, out uint code);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool TerminateJobObject(nint job, uint code);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool TerminateProcess(nint process, uint code);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool CloseHandle(nint handle);
