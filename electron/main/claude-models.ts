@@ -92,7 +92,7 @@ export async function readCliModelCatalog(binary: string, createQuery: ModelQuer
         permissionMode: 'dontAsk', permissionPrompts: 'none', extraArgs: { 'safe-mode': null },
         stderr: () => undefined,
         spawnClaudeCodeProcess(options) {
-          const launch = process.platform === 'win32' ? windowsLaunch(options.command, options.args, options.env) : { binary: options.command, args: options.args, env: options.env }
+          const launch = process.platform === 'win32' ? windowsLaunch(options.command, options.args, options.env, undefined, options.cwd) : { binary: options.command, args: options.args, env: options.env }
           child = spawn(launch.binary, launch.args, { cwd: options.cwd, env: launch.env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] })
           child.stderr.resume()
           return child

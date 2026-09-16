@@ -63,8 +63,12 @@ public static class MightyJob {
     }
     SetConsoleCP(65001); SetConsoleOutputCP(65001);
   }
-  public static int Run(string binary, string arguments) {
+  public static int Run(string binary, string arguments, string workingDirectory) {
+    // .NET Framework constructs an auto-flushing stdin StreamWriter using this
+    // encoding before we copy raw bytes; a BOM would corrupt the first JSON line.
+    Console.InputEncoding = new System.Text.UTF8Encoding(false);
     var info = new ProcessStartInfo(binary, arguments);
+    info.WorkingDirectory = workingDirectory;
     info.UseShellExecute = false;
     info.CreateNoWindow = false; // Inherit the helper's hidden UTF-8 console.
     info.WindowStyle = ProcessWindowStyle.Hidden;
@@ -87,7 +91,7 @@ public static class MightyJob {
   [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
   $spec = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:MIGHTY_CLAUDE_LAUNCH_SPEC)) | ConvertFrom-Json
   Remove-Item Env:MIGHTY_CLAUDE_LAUNCH_SPEC
-  exit ([MightyJob]::Run([string]$spec.binary, [string]$spec.arguments))
+  exit ([MightyJob]::Run([string]$spec.binary, [string]$spec.arguments, [string]$spec.workingDirectory))
 } catch {
   [Console]::Error.WriteLine('MightyClaude Windows launcher: ' + $_.Exception.Message)
   exit 125
@@ -114,11 +118,11 @@ export function windowsShellArguments(command: string): string {
   return `/d /s /c "chcp 65001>nul & ${command}"`
 }
 
-export function windowsLaunch(binary: string, args: string[], env: NodeJS.ProcessEnv, shellCommand?: string): { binary: string; args: string[]; env: NodeJS.ProcessEnv } {
+export function windowsLaunch(binary: string, args: string[], env: NodeJS.ProcessEnv, shellCommand?: string, workingDirectory = process.cwd()): { binary: string; args: string[]; env: NodeJS.ProcessEnv } {
   const argumentsText = shellCommand === undefined ? args.map(quoteWindowsArgument).join(' ') : windowsShellArguments(shellCommand)
   return {
     binary: join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
     args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(JOB_RUNNER, 'utf16le').toString('base64')],
-    env: { ...env, MIGHTY_CLAUDE_LAUNCH_SPEC: Buffer.from(JSON.stringify({ binary, arguments: argumentsText })).toString('base64') },
+    env: { ...env, MIGHTY_CLAUDE_LAUNCH_SPEC: Buffer.from(JSON.stringify({ binary, arguments: argumentsText, workingDirectory })).toString('base64') },
   }
 }

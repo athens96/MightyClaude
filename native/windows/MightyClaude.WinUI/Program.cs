@@ -1,8 +1,6 @@
 using System.Text.Json;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Markup;
 
 namespace MightyClaude.WinUI;
 
@@ -102,17 +100,10 @@ internal static class Program
     }
 }
 
-internal sealed partial class MightyApplication : Application, IXamlMetadataProvider
+public sealed partial class MightyApplication : Application
 {
     private readonly StartupOptions options;
     private Window? window;
-    // Without App.xaml there is no compiler-generated metadata provider. Theme
-    // XBF resources still need WinUI's built-in type resolver.
-    private Microsoft.UI.Xaml.XamlTypeInfo.XamlControlsXamlMetaDataProvider? metadata;
-    private Microsoft.UI.Xaml.XamlTypeInfo.XamlControlsXamlMetaDataProvider Metadata => metadata ??= new();
-    public IXamlType GetXamlType(Type type) => Metadata.GetXamlType(type);
-    public IXamlType GetXamlType(string fullName) => Metadata.GetXamlType(fullName);
-    public XmlnsDefinition[] GetXmlnsDefinitions() => Metadata.GetXmlnsDefinitions();
     public MightyApplication(StartupOptions options)
     {
         this.options = options;
@@ -124,13 +115,14 @@ internal sealed partial class MightyApplication : Application, IXamlMetadataProv
             // A failed isolated test must not remain as a hung CI desktop app.
             Environment.Exit(1);
         };
+        // App.xaml drives the XAML compiler's metadata and merged resources.pri.
+        // A hand-written provider alone cannot resolve WinUI's theme dictionaries.
+        InitializeComponent();
+        options.TraceStartup("xaml-controls-resources-ready");
     }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         options.TraceStartup("on-launched");
-        // Theme resources require a fully constructed Application and metadata provider.
-        Resources.MergedDictionaries.Add(new XamlControlsResources());
-        options.TraceStartup("xaml-controls-resources-ready");
         window = new MainWindow(options);
         options.TraceStartup("main-window-created");
         window.Activate();

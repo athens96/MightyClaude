@@ -202,7 +202,7 @@ describe('native command lifecycle', () => {
       await manager.start({ ...request, kind: 'shell', input: process.platform === 'win32' ? 'cd' : 'pwd', resumeId: undefined })
       await waitUntil(() => events.some((event) => event.type === 'status' && event.status !== 'running'))
       expect(events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(events)).toBe(true)
-      expect(events.some((event) => event.type === 'log' && event.entry.text.includes(directory))).toBe(true)
+      expect(events.some((event) => event.type === 'log' && event.entry.text.includes(directory)), JSON.stringify(events)).toBe(true)
       expect(events.filter((event) => event.type === 'status').map((event) => event.status)).toEqual(['running', 'completed'])
     } finally { await manager.dispose() }
   })
@@ -322,10 +322,12 @@ process.stdin.on('end', () => {
 
 describe('Windows launcher specification', () => {
   it.skipIf(process.platform !== 'win32')('starts the real job helper and preserves literal argv and UTF-8 stdin', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mighty launcher 한국어 '))
+    temporary.push(directory)
     const argument = 'quoted path \\" 한국어 $(not-a-command)'
     const input = 'launcher stdin 한국어\n'
-    const source = "let input='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>console.log(JSON.stringify({input,args:process.argv.slice(1)})));"
-    const launch = windowsLaunch(process.execPath, ['-e', source, argument], process.env)
+    const source = "let input='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>console.log(JSON.stringify({input,args:process.argv.slice(1),cwd:process.cwd()})));"
+    const launch = windowsLaunch(process.execPath, ['-e', source, argument], process.env, undefined, directory)
     const child = spawn(launch.binary, launch.args, { env: launch.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let output = '', errors = ''
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk })
@@ -337,7 +339,7 @@ describe('Windows launcher specification', () => {
       child.stdin.end(input)
       const code = await exited
       expect(code, `Windows launcher exit=${code}\nstdout=${output}\nstderr=${errors}`).toBe(0)
-      expect(JSON.parse(output.trim())).toEqual({ input, args: [argument] })
+      expect(JSON.parse(output.trim())).toEqual({ input, args: [argument], cwd: directory })
     } finally { clearTimeout(timer); if (child.exitCode === null && child.signalCode === null) child.kill() }
   }, 15_000)
 
