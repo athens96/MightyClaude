@@ -5,7 +5,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ICON_SOURCE="${1:-$PROJECT_ROOT/assets/icons/mightyclaude.png}"
 ICON_OUTPUT="${2:-$PROJECT_ROOT/assets/icons}"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+# Respect an explicit DEVELOPER_DIR, otherwise use xcode-select (including CI's selected Xcode).
+# Never replace the selected toolchain with a hard-coded Command Line Tools path.
 ICON_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/mightyclaude-icons.XXXXXX")"
 trap 'rm -rf "$ICON_TEMP"' EXIT
 mkdir -p "$ICON_OUTPUT" "$ICON_TEMP/MightyClaude.iconset" "$PROJECT_ROOT/native/macos/.build/module-cache"

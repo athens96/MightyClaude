@@ -2,7 +2,8 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+# Respect an explicit DEVELOPER_DIR, otherwise use xcode-select (including CI's selected Xcode).
+# Never replace the selected toolchain with a hard-coded Command Line Tools path.
 SWIFT_EXECUTABLE="$(xcrun --find swift)"
 TESTING_PLUGIN="$(dirname "$SWIFT_EXECUTABLE")/../lib/swift/host/plugins/testing/libTestingMacros.dylib"
 TEST_ARGUMENTS=(--package-path "$PROJECT_ROOT/native/macos" --disable-xctest --enable-swift-testing)

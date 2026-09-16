@@ -23,6 +23,12 @@ internal static class Verification
     private static ProviderCatalog Absent() => new((_, _) => Task.FromResult<CliCommand?>(null));
     private static StartRunRequest Shell(string id, Workspace workspace, string text) => new(id, workspace.Id, "shell", text);
     private static string LongCommand(string pidFile) { var self = Self("--long-child", pidFile); return OperatingSystem.IsWindows() ? string.Join(" ", new[] { self.Binary }.Concat(self.Prefix).Select(ChildProcess.QuoteWindows)) : string.Join(" ", new[] { self.Binary }.Concat(self.Prefix).Select(v => "'" + v.Replace("'", "'\"'\"'") + "'")); }
+    private static string AttachmentReferencePath(string prompt, string name)
+    {
+        var prefix = JsonSerializer.Serialize(name, Wire.Json) + ": ";
+        var line = prompt.Split('\n').Single(value => value.StartsWith(prefix, StringComparison.Ordinal));
+        return JsonSerializer.Deserialize<string>(line[prefix.Length..], Wire.Json) ?? throw new InvalidOperationException("Missing attachment path.");
+    }
     private sealed class Protector : ISecretProtector
     {
         private readonly byte[] key = RandomNumberGenerator.GetBytes(32);
@@ -60,6 +66,15 @@ internal static class Verification
         else
         {
             var input = await Console.In.ReadToEndAsync(); await File.WriteAllTextAsync(record + ".prompt", input);
+            if (args.Contains("--verify-attachments"))
+            {
+                var flag = provider == "claude" ? "--add-dir" : provider == "codex" ? "--image" : "--include-directories";
+                var index = Array.IndexOf(args, flag); Check(index >= 0 && index + 1 < args.Length, provider + " staged attachment argument missing");
+                var directory = provider == "codex" ? Path.GetDirectoryName(args[index + 1])! : args[index + 1];
+                var captured = new Dictionary<string, string>();
+                foreach (var file in Directory.EnumerateFiles(directory)) captured.Add(file, Convert.ToBase64String(await File.ReadAllBytesAsync(file)));
+                await File.WriteAllTextAsync(record + ".attachments", JsonSerializer.Serialize(captured, Wire.Json));
+            }
             Console.WriteLine("{\"type\":\"thread.started\",\"thread_id\":\"fixture-thread\"}"); Console.WriteLine("{\"type\":\"item.completed\",\"item\":{\"id\":\"answer\",\"type\":\"agent_message\",\"text\":\"FAKE_CLI_OK\"}}");
             if (args.Contains("--hold-run")) await Task.Delay(60000);
             if (args.Contains("--fail-run")) Environment.ExitCode = 2;
@@ -148,10 +163,31 @@ internal static class Verification
                 var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin")); await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
                 foreach (var provider in Wire.Providers)
                 {
-                    var record = Path.Combine(directory, provider); await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Self("--fake-cli", provider, record))); await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue);
+                    var record = Path.Combine(directory, provider); await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Self("--fake-cli", provider, record, "--verify-attachments"))); await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue);
                     await manager.StartAsync(new(provider, workspace.Id, "claude", "", Provider: provider, Attachments: files)); await Until(() => !manager.IsRunning(provider));
-                    Check(events.Any(e => e.SessionId == provider && e.Status == "completed")); var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!; var flag = provider == "claude" ? "--add-dir" : provider == "codex" ? "--image" : "--include-directories"; var path = args[Array.IndexOf(args, flag) + 1]; if (provider == "codex") path = Path.GetDirectoryName(path)!; Check(!Directory.Exists(path), provider + " staging cleanup");
-                    var prompt = await File.ReadAllTextAsync(record + ".prompt"); Check(provider == "claude" ? prompt.Contains(files[0].DataBase64) : prompt.Contains(path)); Check(!args.Contains(files[0].DataBase64));
+                    Check(events.Any(e => e.SessionId == provider && e.Status == "completed"), provider + " attachment run did not complete");
+                    var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+                    var flag = provider == "claude" ? "--add-dir" : provider == "codex" ? "--image" : "--include-directories";
+                    var path = args[Array.IndexOf(args, flag) + 1]; if (provider == "codex") path = Path.GetDirectoryName(path)!;
+                    Check(!Directory.Exists(path), provider + " staging cleanup");
+                    var prompt = await File.ReadAllTextAsync(record + ".prompt");
+                    var captured = JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(record + ".attachments"), Wire.Json)!;
+                    Check(captured.Count == files.Length, provider + " child did not read every staged attachment");
+                    if (provider == "claude")
+                    {
+                        using var json = JsonDocument.Parse(prompt); var content = json.RootElement.GetProperty("message").GetProperty("content").EnumerateArray().ToArray();
+                        Check(content.Single(c => c.GetProperty("type").GetString() == "image").GetProperty("source").GetProperty("data").GetString() == files[0].DataBase64, "Claude inline image bytes changed");
+                        prompt = content.Single(c => c.GetProperty("type").GetString() == "text").GetProperty("text").GetString()!;
+                    }
+                    // References are JSON strings: Windows separators must be decoded before comparing paths.
+                    foreach (var attachment in provider == "claude" ? files.Skip(1) : files)
+                    {
+                        var referencedPath = AttachmentReferencePath(prompt, attachment.Name);
+                        Check(Path.GetDirectoryName(referencedPath) == path, provider + " reference escaped its staged directory");
+                        Check(captured.TryGetValue(referencedPath, out var bytes) && bytes == attachment.DataBase64, provider + " referenced bytes changed before CLI consumption");
+                        if (provider == "codex" && attachment.MediaType.StartsWith("image/", StringComparison.Ordinal)) Check(args[Array.IndexOf(args, "--image") + 1] == referencedPath, "Codex image argument and reference differ");
+                    }
+                    Check(!args.Contains(files[0].DataBase64), provider + " attachment bytes leaked into argv");
                 }
                 foreach (var behavior in new[] { "--hold-run", "--fail-run" })
                 {
