@@ -10,6 +10,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Report the selected Apple toolchain
+        run: |
+          xcode-select -p
+          xcrun --find swift
+          xcrun swift --version
+          xcrun --sdk macosx --show-sdk-path
       - name: Test Swift core and loopback remote execution
         run: bash scripts/test-native-macos.sh
       - name: Build SwiftUI application

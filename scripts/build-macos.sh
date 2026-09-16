@@ -2,7 +2,9 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+# Respect an explicit DEVELOPER_DIR, otherwise use xcode-select (including CI's selected Xcode).
+# Never replace the selected toolchain with a hard-coded Command Line Tools path.
+SWIFT_EXECUTABLE="$(xcrun --find swift)"
 BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-release}"
 BUILD_SCRATCH="$PROJECT_ROOT/native/macos/.build"
 MODULE_CACHE="$PROJECT_ROOT/native/macos/.build/module-cache"
@@ -12,8 +14,8 @@ export CLANG_MODULE_CACHE_PATH="$MODULE_CACHE"
 export SWIFTPM_MODULECACHE_OVERRIDE="$MODULE_CACHE"
 bash "$PROJECT_ROOT/scripts/package-icons.sh"
 
-swift build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" -Xswiftc -module-cache-path -Xswiftc "$MODULE_CACHE"
-BIN_PATH="$(swift build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" --show-bin-path)"
+"$SWIFT_EXECUTABLE" build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" -Xswiftc -module-cache-path -Xswiftc "$MODULE_CACHE"
+BIN_PATH="$("$SWIFT_EXECUTABLE" build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" --show-bin-path)"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources/mods"
 cp "$BIN_PATH/MightyClaude" "$APP_PATH/Contents/MacOS/MightyClaude"
 # SwiftPM resource bundles contain Ghostty's terminfo and shell integration.
