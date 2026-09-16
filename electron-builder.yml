@@ -1,0 +1,30 @@
+appId: dev.mightyclaude.desktop
+productName: MightyClaude
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: mods/mighty-bridge
+    to: mods/mighty-bridge
+    filter:
+      - '**/*'
+      - '!**/*.test.ts'
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+artifactName: '${productName}-${version}-${os}-${arch}.${ext}'

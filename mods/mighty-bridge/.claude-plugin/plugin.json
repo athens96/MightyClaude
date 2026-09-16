@@ -1,0 +1,6 @@
+{
+  "name": "mighty-bridge",
+  "version": "0.1.0",
+  "description": "MightyClaude desktop lifecycle bridge for Claude Code Mods.",
+  "author": { "name": "MightyClaude" }
+}
