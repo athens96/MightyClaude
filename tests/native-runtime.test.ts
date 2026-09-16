@@ -1,4 +1,5 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -199,7 +200,8 @@ describe('native command lifecycle', () => {
     const manager = new RunManager({ pluginDirectory: join(process.cwd(), 'mods/mighty-bridge'), resolveWorkspace: async () => workspace, emit: (event) => events.push(event) })
     try {
       await manager.start({ ...request, kind: 'shell', input: process.platform === 'win32' ? 'cd' : 'pwd', resumeId: undefined })
-      await waitUntil(() => events.some((event) => event.type === 'status' && event.status === 'completed'))
+      await waitUntil(() => events.some((event) => event.type === 'status' && event.status !== 'running'))
+      expect(events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(events)).toBe(true)
       expect(events.some((event) => event.type === 'log' && event.entry.text.includes(directory))).toBe(true)
       expect(events.filter((event) => event.type === 'status').map((event) => event.status)).toEqual(['running', 'completed'])
     } finally { await manager.dispose() }
@@ -298,7 +300,7 @@ process.stdin.on('end', () => {
       const binary = process.execPath.replaceAll('"', '')
       await manager.start({ ...request, kind: 'shell', input: `echo 안녕하세요 & "${binary}" -e "process.stdout.write('quoted path works')"`, resumeId: undefined })
       await waitUntil(() => events.some((event) => event.type === 'status' && event.status !== 'running'), 15_000)
-      expect(events.some((event) => event.type === 'status' && event.status === 'completed')).toBe(true)
+      expect(events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(events)).toBe(true)
       expect(events.some((event) => event.type === 'log' && event.entry.text.includes('안녕하세요'))).toBe(true)
       expect(events.some((event) => event.type === 'log' && event.entry.text.includes('quoted path works'))).toBe(true)
     } finally { await manager.dispose() }
@@ -310,7 +312,7 @@ process.stdin.on('end', () => {
     try {
       await manager.start({ ...request, kind: 'shell', input: `start "" /b "${process.execPath}" -e "console.log(process.pid);setInterval(()=>{},1000)"`, resumeId: undefined })
       await waitUntil(() => events.some((event) => event.type === 'status' && event.status !== 'running'), 15_000)
-      expect(events.some((event) => event.type === 'status' && event.status === 'completed')).toBe(true)
+      expect(events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(events)).toBe(true)
       const entry = events.find((event) => event.type === 'log' && event.entry.kind === 'output' && /^\d+/.test(event.entry.text))
       if (!entry || entry.type !== 'log') throw new Error('Expected Windows child PID output')
       expect(() => process.kill(Number(entry.entry.text.trim()), 0)).toThrow()
@@ -319,6 +321,26 @@ process.stdin.on('end', () => {
 })
 
 describe('Windows launcher specification', () => {
+  it.skipIf(process.platform !== 'win32')('starts the real job helper and preserves literal argv and UTF-8 stdin', async () => {
+    const argument = 'quoted path \\" 한국어 $(not-a-command)'
+    const input = 'launcher stdin 한국어\n'
+    const source = "let input='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>console.log(JSON.stringify({input,args:process.argv.slice(1)})));"
+    const launch = windowsLaunch(process.execPath, ['-e', source, argument], process.env)
+    const child = spawn(launch.binary, launch.args, { env: launch.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    let output = '', errors = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk })
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { errors += chunk })
+    child.stdin.on('error', (error) => { errors += `\nstdin: ${error.message}` })
+    const timer = setTimeout(() => child.kill(), 10_000)
+    try {
+      const exited = new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+      child.stdin.end(input)
+      const code = await exited
+      expect(code, `Windows launcher exit=${code}\nstdout=${output}\nstderr=${errors}`).toBe(0)
+      expect(JSON.parse(output.trim())).toEqual({ input, args: [argument] })
+    } finally { clearTimeout(timer); if (child.exitCode === null && child.signalCode === null) child.kill() }
+  }, 15_000)
+
   it('quotes native argv without evaluating PowerShell and encodes shell output as UTF-8', () => {
     expect(quoteWindowsArgument('plain')).toBe('plain')
     expect(quoteWindowsArgument('a b')).toBe('"a b"')

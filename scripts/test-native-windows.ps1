@@ -28,6 +28,7 @@ foreach ($argument in @('--smoke-test', '--smoke-exit', '--profile', $ProfileDir
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
 $started = $false
+$launchTime = Get-Date
 try {
     if (-not $process.Start()) { throw '앱 프로세스를 시작하지 못했습니다.' }
     $started = $true
@@ -47,6 +48,26 @@ try {
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
     Write-Output "Windows GUI PASS: $resultPath"
 } finally {
+    if ($started -and $process.HasExited -and $process.ExitCode -ne 0) {
+        # Native WinUI fail-fast can bypass managed exception handlers. Read only
+        # Application events naming this app from this launch, never unrelated logs.
+        [IO.Directory]::CreateDirectory($ProfileDirectory) | Out-Null
+        try {
+            Start-Sleep -Seconds 2
+            $appName = [IO.Path]::GetFileNameWithoutExtension($Executable)
+            $nativeEvents = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $launchTime; Id = @(1000, 1001, 1026) } -ErrorAction SilentlyContinue |
+                Where-Object { $_.Message -and $_.Message.Contains($appName, [StringComparison]::OrdinalIgnoreCase) } |
+                Select-Object -First 12 TimeCreated, Id, ProviderName, Message)
+            ConvertTo-Json -InputObject $nativeEvents -Depth 4 | Set-Content (Join-Path $ProfileDirectory 'native-crash-events.json') -Encoding utf8
+        } catch {
+            $_.Exception.Message | Set-Content (Join-Path $ProfileDirectory 'native-crash-events-error.txt') -Encoding utf8
+        }
+        Get-ChildItem -File -Recurse (Split-Path -Parent $Executable) |
+            Select-Object @{Name='Path';Expression={[IO.Path]::GetRelativePath((Split-Path -Parent $Executable), $_.FullName)}}, Length |
+            ConvertTo-Json -Depth 3 | Set-Content (Join-Path $ProfileDirectory 'published-files.json') -Encoding utf8
+        @{ processId = $process.Id; exitCode = $process.ExitCode; launchedAt = $launchTime.ToUniversalTime().ToString('O') } |
+            ConvertTo-Json | Set-Content (Join-Path $ProfileDirectory 'native-process.json') -Encoding utf8
+    }
     if ($started -and -not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
     $process.Dispose()
 }

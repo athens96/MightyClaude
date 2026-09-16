@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Markup;
 
 namespace MightyClaude.WinUI;
 
@@ -35,6 +36,17 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
         return new(profile, smoke, exit);
     }
 
+    internal void TraceStartup(string stage)
+    {
+        if (!SmokeTest || ProfileDirectory is null) return;
+        try
+        {
+            Directory.CreateDirectory(ProfileDirectory);
+            File.AppendAllText(Path.Combine(ProfileDirectory, "startup.log"), $"{DateTimeOffset.UtcNow:O} {stage}\n");
+        }
+        catch { /* Diagnostics must not change startup behavior. */ }
+    }
+
     internal void WriteStartupFailure(Exception error)
     {
         if (!SmokeTest || ProfileDirectory is null) return;
@@ -47,6 +59,8 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
                 phase = "startup",
                 error = error.Message,
                 exceptionType = error.GetType().FullName,
+                hresult = $"0x{error.HResult:X8}",
+                exception = error.ToString(),
                 aiRequestSent = false
             }, new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -64,9 +78,16 @@ internal static class Program
         {
             var startup = StartupOptions.Parse(args);
             options = startup;
+            startup.TraceStartup("options-parsed");
+            if (startup.SmokeTest) AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                if (args.ExceptionObject is Exception error) startup.WriteStartupFailure(error);
+            };
             WinRT.ComWrappersSupport.InitializeComWrappers();
+            startup.TraceStartup("com-wrappers-ready");
             Application.Start(parameters =>
             {
+                startup.TraceStartup("application-start-callback");
                 SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
                 _ = new MightyApplication(startup);
             });
@@ -81,14 +102,21 @@ internal static class Program
     }
 }
 
-internal sealed class MightyApplication : Application
+internal sealed partial class MightyApplication : Application, IXamlMetadataProvider
 {
     private readonly StartupOptions options;
     private Window? window;
+    // Without App.xaml there is no compiler-generated metadata provider. Theme
+    // XBF resources still need WinUI's built-in type resolver.
+    private Microsoft.UI.Xaml.XamlTypeInfo.XamlControlsXamlMetaDataProvider? metadata;
+    private Microsoft.UI.Xaml.XamlTypeInfo.XamlControlsXamlMetaDataProvider Metadata => metadata ??= new();
+    public IXamlType GetXamlType(Type type) => Metadata.GetXamlType(type);
+    public IXamlType GetXamlType(string fullName) => Metadata.GetXamlType(fullName);
+    public XmlnsDefinition[] GetXmlnsDefinitions() => Metadata.GetXmlnsDefinitions();
     public MightyApplication(StartupOptions options)
     {
         this.options = options;
-        Resources.MergedDictionaries.Add(new XamlControlsResources());
+        options.TraceStartup("application-constructor");
         UnhandledException += (_, args) =>
         {
             if (!options.SmokeTest) return;
@@ -99,7 +127,13 @@ internal sealed class MightyApplication : Application
     }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        options.TraceStartup("on-launched");
+        // Theme resources require a fully constructed Application and metadata provider.
+        Resources.MergedDictionaries.Add(new XamlControlsResources());
+        options.TraceStartup("xaml-controls-resources-ready");
         window = new MainWindow(options);
+        options.TraceStartup("main-window-created");
         window.Activate();
+        options.TraceStartup("main-window-activated");
     }
 }

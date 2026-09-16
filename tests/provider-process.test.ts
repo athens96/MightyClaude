@@ -27,7 +27,8 @@ describe('provider native subprocess integration', () => {
     const discoverClaude = vi.fn(async () => { throw new Error('Claude discovery must not run') })
     const manager = new RunManager({ pluginDirectory: '/does-not-exist', resolveWorkspace: async () => ({ id: 'workspace', name: 'Fixture', path: directory, createdAt: new Date().toISOString() }), emit: (event) => events.push(event), discoverRuntime: discoverClaude, discoverProvider: async (provider) => ({ provider, binary: process.execPath, argsPrefix: [file], modelCatalog: fallbackProviderCatalog(provider) }) }); managers.push(manager)
     await Promise.all([manager.start({ ...base, sessionId: 'codex-run' }), manager.start({ ...base, provider: 'gemini', sessionId: 'gemini-run' })])
-    await vi.waitFor(() => expect(events.filter((event) => event.type === 'status' && event.status === 'completed')).toHaveLength(2), { timeout: 10_000 })
+    await vi.waitFor(() => expect(events.filter((event) => event.type === 'status' && event.status !== 'running')).toHaveLength(2), { timeout: 10_000 })
+    expect(events.filter((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(events)).toHaveLength(2)
     expect(discoverClaude).not.toHaveBeenCalled()
     for (const provider of ['codex', 'gemini'] as const) {
       expect(events).toContainEqual({ sessionId: `${provider}-run`, type: 'resume', resumeId: `${provider}-resume` })
@@ -48,7 +49,7 @@ describe('provider native subprocess integration', () => {
     await manager.start({ ...base, provider: 'gemini', sessionId: 'stop-run' })
     await manager.stop('stop-run')
     expect(events).toContainEqual({ sessionId: 'stop-run', type: 'status', status: 'stopped' })
-    expect(events.some((event) => event.type === 'log' && event.entry.text === 'Login required')).toBe(true)
+    expect(events.some((event) => event.type === 'log' && event.entry.text === 'Login required'), JSON.stringify(events)).toBe(true)
   }, 15_000)
 
   it('does not launch a local child for a remote workspace', async () => {
