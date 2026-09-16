@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-release}"
+BUILD_SCRATCH="$PROJECT_ROOT/native/macos/.build"
+MODULE_CACHE="$PROJECT_ROOT/native/macos/.build/module-cache"
+APP_PATH="${MIGHTY_MACOS_APP_PATH:-$PROJECT_ROOT/release/native-macos/MightyClaude.app}"
+mkdir -p "$MODULE_CACHE"
+export CLANG_MODULE_CACHE_PATH="$MODULE_CACHE"
+export SWIFTPM_MODULECACHE_OVERRIDE="$MODULE_CACHE"
+bash "$PROJECT_ROOT/scripts/package-icons.sh"
+
+swift build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" -Xswiftc -module-cache-path -Xswiftc "$MODULE_CACHE"
+BIN_PATH="$(swift build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" --show-bin-path)"
+mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources/mods"
+cp "$BIN_PATH/MightyClaude" "$APP_PATH/Contents/MacOS/MightyClaude"
+# SwiftPM resource bundles contain Ghostty's terminfo and shell integration.
+# They must travel with the app; a development checkout is not a runtime dependency.
+for resource_bundle in "$BIN_PATH"/*.bundle; do
+  if [ -d "$resource_bundle" ]; then
+    ditto "$resource_bundle" "$APP_PATH/Contents/Resources/$(basename "$resource_bundle")"
+  fi
+done
+ditto "$PROJECT_ROOT/native/licenses" "$APP_PATH/Contents/Resources/ThirdPartyLicenses"
+cp "$PROJECT_ROOT/assets/icons/MightyClaude.icns" "$APP_PATH/Contents/Resources/MightyClaude.icns"
+cp "$PROJECT_ROOT/assets/icons/mightyclaude.png" "$APP_PATH/Contents/Resources/mightyclaude.png"
+if [ -d "$PROJECT_ROOT/assets/pets" ]; then
+  ditto "$PROJECT_ROOT/assets/pets" "$APP_PATH/Contents/Resources/pets"
+fi
+ditto "$PROJECT_ROOT/mods/mighty-bridge" "$APP_PATH/Contents/Resources/mods/mighty-bridge"
+cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>MightyClaude</string>
+<key>CFBundleDisplayName</key><string>MightyClaude</string>
+<key>CFBundleIdentifier</key><string>dev.mightyclaude.native</string>
+<key>CFBundleExecutable</key><string>MightyClaude</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>MightyClaude.icns</string>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
+</dict></plist>
+PLIST
+codesign --force --deep --sign - "$APP_PATH"
+printf '%s\n' "$APP_PATH"
