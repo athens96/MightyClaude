@@ -284,6 +284,7 @@ describe('remote client controller', () => {
   })
 
   it('runs and stops a real harmless shell process through two controllers', async () => {
+    const launchTimeout = process.platform === 'win32' ? 15_000 : 5000
     const host = await fixture()
     const realHost = new RemoteController({ ...host.options, createRunManager: (emit) => new RunManager({ pluginDirectory: '.', resolveWorkspace: host.options.resolveWorkspace, emit }) }, testNetwork)
     controllers.push(realHost)
@@ -292,15 +293,15 @@ describe('remote client controller', () => {
     const connected = await connect(client.controller, shared)
     const workspace = imported(connected.connections[0]!.id, connected.connections[0]!.workspaces[0]!)
     await client.controller.startRun({ ...baseRequest, workspaceId: workspace.id, input: 'echo MIGHTY_REMOTE_OK' }, workspace)
-    await vi.waitFor(() => expect(client.events.some((event) => event.type === 'status' && event.status !== 'running')).toBe(true), { timeout: 5000, interval: 20 })
+    await vi.waitFor(() => expect(client.events.some((event) => event.type === 'status' && event.status !== 'running'), JSON.stringify(client.events)).toBe(true), { timeout: launchTimeout, interval: 20 })
     expect(client.events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(client.events)).toBe(true)
     expect(client.events.some((event) => event.type === 'log' && event.entry.text.includes('MIGHTY_REMOTE_OK'))).toBe(true)
     const second = { ...baseRequest, sessionId: 'long-pane', workspaceId: workspace.id, input: `"${process.execPath}" -e "console.log('MIGHTY_REMOTE_RUNNING');setInterval(()=>{},1000)"` }
     await client.controller.startRun(second, workspace)
-    await vi.waitFor(() => expect(client.events.some((event) => event.sessionId === 'long-pane' && event.type === 'log' && event.entry.text.includes('MIGHTY_REMOTE_RUNNING'))).toBe(true), { timeout: 5000, interval: 20 })
+    await vi.waitFor(() => expect(client.events.some((event) => event.sessionId === 'long-pane' && event.type === 'log' && event.entry.text.includes('MIGHTY_REMOTE_RUNNING')), JSON.stringify(client.events)).toBe(true), { timeout: launchTimeout, interval: 20 })
     await client.controller.stopRun('long-pane')
     expect(client.controller.isRemoteRun('long-pane')).toBe(false)
     expect((await realHost.getState()).host.activeRuns).toBe(0)
     expect(client.events.some((event) => event.sessionId === 'long-pane' && event.type === 'status' && event.status === 'stopped')).toBe(true)
-  }, 15_000)
+  }, process.platform === 'win32' ? 40_000 : 15_000)
 })

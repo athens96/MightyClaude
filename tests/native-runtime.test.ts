@@ -200,12 +200,13 @@ describe('native command lifecycle', () => {
     const manager = new RunManager({ pluginDirectory: join(process.cwd(), 'mods/mighty-bridge'), resolveWorkspace: async () => workspace, emit: (event) => events.push(event) })
     try {
       await manager.start({ ...request, kind: 'shell', input: process.platform === 'win32' ? 'cd' : 'pwd', resumeId: undefined })
-      await waitUntil(() => events.some((event) => event.type === 'status' && event.status !== 'running'))
+      // Concurrent cold PowerShell/Add-Type startup on Windows CI can exceed 5s.
+      await waitUntil(() => events.some((event) => event.type === 'status' && event.status !== 'running'), process.platform === 'win32' ? 15_000 : 5000)
       expect(events.some((event) => event.type === 'status' && event.status === 'completed'), JSON.stringify(events)).toBe(true)
       expect(events.some((event) => event.type === 'log' && event.entry.text.includes(directory)), JSON.stringify(events)).toBe(true)
       expect(events.filter((event) => event.type === 'status').map((event) => event.status)).toEqual(['running', 'completed'])
     } finally { await manager.dispose() }
-  })
+  }, process.platform === 'win32' ? 20_000 : 5000)
 
   it('rejects an unsupported CLI before starting a process', async () => {
     const events: RunEvent[] = []
