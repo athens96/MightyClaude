@@ -1,0 +1,141 @@
+import { useCallback, useState } from 'react';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Badge, Button, Card, EmptyState } from '@/components/ui';
+import { hostAddress, useHostsStore, type PairedHost, type Reachability } from '@/store/hosts';
+import { useLiveStore } from '@/store/live';
+import { countAttention } from '@/lib/merge';
+import { colors, spacing } from '@/theme';
+
+const reachabilityLabels: Record<Reachability, string> = {
+  unknown: '확인 전',
+  checking: '확인 중…',
+  online: '연결됨',
+  unauthorized: '재페어링 필요',
+  offline: '연결 불가',
+};
+
+const reachabilityColors: Record<Reachability, string> = {
+  unknown: colors.textFaint,
+  checking: colors.textMuted,
+  online: colors.success,
+  unauthorized: colors.danger,
+  offline: colors.grey,
+};
+
+function HostRow({ host }: { host: PairedHost }) {
+  const status = useHostsStore((state) => state.status[host.id]?.reachability ?? 'unknown');
+  const attention = useLiveStore((store) => {
+    const state = store.states[host.id];
+    return state ? countAttention(state) : 0;
+  });
+  const removeHost = useHostsStore((state) => state.removeHost);
+
+  const confirmRemove = useCallback(() => {
+    Alert.alert('호스트 삭제', `${host.name} 페어링을 삭제할까요?`, [
+      { text: '취소', style: 'cancel' },
+      { text: '삭제', style: 'destructive', onPress: () => void removeHost(host.id) },
+    ]);
+  }, [host.id, host.name, removeHost]);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => router.push(`/host/${host.id}`)}
+      onLongPress={confirmRemove}
+      style={({ pressed }) => [pressed && styles.pressed]}
+    >
+      <Card>
+        <View style={styles.rowTop}>
+          <Text numberOfLines={1} style={styles.hostName}>
+            {host.name}
+          </Text>
+          <Badge count={attention} />
+        </View>
+        <Text style={styles.address}>{hostAddress(host)}</Text>
+        <View style={styles.rowBottom}>
+          <View style={[styles.dot, { backgroundColor: reachabilityColors[status] }]} />
+          <Text style={[styles.status, { color: reachabilityColors[status] }]}>
+            {reachabilityLabels[status]}
+          </Text>
+          {host.platform ? <Text style={styles.meta}>· {host.platform}</Text> : null}
+          {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
+export default function HostsScreen() {
+  const hosts = useHostsStore((state) => state.hosts);
+  const loaded = useHostsStore((state) => state.loaded);
+  const refreshAll = useHostsStore((state) => state.refreshAll);
+  const [refreshing, setRefreshing] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshAll();
+    setRefreshing(false);
+  }, [refreshAll]);
+
+  return (
+    <View style={styles.screen}>
+      <FlatList
+        data={hosts}
+        keyExtractor={(host) => host.id}
+        renderItem={({ item }) => <HostRow host={item} />}
+        contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 96 }]}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.accent}
+          />
+        }
+        ListEmptyComponent={
+          loaded ? (
+            <EmptyState
+              title="페어링된 호스트가 없습니다"
+              description="데스크톱 MightyClaude에서 QR 코드를 띄우고 아래 버튼으로 추가하세요."
+            />
+          ) : null
+        }
+      />
+      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+        <Button label="+ 호스트 추가" tone="primary" onPress={() => router.push('/pair')} />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { backgroundColor: colors.background, flex: 1 },
+  list: { padding: spacing.lg },
+  separator: { height: spacing.md },
+  pressed: { opacity: 0.7 },
+  rowTop: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  hostName: { color: colors.text, flex: 1, fontSize: 17, fontWeight: '700' },
+  address: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  rowBottom: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  dot: { borderRadius: 4, height: 8, width: 8 },
+  status: { fontSize: 12, fontWeight: '600' },
+  meta: { color: colors.textFaint, fontSize: 12 },
+  footer: {
+    backgroundColor: colors.background,
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    bottom: 0,
+    left: 0,
+    padding: spacing.lg,
+    position: 'absolute',
+    right: 0,
+  },
+});
