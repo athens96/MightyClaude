@@ -4,6 +4,7 @@ using MightyClaude.Core;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
@@ -64,6 +65,19 @@ public sealed partial class MainWindow
             Require(ReferenceEquals(pane, views[sessions[0].Id]) && service.Snapshot.Sessions.First(p => p.Id == sessions[0].Id).Draft == "다음 요청 초안", "탭 합치기가 입력창 또는 초안을 바꿨습니다.");
             result["paneReparentingAcrossImmediateTabAndSplitChanges"] = true;
             result["workspaceModesSelectionSplitDraftPreserved"] = true;
+            var originalTheme = service.Snapshot.Theme;
+            try
+            {
+                await service.UpdateAsync(s => s with { Theme = "light" }); Render();
+                Require(root.RequestedTheme == ElementTheme.Light && root.Background is SolidColorBrush { Color.A: 255 }, "밝은 테마의 창 배경이 불투명하지 않습니다.");
+                var lightColor = ((SolidColorBrush)root.Background).Color;
+                root.UpdateLayout(); await Task.Delay(120);
+                result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
+                await service.UpdateAsync(s => s with { Theme = "dark" }); Render();
+                Require(root.RequestedTheme == ElementTheme.Dark && root.Background is SolidColorBrush { Color.A: 255 } dark && dark.Color.R < lightColor.R, "어두운 테마의 창 배경이 투명하거나 밝은 테마와 구분되지 않습니다.");
+                result["opaqueBackgroundInBothThemes"] = true;
+            }
+            finally { await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png"));
             result["passed"] = true; passed = true;
