@@ -18,7 +18,7 @@ struct ComponentInstallerTests {
                            applicationPaths: [root.appendingPathComponent(app ? "Tailscale.app" : "Missing.app")],
                            cliCandidates: [root.appendingPathComponent(cli ? "bin/tailscale" : "bin/none")],
                            brewCandidates: [root.appendingPathComponent(brew ? "bin/brew" : "bin/nobrew")],
-                           statusTimeout: 3, installTimeout: 5, loginTimeout: 3)
+                           gitProbe: root.appendingPathComponent("bin/git"), statusTimeout: 3, installTimeout: 5, loginTimeout: 3)
     }
 
     @Test func phasesFollowTheBackendStateAndInstallFallsBackToTheStore() async throws {
@@ -56,10 +56,16 @@ struct ComponentInstallerTests {
         let root = try root()
         defer { try? FileManager.default.removeItem(at: root) }
         try script("""
+        if [ "$1" = "--version" ]; then echo "Homebrew 4.6.0"; exit 0; fi
         echo "$@" > "\(root.path)/brew.log"; env | grep -E '^(NONINTERACTIVE|HOMEBREW_NO_AUTO_UPDATE)=' | sort >> "\(root.path)/brew.log"
         if [ -f "\(root.path)/fail" ]; then echo "Error: boom" >&2; exit 1; fi
         echo "🍺  tailscale was successfully installed!"
         """, at: root.appendingPathComponent("bin/brew"))
+        // Apple's git shim is what Homebrew trips over when the Xcode license is unsigned.
+        try script("""
+        if [ -f "\(root.path)/license" ]; then echo "You have not agreed to the Xcode license agreements." >&2; exit 69; fi
+        echo "git version 2.54.0"
+        """, at: root.appendingPathComponent("bin/git"))
         let installer = installer(root, app: false, cli: false, brew: true)
         let inspection = await installer.inspect()
         #expect(inspection.phase == "missing" && inspection.brewAvailable)
@@ -68,6 +74,11 @@ struct ComponentInstallerTests {
         #expect(log.hasPrefix("install --cask tailscale\n") && log.contains("NONINTERACTIVE=1") && log.contains("HOMEBREW_NO_AUTO_UPDATE=1"))
         try Data().write(to: root.appendingPathComponent("fail"))
         if case .failed(let message) = await installer.install() { #expect(message.contains("boom")) } else { Issue.record("install should fail") }
+        // A Homebrew blocked by the Xcode license is not offered; the hint names the fix.
+        try FileManager.default.removeItem(at: root.appendingPathComponent("fail"))
+        try Data().write(to: root.appendingPathComponent("license"))
+        let blocked = await installer.inspect()
+        #expect(!blocked.brewAvailable && blocked.brewIssue?.contains("xcodebuild -license accept") == true && blocked.detail.contains("App Store"))
         #expect(ComponentCatalog.installCommand(provider: "claude") == "npm install -g @anthropic-ai/claude-code")
         #expect(ComponentCatalog.installCommand(provider: "browser") == nil)
     }

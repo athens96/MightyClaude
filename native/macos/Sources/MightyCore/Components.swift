@@ -63,9 +63,11 @@ public struct TailscaleInspection: Sendable, Equatable {
     public var version: String?
     public var addresses: [String]
     public var brewAvailable: Bool
+    /// Why Homebrew cannot be used right now (e.g. the Xcode license), or nil.
+    public var brewIssue: String?
     public var detail: String
-    public init(phase: String, appPath: String? = nil, cliPath: String? = nil, version: String? = nil, addresses: [String] = [], brewAvailable: Bool = false, detail: String) {
-        self.phase = phase; self.appPath = appPath; self.cliPath = cliPath; self.version = version; self.addresses = addresses; self.brewAvailable = brewAvailable; self.detail = detail
+    public init(phase: String, appPath: String? = nil, cliPath: String? = nil, version: String? = nil, addresses: [String] = [], brewAvailable: Bool = false, brewIssue: String? = nil, detail: String) {
+        self.phase = phase; self.appPath = appPath; self.cliPath = cliPath; self.version = version; self.addresses = addresses; self.brewAvailable = brewAvailable; self.brewIssue = brewIssue; self.detail = detail
     }
 }
 
@@ -83,6 +85,9 @@ public actor TailscaleInstaller {
     private let applicationPaths: [URL]
     private let cliCandidates: [URL]
     private let brewCandidates: [URL]
+    /// Homebrew casks need git, and Apple's git shim refuses to run until the
+    /// Xcode license is accepted. Probing it is instant and decisive.
+    private let gitProbe: URL
     private let statusTimeout: TimeInterval
     private let installTimeout: TimeInterval
     private let loginTimeout: TimeInterval
@@ -95,11 +100,11 @@ public actor TailscaleInstaller {
                   applicationPaths: [URL(fileURLWithPath: "/Applications/Tailscale.app"), home.appendingPathComponent("Applications/Tailscale.app")],
                   cliCandidates: Self.defaultCLICandidates(environment: env),
                   brewCandidates: [URL(fileURLWithPath: "/opt/homebrew/bin/brew"), URL(fileURLWithPath: "/usr/local/bin/brew")],
-                  statusTimeout: 5, installTimeout: 600, loginTimeout: 8)
+                  gitProbe: URL(fileURLWithPath: "/usr/bin/git"), statusTimeout: 5, installTimeout: 600, loginTimeout: 8)
     }
 
-    init(environment: [String: String], applicationPaths: [URL], cliCandidates: [URL], brewCandidates: [URL], statusTimeout: TimeInterval, installTimeout: TimeInterval, loginTimeout: TimeInterval) {
-        self.environment = environment; self.applicationPaths = applicationPaths; self.cliCandidates = cliCandidates; self.brewCandidates = brewCandidates
+    init(environment: [String: String], applicationPaths: [URL], cliCandidates: [URL], brewCandidates: [URL], gitProbe: URL, statusTimeout: TimeInterval, installTimeout: TimeInterval, loginTimeout: TimeInterval) {
+        self.environment = environment; self.applicationPaths = applicationPaths; self.cliCandidates = cliCandidates; self.brewCandidates = brewCandidates; self.gitProbe = gitProbe
         self.statusTimeout = statusTimeout; self.installTimeout = installTimeout; self.loginTimeout = loginTimeout
     }
 
@@ -118,10 +123,32 @@ public actor TailscaleInstaller {
     private var cli: URL? { cliCandidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } }
     private var brew: URL? { brewCandidates.first { FileManager.default.isExecutableFile(atPath: $0.path) } }
 
+    /// Homebrew refuses to run until Xcode's license is accepted, and that
+    /// happens in seconds, so probe it before offering the button.
+    private func brewHealth() async -> String? {
+        guard let brew else { return "Homebrew가 설치되어 있지 않습니다." }
+        var env = environment; env["NONINTERACTIVE"] = "1"; env["HOMEBREW_NO_AUTO_UPDATE"] = "1"; env["HOMEBREW_NO_ENV_HINTS"] = "1"
+        guard let result = try? await ProcessCapture.run(executable: brew, arguments: ["--version"], environment: env, timeout: statusTimeout) else { return "Homebrew를 실행하지 못했습니다." }
+        guard result.exitCode == 0 else { return Self.brewFailureHint(String(decoding: result.stdout + result.stderr, as: UTF8.self)) }
+        if FileManager.default.isExecutableFile(atPath: gitProbe.path),
+           let git = try? await ProcessCapture.run(executable: gitProbe, arguments: ["--version"], environment: env, timeout: statusTimeout), git.exitCode != 0 {
+            let output = String(decoding: git.stdout + git.stderr, as: UTF8.self)
+            if output.contains("Xcode license") { return Self.brewFailureHint(output) }
+        }
+        return nil
+    }
+    static func brewFailureHint(_ output: String) -> String {
+        if output.contains("Xcode license") { return "Homebrew가 Xcode 라이선스 동의를 요구합니다. 터미널에서 `sudo xcodebuild -license accept`를 실행한 뒤 다시 시도하세요." }
+        return "Homebrew를 사용할 수 없습니다: " + String(output.trimmingCharacters(in: .whitespacesAndNewlines).suffix(300))
+    }
+
     public func inspect() async -> TailscaleInspection {
-        let app = installedApp; let cli = cli; let brew = brew != nil
+        let app = installedApp; let cli = cli
+        let issue = await brewHealth()
+        let brew = issue == nil
         guard app != nil || cli != nil else {
-            return TailscaleInspection(phase: "missing", brewAvailable: brew, detail: brew ? "Homebrew로 Tailscale을 설치할 수 있습니다." : "Mac App Store에서 Tailscale을 설치하세요.")
+            let detail = brew ? "Homebrew로 Tailscale을 설치할 수 있습니다." : "Mac App Store에서 Tailscale을 설치하세요." + (issue.map { $0.hasPrefix("Homebrew가 설치") ? "" : " " + $0 } ?? "")
+            return TailscaleInspection(phase: "missing", brewAvailable: brew, brewIssue: issue, detail: detail)
         }
         guard let cli else {
             return TailscaleInspection(phase: "needs-launch", appPath: app?.path, brewAvailable: brew, detail: "Tailscale 앱을 한 번 실행하면 명령줄 도구가 준비됩니다.")
@@ -162,7 +189,7 @@ public actor TailscaleInstaller {
         do {
             let result = try await ProcessCapture.run(executable: brew, arguments: ["install", "--cask", "tailscale"], environment: env, timeout: installTimeout, maximumBytes: 4 * 1024 * 1024)
             let output = String(decoding: result.stdout + result.stderr, as: UTF8.self)
-            guard result.exitCode == 0 else { return .failed("Homebrew 설치가 실패했습니다 (종료 코드 \(result.exitCode)). " + String(output.suffix(600))) }
+            guard result.exitCode == 0 else { return .failed(output.contains("Xcode license") ? Self.brewFailureHint(output) : "Homebrew 설치가 실패했습니다 (종료 코드 \(result.exitCode)). " + String(output.suffix(600))) }
             return .installed(String(output.suffix(400)))
         } catch { return .failed("Homebrew를 실행하지 못했습니다: \(error.localizedDescription)") }
     }

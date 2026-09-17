@@ -10,8 +10,11 @@ struct ComponentsSettingsSection: View {
         Section {
             ForEach(store.components) { component in row(component) }
             if let message = store.componentMessage {
-                Text(message).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    .accessibilityIdentifier("components-message")
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: store.componentMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle").foregroundStyle(store.componentMessageIsError ? Color.orange : Color.green).padding(.top, 1)
+                    Text(message).font(.system(size: 11)).foregroundStyle(store.componentMessageIsError ? .primary : .secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+                .accessibilityIdentifier("components-message")
             }
             HStack {
                 Text("Tailscale은 앱이 직접 설치·실행·로그인을 돕고, 에이전트 CLI는 상태와 설치 명령을 보여줍니다.").font(.system(size: 11)).foregroundStyle(.secondary)
