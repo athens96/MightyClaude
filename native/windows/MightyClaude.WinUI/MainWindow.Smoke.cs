@@ -53,6 +53,16 @@ public sealed partial class MainWindow
             await SelectLayoutSession(sessions[0].Id);
             Require(ReferenceEquals(pane, views[sessions[0].Id]), "탭 이동이 기존 입력창을 다시 만들었습니다.");
             Require(service.Snapshot.Sessions.First(p => p.Id == sessions[0].Id).Draft == "다음 요청 초안", "분할 후 초안이 보존되지 않았습니다.");
+            Require(paneHosts.Count == 2 && paneHosts.All(pair => ReferenceEquals(pair.Value.Child, views[pair.Key].Container)), "분할 후 실행 창의 소유 컨테이너가 잘못 연결되었습니다.");
+            // Exercise immediate tab changes and split -> merged tabs -> split
+            // without a dispatcher delay; old detached trees must release panes.
+            await SelectLayoutSession(sessions[2].Id); await SelectLayoutSession(sessions[0].Id);
+            var mergeTarget = PaneLayout.Groups(EffectiveLayout(service.Snapshot, workspace.Id)).First(g => g.SessionIds.Contains(sessions[0].Id));
+            await DockSession(sessions[1].Id, workspace.Id, mergeTarget.Id, "center");
+            Require(paneHosts.Count == 1 && EffectiveLayout(service.Snapshot, workspace.Id)?.Kind == "tabs", "분할 창을 하나의 탭 그룹으로 합치지 못했습니다.");
+            await SelectLayoutSession(sessions[0].Id);
+            Require(ReferenceEquals(pane, views[sessions[0].Id]) && service.Snapshot.Sessions.First(p => p.Id == sessions[0].Id).Draft == "다음 요청 초안", "탭 합치기가 입력창 또는 초안을 바꿨습니다.");
+            result["paneReparentingAcrossImmediateTabAndSplitChanges"] = true;
             result["workspaceModesSelectionSplitDraftPreserved"] = true;
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png"));

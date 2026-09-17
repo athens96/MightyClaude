@@ -15,6 +15,9 @@ public sealed partial class MainWindow
     private readonly StackPanel sessionLinks = new() { Spacing = 3 };
     // Keep generated legacy layouts stable until the first user layout action.
     private readonly Dictionary<string, PaneLayoutNode> layoutDefaults = [];
+    // Own each attachment explicitly: FrameworkElement.Parent can be unavailable
+    // while a generated tab/split tree is being detached from the visual tree.
+    private readonly Dictionary<string, Border> paneHosts = [];
     private string? draggedSessionId, draggedWorkspaceId;
 
     private static string LayoutMode(AppSnapshot state, string? workspace) => workspace is not null && state.PaneLayoutModes?.TryGetValue(workspace, out var mode) == true ? mode : state.Layout;
@@ -79,13 +82,14 @@ public sealed partial class MainWindow
 
     private void DetachPaneViews()
     {
+        // Clear the actual owner before discarding the old layout. Removing the
+        // outer viewport alone leaves its descendants parented to the old tree.
+        foreach (var host in paneHosts.Values) host.Child = null;
+        paneHosts.Clear();
         foreach (var view in views.Values)
         {
             // PaneView owns draft text, selection and attachment objects. Move
             // its container instead of recreating it when tabs or splits change.
-            if (view.Container.Parent is Panel panel) panel.Children.Remove(view.Container);
-            else if (view.Container.Parent is Border border) border.Child = null;
-            else if (view.Container.Parent is ContentControl content) content.Content = null;
             Grid.SetRow(view.Container, 0); Grid.SetColumn(view.Container, 0);
         }
     }
@@ -190,7 +194,9 @@ public sealed partial class MainWindow
             var close = Button("×", () => CloseSession(id)); close.MinWidth = 0; close.Width = 22; close.Height = 30; close.Padding = new(0); close.Background = new SolidColorBrush(Colors.Transparent); close.BorderThickness = new(0); AutomationProperties.SetName(close, session.Title + " 닫기"); tabCell.Children.Add(close); tabs.Children.Add(tabCell);
         }
         if (!views.TryGetValue(selected, out var pane)) { pane = new(this, selected); views[selected] = pane; }
-        Grid.SetRow(pane.Container, 1); group.Children.Add(pane.Container); pane.Refresh();
+        if (paneHosts.ContainsKey(selected)) throw new InvalidOperationException("같은 실행 창이 두 레이아웃 그룹에 연결되어 있습니다.");
+        var paneHost = new Border(); paneHosts.Add(selected, paneHost);
+        paneHost.Child = pane.Container; Grid.SetRow(paneHost, 1); group.Children.Add(paneHost); pane.Refresh();
         var hint = new Border { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 100, 149, 237)), BorderBrush = new SolidColorBrush(Colors.CornflowerBlue), BorderThickness = new(2), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = new TextBlock { Text = "탭으로 합치기", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         Grid.SetRowSpan(hint, 2); group.Children.Add(hint);
         group.DragOver += (_, args) =>

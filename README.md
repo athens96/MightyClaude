@@ -17,8 +17,8 @@
 
 [Native clients 빌드 목록](https://github.com/athens96/MightyClaude/actions/workflows/native.yml)에서 성공한 실행을 열고 **Artifacts**의 운영체제·아키텍처에 맞는 파일을 내려받습니다. GitHub 로그인이 필요할 수 있습니다.
 
-- **Windows:** x64 또는 ARM64 패키지를 폴더째 압축 해제하고 `MightyClaude.exe`를 실행합니다. 함께 제공되는 DLL·Assets·Mods 파일도 필요하므로 exe만 따로 옮기지 마세요. .NET/Windows App SDK 런타임을 포함한 self-contained 패키지입니다.
-- **macOS:** 패키지의 `MightyClaude.app`을 실행합니다. 현재 로컬 서명 빌드이며 배포용 Developer ID 서명·공증은 포함하지 않습니다.
+- **Windows:** x64 또는 ARM64 Artifacts ZIP을 받은 뒤, 그 안의 `MightyClaude-windows-<아키텍처>.zip`도 폴더째 압축 해제하고 `MightyClaude.exe`를 실행합니다. 함께 제공되는 DLL·Assets·Mods 파일도 필요하므로 exe만 따로 옮기지 마세요. .NET/Windows App SDK 런타임을 포함한 self-contained 패키지이며 SHA-256 파일을 함께 제공합니다.
+- **macOS:** Artifacts 안의 `MightyClaude-macos.zip`을 압축 해제하고 `MightyClaude.app`을 실행합니다. CI 빌드는 실행한 Mac 호스트의 단일 CPU 아키텍처용이며 universal 빌드가 아닙니다. 현재 로컬 서명 빌드이며 배포용 Developer ID 서명·공증은 포함하지 않습니다.
 
 빌드 산출물은 Actions 보관 기간의 영향을 받습니다. 아래 명령으로 동일한 소스에서 직접 빌드할 수도 있습니다.
 

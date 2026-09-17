@@ -25,6 +25,13 @@ jobs:
         run: release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude --smoke-test --smoke-exit --profile "$RUNNER_TEMP/mighty-native-smoke"
       - name: Check smoke result
         run: python3 -c 'import json, os; p=os.environ["RUNNER_TEMP"] + "/mighty-native-smoke/smoke-result.json"; r=json.load(open(p)); print(r); assert r["passed"]'
+      - name: Upload isolated macOS GUI result and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MightyClaude-macos-smoke
+          path: ${{ runner.temp }}/mighty-native-smoke/
+          if-no-files-found: warn
       - name: Package macOS app with executable modes and hidden resources
         run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
       - uses: actions/upload-artifact@v4
