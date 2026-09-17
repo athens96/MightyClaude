@@ -837,8 +837,19 @@ final class AppStore: ObservableObject {
         let running = session.status == "running"
         let actionIdentifier = (running ? "composer-stop-" : "send-") + sessionId
         let absentIdentifier = (running ? "send-" : "composer-stop-") + sessionId
-        let action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
-        let duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
+        var action: Bool?
+        var duplicate: Bool?
+        let actionDeadline = Date().addingTimeInterval(3)
+        repeat {
+            // SwiftUI publishes virtual accessibility children after the layout
+            // transaction. Wait for the actual button, not a fixed frame delay.
+            view.layoutSubtreeIfNeeded()
+            tree = []
+            action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
+            duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
+            if action == (running || expectedSendEnabled), duplicate == nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        } while Date() < actionDeadline
         diagnostic["primaryAction"] = running ? "stop" : "send"
         diagnostic["primaryActionLocated"] = action != nil
         diagnostic["singlePrimaryAction"] = duplicate == nil
@@ -1032,26 +1043,37 @@ final class AppStore: ObservableObject {
         guard pasted, editors(view).contains(where: { $0 === editor }), diagnostic["pasteGrowsViewport"] as? Bool == true else { throw MightyError("첨부 이후 네이티브 텍스트 붙여넣기 또는 자동 높이를 확인하지 못했습니다.") }
     }
 
-    private func smokeAccessibilityElement(_ element: Any, identifier: String, depth: Int = 0, tree: inout [[String: Any]]) -> Bool? {
-        guard depth < 30 else { return nil }
-        var children: [Any] = []
-        if let node = element as? any NSAccessibilityProtocol {
-            let currentId = node.accessibilityIdentifier() ?? ""
-            tree.append(["depth": depth, "class": String(describing: type(of: element)), "id": currentId, "enabled": node.isAccessibilityEnabled()])
-            if currentId == identifier { return node.isAccessibilityEnabled() }
-            children = node.accessibilityChildren() ?? []
-        } else if let node = element as? NSObject {
-            // SwiftUI's virtual accessibility nodes expose the modern Objective-C
-            // getters without declaring NSAccessibilityProtocol conformance.
-            let currentId = node.responds(to: NSSelectorFromString("accessibilityIdentifier")) ? node.value(forKey: "accessibilityIdentifier") as? String ?? "" : ""
-            let enabled = node.responds(to: NSSelectorFromString("isAccessibilityEnabled")) ? node.value(forKey: "accessibilityEnabled") as? Bool : nil
-            tree.append(["depth": depth, "class": String(describing: type(of: element)), "id": currentId, "enabled": enabled ?? false])
-            if currentId == identifier { return enabled }
-            if node.responds(to: NSSelectorFromString("accessibilityChildren")) { children = node.value(forKey: "accessibilityChildren") as? [Any] ?? [] }
+    private func smokeAccessibilityElement(_ element: Any, identifier: String, tree: inout [[String: Any]]) -> Bool? {
+        var visited = Set<ObjectIdentifier>()
+        func find(_ element: Any, depth: Int) -> Bool? {
+            if let view = element as? NSView, view.isHiddenOrHasHiddenAncestor { return nil }
+            guard depth < 128, visited.count < 10_000, let object = element as? NSObject,
+                  visited.insert(ObjectIdentifier(object)).inserted else { return nil }
+            var children: [Any] = []
+            if let node = element as? any NSAccessibilityProtocol {
+                let currentId = node.accessibilityIdentifier() ?? ""
+                tree.append(["depth": depth, "class": String(describing: type(of: element)), "id": currentId, "enabled": node.isAccessibilityEnabled()])
+                if currentId == identifier { return node.isAccessibilityEnabled() }
+                children = node.accessibilityChildren() ?? []
+            } else {
+                // SwiftUI virtual nodes may expose Objective-C getters without
+                // declaring NSAccessibilityProtocol conformance.
+                let currentId = object.responds(to: NSSelectorFromString("accessibilityIdentifier")) ? object.value(forKey: "accessibilityIdentifier") as? String ?? "" : ""
+                let enabled = object.responds(to: NSSelectorFromString("isAccessibilityEnabled")) ? object.value(forKey: "accessibilityEnabled") as? Bool : nil
+                tree.append(["depth": depth, "class": String(describing: type(of: element)), "id": currentId, "enabled": enabled ?? false])
+                if currentId == identifier { return enabled }
+                if object.responds(to: NSSelectorFromString("accessibilityChildren")) { children = object.value(forKey: "accessibilityChildren") as? [Any] ?? [] }
+            }
+            // AppKit can omit ignored hosting wrappers from the parent AX tree
+            // before their SwiftUI children are materialized. Inspect the native
+            // subtree too; identity tracking avoids traversing shared nodes twice.
+            if let view = element as? NSView { children.append(contentsOf: view.subviews) }
+            if let window = element as? NSWindow, let content = window.contentView { children.append(content) }
+            for child in children {
+                if let found = find(child, depth: depth + 1) { return found }
+            }
+            return nil
         }
-        for child in children {
-            if let found = smokeAccessibilityElement(child, identifier: identifier, depth: depth + 1, tree: &tree) { return found }
-        }
-        return nil
+        return find(element, depth: 0)
     }
 }
