@@ -167,6 +167,7 @@ struct PermissionTests {
         IFS= read -r prompt || exit 22
         printf '%s\n' "$prompt" > prompt.json
         request='{"type":"control_request","request_id":"same-request","request":{"subtype":"can_use_tool","tool_name":"WebSearch","tool_use_id":"same-tool","input":{"query":"official documentation","allowed_domains":["example.com"],"nested":{"unchanged":true}}}}'
+        if [ -f question-request.json ]; then request=$(/bin/cat question-request.json); fi
         printf '%s\n%s\n' "$request" "$request"
         IFS= read -r response || exit 23
         printf '%s\n' "$response" > response.json
@@ -227,6 +228,22 @@ struct PermissionTests {
             #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("response.json").path))
             let pid = try #require(Int32(String(contentsOf: root.appendingPathComponent("child-pid.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
             #expect(Darwin.kill(pid, 0) != 0)
+
+            let questionInput: [String: Any] = ["questions": [["header": "앱", "question": "어느 앱?", "multiSelect": false, "options": [["label": "Swift", "description": "Mac"], ["label": "WinUI", "description": "Windows"]]]]]
+            try ask("same-request", tool: "AskUserQuestion", input: questionInput).write(to: root.appendingPathComponent("question-request.json"))
+            try await runner.start(request: request, workspace: workspace, allowPermissionPrompts: true)
+            try await wait { events.values().filter { $0.permission?.state == "pending" }.count == 4 }
+            let fourth = try #require(events.values().compactMap(\.permission).last { $0.state == "pending" })
+            let answers = ["어느 앱?": UserQuestionAnswer(selectedOptions: ["Swift"])]
+            await #expect(throws: MightyError.self) { try await runner.answerUserQuestions(sessionId: "pane", runId: third.runId, requestId: fourth.id, answers: answers) }
+            await #expect(throws: MightyError.self) { try await runner.answerUserQuestions(sessionId: "wrong-pane", runId: fourth.runId, requestId: fourth.id, answers: answers) }
+            #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("response.json").path))
+            try await runner.answerUserQuestions(sessionId: "pane", runId: fourth.runId, requestId: fourth.id, answers: answers)
+            await #expect(throws: MightyError.self) { try await runner.answerUserQuestions(sessionId: "pane", runId: fourth.runId, requestId: fourth.id, answers: answers) }
+            try await wait { events.values().filter { $0.status == "completed" }.count == 3 }
+            let questionResponse = try response(Data(contentsOf: root.appendingPathComponent("response.json")))
+            #expect((questionResponse["updatedInput"] as? [String: Any])?["answers"] as? [String: String] == ["어느 앱?": "Swift"])
+            #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("extra-responses.jsonl").path))
         } catch { await runner.shutdown(); await providers.shutdown(); throw error }
         await runner.shutdown(); await providers.shutdown()
     }

@@ -8,15 +8,17 @@ enum AgentTranscriptFormat {
     static let accent = NSColor(calibratedRed: 0.86, green: 0.65, blue: 0.55, alpha: 1)
     static let codeAttribute = NSAttributedString.Key("MightyTranscriptCode")
 
-    static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool) -> NSAttributedString {
-        let builder = Builder()
+    /// `references` turns file paths and addresses into links. Only the Mighty
+    /// graph opts in; the basic transcript keeps model text as plain text.
+    static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool, references: Bool = false) -> NSAttributedString {
+        let builder = Builder(references: references)
         if let activity = entry.activity {
             let live = running && ["running", "waiting"].contains(activity.state)
             let color = activity.state == "error" ? NSColor.systemRed : live ? accent : .secondaryLabelColor
             let line = NSMutableAttributedString(attributedString: symbol(AgentActivityRow.symbol(activity.kind), color: color))
             let summary = activity.summary.isEmpty ? activity.toolName ?? "작업" : activity.summary
             let font = ["command", "read", "edit"].contains(activity.kind) ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular) : .systemFont(ofSize: 12)
-            line.append(NSAttributedString(string: "  " + summary, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]))
+            builder.appendText("  " + summary, attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor], to: line)
             if let duration = ActivitySupport.durationLabel(activity) {
                 line.append(NSAttributedString(string: "  · " + duration, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
             }
@@ -34,25 +36,37 @@ enum AgentTranscriptFormat {
             if expanded, let output = activity.output, !output.isEmpty { builder.code(output, language: nil) }
         } else if entry.kind == "assistant" {
             let selectedProvider = entry.provider ?? provider
-            let header = NSMutableAttributedString(attributedString: symbol(Palette.symbol(selectedProvider), color: accent))
+            let header = NSMutableAttributedString(attributedString: providerSymbol(selectedProvider, color: accent))
             let timestamp = ISO8601DateFormatter().date(from: entry.timestamp)?.formatted(date: .omitted, time: .shortened) ?? ""
             header.append(NSAttributedString(string: "  \(ProviderOptions.label(selectedProvider))\(timestamp.isEmpty ? "" : "  ·  " + timestamp)", attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor]))
             builder.paragraph(header, spacing: 10)
-            for block in AgentMarkdownDocument.parse(entry.text).blocks { builder.block(block) }
+            if let questions = UserQuestionnaire.parse(inputJSON: entry.text) {
+                builder.questionnaire(questions)
+            } else {
+                for block in AgentMarkdownDocument.parse(entry.text).blocks { builder.block(block) }
+            }
         } else if entry.kind == "user" {
             let line = NSMutableAttributedString(attributedString: symbol("arrow.up.right", color: accent))
-            line.append(NSAttributedString(string: "  " + entry.text))
+            builder.appendText("  " + entry.text, attributes: [:], to: line)
             builder.paragraph(line, spacing: 12, box: builder.box(background: accent.withAlphaComponent(0.07), border: .clear))
         } else if entry.kind == "output" {
             builder.code(entry.text, language: nil)
         } else {
             let color: NSColor = entry.kind == "error" ? .systemRed : .secondaryLabelColor
             let line = NSMutableAttributedString(attributedString: symbol(entry.kind == "error" ? "exclamationmark.circle" : "info.circle", color: color))
-            line.append(NSAttributedString(string: "  " + entry.text))
+            builder.appendText("  " + entry.text, attributes: [:], to: line)
             builder.paragraph(line, font: .systemFont(ofSize: 12), color: color, spacing: 7)
         }
         builder.separation()
         return NSAttributedString(attributedString: builder.result)
+    }
+
+    private static func providerSymbol(_ provider: String, color: NSColor) -> NSAttributedString {
+        guard let image = ProviderIconImage.image(provider: provider, pointSize: 11, color: color) else { return NSAttributedString(string: "•") }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = NSRect(x: 0, y: -2, width: 13, height: 13)
+        return NSAttributedString(attachment: attachment)
     }
 
     private static func symbol(_ name: String, color: NSColor) -> NSAttributedString {
@@ -65,6 +79,26 @@ enum AgentTranscriptFormat {
 
     @MainActor private final class Builder {
         let result = NSMutableAttributedString(string: "")
+        let references: Bool
+        init(references: Bool) { self.references = references }
+
+        /// Plain text, with file paths and addresses linked when enabled.
+        func appendText(_ string: String, attributes: [NSAttributedString.Key: Any], to target: NSMutableAttributedString) {
+            guard references else { target.append(NSAttributedString(string: string, attributes: attributes)); return }
+            var cursor = string.startIndex
+            for match in ReferenceLinkSupport.matches(in: string) where match.range.lowerBound >= cursor {
+                if match.range.lowerBound > cursor { target.append(NSAttributedString(string: String(string[cursor..<match.range.lowerBound]), attributes: attributes)) }
+                var linked = attributes
+                if let url = match.url {
+                    if AgentMarkdownDocument.safeLink(url) { linked[.link] = url; linked[.foregroundColor] = AgentTranscriptFormat.accent }
+                } else if let url = ReferenceLinkSupport.referenceURL(path: match.path, line: match.line) {
+                    linked[.link] = url; linked[.foregroundColor] = AgentTranscriptFormat.accent; linked[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                }
+                target.append(NSAttributedString(string: String(string[match.range]), attributes: linked))
+                cursor = match.range.upperBound
+            }
+            if cursor < string.endIndex { target.append(NSAttributedString(string: String(string[cursor...]), attributes: attributes)) }
+        }
 
         func separation() {
             result.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 4), .paragraphStyle: style(spacing: 2)]))
@@ -104,7 +138,12 @@ enum AgentTranscriptFormat {
                 if intent?.contains(.code) == true { attributes[.backgroundColor] = NSColor.labelColor.withAlphaComponent(0.055) }
                 if intent?.contains(.strikethrough) == true { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                 if let link = run.link, AgentMarkdownDocument.safeLink(link) { attributes[.link] = link; attributes[.foregroundColor] = AgentTranscriptFormat.accent }
-                result.append(NSAttributedString(string: String(source[run.range].characters), attributes: attributes))
+                let text = String(source[run.range].characters)
+                if attributes[.link] == nil, references, let path = run.referencePath, let url = ReferenceLinkSupport.referenceURL(path: path, line: nil) {
+                    attributes[.link] = url; attributes[.foregroundColor] = AgentTranscriptFormat.accent; attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                    result.append(NSAttributedString(string: text, attributes: attributes))
+                } else if attributes[.link] == nil { appendText(text, attributes: attributes, to: result) }
+                else { result.append(NSAttributedString(string: text, attributes: attributes)) }
             }
             return result
         }
@@ -122,7 +161,9 @@ enum AgentTranscriptFormat {
                 for item in block.children { listItem(item, ordered: block.kind == .orderedList, indent: indent, quote: quote) }
             case .listItem:
                 for child in block.children { self.block(child, indent: indent, quote: quote) }
-            case .codeBlock(let language): code(block.plainText, language: language, indent: indent)
+            case .codeBlock(let language):
+                if let questions = UserQuestionnaire.parse(inputJSON: block.plainText) { questionnaire(questions) }
+                else { code(block.plainText, language: language, indent: indent) }
             case .blockQuote:
                 let border = NSTextBlock()
                 border.setWidth(10, type: .absoluteValueType, for: .padding)
@@ -138,6 +179,22 @@ enum AgentTranscriptFormat {
             @unknown default:
                 if !block.plainText.isEmpty { paragraph(inline(block.text), indent: indent, box: quote) }
                 for child in block.children { self.block(child, indent: indent, quote: quote) }
+            }
+        }
+
+        func questionnaire(_ form: UserQuestionnaire) {
+            for (index, question) in form.questions.enumerated() {
+                let title = "\(index + 1). \(question.header)  ·  \(question.multiSelect ? "복수 선택" : "하나 선택")"
+                paragraph(NSAttributedString(string: title), font: .systemFont(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
+                          box: box(background: AgentTranscriptFormat.accent.withAlphaComponent(0.07), border: .clear))
+                paragraph(NSAttributedString(string: question.question), font: .systemFont(ofSize: 14, weight: .semibold), spacing: 10)
+                for option in question.options {
+                    paragraph(NSAttributedString(string: "\(question.multiSelect ? "☐" : "○")  \(option.label)"), font: .systemFont(ofSize: 13, weight: .medium), spacing: 3)
+                    if !option.description.isEmpty {
+                        paragraph(NSAttributedString(string: option.description), font: .systemFont(ofSize: 12), color: .secondaryLabelColor, indent: 20, spacing: 10)
+                    }
+                }
+                separation()
             }
         }
 

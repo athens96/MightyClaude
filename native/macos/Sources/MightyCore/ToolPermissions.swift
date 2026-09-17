@@ -13,12 +13,27 @@ public struct ToolPermissionRequest: Codable, Sendable, Equatable, Identifiable 
     public var blockedPath: String?
     public var state: String
     public var canAllow: Bool
+    public var canAnswerQuestions: Bool
+    public var questionnaire: UserQuestionnaire? { toolName == "AskUserQuestion" ? UserQuestionnaire.parse(inputJSON: inputJSON) : nil }
 
-    public init(id: String, runId: String, toolUseId: String, toolName: String, inputJSON: String, summary: String, reason: String? = nil, blockedPath: String? = nil, state: String = "pending", canAllow: Bool = true) {
+    public init(id: String, runId: String, toolUseId: String, toolName: String, inputJSON: String, summary: String, reason: String? = nil, blockedPath: String? = nil, state: String = "pending", canAllow: Bool = true, canAnswerQuestions: Bool = false) {
         self.id = id; self.runId = runId; self.toolUseId = toolUseId
         self.toolName = toolName; self.inputJSON = inputJSON; self.summary = summary
-        self.reason = reason; self.blockedPath = blockedPath; self.state = state; self.canAllow = canAllow
+        self.reason = reason; self.blockedPath = blockedPath; self.state = state; self.canAllow = canAllow; self.canAnswerQuestions = canAnswerQuestions
     }
+    private enum CodingKeys: String, CodingKey {
+        case id, runId, toolUseId, toolName, inputJSON, summary, reason, blockedPath, state, canAllow, canAnswerQuestions
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id); runId = try c.decode(String.self, forKey: .runId)
+        toolUseId = try c.decode(String.self, forKey: .toolUseId); toolName = try c.decode(String.self, forKey: .toolName)
+        inputJSON = try c.decode(String.self, forKey: .inputJSON); summary = try c.decode(String.self, forKey: .summary)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason); blockedPath = try c.decodeIfPresent(String.self, forKey: .blockedPath)
+        state = try c.decode(String.self, forKey: .state); canAllow = try c.decode(Bool.self, forKey: .canAllow)
+        canAnswerQuestions = try c.decodeIfPresent(Bool.self, forKey: .canAnswerQuestions) ?? false
+    }
+
 }
 
 /// Claude Code's supported SDK stdio protocol. Only `can_use_tool` asks reach
@@ -102,13 +117,14 @@ final class ClaudePermissionChannel {
         let details = [request["title"] as? String, request["description"] as? String, request["decision_reason"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
         let originalPath = request["blocked_path"] as? String
         let completeMetadata = details.utf8.count <= 8_192 && (originalPath?.utf8.count ?? 0) <= 8_192
+        let canAnswerQuestions = toolName == "AskUserQuestion" && completeMetadata && UserQuestionnaire.parse(inputJSON: display) != nil
         var reason = ActivitySupport.clean(details, maximumBytes: 8_192)
-        if interaction { reason += (reason.isEmpty ? "" : "\n\n") + "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다." }
+        if interaction && !canAnswerQuestions { reason += (reason.isEmpty ? "" : "\n\n") + "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다." }
         if !completeMetadata { reason += "\n\n승인 설명이 표시 한도를 넘어 허용할 수 없습니다." }
         let value = ToolPermissionRequest(id: id, runId: runId, toolUseId: toolUseId,
             toolName: ActivitySupport.clean(toolName, maximumBytes: 256, singleLine: true), inputJSON: display,
             summary: ActivitySupport.summary(tool: toolName, input: input), reason: reason.isEmpty ? nil : reason,
-            blockedPath: originalPath.map { ActivitySupport.clean($0, maximumBytes: 8_192) }, canAllow: !interaction && completeMetadata)
+            blockedPath: originalPath.map { ActivitySupport.clean($0, maximumBytes: 8_192) }, canAllow: !interaction && completeMetadata, canAnswerQuestions: canAnswerQuestions)
         pending[id] = Pending(display: value, input: input)
         activity(value, "waiting"); emit(value)
     }
@@ -123,6 +139,24 @@ final class ClaudePermissionChannel {
         else { deny(requestId, toolUseId: request.display.toolUseId, message: "The user denied this tool request in MightyClaude.") }
         var display = request.display; display.state = allow ? "allowed" : "denied"
         activity(display, allow ? "running" : "error"); emit(display)
+    }
+
+    func answerQuestions(requestId: String, answers: [String: UserQuestionAnswer]) throws {
+        guard !closed, let request = pending[requestId] else { throw MightyError("이미 처리되었거나 종료된 선택 요청입니다.") }
+        guard request.display.canAnswerQuestions, let questionnaire = request.display.questionnaire else {
+            throw MightyError("이 요청은 선택 답변을 지원하지 않습니다.")
+        }
+        let validated = try questionnaire.validatedAnswers(answers)
+        var input = request.input
+        input["answers"] = validated
+        // A freeform response overrides answers in the SDK; structured user
+        // answers must replace any model-supplied response, not be hidden by it.
+        input.removeValue(forKey: "response")
+        // Validate first; an invalid draft must leave the request answerable.
+        pending.removeValue(forKey: requestId)
+        success(requestId, result: ["behavior": "allow", "updatedInput": input, "toolUseID": request.display.toolUseId])
+        var display = request.display; display.state = "answered"
+        activity(display, "running"); emit(display)
     }
 
     func cancelAll() {

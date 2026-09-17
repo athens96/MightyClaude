@@ -177,22 +177,16 @@ struct AppSettingsView: View {
                     Text("다른 컴퓨터의 워크스페이스에 연결하거나 이 Mac의 워크스페이스를 공유합니다.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                ComponentsSettingsSection().environmentObject(store)
+                MobileRemoteSettingsSection().environmentObject(store)
                 CLIUpdateSettingsSection().environmentObject(store)
-                Section("계정 아일랜드") {
-                    Toggle("카메라 옆에 계정 아일랜드 표시", isOn: Binding(
-                        get: { store.companion.preferences.showsSessionIsland != false },
-                        set: { store.companion.preferences.showsSessionIsland = $0 }
-                    ))
-                    Text("계정의 세션·주간 사용 한도는 아일랜드에, 대화 컨텍스트는 입력창 옆에 표시합니다.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
                 CompanionSettingsSection(companion: store.companion)
                 Section {
                     ForEach(ProviderOptions.ids, id: \.self) { id in
                         let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Label(provider.name, systemImage: Palette.symbol(id)).font(.system(size: 13, weight: .medium))
+                                HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name) }.font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 Text(provider.available ? "실행 준비됨" : "설정 필요").font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
                             }

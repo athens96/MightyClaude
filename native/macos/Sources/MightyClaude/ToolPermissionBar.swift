@@ -9,9 +9,17 @@ struct ToolPermissionBar: View {
 
     @ViewBuilder var body: some View {
         if let request = store.toolPermissions[sessionId]?.first {
-            ToolPermissionCard(sessionId: sessionId, request: request,
-                               count: store.toolPermissions[sessionId]?.count ?? 1)
-                .id(store.permissionResponseKey(sessionId: sessionId, request: request))
+            Group {
+                if let questionnaire = request.questionnaire {
+                    UserQuestionnaireCard(sessionId: sessionId, request: request,
+                                          questionnaire: questionnaire,
+                                          count: store.toolPermissions[sessionId]?.count ?? 1)
+                        .layoutPriority(1)
+                } else {
+                    ToolPermissionCard(sessionId: sessionId, request: request,
+                                       count: store.toolPermissions[sessionId]?.count ?? 1)
+                }
+            }.id(store.permissionResponseKey(sessionId: sessionId, request: request))
         }
     }
 }
@@ -21,28 +29,52 @@ private struct ToolPermissionCard: View {
     let sessionId: String
     let request: ToolPermissionRequest
     let count: Int
-    @ViewState private var expanded = true
+    @ViewState private var showsJSON = false
     private var busy: Bool { store.permissionResponses.contains(store.permissionResponseKey(sessionId: sessionId, request: request)) }
+    private var presentation: ToolPermissionPresentation { ToolPermissionPresentation.make(toolName: request.toolName, inputJSON: request.inputJSON) }
 
     var body: some View {
+        let presentation = presentation
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
-                Text("\(request.toolName) · 승인 요청").fontWeight(.semibold).lineLimit(1)
+                Text("\(presentation.title) · 승인 요청").fontWeight(.semibold).lineLimit(1)
+                Text(request.toolName).foregroundStyle(.secondary).lineLimit(1)
                 Spacer(minLength: 0)
                 if count > 1 { Text("\(count)개 대기").foregroundStyle(.secondary) }
             }.font(.system(size: 11))
-            Text(request.summary).font(.system(size: 12, design: .monospaced))
-                .lineLimit(2).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            DisclosureGroup("요청 내용 보기", isExpanded: $expanded) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let path = request.blockedPath, !path.isEmpty { Text("접근 경로: \(path)") }
-                        if let reason = request.reason, !reason.isEmpty { Text(reason).foregroundStyle(.secondary) }
-                        Text(request.inputJSON).font(.system(size: 10, design: .monospaced))
-                    }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
-                }.frame(maxHeight: 100)
-            }.font(.system(size: 10))
+            if let headline = presentation.headline {
+                Text(headline).font(.system(size: 12, weight: .medium)).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("permission-headline")
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(presentation.fields.enumerated()), id: \.offset) { _, field in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(field.label).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                            if field.code {
+                                Text(field.value).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 8).padding(.vertical, 6)
+                                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                            } else {
+                                Text(field.value).font(.system(size: 11)).textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    if presentation.fields.isEmpty, presentation.headline == nil {
+                        Text(request.summary).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                    }
+                    if let path = request.blockedPath, !path.isEmpty { Text("접근 경로: \(path)").font(.system(size: 10)) }
+                    if let reason = request.reason, !reason.isEmpty { Text(reason).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    DisclosureGroup("원본 JSON", isExpanded: $showsJSON) {
+                        Text(request.inputJSON).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+                    }.font(.system(size: 10)).accessibilityIdentifier("permission-json")
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 4)
+            }.frame(maxHeight: 180)
             if !request.canAllow {
                 Text("이 요청은 현재 승인 화면에서 허용할 수 없습니다. 거부하거나 실행을 중지하세요.")
                     .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -63,6 +95,7 @@ private struct ToolPermissionCard: View {
         .padding(12)
         .background(Color.orange.opacity(0.055))
         .overlay(alignment: .top) { Divider() }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-request-\(request.id)")
     }
 

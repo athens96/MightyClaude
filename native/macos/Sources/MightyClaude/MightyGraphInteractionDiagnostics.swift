@@ -25,7 +25,9 @@ enum MightyGraphInteractionDiagnostics {
                 MightyGraphAgent(id: "nested", parentID: "left", title: "중첩 작업", status: "running", entries: entries)
             ])
             let rootID = MightyGraphLayout.nodeID(run, suffix: "request")
-            let host = NSHostingView(rootView: MightyGraphView(sessionID: "wheel-fixture", provider: "claude", runs: [run], draft: "", running: true, onFocus: {}))
+            var savedSizes: [String: MightyGraphBlockSize] = [:]
+            let host = NSHostingView(rootView: MightyGraphView(sessionID: "wheel-fixture", provider: "claude", runs: [run], draft: "", running: true,
+                onSaveBlockSize: { id, size in savedSizes[id] = size }, onFocus: {}))
             window.contentView = host
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -167,6 +169,38 @@ enum MightyGraphInteractionDiagnostics {
             report["nativeWheels"] = probe.nativeWheels
             report["lastMonitorDiagnostic"] = probe.diagnostic
 
+            guard let realFrame = probe.frames.first(where: { $0.0 == rootID })?.1,
+                  let realSize = probe.layoutFrames.first(where: { $0.0 == rootID })?.1.size,
+                  let childBeforeResize = probe.layoutFrames.first(where: { $0.0 == childID })?.1,
+                  let resizeEditor = self.editor(in: host, nodeID: rootID) else { throw MightyError("실제 그래프 크기 조절 대상을 찾지 못했습니다.") }
+            // The unbounded camera checks deliberately unmount offscreen
+            // transcripts. Compare identity across this resize only, after the
+            // card has returned to the viewport and remounted.
+            report["resizeEditorRemountedAfterUnboundedPan"] = resizeEditor !== editor
+            let realStart = CGPoint(x: realFrame.maxX - 3, y: realFrame.maxY - 3)
+            try drag(window, from: probe.convert(realStart, to: nil), to: probe.convert(CGPoint(x: realStart.x + 80, y: realStart.y + 70), to: nil))
+            try await store.waitForSmoke(timeout: 3) {
+                savedSizes[rootID]?.width == realSize.width + 80 && savedSizes[rootID]?.height == realSize.height + 70 && !probe.isResizing
+                    && probe.layoutFrames.first(where: { $0.0 == rootID })?.1.size == CGSize(width: realSize.width + 80, height: realSize.height + 70)
+            }
+            try await Task.sleep(for: .milliseconds(120))
+            let postResizeFrame = probe.frames.first(where: { $0.0 == rootID })?.1
+            let postResizeChild = probe.layoutFrames.first(where: { $0.0 == childID })?.1
+            report["actualGraphResizeEvidence"] = [
+                "beforeFrame": NSStringFromRect(realFrame), "afterFrame": NSStringFromRect(postResizeFrame ?? .zero),
+                "childBefore": NSStringFromRect(childBeforeResize), "childAfter": NSStringFromRect(postResizeChild ?? .zero),
+                "panOffset": NSStringFromPoint(probe.panOffset),
+                "sameEditorAcrossResize": self.editor(in: host, nodeID: rootID) === resizeEditor,
+                "originalEditorStillMounted": editor.window === window
+            ]
+            guard let realAfter = probe.frames.first(where: { $0.0 == rootID })?.1,
+                  let childAfterResize = probe.layoutFrames.first(where: { $0.0 == childID })?.1,
+                  !changed(realAfter.origin, realFrame.origin), childAfterResize.minY >= childBeforeResize.minY + 69,
+                  self.editor(in: host, nodeID: rootID) === resizeEditor else { throw MightyError("실제 그래프 크기 조절이 시작 모서리·하위 배치·출력창을 유지하지 못했습니다.") }
+            report["actualGraphResizePreservesAnchorAndEditor"] = true
+            report["actualGraphResizeReflowsChildren"] = true
+            report["actualGraphResizeScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph-resized.png").path
+
             let retiredCount = probe.forwardedWheels + probe.nativeWheels
             let plainHost = NSHostingView(rootView: AgentTranscriptView(sessionId: "wheel-basic", provider: "claude", running: false, entries: entries, onFocus: {}))
             window.contentView = plainHost
@@ -178,6 +212,7 @@ enum MightyGraphInteractionDiagnostics {
             try await store.waitForSmoke(timeout: 3) { changed(plainScroll.contentView.bounds.origin, plainBefore) }
             guard retiredCount == probe.forwardedWheels + probe.nativeWheels else { throw MightyError("제거된 카메라 모니터가 기본 출력창 휠을 처리했습니다.") }
             report["completedBasicTranscriptAndMonitorCleanup"] = true
+            report["resize"] = try await resizing(store: store, window: window)
             report["activity"] = try await activity(store: store, window: window)
             report["passed"] = true
         } catch {
@@ -192,6 +227,144 @@ enum MightyGraphInteractionDiagnostics {
             if let url = try? store.captureSmokeWindow(window, filename: "mighty-graph-interaction-failure.png") { report["failureScreenshot"] = url.path }
         }
         return report
+    }
+
+    private final class FlippedFixtureView: NSView { override var isFlipped: Bool { true } }
+
+    private static func resizing(store: AppStore, window: NSWindow) async throws -> [String: Any] {
+        var results: [[String: Any]] = []
+        for zoom: CGFloat in [0.5, 1, 1.5] {
+            let container = FlippedFixtureView(frame: NSRect(x: 0, y: 0, width: 940, height: 680))
+            let root = FlippedFixtureView(frame: container.bounds)
+            container.addSubview(root)
+            let inner = NSScrollView()
+            inner.hasVerticalScroller = true
+            let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 280, height: 3200))
+            text.isEditable = false
+            text.string = (0..<160).map { "출력 \($0) · 크기를 바꾸어도 블록 스크롤을 유지합니다." }.joined(separator: "\n")
+            inner.documentView = text
+            root.addSubview(inner)
+            let probe = MightyGraphInteractionProbe(frame: container.bounds)
+            probe.sessionID = "resize-fixture"
+            probe.graphRoot = root
+            container.addSubview(probe)
+            let nodeID = "resize-node"
+            let initialSize = CGSize(width: 360, height: 240)
+            var currentSize = initialSize
+            var currentPan = CGPoint.zero
+            var calls: [(CGSize, Bool)] = []
+            func render() {
+                // Deliberate tree reflow: changing a child can shift its own
+                // computed origin. The drag must keep its screen anchor fixed.
+                let origin = CGPoint(x: 120 + (currentSize.width - 360) * 0.3,
+                                     y: 120 + (currentSize.height - 240) * 0.15)
+                probe.updateLayoutFrames([(nodeID, CGRect(origin: origin, size: currentSize))], zoom: zoom, panOffset: currentPan)
+                if let frame = probe.frames.first?.1 {
+                    inner.frame = frame.insetBy(dx: 8 * zoom, dy: 24 * zoom)
+                }
+            }
+            probe.onPan = { point in currentPan = point; if let frame = probe.frames.first?.1 { inner.frame = frame.insetBy(dx: 8 * zoom, dy: 24 * zoom) } }
+            probe.onResize = { _, size, finished in calls.append((size, finished)); currentSize = size; render() }
+            render()
+            window.contentView = container
+            window.makeKeyAndOrderFront(nil)
+            probe.installMonitorIfNeeded()
+            defer { probe.dispose() }
+            try await Task.sleep(for: .milliseconds(80))
+            func require(_ condition: Bool, _ message: String) throws {
+                if !condition { throw MightyError("크기 조절 \(zoom)x: \(message)") }
+            }
+            func post(_ type: NSEvent.EventType, at point: CGPoint) throws {
+                guard let event = NSEvent.mouseEvent(with: type, location: probe.convert(point, to: nil), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                    windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1,
+                                                    pressure: type == .leftMouseUp ? 0 : 1) else { throw MightyError("크기 조절 이벤트를 만들지 못했습니다.") }
+                NSApp.postEvent(event, atStart: false)
+            }
+            func startDrag() async throws -> CGPoint {
+                guard let frame = probe.frames.first?.1 else { throw MightyError("크기 조절 블록이 없습니다.") }
+                let handle = probe.resizeHandleRect(for: frame)
+                try require(handle.width >= 16 && abs(handle.width - max(16, 22 * zoom)) < 0.1, "모서리 클릭 영역")
+                let point = CGPoint(x: frame.maxX - 2, y: frame.maxY - 2)
+                try post(.leftMouseDown, at: point)
+                try await store.waitForSmoke(timeout: 3) { probe.isResizing }
+                return point
+            }
+            let anchor = probe.frames[0].1.origin
+            let start = try await startDrag()
+            try require(probe.selectedNodeID == nodeID && !probe.isPanning, "모서리 선택이 카메라 이동을 시작했습니다.")
+            let forwardCount = probe.forwardedWheels
+            let nativeCount = probe.nativeWheels
+            let resizePan = probe.panOffset
+            try postWheel(window: window, at: probe.convert(start, to: nil), dy: -30)
+            try await Task.sleep(for: .milliseconds(60))
+            try require(probe.forwardedWheels == forwardCount && probe.nativeWheels == nativeCount && probe.panOffset == resizePan, "크기 조절 중 휠 전달")
+
+            let end = CGPoint(x: start.x + 90, y: start.y + 60)
+            try post(.leftMouseDragged, at: end)
+            try await store.waitForSmoke(timeout: 3) { !calls.isEmpty }
+            let expected = CGSize(width: 360 + 90 / zoom, height: 240 + 60 / zoom)
+            try require(currentSize == expected, "화면 이동량이 확대 배율로 변환되지 않았습니다.")
+            try require(!changed(probe.frames[0].1.origin, anchor), "레이아웃 재배치로 시작 모서리가 이동했습니다.")
+            try post(.leftMouseDragged, at: end)
+            try await Task.sleep(for: .milliseconds(40))
+            try require(currentSize == expected, "동일 마우스 위치에서 크기가 누적되었습니다.")
+            try post(.leftMouseUp, at: end)
+            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && calls.contains(where: \.1) }
+            try require(calls.filter(\.1).count == 1, "완료 콜백이 한 번이 아닙니다.")
+            try require(!changed(probe.frames[0].1.origin, anchor), "완료 시 모서리 위치 변경")
+
+            let beforeCancel = currentSize
+            let cancelStart = try await startDrag()
+            try post(.leftMouseDragged, at: CGPoint(x: cancelStart.x + 50, y: cancelStart.y + 40))
+            try await store.waitForSmoke(timeout: 3) { currentSize != beforeCancel }
+            try escape(window)
+            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == beforeCancel }
+
+            // Mouse-up outside the viewport still ends the same drag and clamps
+            // graph dimensions, independent of zoom.
+            let largeStart = try await startDrag()
+            let outside = CGPoint(x: largeStart.x + 4000, y: largeStart.y + 4000)
+            try post(.leftMouseDragged, at: outside)
+            try post(.leftMouseUp, at: outside)
+            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == CGSize(width: 1400, height: 1200) }
+            currentSize = initialSize; currentPan = .zero; render()
+            let smallStart = try await startDrag()
+            let smallEnd = CGPoint(x: smallStart.x - 4000, y: smallStart.y - 4000)
+            try post(.leftMouseDragged, at: smallEnd)
+            try post(.leftMouseUp, at: smallEnd)
+            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == CGSize(width: 300, height: 140) }
+
+            currentSize = initialSize; currentPan = .zero; render()
+            scroll(inner, to: NSPoint(x: 0, y: 200))
+            let innerOrigin = inner.contentView.bounds.origin
+            let beforeInner = probe.nativeWheels
+            let innerPan = probe.panOffset
+            try postWheel(window: window, at: center(inner.contentView), dy: -25)
+            try await store.waitForSmoke(timeout: 3) { probe.nativeWheels > beforeInner && changed(inner.contentView.bounds.origin, innerOrigin) }
+            try require(probe.panOffset == innerPan, "크기 조절 후 선택 블록 스크롤이 카메라 이동")
+            let beforePan = probe.panOffset
+            try drag(window, from: probe.convert(CGPoint(x: 8, y: 8), to: nil), to: probe.convert(CGPoint(x: 48, y: 38), to: nil))
+            try await store.waitForSmoke(timeout: 3) { !probe.isPanning && changed(probe.panOffset, beforePan) }
+            try require(abs(probe.panOffset.x - beforePan.x - 40) < 1 && abs(probe.panOffset.y - beforePan.y - 30) < 1, "크기 조절 후 배경 드래그")
+
+            currentSize = initialSize; currentPan = .zero; render()
+            let resignStart = try await startDrag()
+            try post(.leftMouseDragged, at: CGPoint(x: resignStart.x + 35, y: resignStart.y + 25))
+            try await store.waitForSmoke(timeout: 3) { currentSize != initialSize }
+            NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+            try require(!probe.isResizing && currentSize == initialSize, "창 비활성화 취소")
+            let disposeStart = try await startDrag()
+            try post(.leftMouseDragged, at: CGPoint(x: disposeStart.x + 35, y: disposeStart.y + 25))
+            try await store.waitForSmoke(timeout: 3) { currentSize != initialSize }
+            probe.dispose()
+            try require(!probe.isResizing && currentSize == initialSize, "뷰 제거 취소")
+            results.append(["zoom": zoom, "screenDelta": "90,60", "graphSize": NSStringFromSize(expected),
+                            "anchorPinned": true, "fixedOriginDelta": true, "wheelSuppressedDuringResize": true,
+                            "outsideMouseUpAndClamps": true, "escapeRestoresSize": true,
+                            "selectedInnerScrollPreserved": true, "backgroundPanPreserved": true,
+                            "resignAndDisposeCancel": true])
+        }
+        return ["passed": true, "zooms": results]
     }
 
     private static func activity(store: AppStore, window: NSWindow) async throws -> [String: Any] {

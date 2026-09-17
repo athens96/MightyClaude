@@ -2,6 +2,26 @@ import AppKit
 import MightyCore
 import SwiftUI
 
+extension AppStore {
+    func runPluginSmokeTest() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--profile") else { error = "플러그인 검증에는 임시 --profile이 필요합니다."; return }
+        var result: [String: Any] = ["passed": false]
+        do {
+            let directory = dataDirectory.appendingPathComponent("Plugin Studio")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let workspace = try await repository.approveWorkspace(Workspace(name: "Plugin Studio", path: directory.path))
+            addWorkspace(workspace)
+            result = await ClaudePluginDiagnostics.run(store: self)
+        } catch { result["error"] = error.localizedDescription }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: dataDirectory.appendingPathComponent("plugin-smoke-result.json"), options: .atomic)
+        } catch { self.error = error.localizedDescription }
+        if arguments.contains("--smoke-exit") { NSApp.terminate(nil) }
+    }
+}
+
 @MainActor
 enum ClaudePluginDiagnostics {
     /// Every list, install and marketplace operation below is an in-memory
@@ -188,6 +208,59 @@ enum ClaudePluginDiagnostics {
             result["composerScreenshot"] = try store.captureSmokeWindow(composerWindow, filename: "claude-plugins-composer.png").path
             result["fixtureInstallCalls"] = fixture.installs.count
             result["fixtureRefreshCalls"] = fixture.refreshes.count
+
+            stage = "codex-browser"
+            let codexFixture = PluginFixtureService()
+            codexFixture.codexSources = true
+            let codexModel = ClaudePluginBrowserModel(workspace: workspace, provider: "codex",
+                load: { await codexFixture.snapshot() },
+                install: { id, scope in await store.performPluginMutation(workspace: workspace, provider: "codex") { await codexFixture.install(id: id, scope: scope, workspace: workspace) } },
+                refresh: { name in await store.performPluginMutation(workspace: workspace, provider: "codex") { await codexFixture.refresh(name) } },
+                mutationBlockedReason: { store.pluginMutationBlockedReason(workspace: workspace, provider: "codex") })
+            browserWindow.title = "Codex 플러그인 검증"
+            browserWindow.contentView = NSHostingView(rootView: ClaudePluginView(model: codexModel, onClose: { [weak browserWindow] in browserWindow?.orderOut(nil) }).preferredColorScheme(.dark))
+            browserWindow.makeKeyAndOrderFront(nil)
+            codexModel.loadIfNeeded()
+            try await store.waitForSmoke(timeout: 3) { !codexModel.isBusy && node(browserWindow, id: "codex-plugin-row-" + codexFixture.installed[0].id) != nil }
+            try require(codexModel.scope == "user" && codexModel.supportedScopes == ["user"] && codexFixture.installs.isEmpty, "Codex 초기 설치 범위 또는 읽기 전용 조회가 잘못되었습니다.")
+            result["codexInstalledScreenshot"] = try store.captureSmokeWindow(browserWindow, filename: "codex-plugins-installed.png").path
+            try press(browserWindow, id: "codex-plugin-tab-marketplace")
+            codexModel.scope = "project"
+            codexModel.install(pluginID: PluginFixtureService.successID)
+            try require(codexFixture.installs.isEmpty && codexModel.lastResult?.status == "failed", "Codex가 지원하지 않는 프로젝트 범위를 허용했습니다.")
+            codexModel.scope = "user"
+            try await store.waitForSmoke(timeout: 3) { enabled(browserWindow, id: "codex-plugin-install-" + PluginFixtureService.successID) == true }
+            try press(browserWindow, id: "codex-plugin-install-" + PluginFixtureService.successID)
+            try await store.waitForSmoke(timeout: 3) { !codexModel.isBusy && codexModel.lastResult?.status == "succeeded" }
+            try require(codexFixture.installs.count == 1 && codexFixture.installs.first?.scope == "user" && codexModel.installedInSelectedScope(PluginFixtureService.successID), "Codex 사용자 범위 설치 후 목록이 갱신되지 않았습니다.")
+            codexModel.install(pluginID: PluginFixtureService.successID)
+            try require(codexFixture.installs.count == 1, "Codex 설치된 플러그인을 중복 설치했습니다.")
+            result["codexUserScopeInstallAndReload"] = true
+            result["codexMarketplaceScreenshot"] = try store.captureSmokeWindow(browserWindow, filename: "codex-plugins-marketplace.png").path
+
+            stage = "codex-git-refresh"
+            try require(codexModel.refreshableMarketplaces == ["other-market"], "Codex 갱신 대상에 로컬 마켓이 포함되었습니다.")
+            try await store.waitForSmoke(timeout: 3) { enabled(browserWindow, id: "codex-plugin-refresh-marketplaces") == true }
+            try press(browserWindow, id: "codex-plugin-refresh-marketplaces")
+            try await store.waitForSmoke(timeout: 3) { !codexModel.isBusy && codexModel.lastResult?.status == "succeeded" && !codexFixture.refreshes.isEmpty }
+            try require(codexFixture.refreshes == ["other-market"], "Codex Git 마켓만 갱신하지 않았습니다.")
+            codexModel.marketplaceFilter = "fixture-market"
+            try await store.waitForSmoke(timeout: 3) { enabled(browserWindow, id: "codex-plugin-refresh-marketplaces") == false }
+            result["codexRefreshOnlyRegisteredGitSources"] = true
+
+            stage = "codex-mutation-guards"
+            var codexSession = RunSession(id: "codex-plugin-fixture", workspaceId: workspace.id, title: "Codex 플러그인 검증", provider: "codex")
+            codexSession.status = "running"
+            store.snapshot.sessions.append(codexSession)
+            let rejectedCodex = await store.performPluginMutation(workspace: workspace, provider: "codex") { await codexFixture.install(id: "must-not-run", scope: "user", workspace: workspace) }
+            try require(rejectedCodex.status == "skipped" && codexFixture.installs.count == 1, "실행 중인 Codex 작업과 설치가 겹쳤습니다.")
+            store.snapshot.sessions.removeAll { $0.id == codexSession.id }
+            store.isManagingPlugins = true
+            let codexRunBlocked = store.runBlockedReason(codexSession)
+            store.isManagingPlugins = false
+            try require(codexRunBlocked?.contains("플러그인") == true, "플러그인 변경 중 Codex 실행이 차단되지 않았습니다.")
+            result["codexRunAndMutationGuards"] = true
+            await codexModel.shutdown()
             result["passed"] = true
         } catch {
             result["failedStage"] = stage; result["error"] = error.localizedDescription
@@ -246,6 +319,7 @@ private final class PluginFixtureService {
     struct Install { let id: String; let scope: String; let workspaceID: String; let path: String }
     var installed = [ClaudeInstalledPlugin(pluginID: "fixture-installed@fixture-market", name: "Fixture Installed", marketplace: "fixture-market", version: "1.0.0", scope: "user", enabled: true, description: "격리된 설치 목록 예시입니다.")]
     var loads = 0
+    var codexSources = false
     var installs: [Install] = []
     var refreshes: [String] = []
     var pauseNext = false
@@ -257,7 +331,7 @@ private final class PluginFixtureService {
             available: [ClaudeCatalogPlugin(id: Self.successID, name: "Fixture Success", description: "프로젝트 범위 설치 성공을 검증합니다.", marketplace: "fixture-market", version: "2.0.0", sourceKind: "github"),
                         ClaudeCatalogPlugin(id: Self.failureID, name: "Fixture Failure", description: "실패 메시지와 재시도 가능 상태를 검증합니다.", marketplace: "fixture-market", sourceKind: "github"),
                         ClaudeCatalogPlugin(id: Self.otherID, name: "Fixture Other", description: "마켓별 필터를 검증합니다.", marketplace: "other-market", sourceKind: "git")],
-            marketplaces: [ClaudePluginMarketplace(name: "fixture-market", sourceKind: "github"), ClaudePluginMarketplace(name: "other-market", sourceKind: "git")], updatedAt: mightyTimestamp())
+            marketplaces: [ClaudePluginMarketplace(name: "fixture-market", sourceKind: codexSources ? "local" : "github"), ClaudePluginMarketplace(name: "other-market", sourceKind: "git")], updatedAt: mightyTimestamp())
     }
     func install(id: String, scope: String, workspace: Workspace) async -> ClaudePluginOperationResult {
         installs.append(Install(id: id, scope: scope, workspaceID: workspace.id, path: workspace.path))

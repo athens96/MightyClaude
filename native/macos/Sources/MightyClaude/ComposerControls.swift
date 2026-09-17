@@ -4,6 +4,8 @@ import AppKit
 struct ComposerPill: View {
     let title: String
     var systemImage: String?
+    /// Draws the provider glyph instead of an SF Symbol when set.
+    var provider: String?
     var active = false
     var chevron = false
     var maximumTextWidth: CGFloat?
@@ -11,7 +13,8 @@ struct ComposerPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let systemImage { Image(systemName: systemImage).font(.system(size: 12, weight: .medium)).frame(width: 14, height: 14) }
+            if let provider { ProviderIcon(provider: provider, size: 12).frame(width: 14, height: 14) }
+            else if let systemImage { Image(systemName: systemImage).font(.system(size: 12, weight: .medium)).frame(width: 14, height: 14) }
             if !compact { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.tail).frame(width: min(ComposerToolbarMetrics.textWidth(title), maximumTextWidth ?? .greatestFiniteMagnitude)) }
             if chevron && !compact { Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).opacity(0.6).frame(width: 7) }
         }

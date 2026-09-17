@@ -31,7 +31,7 @@ public final class CLIStreamParser {
         self.provider = provider; self.log = log; self.resume = resume
         self.activityNamespace = activityNamespace; self.activity = activity; self.control = control; self.result = result
         usageTracker = SessionUsageTracker(provider: provider, callback: usage)
-        graphTracker = provider == "claude" ? graph.map { ExecutionGraphTracker(runID: activityNamespace, input: graphInput, emit: $0) } : nil
+        graphTracker = MightyGraphSupport.providers.contains(provider) ? graph.map { ExecutionGraphTracker(runID: activityNamespace, input: graphInput, provider: provider, emit: $0) } : nil
         let origin = ContinuousClock.now
         self.activityClock = activityClock ?? {
             let elapsed = origin.duration(to: .now).components
@@ -161,6 +161,8 @@ public final class CLIStreamParser {
     /// Called once after draining stdout and settling tools, before the runner
     /// publishes its terminal status. Child turns never invoke this themselves.
     public func finishGraph(state: String) { graphTracker?.finish(state: state) }
+    /// A follow-up the runner wrote to Claude's stdin during this turn.
+    public func steer(id: String, text: String) { graphTracker?.steer(id: id, text: text) }
     func permissionActivity(_ request: ToolPermissionRequest, state: String) {
         permissionStates[ActivitySupport.id(namespace: activityNamespace, key: request.toolUseId)] = state
         tool(id: request.toolUseId, name: request.toolName, state: state, summary: request.summary)
@@ -214,6 +216,11 @@ public final class CLIStreamParser {
                     if activity == nil, ended, let output, !output.isEmpty { log("output", output) }
                 case "file_change": tool(id: item["id"] as? String, name: "file_change", input: item, state: state)
                 case "web_search": tool(id: item["id"] as? String, name: "web_search", input: item, state: state)
+                case "collab_tool_call", "collab_agent_tool_call":
+                    if let collaboration = CodexCollaborationItem(item) {
+                        tool(id: collaboration.id, name: collaboration.tool, state: state,
+                             output: collaboration.output, summary: collaboration.summary)
+                    }
                 case "mcp_tool_call":
                     let name = [item["server"] as? String, item["tool"] as? String].compactMap { $0 }.joined(separator: ".")
                     tool(id: item["id"] as? String, name: name.isEmpty ? "MCP" : name, input: item["arguments"], state: state, output: ActivitySupport.output(item["error"] ?? item["result"]))

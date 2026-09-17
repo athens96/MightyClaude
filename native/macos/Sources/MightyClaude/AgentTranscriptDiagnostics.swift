@@ -218,6 +218,13 @@ enum AgentTranscriptDiagnostics {
         window.makeKeyAndOrderFront(nil)
         guard let editor = coordinator.textView else { throw MightyError("복원된 출력 뷰가 없습니다.") }
         window.makeFirstResponder(editor)
+        // No run-loop yield: the native layout must already point at the final
+        // messages, rather than briefly painting old history before an async hop.
+        window.contentView?.layoutSubtreeIfNeeded()
+        scroll.needsLayout = true; scroll.layoutSubtreeIfNeeded()
+        let firstBottom = max(0, editor.bounds.height - scroll.contentView.bounds.height)
+        report["restoredHistoryPositionedBeforeAsyncPaint"] = firstBottom > 500 && abs(scroll.contentView.bounds.minY - firstBottom) < 2
+        guard report["restoredHistoryPositionedBeforeAsyncPaint"] as? Bool == true else { throw MightyError("복원된 출력의 첫 native layout이 이전 메시지를 표시했습니다.") }
         try await Task.sleep(for: .milliseconds(120))
         window.contentView?.layoutSubtreeIfNeeded()
         let clip = scroll.contentView

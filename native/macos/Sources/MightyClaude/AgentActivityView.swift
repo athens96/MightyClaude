@@ -13,7 +13,7 @@ struct AgentLogEntryView: View {
         } else if entry.kind == "assistant" {
             VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 7) {
-                    Image(systemName: Palette.symbol(entry.provider ?? fallbackProvider)).foregroundStyle(Palette.accent)
+                    ProviderIcon(provider: entry.provider ?? fallbackProvider, size: 12).foregroundStyle(Palette.accent)
                     Text(ProviderOptions.label(entry.provider ?? fallbackProvider)).fontWeight(.semibold)
                     Spacer()
                     Text(shortTime).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)

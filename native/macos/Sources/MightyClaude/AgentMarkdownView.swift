@@ -1,6 +1,24 @@
 import AppKit
 import Foundation
+import MightyCore
 import SwiftUI
+
+/// A relative or file link target kept as plain data. Only Mighty transcripts
+/// turn it into an in-app reference link; nothing opens it automatically.
+enum MightyReferencePathAttribute: CodableAttributedStringKey {
+    typealias Value = String
+    static let name = "MightyReferencePath"
+}
+extension AttributeScopes {
+    struct MightyAttributes: AttributeScope {
+        let referencePath: MightyReferencePathAttribute
+        let foundation: FoundationAttributes
+    }
+    var mighty: MightyAttributes.Type { MightyAttributes.self }
+}
+extension AttributeDynamicLookup {
+    subscript<T: AttributedStringKey>(dynamicMember keyPath: KeyPath<AttributeScopes.MightyAttributes, T>) -> T { self[T.self] }
+}
 
 struct AgentMarkdownBlock: Identifiable {
     let id: Int
@@ -74,7 +92,10 @@ final class AgentMarkdownDocument: NSObject {
         var result = source
         result.presentationIntent = nil
         for run in Array(result.runs) {
-            if let link = run.link, !safeLink(link) { result[run.range].link = nil }
+            if let link = run.link, !safeLink(link) {
+                result[run.range].link = nil
+                if let path = ReferenceLinkSupport.localPath(link) { result[run.range].referencePath = path }
+            }
             // Image alt text remains readable; messages never fetch image URLs
             // or load local files merely because the model mentioned them.
             result[run.range].imageURL = nil

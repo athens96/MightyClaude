@@ -12,6 +12,66 @@ struct MightyGraphTests {
         session.recordGraph(RunEvent(sessionId: session.id, type: "graph", graph: node))
     }
 
+    @Test func backgroundTaskBlocksKeepTheirKindThroughHistoryAndRestore() throws {
+        var session = RunSession(workspaceId: "workspace", title: "Graph")
+        session.beginGraphRun(input: "Build it", id: "request-one")
+        receive(node("process-one"), &session)
+        var task = node("process-one", agent: "build", input: "npm run build"); task.kind = "task"; task.title = "Build the app"
+        receive(task, &session)
+        receive(node("process-one", agent: "helper", input: "Inspect"), &session)
+        var agents = session.mightyGraphRuns[0].agents
+        #expect(agents.map(\.isTask) == [true, false])
+        // A later snapshot without an explicit kind must not demote the block.
+        var settled = node("process-one", agent: "build", state: "completed", output: "completed (exit code 0)"); settled.kind = "task"; settled.title = "Build the app"
+        receive(settled, &session)
+        agents = session.mightyGraphRuns[0].agents
+        #expect(agents[0].isTask); #expect(agents[0].status == "completed"); #expect(agents[0].title == "Build the app")
+        let data = try JSONEncoder().encode(session)
+        let restored = try JSONDecoder().decode(RunSession.self, from: data)
+        var budget = 1 << 20
+        let normalized = MightyGraphSupport.normalized(restored.graphRuns ?? [], restoring: true, budget: &budget)
+        #expect(normalized[0].agents[0].isTask); #expect(!normalized[0].agents[1].isTask)
+        var odd = normalized; odd[0].agents[1].kind = "job"
+        #expect(MightyGraphSupport.normalized(odd, restoring: false, budget: &budget)[0].agents[1].kind == nil)
+    }
+
+    @Test func tokenUsageReachesRunAndAgentsAndTotalsAcrossTheRequest() throws {
+        var session = RunSession(workspaceId: "workspace", title: "Graph")
+        session.beginGraphRun(input: "Count", id: "request-one")
+        var main = node("process-one"); main.usage = GraphTokenUsage(inputTokens: 2_000, outputTokens: 100)
+        receive(main, &session)
+        var child = node("process-one", agent: "a", input: "Inspect"); child.usage = GraphTokenUsage(inputTokens: 500, outputTokens: 50, cacheReadTokens: 200)
+        receive(child, &session)
+        var run = session.mightyGraphRuns[0]
+        #expect(run.usage?.total == 2_100); #expect(run.agents[0].usage?.total == 750); #expect(run.totalUsage?.total == 2_850)
+        // A later snapshot without usage keeps the last known figure.
+        receive(node("process-one", agent: "a", state: "completed", output: "done"), &session)
+        run = session.mightyGraphRuns[0]
+        #expect(run.agents[0].usage?.total == 750); #expect(run.agents[0].status == "completed")
+        let restored = try JSONDecoder().decode(RunSession.self, from: JSONEncoder().encode(session))
+        var budget = 1 << 20
+        let normalized = MightyGraphSupport.normalized(restored.graphRuns ?? [], restoring: true, budget: &budget)
+        #expect(normalized[0].totalUsage?.total == 2_850)
+        var odd = normalized; odd[0].agents[0].usage = GraphTokenUsage(inputTokens: -3)
+        #expect(MightyGraphSupport.normalized(odd, restoring: false, budget: &budget)[0].agents[0].usage == nil)
+        #expect(MightyGraphSupport.legacyRuns(RunSession(workspaceId: "w", title: "t"))[...].allSatisfy { $0.totalUsage == nil })
+    }
+
+    @Test func codexSessionsKeepGraphHistoryButGeminiSessionsDoNot() {
+        var codex = RunSession(workspaceId: "workspace", title: "Codex"); codex.provider = "codex"
+        codex.beginGraphRun(input: "Ship it", id: "request-one")
+        receive(node("process-one"), &codex)
+        receive(node("process-one", agent: "a", input: "Check"), &codex)
+        receive(node("process-one", state: "completed", output: "Done"), &codex)
+        receive(node("process-one", agent: "a", state: "completed", output: "Checked"), &codex)
+        #expect(codex.mightyGraphRuns.count == 1); #expect(codex.mightyGraphRuns[0].agents.count == 1)
+        #expect(codex.mightyGraphRuns[0].resultEntries.map(\.text) == ["Done"])
+        var gemini = RunSession(workspaceId: "workspace", title: "Gemini"); gemini.provider = "gemini"
+        gemini.beginGraphRun(input: "Ship it", id: "request-one")
+        #expect(gemini.graphRuns == nil)
+        #expect(MightyGraphSupport.providers == ["claude", "codex"])
+    }
+
     @Test func resultWaitsForEveryChildAndAppearsInMainAndResult() {
         var session = RunSession(workspaceId: "workspace", title: "Graph")
         session.beginGraphRun(input: "Build this", id: "request-one")

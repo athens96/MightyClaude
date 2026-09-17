@@ -125,7 +125,11 @@ public actor StateRepository {
             guard let bytes = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]) else { return nil }
             return try? decoder.decode(Bool.self, from: bytes)
         }
-        return normalize(AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? 252, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs), restoring: restoring)
+        let mobileRemote: MobileRemoteSettings? = (object["mobileRemote"] as? [String: Any]).flatMap { value in
+            guard let bytes = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+            return try? decoder.decode(MobileRemoteSettings.self, from: bytes)
+        }
+        return normalize(AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? 252, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote), restoring: restoring)
     }
 
     public nonisolated static func normalize(_ value: AppSnapshot, restoring: Bool, at date: Date = Date()) -> AppSnapshot {
@@ -138,14 +142,14 @@ public actor StateRepository {
         }
         for var session in value.sessions.prefix(128) {
             guard CoreValidation.identifier(session.id), !sessionIds.contains(session.id), workspaceIds.contains(session.workspaceId), ["claude", "shell"].contains(session.kind) else { continue }
-            sessionIds.insert(session.id); session.title = String(session.title.prefix(120))
+            sessionIds.insert(session.id); session.title = legacyNumberedTitle(String(session.title.prefix(120)))
             session.provider = ProviderOptions.normalizeProvider(session.provider); session.model = CoreValidation.model(session.model) ? session.model : "default"
             session.settings = ProviderOptions.normalizedSettings(provider: session.provider, settings: session.settings)
             if !["idle", "running", "completed", "error", "stopped"].contains(session.status) { session.status = "idle" }
             if restoring && session.status == "running" { session.status = "stopped" }
             if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
             session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
-            session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget) }
+            session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
             session.logs = session.logs.suffix(400).compactMap { entry in
                 guard CoreValidation.identifier(entry.id), ["user", "assistant", "system", "output", "error"].contains(entry.kind), logBudget > 0 else { return nil }
                 var log = entry; log.text = ActivitySupport.prefixUTF8(log.text, maximumBytes: min(log.kind == "assistant" ? 131_072 : 32_768, logBudget)); logBudget -= log.text.utf8.count
@@ -161,6 +165,7 @@ public actor StateRepository {
                 }
                 return log
             }
+            session.graphBlockSizes = session.kind == "shell" ? nil : MightyGraphBlockSize.normalized(session.graphBlockSizes, runs: session.mightyGraphRuns)
             if session.kind == "shell" { session.runTiming = nil; session.sessionUsage = nil }
             else {
                 session.sessionUsage = session.sessionUsage.flatMap { $0.provider == session.provider ? SessionUsageSupport.normalized($0) : nil }
@@ -194,6 +199,20 @@ public actor StateRepository {
         }
         output.sidebarWidth = value.sidebarWidth.isFinite ? min(400, max(200, value.sidebarWidth)) : 252
         output.autoUpdateCLIs = value.autoUpdateCLIs
+        output.expandedWorkspaceIds = value.expandedWorkspaceIds.map { Array(Set($0).intersection(workspaceIds)).sorted() }
+        output.mobileRemote = value.mobileRemote?.normalized
         return output
+    }
+
+    /// Panes used to be named "Claude 1", "터미널 2". New panes carry the bare
+    /// name, and saved auto-generated names are folded the same way. A title the
+    /// user typed is left alone unless it exactly matches that generated form.
+    public nonisolated static func legacyNumberedTitle(_ title: String) -> String {
+        let bases = ["Claude", "Codex", "Gemini", "터미널", "원격 명령"]
+        for base in bases where title.hasPrefix(base + " ") {
+            let suffix = title.dropFirst(base.count + 1)
+            if !suffix.isEmpty, suffix.allSatisfy({ $0.isASCII && $0.isNumber }) { return base }
+        }
+        return title
     }
 }

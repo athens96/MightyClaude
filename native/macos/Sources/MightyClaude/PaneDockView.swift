@@ -218,7 +218,10 @@ private struct PaneDockTab: View {
     var body: some View {
         HStack(spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: session.kind == "shell" ? "terminal" : Palette.symbol(session.provider)).font(.system(size: 10))
+                Group {
+                    if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 10)) }
+                    else { ProviderIcon(provider: session.provider, size: 10) }
+                }
                 Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125)
                 if session.status == "running" { StatusDot(status: session.status) }
             }

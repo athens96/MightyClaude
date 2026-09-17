@@ -42,7 +42,11 @@ struct SessionPaneView: View {
         return nil
     }
     private var selectedModelName: String { models.first(where: { $0.value == session.model })?.displayName ?? session.model }
-    private var canSend: Bool { !running && !stopping && !importingAttachments && blockedReason == nil && (!draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty)) }
+    /// Sending stays possible while a run is busy: a local Claude turn takes
+    /// the text immediately, other panes queue it for after the current request.
+    private var canSend: Bool { !stopping && !importingAttachments && blockedReason == nil && (!draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty)) }
+    private var steers: Bool { store.canSteer(session) }
+    private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
     private var settingsPopover: Binding<RunSession?> {
         Binding(get: { store.settingsSession?.id == session.id ? store.settingsSession : nil }, set: { value in
             if let value { store.settingsSession = value }
@@ -65,27 +69,35 @@ struct SessionPaneView: View {
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 11))
         .overlay { RoundedRectangle(cornerRadius: 11).stroke(active ? Palette.accent.opacity(0.58) : Palette.border, lineWidth: 1).allowsHitTesting(false) }
         .clipShape(RoundedRectangle(cornerRadius: 11))
-        .onChange(of: composerFocused) { _, focused in if focused { store.selectSession(session.id) } }
+        .onChange(of: composerFocused) { _, focused in
+            // SwiftUI can deliver this after a tab switch detached the editor.
+            // Only the editor that still owns native focus may select a pane.
+            guard focused, store.snapshot.activeWorkspaceId == session.workspaceId,
+                  store.layoutForWorkspace(session.workspaceId)?.group(containing: session.id)?.selectedSessionId == session.id,
+                  let editor = composerInput.editor, let window = editor.window,
+                  !editor.isHiddenOrHasHiddenAncestor, window.firstResponder === editor else { return }
+            store.selectSession(session.id)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(session.title)
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            if session.kind == "claude", session.provider == "claude" {
+            if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) {
                 HStack(spacing: 2) {
                     agentModeButton("기본", mode: "default", symbol: "text.alignleft")
                     agentModeButton("마이티", mode: "mighty", symbol: "point.3.connected.trianglepath.dotted")
                 }
                 .padding(2).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
-                if session.agentViewMode == "mighty" {
+                if session.agentViewMode == "mighty", ["claude", "codex"].contains(session.provider) {
                     Button { store.openPluginBrowser(sessionID: session.id) } label: {
                         Image(systemName: "puzzlepiece.extension").font(.system(size: 12))
                             .frame(width: 26, height: 24)
                     }
                     .buttonStyle(.plain).disabled(store.hasModal)
-                    .help("플러그인 · 설치 목록 및 마켓플레이스")
-                    .accessibilityLabel("플러그인")
+                    .help("\(ProviderOptions.label(session.provider)) 플러그인 · 설치 목록 및 마켓플레이스")
+                    .accessibilityLabel("\(ProviderOptions.label(session.provider)) 플러그인")
                     .accessibilityIdentifier("mighty-plugins-\(session.id)")
                 }
             }
@@ -154,7 +166,7 @@ struct SessionPaneView: View {
                 }
             }
         } label: {
-            ComposerPill(title: selectedModelName, systemImage: Palette.symbol(session.provider), chevron: true, maximumTextWidth: maximumTextWidth)
+            ComposerPill(title: selectedModelName, provider: session.provider, chevron: true, maximumTextWidth: maximumTextWidth)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
         .help("\(ProviderOptions.label(session.provider)) · \(selectedModelName)")
@@ -262,8 +274,11 @@ struct SessionPaneView: View {
 
     private var output: some View {
         Group {
-            if session.kind == "claude", session.provider == "claude", session.agentViewMode == "mighty" {
-                MightyGraphView(sessionID: session.id, provider: session.provider, runs: session.mightyGraphRuns, draft: draft.wrappedValue, running: running) {
+            if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider), session.agentViewMode == "mighty" {
+                MightyGraphView(sessionID: session.id, provider: session.provider, runs: session.mightyGraphRuns, draft: draft.wrappedValue, running: running,
+                    blockSizes: session.graphBlockSizes ?? [:],
+                    onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
+                    workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }) {
                     store.selectSession(session.id)
                 }
             } else if session.logs.isEmpty {
@@ -280,7 +295,10 @@ struct SessionPaneView: View {
 
     private var emptyOutput: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: session.kind == "shell" ? "terminal" : Palette.symbol(session.provider)).font(.system(size: 24, weight: .light)).foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, 5)
+            Group {
+                if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 24, weight: .light)) }
+                else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
+            }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, 5)
             Text(session.kind == "shell" ? (remoteCommand ? "원격 작업 폴더에서 명령 실행" : "작업 폴더에서 명령 실행") : "\(ProviderOptions.label(session.provider))와 작업을 시작하세요")
                 .font(.system(size: 16, weight: .medium))
             Text(session.kind == "shell" ? "명령마다 새 셸을 시작합니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다." : "프로젝트를 설명하거나, 수정할 내용을 입력하세요. 이 창의 대화는 다음 실행에서도 이어집니다.")
@@ -302,11 +320,16 @@ struct SessionPaneView: View {
                 .padding(.horizontal, 10).padding(.top, 10)
                 .accessibilityIdentifier("attachments-\(session.id)")
             }
+            if !queued.isEmpty {
+                QueuedInputsView(sessionID: session.id, items: queued, running: running || store.hasModal,
+                                 onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) })
+                    .padding(.horizontal, 10).padding(.top, attachments.isEmpty ? 10 : 6)
+            }
             NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocused = $0 }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput)
                 .frame(height: editorHeight)
-                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, placeholder: running ? "다음 요청을 미리 작성하세요…" : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
-                .padding(.horizontal, 8).padding(.top, attachments.isEmpty ? 9 : 0)
-                .help("Enter로 전송 · Shift+Enter로 줄바꿈 · ⌘Enter로도 전송")
+                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, placeholder: running ? (steers ? "실행 중에도 보낼 수 있어요 · 진행 중인 작업에 바로 전달됩니다" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
+                .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
+                .help(running ? (steers ? "Enter로 전송 · 실행 중인 Claude에 바로 전달됩니다" : "Enter로 전송 · 현재 작업이 끝난 뒤 실행됩니다") : "Enter로 전송 · Shift+Enter로 줄바꿈 · ⌘Enter로도 전송")
             if importingAttachments {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
@@ -349,7 +372,7 @@ struct SessionPaneView: View {
 
     private var composerToolbar: some View {
         GeometryReader { geometry in
-            let actionsWidth: CGFloat = 32 + (session.resumeId == nil ? 0 : 22) + (session.kind == "shell" ? 0 : 38)
+            let actionsWidth: CGFloat = (running && canSend ? 64 : 32) + (session.resumeId == nil ? 0 : 22) + (session.kind == "shell" ? 0 : 38)
             let width = max(0, geometry.size.width - actionsWidth - ComposerToolbarMetrics.spacing)
             let style = ComposerToolbarMetrics.style(width: width, model: selectedModelName, effort: showsEffort ? effortLabel(session.settings.effort) : nil, permission: permissionLabel(session.settings.permissionMode, provider: session.provider), fast: showsFast)
             HStack(alignment: .center, spacing: ComposerToolbarMetrics.spacing) {
@@ -376,15 +399,31 @@ struct SessionPaneView: View {
                         Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(.secondary).help("이전 대화를 이어갑니다.").accessibilityLabel("대화 이어짐")
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
-                    Button(action: performComposerAction) {
-                        Image(systemName: running ? "stop.fill" : "arrow.up").font(.system(size: running ? 12 : 14, weight: .semibold)).frame(width: 32, height: 32)
-                            .foregroundStyle(running || canSend ? Palette.canvas : Color.secondary)
-                            .background(running || canSend ? Palette.accent : Color.primary.opacity(0.08), in: Circle()).contentShape(Circle())
+                    if running {
+                        // With text waiting, stop shrinks beside the send button
+                        // so Enter and the arrow keep meaning "send".
+                        let compact = canSend
+                        Button(action: stopRun) {
+                            Image(systemName: "stop.fill").font(.system(size: compact ? 10 : 12, weight: .semibold)).frame(width: compact ? 28 : 32, height: compact ? 28 : 32)
+                                .foregroundStyle(compact ? Palette.accent : Palette.canvas)
+                                .background(compact ? Palette.accent.opacity(0.14) : Palette.accent, in: Circle()).contentShape(Circle())
+                        }
+                        .buttonStyle(.plain).disabled(stopping)
+                        .help(stopping ? "중지하는 중…" : "작업 중지")
+                        .accessibilityLabel(stopping ? "중지하는 중" : "중지")
+                        .accessibilityIdentifier("composer-stop-" + session.id)
                     }
-                    .buttonStyle(.plain).disabled(stopping || (!running && !canSend))
-                    .help(running ? (stopping ? "중지하는 중…" : "작업 중지") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")
-                    .accessibilityLabel(running ? (stopping ? "중지하는 중" : "중지") : "보내기")
-                    .accessibilityIdentifier((running ? "composer-stop-" : "send-") + session.id)
+                    if !running || canSend {
+                        Button(action: submitComposer) {
+                            Image(systemName: running && !steers ? "text.badge.plus" : "arrow.up").font(.system(size: running && !steers ? 13 : 14, weight: .semibold)).frame(width: 32, height: 32)
+                                .foregroundStyle(canSend ? Palette.canvas : Color.secondary)
+                                .background(canSend ? Palette.accent : Color.primary.opacity(0.08), in: Circle()).contentShape(Circle())
+                        }
+                        .buttonStyle(.plain).disabled(!canSend)
+                        .help(running ? (steers ? "실행 중인 Claude에 바로 전달 (Enter)" : "현재 작업이 끝난 뒤 실행 (Enter)") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")
+                        .accessibilityLabel(running ? (steers ? "실행 중에 전달" : "대기열에 추가") : "보내기")
+                        .accessibilityIdentifier("send-" + session.id)
+                    }
                 }.fixedSize(horizontal: true, vertical: true)
             }.frame(width: geometry.size.width, height: ComposerToolbarMetrics.height, alignment: .leading)
         }
@@ -392,9 +431,8 @@ struct SessionPaneView: View {
         .popover(item: settingsPopover, arrowEdge: .bottom) { selected in RunSettingsView(session: selected).environmentObject(store) }
     }
 
-    private func performComposerAction() {
-        guard !stopping else { return }
-        guard running else { submitComposer(); return }
+    private func stopRun() {
+        guard !stopping, running else { return }
         stopping = true
         Task {
             defer { stopping = false }

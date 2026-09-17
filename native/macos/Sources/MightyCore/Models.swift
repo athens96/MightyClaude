@@ -93,6 +93,20 @@ public struct AgentActivity: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// A request typed while the pane was busy. A local Claude run receives the
+/// text mid-turn; every other pane runs the item after the current request.
+public struct QueuedInput: Sendable, Equatable, Identifiable {
+    public var id: String
+    public var text: String
+    public var attachments: [RunAttachment]
+    public var createdAt: String
+    public static let maximumItems = 16
+    public init(id: String = UUID().uuidString, text: String, attachments: [RunAttachment] = [], createdAt: String = mightyTimestamp()) {
+        self.id = id; self.text = text; self.attachments = attachments; self.createdAt = createdAt
+    }
+    public var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
+}
+
 public struct LogEntry: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var kind: String
@@ -130,10 +144,11 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public var sessionUsage: SessionUsage?
     public var agentViewMode: String?
     public var graphRuns: [MightyGraphRun]?
+    public var graphBlockSizes: [String: MightyGraphBlockSize]?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, graphRuns }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, graphRuns, graphBlockSizes }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); workspaceId = try c.decode(String.self, forKey: .workspaceId)
@@ -147,6 +162,8 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         sessionUsage = try? c.decodeIfPresent(SessionUsage.self, forKey: .sessionUsage)
         agentViewMode = try? c.decodeIfPresent(String.self, forKey: .agentViewMode)
         graphRuns = try? c.decodeIfPresent([MightyGraphRun].self, forKey: .graphRuns)
+        // Optional layout damage must not discard the saved conversation.
+        graphBlockSizes = try? c.decodeIfPresent([String: MightyGraphBlockSize].self, forKey: .graphBlockSizes)
     }
 }
 
@@ -163,11 +180,16 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var paneLayoutModes: [String: String]?
     public var paneLayoutActiveSessionIds: [String: String]?
     public var autoUpdateCLIs: Bool?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil) {
+    /// Sidebar workspaces whose pane list is open. nil (older state) means only
+    /// the active workspace is open, which was the previous behaviour.
+    public var expandedWorkspaceIds: [String]?
+    /// Phone access over Tailscale; nil means never enabled.
+    public var mobileRemote: MobileRemoteSettings?
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil) {
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds
-        self.autoUpdateCLIs = autoUpdateCLIs
+        self.autoUpdateCLIs = autoUpdateCLIs; self.expandedWorkspaceIds = expandedWorkspaceIds; self.mobileRemote = mobileRemote
     }
 }
 

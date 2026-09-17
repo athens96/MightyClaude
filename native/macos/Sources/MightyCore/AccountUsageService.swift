@@ -14,12 +14,15 @@ struct ClaudeQuotaCredential: Sendable {
 }
 enum AccountUsageFailure: Error {
     case unavailable(String), invalidResponse, authentication, rateLimited(TimeInterval), network
+    /// macOS refused the login keychain item without a user prompt. Only an
+    /// interactive read (a click) may show the Keychain dialog.
+    case keychainPermission
 }
 
 /// Local account reads only. The caller selects providers with local open sessions.
 /// Codex owns its authentication; Claude credentials are read without rotation or writes.
 public actor AccountUsageService {
-    private let probe: @Sendable (String) async throws -> AccountUsageSnapshot
+    private let probe: @Sendable (String, Bool) async throws -> AccountUsageSnapshot
     private let now: @Sendable () -> Date
     private var tasks: [String: Task<AccountUsageSnapshot, Never>] = [:]
     private var cache: [String: AccountUsageSnapshot] = [:]
@@ -28,8 +31,8 @@ public actor AccountUsageService {
 
     public init() {
         let environment = ProviderService.runtimeEnvironment()
-        probe = { provider in
-            if provider == "claude" { return try await Self.claude(environment: environment) }
+        probe = { provider, interactive in
+            if provider == "claude" { return try await Self.claude(environment: environment, interactive: interactive) }
             if provider == "codex" {
                 let providers = ProviderService(environment: environment)
                 let command = await providers.command(provider: provider)
@@ -45,12 +48,18 @@ public actor AccountUsageService {
     }
 
     init(now: @escaping @Sendable () -> Date = { Date() }, probe: @escaping @Sendable (String) async throws -> AccountUsageSnapshot) {
-        self.now = now; self.probe = probe
+        self.now = now; self.probe = { provider, _ in try await probe(provider) }
+    }
+    init(now: @escaping @Sendable () -> Date = { Date() }, interactiveProbe: @escaping @Sendable (String, Bool) async throws -> AccountUsageSnapshot) {
+        self.now = now; self.probe = interactiveProbe
     }
 
-    public func read(provider: String, force: Bool = false) async -> AccountUsageSnapshot {
+    /// `interactive` marks a read the user asked for; only then may the login
+    /// keychain show its access dialog, and a pending permission state retries.
+    public func read(provider: String, force: Bool = false, interactive: Bool = false) async -> AccountUsageSnapshot {
         guard !closing, !Task.isCancelled else { return AccountUsageSnapshot(provider: provider, status: "cancelled", detail: "계정 조회를 종료했습니다.") }
         if let task = tasks[provider] { return await task.value }
+        if interactive, cache[provider]?.status == "permission" { nextRead.removeValue(forKey: provider) }
         let instant = now()
         // Force refresh still respects server cooldown and the minimum request interval.
         if let deadline = nextRead[provider], deadline > instant, let saved = cache[provider] { return saved }
@@ -59,7 +68,7 @@ public actor AccountUsageService {
         let task = Task { [weak self] in
             let result: AccountUsageSnapshot
             do {
-                var snapshot = try await operation(provider)
+                var snapshot = try await operation(provider, interactive)
                 try Task.checkCancellation()
                 snapshot.fetchedAt = Self.timestamp(instant)
                 result = snapshot
@@ -95,16 +104,21 @@ public actor AccountUsageService {
         var delay: TimeInterval = 60
         var detail = "계정 사용량을 갱신하지 못했습니다. 잠시 후 다시 확인하세요."
         var preserve = true
+        var status: String?
         if let failure = error as? AccountUsageFailure {
             switch failure {
             case .unavailable(let reason): detail = reason; preserve = false
             case .authentication: detail = "CLI 로그인을 다시 확인하세요. 계정 한도 조회 권한이 없거나 로그인이 만료되었습니다."; preserve = false
             case .rateLimited(let seconds): delay = min(86400, max(60, seconds)); detail = "조회가 제한되었습니다. 잠시 후 자동으로 다시 확인합니다."
+            case .keychainPermission:
+                // Automatic polling must stay silent; the user grants access by refreshing.
+                delay = 3600; preserve = false; status = "permission"
+                detail = "macOS Keychain의 Claude Code 로그인 정보에 접근해야 계정 한도를 읽을 수 있습니다. 새로고침을 누르면 접근 허용 창이 열립니다. \"항상 허용\"을 선택하면 이 빌드에서는 다시 묻지 않습니다."
             case .invalidResponse, .network: break
             }
         }
         var value = preserve ? cache[provider] ?? AccountUsageSnapshot(provider: provider) : AccountUsageSnapshot(provider: provider)
-        value.status = value.windows.isEmpty ? (preserve ? "error" : "unavailable") : "stale"
+        value.status = status ?? (value.windows.isEmpty ? (preserve ? "error" : "unavailable") : "stale")
         value.detail = value.windows.isEmpty ? detail : detail + " 마지막으로 확인한 값입니다."
         cache[provider] = value; nextRead[provider] = now().addingTimeInterval(delay)
         return value
@@ -158,12 +172,13 @@ public actor AccountUsageService {
     }
 
     static func claude(environment: [String: String], load: (@Sendable () throws -> ClaudeQuotaCredential?)? = nil,
-                       http: @escaping @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = accountUsageHTTP) async throws -> AccountUsageSnapshot {
+                       http: @escaping @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = accountUsageHTTP,
+                       interactive: Bool = false) async throws -> AccountUsageSnapshot {
         // Never forward a custom provider's credentials to the production endpoint.
         for key in ["CLAUDE_CODE_CUSTOM_OAUTH_URL", "CLAUDE_LOCAL_OAUTH_API_BASE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] {
             if let value = environment[key], !value.isEmpty, !["0", "false"].contains(value.lowercased()) { throw AccountUsageFailure.unavailable("사용자 지정 인증의 계정 한도는 CLI에서 확인하세요.") }
         }
-        guard let credentials = try (load ?? { try ClaudeQuotaCredentials.read(environment: environment) })() else { throw AccountUsageFailure.authentication }
+        guard let credentials = try (load ?? { try ClaudeQuotaCredentials.read(environment: environment, interactive: interactive) })() else { throw AccountUsageFailure.authentication }
         func request(_ path: String) -> URLRequest {
             var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/" + path)!, timeoutInterval: 10)
             request.httpMethod = "GET"
@@ -204,7 +219,18 @@ public actor AccountUsageService {
 }
 
 private enum ClaudeQuotaCredentials {
-    static func read(environment: [String: String]) throws -> ClaudeQuotaCredential? {
+    /// The login keychain guards Claude Code's item with an application ACL,
+    /// and `kSecUseAuthenticationUIFail` does not cover that dialog. Disable
+    /// keychain UI for the duration of an automatic read so the app never asks
+    /// at launch; a denied item becomes `keychainPermission` for the caller.
+    static func read(environment: [String: String], interactive: Bool = false) throws -> ClaudeQuotaCredential? {
+        var previousInteraction: DarwinBoolean = true
+        if !interactive {
+            SecKeychainGetUserInteractionAllowed(&previousInteraction)
+            SecKeychainSetUserInteractionAllowed(false)
+        }
+        defer { if !interactive { SecKeychainSetUserInteractionAllowed(previousInteraction.boolValue) } }
+        var permissionDenied = false
         let home = FileManager.default.homeDirectoryForCurrentUser
         let config = environment["CLAUDE_CONFIG_DIR"]
         let directory = config.map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".claude")
@@ -224,11 +250,13 @@ private enum ClaudeQuotaCredentials {
             var status = SecItemCopyMatching(query as CFDictionary, &result)
             if status == errSecItemNotFound { query.removeValue(forKey: kSecAttrAccount as String); status = SecItemCopyMatching(query as CFDictionary, &result) }
             if status == errSecSuccess, let data = result as? Data, let value = parse(data) { return value }
+            if status == errSecInteractionNotAllowed || status == errSecAuthFailed || status == errSecUserCanceled { permissionDenied = true }
         }
         let path = directory.appendingPathComponent(".credentials.json")
-        guard let size = try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 262144,
-              let data = try? Data(contentsOf: path) else { return nil }
-        return parse(data)
+        if let size = try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 262144,
+           let data = try? Data(contentsOf: path), let value = parse(data) { return value }
+        if permissionDenied { throw AccountUsageFailure.keychainPermission }
+        return nil
     }
     static func parse(_ data: Data) -> ClaudeQuotaCredential? {
         guard data.count <= 262144, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

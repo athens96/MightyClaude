@@ -126,13 +126,22 @@ struct CompanionOverlayView: View {
     @ViewState private var celebrating = false
     var body: some View {
         VStack(spacing: 2) {
-            if companion.preferences.showsTask, bubble.isVisible, let current = companion.current {
+            if let approval = companion.approval {
+                CompanionApprovalBubble(companion: companion, approval: approval)
+            } else if companion.preferences.showsTask, bubble.isVisible, let current = companion.current {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 Button { companion.focus(current.id) } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 7) {
                             PresenceIndicator(status: current.status)
-                            Text(current.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                            // Several agents can be busy at once; the workspace says which one this is.
+                            VStack(alignment: .leading, spacing: 1) {
+                                if !current.workspace.isEmpty {
+                                    Text(current.workspace).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                                        .accessibilityIdentifier("pet-workspace-\(current.id)")
+                                }
+                                Text(current.title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                            }
                             Spacer(minLength: 0)
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(presenceLabel(current.status)).font(.system(size: 9)).foregroundStyle(.secondary)
@@ -154,7 +163,7 @@ struct CompanionOverlayView: View {
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
                         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.10)))
                 }.buttonStyle(.plain).frame(width: 258)
-                    .accessibilityLabel("\(current.title) 열기. \(current.timing.map { "실행 시간 " + $0.label(at: timeline.date) + ". " } ?? "")요청: \(current.input ?? "없음"). 작업: \(current.summary)")
+                    .accessibilityLabel("\(current.workspace.isEmpty ? "" : current.workspace + " 워크스페이스의 ")\(current.title) 열기. \(current.timing.map { "실행 시간 " + $0.label(at: timeline.date) + ". " } ?? "")요청: \(current.input ?? "없음"). 작업: \(current.summary)")
                     .accessibilityIdentifier("pet-task-bubble")
                 }
             } else { Color.clear.frame(height: 86) }
@@ -168,7 +177,7 @@ struct CompanionOverlayView: View {
             }.buttonStyle(.plain).accessibilityLabel(companion.preferences.showsTask && bubble.isVisible ? "작업 말풍선 숨기기" : "작업 말풍선 보기").accessibilityIdentifier("pet-toggle-bubble")
                 .background(CompanionPetInteraction(motion: motion, row: animationRow, onClick: toggleBubble).allowsHitTesting(false))
                 .contextMenu { Button("펫 숨기기") { companion.preferences.enabled = false }; Button("에이전트 열기") { companion.focus(companion.current?.id) } }
-        }.padding(8).frame(width: 282, height: 306, alignment: .bottom)
+        }.padding(8).frame(width: 282, height: companion.approval == nil ? 306 : CompanionPanel.tallHeight, alignment: .bottom)
             .onChange(of: CompanionBubbleIdentity(companion.current), initial: true) { _, identity in bubble.synchronize(identity) }
             .onChange(of: animationRow) { _, _ in epoch = Date() }
             .onDisappear { motion.endAfterTeardown() }
@@ -190,8 +199,73 @@ struct CompanionOverlayView: View {
     }
 }
 
+/// Approvals and single-choice questions can be answered from the pet without
+/// activating the main window. Everything else opens the pane.
+struct CompanionApprovalBubble: View {
+    @ObservedObject var companion: AgentCompanion
+    let approval: CompanionApproval
+    var body: some View {
+        let presentation = approval.presentation
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: approval.quickChoices == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(.orange)
+                Text(approval.quickChoices == nil ? "승인 요청" : "선택 요청").font(.system(size: 11, weight: .semibold))
+                Spacer(minLength: 0)
+                Text(approval.workspaceName.isEmpty ? approval.sessionTitle : approval.workspaceName + " · " + approval.sessionTitle)
+                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            }
+            if let question = approval.quickChoices {
+                Text(question.question).font(.system(size: 11, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
+                    Button { companion.answerApprovalChoice(option.label) } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(option.label).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                            if !option.description.isEmpty { Text(option.description).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
+                    }.buttonStyle(.plain).accessibilityIdentifier("pet-choice-\(index)")
+                }
+            } else {
+                Text(presentation.title + " · " + approval.request.toolName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                if let headline = presentation.headline {
+                    Text(headline).font(.system(size: 11, weight: .medium)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                if let code = presentation.primaryCode {
+                    Text(code.value).font(.system(size: 10, design: .monospaced)).lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 7).padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                } else if presentation.headline == nil {
+                    Text(approval.request.summary).font(.system(size: 10, design: .monospaced)).lineLimit(3)
+                }
+            }
+            if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(2) }
+            HStack(spacing: 6) {
+                Button("열기") { companion.openApproval() }.accessibilityIdentifier("pet-approval-open")
+                Spacer(minLength: 0)
+                if companion.approvalBusy { ProgressView().controlSize(.mini) }
+                if approval.quickChoices == nil {
+                    Button("거부") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-deny")
+                    Button("이번만 허용") { companion.answerApproval(allow: true) }
+                        .buttonStyle(.borderedProminent).disabled(!approval.request.canAllow)
+                        .accessibilityIdentifier("pet-approval-allow")
+                } else {
+                    Button("취소") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
+                }
+            }.controlSize(.small).disabled(companion.approvalBusy)
+        }
+        .padding(12).frame(width: 258)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.orange.opacity(0.45)))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(approval.workspaceName.isEmpty ? "" : approval.workspaceName + " 워크스페이스의 ")\(approval.sessionTitle) 승인 요청: \(presentation.headline ?? approval.request.summary)")
+        .accessibilityIdentifier("pet-approval-bubble")
+    }
+}
+
 @MainActor
 final class CompanionPanel {
+    static let baseHeight: CGFloat = 306
+    static let tallHeight: CGFloat = 470
     private let panel: NSPanel
     init(companion: AgentCompanion) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 282, height: 306), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -217,6 +291,12 @@ final class CompanionPanel {
     func setVisible(_ visible: Bool) {
         if visible { panel.orderFrontRegardless() }
         else { CompanionPetInteraction.cancel(in: panel.contentView); panel.orderOut(nil) }
+    }
+    /// Grow upward for an approval bubble; the pet keeps its bottom-left origin.
+    func setTall(_ tall: Bool) {
+        let height = tall ? Self.tallHeight : Self.baseHeight
+        guard abs(panel.frame.height - height) > 0.5 else { return }
+        panel.setFrame(NSRect(x: panel.frame.minX, y: panel.frame.minY, width: panel.frame.width, height: height), display: true)
     }
     func close() { CompanionPetInteraction.cancel(in: panel.contentView); panel.close() }
 }

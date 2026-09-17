@@ -215,7 +215,7 @@ struct SessionInfoView: View {
         let selectedModel = catalog.models.first { $0.value == session.model }?.displayName ?? (session.model == "default" ? "CLI 기본값" : session.model)
         return VStack(alignment: .leading, spacing: sectionSpacing) {
             HStack(spacing: 9) {
-                Image(systemName: Palette.symbol(session.provider)).font(.system(size: 20)).foregroundStyle(Palette.accent)
+                ProviderIcon(provider: session.provider, size: 20).foregroundStyle(Palette.accent)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(session.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).help(session.title)
                     Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)

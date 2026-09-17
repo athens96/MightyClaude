@@ -8,6 +8,7 @@ import SwiftUI
 final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     let id = UUID()
     let workspace: Workspace
+    let provider: String
     @Published var tab = "installed"
     @Published var search = ""
     @Published var marketplaceFilter = ""
@@ -25,14 +26,18 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     private var loaded = false
     private var closed = false
 
-    init(workspace: Workspace,
+    init(workspace: Workspace, provider: String = "claude",
          load: @escaping @MainActor () async -> ClaudePluginSnapshot,
          install: @escaping @MainActor (String, String) async -> ClaudePluginOperationResult,
          refresh: @escaping @MainActor (String) async -> ClaudePluginOperationResult,
          mutationBlockedReason: @escaping @MainActor () -> String? = { nil }) {
-        self.workspace = workspace; loadAction = load; installAction = install
+        self.workspace = workspace; self.provider = provider
+        self.scope = provider == "codex" ? "user" : "local"
+        loadAction = load; installAction = install
         refreshAction = refresh; self.mutationBlockedReason = mutationBlockedReason
     }
+    var providerLabel: String { ProviderOptions.label(provider) }
+    var supportedScopes: [String] { provider == "codex" ? ["user"] : ["local", "project", "user"] }
     var isRemote: Bool { workspace.remote != nil }
     var isBusy: Bool { phase != "idle" || isCancelling }
     var isMutating: Bool { ["installing", "refreshing"].contains(phase) || isCancelling }
@@ -42,6 +47,14 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     }
     var marketplaces: [String] {
         Array(Set((snapshot?.marketplaces.map(\.name) ?? []) + (snapshot?.available.map(\.marketplace) ?? []) + (snapshot?.installed.compactMap(\.marketplace) ?? []))).sorted()
+    }
+    /// Refresh uses registered sources; Codex can upgrade only Git-backed ones.
+    /// Keep the broader catalog marketplace list available for search/filtering.
+    var refreshableMarketplaces: [String] {
+        (snapshot?.marketplaces ?? []).filter {
+            (provider != "codex" || $0.sourceKind == "git")
+                && (marketplaceFilter.isEmpty || $0.name == marketplaceFilter)
+        }.map(\.name)
     }
     var installed: [ClaudeInstalledPlugin] {
         (snapshot?.installed ?? []).filter {
@@ -84,7 +97,7 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     func install(pluginID: String) {
         guard !closed, !isBusy else { return }
         guard canMutate() else { return }
-        guard ["local", "project", "user"].contains(scope),
+        guard supportedScopes.contains(scope),
               snapshot?.available.contains(where: { $0.id == pluginID }) == true else {
             lastResult = ClaudePluginOperationResult(status: "failed", detail: "목록에서 플러그인과 설치 범위를 다시 선택하세요."); return
         }
@@ -106,10 +119,12 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     func refreshMarketplaces() {
         guard !closed, !isBusy else { return }
         guard canMutate() else { return }
-        let registered = snapshot?.marketplaces.map(\.name) ?? []
-        let names = marketplaceFilter.isEmpty ? registered : registered.filter { $0 == marketplaceFilter }
+        let names = refreshableMarketplaces
         guard !names.isEmpty else {
-            lastResult = ClaudePluginOperationResult(status: "skipped", detail: "새로고침할 등록된 마켓플레이스가 없습니다."); return
+            lastResult = ClaudePluginOperationResult(status: "skipped", detail: provider == "codex"
+                ? "갱신할 Git 마켓플레이스가 없습니다. 로컬·기본 제공 마켓플레이스는 목록 새로고침으로 확인하세요."
+                : "새로고침할 등록된 마켓플레이스가 없습니다.")
+            return
         }
         phase = "refreshing"; lastResult = nil
         task = Task { [weak self] in
@@ -173,7 +188,7 @@ struct ClaudePluginView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "puzzlepiece.extension").font(.system(size: 25)).foregroundStyle(Palette.accent)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Claude 플러그인").font(.system(size: 18, weight: .semibold))
+                    Text("\(model.providerLabel) 플러그인").font(.system(size: 18, weight: .semibold))
                     Text(model.workspace.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                     Text(model.workspace.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(model.workspace.path)
                 }
@@ -187,7 +202,7 @@ struct ClaudePluginView: View {
                     Text("원격 컴퓨터의 MightyClaude에서 플러그인을 관리하세요.").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("claude-plugin-remote-unavailable")
+                .accessibilityIdentifier("\(model.provider)-plugin-remote-unavailable")
             } else {
                 browser
             }
@@ -195,19 +210,19 @@ struct ClaudePluginView: View {
                 if model.isBusy {
                     ProgressView().controlSize(.small)
                     Text(progressLabel).font(.system(size: 11)).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("claude-plugin-progress")
+                        .accessibilityIdentifier("\(model.provider)-plugin-progress")
                 }
                 Spacer()
                 if model.isMutating {
                     Button(model.isCancelling ? "취소 중…" : "작업 취소") { Task { await model.cancelOperation() } }
-                        .disabled(model.isCancelling).accessibilityIdentifier("claude-plugin-cancel")
+                        .disabled(model.isCancelling).accessibilityIdentifier("\(model.provider)-plugin-cancel")
                 }
                 Button("닫기", action: onClose).keyboardShortcut(.cancelAction).disabled(model.isMutating)
-                    .accessibilityIdentifier("claude-plugin-close")
+                    .accessibilityIdentifier("\(model.provider)-plugin-close")
             }
         }
         .padding(20).frame(width: 760, height: 620)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("claude-plugin-browser")
+        .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-browser")
         .onAppear { model.loadIfNeeded() }
     }
 
@@ -218,48 +233,57 @@ struct ClaudePluginView: View {
                 tab("마켓플레이스", value: "marketplace", count: model.snapshot?.available.count ?? 0)
                 Spacer()
                 Button { model.reload() } label: { Label("목록 새로고침", systemImage: "arrow.clockwise") }
-                    .disabled(model.isBusy).accessibilityIdentifier("claude-plugin-reload")
+                    .disabled(model.isBusy).accessibilityIdentifier("\(model.provider)-plugin-reload")
             }
             HStack(spacing: 10) {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField("이름 또는 설명 검색", text: $model.search).textFieldStyle(.plain)
-                        .accessibilityIdentifier("claude-plugin-search")
+                        .accessibilityIdentifier("\(model.provider)-plugin-search")
                 }.padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
                 Picker("마켓플레이스", selection: $model.marketplaceFilter) {
                     Text("전체").tag("")
                     ForEach(model.marketplaces, id: \.self) { Text($0).tag($0) }
                 }
-                .frame(width: 230).accessibilityIdentifier("claude-plugin-marketplace-filter")
+                .frame(width: 230).accessibilityIdentifier("\(model.provider)-plugin-marketplace-filter")
             }
             if model.tab == "marketplace" {
                 HStack(spacing: 12) {
                     Picker("설치 범위", selection: $model.scope) {
-                        Text("로컬 · 이 워크스페이스, 나만").tag("local")
-                        Text("프로젝트 · 팀과 공유").tag("project")
+                        if model.provider != "codex" {
+                            Text("로컬 · 이 워크스페이스, 나만").tag("local")
+                            Text("프로젝트 · 팀과 공유").tag("project")
+                        }
                         Text("사용자 · 모든 프로젝트").tag("user")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).disabled(model.isBusy)
-                    .accessibilityIdentifier("claude-plugin-scope")
+                    .accessibilityIdentifier("\(model.provider)-plugin-scope")
                     Button("마켓플레이스 새로고침") { model.refreshMarketplaces() }
-                        .disabled(model.isBusy || model.blockedReason != nil || model.snapshot?.status != "ready" || model.snapshot?.marketplaces.isEmpty != false)
-                        .accessibilityIdentifier("claude-plugin-refresh-marketplaces")
+                        .disabled(model.isBusy || model.blockedReason != nil || model.snapshot?.status != "ready" || model.refreshableMarketplaces.isEmpty)
+                        .accessibilityIdentifier("\(model.provider)-plugin-refresh-marketplaces")
                 }
                 Text(scopeExplanation).font(.system(size: 10)).foregroundStyle(.secondary)
+                if model.provider == "codex", model.refreshableMarketplaces.isEmpty {
+                    Text("마켓플레이스 갱신은 등록된 Git 소스만 지원합니다. 다른 소스는 목록 새로고침으로 확인하세요.")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("codex-plugin-refresh-unavailable")
+                }
             }
             if !model.isMutating, let reason = model.blockedReason {
                 Label(reason, systemImage: "info.circle").font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("claude-plugin-blocked")
+                    .accessibilityIdentifier("\(model.provider)-plugin-blocked")
             }
-            if let snapshot = model.snapshot, snapshot.status != "ready" {
-                Text(snapshot.detail).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("claude-plugin-load-status")
+            if let snapshot = model.snapshot, snapshot.status != "ready" || (model.provider == "codex" && !snapshot.detail.isEmpty) {
+                Text(snapshot.detail).font(.system(size: 11))
+                    .foregroundStyle(snapshot.status != "ready" || !snapshot.diagnosticOutput.isEmpty ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("\(model.provider)-plugin-load-status")
             }
             if let result = model.lastResult {
                 Label(result.detail, systemImage: result.status == "succeeded" ? "checkmark.circle.fill" : "info.circle")
                     .font(.system(size: 11)).foregroundStyle(result.status == "succeeded" ? Color.green : Color.orange)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    .accessibilityIdentifier("claude-plugin-status")
+                    .accessibilityIdentifier("\(model.provider)-plugin-status")
 
             }
             if !diagnosticOutput.isEmpty {
@@ -268,7 +292,9 @@ struct ClaudePluginView: View {
                         .frame(height: 80)
                 }.font(.system(size: 10))
             }
-            Text("현재 폴더의 설정과 저장된 목록입니다. 새 설치는 다음 Claude 실행부터 적용됩니다.")
+            Text(model.provider == "codex"
+                 ? "이 Mac의 Codex 설치 목록과 마켓플레이스 목록입니다. 설치 후 새 Codex 세션을 시작하세요."
+                 : "현재 폴더의 설정과 저장된 목록입니다. 새 설치는 다음 Claude 실행부터 적용됩니다.")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
             Divider()
             GeometryReader { viewport in
@@ -293,7 +319,7 @@ struct ClaudePluginView: View {
             Text("\(title) \(count)").font(.system(size: 12, weight: model.tab == value ? .semibold : .regular))
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(model.tab == value ? Palette.accent.opacity(0.17) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain).accessibilityIdentifier("claude-plugin-tab-\(value)")
+        }.buttonStyle(.plain).accessibilityIdentifier("\(model.provider)-plugin-tab-\(value)")
     }
     private func installedRow(_ plugin: ClaudeInstalledPlugin) -> some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -311,7 +337,7 @@ struct ClaudePluginView: View {
             ForEach(Array(plugin.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
-        .accessibilityElement(children: .contain).accessibilityIdentifier("claude-plugin-row-\(plugin.id)")
+        .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-row-\(plugin.id)")
     }
     private func catalogRow(_ plugin: ClaudeCatalogPlugin) -> some View {
         let installed = model.installedInSelectedScope(plugin.id)
@@ -327,17 +353,22 @@ struct ClaudePluginView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
             Button(model.activePluginID == plugin.id ? "설치 중…" : installed ? "설치됨" : "설치") { model.install(pluginID: plugin.id) }
                 .disabled(installed || model.isBusy || model.blockedReason != nil || model.snapshot?.status != "ready")
-                .accessibilityIdentifier("claude-plugin-install-\(plugin.id)")
+                .accessibilityIdentifier("\(model.provider)-plugin-install-\(plugin.id)")
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
-        .accessibilityElement(children: .contain).accessibilityIdentifier("claude-plugin-row-\(plugin.id)")
+        .accessibilityElement(children: .contain).accessibilityIdentifier("\(model.provider)-plugin-row-\(plugin.id)")
     }
     private var emptyList: some View {
         VStack(spacing: 10) {
             Text(emptyMessage).font(.system(size: 12)).foregroundStyle(.secondary)
             if model.snapshot?.status == "ready", model.tab == "marketplace", model.snapshot?.marketplaces.isEmpty == true {
-                Link("마켓플레이스 추가 방법", destination: URL(string: "https://code.claude.com/docs/en/discover-plugins#add-marketplaces")!)
-                    .font(.system(size: 11))
+                if model.provider == "codex" {
+                    Text("Codex CLI에서 마켓플레이스를 등록한 뒤 목록을 새로고침하세요.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    Link("마켓플레이스 추가 방법", destination: URL(string: "https://code.claude.com/docs/en/discover-plugins#add-marketplaces")!)
+                        .font(.system(size: 11))
+                }
             }
         }.frame(maxWidth: .infinity, alignment: .center).padding(.vertical, 28)
     }
@@ -350,7 +381,11 @@ struct ClaudePluginView: View {
     private var diagnosticOutput: String {
         let snapshotOutput = model.snapshot?.diagnosticOutput ?? ""
         if model.snapshot?.status != "ready", !snapshotOutput.isEmpty { return snapshotOutput }
-        return model.lastResult?.output ?? ""
+        let operationOutput = model.lastResult?.output ?? ""
+        if model.provider == "codex" {
+            return [operationOutput, snapshotOutput].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        }
+        return operationOutput
     }
     private var scopeExplanation: String {
         switch model.scope {
