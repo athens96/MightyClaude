@@ -28,6 +28,7 @@ extension AppStore {
         switch inspection.phase {
         case "missing":
             state = "missing"
+            // Homebrew first only when it actually runs; otherwise the store is the sure path.
             actions = inspection.brewAvailable ? [ComponentAction(id: "install", title: "Homebrew로 설치"), ComponentAction(id: "open-store", title: "App Store에서 설치", primary: false)]
                                                : [ComponentAction(id: "open-store", title: "App Store에서 설치")]
         case "needs-launch": state = "attention"; actions = [ComponentAction(id: "launch", title: "Tailscale 실행")]
@@ -68,7 +69,7 @@ extension AppStore {
     func performComponentAction(component: String, action: String) {
         guard componentAction == nil, !ending else { return }
         componentAction = component + ":" + action
-        componentMessage = nil
+        componentMessage = nil; componentMessageIsError = false
         Task {
             defer { componentAction = nil }
             switch (component, action) {
@@ -76,7 +77,7 @@ extension AppStore {
                 switch await tailscaleInstaller.install() {
                 case .installed: componentMessage = "Tailscale을 설치했습니다. 앱을 실행해 로그인하세요."; launchTailscale()
                 case .openStore: openURL(ComponentCatalog.tailscaleAppStoreURL)
-                case .failed(let message): componentMessage = message
+                case .failed(let message): componentMessage = message; componentMessageIsError = true
                 }
             case ("tailscale", "open-store"): openURL(ComponentCatalog.tailscaleAppStoreURL)
             case ("tailscale", "launch"): launchTailscale()
@@ -84,7 +85,7 @@ extension AppStore {
                 if let url = await tailscaleInstaller.loginURL() { NSWorkspace.shared.open(url); componentMessage = "브라우저에서 로그인을 마치면 자동으로 연결됩니다." }
                 else { launchTailscale(); componentMessage = "Tailscale 앱에서 로그인하세요." }
             case ("tailscale", "connect"):
-                if let failure = await tailscaleInstaller.connect() { componentMessage = failure }
+                if let failure = await tailscaleInstaller.connect() { componentMessage = failure; componentMessageIsError = true }
             case (_, "update"): startCLIUpdates()
             case (let provider, "copy-command"):
                 if let command = ComponentCatalog.installCommand(provider: provider) {

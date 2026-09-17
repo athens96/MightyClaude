@@ -4,7 +4,7 @@
 
 | 항목 | 검사 | 제공하는 조치 |
 |---|---|---|
-| Tailscale | 앱 번들(`/Applications/Tailscale.app`, `~/Applications`)과 CLI(`PATH`, Homebrew, 앱 내장 CLI)를 찾고 `tailscale status --json`의 `BackendState`로 단계를 나눈다: 없음 → 실행 필요 → 로그인 필요 → 연결 필요 → 연결됨 | **Homebrew로 설치**(`brew install --cask tailscale`, 비대화형·자동 업데이트 끔), **App Store에서 설치**(스토어 페이지 열기), **Tailscale 실행**, **로그인**(`tailscale login`이 출력한 URL을 브라우저로 열기, 실패 시 앱 열기), **연결**(`tailscale up`) |
+| Tailscale | Homebrew는 `brew --version`으로 먼저 점검한다(Xcode 라이선스 미동의 등으로 실행이 안 되면 App Store 버튼만 보이고 해결 방법을 안내한다). 앱 번들(`/Applications/Tailscale.app`, `~/Applications`)과 CLI(`PATH`, Homebrew, 앱 내장 CLI)를 찾고 `tailscale status --json`의 `BackendState`로 단계를 나눈다: 없음 → 실행 필요 → 로그인 필요 → 연결 필요 → 연결됨 | **Homebrew로 설치**(`brew install --cask tailscale`, 비대화형·자동 업데이트 끔), **App Store에서 설치**(스토어 페이지 열기), **Tailscale 실행**, **로그인**(`tailscale login`이 출력한 URL을 브라우저로 열기, 실패 시 앱 열기), **연결**(`tailscale up`) |
 | Claude Code · Codex · Gemini CLI | 실행기 상태(설치·버전). Claude는 Mods 지원 버전(2.1.271 이상)인지도 본다 | 설치되지 않았으면 **설치 명령 복사**(앱은 새 CLI를 직접 설치하지 않는다), Mods 미지원 버전이면 **CLI 업데이트**(기존 업데이트 기능) |
 | 필수 플러그인 | `ComponentCatalog.requiredPlugins`에 등록된 마켓플레이스 플러그인을 해당 CLI가 설치된 경우에만 검사한다 | **플러그인 설치**(기존 Claude/Codex 플러그인 서비스로 사용자 범위 설치) |
 
