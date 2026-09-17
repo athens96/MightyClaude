@@ -23,7 +23,18 @@ struct ComponentsSettingsSection: View {
                     .disabled(store.componentsRefreshing || store.componentAction != nil).accessibilityIdentifier("components-refresh")
             }
         } header: { Text("구성 요소") }
-        .task { if store.components.isEmpty { await store.refreshComponents() } }
+        .task {
+            // Re-check whenever the sheet opens, then keep polling while
+            // something still needs the user (an App Store install lands
+            // outside the app, so nothing else would notice it).
+            await store.refreshComponents()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, store.componentAction == nil, !store.componentsRefreshing,
+                      store.components.contains(where: { $0.state != "installed" }) else { continue }
+                await store.refreshComponents()
+            }
+        }
     }
 
     private func row(_ component: ComponentStatus) -> some View {
