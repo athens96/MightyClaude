@@ -36,7 +36,12 @@ internal sealed class AgentTranscript
         var scroll = Descendant<ScrollViewer>(View); var offset = scroll?.VerticalOffset ?? 0;
         var follows = scroll is null || scroll.ScrollableHeight - offset < 32;
         var previous = plain;
-        View.Document.SetText(TextSetOptions.FormatRtf, next); rendered = next;
+        // WinUI also blocks programmatic document writes while IsReadOnly is true.
+        // Keep this synchronous so no user input can run before protection returns.
+        var readOnly = View.IsReadOnly;
+        try { View.IsReadOnly = false; View.Document.SetText(TextSetOptions.FormatRtf, next); }
+        finally { View.IsReadOnly = readOnly; }
+        rendered = next;
         View.Document.GetText(TextGetOptions.None, out plain);
         var prefix = 0; while (prefix < previous.Length && prefix < plain.Length && previous[prefix] == plain[prefix]) prefix++;
         var suffix = 0; while (suffix < previous.Length - prefix && suffix < plain.Length - prefix && previous[^(suffix + 1)] == plain[^(suffix + 1)]) suffix++;

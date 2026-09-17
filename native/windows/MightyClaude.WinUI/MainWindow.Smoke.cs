@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using MightyClaude.Core;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -59,7 +60,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
-            result["error"] = ex.Message; result["exceptionType"] = ex.GetType().FullName;
+            result["error"] = ex.Message; result["exceptionType"] = ex.GetType().FullName; result["exception"] = ex.ToString();
             try { result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png")); } catch (Exception capture) { result["captureError"] = capture.Message; }
         }
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
@@ -83,10 +84,10 @@ public sealed partial class MainWindow
         using var source = stream.GetInputStreamAt(0); using var output = new DataReader(source); await output.LoadAsync((uint)stream.Size); var png = new byte[(int)stream.Size]; output.ReadBytes(png); await File.WriteAllBytesAsync(path, png); return path;
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-    private static async Task WaitUI(Func<bool> predicate)
+    private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "")
     {
         var deadline = DateTime.UtcNow.AddSeconds(4);
-        while (!predicate()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("WinUI 검증 상태 대기 시간이 초과되었습니다."); await Task.Delay(20); }
+        while (!predicate()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("WinUI 검증 상태 대기 시간이 초과되었습니다: " + condition); await Task.Delay(20); }
     }
 
     private sealed partial class PaneView
@@ -103,11 +104,12 @@ public sealed partial class MainWindow
             input.Text = ""; Container.UpdateLayout(); await WaitUI(() => input.ActualHeight <= singleHeight + 1);
             checks["nativeEditorRetainedAndAutoHeight"] = true;
             var doc = output.View.Document; doc.GetText(TextGetOptions.None, out var text);
+            Require(output.View.IsReadOnly, "출력 갱신 후 읽기 전용 상태가 복원되지 않았습니다.");
             var start = text.IndexOf("첫 번째", StringComparison.Ordinal); var end = text.IndexOf("두 번째", StringComparison.Ordinal) + "두 번째 문단".Length;
             Require(start >= 0 && end > start && !text.Contains("**문단**", StringComparison.Ordinal) && text.Contains("12.3초", StringComparison.Ordinal), "Markdown 또는 도구 경과시간이 표시되지 않았습니다.");
             doc.Selection.SetRange(start, end); doc.Selection.GetText(TextGetOptions.None, out var selected);
             await Change(p => p with { Logs = p.Logs.Append(new LogEntry(Wire.Id(), "assistant", "추가 응답", Wire.Now(), p.Provider)).ToList() }); Refresh();
-            doc.Selection.GetText(TextGetOptions.None, out var retained); Require(selected == retained, "새 출력이 여러 문단의 선택 범위를 바꿨습니다."); checks["crossParagraphSelectionSurvivesAppend"] = true;
+            doc.Selection.GetText(TextGetOptions.None, out var retained); Require(selected == retained, "새 출력이 여러 문단의 선택 범위를 바꿨습니다."); Require(output.View.IsReadOnly, "추가 출력 후 읽기 전용 상태가 복원되지 않았습니다."); checks["crossParagraphSelectionSurvivesAppend"] = true;
             Container.Width = 315; Container.UpdateLayout(); await WaitUI(() => Math.Abs(Container.ActualWidth - 315) < 1); ArrangeComposer(); Container.UpdateLayout(); await Task.Delay(40);
             var controls = selectors.Children.OfType<FrameworkElement>().Where(c => c.Visibility == Visibility.Visible).Concat([context, send]).ToArray();
             var centers = controls.Select(c => c.TransformToVisual(Container).TransformPoint(new(0, 0)).Y + c.ActualHeight / 2).ToArray();

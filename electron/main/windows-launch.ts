@@ -13,6 +13,7 @@ try {
   Add-Type -TypeDefinition @'
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 public static class MightyJob {
@@ -44,6 +45,16 @@ public static class MightyJob {
   [DllImport("kernel32.dll")] static extern bool SetConsoleOutputCP(uint codePage);
   [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int show);
   static IntPtr job;
+  static async Task ForwardInput(Stream source, Stream destination) {
+    var buffer = new byte[4096];
+    int count;
+    while ((count = await source.ReadAsync(buffer, 0, buffer.Length)) != 0) {
+      await destination.WriteAsync(buffer, 0, count);
+      // RPC callers keep stdin open while waiting for a response. Flush each
+      // received chunk so a short JSON request is not buffered until EOF.
+      await destination.FlushAsync();
+    }
+  }
   public static void Initialize() {
     job = CreateJobObject(IntPtr.Zero, null);
     var limits = new ExtendedLimits();
@@ -74,7 +85,7 @@ public static class MightyJob {
     info.WindowStyle = ProcessWindowStyle.Hidden;
     info.RedirectStandardInput = info.RedirectStandardOutput = info.RedirectStandardError = true;
     using (var process = Process.Start(info)) {
-      var input = Console.OpenStandardInput().CopyToAsync(process.StandardInput.BaseStream);
+      var input = ForwardInput(Console.OpenStandardInput(), process.StandardInput.BaseStream);
       input.ContinueWith(task => { try { process.StandardInput.Close(); } catch {} });
       var output = process.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
       var errors = process.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());

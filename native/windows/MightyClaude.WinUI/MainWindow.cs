@@ -67,7 +67,11 @@ public sealed partial class MainWindow : Window
         try { await service.InitializeAsync(); Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
     }
-    private async Task Act(Func<Task> action) { try { error.Text = ""; await action(); } catch (Exception ex) { error.Text = ex.Message; } }
+    private async Task Act(Func<Task> action)
+    {
+        try { error.Text = ""; await action(); }
+        catch (Exception ex) { error.Text = ex.Message; if (options.SmokeTest) throw; }
+    }
     internal static Button Button(string title, Func<Task> action)
     {
         var button = new Button { Content = title }; AutomationProperties.SetName(button, title);

@@ -834,18 +834,23 @@ final class AppStore: ObservableObject {
         report(diagnostic)
         try await Task.sleep(for: .milliseconds(100))
         var tree: [[String: Any]] = []
-        let send = smokeAccessibilityElement(window, identifier: "send-\(sessionId)", tree: &tree)
-        diagnostic["sendLocated"] = send != nil
+        let running = session.status == "running"
+        let actionIdentifier = (running ? "composer-stop-" : "send-") + sessionId
+        let absentIdentifier = (running ? "send-" : "composer-stop-") + sessionId
+        let action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
+        let duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
+        diagnostic["primaryAction"] = running ? "stop" : "send"
+        diagnostic["primaryActionLocated"] = action != nil
+        diagnostic["singlePrimaryAction"] = duplicate == nil
         report(diagnostic)
-        guard let send else {
+        guard let action, duplicate == nil else {
             let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: dataDirectory.appendingPathComponent("composer-accessibility.json"), options: .atomic)
-            throw MightyError("보내기 버튼의 접근성 상태를 확인하지 못했습니다.")
+            throw MightyError("단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.")
         }
-        diagnostic["sendDisabled"] = !send
-        diagnostic["sendEnabled"] = send
+        diagnostic["primaryActionEnabled"] = action
         report(diagnostic)
-        guard send == expectedSendEnabled else { throw MightyError("보내기 버튼이 실행 가능 상태와 일치하지 않습니다.") }
+        guard action == (running || expectedSendEnabled) else { throw MightyError("실행·중지 버튼이 현재 작업 상태와 일치하지 않습니다.") }
         if forceUnavailable {
             tree = []
             let noticeVisible = smokeAccessibilityElement(window, identifier: "run-blocked-\(sessionId)", tree: &tree) != nil
