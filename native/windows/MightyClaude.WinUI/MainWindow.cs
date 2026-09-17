@@ -15,7 +15,10 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow : Window
 {
     private readonly DesktopService service;
-    private readonly Grid root = new() { Padding = new Thickness(12), ColumnSpacing = 12, RowSpacing = 8 };
+    private readonly Grid root = new() { Padding = new Thickness(12), ColumnSpacing = 12, RowSpacing = 8, Background = WindowBackground(false) };
+    private static SolidColorBrush WindowBackground(bool light) => new(light
+        ? Windows.UI.Color.FromArgb(255, 245, 246, 249)
+        : Windows.UI.Color.FromArgb(255, 24, 26, 31));
     private readonly StackPanel sidebar = new() { Spacing = 10 };
     private readonly Grid panes = new() { ColumnSpacing = 12, RowSpacing = 12 };
     private readonly ListView workspaces = new() { SelectionMode = ListViewSelectionMode.Single };
@@ -121,7 +124,8 @@ public sealed partial class MainWindow : Window
     private void Render()
     {
         if (closing) return; rendering = true; var state = service.Snapshot;
-        root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
+        root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark;
+        root.Background = WindowBackground(state.Theme == "light"); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) views.Remove(stale);
