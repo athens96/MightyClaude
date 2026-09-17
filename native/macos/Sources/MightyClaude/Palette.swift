@@ -13,7 +13,7 @@ enum Palette {
     static let subtle = Color.primary.opacity(0.035)
 
     static func symbol(_ provider: String) -> String {
-        switch provider { case "codex": return "terminal.fill"; case "gemini": return "sparkles"; default: return "asterisk" }
+        switch provider { case "codex": return "hexagon"; case "gemini": return "sparkle"; default: return "asterisk" }
     }
 
     static func name(_ provider: String) -> String {

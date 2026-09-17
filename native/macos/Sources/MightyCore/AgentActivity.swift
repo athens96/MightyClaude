@@ -72,7 +72,7 @@ public enum ActivitySupport {
         if ["edit", "write", "write_file", "replace", "apply_patch", "file_change", "notebookedit"].contains(name) { return "edit" }
         if ["grep", "glob", "search_file_content", "glob_search"].contains(name) { return "search" }
         if ["websearch", "webfetch", "web_search", "google_web_search", "web_fetch"].contains(name) { return "web" }
-        if ["agent", "task", "spawn_agent", "delegate_to_agent"].contains(name) { return "agent" }
+        if ["agent", "task", "spawn_agent", "send_input", "wait", "close_agent", "delegate_to_agent"].contains(name) { return "agent" }
         return "tool"
     }
 
@@ -104,5 +104,64 @@ public enum ActivitySupport {
         if let text = record["message"] as? String { return clean(text, maximumBytes: maximumOutputBytes) }
         if let content = record["content"] { return output(content) }
         return nil
+    }
+}
+
+/// The public `codex exec --json` collaboration item, not app-server's
+/// camelCase schema. Select only its documented display fields.
+struct CodexCollaborationItem {
+    struct AgentState {
+        let status: String
+        let message: String?
+    }
+    let id: String
+    let tool: String
+    let sender: String?
+    let receivers: [String]
+    let states: [String: AgentState]
+    let prompt: String?
+    let status: String
+
+    static func key(_ value: Any?) -> String? {
+        guard let value = value as? String, !value.isEmpty, value.utf8.count <= 512,
+              !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        return value
+    }
+    init?(_ item: [String: Any]) {
+        guard ["collab_tool_call", "collab_agent_tool_call"].contains(item["type"] as? String ?? ""),
+              let id = Self.key(item["id"]), let tool = item["tool"] as? String,
+              ["spawn_agent", "send_input", "wait", "close_agent"].contains(tool) else { return nil }
+        self.id = id; self.tool = tool; sender = Self.key(item["sender_thread_id"])
+        var seen = Set<String>()
+        receivers = (item["receiver_thread_ids"] as? [String] ?? []).prefix(ExecutionGraphSupport.maximumNodes)
+            .compactMap(Self.key).filter { seen.insert($0).inserted }
+        var states: [String: AgentState] = [:]
+        for (thread, raw) in (item["agents_states"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }).prefix(ExecutionGraphSupport.maximumNodes) {
+            guard let thread = Self.key(thread), let raw = raw as? [String: Any], let status = raw["status"] as? String else { continue }
+            states[thread] = AgentState(status: String(status.prefix(80)), message: (raw["message"] as? String).map { ActivitySupport.clean($0, maximumBytes: ExecutionGraphSupport.maximumOutputBytes) })
+        }
+        self.states = states
+        prompt = (item["prompt"] as? String).map { ActivitySupport.clean($0, maximumBytes: ExecutionGraphSupport.maximumInputBytes) }.flatMap { $0.isEmpty ? nil : $0 }
+        status = item["status"] as? String ?? "in_progress"
+    }
+    var threads: [String] { Array((receivers + states.keys.sorted().filter { !receivers.contains($0) }).prefix(ExecutionGraphSupport.maximumNodes)) }
+    var summary: String {
+        let action: String
+        switch tool {
+        case "spawn_agent": action = "하위 에이전트 생성"
+        case "send_input": action = "하위 에이전트에 지시"
+        case "wait": action = "하위 에이전트 응답 대기"
+        default: action = "하위 에이전트 종료"
+        }
+        let targets = threads.prefix(4).map { String($0.prefix(12)) }.joined(separator: ", ")
+        return ActivitySupport.clean([action, prompt, targets.isEmpty ? nil : targets].compactMap { $0 }.joined(separator: " · "), maximumBytes: ActivitySupport.maximumSummaryBytes, singleLine: true)
+    }
+    var output: String? {
+        let rows = threads.compactMap { thread -> String? in
+            guard let state = states[thread] else { return nil }
+            let label = "\(thread.prefix(12)) · \(state.status)"
+            return state.message.map { label + "\n" + $0 } ?? label
+        }
+        return rows.isEmpty ? nil : ActivitySupport.clean(rows.joined(separator: "\n\n"), maximumBytes: ActivitySupport.maximumOutputBytes)
     }
 }

@@ -32,7 +32,35 @@ private actor AccountTestHTTP {
     }
 }
 
+private actor AccountPermissionProbe {
+    var calls = 0
+    var interactiveCalls = 0
+    func read(_ provider: String, interactive: Bool) throws -> AccountUsageSnapshot {
+        calls += 1
+        guard interactive else { throw AccountUsageFailure.keychainPermission }
+        interactiveCalls += 1
+        return AccountUsageSnapshot(provider: provider, windows: [.init(kind: "session", usedPercent: 12)], status: "available")
+    }
+    func count() -> Int { calls }
+    func interactiveCount() -> Int { interactiveCalls }
+}
+
 struct AccountUsageTests {
+    @Test func keychainPermissionStaysSilentUntilAnInteractiveRead() async throws {
+        let clock = AccountTestClock(); let probe = AccountPermissionProbe()
+        let service = AccountUsageService(now: { clock.read() }, interactiveProbe: { provider, interactive in try await probe.read(provider, interactive: interactive) })
+        let first = await service.read(provider: "claude")
+        #expect(first.status == "permission"); #expect(first.windows.isEmpty); #expect(first.detail.contains("Keychain"))
+        // Automatic polling, even forced, must not retry for an hour or prompt.
+        clock.advance(600)
+        let polled = await service.read(provider: "claude", force: true)
+        #expect(polled.status == "permission"); #expect(await probe.count() == 1)
+        let granted = await service.read(provider: "claude", force: true, interactive: true)
+        #expect(granted.status == "available"); #expect(granted.windows.first?.usedPercent == 12)
+        #expect(await probe.count() == 2); #expect(await probe.interactiveCount() == 1)
+        await service.shutdown()
+    }
+
     @Test func codexUsesReportedWindowsAndDoesNotInventWeeklyPeriod() throws {
         let account: [String: Any] = ["account": ["type": "chatgpt", "email": "fixture@example.test", "planType": "pro"]]
         let value = try AccountUsageService.mapCodex(account: account, limits: ["rateLimits": ["primary": ["usedPercent": 99]], "rateLimitsByLimitId": ["codex": ["primary": ["usedPercent": 25, "windowDurationMins": 300, "resetsAt": 1_800_000_000], "secondary": ["usedPercent": 44, "windowDurationMins": 10080]]]])

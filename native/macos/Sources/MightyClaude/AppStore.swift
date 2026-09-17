@@ -9,7 +9,6 @@ import MightyCore
 final class AppStore: ObservableObject {
     static let shared = AppStore()
     let companion = AgentCompanion()
-    let sessionIsland = SessionIslandController()
 
     @Published var snapshot = AppSnapshot() { didSet { scheduleSave(); companion.refresh(snapshot) } }
     @Published var runtime: RuntimeInfo?
@@ -26,6 +25,7 @@ final class AppStore: ObservableObject {
     @Published var pluginBrowser: ClaudePluginBrowserModel?
     @Published var isManagingPlugins = false
     let claudePlugins = ClaudePluginService()
+    let codexPlugins = CodexPluginService()
     @Published var remoteBusy = false
     @Published var search = ""
     @Published var focusSearch = false
@@ -37,6 +37,25 @@ final class AppStore: ObservableObject {
         }
     }
     @Published var attachmentDrafts: [String: [RunAttachment]] = [:]
+    /// Requests typed while a pane was busy, in send order. Kept in memory:
+    /// a restored session is never running, so nothing would drain it.
+    @Published var queuedInputs: [String: [QueuedInput]] = [:]
+    private var steerTasks: [String: Task<Void, Never>] = [:]
+    /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
+    @Published var mobileStatus = MobileHostStatus()
+    @Published var mobileBusy = false
+    lazy var mobileRemote = MobileRemoteService(dataDirectory: dataDirectory.appendingPathComponent("mobile-remote", isDirectory: true), hostName: Host.current().localizedName ?? "MightyClaude Mac")
+    var mobileBridge: MobileRemoteBridge?
+    var mobileTracking = MobileRemoteTracking()
+    var mobileSubscriptions = Set<AnyCancellable>()
+    var mobileRetryTask: Task<Void, Never>?
+    /// Settings → 구성 요소 (AppStore+Components.swift).
+    @Published var components: [ComponentStatus] = []
+    @Published var componentsRefreshing = false
+    @Published var componentAction: String?
+    @Published var componentMessage: String?
+    let tailscaleInstaller = TailscaleInstaller()
+    var lastTailscaleInspection: TailscaleInspection?
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
     @Published var attachmentPanelSession: String?
@@ -62,14 +81,14 @@ final class AppStore: ObservableObject {
     let providers = ProviderService()
     let pluginDirectory: URL
     private var loading = false
-    private var ending = false
+    private(set) var ending = false
     private var canSave = false
     private var saveTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var runtimeTask: Task<Void, Never>?
-    private var pendingRuns = Set<String>()
+    private(set) var pendingRuns = Set<String>()
     private var startTasks: [String: Task<Void, Never>] = [:]
-    private var closingSessions = Set<String>()
+    private(set) var closingSessions = Set<String>()
     private var draftRevisions: [String: UInt64] = [:]
     var attachmentTasks: [String: Task<Void, Never>] = [:]
     var terminalController: TerminalController?
@@ -115,13 +134,13 @@ final class AppStore: ObservableObject {
         guard !ending, !Task.isCancelled else { loading = false; return }
         isLoaded = true
         companion.configure(store: self)
-        sessionIsland.configure(store: self)
         loading = false
         Task {
             await refreshRuntime()
             if !arguments.contains(where: { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") }) { beginAutomaticCLIUpdatesIfNeeded() }
         }
         remoteState = await remote.state()
+        configureMobileRemote()
         guard !ending, !Task.isCancelled else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -134,7 +153,10 @@ final class AppStore: ObservableObject {
                 await self.pollRemote()
             }
         }
-        if arguments.contains("--cli-update-smoke-test") { Task { await runCLIUpdateSmokeTest() } }
+        if arguments.contains("--plugin-smoke-test") { Task { await runPluginSmokeTest() } }
+        else if arguments.contains("--cli-update-smoke-test") { Task { await runCLIUpdateSmokeTest() } }
+        else if arguments.contains("--question-smoke-test") { Task { await runQuestionnaireSmokeTest() } }
+        else if arguments.contains("--graph-smoke-test") { Task { await runGraphSmokeTest() } }
         else if arguments.contains("--agent-smoke-test") { Task { await runAgentSmokeTest() } }
         else if arguments.contains("--layout-smoke-test") { Task { await runLayoutSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
@@ -205,8 +227,8 @@ final class AppStore: ObservableObject {
         if workspace.remote == nil, session.kind != "shell", updatingCLI == session.provider {
             return "\(ProviderOptions.label(session.provider)) CLI를 업데이트하고 있습니다. 완료 후 전송하세요."
         }
-        if workspace.remote == nil, session.kind != "shell", session.provider == "claude", isManagingPlugins {
-            return "Claude 플러그인을 변경하고 있습니다. 완료 후 전송하세요."
+        if workspace.remote == nil, session.kind != "shell", ["claude", "codex"].contains(session.provider), isManagingPlugins {
+            return "플러그인을 변경하고 있습니다. 완료 후 전송하세요."
         }
         if workspace.remote != nil, connection(for: workspace)?.status != "connected" { return "원격 컴퓨터에 연결한 후 실행하세요." }
         if session.kind != "shell" {
@@ -246,35 +268,49 @@ final class AppStore: ObservableObject {
 
     func selectWorkspace(_ id: String) {
         guard snapshot.workspaces.contains(where: { $0.id == id }) else { return }
-        snapshot.activeWorkspaceId = id
         let remembered = (snapshot.paneLayoutActiveSessionIds?[id]).flatMap { saved in snapshot.sessions.first { $0.id == saved && $0.workspaceId == id }?.id }
-        snapshot.activeSessionId = remembered ?? layoutForWorkspace(id)?.firstSelectedSessionId ?? snapshot.sessions.first { $0.workspaceId == id }?.id
-        reconcilePaneLayout(id)
+        let selected = remembered ?? layoutForWorkspace(id)?.firstSelectedSessionId ?? snapshot.sessions.first { $0.workspaceId == id }?.id
+        var next = paneSelectionSnapshot(workspaceId: id, sessionId: selected)
+        // Selecting opens this workspace's list without closing the others.
+        next.expandedWorkspaceIds = expandedWorkspaceSet().union([id]).sorted()
+        if next != snapshot { snapshot = next }
+    }
+
+    private func expandedWorkspaceSet() -> Set<String> {
+        Set(snapshot.expandedWorkspaceIds ?? snapshot.activeWorkspaceId.map { [$0] } ?? [])
+    }
+    func isWorkspaceExpanded(_ id: String) -> Bool { expandedWorkspaceSet().contains(id) }
+    func toggleWorkspaceExpanded(_ id: String) {
+        var ids = expandedWorkspaceSet()
+        if !ids.insert(id).inserted { ids.remove(id) }
+        snapshot.expandedWorkspaceIds = ids.sorted()
     }
 
     func selectSession(_ id: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
-        snapshot.activeWorkspaceId = session.workspaceId
-        snapshot.activeSessionId = id
-        selectPaneInLayout(id, workspaceId: session.workspaceId)
+        let next = paneSelectionSnapshot(workspaceId: session.workspaceId, sessionId: id)
+        if next != snapshot { snapshot = next }
     }
 
-    func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab") {
-        guard !hasModal, let workspace = activeWorkspace else { return }
-        guard snapshot.sessions.count < 128 else { error = "실행 창은 최대 128개까지 만들 수 있습니다."; return }
+    @discardableResult
+    func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
+        guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
+        guard snapshot.sessions.count < 128 else { error = "실행 창은 최대 128개까지 만들 수 있습니다."; return nil }
         let name = kind == "shell" ? (workspace.remote == nil ? "터미널" : "원격 명령") : ProviderOptions.label(provider)
-        let count = snapshot.sessions.filter { $0.workspaceId == workspace.id && $0.kind == kind }.count + 1
-        let session = RunSession(workspaceId: workspace.id, title: "\(name) \(count)", kind: kind, provider: provider)
+        var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
+        // Start from the most recently used pane of the same provider.
+        if let template = RunSession.template(kind: kind, provider: provider, in: snapshot.sessions) { session.inheritSettings(from: template) }
         reconcilePaneLayout(workspace.id)
         let previousGroup = targetGroupId ?? snapshot.activeSessionId.flatMap { layoutForWorkspace(workspace.id)?.group(containing: $0)?.id }
         let previousMode = paneLayoutMode(workspace.id)
         guard let next = PaneLayouts.inserting(root: layoutForWorkspace(workspace.id), sessionId: session.id, targetGroupId: previousGroup, placement: placement), next.group(containing: session.id) != nil else {
-            error = "실행 창을 추가할 그룹이 없거나 분할 한도에 도달했습니다."; return
+            error = "실행 창을 추가할 그룹이 없거나 분할 한도에 도달했습니다."; return nil
         }
         snapshot.sessions.append(session)
         savePaneLayout(next, workspaceId: workspace.id)
         setPaneLayoutMode(previousMode == "focus" && placement == "tab" ? "focus" : (next.kind == "split" ? "custom" : "tabs"), workspaceId: workspace.id)
         selectSession(session.id)
+        return session.id
     }
 
     func closeSession(_ id: String) {
@@ -286,6 +322,7 @@ final class AppStore: ObservableObject {
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
             discardAttachments(id)
+            queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.cancel()
             draftRevisions.removeValue(forKey: id)
             if snapshot.activeSessionId == id {
                 snapshot.activeSessionId = previousGroup?.sessionIds.first(where: { candidate in snapshot.sessions.contains { $0.id == candidate } }) ?? activeSessions.first?.id
@@ -304,6 +341,7 @@ final class AppStore: ObservableObject {
                 await stop(session.id)
                 drafts.removeValue(forKey: session.id)
                 discardAttachments(session.id)
+                queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.cancel()
                 draftRevisions.removeValue(forKey: session.id)
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
@@ -328,7 +366,7 @@ final class AppStore: ObservableObject {
     func setAgentViewMode(_ id: String, mode: String) {
         guard ["default", "mighty"].contains(mode) else { return }
         updateSession(id) { session in
-            guard session.kind == "claude", session.provider == "claude" else { return }
+            guard session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) else { return }
             session.agentViewMode = mode
         }
     }
@@ -374,7 +412,7 @@ final class AppStore: ObservableObject {
     }
 
     func submit(_ id: String) {
-        guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running",
+        guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = "로컬 터미널 안에 명령을 직접 입력하세요."; return }
         let originalDraft = drafts[id] ?? ""
@@ -382,6 +420,93 @@ final class AppStore: ObservableObject {
         let attachments = attachmentDrafts[id] ?? []
         guard !input.isEmpty || !attachments.isEmpty else { return }
         if let reason = runBlockedReason(session) { error = reason; return }
+        if session.status == "running" || pendingRuns.contains(id) {
+            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments))
+            return
+        }
+        start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
+    }
+
+    /// A local Claude run reads follow-ups on its open stdin frame, so the text
+    /// joins the running turn. Everything else waits for the current request.
+    func canSteer(_ session: RunSession) -> Bool {
+        session.kind == "claude" && session.provider == "claude" && !pendingRuns.contains(session.id)
+            && snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+    }
+
+    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput) {
+        guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = "대기열에는 최대 \(QueuedInput.maximumItems)개까지 넣을 수 있습니다."; return }
+        drafts[id] = ""
+        let submittedIds = Set(item.attachments.map(\.id))
+        attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
+        if canSteer(session), item.attachments.isEmpty {
+            // One chain per session keeps rapid follow-ups in send order.
+            let previous = steerTasks[id]
+            steerTasks[id] = Task { [weak self] in
+                await previous?.value
+                guard let self, !Task.isCancelled else { return }
+                await self.steer(id, item: item)
+            }
+        } else {
+            queuedInputs[id, default: []].append(item)
+        }
+    }
+
+    private func steer(_ id: String, item: QueuedInput) async {
+        let accepted = await runner.steer(sessionId: id, text: item.text)
+        guard !ending, !closingSessions.contains(id) else { return }
+        guard accepted else {
+            // The turn ended (or never opened stdin) meanwhile; run it next.
+            queuedInputs[id, default: []].append(item)
+            settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
+            return
+        }
+        companion.recordInput(sessionID: id, text: item.text)
+        updateSession(id) {
+            $0.logs.append(LogEntry(id: item.id, kind: "user", text: item.text)); $0.logs = Array($0.logs.suffix(400))
+        }
+    }
+
+    func removeQueuedInput(_ id: String, itemId: String) {
+        queuedInputs[id]?.removeAll { $0.id == itemId }
+        if queuedInputs[id]?.isEmpty == true { queuedInputs.removeValue(forKey: id) }
+    }
+
+    /// Runs the first queued item now; used after an error left the queue paused.
+    func runNextQueuedInput(_ id: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
+        settleQueue(id, status: "completed")
+    }
+
+    private func settleQueue(_ id: String, status: String) {
+        guard let queue = queuedInputs[id], !queue.isEmpty, !ending, !closingSessions.contains(id) else { return }
+        switch status {
+        case "completed", "idle":
+            guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id),
+                  let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
+            let next = queue[0]
+            if let reason = runBlockedReason(session) {
+                queuedInputs.removeValue(forKey: id)
+                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청 \(queue.count)개를 실행할 수 없어 취소했습니다. \(reason)")) }
+                return
+            }
+            queuedInputs[id] = queue.count > 1 ? Array(queue.dropFirst()) : nil
+            if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil) {
+                // Validation refused it; keep the item so nothing typed is lost.
+                queuedInputs[id, default: []].insert(next, at: 0)
+                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청을 실행하지 못해 대기열에 남겨 두었습니다. \(error ?? "")")) }
+            }
+        case "stopped":
+            queuedInputs.removeValue(forKey: id)
+            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "실행을 중지해 대기 중인 요청 \(queue.count)개를 취소했습니다.")) }
+        case "error":
+            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "실행 오류로 대기 중인 요청 \(queue.count)개를 보류합니다. 대기열의 실행 버튼으로 이어갈 수 있습니다.")) }
+        default: break
+        }
+    }
+
+    @discardableResult
+    func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?) -> Bool {
         let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
         do {
             try CoreValidation.validate(request)
@@ -390,9 +515,9 @@ final class AppStore: ObservableObject {
                 try CoreValidation.validateSelection(request, catalog: provider.modelCatalog)
                 try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
             }
-        } catch { self.error = error.localizedDescription; return }
+        } catch { self.error = error.localizedDescription; return false }
         pendingRuns.insert(id)
-        drafts[id] = ""
+        if restoringDraft != nil { drafts[id] = "" }
         let submittedRevision = draftRevisions[id, default: 0]
         let attachmentSummary = attachments.map { "첨부: \($0.name) (\(AttachmentImport.sizeLabel($0)))" }.joined(separator: "\n")
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
@@ -414,8 +539,8 @@ final class AppStore: ObservableObject {
                 let submittedIds = Set(attachments.map(\.id))
                 attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
             } catch {
-                if draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
-                    drafts[id] = originalDraft
+                if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
+                    drafts[id] = restoringDraft
                 }
                 if Task.isCancelled {
                     apply(RunEvent(sessionId: id, type: "status", status: "stopped"))
@@ -426,7 +551,10 @@ final class AppStore: ObservableObject {
             }
             pendingRuns.remove(id)
             startTasks.removeValue(forKey: id)
+            // A run that ended before startup bookkeeping finished must still drain.
+            settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
         }
+        return true
     }
 
     func stop(_ id: String) async {
@@ -462,6 +590,7 @@ final class AppStore: ObservableObject {
             }
         }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
+        if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
     }
 
     func toggleTheme() { snapshot.theme = snapshot.theme == "light" ? "dark" : "light" }
@@ -509,6 +638,25 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func answerQuestionnaire(sessionId: String, request: ToolPermissionRequest, answers: [String: UserQuestionAnswer]) async {
+        let key = permissionResponseKey(sessionId: sessionId, request: request)
+        guard !ending, !closingSessions.contains(sessionId), !permissionResponses.contains(key),
+              request.canAnswerQuestions,
+              snapshot.sessions.first(where: { $0.id == sessionId })?.status == "running",
+              toolPermissions[sessionId]?.contains(where: { $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true else { return }
+        permissionResponses.insert(key)
+        permissionErrors.removeValue(forKey: sessionId)
+        defer { permissionResponses.remove(key) }
+        do {
+            try await runner.answerUserQuestions(sessionId: sessionId, runId: request.runId, requestId: request.id, answers: answers)
+            toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
+        } catch {
+            if !ending, toolPermissions[sessionId]?.first.map({ $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true {
+                permissionErrors[sessionId] = error.localizedDescription
+            }
+        }
+    }
+
     private func scheduleSave() {
         guard isLoaded, canSave, !ending else { return }
         saveTask?.cancel()
@@ -531,6 +679,7 @@ final class AppStore: ObservableObject {
     func shutdown() async {
         ending = true
         await claudePlugins.shutdown()
+        await codexPlugins.shutdown()
         await pluginBrowser?.shutdown()
         pluginBrowser = nil
         cliUpdateTask?.cancel()
@@ -539,7 +688,6 @@ final class AppStore: ObservableObject {
         toolPermissions.removeAll()
         permissionResponses.removeAll()
         companion.shutdown()
-        await sessionIsland.shutdown()
         shutdownTerminals()
         for task in attachmentTasks.values { task.cancel() }
         attachmentTasks.removeAll()
@@ -554,6 +702,7 @@ final class AppStore: ObservableObject {
         await providers.shutdown()
         await runner.shutdown()
         await remote.shutdown()
+        await shutdownMobileRemote()
         for task in starting { await task.value }
         // Process callbacks enqueue onto the main actor. Let terminal events settle before the final save.
         try? await Task.sleep(for: .milliseconds(60))
@@ -835,8 +984,13 @@ final class AppStore: ObservableObject {
         try await Task.sleep(for: .milliseconds(100))
         var tree: [[String: Any]] = []
         let running = session.status == "running"
+        // A busy pane keeps accepting text: it steers a local Claude turn or
+        // waits in the queue. With a draft present, stop and send coexist.
+        let sendsWhileRunning = running && !forceUnavailable
+        let sendExpected = expectedSendEnabled || sendsWhileRunning
         let actionIdentifier = (running ? "composer-stop-" : "send-") + sessionId
         let absentIdentifier = (running ? "send-" : "composer-stop-") + sessionId
+        func secondaryMatches(_ value: Bool?) -> Bool { sendsWhileRunning ? value == true : value == nil }
         var action: Bool?
         var duplicate: Bool?
         let actionDeadline = Date().addingTimeInterval(3)
@@ -847,14 +1001,15 @@ final class AppStore: ObservableObject {
             tree = []
             action = smokeAccessibilityElement(window, identifier: actionIdentifier, tree: &tree)
             duplicate = smokeAccessibilityElement(window, identifier: absentIdentifier, tree: &tree)
-            if action == (running || expectedSendEnabled), duplicate == nil { break }
+            if action == (running || expectedSendEnabled), secondaryMatches(duplicate) { break }
             try await Task.sleep(for: .milliseconds(50))
         } while Date() < actionDeadline
         diagnostic["primaryAction"] = running ? "stop" : "send"
         diagnostic["primaryActionLocated"] = action != nil
-        diagnostic["singlePrimaryAction"] = duplicate == nil
+        diagnostic["singlePrimaryAction"] = secondaryMatches(duplicate)
+        diagnostic["sendWhileRunning"] = sendsWhileRunning
         report(diagnostic)
-        guard let action, duplicate == nil else {
+        guard let action, secondaryMatches(duplicate) else {
             let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: dataDirectory.appendingPathComponent("composer-accessibility.json"), options: .atomic)
             throw MightyError("단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.")
@@ -877,7 +1032,7 @@ final class AppStore: ObservableObject {
             return own + root.subviews.flatMap(keyProbes)
         }
         guard let probe = keyProbes(view).first(where: { $0.editor === editor }), probe.onSubmit != nil,
-              probe.canSubmit == expectedSendEnabled else { throw MightyError("입력창의 키 전송 조건을 확인하지 못했습니다.") }
+              probe.canSubmit == sendExpected else { throw MightyError("입력창의 키 전송 조건을 확인하지 못했습니다.") }
         func returnEvent(_ modifiers: NSEvent.ModifierFlags = [], keyCode: UInt16 = 36, repeating: Bool = false) throws -> NSEvent {
             guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: repeating, keyCode: keyCode) else { throw MightyError("입력 키 검증 이벤트를 만들지 못했습니다.") }
             return event
@@ -893,7 +1048,7 @@ final class AppStore: ObservableObject {
         let commandEnter = route(try returnEvent(.command))
         let keypadEnter = route(try returnEvent(.numericPad, keyCode: 76))
         let repeatedEnter = route(try returnEvent([], repeating: true))
-        let expectedCallbacks = expectedSendEnabled ? 1 : 0
+        let expectedCallbacks = sendExpected ? 1 : 0
         diagnostic["keyVerification"] = "synthetic events: monitor handler and native NSTextView.keyDown"
         diagnostic["enterCallbackCount"] = enter.callbacks
         diagnostic["commandEnterCallbackCount"] = commandEnter.callbacks

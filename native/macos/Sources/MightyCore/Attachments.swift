@@ -107,12 +107,17 @@ public final class AttachmentPreparation {
 public struct ProviderInput {
     public let arguments: [String]
     public let standardInput: Data
+    /// One stdin frame for a Claude run started with stream-json input. The
+    /// first frame carries the prompt; later frames are mid-turn follow-ups.
+    public static func claudeUserMessage(_ content: Any) throws -> Data {
+        var data = try JSONSerialization.data(withJSONObject: ["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()], options: [.sortedKeys, .withoutEscapingSlashes])
+        data.append(10); return data
+    }
     public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false) throws -> ProviderInput {
         var arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts)
         guard !request.attachments.isEmpty else {
             if request.provider == "claude", allowPermissionPrompts {
-                var data = try JSONSerialization.data(withJSONObject: ["type": "user", "message": ["role": "user", "content": request.input], "parent_tool_use_id": NSNull()], options: [.sortedKeys, .withoutEscapingSlashes])
-                data.append(10); return ProviderInput(arguments: arguments, standardInput: data)
+                return ProviderInput(arguments: arguments, standardInput: try claudeUserMessage(request.input))
             }
             return ProviderInput(arguments: arguments, standardInput: Data(request.input.utf8))
         }
@@ -132,8 +137,7 @@ public struct ProviderInput {
             for file in attachments.files where !generic.contains(where: { $0.attachment.id == file.attachment.id }) {
                 content.append(["type": file.attachment.mediaType == "application/pdf" ? "document" : "image", "source": ["type": "base64", "media_type": file.attachment.mediaType, "data": file.attachment.dataBase64]])
             }
-            var data = try JSONSerialization.data(withJSONObject: ["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()], options: [.sortedKeys, .withoutEscapingSlashes])
-            data.append(10); return ProviderInput(arguments: arguments, standardInput: data)
+            return ProviderInput(arguments: arguments, standardInput: try claudeUserMessage(content))
         case "codex":
             let images = attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }
             let extra = images.flatMap { ["--image", $0.url.path] }

@@ -22,6 +22,29 @@ extension AppStore {
         return PaneLayouts.workspaceModes(workspaceIds: [workspaceId], activeWorkspaceId: snapshot.activeWorkspaceId, legacyMode: snapshot.layout, layouts: snapshot.paneLayouts, savedModes: snapshot.paneLayoutModes)[workspaceId] ?? "tabs"
     }
 
+    /// Publish workspace, active tab, tab-group selection and remembered
+    /// selection as one value. Observers never see a new workspace paired with
+    /// the previous workspace's pane, or the old tab while focus is changing.
+    func paneSelectionSnapshot(workspaceId: String, sessionId: String?, layout: PaneLayoutNode? = nil, mode: String? = nil) -> AppSnapshot {
+        var next = snapshot
+        let ids = snapshot.sessions.filter { $0.workspaceId == workspaceId }.map(\.id)
+        let selected = sessionId.flatMap { ids.contains($0) ? $0 : nil }
+        let mode = mode ?? paneLayoutMode(workspaceId)
+        let initial = layout ?? layoutForWorkspace(workspaceId) ?? PaneLayouts.preset(sessionIds: ids, activeId: selected, mode: mode)
+        let root = PaneLayouts.normalized(root: initial, sessionIds: ids, activeId: selected)
+        let active = selected ?? root?.firstSelectedSessionId
+        next.activeWorkspaceId = workspaceId
+        next.activeSessionId = active
+        var layouts = next.paneLayouts ?? [:]
+        if let root { layouts[workspaceId] = root } else { layouts.removeValue(forKey: workspaceId) }
+        next.paneLayouts = layouts
+        var modes = next.paneLayoutModes ?? [:]; modes[workspaceId] = mode; next.paneLayoutModes = modes
+        var selections = next.paneLayoutActiveSessionIds ?? [:]
+        if let active { selections[workspaceId] = active } else { selections.removeValue(forKey: workspaceId) }
+        next.paneLayoutActiveSessionIds = selections
+        return next
+    }
+
     func setPaneLayoutMode(_ mode: String, workspaceId: String) {
         guard PaneLayouts.viewModes.contains(mode), snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { return }
         var modes = snapshot.paneLayoutModes ?? [:]; modes[workspaceId] = mode
@@ -75,9 +98,8 @@ extension AppStore {
               let target = root.node(withId: targetGroupId), target.kind == "tabs" else { return }
         if let beforeSessionId, !target.sessionIds.contains(beforeSessionId) { return }
         let moved = PaneLayouts.moving(root: root, sessionId: sessionId, targetGroupId: targetGroupId, placement: placement, beforeSessionId: beforeSessionId)
-        savePaneLayout(PaneLayouts.normalized(root: moved, sessionIds: activeSessions.map(\.id), activeId: sessionId), workspaceId: workspace.id)
-        setPaneLayoutMode("custom", workspaceId: workspace.id)
-        selectSession(sessionId)
+        let next = paneSelectionSnapshot(workspaceId: workspace.id, sessionId: sessionId, layout: moved, mode: "custom")
+        if next != snapshot { snapshot = next }
     }
 
     func resizePaneSplit(_ id: String, ratio: Double) {

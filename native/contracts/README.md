@@ -44,6 +44,23 @@ The host generates `jobId` independently of any client pane ID. Poll events
 contain that job ID; the client remaps it to its local pane ID. Disconnecting
 stops the client's jobs. Reconnecting requires an explicit user operation.
 
+## Mobile protocol (m1)
+
+A separate Tailscale-only listener (default port 43138, `MobileRemoteService`) lets the phone app in `mobile/` read the desktop's workspaces and panes and send commands. Headers on every request: `Authorization: Bearer <key>` and `x-mighty-mobile-version: 1`; no `Origin`. The key is persisted in `<data>/mobile-remote/mobile-remote.key` (owner-only) and shown as `mightyclaude://pair?v=1&host=…&port=…&key=…&name=…` (QR) in Settings.
+
+| Method | Route | Notes |
+|---|---|---|
+| GET | `/m1/info` | `{protocol, hostId, hostName, appVersion, platform}` |
+| GET | `/m1/state?since=<rev>&wait=<0..10>` | Long-poll until the state revision passes `since`; `MobileState` |
+| GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>` | Long-poll per session; `MobileSessionDetail` (last 80 entries, pending permissions as structured cards, queue, usage) |
+| POST | `/m1/sessions/{id}/submit` | `{text}` → 202 `{accepted: started\|steered\|queued}`, 409 when blocked |
+| POST | `/m1/sessions/{id}/stop` | |
+| POST | `/m1/sessions/{id}/permission` | `{requestId, runId, allow}` |
+| POST | `/m1/sessions/{id}/answers` | `{requestId, runId, answers: {question: {selectedOptions, customText?}}}` |
+| POST | `/m1/workspaces/{id}/sessions` | `{kind, provider?}` → 201 `{sessionId}` |
+
+Limits: 64 KiB body, 32 KiB text, 30 requests/s per peer, 10 s maximum wait, peers only from 100.64/10 or fd7a:115c:a1e0::/48. Wire types live in `MightyCore/Remote/MobileRemoteModels.swift`; the full shapes are in `docs/mobile-remote.md`.
+
 ## Providers
 
 Structured `AgentActivity` may include `durationMs`, measured on the execution
@@ -52,6 +69,14 @@ finite nonnegative number capped at 30 days, omitted when no matching start was
 seen. It is shown for completed, failed or stopped tools, not for active tools or
 whole-turn activity. Older clients and hosts can omit or ignore this optional
 field. Invalid optional measurements are discarded without losing the tool result.
+
+Graph nodes carry `kind: "main"`, `"agent"`, or `"task"`. A `task` node is a
+backgrounded command (`run_in_background`) shown as a child block; its state
+comes from the engine's task notification. Clients that predate `task` drop
+such nodes during normalization without affecting the rest of the run.
+Nodes may carry an optional `usage` object (`inputTokens`, `outputTokens`,
+`cacheReadTokens`, `cacheCreationTokens`; non-negative integers) summed from
+the engine's per-message `usage` on the execution host. Older clients ignore it.
 
 `kind: "claude"` remains the compatible wire name for an AI pane. `provider`
 selects `claude`, `codex`, or `gemini`; `kind: "shell"` starts a command.

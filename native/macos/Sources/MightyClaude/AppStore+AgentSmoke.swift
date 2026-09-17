@@ -21,9 +21,6 @@ extension AppStore {
             let checks = AgentMarkdownDiagnostics.checks()
             result["markdown"] = checks
             guard checks.values.allSatisfy({ $0 }) else { throw MightyError("Markdown fixture failed") }
-            let accountIsland = await AccountIslandDiagnostics.run(store: self)
-            result["accountIsland"] = accountIsland
-            guard accountIsland["passed"] as? Bool == true else { throw MightyError("Account island presentation failed") }
             let composerPresentation = await ComposerPresentationDiagnostics.run(store: self)
             result["composerPresentation"] = composerPresentation
             guard composerPresentation["passed"] as? Bool == true else { throw MightyError("Composer presentation failed") }

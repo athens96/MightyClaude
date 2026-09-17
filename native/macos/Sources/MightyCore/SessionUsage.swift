@@ -1,6 +1,32 @@
 import Foundation
 import CoreFoundation
 
+/// Display names for rate-limit windows. Polled quota rows use "session" /
+/// "weekly"; the Mods reading keeps the CLI's own kinds ("five_hour",
+/// "seven_day", "seven_day_opus", "spend_limit"). Both must read the same.
+public enum RateLimitWindowLabel {
+    public static func label(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "session", "five_hour", "5h", "primary": return "세션"
+        case "weekly", "seven_day", "7d", "secondary": return "주간"
+        case "daily": return "일간"
+        case "monthly": return "월간"
+        case "spend_limit": return "지출 한도"
+        default: break
+        }
+        let lowered = kind.lowercased()
+        if lowered.hasPrefix("seven_day_") { return "주간 " + model(String(kind.dropFirst("seven_day_".count))) }
+        if lowered.hasPrefix("five_hour_") { return "세션 " + model(String(kind.dropFirst("five_hour_".count))) }
+        if let range = lowered.range(of: #"^(\d+)m$"#, options: .regularExpression) { return lowered[range].dropLast() + "분" }
+        if let range = lowered.range(of: #"^(\d+)h$"#, options: .regularExpression) { return lowered[range].dropLast() + "시간" }
+        return kind.replacingOccurrences(of: "_", with: " ")
+    }
+    private static func model(_ value: String) -> String {
+        guard let first = value.first else { return value }
+        return first.uppercased() + value.dropFirst()
+    }
+}
+
 public struct SessionRateLimit: Codable, Sendable, Equatable {
     public var kind: String
     public var percentUsed: Double?
@@ -81,6 +107,30 @@ public enum SessionUsageSupport {
             }
         }
         return clean
+    }
+
+    /// `rate_limit_info` of a Claude stream event: `unifiedWindows` keyed by
+    /// window kind with utilization 0...1 and an epoch-second reset time.
+    static func rateLimitWindows(_ info: [String: Any]) -> [SessionRateLimit] {
+        func window(_ kind: String, _ row: [String: Any]) -> SessionRateLimit? {
+            let percent = (row["utilization"] as? NSNumber).flatMap { number -> Double? in
+                let value = number.doubleValue
+                return CFGetTypeID(number) != CFBooleanGetTypeID() && value.isFinite && value >= 0 && value <= 1 ? value * 100 : nil
+            }
+            let reset = (row["resetsAt"] as? NSNumber).flatMap { number -> String? in
+                let seconds = number.doubleValue
+                guard seconds.isFinite, seconds > 0, seconds < 4_102_444_800 else { return nil }
+                return ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: seconds))
+            }
+            guard percent != nil || reset != nil, !kind.isEmpty, kind.utf8.count <= 80 else { return nil }
+            return SessionRateLimit(kind: kind, percentUsed: percent, resetsAt: reset)
+        }
+        if let unified = info["unifiedWindows"] as? [String: Any] {
+            let windows = unified.keys.sorted().prefix(16).compactMap { key in (unified[key] as? [String: Any]).flatMap { window(key, $0) } }
+            if !windows.isEmpty { return windows }
+        }
+        if let kind = info["rateLimitType"] as? String, let row = window(kind, info) { return [row] }
+        return []
     }
 
     static func valid(_ value: Int?) -> Int? { value.flatMap { (0...maximumTokens).contains($0) ? $0 : nil } }
@@ -185,6 +235,12 @@ final class SessionUsageTracker {
         if type == "system", event["subtype"] as? String == "init" { setModel(event["model"]); publish() }
         if type == "system", event["subtype"] as? String == "compact_boundary" {
             value.contextUsedTokens = nil; authoritativeModContext = false; publish()
+        }
+        // The CLI reports the account's rate-limit windows with every turn, so
+        // quota display never needs the login Keychain.
+        if type == "rate_limit_event", let info = event["rate_limit_info"] as? [String: Any] {
+            let windows = SessionUsageSupport.rateLimitWindows(info)
+            if !windows.isEmpty { value.rateLimits = windows; value.rateLimitsUpdatedAt = mightyTimestamp(); publish() }
         }
         if type == "assistant", let message = event["message"] as? [String: Any] {
             let oldModel = value.model; setModel(message["model"])

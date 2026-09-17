@@ -191,3 +191,37 @@ struct SessionUsageTests {
         await client.shutdown(); await host.shutdown(); await providers.shutdown()
     }
 }
+
+struct RateLimitWindowLabelTests {
+    @Test func cliWindowKindsReadInKorean() {
+        #expect(RateLimitWindowLabel.label("five_hour") == "세션")
+        #expect(RateLimitWindowLabel.label("seven_day") == "주간")
+        #expect(RateLimitWindowLabel.label("session") == "세션")
+        #expect(RateLimitWindowLabel.label("weekly") == "주간")
+        #expect(RateLimitWindowLabel.label("seven_day_opus") == "주간 Opus")
+        #expect(RateLimitWindowLabel.label("seven_day_sonnet") == "주간 Sonnet")
+        #expect(RateLimitWindowLabel.label("spend_limit") == "지출 한도")
+        #expect(RateLimitWindowLabel.label("300m") == "300분")
+        #expect(RateLimitWindowLabel.label("some_other") == "some other")
+    }
+}
+
+struct RateLimitEventTests {
+    @Test func claudeRateLimitEventFillsQuotaWindowsWithoutKeychain() throws {
+        var samples: [SessionUsage] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, usage: { samples.append($0) })
+        let event: [String: Any] = ["type": "rate_limit_event", "session_id": "claude-one", "rate_limit_info": [
+            "status": "allowed_warning", "rateLimitType": "seven_day", "utilization": 0.86, "resetsAt": 1789668000,
+            "unifiedWindows": ["five_hour": ["utilization": 0.22, "resetsAt": 1789641600], "seven_day": ["utilization": 0.86, "resetsAt": 1789668000]]]]
+        var data = try JSONSerialization.data(withJSONObject: event); data.append(10); parser.push(data)
+        let limits = try #require(samples.last?.rateLimits)
+        #expect(limits.map(\.kind) == ["five_hour", "seven_day"])
+        #expect(limits.map { $0.percentUsed.map { Int($0.rounded()) } } == [22, 86])
+        #expect(limits[0].resetsAt?.hasPrefix("2026-09-") == true)
+        #expect(samples.last?.rateLimitsUpdatedAt != nil)
+        // Malformed utilization is dropped; a lone rateLimitType still counts.
+        let fallback = SessionUsageSupport.rateLimitWindows(["rateLimitType": "five_hour", "utilization": 0.5, "unifiedWindows": ["x": ["utilization": 7]]])
+        #expect(fallback.map(\.kind) == ["five_hour"]); #expect(fallback[0].percentUsed == 50)
+        #expect(SessionUsageSupport.rateLimitWindows(["unifiedWindows": ["five_hour": ["utilization": true]]]).isEmpty)
+    }
+}

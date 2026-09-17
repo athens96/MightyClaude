@@ -50,5 +50,10 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict></plist>
 PLIST
-codesign --force --deep --sign - "$APP_PATH"
+# Ad-hoc signatures differ per build, so the Keychain treats every rebuild as a
+# new app and asks again for the remote connection key. A stable local
+# code-signing certificate (Keychain Access → Certificate Assistant, type
+# "Code Signing") makes "Always Allow" stick across rebuilds.
+CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:--}"
+codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
 printf '%s\n' "$APP_PATH"

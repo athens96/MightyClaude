@@ -19,7 +19,8 @@ public struct AccountUsageSnapshot: Codable, Equatable, Sendable {
     public var plan: String?
     public var windows: [AccountUsageWindow]
     public var fetchedAt: String?
-    /// available, unavailable, error, stale, or cancelled.
+    /// available, unavailable, error, stale, cancelled, or permission (the
+    /// login keychain has not yet allowed this app to read the credential).
     public var status: String
     public var detail: String
     /// Transport scheduling hint; excluded from presentation serialization.

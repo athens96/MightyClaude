@@ -49,6 +49,9 @@ public final class HTTPServer: @unchecked Sendable {
         self.address = address; self.port = port; self.handler = handler; self.requestBodyLimit = requestBodyLimit
     }
 
+    /// True while the listener is open; long-poll callers check it first.
+    public var isListening: Bool { queue.sync { listener != nil && !closing } }
+
     public func start() async throws -> UInt16 {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
@@ -154,6 +157,11 @@ public final class HTTPServer: @unchecked Sendable {
         if client.data.count < expected { return false }
         guard client.data.count == expected else { reply(client, .json(400, ["error": "하나의 연결에는 하나의 요청만 허용합니다."])); return true }
         client.processing = true
+        // The accept timer covered slow request delivery; a handler may now
+        // long-poll, so give it its own generous deadline instead.
+        client.timer?.cancel()
+        let processing = DispatchWorkItem { [weak self, weak client] in if let client { self?.remove(client) } }
+        client.timer = processing; queue.asyncAfter(deadline: .now() + 60, execute: processing)
         let request = HTTPRequest(method: String(requestLine[0]), target: String(requestLine[1]), headers: headers, body: Data(client.data[separator.upperBound..<expected]), remoteAddress: peer)
         client.data.removeAll(keepingCapacity: false)
         Task { [self, client] in

@@ -6,6 +6,7 @@ struct WorkspaceView: View {
     @EnvironmentObject private var store: AppStore
     @FocusState private var searchFocused: Bool
     @StateObject private var gitState = WorkspaceGitState()
+    @StateObject private var accountUsage = AccountUsageStatusController()
 
     var body: some View {
         NavigationSplitView {
@@ -23,6 +24,9 @@ struct WorkspaceView: View {
                 statusBar
             }
             .background(Palette.canvas)
+            // The hidden title bar still reserves its height as a top safe area. The
+            // traffic lights sit over the sidebar, so the detail column can use that band.
+            .ignoresSafeArea(.container, edges: .top)
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
@@ -30,6 +34,7 @@ struct WorkspaceView: View {
         .task(id: store.activeWorkspace.map { $0.id + "|" + $0.path + "|" + String($0.remote != nil) }) {
             await gitState.observe(store.activeWorkspace)
         }
+        .task { accountUsage.configure(store: store) }
         .sheet(isPresented: $store.showSettings, onDismiss: { store.settingsShowsRemote = false }) { AppSettingsView().environmentObject(store) }
         .sheet(isPresented: $store.showRemote) { RemoteConnectionView().environmentObject(store) }
         .sheet(item: $store.renameTarget) { RenameSheet(target: $0).environmentObject(store) }
@@ -118,9 +123,11 @@ struct WorkspaceView: View {
 
     private func workspaceRow(_ workspace: Workspace) -> some View {
         let selected = workspace.id == store.snapshot.activeWorkspaceId
+        let expanded = store.isWorkspaceExpanded(workspace.id)
         let sessions = store.snapshot.sessions.filter { $0.workspaceId == workspace.id }
         let runningAgents = sessions.filter { $0.kind != "shell" && $0.status == "running" }.count
         return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 0) {
             Button { store.selectWorkspace(workspace.id) } label: {
                 HStack(spacing: 9) {
                     Image(systemName: workspace.remote == nil ? "folder" : "desktopcomputer").font(.system(size: 14)).foregroundStyle(selected ? Palette.accent : .secondary)
@@ -136,12 +143,22 @@ struct WorkspaceView: View {
                             .accessibilityLabel("\(runningAgents)개 에이전트 실행 중")
                             .accessibilityIdentifier("workspace-running-\(workspace.id)")
                     }
-                    if selected { Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary) }
                 }
-                .padding(.horizontal, 11).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 11).padding(.trailing, 4).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // The disclosure is separate from selection: opening or closing a
+            // list never changes the active workspace, and selecting never closes others.
+            Button { store.toggleWorkspaceExpanded(workspace.id) } label: {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).padding(.trailing, 6)
+            .help(expanded ? "실행 창 목록 접기" : "실행 창 목록 펼치기")
+            .accessibilityLabel(expanded ? "\(workspace.name) 실행 창 접기" : "\(workspace.name) 실행 창 펼치기")
+            .accessibilityIdentifier("workspace-expand-\(workspace.id)")
+            }
             .background(selected ? Palette.accent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
             .help(workspace.path)
             .contextMenu {
@@ -151,7 +168,7 @@ struct WorkspaceView: View {
                     Button("Finder에서 보기") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
                 }
             }
-            if selected {
+            if expanded {
                 ForEach(sessions) { session in
                     let agentRunning = session.kind != "shell" && session.status == "running"
                     let permissionPending = !(store.toolPermissions[session.id] ?? []).isEmpty
@@ -160,7 +177,10 @@ struct WorkspaceView: View {
                             if permissionPending { Image(systemName: "hand.raised.fill").font(.system(size: 10)).foregroundStyle(.orange).frame(width: 12) }
                             else if agentRunning { AgentRunningIndicator().accessibilityIdentifier("sidebar-running-\(session.id)") }
                             else { StatusDot(status: session.status).frame(width: 12) }
-                            Image(systemName: session.kind == "shell" ? "terminal" : Palette.symbol(session.provider)).font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 12)
+                            Group {
+                                if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 10)) }
+                                else { ProviderIcon(provider: session.provider, size: 10) }
+                            }.foregroundStyle(.secondary).frame(width: 12)
                             Text(session.title).font(.system(size: 11)).lineLimit(1)
                             Spacer(minLength: 0)
                             if permissionPending { Text("승인 대기").font(.system(size: 9, weight: .medium)).foregroundStyle(.orange) }
@@ -202,18 +222,8 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 9) {
-                Button { store.togglePaneFocus() } label: {
-                    Image(systemName: store.activePaneLayoutMode == "focus" ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 12)).frame(width: 27, height: 27)
-                        .background(store.activePaneLayoutMode == "focus" ? Palette.accent.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
-                }
-                .buttonStyle(.plain).help(store.activePaneLayoutMode == "focus" ? "이전 배치로 보기" : "선택한 그룹에 집중 · 다른 워크스페이스 배치는 유지")
-                .accessibilityLabel(store.activePaneLayoutMode == "focus" ? "이전 배치로 보기" : "집중 보기")
-            }
-            .disabled(store.activeSessions.isEmpty || store.hasModal)
             workspaceAddMenu(workspace)
-        }.padding(.horizontal, 24).padding(.vertical, 10)
+        }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 10)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-header-\(workspace.id)")
     }
@@ -222,7 +232,10 @@ struct WorkspaceView: View {
         Menu {
             ForEach(ProviderOptions.ids, id: \.self) { provider in
                 Button { addSession(in: workspace, kind: "claude", provider: provider) } label: {
-                    Label("새 \(ProviderOptions.label(provider)) 실행 창", systemImage: Palette.symbol(provider))
+                    Label { Text("새 \(ProviderOptions.label(provider)) 실행 창") } icon: {
+                        if let image = ProviderIconImage.image(provider: provider, pointSize: 12, color: .labelColor) { Image(nsImage: image) }
+                        else { Image(systemName: Palette.symbol(provider)) }
+                    }
                 }
             }
             Divider()
@@ -290,11 +303,11 @@ struct WorkspaceView: View {
                 Text("이 Mac에서 실행")
             }
             Spacer()
-            AccountIslandButton(controller: store.sessionIsland)
             Text("\(store.activeSessions.count)개 실행 창")
             Text("·").padding(.horizontal, 3)
             Text("\(store.snapshot.sessions.filter { $0.status == "running" }.count)개 실행 중")
             Divider().frame(height: 12).padding(.horizontal, 4)
+            StatusBarUsageView(controller: accountUsage)
             AgentStatusControls(companion: store.companion)
         }
         .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 8)

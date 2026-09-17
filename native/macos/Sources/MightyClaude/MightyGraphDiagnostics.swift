@@ -51,6 +51,21 @@ enum MightyGraphDiagnostics {
             guard expanded.size.height > layout.size.height else { throw MightyError("카드 확장이 뒤쪽 내용을 밀지 않았습니다.") }
             report["expandedCardsNeverOverlap"] = true
 
+            let resizedIDs = [MightyGraphLayout.nodeID(first, suffix: "request"), research, verify, nested,
+                              MightyGraphLayout.nodeID(first, suffix: "result"), "pending-input"]
+            let sizes = Dictionary(uniqueKeysWithValues: resizedIDs.enumerated().map { index, id in
+                (id, MightyGraphBlockSize(width: index.isMultiple(of: 2) ? 1100 : 320,
+                                          height: index.isMultiple(of: 2) ? 700 : 160))
+            })
+            let resized = MightyGraphLayout.make(runs: fixture.runs, draft: "다음 요청", running: true, expanded: [], blockSizes: sizes)
+            try verifyGeometry(resized)
+            for node in resized.nodes {
+                if let size = sizes[node.id] {
+                    guard node.frame.size == CGSize(width: size.width, height: size.height) else { throw MightyError("블록별 크기가 레이아웃에 적용되지 않았습니다.") }
+                }
+            }
+            report["customSizesReflowEveryBlockAndConnector"] = true
+
             window.contentView = NSHostingView(rootView: GraphFixtureView(fixture: fixture))
             window.makeKeyAndOrderFront(nil)
             let mainID = MightyGraphLayout.nodeID(first, suffix: "request")
@@ -152,6 +167,11 @@ enum MightyGraphDiagnostics {
                   nativeInput.string == "한글 초안 · 그래프 전환",
                   label(node(window, identifier: "mighty-draft-\(session.id)")).contains("한글 초안") else { throw MightyError("마이티 전환이 입력창이나 다음 요청 초안을 바꿨습니다.") }
             report["modeScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-mode-pane.png").path
+            let savedSize = MightyGraphBlockSize(width: 680, height: 230)
+            store.setGraphBlockSize(session.id, nodeID: "pending-input", size: savedSize)
+            try await store.waitForSmoke(timeout: 3) {
+                window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
+            }
             guard let normal = node(window, identifier: "agent-mode-default-\(session.id)") else { throw MightyError("기본 모드 선택 버튼이 없습니다.") }
             press(normal)
             try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-graph-\(session.id)") == nil }
@@ -160,6 +180,17 @@ enum MightyGraphDiagnostics {
                   store.snapshot.sessions.first(where: { $0.id == session.id })?.logs == session.logs,
                   store.snapshot.sessions.first(where: { $0.id == session.id })?.graphRuns == session.graphRuns else { throw MightyError("기본 모드 복귀가 대화·그래프 기록 또는 초안을 지웠습니다.") }
             report["modeTogglePreservesNativeComposerAndHistory"] = true
+            if let mighty = node(window, identifier: "agent-mode-mighty-\(session.id)") { press(mighty) }
+            try await store.waitForSmoke(timeout: 3) {
+                window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 680, height: 230)
+            }
+            guard store.snapshot.sessions.first(where: { $0.id == session.id })?.graphBlockSizes?["pending-input"] == savedSize else { throw MightyError("모드를 전환하면서 저장한 크기가 사라졌습니다.") }
+            report["sessionSizesSurviveModeRemount"] = true
+            store.setGraphBlockSize(session.id, nodeID: "pending-input", size: nil)
+            try await store.waitForSmoke(timeout: 3) {
+                window.contentView.flatMap { camera(in: $0) }?.layoutFrames.first { $0.0 == "pending-input" }?.1.size == CGSize(width: 500, height: 140)
+            }
+            report["resetRestoresDefaultSize"] = true
             report["pendingDraftMirrorsComposer"] = true
             let initial = MightyGraphLayout.make(runs: [], draft: "", running: false, expanded: [])
             guard initial.nodes.count == 1, initial.nodes.first?.content == .draft else { throw MightyError("빈 대화의 첫 입력 블록이 없습니다.") }

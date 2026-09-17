@@ -6,12 +6,13 @@ import SwiftUI
 /// subtree bounds, so expanding one card moves every following row with it.
 struct MightyGraphLayout {
     enum Content: Hashable {
-        case request(Int), agent(Int, Int), result(Int), draft
+        case request(Int), agent(Int, Int), result(Int), resultFiles(Int), draft
     }
     struct Node: Identifiable {
         let id: String
         let content: Content
         var frame: CGRect
+        var isResultFiles: Bool { if case .resultFiles = content { return true }; return false }
     }
     struct Edge: Identifiable {
         let source: String
@@ -24,6 +25,13 @@ struct MightyGraphLayout {
     var size: CGSize = .zero
     static let siblingGap: CGFloat = 32
     static let rowGap: CGFloat = 52
+
+    /// Used by the initial SwiftUI render as well as native camera admission.
+    /// Computing this before mounting avoids painting the origin then jumping.
+    static func cameraOffset(for frame: CGRect, viewport: CGSize, zoom: CGFloat, alignTop: Bool) -> CGPoint {
+        CGPoint(x: (viewport.width - frame.width * zoom) / 2 - frame.minX * zoom,
+                y: (alignTop ? 16 : max(16, (viewport.height - frame.height * zoom) / 2)) - frame.minY * zoom)
+    }
 
     func route(_ edge: Edge) -> [CGPoint] {
         guard let source = nodes.first(where: { $0.id == edge.source })?.frame,
@@ -42,10 +50,14 @@ struct MightyGraphLayout {
         terminal(run.status) && run.agents.allSatisfy { terminal($0.status) }
     }
     static func nodeID(_ run: MightyGraphRun, suffix: String) -> String {
-        "\(run.id.utf8.count):\(run.id):\(suffix)"
+        MightyGraphBlockSize.nodeID(runID: run.id, suffix: suffix)
     }
 
-    static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>) -> Self {
+    static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil) -> Self {
+        func size(_ id: String, width: CGFloat, height: CGFloat) -> CGSize {
+            guard let custom = blockSizes[id]?.normalized else { return CGSize(width: width, height: height) }
+            return CGSize(width: custom.width, height: custom.height)
+        }
         struct Tree {
             var nodes: [Node]
             var edges: [Edge]
@@ -60,19 +72,23 @@ struct MightyGraphLayout {
         var trees: [Tree] = []
         for (runIndex, run) in runs.enumerated() {
             let mainID = nodeID(run, suffix: "request")
-            let mainHeight: CGFloat = expanded.contains(mainID) ? 540 : 280
+            let mainSize = size(mainID, width: 500, height: expanded.contains(mainID) ? 540 : 280)
+            let mainHeight = mainSize.height
+            let resultID = nodeID(run, suffix: "result")
+            let resultSize = size(resultID, width: 500, height: expanded.contains(resultID) ? 440 : 200)
             var visited = Set<Int>()
             let indexes = Dictionary(run.agents.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
             func branch(_ index: Int, depth: Int = 0) -> Tree? {
                 guard depth < 64, visited.insert(index).inserted else { return nil }
                 let agent = run.agents[index]
                 let id = nodeID(run, suffix: "agent:\(agent.id)")
-                let height: CGFloat = expanded.contains(id) ? 480 : 240
+                let cardSize = size(id, width: 360, height: expanded.contains(id) ? 480 : 240)
+                let height = cardSize.height
                 let children = run.agents.indices.filter { $0 != index && run.agents[$0].parentID == agent.id }
                     .compactMap { branch($0, depth: depth + 1) }
                 let childrenWidth = children.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, children.count - 1)) * siblingGap
-                let width = max(360, childrenWidth)
-                var result = Tree(nodes: [Node(id: id, content: .agent(runIndex, index), frame: CGRect(x: (width - 360) / 2, y: 0, width: 360, height: height))], edges: [], width: width, height: height, top: id, leaves: [id])
+                let width = max(cardSize.width, childrenWidth)
+                var result = Tree(nodes: [Node(id: id, content: .agent(runIndex, index), frame: CGRect(x: (width - cardSize.width) / 2, y: 0, width: cardSize.width, height: height))], edges: [], width: width, height: height, top: id, leaves: [id])
                 if !children.isEmpty {
                     result.leaves = []
                     var x = (width - childrenWidth) / 2
@@ -99,8 +115,8 @@ struct MightyGraphLayout {
                 if let tree = branch(index) { branches.append(tree) }
             }
             let branchWidth = branches.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, branches.count - 1)) * siblingGap
-            let width = max(500, branchWidth)
-            var tree = Tree(nodes: [Node(id: mainID, content: .request(runIndex), frame: CGRect(x: (width - 500) / 2, y: 0, width: 500, height: mainHeight))], edges: [], width: width, height: mainHeight, top: mainID, leaves: [mainID])
+            let width = max(mainSize.width, branchWidth, finished(run) ? resultSize.width : 0)
+            var tree = Tree(nodes: [Node(id: mainID, content: .request(runIndex), frame: CGRect(x: (width - mainSize.width) / 2, y: 0, width: mainSize.width, height: mainHeight))], edges: [], width: width, height: mainHeight, top: mainID, leaves: [mainID])
             if !branches.isEmpty {
                 tree.leaves = []
                 var x = (width - branchWidth) / 2
@@ -114,9 +130,9 @@ struct MightyGraphLayout {
                 }
             }
             if finished(run) {
-                let id = nodeID(run, suffix: "result")
-                let height: CGFloat = expanded.contains(id) ? 440 : 200
-                tree.nodes.append(Node(id: id, content: .result(runIndex), frame: CGRect(x: (width - 500) / 2, y: tree.height + rowGap, width: 500, height: height)))
+                let id = resultID
+                let height = resultSize.height
+                tree.nodes.append(Node(id: id, content: .result(runIndex), frame: CGRect(x: (width - resultSize.width) / 2, y: tree.height + rowGap, width: resultSize.width, height: height)))
                 tree.edges += tree.leaves.map { Edge(source: $0, target: id, joins: true) }
                 tree.leaves = [id]
                 tree.height += rowGap + height
@@ -125,7 +141,8 @@ struct MightyGraphLayout {
         }
         let hasPending = (!running && runs.last.map(finished) != false) || !draft.isEmpty
         if hasPending {
-            trees.append(Tree(nodes: [Node(id: "pending-input", content: .draft, frame: CGRect(x: 0, y: 0, width: 500, height: 140))], edges: [], width: 500, height: 140, top: "pending-input", leaves: ["pending-input"]))
+            let pendingSize = size("pending-input", width: 500, height: 140)
+            trees.append(Tree(nodes: [Node(id: "pending-input", content: .draft, frame: CGRect(origin: .zero, size: pendingSize))], edges: [], width: pendingSize.width, height: pendingSize.height, top: "pending-input", leaves: ["pending-input"]))
         }
         let width = max(500, trees.map(\.width).max() ?? 500)
         var result = Self()
@@ -139,6 +156,17 @@ struct MightyGraphLayout {
             y += tree.height + rowGap
         }
         result.size = CGSize(width: width + 48, height: max(188, y - rowGap + 24))
+        if let resultFilesRunID, let runIndex = runs.firstIndex(where: { $0.id == resultFilesRunID }),
+           runs[runIndex].status == "completed", finished(runs[runIndex]),
+           let resultNode = result.nodes.first(where: { $0.content == .result(runIndex) }) {
+            let panelID = nodeID(runs[runIndex], suffix: "result-files")
+            let panelSize = CGSize(width: 320, height: resultNode.frame.height)
+            let frame = CGRect(x: resultNode.frame.maxX + 16, y: resultNode.frame.minY, width: panelSize.width, height: panelSize.height)
+            // This is an attachment to the result, never a flow edge or a new
+            // centerline. Only the trailing canvas extent grows horizontally.
+            result.nodes.append(Node(id: panelID, content: .resultFiles(runIndex), frame: frame))
+            result.size.width = max(result.size.width, frame.maxX + 24)
+        }
         return result
     }
 }
@@ -149,22 +177,38 @@ struct MightyGraphView: View {
     let runs: [MightyGraphRun]
     let draft: String
     let running: Bool
+    var blockSizes: [String: MightyGraphBlockSize] = [:]
+    var onSaveBlockSize: (String, MightyGraphBlockSize?) -> Void = { _, _ in }
+    /// Local project folder for resolving file references; nil disables links.
+    var workspaceRoot: URL? = nil
     let onFocus: () -> Void
+    @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
+    @ViewState private var reference: MightyGraphReference?
+    @ViewState private var referenceOnLeft = false
+    // Remembered across sessions and panes. Height 0 means "as tall as the graph".
+    @AppStorage("mighty.referenceBubble.width") private var bubbleWidth: Double = MightyGraphReferenceBubble.defaultWidth
+    @AppStorage("mighty.referenceBubble.height") private var bubbleHeight: Double = 0
     @ViewState private var expanded = Set<String>()
     @ViewState private var zoom: CGFloat = 1
     @ViewState private var scrollTarget: MightyGraphScrollTarget?
     @ViewState private var selectedNodeID: String?
+    @StateObject private var resultFiles = MightyGraphResultFilesModel()
 
-    private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded) }
+    private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID) }
 
     var body: some View {
         let graph = layout
+        let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer }.count }
+        let taskCount = runs.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
+        let steerCount = runs.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
+        let tokens = runs.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Label("마이티", systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 12, weight: .semibold))
-                Text("요청 \(runs.count) · 하위 에이전트 \(runs.reduce(0) { $0 + $1.agents.count })")
+                Text("요청 \(runs.count) · 하위 에이전트 \(agentCount)" + (taskCount > 0 ? " · 백그라운드 작업 \(taskCount)" : "") + (steerCount > 0 ? " · 중간 요청 \(steerCount)" : "") + (tokens.isEmpty ? "" : " · " + tokens.summary))
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
                 Spacer(minLength: 8)
                 Button { zoom = max(0.5, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
                     .disabled(zoom <= 0.5).help("축소").accessibilityIdentifier("mighty-zoom-out-\(sessionID)")
@@ -175,11 +219,16 @@ struct MightyGraphView: View {
             }
             .buttonStyle(.plain).padding(.horizontal, 12).padding(.vertical, 10)
             Divider()
-            MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID, scrollTarget: scrollTarget, selection: $selectedNodeID, edges: graphEdges(graph), card: card)
-                .onAppear {
-                    guard scrollTarget == nil else { return }
-                    scrollTarget = MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: initialTarget(graph), alignTop: false)
-                }
+            MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
+                              scrollTarget: scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: initialTarget(graph), alignTop: false), selection: $selectedNodeID, edges: graphEdges(graph),
+                              overlay: reference.map { AnyView(referenceOverlay($0)) } ?? AnyView(EmptyView()),
+                              overlayLayout: reference == nil ? nil : MightyOverlayLayout(onLeft: referenceOnLeft, storedWidth: bubbleWidth, storedHeight: bubbleHeight),
+                              onOverlayResize: { size, _ in
+                                  // .zero is the corner's double click: back to the default size.
+                                  if size == .zero { bubbleWidth = MightyGraphReferenceBubble.defaultWidth; bubbleHeight = 0 }
+                                  else { bubbleWidth = Double(size.width); bubbleHeight = Double(size.height) }
+                              },
+                              onResize: resize, onResetSize: resetSize, card: card)
                 .onChange(of: runs.last?.id) { _, _ in
                     guard let last = runs.last else { return }
                     scrollTarget = MightyGraphScrollTarget(token: "run:" + last.id, nodeID: MightyGraphLayout.nodeID(last, suffix: "request"), alignTop: true)
@@ -187,6 +236,35 @@ struct MightyGraphView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-graph-\(sessionID)")
+        .task(id: MightyGraphResultFilesModel.Request(sessionID: sessionID, runs: runs, root: workspaceRoot)) {
+            await resultFiles.load(.init(sessionID: sessionID, runs: runs, root: workspaceRoot))
+        }
+    }
+
+    /// Rendered inside the canvas's native overlay view, which is sized to
+    /// `MightyGraphReferenceBubble.frame` from the canvas's own bounds.
+    private func referenceOverlay(_ reference: MightyGraphReference) -> some View {
+        MightyGraphReferenceBubble(sessionID: sessionID, reference: reference, onLeft: referenceOnLeft,
+                                   onFlip: { referenceOnLeft.toggle() }, onClose: { self.reference = nil })
+    }
+
+    /// A clicked path resolves inside the workspace only. Unresolved paths
+    /// still open the bubble so the user sees why nothing was shown.
+    private func openReference(_ path: String, line: Int?) {
+        onFocus()
+        reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: workspaceRoot))
+    }
+
+    private func resize(_ id: String, _ size: CGSize, _ finished: Bool) {
+        guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
+        resized[id] = value
+        if finished { onSaveBlockSize(id, value) }
+    }
+
+    private func resetSize(_ id: String) {
+        resized.removeValue(forKey: id)
+        expanded.remove(id)
+        onSaveBlockSize(id, nil)
     }
 
     private func initialTarget(_ graph: MightyGraphLayout) -> String {
@@ -231,22 +309,28 @@ struct MightyGraphView: View {
         case .request(let index):
             let run = runs[index]
             transcriptCard(node, title: "요청 \(index + 1) · \(ProviderOptions.label(provider))", icon: "arrow.up.message", status: run.status,
-                           input: run.input, entries: run.rootEntries, tint: Palette.accent)
+                           input: run.input, entries: run.rootEntries, tint: Palette.accent, usage: run.usage)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]
-            transcriptCard(node, title: agent.title.isEmpty ? "하위 에이전트" : agent.title, icon: "person.crop.square.filled.and.at.rectangle", status: agent.status,
-                           input: agent.input, entries: agent.entries, tint: .purple)
+            transcriptCard(node, title: agent.isSteer ? "중간 요청" : agent.title.isEmpty ? (agent.isTask ? "백그라운드 작업" : "하위 에이전트") : agent.title,
+                           icon: agent.isSteer ? "text.bubble" : agent.isTask ? "terminal" : "person.crop.square.filled.and.at.rectangle", status: agent.status,
+                           input: agent.input, entries: agent.entries, tint: agent.isSteer ? .orange : agent.isTask ? .teal : .purple, usage: agent.usage)
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)
             let stopped = ["stopped", "cancelled", "interrupted"].contains(run.status)
             let status = failed ? "error" : stopped ? "stopped" : "completed"
             transcriptCard(node, title: failed ? "요청 실패" : stopped ? "요청 중단" : "최종 결과", icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
-                           status: status, input: "", entries: run.resultEntries, tint: failed ? .red : stopped ? .orange : .green)
+                           status: status, input: "", entries: run.resultEntries, tint: failed ? .red : stopped ? .orange : .green,
+                           usage: run.totalUsage, usageLabel: "요청 전체 합계", resultFilesRunID: run.status == "completed" ? run.id : nil)
+        case .resultFiles(let index):
+            MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
+                                       onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
         }
     }
 
-    private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color) -> some View {
+    private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
+                                usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
@@ -256,9 +340,30 @@ struct MightyGraphView: View {
                 if selectedNodeID == node.id { blockScrollLabel(node.id) }
                 MightyGraphActivityIndicator(status: status, tint: tint)
                 Text(statusLabel(status)).font(.system(size: 10)).foregroundStyle(.secondary)
+                if let usage, !usage.isEmpty {
+                    Text(usage.summary).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.subtle, in: Capsule())
+                        .help(usageLabel + " · " + usage.detail)
+                        .accessibilityLabel(usageLabel + " " + usage.detail)
+                        .accessibilityIdentifier("mighty-tokens-\(node.id)")
+                }
+                if let resultFilesRunID, !resultFiles.files(for: resultFilesRunID).isEmpty {
+                    Button { resultFiles.toggle(resultFilesRunID) } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "doc.on.doc")
+                            Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.system(size: 10)).monospacedDigit()
+                        }
+                        .foregroundStyle(resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Color.secondary)
+                    }
+                    .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? "파일 목록 닫기" : "결과에 나온 파일 보기")
+                    .accessibilityLabel("결과 파일 \(resultFiles.files(for: resultFilesRunID).count)개 · 목록 토글")
+                    .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
+                }
                 Button {
+                    resized.removeValue(forKey: node.id)
+                    onSaveBlockSize(node.id, nil)
                     if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
-                } label: { Image(systemName: expanded.contains(node.id) ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }
+                } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
                     .buttonStyle(.plain).help(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
                     .accessibilityLabel(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
                     .accessibilityIdentifier("mighty-expand-\(node.id)")
@@ -277,7 +382,8 @@ struct MightyGraphView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(15)
             } else {
                 AgentTranscriptView(sessionId: "graph-\(sessionID)-\(node.id)", provider: provider,
-                    running: !MightyGraphLayout.terminal(status), entries: content, onFocus: onFocus)
+                    running: !MightyGraphLayout.terminal(status), entries: content, onFocus: onFocus,
+                    onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) })
             }
         }
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
@@ -314,14 +420,23 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     let scrollTarget: MightyGraphScrollTarget?
     @Binding var selection: String?
     let edges: Edges
+    var overlay: AnyView = AnyView(EmptyView())
+    var overlayLayout: MightyOverlayLayout? = nil
+    var onOverlayResize: (CGSize, Bool) -> Void = { _, _ in }
+    let onResize: (String, CGSize, Bool) -> Void
+    let onResetSize: (String) -> Void
     let card: (MightyGraphLayout.Node) -> Card
-    @ViewState private var cameraOffset: CGPoint = .zero
+    @ViewState private var cameraOffset: CGPoint?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { viewport in
-            let visible = CGRect(x: floor(-cameraOffset.x / zoom / 64) * 64 - 192,
-                                 y: floor(-cameraOffset.y / zoom / 64) * 64 - 192,
+            let targetFrame = graph.nodes.first(where: { $0.id == scrollTarget?.nodeID })?.frame
+            let initialOffset = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: scrollTarget?.alignTop ?? false) } ?? .zero
+            let displayedOffset = cameraOffset ?? initialOffset
+            let panBinding = Binding<CGPoint>(get: { cameraOffset ?? initialOffset }, set: { cameraOffset = $0 })
+            let visible = CGRect(x: floor(-displayedOffset.x / zoom / 64) * 64 - 192,
+                                 y: floor(-displayedOffset.y / zoom / 64) * 64 - 192,
                                  width: viewport.size.width / zoom + 448,
                                  height: viewport.size.height / zoom + 448)
             let diagram = ZStack(alignment: .topLeading) {
@@ -340,13 +455,29 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                             } else { Color.clear }
                         }
                         .frame(width: node.frame.width, height: node.frame.height)
+                        .overlay(alignment: .bottomTrailing) {
+                            if !node.isResultFiles {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(selection == node.id ? Palette.accent : .secondary)
+                                    .frame(width: 22, height: 22)
+                                    .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
+                                    .padding(2)
+                                    .help("드래그하여 블록 크기 조절 · 우클릭하여 크기 초기화")
+                                    .accessibilityLabel("블록 크기 조절")
+                                    .accessibilityIdentifier("mighty-resize-" + node.id)
+                                    .contextMenu {
+                                        Button("기본 크기로 되돌리기") { onResetSize(node.id) }
+                                    }
+                            }
+                        }
                         .id(node.id)
                         .position(x: node.frame.midX, y: node.frame.midY)
                     }
                 }
                 .frame(width: graph.size.width, height: graph.size.height, alignment: .topLeading)
                 .scaleEffect(zoom, anchor: .topLeading)
-                .offset(x: cameraOffset.x, y: cameraOffset.y)
+                .offset(x: displayedOffset.x, y: displayedOffset.y)
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .clipped()
@@ -354,16 +485,18 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
 
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
-                targetFrame: graph.nodes.first(where: { $0.id == scrollTarget?.nodeID })?.frame,
-                alignTop: scrollTarget?.alignTop ?? false, selection: $selection, panOffset: $cameraOffset,
+                targetFrame: targetFrame,
+                alignTop: scrollTarget?.alignTop ?? false, selection: $selection, panOffset: panBinding, onResize: onResize,
+                overlay: AnyView(overlay.environment(\.colorScheme, colorScheme)), overlayLayout: overlayLayout, onOverlayResize: onOverlayResize,
                 content: diagram.environment(\.colorScheme, colorScheme))
                 .frame(width: viewport.size.width, height: viewport.size.height)
             .accessibilityIdentifier("mighty-graph-canvas-\(sessionID)")
             .onChange(of: zoom) { old, new in
                 guard old > 0 else { return }
                 let center = CGPoint(x: viewport.size.width / 2, y: viewport.size.height / 2)
-                cameraOffset = CGPoint(x: center.x - (center.x - cameraOffset.x) * new / old,
-                                       y: center.y - (center.y - cameraOffset.y) * new / old)
+                let previous = cameraOffset ?? targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: scrollTarget?.alignTop ?? false) } ?? .zero
+                cameraOffset = CGPoint(x: center.x - (center.x - previous.x) * new / old,
+                                       y: center.y - (center.y - previous.y) * new / old)
             }
         }
     }
@@ -396,6 +529,7 @@ private struct MightyGraphInputHeight: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
+
 
 
 private struct MightyGraphScrollTarget {

@@ -5,28 +5,32 @@ extension AppStore {
     func openPluginBrowser(sessionID: String) {
         guard !hasModal,
               let session = snapshot.sessions.first(where: { $0.id == sessionID }),
-              session.kind == "claude", session.provider == "claude",
+              session.kind == "claude", ["claude", "codex"].contains(session.provider),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
-        pluginBrowser = ClaudePluginBrowserModel(workspace: workspace, load: { [weak self] in
+        let provider = session.provider
+        pluginBrowser = ClaudePluginBrowserModel(workspace: workspace, provider: provider, load: { [weak self] in
             guard let self else { return ClaudePluginSnapshot(status: "cancelled", detail: "플러그인 창이 닫혔습니다.") }
             if let reason = self.pluginWorkspaceBlockedReason(workspace) {
                 return ClaudePluginSnapshot(status: workspace.remote == nil ? "failed" : "remote", detail: reason)
             }
             if self.isUpdatingCLIs { return ClaudePluginSnapshot(status: "busy", detail: "CLI 업데이트가 끝난 후 다시 확인하세요.") }
+            if provider == "codex" { return await self.codexPlugins.snapshot(workspace: workspace) }
             return await self.claudePlugins.snapshot(workspace: workspace)
         }, install: { [weak self] pluginID, scope in
             guard let self else { return ClaudePluginOperationResult(status: "cancelled", detail: "앱이 종료 중입니다.") }
-            return await self.performPluginMutation(workspace: workspace) {
-                await self.claudePlugins.install(pluginID: pluginID, scope: scope, workspace: workspace)
+            return await self.performPluginMutation(workspace: workspace, provider: provider) {
+                if provider == "codex" { return await self.codexPlugins.install(pluginID: pluginID, scope: scope, workspace: workspace) }
+                return await self.claudePlugins.install(pluginID: pluginID, scope: scope, workspace: workspace)
             }
         }, refresh: { [weak self] name in
             guard let self else { return ClaudePluginOperationResult(status: "cancelled", detail: "앱이 종료 중입니다.") }
-            return await self.performPluginMutation(workspace: workspace) {
-                await self.claudePlugins.refreshMarketplace(name: name, workspace: workspace)
+            return await self.performPluginMutation(workspace: workspace, provider: provider) {
+                if provider == "codex" { return await self.codexPlugins.refreshMarketplace(name: name, workspace: workspace) }
+                return await self.claudePlugins.refreshMarketplace(name: name, workspace: workspace)
             }
         }, mutationBlockedReason: { [weak self] in
             guard let self else { return "플러그인 창이 닫혔습니다." }
-            return self.pluginMutationBlockedReason(workspace: workspace)
+            return self.pluginMutationBlockedReason(workspace: workspace, provider: provider)
         })
     }
 
@@ -42,21 +46,21 @@ extension AppStore {
         return nil
     }
 
-    func pluginMutationBlockedReason(workspace: Workspace) -> String? {
+    func pluginMutationBlockedReason(workspace: Workspace, provider: String = "claude") -> String? {
         if let reason = pluginWorkspaceBlockedReason(workspace) { return reason }
         if isManagingPlugins { return "다른 플러그인 작업이 진행 중입니다." }
         if isUpdatingCLIs { return "CLI 업데이트가 끝난 후 플러그인을 변경하세요." }
-        if localCLIIsRunning("claude") { return "실행 중인 Claude 작업이 끝난 후 플러그인을 변경하세요." }
+        if localCLIIsRunning(provider) { return "실행 중인 \(ProviderOptions.label(provider)) 작업이 끝난 후 플러그인을 변경하세요." }
         if remoteBusy || remoteState.host.enabled { return "원격 공유·연결 작업을 마친 후 플러그인을 변경하세요." }
         return nil
     }
 
     /// Reserve admission on the main actor before any suspension. The same flag
-    /// prevents new Claude requests, CLI updates and host sharing from racing
+    /// prevents new Claude/Codex requests, CLI updates and host sharing from racing
     /// a plugin mutation, including operations submitted outside the sheet.
-    func performPluginMutation(workspace: Workspace,
+    func performPluginMutation(workspace: Workspace, provider: String = "claude",
                                operation: @MainActor () async -> ClaudePluginOperationResult) async -> ClaudePluginOperationResult {
-        if let reason = pluginMutationBlockedReason(workspace: workspace) {
+        if let reason = pluginMutationBlockedReason(workspace: workspace, provider: provider) {
             return ClaudePluginOperationResult(status: workspace.remote == nil ? "skipped" : "remote", detail: reason)
         }
         guard !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: "플러그인 작업을 취소했습니다.") }

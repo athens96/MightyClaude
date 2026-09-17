@@ -64,6 +64,14 @@ bash scripts/build-macos.sh
 open release/native-macos/MightyClaude.app
 ```
 
+실행 중인 창에도 계속 입력할 수 있다. 이 Mac의 Claude 창은 보낸 글을 진행 중인 턴에 바로 전달하고 마이티 모드에 **중간 요청** 블록으로 표시하며, Codex·Gemini·원격·셸 창은 현재 요청이 끝난 뒤 순서대로 실행하는 대기열에 넣는다. 자세한 동작은 [docs/mighty-mode.md](docs/mighty-mode.md)를 참고한다.
+
+설정의 **구성 요소**에서 Tailscale 설치·실행·로그인과 에이전트 CLI 상태를 한 번에 확인하고 처리한다([docs/components.md](docs/components.md)).
+
+휴대폰(iOS·Android)에서는 `mobile/`의 Expo 앱으로 Tailscale을 통해 이 Mac의 MightyClaude에 접속해 워크스페이스·실행 창을 보고 요청·중지·권한 답변을 보낼 수 있다. 설정의 **모바일 리모트**에서 켜고 QR로 페어링한다. 자세한 내용은 [docs/mobile-remote.md](docs/mobile-remote.md).
+
+`/Applications`에 설치한 앱을 갱신할 때는 `bash scripts/install-macos.sh`를 사용하세요. 실행 중인 앱이 종료될 때까지 기다렸다가 백업 후 교체하고 다시 실행합니다. 실행 중인 앱의 번들을 디스크에서 바꾸면 macOS 입력기 연결이 끊겨 한글 조합이 자소 단위로 풀립니다.
+
 첫 빌드에서 고정된 Ghostty Swift 패키지와 체크섬으로 검증하는 네이티브 라이브러리를 내려받습니다. Ghostty 앱을 따로 설치할 필요는 없습니다.
 
 임시 프로필로 앱 시작·셸 실행을 검증할 수 있습니다. 실제 AI 요청은 보내지 않습니다.
@@ -76,7 +84,7 @@ release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
 ## 사용 방법
 
 1. **폴더 추가**로 로컬 워크스페이스를 엽니다.
-2. 워크스페이스의 **+**에서 AI 실행 창 또는 명령 창을 추가합니다.
+2. 워크스페이스의 **+**에서 AI 실행 창 또는 명령 창을 추가합니다. 새 창의 이름은 실행기 이름 그대로(Claude·Codex·Gemini·터미널)이며 필요하면 이름을 바꿉니다. 새 AI 실행 창은 같은 실행기의 가장 최근에 사용한 창에서 모델·사고 강도·권한·보기 모드를 이어받습니다(대화 기록과 이어가기 ID는 새로 시작).
 3. 입력창 아래에서 프로바이더·모델·사고 강도·권한을 선택하고 요청을 입력합니다.
 4. **Enter**로 전송하고 **Shift+Enter**로 줄을 바꿉니다. 한글 등 입력기 조합 중인 Enter는 전송하지 않습니다.
 5. 작업 중에는 같은 실행 버튼이 **중지** 버튼으로 바뀝니다. 다음 요청의 초안과 첨부파일을 미리 준비할 수 있습니다.
@@ -96,6 +104,12 @@ release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
 실행기가 지원하는 옵션만 선택할 수 있습니다. Fast는 사고 강도와 별개이며 모델·계정의 지원 범위에 따릅니다. Auto mode는 지원하는 Claude CLI에서만 표시합니다. 기존 권한 설정을 임의로 전체 접근으로 바꾸지 않습니다.
 
 Claude Mods는 `mods/mighty-bridge`의 function hooks를 Claude Code 안에 로드합니다. 호환 기준은 Claude Code **2.1.271 이상**입니다. [Mods 분석](docs/claude-mods-analysis.md) · [실행 설정 계약](native/contracts/README.md#composer-settings)
+
+### 선택 요청
+
+Mac의 로컬 Claude가 `AskUserQuestion`을 요청하면 JSON 대신 질문 카드가 표시됩니다. 질문 제목·선택지 설명을 읽고 단일 또는 복수 선택을 하거나 **직접 입력**으로 답할 수 있습니다. 모든 질문에 답한 뒤 **답변 보내기**를 눌러 작업을 이어갑니다. 선택만으로 답이 전송되지는 않습니다.
+
+대화 기록에 남은 같은 형식의 JSON도 질문·선택지 목록으로 표시합니다. 실행이 끝났거나 취소된 질문은 다시 제출할 수 없습니다. Windows와 원격 세션의 대화형 질문 전달은 아직 지원하지 않습니다.
 
 ### 파일과 이미지
 
@@ -117,16 +131,16 @@ Claude Mods는 `mods/mighty-bridge`의 function hooks를 Claude Code 안에 로�
 | 세션 컨텍스트·사용량 상세 | 지원 | 지원 |
 | Tailscale 원격 실행·중지 | 지원 | 지원 |
 | 로컬 터미널 | Ghostty + PTY | 요청별 명령 실행 |
-| Claude 추가 권한 요청의 앱 내 승인 | 로컬 세션 지원 | 미지원 |
-| 마이티 그래프·플러그인 마켓플레이스 | 지원 | 미지원 |
+| Claude 추가 권한 요청의 앱 내 승인 (실행 창·펫 말풍선) | 로컬 세션 지원 | 미지원 |
+| 마이티 그래프·플러그인 마켓플레이스 (Claude·Codex) | 지원 | 미지원 |
 | CLI 자동 업데이트 설정 | 지원 | 미지원 |
-| 데스크톱 펫·완료 알림·계정 아일랜드 | 지원 | 미지원 |
+| 데스크톱 펫·완료 알림 | 지원 | 미지원 |
 
 Windows와 Mac의 구현 범위를 구분한 표입니다. Windows 명령 창은 대화형 PTY 터미널이 아닙니다. 원격 실행과 Codex·Gemini에는 앱 내 추가 권한 승인 채널이 없습니다.
 
-Mac 마이티 모드는 요청·메인 에이전트·서브에이전트·결과를 그래프로 표시합니다. 빈 공간을 드래그하거나 스크롤해 다이어그램 안에서 이동하고, 블록을 클릭하면 해당 내용만 스크롤합니다. [마이티 모드](docs/mighty-mode.md) · [플러그인 관리](docs/claude-plugins.md)
+Mac 마이티 모드는 Claude와 Codex 실행 창에서 요청·메인 에이전트·서브에이전트·결과를 그래프로 표시합니다. 빈 공간을 드래그하거나 스크롤해 다이어그램 안에서 이동하고, 블록을 클릭하면 해당 내용만 스크롤합니다. 오른쪽 아래 모서리를 드래그하면 블록 크기를 조절하고 세션별로 저장합니다. 퍼즐 아이콘에서 Claude·Codex의 설치된 플러그인을 확인하고 CLI가 제공하는 마켓플레이스에서 설치할 수 있습니다. Codex 플러그인은 사용자 범위에 설치되며 새 Codex 세션부터 사용합니다. [마이티 모드](docs/mighty-mode.md) · [플러그인 관리](docs/claude-plugins.md)
 
-입력창에는 CLI가 보고한 세션 컨텍스트를 표시하며, 확인할 수 없는 값은 추정해 채우지 않습니다. Mac의 카메라 위치와 앱 하단 계정 아일랜드는 사용 중인 프로바이더를 중복 없이 최대 두 개 표시합니다. 각 계정에서 잔여량이 적은 한도 두 개를 골라 세션 → 주간 → 기타 순으로 보여줍니다. [세션·사용량](docs/session-usage.md)
+입력창에는 CLI가 보고한 세션 컨텍스트를 표시하며, 확인할 수 없는 값은 추정해 채우지 않습니다. 컨텍스트 버튼을 누르면 해당 대화의 토큰·비용 등 사용량 상세를 확인할 수 있습니다. [세션·사용량](docs/session-usage.md)
 
 슈퍼 너구리 펫은 요청·현재 작업·경과 시간을 보여주고, 드래그 방향에 따라 걷거나 현재 작업에 맞는 동작을 합니다. 펫 클릭으로 말풍선을 토글하고, 말풍선을 누르면 해당 에이전트로 이동합니다. 완료 말풍선은 6초 후 숨깁니다. [펫과 알림](docs/agent-companion.md)
 

@@ -14,6 +14,9 @@ enum ComposerPresentationDiagnostics {
         window.isReleasedWhenClosed = false
         defer { window.orderOut(nil); window.close(); previousWindow?.makeKeyAndOrderFront(nil) }
         do {
+            let inputTransaction = ComposerInputTransactionDiagnostics.run()
+            for (key, passed) in inputTransaction { report[key] = passed }
+            guard inputTransaction.values.allSatisfy({ $0 }) else { throw MightyError("IME 입력 transaction 회귀 검증에 실패했습니다.") }
             let model = FixtureModel()
             let host = NSHostingView(rootView: PlaceholderFixture(model: model))
             window.contentView = host

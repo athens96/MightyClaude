@@ -127,6 +127,14 @@ final class NativeChildProcess: @unchecked Sendable {
         }
     }
     func closeInput() { writer.async { [self] in if stdinFD >= 0 { Darwin.close(stdinFD); stdinFD = -1 } } }
+    /// Whether a write would still reach the child. Checked on the writer
+    /// queue after any queued close, so a just-exited child reports false.
+    var inputIsOpen: Bool {
+        writer.sync { [self] in
+            lock.lock(); let ended = stopping || exitedAt != nil; lock.unlock()
+            return stdinFD >= 0 && !ended
+        }
+    }
     private func terminateGroup() {
         guard pid > 0, Darwin.kill(-pid, 0) == 0 else { return }
         _ = Darwin.kill(-pid, SIGTERM)
@@ -327,6 +335,19 @@ public actor ProcessRunner {
         }
     }
 
+    /// Delivers a follow-up while a Claude turn is still running. The CLI reads
+    /// it between tool calls and answers inside the same turn. A run whose
+    /// stdin frame is not open (other providers, attachments, result already
+    /// received) reports false so the caller queues the text instead.
+    public func steer(sessionId: String, text: String) -> Bool {
+        guard let run = runs[sessionId], !run.finished, !run.stopping, !shuttingDown, run.request.provider == "claude",
+              let permissions = run.permissions, permissions.initialized, !permissions.failed, !run.receivedClaudeResult,
+              let child = run.child, child.inputIsOpen, let data = try? ProviderInput.claudeUserMessage(text) else { return false }
+        child.write(data)
+        run.parser?.steer(id: UUID().uuidString, text: text)
+        return true
+    }
+
     /// Answers exactly one pending request in exactly one local run. A stale
     /// card from a previous execution of the same pane can never grant access.
     public func respondToPermission(sessionId: String, runId: String, requestId: String, allow: Bool) async throws {
@@ -335,6 +356,13 @@ public actor ProcessRunner {
             throw MightyError("승인 요청의 실행이 이미 종료되었거나 변경되었습니다.")
         }
         try permissions.respond(requestId: requestId, allow: allow)
+    }
+    public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
+        guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
+              !run.stopping, !run.finished, let permissions = run.permissions else {
+            throw MightyError("선택 요청의 실행이 이미 종료되었거나 변경되었습니다.")
+        }
+        try permissions.answerQuestions(requestId: requestId, answers: answers)
     }
     private func permissionInitializationTimedOut(_ run: ManagedProcess) {
         guard runs[run.request.sessionId] === run, !run.stopping, !run.finished else { return }

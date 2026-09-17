@@ -133,11 +133,26 @@ final class ComposerTextView: NSTextView {
     /// syllable before AppStore captures and clears the draft, without sending
     /// an Enter key to the input method or changing keyboard focus.
     func prepareForSubmission() {
-        if hasMarkedText() {
-            unmarkText()
-            inputContext?.discardMarkedText()
+        performInputTransaction {
+            if hasMarkedText() {
+                unmarkText()
+                inputContext?.discardMarkedText()
+            }
         }
-        onInputFinished?()
+    }
+
+    // One key can commit the preceding syllable and begin the next marked
+    // range through several sequential NSTextInputClient callbacks. Publishing
+    // between those callbacks lets @Published/SwiftUI updates re-enter AppKit
+    // before the input context has finished interpreting that key.
+    override func keyDown(with event: NSEvent) {
+        performInputTransaction { super.keyDown(with: event) }
+    }
+
+    func performInputTransaction(_ body: () -> Void) {
+        inputMutationDepth += 1
+        defer { finishInputMutation() }
+        body()
     }
 
     override func becomeFirstResponder() -> Bool {
@@ -153,26 +168,20 @@ final class ComposerTextView: NSTextView {
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        inputMutationDepth += 1
-        defer { finishInputMutation() }
-        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        performInputTransaction { super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange) }
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        inputMutationDepth += 1
-        defer { finishInputMutation() }
-        super.insertText(string, replacementRange: replacementRange)
+        performInputTransaction { super.insertText(string, replacementRange: replacementRange) }
     }
 
     override func unmarkText() {
-        inputMutationDepth += 1
-        defer { finishInputMutation() }
-        super.unmarkText()
+        performInputTransaction { super.unmarkText() }
     }
 
     // AppKit can notify its delegate before a marked range is installed or
-    // while insertText is still committing it. Publish only after that native
-    // operation has completed; never change its storage mid-operation.
+    // between commits within one key event. Publish after the outermost input
+    // transaction completes; never replace storage mid-interpretation.
     private func finishInputMutation() {
         inputMutationDepth -= 1
         if inputMutationDepth == 0 { onInputFinished?() }

@@ -9,7 +9,23 @@ struct CompanionPreferences: Codable {
     var notifications = true
     var reducedMotion = false
     var selectedPet = "mighty-raccoon"
-    var showsSessionIsland: Bool?
+}
+
+/// The approval the pet bubble offers. Only local Claude panes raise these.
+struct CompanionApproval: Equatable, Identifiable {
+    let sessionId: String
+    let sessionTitle: String
+    let workspaceName: String
+    let request: ToolPermissionRequest
+    var id: String { sessionId + "|" + request.runId + "|" + request.id }
+    var presentation: ToolPermissionPresentation { ToolPermissionPresentation.make(toolName: request.toolName, inputJSON: request.inputJSON) }
+    /// A single-question, single-choice questionnaire can be answered from the
+    /// bubble by tapping an option; anything richer opens the pane instead.
+    var quickChoices: UserQuestionnaire.Question? {
+        guard request.canAnswerQuestions, let questionnaire = request.questionnaire, questionnaire.questions.count == 1,
+              let question = questionnaire.questions.first, !question.multiSelect else { return nil }
+        return question
+    }
 }
 
 struct AgentPresence: Identifiable {
@@ -33,6 +49,10 @@ final class AgentCompanion: ObservableObject {
     @Published var message: String?
     @Published var notificationStatus = "확인 중"
     @Published var showsStatus = false
+    @Published private(set) var approval: CompanionApproval?
+    @Published private(set) var approvalBusy = false
+    @Published private(set) var approvalError: String?
+    private var subscriptions = Set<AnyCancellable>()
     private weak var store: AppStore?
     private var activities: [String: AgentActivity] = [:]
     private var liveTools: [String: [AgentActivity]] = [:]
@@ -63,6 +83,9 @@ final class AgentCompanion: ObservableObject {
         reloadPets()
         refresh(store.snapshot)
         notifications = CompletionNotifications { [weak self] id in self?.focus(id) }
+        store.$toolPermissions.combineLatest(store.$permissionResponses, store.$permissionErrors)
+            .sink { [weak self] permissions, responses, errors in self?.updateApproval(permissions: permissions, responses: responses, errors: errors) }
+            .store(in: &subscriptions)
         if !testMode {
             Task { await refreshNotificationStatus(request: preferences.notifications) }
             overlay = CompanionPanel(companion: self)
@@ -133,10 +156,44 @@ final class AgentCompanion: ObservableObject {
             lastTouched[event.sessionId] = Date()
             if wasRunning && status == "completed" {
                 completionCount += 1
-                if preferences.notifications && !testMode { notifications?.send(sessionID: session.id, title: session.title) }
+                let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }?.name
+                if preferences.notifications && !testMode { notifications?.send(sessionID: session.id, title: workspace.map { $0 + " · " + session.title } ?? session.title) }
             }
         }
     }
+
+    /// The oldest pending request of the agent the bubble already shows, else
+    /// the oldest pending request anywhere. Answered or cancelled ones vanish.
+    private func updateApproval(permissions: [String: [ToolPermissionRequest]], responses: Set<String>, errors: [String: String]) {
+        guard let store, !stopped else { approval = nil; return }
+        let candidates = permissions.compactMap { sessionId, requests -> CompanionApproval? in
+            guard let request = requests.first(where: { $0.state == "pending" }),
+                  let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), session.status == "running",
+                  store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil else { return nil }
+            let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }?.name ?? ""
+            return CompanionApproval(sessionId: sessionId, sessionTitle: session.title, workspaceName: workspace, request: request)
+        }
+        let preferred = current?.id
+        let next = candidates.first { $0.sessionId == preferred } ?? candidates.sorted { $0.sessionTitle < $1.sessionTitle }.first
+        if next != approval { approval = next; updateOverlay() }
+        // Only publish real changes; a same-value assignment would still redraw
+        // every view that observes the companion, including pane headers.
+        let busy = next.map { responses.contains(store.permissionResponseKey(sessionId: $0.sessionId, request: $0.request)) } ?? false
+        if busy != approvalBusy { approvalBusy = busy }
+        let error = next.flatMap { errors[$0.sessionId] }
+        if error != approvalError { approvalError = error }
+    }
+    func answerApproval(allow: Bool) {
+        guard let store, let approval, !approvalBusy else { return }
+        Task { await store.answerPermission(sessionId: approval.sessionId, request: approval.request, allow: allow) }
+    }
+    func answerApprovalChoice(_ label: String) {
+        guard let store, let approval, !approvalBusy, let question = approval.quickChoices,
+              question.options.contains(where: { $0.label == label }) else { return }
+        let answers = [question.question: UserQuestionAnswer(selectedOptions: [label])]
+        Task { await store.answerQuestionnaire(sessionId: approval.sessionId, request: approval.request, answers: answers) }
+    }
+    func openApproval() { focus(approval?.sessionId) }
 
     func focus(_ id: String?) {
         guard let store else { return }
@@ -194,7 +251,10 @@ final class AgentCompanion: ObservableObject {
             try JSONEncoder().encode(preferences).write(to: url, options: .atomic)
         } catch { message = "펫 설정을 저장하지 못했습니다: \(error.localizedDescription)" }
     }
-    private func updateOverlay() { overlay?.setVisible(preferences.enabled && !stopped) }
+    private func updateOverlay() {
+        overlay?.setVisible(preferences.enabled && !stopped)
+        overlay?.setTall(approval != nil)
+    }
 }
 
 /// The notification contains no prompt, tool arguments or project path.

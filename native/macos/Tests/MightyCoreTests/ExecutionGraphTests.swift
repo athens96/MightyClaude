@@ -110,6 +110,95 @@ struct ExecutionGraphTests {
         #expect(nodes.last?.kind == "main"); #expect(nodes.last?.output == nil)
     }
 
+    private func command(_ id: String, command: String, description: String? = nil, background: Bool = true) -> [String: Any] {
+        var input: [String: Any] = ["command": command, "run_in_background": background]
+        if let description { input["description"] = description }
+        return ["type": "tool_use", "id": id, "name": "Bash", "input": input]
+    }
+    private func notification(task: String, tool: String?, status: String, summary: String) -> [String: Any] {
+        var body = "[SYSTEM NOTIFICATION]\n<task-notification>\n<task-id>\(task)</task-id>\n"
+        if let tool { body += "<tool-use-id>\(tool)</tool-use-id>\n" }
+        body += "<output-file>/tmp/\(task).output</output-file>\n<status>\(status)</status>\n<summary>\(summary)</summary>\n</task-notification>"
+        return ["type": "user", "message": ["content": [["type": "text", "text": body]]]]
+    }
+
+    @Test func backgroundCommandBecomesTaskBlockSettledByNotification() throws {
+        var nodes: [ExecutionGraphNode] = []; var activities: [AgentActivity] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "task-run", activity: { activities.append($0) }, graph: { nodes.append($0) })
+        try send(assistant([command("build", command: "npm run build", description: "Build the app"), command("sync", command: "rsync -a src/ dst/"), command("quick", command: "ls", background: false)], id: "main-1"), to: parser)
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: "task-run")
+        let buildID = ExecutionGraphSupport.agentNodeID(runId: "task-run", toolUseId: "build")
+        let syncID = ExecutionGraphSupport.agentNodeID(runId: "task-run", toolUseId: "sync")
+        #expect(!nodes.contains { $0.id == ExecutionGraphSupport.agentNodeID(runId: "task-run", toolUseId: "quick") })
+        let build = try latest(nodes, buildID)
+        #expect(build.kind == "task"); #expect(build.state == "running"); #expect(build.parentId == mainID)
+        #expect(build.title == "Build the app"); #expect(build.input == "npm run build")
+        #expect(try latest(nodes, syncID).title == "rsync -a src/ dst/")
+        // The launch acknowledgement is not the command's result.
+        try send(toolResult("build", text: "Command running in background with ID: task-b1. Output is being written to: /tmp/task-b1.output."), to: parser)
+        try send(toolResult("sync", text: "Command running in background with ID: task-s1. Output is being written to: /tmp/task-s1.output."), to: parser)
+        #expect(try latest(nodes, buildID).state == "running"); #expect(try latest(nodes, buildID).output == nil)
+        #expect(try latest(nodes, buildID).entries.last?.text.hasPrefix("Command running in background") == true)
+        // Main transcript rows still complete on the acknowledgement, as before.
+        #expect(activities.contains { $0.toolName == "Bash" && $0.state == "completed" })
+        try send(notification(task: "task-b1", tool: "build", status: "completed", summary: "Background command \"Build the app\" completed (exit code 0)"), to: parser)
+        let done = try latest(nodes, buildID)
+        #expect(done.state == "completed"); #expect(done.output == "Background command \"Build the app\" completed (exit code 0)")
+        // A notification that only names the task ID uses the acknowledged alias.
+        try send(notification(task: "task-s1", tool: nil, status: "failed", summary: "rsync exited with code 23"), to: parser)
+        #expect(try latest(nodes, syncID).state == "error"); #expect(try latest(nodes, syncID).output == "rsync exited with code 23")
+        try send(notification(task: "task-b1", tool: "build", status: "failed", summary: "late duplicate"), to: parser)
+        #expect(try latest(nodes, buildID).state == "completed")
+        #expect(try latest(nodes, mainID).state == "running"); #expect(try latest(nodes, mainID).entries.isEmpty)
+    }
+
+    @Test func unfinishedBackgroundCommandStopsWithRunAndLaunchFailureIsAnError() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "task-stop", graph: { nodes.append($0) })
+        try send(assistant([command("long", command: "sleep 600", description: "Long job"), command("broken", command: "nope", description: "Broken launch")], id: "main"), to: parser)
+        try send(toolResult("long", text: "Command running in background with ID: t-long. Output is being written to: /tmp/t-long.output."), to: parser)
+        try send(["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "broken", "is_error": true, "content": "command not found: nope"]]]], to: parser)
+        let brokenID = ExecutionGraphSupport.agentNodeID(runId: "task-stop", toolUseId: "broken")
+        #expect(try latest(nodes, brokenID).state == "error"); #expect(try latest(nodes, brokenID).output == "command not found: nope")
+        try send(["type": "result", "result": "Done for now", "is_error": false], to: parser)
+        parser.finishActivities(stopped: false); parser.finishGraph(state: "completed")
+        let long = try latest(nodes, ExecutionGraphSupport.agentNodeID(runId: "task-stop", toolUseId: "long"))
+        #expect(long.kind == "task"); #expect(long.state == "stopped"); #expect(long.output == nil)
+        #expect(long.entries.last?.text == "백그라운드 작업의 완료 알림을 받기 전에 실행이 종료되었습니다.")
+        #expect(ExecutionGraphSupport.normalized(long, restoring: true)?.kind == "task")
+        var unknown = long; unknown.kind = "job"
+        #expect(ExecutionGraphSupport.normalized(unknown) == nil)
+    }
+
+    @Test func tokenUsageIsSummedPerBlockOncePerMessage() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "tokens", graph: { nodes.append($0) })
+        func message(_ id: String, usage: [String: Any], parent: String? = nil, blocks: [[String: Any]] = [["type": "text", "text": "hi"]]) -> [String: Any] {
+            var value = assistant(blocks, id: id, parent: parent)
+            var inner = value["message"] as! [String: Any]; inner["usage"] = usage; value["message"] = inner
+            return value
+        }
+        // One message streams as several events; the last figure wins, once.
+        try send(message("m1", usage: ["input_tokens": 1_000, "output_tokens": 10, "cache_read_input_tokens": 500]), to: parser)
+        try send(message("m1", usage: ["input_tokens": 1_000, "output_tokens": 40, "cache_read_input_tokens": 500], blocks: [spawn("child", prompt: "Look")]), to: parser)
+        try send(message("m2", usage: ["input_tokens": 1_200, "output_tokens": 25, "cache_creation_input_tokens": 300]), to: parser)
+        try send(message("c1", usage: ["input_tokens": 400, "output_tokens": 60], parent: "child"), to: parser)
+        try send(message("c1", usage: ["input_tokens": 400, "output_tokens": 60], parent: "child"), to: parser)
+        try send(message("bad", usage: ["input_tokens": -5, "output_tokens": "x"]), to: parser)
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: "tokens")
+        let main = try latest(nodes, mainID)
+        #expect(main.usage == GraphTokenUsage(inputTokens: 2_200, outputTokens: 65, cacheReadTokens: 500, cacheCreationTokens: 300))
+        let child = try latest(nodes, ExecutionGraphSupport.agentNodeID(runId: "tokens", toolUseId: "child"))
+        #expect(child.usage == GraphTokenUsage(inputTokens: 400, outputTokens: 60))
+        #expect(GraphTokenUsage.parse(["input_tokens": 0, "output_tokens": 0]) == nil)
+        #expect(GraphTokenUsage.compact(999) == "999"); #expect(GraphTokenUsage.compact(1_234) == "1.2K")
+        #expect(GraphTokenUsage.compact(12_345) == "12K"); #expect(GraphTokenUsage.compact(1_234_567) == "1.23M")
+        var invalid = main; invalid.usage = GraphTokenUsage(inputTokens: -1)
+        #expect(ExecutionGraphSupport.normalized(invalid)?.usage == nil)
+        parser.finishActivities(stopped: false); parser.finishGraph(state: "completed")
+        #expect(try latest(nodes, mainID).usage?.total == 3_065)
+    }
+
     @Test func stopSettlesChildToolsAndUnmatchedAgentEventsWithoutGuessingIdentity() throws {
         var nodes: [ExecutionGraphNode] = []; var activities: [AgentActivity] = []
         let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "stopped", activity: { activities.append($0) }, graph: { nodes.append($0) })
@@ -122,9 +211,51 @@ struct ExecutionGraphTests {
         #expect(nodes.last?.state == "stopped")
     }
 
+    private func codexItem(_ event: String, _ item: [String: Any]) -> [String: Any] { ["type": event, "item": item] }
+    private func collab(_ id: String, tool: String, sender: String = "root", receivers: [String], prompt: String? = nil, states: [String: [String: Any]] = [:], status: String = "in_progress") -> [String: Any] {
+        var item: [String: Any] = ["id": id, "type": "collab_tool_call", "tool": tool, "sender_thread_id": sender, "receiver_thread_ids": receivers, "agents_states": states, "status": status]
+        if let prompt { item["prompt"] = prompt }
+        return item
+    }
+
+    @Test func codexCollabItemsBecomeAgentBlocksAndTurnUsageReachesMain() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, activityNamespace: "codex-run", graph: { nodes.append($0) }, graphInput: "Plan the release")
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: "codex-run")
+        #expect(nodes.first?.title == "Codex CLI" || nodes.first?.title == ProviderOptions.label("codex"))
+        try send(["type": "thread.started", "thread_id": "root"], to: parser)
+        try send(["type": "turn.started"], to: parser)
+        try send(codexItem("item.started", collab("c1", tool: "spawn_agent", receivers: ["t1"], prompt: "Inspect the API", states: ["t1": ["status": "pending_init"]])), to: parser)
+        try send(codexItem("item.completed", collab("c1", tool: "spawn_agent", receivers: ["t1"], prompt: "Inspect the API", states: ["t1": ["status": "running"]], status: "completed")), to: parser)
+        let t1 = ExecutionGraphSupport.identifier("codex-run", "codex-agent:t1")
+        var agent = try latest(nodes, t1)
+        #expect(agent.kind == "agent"); #expect(agent.state == "running"); #expect(agent.input == "Inspect the API"); #expect(agent.parentId == mainID)
+        try send(codexItem("item.completed", collab("c2", tool: "send_input", receivers: ["t1"], prompt: "Also check auth", states: ["t1": ["status": "running"]], status: "completed")), to: parser)
+        #expect(try latest(nodes, t1).entries.map(\.text) == ["Also check auth"])
+        // A spawn issued by t1 nests under t1.
+        try send(codexItem("item.completed", collab("c3", tool: "spawn_agent", sender: "t1", receivers: ["t2"], prompt: "Nested", states: ["t2": ["status": "running"]], status: "completed")), to: parser)
+        let t2 = ExecutionGraphSupport.identifier("codex-run", "codex-agent:t2")
+        #expect(try latest(nodes, t2).parentId == t1); #expect(try latest(nodes, t2).input == "Nested")
+        try send(codexItem("item.completed", collab("c4", tool: "wait", receivers: ["t1", "t2"], states: ["t1": ["status": "completed", "message": "API inspected"], "t2": ["status": "errored", "message": "boom"]], status: "completed")), to: parser)
+        agent = try latest(nodes, t1)
+        #expect(agent.state == "completed"); #expect(agent.output == "API inspected")
+        #expect(try latest(nodes, t2).state == "error"); #expect(try latest(nodes, t2).output == "boom")
+        try send(codexItem("item.completed", collab("c5", tool: "close_agent", receivers: ["t1"], states: [:], status: "completed")), to: parser)
+        #expect(try latest(nodes, t1).state == "completed")
+        try send(codexItem("item.completed", ["id": "m1", "type": "agent_message", "text": "Release plan ready"]), to: parser)
+        try send(["type": "turn.completed", "usage": ["input_tokens": 1_000, "cached_input_tokens": 400, "output_tokens": 50]], to: parser)
+        try send(["type": "turn.completed", "usage": ["input_tokens": 200, "output_tokens": 5]], to: parser)
+        let main = try latest(nodes, mainID)
+        #expect(main.output == "Release plan ready")
+        #expect(main.usage == GraphTokenUsage(inputTokens: 1_200, outputTokens: 55, cacheReadTokens: 400))
+        parser.finishActivities(stopped: false); parser.finishGraph(state: "completed")
+        #expect(nodes.last?.id == mainID); #expect(nodes.last?.state == "completed")
+        #expect(Set(nodes.filter { $0.kind == "agent" }.map(\.id)) == [t1, t2])
+    }
+
     @Test func nodeIDsAreRunScopedAndOtherProvidersEmitNoClaudeGraph() throws {
         #expect(ExecutionGraphSupport.agentNodeID(runId: "one", toolUseId: "shared") != ExecutionGraphSupport.agentNodeID(runId: "two", toolUseId: "shared"))
-        for provider in ["codex", "gemini"] {
+        for provider in ["gemini"] {
             var nodes: [ExecutionGraphNode] = []
             let parser = CLIStreamParser(provider: provider, log: { _, _ in }, resume: { _ in }, graph: { nodes.append($0) })
             try send(["type": "result", "status": "success"], to: parser); parser.finishGraph(state: "completed")
@@ -235,5 +366,70 @@ struct ExecutionGraphTests {
             #expect(values.last(where: { $0.graph?.kind == "agent" })?.graph?.state == "error")
             await runner.shutdown(); await providers.shutdown()
         } catch { await runner.shutdown(); await providers.shutdown(); throw error }
+    }
+}
+
+struct SteeringGraphTests {
+    private func send(_ value: [String: Any], to parser: CLIStreamParser) throws {
+        var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
+        data.append(10); parser.push(data)
+    }
+    private func assistant(_ blocks: [[String: Any]], id: String) -> [String: Any] {
+        ["type": "assistant", "uuid": id, "session_id": "main-session", "message": ["id": id, "content": blocks]]
+    }
+
+    @Test func midTurnMessageBecomesABlockUnderMainAndSettlesOnTheNextRootAnswer() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-steer", graph: { nodes.append($0) }, graphInput: "Refactor the parser")
+        try send(assistant([["type": "tool_use", "id": "tool-1", "name": "Bash", "input": ["command": "sleep 5"]]], id: "main-1"), to: parser)
+        parser.steer(id: "first", text: "Also add tests")
+        let main = ExecutionGraphSupport.mainNodeID(runId: "run-steer")
+        let steer = try #require(nodes.last(where: { $0.kind == "steer" }))
+        #expect(steer.parentId == main); #expect(steer.state == "running"); #expect(steer.input == "Also add tests"); #expect(steer.title == "중간 요청")
+        // A tool-only assistant message is not the reply.
+        try send(assistant([["type": "tool_use", "id": "tool-2", "name": "Read", "input": ["file_path": "/tmp/a"]]], id: "main-2"), to: parser)
+        #expect(nodes.last(where: { $0.id == steer.id })?.state == "running")
+        // A preamble beside another tool call is not the reply either.
+        try send(assistant([["type": "text", "text": "Let me check."], ["type": "tool_use", "id": "tool-3", "name": "Read", "input": ["file_path": "/tmp/b"]]], id: "main-2b"), to: parser)
+        #expect(nodes.last(where: { $0.id == steer.id })?.state == "running")
+        try send(assistant([["type": "text", "text": "Done, tests added."]], id: "main-3"), to: parser)
+        let settled = try #require(nodes.last(where: { $0.id == steer.id }))
+        #expect(settled.state == "completed"); #expect(settled.output == "Done, tests added.")
+        // Same id twice is one block; the second steer is its own block.
+        parser.steer(id: "first", text: "duplicate"); parser.steer(id: "second", text: "One more thing")
+        #expect(nodes.filter { $0.kind == "steer" }.map(\.id).reduce(into: Set<String>()) { $0.insert($1) }.count == 2)
+        parser.finishGraph(state: "completed")
+        let unanswered = try #require(nodes.last(where: { $0.input == "One more thing" }))
+        #expect(unanswered.state == "stopped"); #expect(unanswered.entries.last?.text.contains("중간 요청") == true)
+    }
+
+    @Test func codexRunsIgnoreSteeringAndSessionsKeepTheSteerKind() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let codex = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-codex", graph: { nodes.append($0) }, graphInput: "Hi")
+        codex.steer(id: "x", text: "ignored")
+        #expect(!nodes.contains { $0.kind == "steer" })
+
+        var session = RunSession(workspaceId: "workspace", title: "Claude")
+        session.beginGraphRun(input: "Refactor", id: "request-one")
+        let main = ExecutionGraphSupport.mainNodeID(runId: "process-one")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "graph", graph: ExecutionGraphNode(id: main, runId: "process-one", kind: "main", state: "running", title: "Claude")))
+        let steer = ExecutionGraphNode(id: "process-one-steer", runId: "process-one", parentId: main, kind: "steer", state: "completed", title: "중간 요청", input: "Also tests", output: "Sure")
+        session.recordGraph(RunEvent(sessionId: session.id, type: "graph", graph: steer))
+        let agent = try #require(session.mightyGraphRuns[0].agents.first)
+        #expect(agent.isSteer); #expect(agent.parentID == nil); #expect(agent.entries.last?.text == "Sure")
+        let restored = try JSONDecoder().decode(RunSession.self, from: try JSONEncoder().encode(session))
+        var budget = 1_000_000
+        let normalized = MightyGraphSupport.normalized(restored.graphRuns ?? [], restoring: true, budget: &budget)
+        #expect(normalized[0].agents[0].isSteer)
+    }
+
+    @Test func claudeStdinFramesCarryTheUserMessageShape() throws {
+        let data = try ProviderInput.claudeUserMessage("Also add tests")
+        let text = String(decoding: data, as: UTF8.self)
+        #expect(text.hasSuffix("\n"))
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["type"] as? String == "user")
+        #expect((object["message"] as? [String: Any])?["content"] as? String == "Also add tests")
+        #expect(object["parent_tool_use_id"] is NSNull)
     }
 }

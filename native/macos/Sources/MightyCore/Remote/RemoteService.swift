@@ -7,6 +7,10 @@ public actor RemoteService {
         var info: RemoteConnectionInfo
         var token: String?
         var target: RemoteTarget?
+        /// A saved connection whose key has not been read from the Keychain yet.
+        /// Reading happens on explicit use, never at launch, so macOS does not
+        /// ask for Keychain access every time the app starts.
+        var keychainPending = false
         var revision = UUID()
     }
     private struct ClientRun {
@@ -310,6 +314,10 @@ public actor RemoteService {
 
     public func refreshRemote(id: String) async throws -> RemoteState {
         try ensureActive(); loadConnections()
+        if connections[id]?.token == nil, connections[id]?.keychainPending == true {
+            connections[id]?.token = RemoteKeychain.load(id)
+            connections[id]?.keychainPending = false
+        }
         guard let current = connections[id], let token = current.token else { throw RemoteFailure("연결 이름·주소·키를 입력해 다시 연결해 주세요.") }
         let tailscale = await discover(force: true)
         do {
@@ -439,9 +447,9 @@ public actor RemoteService {
         guard !testing || file == ownFile, let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 256 * 1024, let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(SavedConnections.self, from: data), saved.version == 1 else { return }
         for item in saved.connections.prefix(16) {
             guard CoreValidation.identifier(item.id), let address = try? ParsedRemoteAddress.parse(item.address), !connections.values.contains(where: { $0.info.address == address.origin }) else { continue }
-            let token = testing ? nil : RemoteKeychain.load(item.id)
-            let info = RemoteConnectionInfo(id: item.id, name: String(item.name.prefix(120)), address: address.origin, detail: token == nil ? "연결 키를 입력해 다시 연결해 주세요." : "저장된 연결입니다. 새로고침하여 연결하세요.")
-            connections[item.id] = Connection(info: info, token: token)
+            // The Keychain is consulted only when this connection is refreshed.
+            let info = RemoteConnectionInfo(id: item.id, name: String(item.name.prefix(120)), address: address.origin, detail: "저장된 연결입니다. 새로고침하여 연결하세요.")
+            connections[item.id] = Connection(info: info, token: nil, keychainPending: !testing)
         }
     }
     private func saveConnections() {

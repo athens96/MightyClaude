@@ -7,9 +7,16 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var input: String
     public var status: String
     public var entries: [LogEntry]
-    public init(id: String, parentID: String? = nil, title: String = "서브에이전트", input: String = "", status: String = "running", entries: [LogEntry] = []) {
-        self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries
+    /// nil means a subagent; "task" is a backgrounded command block.
+    public var kind: String?
+    public var usage: GraphTokenUsage?
+    public var activityGeneration: Int?
+    public init(id: String, parentID: String? = nil, title: String = "서브에이전트", input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil) {
+        self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration
     }
+    public var isTask: Bool { kind == "task" }
+    /// A mid-turn message the user sent to a running Claude request.
+    public var isSteer: Bool { kind == "steer" }
 }
 
 public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
@@ -21,15 +28,39 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     public var resultEntries: [LogEntry]
     public var sourceRunID: String?
     public var finalOutput: String?
-    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil) {
-        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput
+    /// Tokens of the main block alone; `totalUsage` adds every child block.
+    public var usage: GraphTokenUsage?
+    public var provider: String?
+    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, provider: String? = nil) {
+        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.provider = provider
+    }
+    public var totalUsage: GraphTokenUsage? {
+        let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
+        return sum.isEmpty ? nil : sum
     }
     public var settled: Bool { MightyGraphSupport.terminal(status) && agents.allSatisfy { MightyGraphSupport.terminal($0.status) } }
+
+    /// The owning session is authoritative, including pre-provider graph saves.
+    mutating func applyProvider(_ value: String) {
+        let value = ProviderOptions.normalizeProvider(value)
+        provider = value
+        func labelled(_ entries: [LogEntry]) -> [LogEntry] {
+            entries.map { original in
+                var entry = original
+                entry.provider = value
+                if entry.activity != nil { entry.activity?.provider = value }
+                return entry
+            }
+        }
+        rootEntries = labelled(rootEntries)
+        resultEntries = labelled(resultEntries)
+        for index in agents.indices { agents[index].entries = labelled(agents[index].entries) }
+    }
 
     mutating func refreshResult() {
         guard status == "completed", settled, let text = finalOutput, !text.isEmpty else { resultEntries = []; return }
         let timestamp = resultEntries.first?.timestamp ?? rootEntries.last?.timestamp ?? mightyTimestamp()
-        let entry = LogEntry(id: id + "-result", kind: "assistant", text: text, timestamp: timestamp, provider: "claude")
+        let entry = LogEntry(id: id + "-result", kind: "assistant", text: text, timestamp: timestamp, provider: provider ?? "claude")
         resultEntries = [entry]
         // Keep the final answer in the main block as well as the result block.
         if !rootEntries.contains(where: { $0.kind == "assistant" && $0.text == text }) {
@@ -40,6 +71,9 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum MightyGraphSupport {
+    /// AI panes whose runs produce a graph: Claude via stream-json + Mods,
+    /// Codex via exec JSONL. Gemini's stream has no agent structure.
+    public static let providers = ["claude", "codex"]
     public static func terminal(_ status: String) -> Bool { ["completed", "error", "stopped"].contains(status) }
     static func nextState(_ previous: String, _ incoming: String) -> String {
         if ["error", "stopped"].contains(previous) { return previous }
@@ -56,14 +90,16 @@ public enum MightyGraphSupport {
         for entry in session.logs {
             if entry.kind == "user" {
                 if !runs.isEmpty { finishLegacy(&runs[runs.count - 1], status: "completed") }
-                runs.append(MightyGraphRun(id: entry.id, input: entry.text))
+                runs.append(MightyGraphRun(id: entry.id, input: entry.text, provider: session.provider))
             } else {
-                if runs.isEmpty { runs.append(MightyGraphRun(id: "history-" + session.id, input: "", status: "completed")) }
+                if runs.isEmpty { runs.append(MightyGraphRun(id: "history-" + session.id, input: "", status: "completed", provider: session.provider)) }
                 runs[runs.count - 1].rootEntries.append(entry)
             }
         }
         if !runs.isEmpty { finishLegacy(&runs[runs.count - 1], status: session.status == "idle" ? "completed" : session.status) }
-        return runs
+        return runs.map { original in
+            var run = original; run.applyProvider(session.provider); return run
+        }
     }
     private static func finishLegacy(_ run: inout MightyGraphRun, status: String) {
         run.status = status
@@ -75,7 +111,7 @@ public enum MightyGraphSupport {
 
     /// Share a bounded persistence budget with the rest of the saved profile.
     /// Malformed graph metadata cannot invalidate the original transcript.
-    public static func normalized(_ values: [MightyGraphRun], restoring: Bool, budget: inout Int) -> [MightyGraphRun] {
+    public static func normalized(_ values: [MightyGraphRun], restoring: Bool, budget: inout Int, provider: String? = nil) -> [MightyGraphRun] {
         var ids = Set<String>()
         var result: [MightyGraphRun] = []
         for var run in values.suffix(128).reversed() {
@@ -89,6 +125,10 @@ public enum MightyGraphSupport {
             budget -= overhead
             run.input = bounded(run.input, maximum: 32_768, budget: &budget)
             run.status = states.contains(run.status) ? run.status : "stopped"
+            run.usage = run.usage?.normalized
+            let resolvedProvider = provider ?? run.provider
+                ?? run.rootEntries.compactMap(\.provider).first(where: ProviderOptions.ids.contains) ?? "claude"
+            run.provider = ProviderOptions.normalizeProvider(resolvedProvider)
             if restoring && !terminal(run.status) { run.status = "stopped" }
             if let source = run.sourceRunID, !CoreValidation.identifier(source) { run.sourceRunID = nil }
             // Prefer the actual final answer over older intermediate output.
@@ -100,6 +140,9 @@ public enum MightyGraphSupport {
                 agent.title = bounded(agent.title, maximum: 240, budget: &budget)
                 agent.input = bounded(agent.input, maximum: 16_384, budget: &budget)
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
+                if !["task", "steer"].contains(agent.kind ?? "") { agent.kind = nil }
+                agent.usage = agent.usage?.normalized
+                agent.activityGeneration = ExecutionGraphSupport.normalizedGeneration(agent.activityGeneration)
                 if restoring && !terminal(agent.status) { agent.status = "stopped" }
                 agent.entries = limitedEntries(agent.entries, maximum: 65_536, restoring: restoring, budget: &budget)
                 return agent
@@ -116,6 +159,7 @@ public enum MightyGraphSupport {
                 }
             }
             run.resultEntries = []
+            run.applyProvider(run.provider ?? "claude")
             run.refreshResult()
             result.append(run)
         }
@@ -170,17 +214,21 @@ public enum MightyGraphSupport {
 }
 
 extension RunSession {
-    public var mightyGraphRuns: [MightyGraphRun] { graphRuns ?? MightyGraphSupport.legacyRuns(self) }
+    public var mightyGraphRuns: [MightyGraphRun] {
+        (graphRuns ?? MightyGraphSupport.legacyRuns(self)).map { original in
+            var run = original; run.applyProvider(provider); return run
+        }
+    }
 
     public mutating func beginGraphRun(input: String, id: String = UUID().uuidString) {
-        guard kind == "claude", provider == "claude" else { return }
+        guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
-        graphRuns?.append(MightyGraphRun(id: id, input: input))
+        graphRuns?.append(MightyGraphRun(id: id, input: input, provider: provider))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
     }
 
     public mutating func recordGraph(_ event: RunEvent) {
-        guard kind == "claude", provider == "claude", event.sessionId == id else { return }
+        guard kind == "claude", MightyGraphSupport.providers.contains(provider), event.sessionId == id else { return }
         if event.type == "log", let entry = event.entry, entry.kind == "user" {
             beginGraphRun(input: entry.text, id: entry.id)
             return
@@ -196,19 +244,42 @@ extension RunSession {
             }
             if node.kind == "main" {
                 runs[index].status = MightyGraphSupport.nextState(runs[index].status, node.state)
+                if let usage = node.usage { runs[index].usage = usage }
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
-                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries)
-                if let output = node.output, !output.isEmpty, !agent.entries.contains(where: { $0.kind == "assistant" && $0.text == output }) {
-                    agent.entries.append(LogEntry(id: node.id + "-answer", kind: "assistant", text: output, provider: "claude"))
+                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration)
+                if let output = node.output, !output.isEmpty {
+                    let answerID = provider == "codex"
+                        ? ExecutionGraphSupport.identifier(node.runId, node.id + ":answer:\(node.activityGeneration ?? 0)")
+                        : node.id + "-answer"
+                    let hasAnswer = agent.entries.contains {
+                        provider == "codex" ? $0.id == answerID : $0.kind == "assistant" && $0.text == output
+                    }
+                    if !hasAnswer { agent.entries.append(LogEntry(id: answerID, kind: "assistant", text: output, provider: provider)) }
                 }
                 if let position = runs[index].agents.firstIndex(where: { $0.id == node.id }) {
                     let previous = runs[index].agents[position]
-                    // Late starts may enrich identity, but never reopen a node.
-                    agent.status = MightyGraphSupport.nextState(previous.status, agent.status)
-                    if agent.input.isEmpty { agent.input = previous.input }
-                    if agent.entries.isEmpty { agent.entries = previous.entries }
+                    let previousGeneration = previous.activityGeneration ?? 0
+                    let incomingGeneration = agent.activityGeneration ?? 0
+                    // New work must be explicit. Late snapshots from an older
+                    // activity cannot replace current output or reopen history.
+                    guard incomingGeneration >= previousGeneration else { return }
+                    let newerActivity = incomingGeneration > previousGeneration
+                    if newerActivity && runs[index].status != "running" { return }
+                    if !(newerActivity && runs[index].status == "running") {
+                        agent.status = MightyGraphSupport.nextState(previous.status, agent.status)
+                    }
+                    if agent.activityGeneration == nil { agent.activityGeneration = previous.activityGeneration }
+                    if agent.kind == nil { agent.kind = previous.kind }
+                    if agent.usage == nil { agent.usage = previous.usage }
+                    if !previous.input.isEmpty { agent.input = previous.input }
+                    var mergedEntries = previous.entries
+                    for entry in agent.entries {
+                        if let entryIndex = mergedEntries.firstIndex(where: { $0.id == entry.id }) { mergedEntries[entryIndex] = entry }
+                        else { mergedEntries.append(entry) }
+                    }
+                    agent.entries = Array(mergedEntries.suffix(ExecutionGraphSupport.maximumEntries))
                     runs[index].agents[position] = agent
                 } else if runs[index].agents.count < 128 { runs[index].agents.append(agent) }
             }
@@ -227,6 +298,7 @@ extension RunSession {
                 runs[index].finalOutput = runs[index].rootEntries.last(where: { $0.kind == "assistant" })?.text
             }
         } else { return }
+        runs[index].applyProvider(provider)
         runs[index].refreshResult()
         graphRuns = MightyGraphSupport.boundedLiveHistory(runs)
     }
