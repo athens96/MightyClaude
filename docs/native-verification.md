@@ -1,5 +1,17 @@
 # 네이티브 전환 검증
 
+## 2026-09-17: Windows 기본판 실제 실행·배포 검증
+
+- 커밋 `d5dd549`의 [Native clients 실행](https://github.com/athens96/MightyClaude/actions/runs/35166591891)에서 **Windows x64·ARM64 작업 모두 성공**했다. 각 Windows 호스트에서 C# 코어 28개 검사(생략 0개), self-contained WinUI 패키징, 실제 GUI 실행, ZIP 업로드를 완료했다.
+- 두 아키텍처의 `smoke-result.json`에서 입력창 유지·자동 높이, 32px 버튼 한 줄 정렬, 여러 문단 선택과 출력 추가 후 선택 유지, 단일 실행/중지 버튼, 중복 전송 방지, 새 초안·첨부 보존, 워크스페이스별 구성, 즉시 탭 전환·분할·탭 합치기가 모두 통과했다. 실제 모델 요청과 사용자 클립보드 접근은 없었다. 물리 키보드·한글 IME·마우스 드래그의 전체 동작을 검증한 것은 아니다.
+- 배포 ZIP을 직접 내려받아 동봉 SHA-256과 비교했다. x64 669개·ARM64 665개 파일에서 실행 파일의 PE 아키텍처, .NET·WinUI 런타임, `resources.pri`, 아이콘, 라이선스, 숨김 Claude Mods 매니페스트와 소스 커밋을 확인했다. .NET SDK 10.0.401·Windows App SDK 2.4.0으로 생성된 서명 없는 폴더 패키지다.
+- 두 아키텍처의 밝은·어두운 테마 원본 PNG 4장을 직접 확인했다. 모든 픽셀의 알파가 255이며, 사이드바·탭·Markdown·입력창·컨텍스트 버튼이 정상적으로 읽힌다.
+- SHA-256: x64 `adab0415f6ec3a4b6b1cc7074ece4ed9d4fe0310d8f3c4fe221d7b852885a353`, ARM64 `b02cea143525b333e9dd8e2d6c6bdea0fd283d90d31be5691c87732941f4f44e`.
+- [동일 커밋의 참조 구현 CI](https://github.com/athens96/MightyClaude/actions/runs/35166591873)는 Mac·Windows 모두 성공했다. Windows에서는 75개 검사 통과·다른 플랫폼 전용 3개 생략, 타입 검사와 패키징이 통과했다.
+- Mac의 Swift 127개 검사는 통과했으나 이 CI 실행의 GUI 검증은 실행/중지 버튼의 접근성 탐색에서 실패했다. 따라서 위 성공 범위는 Windows 작업이며 전체 Native clients 실행 또는 Mac 배포의 성공을 의미하지 않는다. 별도 로컬 Mac 번들의 동일 기능 스모크는 통과했으며 CI 접근성 진단을 추가했다.
+
+아래는 각 구현 시점의 기록이다. 현재 Windows 배포 범위와 다운로드 방법은 [README](../README.md)를 기준으로 한다.
+
 ## 2026-09-17: Windows basic release preparation
 
 - Windows x64 and ARM64 WinUI sources compile on macOS with .NET 10.0.302, with zero warnings or errors. These checks compile C# only; actual Windows publish and GUI results are pending CI at this preparation checkpoint. Windows CI performs the complete publish and native GUI launch for each architecture.
