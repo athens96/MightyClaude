@@ -330,7 +330,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 ## 2026-09-17: Mid-turn messages and the request queue
 
 - Verified with Claude Code 2.1.274 that a second `{"type":"user"}` frame written to stdin while a `--input-format stream-json` turn is running is read between tool calls and answered in the same turn (one `result`, `num_turns` 2). `codex exec` reads its prompt once and closes stdin, so Codex, Gemini, remote workspaces and shell panes cannot take mid-turn input.
-- Local Claude panes therefore deliver composer text during a run through `ProcessRunner.steer`, which writes the frame on the permission channel's open stdin and adds a `steer` node under main; `SteeringGraphTests` covers the block lifecycle (running until the next root text answer, stopped on early finish, duplicate ids folded) and the stdin frame shape. Every other pane appends the text to an in-memory queue that drains on `completed`, clears on `stopped`, and pauses on `error`.
+- Local Claude panes therefore deliver composer text during a run through `ProcessRunner.steer` when the user presses ⌘Enter (`AppStore.submit(_:steering:)`); plain Enter and the send button queue it as the next request instead, which writes the frame on the permission channel's open stdin and adds a `steer` node under main; `SteeringGraphTests` covers the block lifecycle (running until the next root text answer, stopped on early finish, duplicate ids folded) and the stdin frame shape. Every other pane appends the text to an in-memory queue that drains on `completed`, clears on `stopped`, and pauses on `error`.
 
 ## 2026-09-17: Claude quota without the Keychain
 

@@ -418,7 +418,9 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func submit(_ id: String) {
+    /// `steering`: while a run is busy, hand the text to the running Claude
+    /// turn (⌘Enter) instead of queueing it for the next request (Enter).
+    func submit(_ id: String, steering: Bool = false) {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         guard !usesLocalTerminal(session) else { error = "로컬 터미널 안에 명령을 직접 입력하세요."; return }
@@ -428,7 +430,7 @@ final class AppStore: ObservableObject {
         guard !input.isEmpty || !attachments.isEmpty else { return }
         if let reason = runBlockedReason(session) { error = reason; return }
         if session.status == "running" || pendingRuns.contains(id) {
-            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments))
+            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: steering)
             return
         }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
@@ -441,12 +443,12 @@ final class AppStore: ObservableObject {
             && snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
     }
 
-    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput) {
+    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true) {
         guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = "대기열에는 최대 \(QueuedInput.maximumItems)개까지 넣을 수 있습니다."; return }
         drafts[id] = ""
         let submittedIds = Set(item.attachments.map(\.id))
         attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
-        if canSteer(session), item.attachments.isEmpty {
+        if steering, canSteer(session), item.attachments.isEmpty {
             // One chain per session keeps rapid follow-ups in send order.
             let previous = steerTasks[id]
             steerTasks[id] = Task { [weak self] in
@@ -1047,7 +1049,7 @@ final class AppStore: ObservableObject {
         func route(_ event: NSEvent) -> (remaining: NSEvent?, callbacks: Int) {
             let original = probe.onSubmit
             var callbacks = 0
-            probe.onSubmit = { callbacks += 1 }
+            probe.onSubmit = { _ in callbacks += 1 }
             defer { probe.onSubmit = original }
             return (probe.handleKeyEvent(event), callbacks)
         }

@@ -258,7 +258,7 @@ enum ComposerPresentationDiagnostics {
         var body: some View {
             VStack {
                 NativeComposerEditor(text: $model.text).frame(height: height)
-                    .background(TextEditorHeightReader(text: model.text, height: $height, canSubmit: false, onSubmit: {}, placeholder: "요청할 작업을 입력하세요…"))
+                    .background(TextEditorHeightReader(text: model.text, height: $height, canSubmit: false, onSubmit: { _ in }, placeholder: "요청할 작업을 입력하세요…"))
                 Spacer()
             }.padding(20)
         }

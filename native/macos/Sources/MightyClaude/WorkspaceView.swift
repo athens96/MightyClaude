@@ -243,8 +243,8 @@ struct WorkspaceView: View {
                 Label(workspace.remote == nil ? "새 터미널" : "새 원격 명령", systemImage: "terminal")
             }
         } label: {
-            Image(systemName: "plus").font(.system(size: 13, weight: .medium)).frame(width: 28, height: 28)
-                .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
+            Image(systemName: "plus.circle.fill").font(.system(size: 20, weight: .semibold)).frame(width: 28, height: 28)
+                .foregroundStyle(Palette.canvas, Palette.accent)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         .disabled(store.hasModal)

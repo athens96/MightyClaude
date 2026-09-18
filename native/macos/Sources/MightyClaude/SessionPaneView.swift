@@ -353,9 +353,9 @@ struct SessionPaneView: View {
                     if text != nil { store.refreshSlashCommands(for: session) }
                 }
                 .frame(height: editorHeight)
-                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: running ? (steers ? "실행 중에도 보낼 수 있어요 · 진행 중인 작업에 바로 전달됩니다" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
+                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: { submitComposer(command: $0) }, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: running ? (steers ? "Enter: 다음 요청으로 대기 · ⌘Enter: 실행 중인 작업에 바로 전달" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
-                .help(running ? (steers ? "Enter로 전송 · 실행 중인 Claude에 바로 전달됩니다" : "Enter로 전송 · 현재 작업이 끝난 뒤 실행됩니다") : "Enter로 전송 · Shift+Enter로 줄바꿈 · ⌘Enter로도 전송")
+                .help(running ? (steers ? "Enter: 현재 작업이 끝난 뒤 실행 · ⌘Enter: 실행 중인 Claude에 바로 전달 · Shift+Enter: 줄바꿈" : "Enter: 현재 작업이 끝난 뒤 실행 · Shift+Enter: 줄바꿈") : "Enter 또는 ⌘Enter로 전송 · Shift+Enter로 줄바꿈")
             if importingAttachments {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
@@ -458,14 +458,14 @@ struct SessionPaneView: View {
                         .accessibilityIdentifier("composer-stop-" + session.id)
                     }
                     if !running || canSend {
-                        Button(action: submitComposer) {
-                            Image(systemName: running && !steers ? "text.badge.plus" : "arrow.up").font(.system(size: running && !steers ? 13 : 14, weight: .semibold)).frame(width: 32, height: 32)
+                        Button { submitComposer() } label: {
+                            Image(systemName: running ? "text.badge.plus" : "arrow.up").font(.system(size: running ? 13 : 14, weight: .semibold)).frame(width: 32, height: 32)
                                 .foregroundStyle(canSend ? Palette.canvas : Color.secondary)
                                 .background(canSend ? Palette.accent : Color.primary.opacity(0.08), in: Circle()).contentShape(Circle())
                         }
                         .buttonStyle(.plain).disabled(!canSend)
-                        .help(running ? (steers ? "실행 중인 Claude에 바로 전달 (Enter)" : "현재 작업이 끝난 뒤 실행 (Enter)") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")
-                        .accessibilityLabel(running ? (steers ? "실행 중에 전달" : "대기열에 추가") : "보내기")
+                        .help(running ? (steers ? "다음 요청으로 대기 (Enter) · 실행 중인 Claude에 바로 전달하려면 ⌘Enter" : "현재 작업이 끝난 뒤 실행 (Enter)") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")
+                        .accessibilityLabel(running ? "대기열에 추가" : "보내기")
                         .accessibilityIdentifier("send-" + session.id)
                     }
                 }.fixedSize(horizontal: true, vertical: true)
@@ -519,7 +519,9 @@ struct SessionPaneView: View {
     /// A built-in typed out in full never reaches the CLI, where it would
     /// be prompt text: `/clear` runs, `/model opus` applies the choice, and a
     /// `/model` with no or an unknown argument reopens (or explains) the list.
-    private func submitComposer() {
+    /// Enter sends now, or queues for the next request while a run is busy;
+    /// ⌘Enter hands the text to the running Claude turn instead.
+    private func submitComposer(command: Bool = false) {
         guard canSend, !store.hasModal else { return }
         if session.kind != "shell", attachments.isEmpty, let builtin = typedBuiltin {
             if let argument = builtin.argument {
@@ -534,7 +536,7 @@ struct SessionPaneView: View {
             applyCompletion(builtin); return
         }
         composerInput.prepareForSubmission()
-        store.submit(session.id)
+        store.submit(session.id, steering: command)
     }
 
     /// The built-in the trimmed draft names exactly (`/clear`, `/model`, `/model opus`).
