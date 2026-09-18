@@ -214,6 +214,7 @@ struct AppSettingsView: View {
                         LabeledContent("앱 호환 기준", value: mods.minimumVersion)
                     }
                 }
+                AppUpdateSettingsSection()
                 Section("앱 정보") {
                     LabeledContent("버전", value: store.runtime?.appVersion ?? "0.1.0")
                     Text("SwiftUI · AppKit · 네이티브 프로세스 실행").font(.system(size: 11)).foregroundStyle(.secondary)

@@ -19,6 +19,9 @@ jobs:
       - name: Test Swift core and loopback remote execution
         run: bash scripts/test-native-macos.sh
       - name: Build SwiftUI application
+        env:
+          MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL }}
+          MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY }}
         run: bash scripts/build-macos.sh
       - name: Smoke test isolated native profile
         timeout-minutes: 3
@@ -45,10 +48,27 @@ jobs:
           if-no-files-found: warn
       - name: Package macOS app with executable modes and hidden resources
         run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
+      - name: Write the signed update manifest for the package
+        if: vars.MIGHTY_DOWNLOAD_BASE != ''
+        env:
+          MIGHTY_DOWNLOAD_BASE: ${{ vars.MIGHTY_DOWNLOAD_BASE }}
+          MIGHTY_UPDATE_SIGNING_KEY: ${{ secrets.MIGHTY_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          KEY_ARGS=()
+          if [ -n "${MIGHTY_UPDATE_SIGNING_KEY:-}" ]; then
+            printf '%s' "$MIGHTY_UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-signing.key"
+            KEY_ARGS=(--sign-key "$RUNNER_TEMP/update-signing.key")
+          fi
+          python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip --base-url "$MIGHTY_DOWNLOAD_BASE/$VERSION" --out release/latest.json "${KEY_ARGS[@]}"
       - uses: actions/upload-artifact@v4
         with:
           name: MightyClaude-native-macos
-          path: release/MightyClaude-macos.zip
+          path: |
+            release/MightyClaude-macos.zip
+            release/latest.json
+            release/latest.unsigned.json
           if-no-files-found: error
   windows:
     name: Windows ${{ matrix.architecture }}

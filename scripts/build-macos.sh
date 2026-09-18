@@ -50,6 +50,19 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict></plist>
 PLIST
+# Version and update address: VERSION file (or MIGHTY_APP_VERSION), commit count
+# (or MIGHTY_BUILD_NUMBER), and the manifest URL the app checks (MIGHTY_UPDATE_URL).
+APP_VERSION="${MIGHTY_APP_VERSION:-$(tr -d '[:space:]' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo 0.1.0)}"
+BUILD_NUMBER="${MIGHTY_BUILD_NUMBER:-$(git -C "$PROJECT_ROOT" rev-list --count HEAD 2>/dev/null || echo 1)}"
+plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP_PATH/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$APP_PATH/Contents/Info.plist"
+if [ -n "${MIGHTY_UPDATE_URL:-}" ]; then
+  plutil -replace MightyUpdateManifestURL -string "$MIGHTY_UPDATE_URL" "$APP_PATH/Contents/Info.plist"
+fi
+# Base64 raw Ed25519 public key; with it the app accepts only signed manifests.
+if [ -n "${MIGHTY_UPDATE_PUBLIC_KEY:-}" ]; then
+  plutil -replace MightyUpdatePublicKey -string "$MIGHTY_UPDATE_PUBLIC_KEY" "$APP_PATH/Contents/Info.plist"
+fi
 # Ad-hoc signatures differ per build, so the Keychain treats every rebuild as a
 # new app and asks again for the remote connection key. A stable local
 # code-signing certificate (Keychain Access → Certificate Assistant, type

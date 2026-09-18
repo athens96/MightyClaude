@@ -306,6 +306,12 @@ struct WorkspaceView: View {
             Text("\(store.activeSessions.count)개 실행 창")
             Text("·").padding(.horizontal, 3)
             Text("\(store.snapshot.sessions.filter { $0.status == "running" }.count)개 실행 중")
+            if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
+                Button { store.showSettings = true } label: {
+                    Label("새 버전 \(version)", systemImage: "arrow.down.circle.fill").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
+                }
+                .buttonStyle(.plain).help("설정에서 업데이트를 받거나 설치할 수 있습니다.").accessibilityIdentifier("app-update-badge")
+            }
             Divider().frame(height: 12).padding(.horizontal, 4)
             StatusBarUsageView(controller: accountUsage)
             AgentStatusControls(companion: store.companion)
