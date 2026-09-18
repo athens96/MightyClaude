@@ -159,6 +159,8 @@ final class ComposerTextView: NSTextView {
     // between those callbacks lets @Published/SwiftUI updates re-enter AppKit
     // before the input context has finished interpreting that key.
     override func keyDown(with event: NSEvent) {
+        InputMethodMonitor.shared.keyBegan(event)
+        defer { InputMethodMonitor.shared.keyEnded() }
         performInputTransaction { super.keyDown(with: event) }
     }
 
@@ -181,15 +183,24 @@ final class ComposerTextView: NSTextView {
     }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        InputMethodMonitor.shared.noteMarkedText(string, selectedRange: selectedRange, in: self)
         performInputTransaction { super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange) }
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
         performInputTransaction { super.insertText(string, replacementRange: replacementRange) }
+        InputMethodMonitor.shared.noteInsert(string, in: self)
     }
 
     override func unmarkText() {
+        InputMethodMonitor.shared.noteUnmark(in: self)
         performInputTransaction { super.unmarkText() }
+    }
+
+    override func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let rect = super.firstRect(forCharacterRange: range, actualRange: actualRange)
+        InputMethodMonitor.shared.noteFirstRect(rect, range: range)
+        return rect
     }
 
     // AppKit can notify its delegate before a marked range is installed or

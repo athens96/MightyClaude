@@ -59,6 +59,8 @@ final class AppStore: ObservableObject {
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
     @Published var statusLines: [String: StatusLineState] = [:]
     @Published var appUpdate = AppUpdateState()
+    /// Korean composition broke in a composer; shown until reconnected or dismissed.
+    @Published var inputMethodProblem: InputMethodMonitor.Problem?
     var appUpdateServiceStorage: AppUpdateService?
     var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
@@ -141,6 +143,8 @@ final class AppStore: ObservableObject {
         guard !ending, !Task.isCancelled else { loading = false; return }
         isLoaded = true
         companion.configure(store: self)
+        InputMethodMonitor.shared.dataDirectory = dataDirectory
+        InputMethodMonitor.shared.onProblem = { [weak self] problem in self?.inputMethodProblem = problem }
         loading = false
         Task {
             await refreshRuntime()
