@@ -132,17 +132,61 @@ public actor StateRepository {
         return normalize(AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? 252, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote), restoring: restoring)
     }
 
+    public static let totalLogBudget = 4 * 1024 * 1024
+    public static let totalGraphBudget = 2 * 1024 * 1024
+
+    /// Splits `total` across sessions so that small histories keep everything
+    /// and only the largest ones are trimmed: each session in ascending order
+    /// of demand takes what it needs up to an equal share of what is left.
+    /// Without this, one big session drained the whole budget and every
+    /// session saved after it lost its history.
+    public nonisolated static func fairShares(demands: [Int], total: Int) -> [Int] {
+        var shares = Array(repeating: 0, count: demands.count)
+        var remaining = max(0, total)
+        let order = demands.indices.sorted { demands[$0] < demands[$1] }
+        for (position, index) in order.enumerated() {
+            let left = order.count - position
+            let grant = min(max(0, demands[index]), remaining / left)
+            shares[index] = grant; remaining -= grant
+        }
+        return shares
+    }
+
+    /// Demand estimates deliberately exceed what normalization charges: a
+    /// session whose estimate fell short would be trimmed with budget to spare.
+    static func approximateLogBytes(_ logs: [LogEntry]) -> Int {
+        guard !logs.isEmpty else { return 0 }
+        let bytes = logs.reduce(0) { $0 + $1.text.utf8.count + ($1.activity.map { $0.summary.utf8.count + ($0.toolName?.utf8.count ?? 0) + ($0.output?.utf8.count ?? 0) } ?? 0) + 256 }
+        return bytes + bytes / 4 + 4096
+    }
+    static func approximateGraphBytes(_ runs: [MightyGraphRun]) -> Int {
+        guard !runs.isEmpty else { return 0 }
+        func entryBytes(_ values: [LogEntry]) -> Int { values.reduce(0) { $0 + 1024 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) } }
+        let bytes = runs.reduce(0) { total, run in
+            total + 2048 + run.id.utf8.count * 2 + (run.sourceRunID?.utf8.count ?? 0) + run.input.utf8.count + (run.finalOutput?.utf8.count ?? 0) * 3 + entryBytes(run.rootEntries)
+                + run.agents.reduce(0) { $0 + 1536 + $1.id.utf8.count * 2 + ($1.parentID?.utf8.count ?? 0) + $1.title.utf8.count + $1.input.utf8.count + entryBytes($1.entries) }
+        }
+        return bytes + bytes / 4 + 4096
+    }
+
     public nonisolated static func normalize(_ value: AppSnapshot, restoring: Bool, at date: Date = Date()) -> AppSnapshot {
-        var output = AppSnapshot(); var workspaceIds = Set<String>(); var sessionIds = Set<String>(); var logBudget = 4 * 1024 * 1024
-        var graphBudget = 2 * 1024 * 1024
+        var output = AppSnapshot(); var workspaceIds = Set<String>(); var sessionIds = Set<String>()
         for var workspace in value.workspaces.prefix(64) {
             guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path, remote: workspace.remote != nil) else { continue }
             if let remote = workspace.remote, !CoreValidation.identifier(remote.connectionId) || !CoreValidation.identifier(remote.workspaceId) || remote.hostName.isEmpty { continue }
             workspace.name = String(workspace.name.prefix(120)); workspaceIds.insert(workspace.id); output.workspaces.append(workspace)
         }
-        for var session in value.sessions.prefix(128) {
-            guard CoreValidation.identifier(session.id), !sessionIds.contains(session.id), workspaceIds.contains(session.workspaceId), ["claude", "shell"].contains(session.kind) else { continue }
-            sessionIds.insert(session.id); session.title = legacyNumberedTitle(String(session.title.prefix(120)))
+        // Shares are computed over the sessions that will survive, so a
+        // dropped or duplicate session cannot take budget from a real one.
+        let candidates = value.sessions.prefix(128).filter { session in
+            CoreValidation.identifier(session.id) && sessionIds.insert(session.id).inserted && workspaceIds.contains(session.workspaceId) && ["claude", "shell"].contains(session.kind)
+        }
+        let logShares = fairShares(demands: candidates.map { approximateLogBytes(Array($0.logs.suffix(400))) }, total: totalLogBudget)
+        let graphShares = fairShares(demands: candidates.map { approximateGraphBytes($0.graphRuns ?? []) }, total: totalGraphBudget)
+        for (position, original) in candidates.enumerated() {
+            var session = original
+            var logBudget = logShares[position], graphBudget = graphShares[position]
+            session.title = legacyNumberedTitle(String(session.title.prefix(120)))
             session.provider = ProviderOptions.normalizeProvider(session.provider); session.model = CoreValidation.model(session.model) ? session.model : "default"
             session.settings = ProviderOptions.normalizedSettings(provider: session.provider, settings: session.settings)
             if !["idle", "running", "completed", "error", "stopped"].contains(session.status) { session.status = "idle" }
@@ -150,6 +194,9 @@ public actor StateRepository {
             if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
             session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
             session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
+            // A history the budget emptied is not "no history": drop the empty
+            // array so the graph is rebuilt from the logs, as for old sessions.
+            if let runs = session.graphRuns, runs.isEmpty, !session.logs.isEmpty { session.graphRuns = nil }
             session.logs = session.logs.suffix(400).compactMap { entry in
                 guard CoreValidation.identifier(entry.id), ["user", "assistant", "system", "output", "error"].contains(entry.kind), logBudget > 0 else { return nil }
                 var log = entry; log.text = ActivitySupport.prefixUTF8(log.text, maximumBytes: min(log.kind == "assistant" ? 131_072 : 32_768, logBudget)); logBudget -= log.text.utf8.count

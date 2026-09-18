@@ -168,6 +168,14 @@ struct AppSettingsView: View {
             Form {
                 Section("화면") {
                     Picker("테마", selection: $store.snapshot.theme) { Text("다크").tag("dark"); Text("라이트").tag("light") }.pickerStyle(.segmented)
+                    Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Claude 상태 줄 표시")
+                            Text("settings.json의 statusLine 명령을 실행해 입력창 아래에 보여줍니다. oh-my-claudecode HUD 같은 도구가 그대로 동작합니다.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
                 }
                 Section("원격 연결") {
                     Button { store.settingsShowsRemote = true } label: {

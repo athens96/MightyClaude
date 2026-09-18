@@ -57,6 +57,7 @@ final class AppStore: ObservableObject {
     @Published var componentMessageIsError = false
     /// Slash-command completion (AppStore+SlashCommands.swift).
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
+    @Published var statusLines: [String: StatusLineState] = [:]
     var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
@@ -98,6 +99,8 @@ final class AppStore: ObservableObject {
     var terminalStarts = Set<String>()
     let paneDragToken = UUID().uuidString
     private let arguments = ProcessInfo.processInfo.arguments
+    /// Smoke profiles must not run the user's own status line command.
+    var smokeTesting: Bool { arguments.contains { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") } }
 
     private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory) { [weak self] event in
         Task { @MainActor in self?.apply(event) }
@@ -323,6 +326,7 @@ final class AppStore: ObservableObject {
             await stop(id)
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
+            statusLines.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.cancel()
             draftRevisions.removeValue(forKey: id)
@@ -342,6 +346,7 @@ final class AppStore: ObservableObject {
             for session in snapshot.sessions where session.workspaceId == workspace.id {
                 await stop(session.id)
                 drafts.removeValue(forKey: session.id)
+                statusLines.removeValue(forKey: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.cancel()
                 draftRevisions.removeValue(forKey: session.id)
