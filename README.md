@@ -64,7 +64,7 @@ bash scripts/build-macos.sh
 open release/native-macos/MightyClaude.app
 ```
 
-실행 중인 창에도 계속 입력할 수 있다. 이 Mac의 Claude 창은 보낸 글을 진행 중인 턴에 바로 전달하고 마이티 모드에 **중간 요청** 블록으로 표시하며, Codex·Gemini·원격·셸 창은 현재 요청이 끝난 뒤 순서대로 실행하는 대기열에 넣는다. 자세한 동작은 [docs/mighty-mode.md](docs/mighty-mode.md)를 참고한다.
+입력창에 `/`를 치면 그 실행기의 스킬·사용자 명령·플러그인 명령이 목록으로 나타나고 ↑↓·Enter·Tab으로 고를 수 있다([docs/slash-commands.md](docs/slash-commands.md)). 실행 중인 창에도 계속 입력할 수 있다. 이 Mac의 Claude 창은 보낸 글을 진행 중인 턴에 바로 전달하고 마이티 모드에 **중간 요청** 블록으로 표시하며, Codex·Gemini·원격·셸 창은 현재 요청이 끝난 뒤 순서대로 실행하는 대기열에 넣는다. 자세한 동작은 [docs/mighty-mode.md](docs/mighty-mode.md)를 참고한다.
 
 설정의 **구성 요소**에서 에이전트 CLI 상태와 필요한 플러그인을 한 번에 확인하고 처리한다([docs/components.md](docs/components.md)).
 

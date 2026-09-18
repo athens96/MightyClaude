@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "릴레이 기반 모바일 리모트: 휴대폰 ⇄ 릴레이 ⇄ Mac (종단 간 암호화)",
+    "viewBox": [1000, 1100],
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    { "id": "phone", "type": "external", "label": "휴대폰", "sublabel": "Expo (mobile/)" },
+    { "id": "relay", "type": "messagebus", "label": "릴레이", "sublabel": "Node + Docker" },
+    { "id": "mac", "type": "backend", "label": "Mac", "sublabel": "Swift 앱" }
+  ],
+  "segments": [
+    { "from": 160, "to": 280, "label": "초기화: 릴레이 연결" },
+    { "from": 300, "to": 460, "label": "페어링: QR 스캔 → 데이터 소켓" },
+    { "from": 480, "to": 680, "label": "핸드셰이크 & 인증 & 통신" },
+    { "from": 700, "to": 860, "label": "상태 동기화 & 요청-응답" }
+  ],
+  "messages": [
+    { "from": "mac", "to": "relay", "y": 190, "label": "제어 소켓 연결 (role=server)", "variant": "emphasis" },
+    { "from": "relay", "to": "mac", "y": 232, "label": "연결됨, QR 표시", "variant": "return" },
+    { "from": "phone", "to": "relay", "y": 320, "label": "QR 스캔 → 데이터 소켓 (role=client, connectionId)", "variant": "emphasis" },
+    { "from": "relay", "to": "mac", "y": 362, "label": "{type:connected, connectionId}", "variant": "security" },
+    { "from": "mac", "to": "relay", "y": 404, "label": "데이터 소켓 연결 (role=server, 같은 connectionId)", "variant": "emphasis" },
+    { "from": "relay", "to": "phone", "y": 446, "label": "✓ 릴레이 소켓 짝지음", "variant": "return" },
+    { "from": "phone", "to": "mac", "y": 510, "label": "hello(clientKey, nonce) [평문]", "variant": "default" },
+    { "from": "mac", "to": "phone", "y": 552, "label": "ready(serverKey, nonce) [평문]", "variant": "return" },
+    { "from": "phone", "to": "mac", "y": 594, "label": "auth(pairingKey) [ChaCha20-Poly1305]", "variant": "security" },
+    { "from": "mac", "to": "phone", "y": 636, "label": "auth_ok [암호화] 또는 auth_error", "variant": "return", "variant": "security" },
+    { "from": "phone", "to": "mac", "y": 720, "label": "요청: {id, GET /m1/state?since&wait} [암호화]", "variant": "emphasis" },
+    { "from": "mac", "to": "phone", "y": 762, "label": "응답: {id, status, body} [암호화]", "variant": "return" },
+    { "from": "mac", "to": "phone", "y": 804, "label": "notify{scope, revision} [암호화]", "variant": "security" },
+    { "from": "phone", "to": "mac", "y": 846, "label": "재요청 (notify 수신 시)", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "mac", "from": 184, "to": 240, "type": "backend" },
+    { "participant": "relay", "from": 184, "to": 450, "type": "messagebus" },
+    { "participant": "phone", "from": 314, "to": 450, "type": "external" },
+    { "participant": "phone", "from": 504, "to": 850, "type": "external" },
+    { "participant": "mac", "from": 504, "to": 850, "type": "backend" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "키 유도 & 암호화",
+      "items": [
+        "X25519 임시 키쌍으로 세션 키 합의 (HKDF-SHA256)",
+        "nonce = [방향 1B][0 0 0][카운터 8B]; 수신자는 증가할 때만 수락",
+        "모든 페이로드 ChaCha20-Poly1305로 인증 및 암호화",
+        "릴레이는 암호문만 보고 의미를 알 수 없음"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "릴레이 소켓 아키텍처",
+      "items": [
+        "Mac: 제어 소켓 (ping/pong 유지), 휴대폰 당 데이터 소켓 1개",
+        "릴레이: /ws?serverId&role=server|client&connectionId로 짝지음",
+        "연결 제한: 호스트당 32개, 미인증 4개, 핸드셰이크 제한 10초"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "재접속 & 알림",
+      "items": [
+        "지수 백오프: 1.5s → 30s (포그라운드 복귀 시 즉시)",
+        "notify 수신 시 즉시 /m1/state 재요청 (long polling)",
+        "20초 ping/pong로 연결 유지",
+        "상태: /m1/state, /m1/sessions, /submit, /stop, /permission, /answers, /workspaces"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "검증",
+      "items": [
+        "릴레이: 16개 테스트 (코드 4404/4409/4410/4413/4429/4504)",
+        "Swift: RelayChannel, MobileRemote, RelayIntegration (실제 릴레이)",
+        "모바일: 61개 테스트 (Swift 벡터 교차 검증 포함)",
+        "설정: 릴레이 주소, QR 생성, 키 다시 만들기"
+      ]
+    }
+  ]
+}

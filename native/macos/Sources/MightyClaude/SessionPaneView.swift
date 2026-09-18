@@ -11,6 +11,8 @@ struct SessionPaneView: View {
     @ViewState private var editorHeight: CGFloat = 22
     @ViewState private var attachmentDropTargeted = false
     @ViewState private var stopping = false
+    @ViewState private var paletteIndex = 0
+    @ViewState private var paletteDismissedFor: String?
 
     private var running: Bool { session.status == "running" }
     private var active: Bool { store.snapshot.activeSessionId == session.id }
@@ -46,6 +48,16 @@ struct SessionPaneView: View {
     /// the text immediately, other panes queue it for after the current request.
     private var canSend: Bool { !stopping && !importingAttachments && blockedReason == nil && (!draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty)) }
     private var steers: Bool { store.canSteer(session) }
+    /// The `/…` token being completed, or nil when the palette should be closed.
+    private var slashQuery: String? {
+        guard session.kind != "shell", let query = SlashCommandCatalog.query(from: draft.wrappedValue), paletteDismissedFor != draft.wrappedValue else { return nil }
+        return query
+    }
+    private var paletteCommands: [SlashCommand] {
+        guard let slashQuery else { return [] }
+        return Array(SlashCommandCatalog.filter(store.slashCommands(for: session), query: slashQuery).prefix(60))
+    }
+    private var paletteVisible: Bool { !paletteCommands.isEmpty }
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
     private var settingsPopover: Binding<RunSession?> {
         Binding(get: { store.settingsSession?.id == session.id ? store.settingsSession : nil }, set: { value in
@@ -325,9 +337,18 @@ struct SessionPaneView: View {
                                  onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) })
                     .padding(.horizontal, 10).padding(.top, attachments.isEmpty ? 10 : 6)
             }
+            if paletteVisible {
+                SlashCommandPalette(commands: paletteCommands, selectedIndex: min(paletteIndex, paletteCommands.count - 1),
+                                    onSelect: { applyCompletion($0) }, onHover: { paletteIndex = $0 })
+                    .padding(.horizontal, 10).padding(.top, 10)
+            }
             NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocused = $0 }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput)
+                .onChange(of: slashQuery) { _, query in
+                    paletteIndex = 0
+                    if query != nil { store.refreshSlashCommands(for: session) }
+                }
                 .frame(height: editorHeight)
-                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, placeholder: running ? (steers ? "실행 중에도 보낼 수 있어요 · 진행 중인 작업에 바로 전달됩니다" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
+                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, onNavigationKey: paletteVisible ? handlePaletteKey : nil, placeholder: running ? (steers ? "실행 중에도 보낼 수 있어요 · 진행 중인 작업에 바로 전달됩니다" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
                 .help(running ? (steers ? "Enter로 전송 · 실행 중인 Claude에 바로 전달됩니다" : "Enter로 전송 · 현재 작업이 끝난 뒤 실행됩니다") : "Enter로 전송 · Shift+Enter로 줄바꿈 · ⌘Enter로도 전송")
             if importingAttachments {
@@ -429,6 +450,27 @@ struct SessionPaneView: View {
         }
         .frame(height: ComposerToolbarMetrics.height)
         .popover(item: settingsPopover, arrowEdge: .bottom) { selected in RunSettingsView(session: selected).environmentObject(store) }
+    }
+
+    /// Arrows move the highlight, Enter/Tab insert it, Esc closes the list for
+    /// this draft. Returns false when the key should reach the editor.
+    private func handlePaletteKey(_ key: ComposerNavigationKey) -> Bool {
+        let commands = paletteCommands
+        guard !commands.isEmpty else { return false }
+        switch key {
+        case .up: paletteIndex = (paletteIndex - 1 + commands.count) % commands.count
+        case .down: paletteIndex = (paletteIndex + 1) % commands.count
+        case .select: applyCompletion(commands[min(paletteIndex, commands.count - 1)])
+        case .dismiss: paletteDismissedFor = draft.wrappedValue
+        }
+        return true
+    }
+
+    private func applyCompletion(_ command: SlashCommand) {
+        let text = "/" + command.invocation + " "
+        paletteDismissedFor = text
+        composerInput.replaceDraft(text)
+        store.drafts[session.id] = text
     }
 
     private func stopRun() {

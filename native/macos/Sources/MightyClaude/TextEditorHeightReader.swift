@@ -8,6 +8,9 @@ struct TextEditorHeightReader: NSViewRepresentable {
     @Binding var height: CGFloat
     let canSubmit: Bool
     let onSubmit: () -> Void
+    /// Returns true when the palette consumed the key (arrows, Tab, Esc,
+    /// Return while a completion is highlighted).
+    var onNavigationKey: ((ComposerNavigationKey) -> Bool)?
     var placeholder = ""
 
     func makeNSView(context: Context) -> HeightProbe { HeightProbe() }
@@ -15,6 +18,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
     func updateNSView(_ view: HeightProbe, context: Context) {
         view.canSubmit = canSubmit
         view.onSubmit = onSubmit
+        view.onNavigationKey = onNavigationKey
         view.placeholder = placeholder
         view.onHeightChange = { measured in
             if abs(height - measured) > 0.5 { height = measured }
@@ -27,6 +31,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
     final class HeightProbe: NSView {
         var onHeightChange: ((CGFloat) -> Void)?
         var onSubmit: (() -> Void)?
+        var onNavigationKey: ((ComposerNavigationKey) -> Bool)?
         var canSubmit = false
         var placeholder = "" { didSet { synchronizePlaceholder() } }
         private(set) weak var editor: NSTextView?
@@ -60,6 +65,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
             detachEditor()
             onHeightChange = nil
             onSubmit = nil
+            onNavigationKey = nil
         }
 
         private func removeKeyMonitor() {
@@ -116,12 +122,24 @@ struct TextEditorHeightReader: NSViewRepresentable {
         /// Return's physical key codes also cover the numeric keypad Enter key.
         /// Composition and modified newlines stay on NSTextView's native path.
         func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
-            guard event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76,
-                  let window, event.windowNumber == window.windowNumber,
+            guard event.type == .keyDown, let window, event.windowNumber == window.windowNumber,
                   let editor, editor.window === window, window.firstResponder === editor,
                   editor.isEditable, !editor.isHiddenOrHasHiddenAncestor else { return event }
             guard !editor.hasMarkedText() else { return event }
             let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            // An open completion palette takes arrows, Tab, Esc and Return first.
+            if modifiers.isEmpty, let onNavigationKey {
+                let key: ComposerNavigationKey? = switch event.keyCode {
+                case 126: .up
+                case 125: .down
+                case 48: .select
+                case 53: .dismiss
+                case 36, 76: .select
+                default: nil
+                }
+                if let key, onNavigationKey(key) { return nil }
+            }
+            guard event.keyCode == 36 || event.keyCode == 76 else { return event }
             guard modifiers.isEmpty || modifiers == .command else { return event }
             if canSubmit, !event.isARepeat { onSubmit?() }
             // Disabled sends are consumed too: Enter must not submit, insert an

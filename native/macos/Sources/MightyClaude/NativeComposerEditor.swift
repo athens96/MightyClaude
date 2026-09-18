@@ -120,6 +120,8 @@ struct NativeComposerEditor: NSViewRepresentable {
 final class ComposerInputController {
     weak var editor: ComposerTextView?
     func prepareForSubmission() { editor?.prepareForSubmission() }
+    /// Replaces the whole draft (used by slash completion) and parks the caret at the end.
+    func replaceDraft(_ text: String) { editor?.replaceDraft(text) }
 }
 
 final class ComposerTextView: NSTextView {
@@ -139,6 +141,17 @@ final class ComposerTextView: NSTextView {
                 inputContext?.discardMarkedText()
             }
         }
+    }
+
+    func replaceDraft(_ text: String) {
+        performInputTransaction {
+            if hasMarkedText() { unmarkText(); inputContext?.discardMarkedText() }
+            string = text
+            undoManager?.removeAllActions()
+            setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+            didChangeText()
+        }
+        onInputFinished?()
     }
 
     // One key can commit the preceding syllable and begin the next marked
