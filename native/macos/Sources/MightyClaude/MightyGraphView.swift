@@ -181,6 +181,8 @@ struct MightyGraphView: View {
     var onSaveBlockSize: (String, MightyGraphBlockSize?) -> Void = { _, _ in }
     /// Local project folder for resolving file references; nil disables links.
     var workspaceRoot: URL? = nil
+    /// The pane's guided Mighty style; nil for the plain CLI style.
+    var style: String? = nil
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     @ViewState private var reference: MightyGraphReference?
@@ -331,7 +333,7 @@ struct MightyGraphView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
             let run = runs[index]
-            transcriptCard(node, title: (OuroborosFlow.requestTitle(forInput: run.input).map { $0 + " · " } ?? "") + "요청 \(index + 1) · \(ProviderOptions.label(provider))", icon: "arrow.up.message", status: run.status,
+            transcriptCard(node, title: (MightyStyles.requestTitle(forInput: run.input, style: style).map { $0 + " · " } ?? "") + "요청 \(index + 1) · \(ProviderOptions.label(provider))", icon: "arrow.up.message", status: run.status,
                            input: run.input, entries: run.rootEntries, tint: Palette.accent, usage: run.usage)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]

@@ -10,7 +10,7 @@ struct ToolPermissionBar: View {
     /// In the Ouroboros style the composer itself shows the agent's questions,
     /// and the style's own state tools are approved without a card.
     private var visibleRequests: [ToolPermissionRequest] {
-        guard let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), store.usesOuroboros(session) else { return store.toolPermissions[sessionId] ?? [] }
+        guard let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), store.usesGuidedStyle(session) else { return store.toolPermissions[sessionId] ?? [] }
         return store.ouroborosVisibleRequests(sessionId)
     }
 

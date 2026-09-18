@@ -86,4 +86,4 @@ Codex 실행 창은 `codex exec --json`이 내보내는 JSONL을 사용한다. �
 
 ## 요청 스타일
 
-마이티 모드의 입력창 위에서 `CLI | Ouroboros` 스타일을 고를 수 있다(이 Mac의 Claude 실행 창). CLI는 이 문서의 기본 동작이고, Ouroboros는 인터뷰 질문을 주고받으며 시드 → 실행 → 평가 → 진화로 이어지는 안내형 흐름이다. 자세한 내용은 [ouroboros-mode.md](ouroboros-mode.md).
+마이티 모드의 입력창 위에서 `CLI | Ouroboros | Paperthin` 스타일을 고를 수 있다(이 Mac의 Claude 실행 창). CLI는 이 문서의 기본 동작이다. Ouroboros는 인터뷰 질문을 주고받으며 시드 → 실행 → 평가 → 진화로 이어지는 안내형 흐름이고([ouroboros-mode.md](ouroboros-mode.md)), Paperthin은 덜어내는 작은 스킬들을 2×2 지도에서 골라 실행하고 반복 사이클의 케이스북을 보여준다([paperthin-mode.md](paperthin-mode.md)). 두 안내형 스타일 모두 에이전트의 질문을 입력창에서 바로 답한다.
