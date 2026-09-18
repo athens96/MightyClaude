@@ -143,12 +143,14 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public var runTiming: AgentRunTiming?
     public var sessionUsage: SessionUsage?
     public var agentViewMode: String?
+    /// How requests are made inside Mighty mode: nil is the plain CLI style, "ouroboros" the guided loop.
+    public var mightyStyle: String?
     public var graphRuns: [MightyGraphRun]?
     public var graphBlockSizes: [String: MightyGraphBlockSize]?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, graphRuns, graphBlockSizes }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, graphRuns, graphBlockSizes }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); workspaceId = try c.decode(String.self, forKey: .workspaceId)
@@ -161,6 +163,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         runTiming = try? c.decodeIfPresent(AgentRunTiming.self, forKey: .runTiming)
         sessionUsage = try? c.decodeIfPresent(SessionUsage.self, forKey: .sessionUsage)
         agentViewMode = try? c.decodeIfPresent(String.self, forKey: .agentViewMode)
+        mightyStyle = try? c.decodeIfPresent(String.self, forKey: .mightyStyle)
         graphRuns = try? c.decodeIfPresent([MightyGraphRun].self, forKey: .graphRuns)
         // Optional layout damage must not discard the saved conversation.
         graphBlockSizes = try? c.decodeIfPresent([String: MightyGraphBlockSize].self, forKey: .graphBlockSizes)

@@ -7,17 +7,25 @@ struct ToolPermissionBar: View {
     @EnvironmentObject private var store: AppStore
     let sessionId: String
 
+    /// In the Ouroboros style the composer itself shows the agent's questions,
+    /// and the style's own state tools are approved without a card.
+    private var visibleRequests: [ToolPermissionRequest] {
+        guard let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), store.usesOuroboros(session) else { return store.toolPermissions[sessionId] ?? [] }
+        return store.ouroborosVisibleRequests(sessionId)
+    }
+
     @ViewBuilder var body: some View {
-        if let request = store.toolPermissions[sessionId]?.first {
+        let requests = visibleRequests
+        if let request = requests.first {
             Group {
                 if let questionnaire = request.questionnaire {
                     UserQuestionnaireCard(sessionId: sessionId, request: request,
                                           questionnaire: questionnaire,
-                                          count: store.toolPermissions[sessionId]?.count ?? 1)
+                                          count: requests.count)
                         .layoutPriority(1)
                 } else {
                     ToolPermissionCard(sessionId: sessionId, request: request,
-                                       count: store.toolPermissions[sessionId]?.count ?? 1)
+                                       count: requests.count)
                 }
             }.id(store.permissionResponseKey(sessionId: sessionId, request: request))
         }

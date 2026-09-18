@@ -19,6 +19,8 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var isSteer: Bool { kind == "steer" }
     /// The CLI summarized its context mid-turn; the block is complete on arrival.
     public var isCompact: Bool { kind == "compact" }
+    /// A question the agent asked the user (AskUserQuestion); the answer is its output.
+    public var isQuestion: Bool { kind == "question" }
 }
 
 public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
@@ -142,7 +144,7 @@ public enum MightyGraphSupport {
                 agent.title = bounded(agent.title, maximum: 240, budget: &budget)
                 agent.input = bounded(agent.input, maximum: 16_384, budget: &budget)
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
-                if !["task", "steer", "compact"].contains(agent.kind ?? "") { agent.kind = nil }
+                if !["task", "steer", "compact", "question"].contains(agent.kind ?? "") { agent.kind = nil }
                 agent.usage = agent.usage?.normalized
                 agent.activityGeneration = ExecutionGraphSupport.normalizedGeneration(agent.activityGeneration)
                 if restoring && !terminal(agent.status) { agent.status = "stopped" }
@@ -250,7 +252,7 @@ extension RunSession {
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
-                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration)
+                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration)
                 if let output = node.output, !output.isEmpty {
                     let answerID = provider == "codex"
                         ? ExecutionGraphSupport.identifier(node.runId, node.id + ":answer:\(node.activityGeneration ?? 0)")

@@ -71,6 +71,18 @@ final class ExecutionGraphTracker {
         nodes[nodeID] = normalized; order.append(nodeID); emit(normalized)
     }
 
+    /// Header and readable body of an AskUserQuestion input: every question with its options.
+    static func questionSummary(_ input: [String: Any]?) -> (title: String?, body: String) {
+        let questions = input?["questions"] as? [[String: Any]] ?? []
+        let title = (questions.first?["header"] as? String).flatMap { $0.isEmpty ? nil : "질문 · " + $0 }
+        let body = questions.map { question -> String in
+            let text = question["question"] as? String ?? ""
+            let options = (question["options"] as? [[String: Any]] ?? []).compactMap { $0["label"] as? String }
+            return options.isEmpty ? text : text + "\n" + options.map { "  ○ " + $0 }.joined(separator: "\n")
+        }.joined(separator: "\n\n")
+        return (title, body)
+    }
+
     static func parentToolID(_ value: [String: Any]) -> String? { key(value["parent_tool_use_id"]) }
     private static func key(_ value: Any?) -> String? {
         guard let value = value as? String, !value.isEmpty, value.utf8.count <= 512 else { return nil }
@@ -197,6 +209,15 @@ final class ExecutionGraphTracker {
                         if let prompt = input?["prompt"] as? String { node.input = prompt }
                         if let title = (input?["name"] ?? input?["description"] ?? input?["subagent_type"]) as? String, !title.isEmpty { node.title = title }
                     }
+                } else if block["name"] as? String == "AskUserQuestion", let question = ensureNode(toolID: toolID, kind: "question", title: "질문") {
+                    // Each question to the user is its own block; the answer settles it.
+                    setParent(question, owner: owner)
+                    let summary = Self.questionSummary(input)
+                    update(question) { node in
+                        node.state = "waiting"
+                        if let title = summary.title { node.title = title }
+                        node.input = summary.body
+                    }
                 } else if background, let task = ensureNode(toolID: toolID, kind: "task", title: "백그라운드 작업") {
                     // A backgrounded command outlives its tool result. It gets its
                     // own child block; the engine's task notification settles it.
@@ -217,6 +238,13 @@ final class ExecutionGraphTracker {
                 let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: toolID)
                 guard let node = nodes[child] else { continue }
                 if node.kind == "task" { acknowledgeTask(child, block: block); continue }
+                if node.kind == "question" {
+                    update(child) { node in
+                        node.state = block["is_error"] as? Bool == true ? "stopped" : "completed"
+                        node.output = Self.text(block["content"])
+                    }
+                    continue
+                }
                 // Background Agent tool results acknowledge launch; they are
                 // not the agent's answer. Its turn.complete is authoritative.
                 guard !backgroundTools.contains(toolID) else { continue }
@@ -511,7 +539,7 @@ final class ExecutionGraphTracker {
             update(id) { value in
                 value.state = state == "error" ? "error" : "stopped"
                 let text = value.kind == "task" ? "백그라운드 작업의 완료 알림을 받기 전에 실행이 종료되었습니다."
-                    : value.kind == "steer" ? "중간 요청에 대한 응답을 받기 전에 실행이 종료되었습니다." : "하위 에이전트의 완료 응답을 받기 전에 실행이 종료되었습니다."
+                    : value.kind == "steer" ? "중간 요청에 대한 응답을 받기 전에 실행이 종료되었습니다." : value.kind == "question" ? "질문에 답하기 전에 실행이 종료되었습니다." : "하위 에이전트의 완료 응답을 받기 전에 실행이 종료되었습니다."
                 value.entries.append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":unfinished"), kind: "system", text: text, provider: provider))
             }
         }
