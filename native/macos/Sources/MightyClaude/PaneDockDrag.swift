@@ -158,6 +158,9 @@ final class PaneDockTabHandleView: NSView {
     }
     override func mouseDown(with event: NSEvent) {
         guard let window, let store, !store.hasModal else { return }
+        // Select on press, like system tab bars: a click that wobbles a few
+        // points still switches tabs instead of turning into a cancelled drag.
+        store.selectSession(sessionId)
         let start = event.locationInWindow
         let coordinator = PaneDockDragCoordinator.shared
         var dragging = false
@@ -182,9 +185,8 @@ final class PaneDockTabHandleView: NSView {
                 if dragging { coordinator.update(location: point, window: window) }
             } else {
                 if dragging { coordinator.finish(location: next.locationInWindow, window: window) }
-                else if paneDockVisibleRect.contains(convert(next.locationInWindow, from: nil)) {
-                    store.selectSession(sessionId)
-                    if event.clickCount == 2 { store.beginRenameSession(sessionId) }
+                else if event.clickCount == 2, paneDockVisibleRect.contains(convert(next.locationInWindow, from: nil)) {
+                    store.beginRenameSession(sessionId)
                 }
                 return
             }
