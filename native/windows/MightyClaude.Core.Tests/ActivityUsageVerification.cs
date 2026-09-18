@@ -73,6 +73,25 @@ internal static class ActivityUsageVerification
         count = values.Count; parser.Parse("""{"type":"assistant","session_id":"child-session","parent_tool_use_id":"agent-tool","message":{"model":"different","usage":{"input_tokens":123,"output_tokens":4},"content":[]}}"""); Check(values.Count == count, "Subagent usage must not overwrite main context");
         return Task.CompletedTask;
     }
+    // Recorded from `claude --resume` after a process that left `sleep 600` running in the background.
+    internal static Task LeftoverTaskResult()
+    {
+        var activity = new List<AgentActivity>(); var logs = new List<(string Kind, string Text)>(); var usage = new List<SessionUsage>();
+        var parser = new OutputParser("claude", (kind, text) => logs.Add((kind, text)), _ => { }, activity.Add, usage.Add);
+        parser.Parse("""{"type":"system","subtype":"task_notification","task_id":"b9f44slha","status":"stopped","summary":"Background shell command didn't finish before the previous session ended"}""");
+        var leftover = """{"type":"result","subtype":"success","is_error":false,"num_turns":0,"result":"","total_cost_usd":0,"origin":{"kind":"task-notification"}}""";
+        Check(ClaudeStream.IsNotificationResult(Json(leftover)), "The recorded leftover event must be recognized as a notification result");
+        parser.Parse(leftover);
+        Check(activity.Count == 0 && usage.Count == 0, "A leftover task-notification result must not end a turn or publish usage before the real request even starts");
+        parser.Parse("""{"type":"assistant","session_id":"claude-session","message":{"model":"claude-sonnet-test","usage":{"input_tokens":100,"output_tokens":20},"content":[{"type":"text","text":"pong"}]}}""");
+        Check(logs.SequenceEqual([("assistant", "pong")]), "Only the real turn's text may reach the transcript");
+        Check(usage.Last().InputTokens == 100 && usage.Last().OutputTokens == 20 && usage.Last().TokenScope == "response", "The leftover result must not have latched resultSeen before the real turn's own usage arrived");
+        parser.Parse("""{"type":"result","session_id":"claude-session","subtype":"success","is_error":false,"num_turns":1,"result":"pong","total_cost_usd":0.01}""");
+        Check(activity.Count(a => a.Kind == "turn") == 1, "Exactly one turn may finish: the leftover notification's result does not count as one");
+        Check(usage.Last().InputTokens == 100 && usage.Last().CostUSD == 0.01 && usage.Last().TokenScope == "run", "The real result must still finalize usage");
+        Check(!ClaudeStream.IsNotificationResult(Json("""{"type":"result","origin":{"kind":"user"}}""")) && !ClaudeStream.IsNotificationResult(Json("""{"type":"assistant","origin":{"kind":"task-notification"}}""")), "Only a result whose origin is a task notification qualifies");
+        return Task.CompletedTask;
+    }
     internal static async Task Persistence()
     {
         var malformed = JsonSerializer.Deserialize<RunSession>("""{"id":"pane","workspaceId":"work","runTiming":{"startedAt":"bad"},"sessionUsage":{"provider":"claude","source":"claude.mods","tokenScope":"run","updatedAt":"2026-09-16T00:00:00Z","inputTokens":"broken","outputTokens":5},"logs":[{"id":"line","kind":"assistant","text":"kept","timestamp":"2026-09-16T00:00:00Z","activity":{"id":12}}]}""", Wire.Json)!;
