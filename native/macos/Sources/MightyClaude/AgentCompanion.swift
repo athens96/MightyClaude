@@ -52,6 +52,7 @@ final class AgentCompanion: ObservableObject {
     @Published private(set) var approval: CompanionApproval?
     @Published private(set) var approvalBusy = false
     @Published private(set) var approvalError: String?
+    @Published private(set) var pinnedAgent: String?
     private var subscriptions = Set<AnyCancellable>()
     private weak var store: AppStore?
     private var activities: [String: AgentActivity] = [:]
@@ -72,6 +73,44 @@ final class AgentCompanion: ObservableObject {
             if l != r { return l > r }
             return (lastTouched[$0.id] ?? .distantPast) > (lastTouched[$1.id] ?? .distantPast)
         }.first
+    }
+    /// Busy agents in sidebar order, so paging through them never reshuffles.
+    var activeAgents: [AgentPresence] { agents.filter { $0.status == "running" || $0.status == "waiting" } }
+    /// What the bubble shows: the agent the user paged to while it is still busy, else `current`.
+    var shown: AgentPresence? {
+        let id = CompanionCarousel.shown(pinned: pinnedAgent, active: activeAgents.map(\.id), fallback: current?.id)
+        return agents.first { $0.id == id }
+    }
+    /// "2 / 3" for the bubble; nil when there is nothing to page through.
+    var page: (position: Int, count: Int)? {
+        let ids = activeAgents.map(\.id)
+        guard ids.count > 1, let position = CompanionCarousel.position(of: shown?.id, in: ids) else { return nil }
+        return (position, ids.count)
+    }
+    func showNeighbour(_ offset: Int) {
+        guard let next = CompanionCarousel.step(from: shown?.id, in: activeAgents.map(\.id), by: offset) else { return }
+        // Back on the pet's own choice means no pick at all: it may follow urgency again.
+        pinnedAgent = next == current?.id ? nil : next
+        // The approval card follows the page: the agent now shown may have its own request.
+        if let store { updateApproval(permissions: store.toolPermissions, responses: store.permissionResponses, errors: store.permissionErrors) }
+        updateOverlay()
+    }
+    /// Turns to the agent whose request is hidden behind the page the user chose.
+    func showApprovalAgent() {
+        guard let approval = hiddenApproval else { return }
+        pinnedAgent = approval.sessionId == current?.id ? nil : approval.sessionId
+        updateOverlay()
+    }
+    /// A request hidden behind the page the user chose, while its agent can still be turned to.
+    var hiddenApproval: CompanionApproval? {
+        guard let approval, visibleApproval == nil, activeAgents.contains(where: { $0.id == approval.sessionId }) else { return nil }
+        return approval
+    }
+    /// An approval interrupts the bubble unless the user paged to an agent that
+    /// is not the one asking; paging back (or that agent finishing) brings it up again.
+    var visibleApproval: CompanionApproval? {
+        guard let approval else { return nil }
+        return pinnedAgent == nil || approval.sessionId == shown?.id ? approval : nil
     }
     var selectedPet: CompanionPet? { pets.first { $0.id == preferences.selectedPet } ?? pets.first }
 
@@ -112,6 +151,11 @@ final class AgentCompanion: ObservableObject {
                 workspace: snapshot.workspaces.first { $0.id == session.workspaceId }?.name ?? "",
                 provider: session.provider, status: state, summary: text,
                 input: submittedInputs[session.id] ?? session.logs.last(where: { $0.kind == "user" }).map { Self.inputPreview($0.text) }, activity: activity, timing: session.runTiming)
+        }
+        if let pinnedAgent, !activeAgents.contains(where: { $0.id == pinnedAgent }) {
+            self.pinnedAgent = nil
+            // Resizing the panel lays its view out synchronously; keep that out of this publish.
+            Task { @MainActor [weak self] in self?.updateOverlay() }
         }
     }
 
@@ -173,7 +217,7 @@ final class AgentCompanion: ObservableObject {
             let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }?.name ?? ""
             return CompanionApproval(sessionId: sessionId, sessionTitle: session.title, workspaceName: workspace, request: request)
         }
-        let preferred = current?.id
+        let preferred = shown?.id
         let next = candidates.first { $0.sessionId == preferred } ?? candidates.sorted { $0.sessionTitle < $1.sessionTitle }.first
         if next != approval { approval = next; updateOverlay() }
         // Only publish real changes; a same-value assignment would still redraw
@@ -253,7 +297,7 @@ final class AgentCompanion: ObservableObject {
     }
     private func updateOverlay() {
         overlay?.setVisible(preferences.enabled && !stopped)
-        overlay?.setTall(approval != nil)
+        overlay?.setTall(visibleApproval != nil)
     }
 }
 
