@@ -58,6 +58,8 @@ final class AppStore: ObservableObject {
     /// Slash-command completion (AppStore+SlashCommands.swift).
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
     @Published var statusLines: [String: StatusLineState] = [:]
+    @Published var appUpdate = AppUpdateState()
+    var appUpdateServiceStorage: AppUpdateService?
     var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
@@ -143,6 +145,7 @@ final class AppStore: ObservableObject {
         Task {
             await refreshRuntime()
             if !arguments.contains(where: { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") }) { beginAutomaticCLIUpdatesIfNeeded() }
+            checkForAppUpdateAutomatically()
         }
         remoteState = await remote.state()
         configureMobileRemote()
