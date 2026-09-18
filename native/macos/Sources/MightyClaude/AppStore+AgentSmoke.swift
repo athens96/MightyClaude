@@ -177,7 +177,7 @@ extension AppStore {
             guard toolPermissions[claude] == nil else { throw MightyError("Stopped session retained an actionable prompt") }
             result["permissionPromptLifecycle"] = true
             selectSession(codex)
-            let panel = NSPanel(contentRect: NSRect(x: 150, y: 150, width: 282, height: 306), styleMask: [.borderless], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 150, y: 150, width: 282, height: CompanionPanel.baseHeight), styleMask: [.borderless], backing: .buffered, defer: false)
             panel.backgroundColor = .clear; panel.isOpaque = false
             panel.contentView = NSHostingView(rootView: CompanionOverlayView(companion: companion))
             panel.orderFront(nil)

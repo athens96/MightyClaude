@@ -16,7 +16,7 @@ enum CompanionPetDiagnostics {
         let session = RunSession(id: "pet-motion-session", workspaceId: workspace.id, title: "펫 동작 검증", status: "running", logs: [LogEntry(kind: "user", text: "문서를 읽고 변경을 검증해 줘.")])
         var snapshot = AppSnapshot(workspaces: [workspace], sessions: [session])
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let panel = NSPanel(contentRect: NSRect(x: visible.midX - 141, y: visible.minY + 60, width: 282, height: 306), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let panel = NSPanel(contentRect: NSRect(x: visible.midX - 141, y: visible.minY + 60, width: 282, height: CompanionPanel.baseHeight), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.isMovableByWindowBackground = false
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true; panel.level = .floating
