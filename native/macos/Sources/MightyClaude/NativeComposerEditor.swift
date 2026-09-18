@@ -189,7 +189,7 @@ final class ComposerTextView: NSTextView {
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
         performInputTransaction { super.insertText(string, replacementRange: replacementRange) }
-        InputMethodMonitor.shared.noteInsert(string, in: self)
+        InputMethodMonitor.shared.noteInsert(string, replacementRange: replacementRange, in: self)
     }
 
     override func unmarkText() {
