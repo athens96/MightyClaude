@@ -194,6 +194,25 @@ struct MightyGraphView: View {
     @ViewState private var selectedNodeID: String?
     @StateObject private var resultFiles = MightyGraphResultFilesModel()
 
+    /// Kept out of the view body: long concatenations of conditionals are
+    /// slow for older type checkers.
+    static func headerSummary(runs: Int, agents: Int, tasks: Int, steers: Int, compactions: Int, tokens: GraphTokenUsage) -> String {
+        var parts = ["요청 \(runs)", "하위 에이전트 \(agents)"]
+        if tasks > 0 { parts.append("백그라운드 작업 \(tasks)") }
+        if steers > 0 { parts.append("중간 요청 \(steers)") }
+        if compactions > 0 { parts.append("컨텍스트 정리 \(compactions)") }
+        if !tokens.isEmpty { parts.append(tokens.summary) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Title, symbol and tint for a child block by kind.
+    static func agentPresentation(_ agent: MightyGraphAgent) -> (title: String, icon: String, tint: Color) {
+        if agent.isSteer { return ("중간 요청", "text.bubble", .orange) }
+        if agent.isCompact { return (ContextCompaction.title, "arrow.down.right.and.arrow.up.left", .mint) }
+        if agent.isTask { return (agent.title.isEmpty ? "백그라운드 작업" : agent.title, "terminal", .teal) }
+        return (agent.title.isEmpty ? "하위 에이전트" : agent.title, "person.crop.square.filled.and.at.rectangle", .purple)
+    }
+
     private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID) }
 
     var body: some View {
@@ -207,7 +226,7 @@ struct MightyGraphView: View {
             HStack(spacing: 10) {
                 Label("마이티", systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 12, weight: .semibold))
-                Text("요청 \(runs.count) · 하위 에이전트 \(agentCount)" + (taskCount > 0 ? " · 백그라운드 작업 \(taskCount)" : "") + (steerCount > 0 ? " · 중간 요청 \(steerCount)" : "") + (compactCount > 0 ? " · 컨텍스트 정리 \(compactCount)" : "") + (tokens.isEmpty ? "" : " · " + tokens.summary))
+                Text(Self.headerSummary(runs: runs.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, tokens: tokens))
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
                 Spacer(minLength: 8)
@@ -313,9 +332,8 @@ struct MightyGraphView: View {
                            input: run.input, entries: run.rootEntries, tint: Palette.accent, usage: run.usage)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]
-            transcriptCard(node, title: agent.isSteer ? "중간 요청" : agent.isCompact ? ContextCompaction.title : agent.title.isEmpty ? (agent.isTask ? "백그라운드 작업" : "하위 에이전트") : agent.title,
-                           icon: agent.isSteer ? "text.bubble" : agent.isCompact ? "arrow.down.right.and.arrow.up.left" : agent.isTask ? "terminal" : "person.crop.square.filled.and.at.rectangle", status: agent.status,
-                           input: agent.input, entries: agent.entries, tint: agent.isSteer ? .orange : agent.isCompact ? .mint : agent.isTask ? .teal : .purple, usage: agent.usage)
+            let look = Self.agentPresentation(agent)
+            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.input, entries: agent.entries, tint: look.tint, usage: agent.usage)
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)

@@ -29,9 +29,9 @@ extension AppStore {
             let names = Set(builtins.map(\.invocation))
             return SlashCommandCatalog.filter(builtins + slashCommands(for: session).filter { !names.contains($0.invocation) }, query: query)
         }
-        guard let (command, query) = SlashCommandCatalog.argumentQuery(from: draft),
-              let argument = builtins.first(where: { $0.invocation == command })?.argument else { return [] }
-        return SlashCommandCatalog.filter(slashArgumentChoices(argument, command: command, session: session), query: command + " " + query)
+        guard let parsed = SlashCommandCatalog.argumentQuery(from: draft),
+              let argument = builtins.first(where: { $0.invocation == parsed.command })?.argument else { return [] }
+        return SlashCommandCatalog.filter(slashArgumentChoices(argument, command: parsed.command, session: session), query: parsed.command + " " + parsed.query)
     }
 
     /// The model list the composer's model menu shows: the runtime catalogue,

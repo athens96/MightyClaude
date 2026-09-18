@@ -24,8 +24,8 @@ struct ContextCompactionTests {
         var logs: [(String, String)] = []
         let parser = CLIStreamParser(provider: "claude", log: { logs.append(($0, $1)) }, resume: { _ in }, activityNamespace: "run-compact", graph: { nodes.append($0) }, graphInput: "Long task")
         let main = ExecutionGraphSupport.mainNodeID(runId: "run-compact")
-        try send(["type": "system", "subtype": "compact_boundary", "uuid": "c1", "session_id": "main-session",
-                  "compact_metadata": ["trigger": "auto", "pre_tokens": 84120, "post_tokens": 21300, "duration_ms": 12300]], to: parser)
+        let metadata: [String: Any] = ["trigger": "auto", "pre_tokens": 84120, "post_tokens": 21300, "duration_ms": 12300]
+        try send(["type": "system", "subtype": "compact_boundary", "uuid": "c1", "session_id": "main-session", "compact_metadata": metadata], to: parser)
         let block = try #require(nodes.last(where: { $0.kind == "compact" }))
         #expect(block.parentId == main); #expect(block.state == "completed"); #expect(block.title == "컨텍스트 정리")
         #expect(block.input == "자동 정리 · 84,120 → 21,300 토큰 · 12.3초")
@@ -35,7 +35,9 @@ struct ContextCompactionTests {
         try send(["type": "system", "subtype": "compact_boundary", "compact_metadata": ["trigger": "manual", "pre_tokens": 10]], to: parser)
         #expect(Set(nodes.filter { $0.kind == "compact" }.map(\.id)).count == 2)
         // A subagent compacting hangs under that agent and is not logged at the root.
-        try send(["type": "assistant", "uuid": "m1", "session_id": "main-session", "message": ["id": "m1", "content": [["type": "tool_use", "id": "child", "name": "Agent", "input": ["description": "Inspect", "prompt": "Go"]]]]], to: parser)
+        let spawn: [String: Any] = ["type": "tool_use", "id": "child", "name": "Agent", "input": ["description": "Inspect", "prompt": "Go"] as [String: Any]]
+        let message: [String: Any] = ["id": "m1", "content": [spawn]]
+        try send(["type": "assistant", "uuid": "m1", "session_id": "main-session", "message": message], to: parser)
         let before = logs.count
         try send(["type": "system", "subtype": "compact_boundary", "uuid": "c2", "parent_tool_use_id": "child", "compact_metadata": ["trigger": "auto", "pre_tokens": 300, "post_tokens": 100]], to: parser)
         let nested = try #require(nodes.last(where: { $0.kind == "compact" && $0.input?.contains("300") == true }))
