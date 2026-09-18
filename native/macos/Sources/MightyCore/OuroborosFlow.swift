@@ -194,8 +194,10 @@ public struct QuestionnaireProgress: Sendable, Equatable {
 
     private mutating func record(_ answer: UserQuestionAnswer, for question: UserQuestionnaire.Question, in questionnaire: UserQuestionnaire) -> Step {
         answers[question.question] = answer
+        // The last question stays on screen until the send succeeds, so its picks stay too.
+        guard index + 1 < questionnaire.questions.count else { return .complete(answers) }
         selected = []
-        if index + 1 < questionnaire.questions.count { index += 1; return .next }
-        return .complete(answers)
+        index += 1
+        return .next
     }
 }

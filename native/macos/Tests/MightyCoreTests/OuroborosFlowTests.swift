@@ -81,6 +81,24 @@ struct OuroborosFlowTests {
         revisit.back(in: multiFirst)
         #expect(revisit.index == 0 && revisit.selected == ["Y"])
         #expect(typed.choose("A", in: form) == .next && typed.answers["어디까지 할까요?"] == UserQuestionAnswer(selectedOptions: ["A"]))
+        // The pet highlights the recorded pick after 이전; answers given further on survive re-answering an earlier question.
+        var pet = QuestionnaireProgress(requestKey: "k4")
+        let singles = try questionnaire(#"{"questions":[{"header":"하나","question":"첫째?","multiSelect":false,"options":[{"label":"A","description":""},{"label":"B","description":""}]},{"header":"둘","question":"둘째?","multiSelect":false,"options":[{"label":"C","description":""},{"label":"D","description":""}]}]}"#)
+        #expect(pet.choose("A", in: singles) == .next)
+        pet.back(in: singles)
+        #expect(pet.index == 0 && pet.answers["첫째?"]?.selectedOptions == ["A"])
+        pet.back(in: singles)                                                           // already at the first question
+        #expect(pet.index == 0)
+        #expect(pet.choose("B", in: singles) == .next)
+        guard case .complete(let revised)? = pet.choose("D", in: singles) else { Issue.record("expected completion"); return }
+        #expect(try singles.validatedAnswers(revised) == ["첫째?": "B", "둘째?": "D"])
+        // A failed send leaves the last multi-choice question as it was, ready to send again.
+        var retry = QuestionnaireProgress(requestKey: "k5")
+        _ = retry.choose("A", in: form); _ = retry.choose("X", in: form)
+        guard case .complete(let first)? = retry.commit(customText: "", in: form) else { Issue.record("expected completion"); return }
+        #expect(retry.index == 1 && retry.selected == ["X"])
+        guard case .complete(let second)? = retry.commit(customText: "", in: form) else { Issue.record("expected a second completion"); return }
+        #expect(first == second)
     }
 
     @Test func askUserQuestionBecomesAQuestionBlockSettledByTheAnswer() throws {
