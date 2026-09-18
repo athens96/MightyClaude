@@ -1,59 +1,57 @@
 import AppKit
 import SwiftUI
+import MightyCore
 
-/// Provider glyphs. Claude keeps its asterisk, Gemini uses the four-point
-/// spark, and Codex draws OpenAI's hexagonal knot. The same shapes serve
-/// SwiftUI views, menus and NSAttributedString attachments.
+/// A provider's own mark in its brand colour. `monochrome` draws it in the
+/// surrounding foreground style instead, for places where colour would mislead.
 struct ProviderIcon: View {
     let provider: String
     var size: CGFloat = 12
-    var weight: Font.Weight = .medium
+    var weight: Font.Weight = .medium   // kept for call sites; the marks have one weight
+    var monochrome = false
 
     var body: some View {
-        switch provider {
-        case "codex":
-            CodexKnotShape().fill(.foreground)
-                .frame(width: size * 1.15, height: size * 1.15)
-                .accessibilityLabel("Codex")
-        case "gemini":
-            Image(systemName: "sparkle").font(.system(size: size, weight: weight)).accessibilityLabel("Gemini")
-        default:
-            Image(systemName: "asterisk").font(.system(size: size, weight: weight)).accessibilityLabel("Claude")
+        Group {
+            if monochrome { ProviderMarkShape(provider: provider).fill(.foreground) }
+            else { ProviderMarkShape(provider: provider).fill(ProviderBrand.gradient(provider)) }
         }
+        .frame(width: size * 1.15, height: size * 1.15)
+        .accessibilityLabel(Palette.name(provider))
     }
 }
 
-/// Six rounded bars, each offset from the centre and rotated 60° apart, form
-/// the interlocking knot that reads as the OpenAI / Codex mark at small sizes.
-struct CodexKnotShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let side = min(rect.width, rect.height)
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let length = side * 0.62, width = side * 0.17, radius = side * 0.2
-        var path = Path()
-        for index in 0..<6 {
-            let angle = CGFloat(index) * .pi / 3
-            let origin = CGPoint(x: center.x + cos(angle + .pi / 6) * radius, y: center.y + sin(angle + .pi / 6) * radius)
-            let bar = Path(roundedRect: CGRect(x: -length / 2, y: -width / 2, width: length, height: width), cornerRadius: width / 2)
-            path.addPath(bar.applying(CGAffineTransform(translationX: origin.x, y: origin.y).rotated(by: angle)))
+struct ProviderMarkShape: Shape {
+    let provider: String
+    func path(in rect: CGRect) -> Path { Path(ProviderMark.path(provider: provider, in: rect)) }
+}
+
+enum ProviderBrand {
+    static func nsColors(_ provider: String) -> [NSColor] {
+        ProviderMark.colors(provider: provider).map { hex in
+            NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
         }
-        return path
+    }
+    /// The first brand colour, for text and tints next to the mark.
+    static func color(_ provider: String) -> Color { Color(nsColor: nsColors(provider).first ?? .labelColor) }
+    /// One colour for Claude and Codex; Gemini's blue-to-rose sweep.
+    static func gradient(_ provider: String) -> LinearGradient {
+        LinearGradient(colors: nsColors(provider).map { Color(nsColor: $0) }, startPoint: .bottomLeading, endPoint: .topTrailing)
     }
 }
 
 enum ProviderIconImage {
-    /// A rendered glyph for places that need an NSImage (menus, transcripts).
-    static func image(provider: String, pointSize: CGFloat, color: NSColor) -> NSImage? {
-        if provider == "codex" {
-            let side = pointSize * 1.2
-            return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
-                color.setFill()
-                NSBezierPath(cgPath: CodexKnotShape().path(in: rect).cgPath).fill()
-                return true
-            }
+    /// A rendered mark for places that need an NSImage (menus, transcripts).
+    /// `color` nil draws the brand colours.
+    static func image(provider: String, pointSize: CGFloat, color: NSColor? = nil) -> NSImage? {
+        let side = pointSize * 1.2
+        // Flipped: the outline data has y pointing down.
+        return NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
+            let path = NSBezierPath(cgPath: ProviderMark.path(provider: provider, in: rect))
+            let brand = ProviderBrand.nsColors(provider)
+            if let color { color.setFill(); path.fill() }
+            else if brand.count > 1, let gradient = NSGradient(colors: brand) { gradient.draw(in: path, angle: -45) }
+            else { (brand.first ?? .labelColor).setFill(); path.fill() }
+            return true
         }
-        let name = provider == "gemini" ? "sparkle" : "asterisk"
-        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .medium).applying(.init(paletteColors: [color])))
     }
 }

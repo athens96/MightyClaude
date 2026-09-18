@@ -47,3 +47,7 @@ The Paperthin style of Mighty mode presents the Paperthin project's skill catalo
 - Project: Paperthin — https://github.com/LilMGenius/paperthin
 - License: MIT License (Copyright (c) Paperthin contributors)
 
+
+## Provider marks
+
+The Claude, Codex (OpenAI) and Gemini marks drawn in the app come from outline data in `native/macos/Sources/MightyCore/ProviderMark.swift`. The Claude and Gemini outlines follow Simple Icons (https://simpleicons.org, CC0 1.0); the OpenAI outline is the company's published mark. All three are trademarks of their owners (Anthropic, OpenAI, Google) and are used only to identify which company's CLI a pane runs; MightyClaude is not affiliated with or endorsed by them.

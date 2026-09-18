@@ -130,7 +130,7 @@ struct StatusBarUsageView: View {
     private func chip(_ provider: String) -> some View {
         let usage = controller.snapshots[provider]
         return HStack(spacing: 5) {
-            ProviderIcon(provider: provider, size: 9).foregroundStyle(.secondary)
+            ProviderIcon(provider: provider, size: 9)
             if let usage, !usage.windows.isEmpty {
                 ForEach(Array(Self.leading(usage.windows).enumerated()), id: \.offset) { _, window in
                     Text(Self.windowLabel(window.kind) + " " + Self.percent(window.usedPercent)).monospacedDigit()
@@ -197,7 +197,7 @@ struct StatusBarUsageDetails: View {
         let usage = controller.snapshots[provider]
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                ProviderIcon(provider: provider, size: 12).foregroundStyle(Palette.accent)
+                ProviderIcon(provider: provider, size: 12)
                 Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .semibold))
                 Spacer()
                 if let usage, usage.accountLabel != nil || usage.plan != nil {

@@ -1,0 +1,69 @@
+import CoreGraphics
+import Foundation
+
+/// The providers' own marks, drawn from outline data instead of look-alike
+/// system symbols. Each outline sits in a 24×24 box and uses only absolute
+/// move / line / cubic / close commands (arcs and quadratics were converted
+/// when the data was prepared). Claude and Gemini follow the Simple Icons
+/// outlines (CC0); the Codex pane carries OpenAI's mark. The marks remain
+/// trademarks of Anthropic, OpenAI and Google and only identify their CLIs.
+public enum ProviderMark {
+    public static let box: CGFloat = 24
+
+    /// Brand colours as 0xRRGGBB. Gemini's mark is a gradient, listed start to end.
+    public static func colors(provider: String) -> [UInt32] {
+        switch provider {
+        case "codex": return [0x10A37F]
+        case "gemini": return [0x4285F4, 0x9B72CB, 0xD96570]
+        default: return [0xD97757]
+        }
+    }
+
+    public static func outline(provider: String) -> String {
+        switch provider { case "codex": return codex; case "gemini": return gemini; default: return claude }
+    }
+
+    /// The mark scaled to fit `rect`, centred, y pointing down as in the source data.
+    public static func path(provider: String, in rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let scale = min(rect.width, rect.height) / box
+        let dx = rect.midX - box * scale / 2, dy = rect.midY - box * scale / 2
+        func point(_ values: ArraySlice<CGFloat>) -> CGPoint {
+            CGPoint(x: dx + values[values.startIndex] * scale, y: dy + values[values.startIndex + 1] * scale)
+        }
+        for command in commands(outline(provider: provider)) {
+            let v = command.values
+            switch command.kind {
+            case "M" where v.count == 2: path.move(to: point(v[0...]))
+            case "L" where v.count == 2: path.addLine(to: point(v[0...]))
+            case "C" where v.count == 6: path.addCurve(to: point(v[4...]), control1: point(v[0...]), control2: point(v[2...]))
+            case "Z": path.closeSubpath()
+            default: break
+            }
+        }
+        return path
+    }
+
+    struct Command: Equatable { let kind: Character; let values: [CGFloat] }
+
+    /// `M1 2 C…Z`: a letter, then its numbers separated by spaces.
+    static func commands(_ outline: String) -> [Command] {
+        var result: [Command] = []
+        var kind: Character?
+        var number = ""
+        var values: [CGFloat] = []
+        func flushNumber() { if let value = Double(number) { values.append(CGFloat(value)) }; number = "" }
+        func flushCommand() { flushNumber(); if let kind { result.append(Command(kind: kind, values: values)) }; values = [] }
+        for character in outline {
+            if character.isLetter { flushCommand(); kind = character }
+            else if character == " " { flushNumber() }
+            else { number.append(character) }
+        }
+        flushCommand()
+        return result
+    }
+
+    static let claude = "M4.714 15.956 L9.432 13.308 L9.511 13.078 L9.432 12.95 L9.201 12.95 L8.412 12.902 L5.716 12.829 L3.379 12.732 L1.114 12.61 L0.543 12.489 L0.009 11.785 L0.064 11.432 L0.543 11.111 L1.229 11.171 L2.747 11.275 L5.024 11.432 L6.675 11.53 L9.122 11.785 L9.511 11.785 L9.565 11.627 L9.432 11.53 L9.329 11.432 L6.973 9.836 L4.423 8.148 L3.087 7.176 L2.365 6.684 L2.001 6.223 L1.843 5.215 L2.498 4.493 L3.379 4.553 L3.603 4.614 L4.496 5.3 L6.402 6.776 L8.892 8.609 L9.256 8.913 L9.402 8.809 L9.42 8.737 L9.256 8.463 L7.902 6.017 L6.457 3.527 L5.813 2.495 L5.643 1.876 C5.583 1.621 5.54 1.409 5.54 1.147 L6.287 0.134 L6.7 0 L7.695 0.134 L8.114 0.498 L8.734 1.913 L9.735 4.141 L11.29 7.17 L11.745 8.069 L11.988 8.901 L12.079 9.156 L12.237 9.156 L12.237 9.01 L12.364 7.304 L12.601 5.209 L12.832 2.514 L12.911 1.755 L13.287 0.844 L14.034 0.352 L14.617 0.631 L15.096 1.317 L15.03 1.761 L14.744 3.612 L14.186 6.515 L13.821 8.457 L14.034 8.457 L14.277 8.215 L15.26 6.909 L16.912 4.845 L17.64 4.025 L18.49 3.121 L19.037 2.69 L20.069 2.69 L20.828 3.819 L20.488 4.985 L19.425 6.332 L18.545 7.474 L17.282 9.174 L16.493 10.534 L16.566 10.643 L16.754 10.625 L19.607 10.018 L21.149 9.738 L22.989 9.423 L23.821 9.811 L23.912 10.206 L23.584 11.013 L21.617 11.499 L19.31 11.961 L15.874 12.774 L15.831 12.805 L15.88 12.865 L17.428 13.011 L18.09 13.047 L19.711 13.047 L22.728 13.272 L23.517 13.794 L23.991 14.432 L23.912 14.917 L22.698 15.537 L21.058 15.148 L17.233 14.237 L15.922 13.909 L15.74 13.909 L15.74 14.019 L16.833 15.087 L18.836 16.897 L21.344 19.228 L21.471 19.805 L21.15 20.26 L20.81 20.212 L18.606 18.554 L17.756 17.807 L15.831 16.186 L15.704 16.186 L15.704 16.356 L16.147 17.006 L18.49 20.527 L18.612 21.608 L18.442 21.96 L17.835 22.173 L17.167 22.051 L15.795 20.127 L14.38 17.959 L13.239 16.016 L13.099 16.095 L12.425 23.35 L12.109 23.721 L11.381 24 L10.774 23.539 L10.452 22.792 L10.774 21.316 L11.162 19.392 L11.478 17.862 L11.763 15.961 L11.933 15.33 L11.921 15.288 L11.781 15.306 L10.349 17.273 L8.169 20.218 L6.445 22.063 L6.032 22.227 L5.316 21.857 L5.382 21.195 L5.783 20.606 L8.169 17.57 L9.608 15.688 L10.537 14.602 L10.531 14.444 L10.476 14.444 L4.138 18.56 L3.008 18.706 L2.523 18.25 L2.583 17.504 L2.814 17.261 L4.721 15.949 Z"
+    static let codex = "M22.282 9.821 C22.825 8.186 22.637 6.397 21.766 4.91 C20.457 2.632 17.826 1.46 15.256 2.01 C13.808 0.4 11.611 -0.317 9.492 0.131 C7.373 0.579 5.653 2.123 4.981 4.182 C3.293 4.528 1.836 5.585 0.983 7.082 C-0.34 9.357 -0.04 12.227 1.726 14.178 C1.181 15.812 1.367 17.602 2.237 19.089 C3.547 21.369 6.18 22.541 8.751 21.989 C9.895 23.277 11.538 24.01 13.26 24 C15.894 24.002 18.227 22.302 19.032 19.794 C20.719 19.447 22.176 18.391 23.029 16.894 C24.337 14.623 24.035 11.769 22.282 9.821 Z M13.26 22.429 C12.209 22.431 11.19 22.062 10.384 21.388 L10.525 21.308 L15.304 18.55 C15.546 18.408 15.695 18.149 15.696 17.869 L15.696 11.132 L17.716 12.3 C17.737 12.31 17.751 12.33 17.754 12.352 L17.754 17.935 C17.749 20.415 15.74 22.424 13.26 22.429 Z M3.599 18.304 C3.072 17.393 2.883 16.326 3.065 15.29 L3.207 15.375 L7.99 18.134 C8.231 18.275 8.529 18.275 8.77 18.134 L14.613 14.765 L14.613 17.097 C14.612 17.122 14.6 17.145 14.58 17.159 L9.74 19.95 C7.589 21.189 4.842 20.452 3.599 18.304 Z M2.341 7.896 C2.872 6.979 3.71 6.281 4.706 5.923 L4.706 11.6 C4.703 11.879 4.851 12.139 5.094 12.277 L10.909 15.631 L8.889 16.799 C8.866 16.811 8.84 16.811 8.818 16.799 L3.987 14.013 C1.841 12.769 1.105 10.023 2.341 7.872 Z M18.937 11.751 L13.104 8.364 L15.119 7.2 C15.141 7.188 15.168 7.188 15.19 7.2 L20.02 9.991 C21.528 10.861 22.398 12.523 22.253 14.258 C22.108 15.993 20.975 17.488 19.344 18.096 L19.344 12.418 C19.335 12.14 19.181 11.886 18.937 11.751 Z M20.948 8.728 L20.806 8.643 L16.032 5.861 C15.79 5.719 15.489 5.719 15.247 5.861 L9.409 9.23 L9.409 6.897 C9.406 6.873 9.417 6.85 9.437 6.836 L14.268 4.049 C15.779 3.179 17.657 3.26 19.088 4.258 C20.518 5.256 21.243 6.99 20.948 8.709 Z M8.306 12.863 L6.287 11.699 C6.266 11.687 6.252 11.666 6.248 11.643 L6.248 6.074 C6.251 4.33 7.26 2.745 8.84 2.005 C10.419 1.266 12.283 1.506 13.624 2.621 L13.482 2.701 L8.704 5.459 C8.462 5.601 8.313 5.86 8.311 6.14 Z M9.404 10.498 L12.006 8.998 L14.613 10.498 L14.613 13.497 L12.016 14.997 L9.409 13.497 Z"
+    static let gemini = "M11.04 19.32 C11.68 20.78 12 22.34 12 24 C12 22.34 12.31 20.78 12.93 19.32 C13.57 17.86 14.43 16.59 15.51 15.51 C16.59 14.43 17.86 13.58 19.32 12.96 C20.78 12.32 22.34 12 24 12 C22.34 12 20.78 11.69 19.32 11.07 C17.899 10.457 16.606 9.582 15.51 8.49 C14.418 7.394 13.543 6.101 12.93 4.68 C12.31 3.22 12 1.66 12 0 C12 1.66 11.68 3.22 11.04 4.68 C10.42 6.14 9.57 7.41 8.49 8.49 C7.394 9.582 6.101 10.457 4.68 11.07 C3.22 11.69 1.66 12 0 12 C1.66 12 3.22 12.32 4.68 12.96 C6.14 13.58 7.41 14.43 8.49 15.51 C9.57 16.59 10.42 17.86 11.04 19.32 Z"
+}
