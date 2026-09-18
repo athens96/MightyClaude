@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MobileSessionSummary } from '@/api/types';
 import { Badge } from '@/components/ui';
+import { ProviderTag } from '@/components/provider-mark';
 import { StatusChip } from '@/components/status-chip';
-import { colors, kindLabels, monoText, providerLabels, radius, spacing } from '@/theme';
+import { kindLabel, monoText, radius, spacing, useStyles, type Palette } from '@/theme';
 
 export function SessionRow({
   session,
@@ -11,6 +12,7 @@ export function SessionRow({
   session: MobileSessionSummary;
   onPress: () => void;
 }) {
+  const styles = useStyles(makeStyles);
   const attention = session.pendingPermissions + session.pendingQuestions;
   return (
     <Pressable
@@ -27,8 +29,8 @@ export function SessionRow({
       </View>
 
       <View style={styles.metaRow}>
-        <Text style={styles.meta}>{kindLabels[session.kind]}</Text>
-        <Text style={styles.meta}>· {providerLabels[session.provider]}</Text>
+        <Text style={styles.meta}>{kindLabel(session.kind)}</Text>
+        <ProviderTag provider={session.provider} />
         {session.model ? <Text style={styles.meta}>· {session.model}</Text> : null}
         {session.terminal ? <Text style={styles.terminalTag}>· 로컬 터미널</Text> : null}
         {session.queued > 0 ? <Text style={styles.meta}>· 대기 {session.queued}</Text> : null}
@@ -43,20 +45,21 @@ export function SessionRow({
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: spacing.xs,
-    padding: spacing.md,
-  },
-  pressed: { opacity: 0.7 },
-  header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  title: { color: colors.text, flex: 1, fontSize: 15, fontWeight: '600' },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  meta: { color: colors.textFaint, fontSize: 12 },
-  terminalTag: { color: colors.warning, fontSize: 12 },
-  preview: { ...monoText, color: colors.textMuted },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    row: {
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderRadius: radius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      gap: spacing.xs,
+      padding: spacing.md,
+    },
+    pressed: { opacity: 0.7 },
+    header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    title: { color: palette.text, flex: 1, fontSize: 15, fontWeight: '600' },
+    metaRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+    meta: { color: palette.textFaint, fontSize: 12 },
+    terminalTag: { color: palette.warning, fontSize: 12 },
+    preview: { ...monoText, color: palette.textMuted },
+  });

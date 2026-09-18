@@ -1,10 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import type { SessionStatus } from '@/api/types';
-import { radius, spacing, statusColors, statusLabels } from '@/theme';
+import { radius, spacing, statusColor, statusLabel, usePalette } from '@/theme';
 
-/** Status pill; the running state pulses so activity is visible at a glance. */
-export function StatusChip({ status }: { status: SessionStatus }) {
+/**
+ * Status pill; the running state pulses so activity is visible at a glance. The status
+ * arrives as a string: one the contract does not list is drawn in the neutral colour
+ * with its own text rather than being forced into a known state.
+ */
+export function StatusChip({ status }: { status: string }) {
+  const palette = usePalette();
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -32,11 +36,11 @@ export function StatusChip({ status }: { status: SessionStatus }) {
     return () => animation.stop();
   }, [pulse, status]);
 
-  const color = statusColors[status];
+  const color = statusColor(palette, status);
   return (
     <View style={[styles.chip, { borderColor: color }]}>
       <Animated.View style={[styles.dot, { backgroundColor: color, opacity: pulse }]} />
-      <Text style={[styles.label, { color }]}>{statusLabels[status]}</Text>
+      <Text style={[styles.label, { color }]}>{statusLabel(status)}</Text>
     </View>
   );
 }

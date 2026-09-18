@@ -47,7 +47,7 @@ struct SlashCommandTests {
         #expect(SlashCommandCatalog.query(from: "/archify make a diagram") == nil)
         #expect(SlashCommandCatalog.query(from: "hello /ar") == nil)
         #expect(SlashCommandCatalog.query(from: "/" + String(repeating: "a", count: 81)) == nil)
-        let commands = ["archify", "sc:analyze", "sc:build", "oh-my-claudecode:autopilot", "review"].map { SlashCommand(invocation: $0, description: $0 == "review" ? "Analyze a PR" : "", source: "x") }
+        let commands = ["archify", "sc:analyze", "sc:build", "oh-my-claudecode:autopilot", "review"].map { SlashCommand(invocation: $0, description: $0 == "review" ? "Analyze a PR" : "", source: "x", origin: .user) }
         #expect(SlashCommandCatalog.filter(commands, query: "").map(\.invocation) == commands.map(\.invocation))
         #expect(SlashCommandCatalog.filter(commands, query: "a").map(\.invocation) == ["archify", "sc:analyze", "oh-my-claudecode:autopilot", "review"])
         #expect(SlashCommandCatalog.filter(commands, query: "auto").map(\.invocation) == ["oh-my-claudecode:autopilot"])
@@ -72,7 +72,7 @@ struct SlashCommandTests {
         let help = SlashCommandCatalog.helpText(provider: "claude")
         #expect(help.hasPrefix("앱 명령 · Claude 실행 창\n/plugin · ") && help.contains("\n/clear · ") && help.contains("CLI에 전달"))
         // Built-ins sort into the same prefix-first order as scanned commands.
-        let mixed = SlashCommandCatalog.filter(claude + [SlashCommand(invocation: "plan-review", description: "", source: "x")], query: "pl")
+        let mixed = SlashCommandCatalog.filter(claude + [SlashCommand(invocation: "plan-review", description: "", source: "x", origin: .user)], query: "pl")
         #expect(mixed.map(\.invocation) == ["plugin", "plan-review"])
     }
 
@@ -86,7 +86,7 @@ struct SlashCommandTests {
         #expect(SlashCommandCatalog.argumentQuery(from: "/model  ") == nil)
         #expect(SlashCommandCatalog.argumentQuery(from: "/bad name! x") == nil)
         #expect(SlashCommandCatalog.argumentQuery(from: "model x") == nil)
-        let choices = ["default", "claude-opus-5", "claude-sonnet-5"].map { SlashCommand(invocation: "model " + $0, description: $0, source: "모델", action: .setModel($0)) }
+        let choices = ["default", "claude-opus-5", "claude-sonnet-5"].map { SlashCommand(invocation: "model " + $0, description: $0, source: "모델", origin: .app, action: .setModel($0)) }
         #expect(SlashCommandCatalog.filter(choices, query: "model cla").map(\.invocation) == ["model claude-opus-5", "model claude-sonnet-5"])
         #expect(SlashCommandCatalog.filter(choices, query: "model ").count == 3)
     }

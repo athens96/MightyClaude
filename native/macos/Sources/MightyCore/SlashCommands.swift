@@ -22,6 +22,11 @@ public enum SlashCommandAction: Sendable, Equatable {
 /// A built-in whose argument the palette completes after `/name `.
 public enum SlashArgument: Sendable, Equatable { case model, permission }
 
+/// Where a command came from, decided where it is discovered. `source` below
+/// is Korean badge prose for the Mac's list; only this enum is a vocabulary,
+/// so the phone never has to parse a sentence to learn the origin.
+public enum SlashCommandOrigin: String, Sendable, Equatable { case app, project, user, plugin }
+
 /// A skill or custom command the composer can complete after a leading `/`.
 /// `invocation` is what the CLI expects (`archify`, `sc:analyze`,
 /// `oh-my-claudecode:autopilot`); the composer inserts `/<invocation> `.
@@ -32,11 +37,15 @@ public struct SlashCommand: Sendable, Equatable, Identifiable {
     /// Where it came from, for the badge: 사용자 스킬 · 프로젝트 스킬 · 플러그인 <name> · 사용자 명령 · 프로젝트 명령 · Codex 스킬,
     /// or one of `SlashCommandCatalog.appSource` / `modelSource` / `permissionSource` for built-ins and their choices.
     public var source: String
+    /// The same fact as `source`, as a value. Set at every discovery site so
+    /// no consumer has to recognise the badge prose.
+    public var origin: SlashCommandOrigin
     public var action: SlashCommandAction?
     public var argument: SlashArgument?
     public var id: String { invocation }
-    public init(invocation: String, description: String, source: String, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) {
-        self.invocation = invocation; self.description = description; self.source = source; self.action = action; self.argument = argument
+    public init(invocation: String, description: String, source: String, origin: SlashCommandOrigin, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) {
+        self.invocation = invocation; self.description = description; self.source = source; self.origin = origin
+        self.action = action; self.argument = argument
     }
 }
 
@@ -78,7 +87,7 @@ public enum SlashCommandCatalog {
     /// names each CLI's users already know. Gemini has no plugin browser here.
     public static func builtins(provider: String) -> [SlashCommand] {
         func app(_ name: String, _ description: String, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) -> SlashCommand {
-            SlashCommand(invocation: name, description: description, source: appSource, action: action, argument: argument)
+            SlashCommand(invocation: name, description: description, source: appSource, origin: .app, action: action, argument: argument)
         }
         let model = app("model", "모델 바꾸기 · 이름을 이어서 고르세요", argument: .model)
         let rename = app("rename", "실행 창 이름 바꾸기", action: .rename)
@@ -132,16 +141,16 @@ public enum SlashCommandCatalog {
         let workspace = workspacePath.map { URL(fileURLWithPath: $0, isDirectory: true) }
         switch provider {
         case "claude":
-            found += skills(in: home.appendingPathComponent(".claude/skills"), source: "사용자 스킬")
-            found += commandFiles(in: home.appendingPathComponent(".claude/commands"), source: "사용자 명령")
+            found += skills(in: home.appendingPathComponent(".claude/skills"), source: "사용자 스킬", origin: .user)
+            found += commandFiles(in: home.appendingPathComponent(".claude/commands"), source: "사용자 명령", origin: .user)
             found += pluginCommands(home: home)
             if let workspace {
-                found += skills(in: workspace.appendingPathComponent(".claude/skills"), source: "프로젝트 스킬")
-                found += commandFiles(in: workspace.appendingPathComponent(".claude/commands"), source: "프로젝트 명령")
+                found += skills(in: workspace.appendingPathComponent(".claude/skills"), source: "프로젝트 스킬", origin: .project)
+                found += commandFiles(in: workspace.appendingPathComponent(".claude/commands"), source: "프로젝트 명령", origin: .project)
             }
         case "codex":
-            found += skills(in: home.appendingPathComponent(".codex/skills"), source: "Codex 스킬")
-            if let workspace { found += skills(in: workspace.appendingPathComponent(".codex/skills"), source: "프로젝트 스킬") }
+            found += skills(in: home.appendingPathComponent(".codex/skills"), source: "Codex 스킬", origin: .user)
+            if let workspace { found += skills(in: workspace.appendingPathComponent(".codex/skills"), source: "프로젝트 스킬", origin: .project) }
         default: break
         }
         // Later sources (project) win over earlier ones (user, plugins).
@@ -153,7 +162,7 @@ public enum SlashCommandCatalog {
     // MARK: Sources
 
     /// `<dir>/<name>/SKILL.md`; the frontmatter `name` wins over the folder.
-    static func skills(in directory: URL, source: String, invocationPrefix: String = "") -> [SlashCommand] {
+    static func skills(in directory: URL, source: String, origin: SlashCommandOrigin, invocationPrefix: String = "") -> [SlashCommand] {
         guard let entries = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
         return entries.sorted { $0.lastPathComponent < $1.lastPathComponent }.prefix(maximumCommands).compactMap { folder -> SlashCommand? in
             let file = folder.appendingPathComponent("SKILL.md")
@@ -161,19 +170,19 @@ public enum SlashCommandCatalog {
             let fields = frontmatter(text)
             let name = fields["name"].flatMap(validName) ?? validName(folder.lastPathComponent)
             guard let name else { return nil }
-            return SlashCommand(invocation: invocationPrefix + name, description: fields["description"].map(clean) ?? "", source: source)
+            return SlashCommand(invocation: invocationPrefix + name, description: fields["description"].map(clean) ?? "", source: source, origin: origin)
         }
     }
 
     /// `<dir>/<name>.md` and `<dir>/<group>/<name>.md` (invoked as `group:name`).
-    static func commandFiles(in directory: URL, source: String, invocationPrefix: String = "") -> [SlashCommand] {
+    static func commandFiles(in directory: URL, source: String, origin: SlashCommandOrigin, invocationPrefix: String = "") -> [SlashCommand] {
         guard let entries = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
         var result: [SlashCommand] = []
         for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).prefix(maximumCommands) {
             if entry.pathExtension == "md", let name = validName(entry.deletingPathExtension().lastPathComponent), let text = read(entry) {
-                result.append(SlashCommand(invocation: invocationPrefix + name, description: frontmatter(text)["description"].map(clean) ?? firstLine(text), source: source))
+                result.append(SlashCommand(invocation: invocationPrefix + name, description: frontmatter(text)["description"].map(clean) ?? firstLine(text), source: source, origin: origin))
             } else if (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true, let group = validName(entry.lastPathComponent) {
-                result += commandFiles(in: entry, source: source, invocationPrefix: invocationPrefix + group + ":")
+                result += commandFiles(in: entry, source: source, origin: origin, invocationPrefix: invocationPrefix + group + ":")
             }
         }
         return result
@@ -191,8 +200,8 @@ public enum SlashCommandCatalog {
                   let path = installs.compactMap({ $0["installPath"] as? String }).first, path.hasPrefix("/") else { continue }
             let root = URL(fileURLWithPath: path, isDirectory: true)
             let source = "플러그인 " + plugin
-            result += skills(in: root.appendingPathComponent("skills"), source: source, invocationPrefix: plugin + ":")
-            result += commandFiles(in: root.appendingPathComponent("commands"), source: source, invocationPrefix: plugin + ":")
+            result += skills(in: root.appendingPathComponent("skills"), source: source, origin: .plugin, invocationPrefix: plugin + ":")
+            result += commandFiles(in: root.appendingPathComponent("commands"), source: source, origin: .plugin, invocationPrefix: plugin + ":")
         }
         return result
     }

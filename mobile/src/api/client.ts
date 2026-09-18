@@ -8,18 +8,28 @@ import {
 } from '@/api/relay/transport';
 import { appForeground } from '@/api/relay/foreground';
 import { clientDeviceName } from '@/lib/device';
+import { KEY_SEPARATOR } from '@/lib/keys';
 import {
+  ENTRY_PAGE_SIZE,
+  MAX_ENTRY_PAGE,
   MAX_TEXT_BYTES,
+  MAX_TITLE_LENGTH,
   MAX_WAIT_SECONDS,
+  type CommandResponse,
+  type CommandsResponse,
   type CreateSessionResponse,
+  type EntriesPage,
   type HostInfo,
+  type MessageCommandAction,
   type MobileSessionDetail,
   type MobileState,
   type OkResponse,
   type Provider,
   type QuestionAnswers,
   type SessionKind,
+  type SettingsPatch,
   type StopResponse,
+  type SubmitOptions,
   type SubmitResponse,
 } from '@/api/types';
 
@@ -59,6 +69,11 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError');
 }
 
+/** True when the host does not know the pane or item any more (closed, evicted). */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
 /** True when the caller should send the user back through pairing. */
 export function needsRepair(error: unknown): boolean {
   if (error instanceof ApiError) return error.needsRepair;
@@ -80,6 +95,11 @@ function clampWait(wait: number | undefined): number {
   if (wait === undefined) return 0;
   if (!Number.isFinite(wait)) return 0;
   return Math.min(MAX_WAIT_SECONDS, Math.max(0, Math.floor(wait)));
+}
+
+function clampLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return ENTRY_PAGE_SIZE;
+  return Math.min(MAX_ENTRY_PAGE, Math.max(1, Math.floor(limit)));
 }
 
 function pollQuery(options: PollOptions | undefined): string {
@@ -122,14 +142,51 @@ export interface RelayChannel {
   ready?(): Promise<RelayHostInfo>;
 }
 
+export interface EntriesOptions {
+  /** Ask for entries older than this one. */
+  before: string;
+  /** 1..100; defaults to the app's page size. */
+  limit?: number;
+  signal?: AbortSignal;
+}
+
 export interface MobileClient {
   /** Fires when the host says a scope changed, so pending polls can re-issue. */
   onNotify(listener: (event: RelayNotification) => void): () => void;
   info(signal?: AbortSignal): Promise<HostInfo>;
   state(options?: PollOptions): Promise<MobileState>;
   session(sessionId: string, options?: PollOptions): Promise<MobileSessionDetail>;
-  submit(sessionId: string, text: string, signal?: AbortSignal): Promise<SubmitResponse>;
+  submit(
+    sessionId: string,
+    text: string,
+    options?: SubmitOptions,
+    signal?: AbortSignal,
+  ): Promise<SubmitResponse>;
   stop(sessionId: string, signal?: AbortSignal): Promise<StopResponse>;
+  /** Drops one queued request ("queue"). */
+  removeQueued(sessionId: string, itemId: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** Starts the first queued request on an idle pane ("queue"). */
+  runNext(sessionId: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** Renames the pane ("pane"); the title is trimmed to 1..80 characters. */
+  rename(sessionId: string, title: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** Closes the pane ("pane"); irreversible. */
+  close(sessionId: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** One page of older log entries ("history"). */
+  entries(sessionId: string, options: EntriesOptions): Promise<EntriesPage>;
+  /** Writes one or more pane settings ("settings"). */
+  updateSettings(
+    sessionId: string,
+    patch: SettingsPatch,
+    signal?: AbortSignal,
+  ): Promise<OkResponse>;
+  /** Slash commands offered for this pane ("commands"). */
+  commands(sessionId: string, signal?: AbortSignal): Promise<CommandsResponse>;
+  /** Runs one of the host-side commands ("commands"). */
+  runCommand(
+    sessionId: string,
+    action: MessageCommandAction,
+    signal?: AbortSignal,
+  ): Promise<CommandResponse>;
   respondPermission(
     sessionId: string,
     input: { requestId: string; runId: string; allow: boolean },
@@ -202,14 +259,19 @@ export function createClient(channel: RelayChannel): MobileClient {
         options?.signal,
       ),
 
-    submit: (sessionId, text, signal) => {
+    submit: (sessionId, text, options, signal) => {
       if (byteLength(text) > MAX_TEXT_BYTES) {
         return Promise.reject(new ApiError(413, '메시지가 너무 깁니다 (최대 32KiB).'));
       }
+      // `mode` and `attachments` stay out of the body unless asked for, so older
+      // hosts keep seeing exactly the request they saw before.
+      const body: Record<string, unknown> = { text };
+      if (options?.mode) body.mode = options.mode;
+      if (options?.attachments?.length) body.attachments = options.attachments;
       return request<SubmitResponse>(
         'POST',
         `/m1/sessions/${encodeURIComponent(sessionId)}/submit`,
-        { text },
+        body,
         signal,
       );
     },
@@ -219,6 +281,86 @@ export function createClient(channel: RelayChannel): MobileClient {
         'POST',
         `/m1/sessions/${encodeURIComponent(sessionId)}/stop`,
         {},
+        signal,
+      ),
+
+    removeQueued: (sessionId, itemId, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(itemId)}/remove`,
+        {},
+        signal,
+      ),
+
+    runNext: (sessionId, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/queue/run-next`,
+        {},
+        signal,
+      ),
+
+    rename: (sessionId, title, signal) => {
+      const trimmed = title.trim();
+      if (trimmed.length === 0 || trimmed.length > MAX_TITLE_LENGTH) {
+        return Promise.reject(new ApiError(400, `이름은 1~${MAX_TITLE_LENGTH}자여야 합니다.`));
+      }
+      return request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/rename`,
+        { title: trimmed },
+        signal,
+      );
+    },
+
+    close: (sessionId, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/close`,
+        {},
+        signal,
+      ),
+
+    entries: (sessionId, options) => {
+      const params = new URLSearchParams();
+      params.set('before', options.before);
+      params.set('limit', String(clampLimit(options.limit)));
+      return request<EntriesPage>(
+        'GET',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/entries?${params.toString()}`,
+        undefined,
+        options.signal,
+      );
+    },
+
+    updateSettings: (sessionId, patch, signal) => {
+      const body = Object.fromEntries(
+        Object.entries(patch).filter(([, value]) => value !== undefined),
+      );
+      if (Object.keys(body).length === 0) {
+        return Promise.reject(new ApiError(400, '변경할 설정이 없습니다.'));
+      }
+      return request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/settings`,
+        body,
+        signal,
+      );
+    },
+
+    commands: (sessionId, signal) =>
+      request<CommandsResponse>(
+        'GET',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/commands`,
+        undefined,
+        signal,
+      ),
+
+    runCommand: (sessionId, action, signal) =>
+      request<CommandResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/command`,
+        { action },
         signal,
       ),
 
@@ -265,7 +407,7 @@ function fingerprintOf(credentials: HostCredentials): string {
     credentials.relayUrl,
     credentials.hostPublicKeyB64,
     credentials.pairingKey,
-  ].join(' ');
+  ].join(KEY_SEPARATOR);
 }
 
 export interface HostLease {

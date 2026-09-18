@@ -40,7 +40,9 @@ final class AppStore: ObservableObject {
     /// Requests typed while a pane was busy, in send order. Kept in memory:
     /// a restored session is never running, so nothing would drain it.
     @Published var queuedInputs: [String: [QueuedInput]] = [:]
-    private var steerTasks: [String: Task<Void, Never>] = [:]
+    /// The live steer chain per session. The token identifies the chain's last
+    /// link, so a finished chain clears itself without racing a newer one.
+    private var steerTasks: [String: (token: UUID, task: Task<SubmitOutcome, Never>)] = [:]
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
     @Published var mobileBusy = false
@@ -357,7 +359,7 @@ final class AppStore: ObservableObject {
             statusLines.removeValue(forKey: id)
             pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); ouroborosProgress.removeValue(forKey: id)
             discardAttachments(id)
-            queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.cancel()
+            queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
             draftRevisions.removeValue(forKey: id)
             if snapshot.activeSessionId == id {
                 snapshot.activeSessionId = previousGroup?.sessionIds.first(where: { candidate in snapshot.sessions.contains { $0.id == candidate } }) ?? activeSessions.first?.id
@@ -378,7 +380,7 @@ final class AppStore: ObservableObject {
                 statusLines.removeValue(forKey: session.id)
                 pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); ouroborosProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
-                queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.cancel()
+                queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.task.cancel()
                 draftRevisions.removeValue(forKey: session.id)
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
@@ -473,37 +475,68 @@ final class AppStore: ObservableObject {
             && snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
     }
 
-    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true) {
-        guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = "대기열에는 최대 \(QueuedInput.maximumItems)개까지 넣을 수 있습니다."; return }
+    /// What deferring did. Steering is only known once the runner answers, so
+    /// the task carries the outcome for callers (the phone) that must report it.
+    enum DeferOutcome {
+        case refused, queued
+        case steering(Task<SubmitOutcome, Never>)
+    }
+
+    @discardableResult
+    func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true) -> DeferOutcome {
+        guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = "대기열에는 최대 \(QueuedInput.maximumItems)개까지 넣을 수 있습니다."; return .refused }
         drafts[id] = ""
         let submittedIds = Set(item.attachments.map(\.id))
         attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
-        if steering, canSteer(session), item.attachments.isEmpty {
-            // One chain per session keeps rapid follow-ups in send order.
-            let previous = steerTasks[id]
-            steerTasks[id] = Task { [weak self] in
-                await previous?.value
-                guard let self, !Task.isCancelled else { return }
-                await self.steer(id, item: item)
-            }
-        } else {
+        guard steering, canSteer(session), item.attachments.isEmpty else {
             queuedInputs[id, default: []].append(item)
+            return .queued
         }
+        // One chain per session keeps rapid follow-ups in send order.
+        let previous = steerTasks[id]?.task
+        let token = UUID()
+        let task = Task { [weak self] in
+            _ = await previous?.value
+            // Cancelled while waiting its turn: the text never reached anything.
+            guard let self, !Task.isCancelled else { return SubmitOutcome.dropped }
+            let outcome = await self.steer(id, item: item)
+            self.finishSteerChain(id, token: token)
+            return outcome
+        }
+        steerTasks[id] = (token, task)
+        return .steering(task)
     }
 
-    private func steer(_ id: String, item: QueuedInput) async {
+    /// Drops the chain handle once its last link finished, so a session that
+    /// stopped steering does not keep a completed task alive.
+    private func finishSteerChain(_ id: String, token: UUID) {
+        guard steerTasks[id]?.token == token else { return }
+        steerTasks.removeValue(forKey: id)
+    }
+
+    /// What the text finally did. The runner refusing it is not the end: the
+    /// item goes to the queue, and settling may start it right there, which a
+    /// caller reporting to a phone must be able to tell apart from waiting.
+    private func steer(_ id: String, item: QueuedInput) async -> SubmitOutcome {
         let accepted = await runner.steer(sessionId: id, text: item.text)
-        guard !ending, !closingSessions.contains(id) else { return }
+        // Closing meanwhile: the item is deliberately not queued, so say so.
+        guard !ending, !closingSessions.contains(id) else { return .dropped }
         guard accepted else {
             // The turn ended (or never opened stdin) meanwhile; run it next.
             queuedInputs[id, default: []].append(item)
             settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
-            return
+            if queuedInputs[id]?.contains(where: { $0.id == item.id }) == true { return .queued }
+            // Gone from the queue: settling either started it now, or threw the
+            // whole queue away because the pane cannot run (it logged why).
+            if pendingRuns.contains(id) { return .started }
+            let status = snapshot.sessions.first { $0.id == id }?.status
+            return status == "running" ? .started : .dropped
         }
         companion.recordInput(sessionID: id, text: item.text)
         updateSession(id) {
             $0.logs.append(LogEntry(id: item.id, kind: "user", text: item.text)); $0.logs = Array($0.logs.suffix(400))
         }
+        return .steered
     }
 
     func removeQueuedInput(_ id: String, itemId: String) {

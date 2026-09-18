@@ -12,9 +12,11 @@ import { groupSessionsByWorkspace } from '@/lib/merge';
 import { useHostsStore } from '@/store/hosts';
 import { useHostClient, useHostState, useLiveStore } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { colors, spacing } from '@/theme';
+import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 export default function HostScreen() {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
   const { hostId } = useLocalSearchParams<{ hostId: string }>();
   const host = useHostsStore((state) => state.hosts.find((entry) => entry.id === hostId));
   const client = useHostClient(hostId);
@@ -102,7 +104,7 @@ export default function HostScreen() {
           <RefreshControl
             refreshing={poll.loading}
             onRefresh={poll.refresh}
-            tintColor={colors.accent}
+            tintColor={palette.accent}
           />
         }
       >
@@ -151,6 +153,7 @@ export default function HostScreen() {
       <NewSessionSheet
         visible={creatingFor !== undefined}
         workspaceName={activeWorkspace?.workspace.name ?? ''}
+        workspaceRemote={activeWorkspace?.workspace.remote ?? false}
         busy={creating}
         onCancel={() => setCreatingFor(undefined)}
         onCreate={(choice) => void createSession(choice)}
@@ -159,13 +162,14 @@ export default function HostScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.background, flex: 1 },
-  content: { gap: spacing.xl, padding: spacing.lg },
-  group: { gap: spacing.sm },
-  groupHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  groupTitles: { flex: 1 },
-  workspaceName: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  workspacePath: { color: colors.textFaint, fontSize: 12 },
-  noSessions: { color: colors.textFaint, fontSize: 13, paddingVertical: spacing.sm },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    screen: { backgroundColor: palette.background, flex: 1 },
+    content: { gap: spacing.xl, padding: spacing.lg },
+    group: { gap: spacing.sm },
+    groupHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    groupTitles: { flex: 1 },
+    workspaceName: { color: palette.text, fontSize: 15, fontWeight: '700' },
+    workspacePath: { color: palette.textFaint, fontSize: 12 },
+    noSessions: { color: palette.textFaint, fontSize: 13, paddingVertical: spacing.sm },
+  });

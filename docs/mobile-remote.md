@@ -61,6 +61,93 @@ MobilePermission {
 
 제한: 요청 본문 64 KiB, `text` 32 KiB, 세션당 대기열 16개, 롱폴 `wait` 최대 10초, 연결당 동시 요청 8개, 호스트당 휴대폰 32대.
 
+## m1 확장 (capabilities)
+
+기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
+
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`.
+
+공통 오류: 알 수 없는 실행 창·항목 404, 형식 오류·허용 값 밖의 문자열·필수 필드 누락 400, 지금 상태에서 할 수 없음 409, 크기 초과 413. 허용 값 밖의 값을 조용히 기본값으로 바꾸지 않는다.
+
+### 고정 문자열 값
+
+| 필드 | 허용 값 |
+|---|---|
+| `status` | `idle` `running` `completed` `error` `stopped` |
+| `LogEntry.kind` | `user` `assistant` `system` `output` `error` |
+| `activity.state` | `running` `waiting` `completed` `error` `stopped` |
+| `permissionMode` | 호스트가 `settings.options.permissionModes`로 알려 주는 id (프로바이더마다 다름) |
+| `agentViewMode` | `plain` `mighty` |
+| `mightyStyle` | `cli` `ouroboros` `paperthin` |
+| 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
+| 블록 `status` | `running` `waiting` `completed` `error` `stopped` |
+| `accepted` | `started` `steered` `queued` |
+| `mode` | `steer` `queue` |
+| 명령 `source` | `app` `builtin` `project` `user` `plugin` |
+| 명령 `action` | `model` `permission` `clear` `usage` `help` `rename` |
+
+### 라우트
+
+| 메서드 | 경로 | 요청 | 응답 |
+|---|---|---|---|
+| POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. `mode: "queue"`면 조정하지 않고 대기열에 넣는다. `mode: "steer"`(또는 생략)면 조정을 시도하고, 조정할 수 없는 창(로컬 Claude가 아님, 턴이 이미 닫힘)이면 대기열로 가며 `queued`를 돌려준다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409 |
+| POST | `/m1/sessions/{id}/queue/{itemId}/remove` | | `{ protocol, ok }` · 없는 항목 404 |
+| POST | `/m1/sessions/{id}/queue/run-next` | | `{ protocol, ok }` · 실행 중이거나 대기열이 비면 409 |
+| POST | `/m1/sessions/{id}/rename` | `{ title }` (앞뒤 공백 제거 후 1~80자) | `{ protocol, ok }` |
+| POST | `/m1/sessions/{id}/close` | | `{ protocol, ok }` — 실행 중이면 Mac에서 닫을 때와 같이 중지 후 닫는다 |
+| GET | `/m1/sessions/{id}/entries?before=<entryId>&limit=<1..100>` | | `{ protocol, entries: [LogEntry], hasMore }` — `before`보다 오래된 항목을 시간순으로. `before`가 호스트 기록에 없으면(밀려남) 가장 오래된 쪽부터가 아니라 **빈 배열과 `hasMore: false`** |
+| POST | `/m1/sessions/{id}/settings` | `{ model?, permissionMode?, effort?, agentViewMode?, mightyStyle? }` (하나 이상) | `{ protocol, ok }` · 실행 중이면 409 · 옵션에 없는 값 400 |
+| GET | `/m1/sessions/{id}/commands` | | `{ protocol, commands: [MobileCommand] }` |
+| POST | `/m1/sessions/{id}/command` | `{ action }` (`clear` `usage` `help`만) | `{ protocol, ok, message? }` — `usage`·`help`는 `message`에 본문 |
+| POST | `/m1/sessions/{id}/guided` | `{ style: "ouroboros" \| "paperthin", skill, text? }` | 202 `{ protocol, accepted }` — 호스트가 Mac과 같은 함수로 프롬프트를 만든다(`/ouroboros:seed`, `/re0 docs/spec.md`). 모르는 스킬 400, 그 스타일이 아닌 창 409 |
+| POST | `/m1/sessions/{id}/uploads` | `{ name, size, mimeType? }` | 201 `{ protocol, uploadId, chunkSize }` · 한도 초과 413 |
+| POST | `/m1/uploads/{uploadId}/chunks/{index}` | `{ dataBase64 }` | `{ protocol, ok, received }` — 순서대로 0부터. 이 라우트만 본문 한도 300 KiB |
+| POST | `/m1/uploads/{uploadId}/complete` | | `{ protocol, attachment: { id, name, size } }` · 크기가 선언과 다르면 400 |
+| POST | `/m1/uploads/{uploadId}/cancel` | | `{ protocol, ok }` |
+
+`POST /m1/workspaces/{id}/sessions`는 **로컬** 워크스페이스에서 `kind: "shell"`을 409로 거절한다(휴대폰에서 쓸 수 없는 창이 되기 때문).
+
+첨부 한도는 Mac과 같다: 요청당 파일 8개, 개당 5 MB, 합계 8 MB. `chunkSize`는 196 608바이트(192 KiB). 끝내지 않은 업로드는 10분 뒤 지운다. `submit`의 `attachments`는 `complete`를 마친 `uploadId`만 받고, 한 번 쓰면 사라진다.
+
+### 추가 필드
+
+```
+MobileInfo            { …, capabilities?: string[] }
+MobileSessionSummary  { …, agentViewMode?: "plain" | "mighty", mightyStyle?: "cli" | "ouroboros" | "paperthin" }
+MobileSessionDetail   { …, hasOlder?: boolean,
+                        settings?: MobileSettings, mighty?: MobileMighty,
+                        statusLine?: { lines: [[{ text, fg?: "#RRGGBB", bold?: boolean }]] },   // 최대 6줄
+                        rateLimits?: [{ label, usedPercent, resetsAt?: ISO-8601 }] }
+MobileSettings {
+  editable: boolean,                         // 실행 중이면 false
+  model, permissionMode, effort?, agentViewMode, mightyStyle,
+  options: { models: [Option], permissionModes: [Option], efforts: [Option], mightyStyles: [Option] }   // Option { id, label }
+}                                            // mightyStyles는 이 창에서 쓸 수 있는 것만(로컬 Claude가 아니면 cli 하나)
+MobileCommand { name, description, source, argumentHint?, action? }
+                                             // action이 있으면 휴대폰이 직접 처리: model·permission → 설정 선택, rename → 이름 변경,
+                                             // clear·usage·help → /command. action이 없으면 입력창에 "/name "을 넣는다.
+                                             // Mac 화면을 여는 명령(/plugin, /config)은 목록에 넣지 않는다.
+MobileMighty {
+  style: "cli" | "ouroboros" | "paperthin",
+  runs: [{ id, input, title?, status, blocks: [MobileBlock] }],          // 최근 20개 요청, 시간순
+  ouroboros?: { phase, ready: boolean, takesText: [skill], next: [{ skill, title, help }], all: [{ skill, title, help }] },
+  paperthin?: { installed: boolean, recommended?: skill,
+                domains: [{ id, title, axis, question, skills: [{ name, emoji, summary, scope, userInvoked, readOnly }] }],
+                casebook?: { name, weight: "full" | "lightweight", files: [string] } }
+}
+MobileBlock { id, kind, title, status, summary?, output?, durationMs? }   // output은 2 000자까지
+```
+
+`activity.durationMs`와 `activity.provider`는 이미 전송되고 있다(도구 소요 시간 표시에 쓴다).
+
+### 휴대폰에서 의도적으로 제외한 Mac 기능
+
+알림(푸시·로컬), 터미널 실행 창 조작, 워크스페이스 추가·이름 변경·제거, 그래프 배치·블록 크기 조절·참조 말풍선, CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·앱 설정, 펫, 다국어.
+
+### 기기 관리
+
+휴대폰은 처음 페어링할 때 페어링 키로 인증하고, 호스트가 발급한 **기기 토큰**을 보안 저장소에 넣은 뒤부터는 토큰으로 인증한다. 자세한 프레임은 [relay.md](relay.md)의 "기기 토큰" 절을 따른다. Mac 설정의 **모바일 리모트**에 기기 목록(이름, 처음·마지막 접속)이 나오고, 한 대를 해제하면 그 기기의 토큰이 무효가 되어 즉시 끊기며 페어링 키도 새로 만들어진다(해제된 휴대폰이 옛 QR로 다시 페어링하지 못하게). 다른 기기는 토큰으로 계속 접속한다. 토큰을 모르는 구버전 앱은 페어링 키로만 인증하므로 "구버전 앱"으로 묶여 보이고, 키가 바뀌면 다시 페어링해야 한다.
+
 ## 데스크톱 구현
 
 - `MightyCore/Remote/RelayChannel.swift`: X25519·HKDF·ChaCha20-Poly1305 채널, 호스트 키쌍 파일, 페어링 오퍼.

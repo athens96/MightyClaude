@@ -15,11 +15,13 @@ import { describeError, probeHost } from '@/api/client';
 import { parsePairingUrl, type PairingPayload } from '@/lib/pairing';
 import { useHostsStore } from '@/store/hosts';
 import { showToast } from '@/store/toast';
-import { colors, radius, spacing } from '@/theme';
+import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 type Mode = 'qr' | 'manual';
 
 export default function PairScreen() {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
   const [mode, setMode] = useState<Mode>('qr');
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
@@ -81,11 +83,16 @@ export default function PairScreen() {
       style={styles.screen}
     >
       <View style={styles.modes}>
-        <Chip label="QR 스캔" selected={mode === 'qr'} color={colors.accent} onPress={() => setMode('qr')} />
+        <Chip
+          label="QR 스캔"
+          selected={mode === 'qr'}
+          color={palette.accent}
+          onPress={() => setMode('qr')}
+        />
         <Chip
           label="링크 붙여넣기"
           selected={mode === 'manual'}
-          color={colors.accent}
+          color={palette.accent}
           onPress={() => setMode('manual')}
         />
       </View>
@@ -159,6 +166,8 @@ function Field({
   autoCapitalize = 'sentences',
   multiline = false,
 }: FieldProps) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -166,7 +175,7 @@ function Field({
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
-        placeholderTextColor={colors.textFaint}
+        placeholderTextColor={palette.textFaint}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
         multiline={multiline}
@@ -176,39 +185,40 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.background, flex: 1 },
-  modes: { flexDirection: 'row', gap: spacing.sm, padding: spacing.lg },
-  scannerWrap: { flex: 1, gap: spacing.lg, padding: spacing.lg },
-  permissionCard: { gap: spacing.lg },
-  camera: {
-    backgroundColor: '#000',
-    borderRadius: radius.lg,
-    flex: 1,
-    overflow: 'hidden',
-  },
-  reticle: {
-    alignSelf: 'center',
-    borderColor: colors.accent,
-    borderRadius: radius.lg,
-    borderWidth: 2,
-    height: 220,
-    marginTop: '30%',
-    width: 220,
-  },
-  hint: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
-  form: { gap: spacing.lg, padding: spacing.lg },
-  field: { gap: spacing.xs },
-  fieldLabel: { color: colors.textMuted, fontSize: 13 },
-  input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.text,
-    fontSize: 15,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  inputMultiline: { minHeight: 96, textAlignVertical: 'top' },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    screen: { backgroundColor: palette.background, flex: 1 },
+    modes: { flexDirection: 'row', gap: spacing.sm, padding: spacing.lg },
+    scannerWrap: { flex: 1, gap: spacing.lg, padding: spacing.lg },
+    permissionCard: { gap: spacing.lg },
+    camera: {
+      backgroundColor: '#000',
+      borderRadius: radius.lg,
+      flex: 1,
+      overflow: 'hidden',
+    },
+    reticle: {
+      alignSelf: 'center',
+      borderColor: palette.accent,
+      borderRadius: radius.lg,
+      borderWidth: 2,
+      height: 220,
+      marginTop: '30%',
+      width: 220,
+    },
+    hint: { color: palette.textMuted, fontSize: 13, textAlign: 'center' },
+    form: { gap: spacing.lg, padding: spacing.lg },
+    field: { gap: spacing.xs },
+    fieldLabel: { color: palette.textMuted, fontSize: 13 },
+    input: {
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderRadius: radius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: palette.text,
+      fontSize: 15,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    inputMultiline: { minHeight: 96, textAlignVertical: 'top' },
+  });
