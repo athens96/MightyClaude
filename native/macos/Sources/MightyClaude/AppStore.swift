@@ -424,7 +424,7 @@ final class AppStore: ObservableObject {
             $0.resumeId = nil
             $0.sessionUsage = nil
             $0.logs.append(LogEntry(kind: "system", text: "\(ProviderOptions.label(provider))로 전환했습니다. 다음 입력은 새 대화로 시작합니다."))
-            $0.logs = Array($0.logs.suffix(400))
+            $0.logs = TranscriptRetention.trimmed($0.logs)
         }
     }
 
@@ -539,7 +539,7 @@ final class AppStore: ObservableObject {
         }
         companion.recordInput(sessionID: id, text: item.text)
         updateSession(id) {
-            $0.logs.append(LogEntry(id: item.id, kind: "user", text: item.text)); $0.logs = Array($0.logs.suffix(400))
+            $0.logs.append(LogEntry(id: item.id, kind: "user", text: item.text)); $0.logs = TranscriptRetention.trimmed($0.logs)
         }
         return .steered
     }
@@ -603,7 +603,7 @@ final class AppStore: ObservableObject {
         let inputEntry = LogEntry(kind: "user", text: logText)
         updateSession(id) {
             $0.beginGraphRun(input: logText, id: inputEntry.id)
-            $0.beginRunTiming(); $0.status = "running"; $0.logs.append(inputEntry); $0.logs = Array($0.logs.suffix(400))
+            $0.beginRunTiming(); $0.status = "running"; $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
         }
         startTasks[id] = Task {
             do {
@@ -660,7 +660,7 @@ final class AppStore: ObservableObject {
                 guard let entry = event.entry else { return }
                 if let index = session.logs.firstIndex(where: { $0.id == entry.id }) { session.logs[index] = entry }
                 else { session.logs.append(entry) }
-                session.logs = Array(session.logs.suffix(400))
+                session.logs = TranscriptRetention.trimmed(session.logs)
             case "status": if let status = event.status { session.status = status }
             case "resume": session.resumeId = event.resumeId
             default: break

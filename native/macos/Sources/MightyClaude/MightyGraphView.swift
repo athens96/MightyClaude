@@ -325,10 +325,11 @@ struct MightyGraphView: View {
                     Spacer()
                     Text(draft.isEmpty ? "입력 대기" : "작성 중").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                Text(draft.isEmpty ? "아래 입력창에서 요청을 작성하세요." : draft)
-                    .font(.system(size: 12)).foregroundStyle(draft.isEmpty ? .secondary : .primary)
-                    .lineLimit(4).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("mighty-draft-\(sessionID)")
+                // A native selectable view, not Text(...).textSelection: the
+                // canvas monitor hands first responder back to itself for every
+                // click that is not on an NSTextView, which left a SwiftUI
+                // selection here drawn but impossible to copy.
+                MightyGraphDraftPreview(draft: draft, width: max(1, node.frame.width - 32), identifier: "mighty-draft-\(sessionID)")
                 Spacer(minLength: 0)
             }
             .padding(16).background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
@@ -397,10 +398,9 @@ struct MightyGraphView: View {
             }.padding(.horizontal, 12).frame(height: 38)
             Divider()
             if !input.isEmpty {
-                MightyGraphInputPreview(input: input, width: node.frame.width - 24)
+                MightyGraphInputPreview(input: input, width: node.frame.width - 24, identifier: "mighty-request-\(node.id)")
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(tint.opacity(0.055))
-                    .accessibilityIdentifier("mighty-request-\(node.id)")
                 Divider()
             }
             if content.isEmpty {
@@ -535,26 +535,41 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
 private struct MightyGraphInputPreview: View {
     let input: String
     let width: CGFloat
+    let identifier: String
     @ViewState private var measuredHeight: CGFloat = 14
     var body: some View {
-        ScrollView(.vertical) {
-            Text(input).font(.system(size: 11)).textSelection(.enabled)
-                .frame(width: max(1, width - 16), alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .background(GeometryReader { geometry in
-                    Color.clear.preference(key: MightyGraphInputHeight.self, value: geometry.size.height)
-                })
-                .padding(.trailing, 16)
-        }
-        .frame(width: width, height: min(64, max(14, measuredHeight)))
-        .onPreferenceChange(MightyGraphInputHeight.self) { height in
+        // The native view scrolls within the pinned height on its own, and its
+        // selection survives the canvas monitor moving first responder away.
+        // The identifier goes on the text view itself, so the accessibility
+        // lookups in MightyGraphDiagnostics land on the element that carries
+        // the request text as its value.
+        MightyGraphSelectableText(text: input, width: max(1, width - 16), fontSize: 11, identifier: identifier,
+                                  accessibilityLabel: "요청 내용", onHeight: { height in
             if height.isFinite, height > 0, abs(measuredHeight - height) > 0.5 { measuredHeight = ceil(height) }
-        }
+        })
+        .frame(width: width, height: min(64, max(14, measuredHeight)))
     }
 }
-private struct MightyGraphInputHeight: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+
+/// The next-request draft. Four lines at most, but four lines of *this* text:
+/// the preview asks the layout manager how tall its own first four fragments
+/// came out, so a Hangul or emoji fallback is reserved for as it is drawn
+/// rather than estimated from the Latin system font.
+private struct MightyGraphDraftPreview: View {
+    let draft: String
+    let width: CGFloat
+    let identifier: String
+    @ViewState private var measuredHeight: CGFloat = 16
+    var body: some View {
+        MightyGraphSelectableText(text: draft.isEmpty ? "아래 입력창에서 요청을 작성하세요." : draft,
+                                  width: width, fontSize: 12, secondary: draft.isEmpty, maximumLines: 4,
+                                  identifier: identifier,
+                                  accessibilityLabel: draft.isEmpty ? "다음 요청 입력 대기" : nil,
+                                  onHeight: { height in
+            if height.isFinite, height > 0, abs(measuredHeight - height) > 0.5 { measuredHeight = ceil(height) }
+        })
+        .frame(maxWidth: .infinity, minHeight: measuredHeight, maxHeight: measuredHeight, alignment: .leading)
+    }
 }
 
 
