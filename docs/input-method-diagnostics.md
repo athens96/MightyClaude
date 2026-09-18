@@ -4,7 +4,9 @@
 
 ## 무엇을 기록하나
 
-입력창(`ComposerTextView`)은 키 입력마다 입력 시스템이 부르는 `setMarkedText`·`insertText`·`unmarkText`·`firstRect(forCharacterRange:)`를 시각과 함께 기록한다(최근 400건). 한국어 입력 소스가 선택된 상태에서 **조합 없이 자모 하나가 그대로 입력**되는 일이 5초 안에 두 번 생기면 문제로 판단한다.
+입력창(`ComposerTextView`)은 키 입력마다 입력 시스템이 부르는 `setMarkedText`·`insertText`(대체 범위 포함)·`unmarkText`·`firstRect(forCharacterRange:)`를 시각과 함께 기록한다(최근 400건).
+
+Apple 두벌식 입력기는 이 입력창에서 marked text를 쓰지 않는다. 첫 자모를 넣은 뒤 다음 키에서 `insertText(_:replacementRange:)`로 **앞 글자를 바꿔 끼우는** 방식이다(ㅋ → 커 → 컷). 그래서 음절 첫 키에 자모 하나가 들어오는 것은 정상이다. 고장은 입력기가 더는 바꿔 끼우지 않는 상태로, **자음 자모 바로 뒤에 모음 자모가 그대로 남는다**("ㅇㅣ"). 정상 두벌식에서는 불가능한 모양이므로, 한국어 입력 소스에서 이 모양이 10초 안에 두 번 생기면 문제로 판단한다. "ㅋㅋ"처럼 자음만 이어지는 입력은 정상이다.
 
 판단되면 `<상태 저장 위치>/diagnostics/ime-<시각>.json`에 다음을 저장한다.
 
@@ -21,7 +23,8 @@
 
 ## 진단 파일로 가리는 것
 
-- `recentEvents`에 `setMarkedText`가 전혀 없고 `insertText`만 자모로 이어지면 입력기가 조합을 시작조차 하지 않은 것이다. 시스템 쪽(입력기 세션·LaunchServices·보안 입력) 문제다.
-- `setMarkedText` 뒤에 곧바로 `unmarkText`/`insertText`가 따라오면 앱 안에서 조합이 끊긴 것이다. 그 사이에 어떤 갱신이 끼었는지 이벤트 순서로 볼 수 있다.
+- 정상이면 `insertText "ㅋ" replace=none` 다음에 `insertText "커" replace={n,1}`처럼 대체 범위가 따라온다.
+- 고장이면 `insertText`가 계속 `replace=none`으로 자모만 넣는다. 키 입력이 입력기를 거치지 않고 키보드 레이아웃의 자모가 그대로 들어오는 것이므로 입력기 세션(프로세스와 입력기 사이 연결) 문제다.
+- 대체 범위는 오는데 글자가 어긋나면, 두 키 사이에 앱이 글자나 선택 범위를 바꿨는지 이벤트 순서로 확인한다.
 - `secureEventInput`이 true면 어떤 프로세스가 보안 키보드 입력을 켜 둔 것이다(터미널의 Secure Keyboard Entry, 비밀번호 필드 등).
 - `editorContextIsCurrent`가 false면 입력 시스템이 다른 컨텍스트를 보고 있다.

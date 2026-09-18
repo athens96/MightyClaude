@@ -42,13 +42,16 @@ final class InputMethodMonitor {
     }
     func noteUnmark(in editor: NSTextView) { record("unmarkText hadMarked=\(editor.hasMarkedText())") }
 
-    func noteInsert(_ string: Any, in editor: NSTextView) {
+    func noteInsert(_ string: Any, replacementRange: NSRange, in editor: NSTextView) {
         let text = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
         let source = Self.currentInputSourceID()
-        record("insertText \(Self.codes(text)) composed=\(composedThisKey) source=\(source ?? "-")")
+        let replaced = replacementRange.location == NSNotFound ? "none" : NSStringFromRange(replacementRange)
+        record("insertText \(Self.codes(text)) replace=\(replaced) marked=\(composedThisKey) source=\(source ?? "-")")
         let koreanSource = InputMethodSymptom.isKoreanInputSource(source)
-        if detector.observeCommit(text, composedThisKey: composedThisKey, koreanSource: koreanSource, at: Date().timeIntervalSince1970), problem == nil {
-            let file = writeDiagnostics(editor: editor, reason: "lone jamo committed twice without composition")
+        let caret = min(editor.selectedRange().location, (editor.string as NSString).length)
+        let before = (editor.string as NSString).substring(with: NSRange(location: max(0, caret - 2), length: min(2, caret)))
+        if detector.observeInsert(textBeforeCaret: before, koreanSource: koreanSource, at: Date().timeIntervalSince1970), problem == nil {
+            let file = writeDiagnostics(editor: editor, reason: "consonant and vowel jamo left uncombined twice (input method stopped replacing)")
             problem = Problem(detectedAt: Date(), file: file)
             onProblem?(problem!)
         }
