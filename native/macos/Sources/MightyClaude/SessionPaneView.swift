@@ -19,12 +19,7 @@ struct SessionPaneView: View {
     private var localTerminal: Bool { store.usesLocalTerminal(session) }
     private var remoteCommand: Bool { session.kind == "shell" && store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil }
     private var runtime: ProviderRuntime { store.providerRuntime(session.provider, workspaceId: session.workspaceId) }
-    private var models: [ModelOption] {
-        var options = runtime.modelCatalog.models
-        if !options.contains(where: { $0.value == "default" }) { options.insert(ModelOption(value: "default", displayName: "CLI 기본값"), at: 0) }
-        if !options.contains(where: { $0.value == session.model }) { options.append(ModelOption(value: session.model, displayName: "\(session.model) · 저장된 모델")) }
-        return options
-    }
+    private var models: [ModelOption] { store.modelOptions(for: session) }
     private var effortLevels: [String] { runtime.capabilities.effort ? ProviderOptions.effortLevels(provider: session.provider, model: session.model, catalog: runtime.modelCatalog) : [] }
     private var draft: Binding<String> { Binding(get: { store.drafts[session.id] ?? "" }, set: { store.drafts[session.id] = $0 }) }
     private var attachments: [RunAttachment] { store.attachmentDrafts[session.id] ?? [] }
@@ -48,14 +43,17 @@ struct SessionPaneView: View {
     /// the text immediately, other panes queue it for after the current request.
     private var canSend: Bool { !stopping && !importingAttachments && blockedReason == nil && (!draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty)) }
     private var steers: Bool { store.canSteer(session) }
-    /// The `/…` token being completed, or nil when the palette should be closed.
-    private var slashQuery: String? {
-        guard session.kind != "shell", let query = SlashCommandCatalog.query(from: draft.wrappedValue), paletteDismissedFor != draft.wrappedValue else { return nil }
-        return query
+    /// The draft while it is a `/name` being typed or a built-in's `/name arg`,
+    /// or nil when the palette should be closed.
+    private var paletteDraft: String? {
+        let text = draft.wrappedValue
+        guard session.kind != "shell", paletteDismissedFor != text,
+              SlashCommandCatalog.query(from: text) != nil || SlashCommandCatalog.argumentQuery(from: text) != nil else { return nil }
+        return text
     }
     private var paletteCommands: [SlashCommand] {
-        guard let slashQuery else { return [] }
-        return Array(SlashCommandCatalog.filter(store.slashCommands(for: session), query: slashQuery).prefix(60))
+        guard let paletteDraft else { return [] }
+        return Array(store.slashPalette(for: session, draft: paletteDraft).prefix(60))
     }
     private var paletteVisible: Bool { !paletteCommands.isEmpty }
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
@@ -343,12 +341,12 @@ struct SessionPaneView: View {
                     .padding(.horizontal, 10).padding(.top, 10)
             }
             NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocused = $0 }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput)
-                .onChange(of: slashQuery) { _, query in
+                .onChange(of: paletteDraft) { _, text in
                     paletteIndex = 0
-                    if query != nil { store.refreshSlashCommands(for: session) }
+                    if text != nil { store.refreshSlashCommands(for: session) }
                 }
                 .frame(height: editorHeight)
-                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, onNavigationKey: paletteVisible ? handlePaletteKey : nil, placeholder: running ? (steers ? "실행 중에도 보낼 수 있어요 · 진행 중인 작업에 바로 전달됩니다" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
+                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: submitComposer, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: running ? (steers ? "실행 중에도 보낼 수 있어요 · 진행 중인 작업에 바로 전달됩니다" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
                 .help(running ? (steers ? "Enter로 전송 · 실행 중인 Claude에 바로 전달됩니다" : "Enter로 전송 · 현재 작업이 끝난 뒤 실행됩니다") : "Enter로 전송 · Shift+Enter로 줄바꿈 · ⌘Enter로도 전송")
             if importingAttachments {
@@ -466,9 +464,20 @@ struct SessionPaneView: View {
         return true
     }
 
+    /// Built-ins run in the app and clear the draft; a built-in that takes
+    /// an argument keeps the palette open for its choices; anything else is
+    /// inserted as `/name ` for the CLI.
     private func applyCompletion(_ command: SlashCommand) {
+        guard !store.hasModal else { return }
+        if let action = command.action {
+            guard store.performSlashAction(action, sessionID: session.id) else { return }
+            paletteDismissedFor = nil
+            composerInput.replaceDraft("")
+            store.drafts[session.id] = ""
+            return
+        }
         let text = "/" + command.invocation + " "
-        paletteDismissedFor = text
+        paletteDismissedFor = command.argument == nil ? text : nil
         composerInput.replaceDraft(text)
         store.drafts[session.id] = text
     }
@@ -482,10 +491,32 @@ struct SessionPaneView: View {
         }
     }
 
+    /// A built-in typed out in full never reaches the CLI, where it would
+    /// be prompt text: `/clear` runs, `/model opus` applies the choice, and a
+    /// `/model` with no or an unknown argument reopens (or explains) the list.
     private func submitComposer() {
         guard canSend, !store.hasModal else { return }
+        if session.kind != "shell", attachments.isEmpty, let builtin = typedBuiltin {
+            if let argument = builtin.argument {
+                let query = SlashCommandCatalog.argumentQuery(from: draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))?.query ?? ""
+                let choices = store.slashPalette(for: session, draft: "/" + builtin.invocation + " ")
+                if let exact = choices.first(where: { $0.invocation == builtin.invocation + " " + query }) { applyCompletion(exact); return }
+                if query.isEmpty { applyCompletion(builtin); return }
+                store.noteSlashMismatch(sessionID: session.id, command: builtin.invocation, argument: argument, query: query)
+                composerInput.replaceDraft(""); store.drafts[session.id] = ""
+                return
+            }
+            applyCompletion(builtin); return
+        }
         composerInput.prepareForSubmission()
         store.submit(session.id)
+    }
+
+    /// The built-in the trimmed draft names exactly (`/clear`, `/model`, `/model opus`).
+    private var typedBuiltin: SlashCommand? {
+        let text = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = SlashCommandCatalog.query(from: text) ?? SlashCommandCatalog.argumentQuery(from: text)?.command
+        return name.flatMap { name in SlashCommandCatalog.builtins(provider: session.provider).first { $0.invocation == name } }
     }
 
     private var attachmentButton: some View {

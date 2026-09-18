@@ -34,6 +34,7 @@ final class ExecutionGraphTracker {
     private var pendingSteers: [String] = []
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
+    private var compactions = 0
     private var finished = false
 
     init(runID: String, input: String?, provider: String = "claude", emit: @escaping (ExecutionGraphNode) -> Void) {
@@ -55,6 +56,19 @@ final class ExecutionGraphTracker {
         guard let normalized = ExecutionGraphSupport.normalized(node) else { return }
         nodes[nodeID] = normalized; order.append(nodeID); emit(normalized)
         pendingSteers.append(nodeID)
+    }
+
+    /// The CLI summarized its context. The block sits under the request, or
+    /// for Claude under the subagent that compacted (Codex exec items carry no
+    /// thread), and is complete the moment it arrives.
+    func compaction(key: String, owner: String, detail: String) {
+        guard !finished, nodes.count < ExecutionGraphSupport.maximumNodes else { return }
+        let nodeID = ExecutionGraphSupport.identifier(runID, "compact:" + key)
+        guard nodes[nodeID] == nil else { return }
+        let parent = nodes[owner] != nil ? owner : mainID
+        let node = ExecutionGraphNode(id: nodeID, runId: runID, parentId: parent, kind: "compact", state: "completed", title: ContextCompaction.title, input: detail)
+        guard let normalized = ExecutionGraphSupport.normalized(node) else { return }
+        nodes[nodeID] = normalized; order.append(nodeID); emit(normalized)
     }
 
     static func parentToolID(_ value: [String: Any]) -> String? { key(value["parent_tool_use_id"]) }
@@ -153,6 +167,11 @@ final class ExecutionGraphTracker {
                 unnamedUsage += 1
                 recordUsage(usage, message: Self.key(message["id"]) ?? Self.key(value["uuid"]) ?? "unnamed:\(unnamedUsage)", node: current)
             }
+        }
+        if type == "system", value["subtype"] as? String == "compact_boundary" {
+            compactions += 1
+            compaction(key: Self.key(value["uuid"]) ?? "n\(compactions)", owner: current, detail: ContextCompaction.claudeSummary(value["compact_metadata"]))
+            return
         }
         if type == "assistant", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
             // A preamble beside a tool_use is not the reply; wait for a text-only answer.
@@ -268,6 +287,12 @@ final class ExecutionGraphTracker {
               let item = value["item"] as? [String: Any], let itemType = item["type"] as? String else { return }
         if itemType == "agent_message" {
             if type == "item.completed", let text = item["text"] as? String, !text.isEmpty { update(mainID) { $0.output = text } }
+            return
+        }
+        if itemType == "context_compaction" {
+            guard type == "item.completed" else { return }
+            compactions += 1
+            compaction(key: Self.key(item["id"]) ?? "n\(compactions)", owner: mainID, detail: ContextCompaction.codexSummary)
             return
         }
         guard let call = CodexCollaborationItem(item) else { return }

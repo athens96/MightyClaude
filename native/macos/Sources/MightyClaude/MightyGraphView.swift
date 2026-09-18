@@ -198,15 +198,16 @@ struct MightyGraphView: View {
 
     var body: some View {
         let graph = layout
-        let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer }.count }
+        let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact }.count }
         let taskCount = runs.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
         let steerCount = runs.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
+        let compactCount = runs.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
         let tokens = runs.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Label("마이티", systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 12, weight: .semibold))
-                Text("요청 \(runs.count) · 하위 에이전트 \(agentCount)" + (taskCount > 0 ? " · 백그라운드 작업 \(taskCount)" : "") + (steerCount > 0 ? " · 중간 요청 \(steerCount)" : "") + (tokens.isEmpty ? "" : " · " + tokens.summary))
+                Text("요청 \(runs.count) · 하위 에이전트 \(agentCount)" + (taskCount > 0 ? " · 백그라운드 작업 \(taskCount)" : "") + (steerCount > 0 ? " · 중간 요청 \(steerCount)" : "") + (compactCount > 0 ? " · 컨텍스트 정리 \(compactCount)" : "") + (tokens.isEmpty ? "" : " · " + tokens.summary))
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
                 Spacer(minLength: 8)
@@ -312,9 +313,9 @@ struct MightyGraphView: View {
                            input: run.input, entries: run.rootEntries, tint: Palette.accent, usage: run.usage)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]
-            transcriptCard(node, title: agent.isSteer ? "중간 요청" : agent.title.isEmpty ? (agent.isTask ? "백그라운드 작업" : "하위 에이전트") : agent.title,
-                           icon: agent.isSteer ? "text.bubble" : agent.isTask ? "terminal" : "person.crop.square.filled.and.at.rectangle", status: agent.status,
-                           input: agent.input, entries: agent.entries, tint: agent.isSteer ? .orange : agent.isTask ? .teal : .purple, usage: agent.usage)
+            transcriptCard(node, title: agent.isSteer ? "중간 요청" : agent.isCompact ? ContextCompaction.title : agent.title.isEmpty ? (agent.isTask ? "백그라운드 작업" : "하위 에이전트") : agent.title,
+                           icon: agent.isSteer ? "text.bubble" : agent.isCompact ? "arrow.down.right.and.arrow.up.left" : agent.isTask ? "terminal" : "person.crop.square.filled.and.at.rectangle", status: agent.status,
+                           input: agent.input, entries: agent.entries, tint: agent.isSteer ? .orange : agent.isCompact ? .mint : agent.isTask ? .teal : .purple, usage: agent.usage)
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)

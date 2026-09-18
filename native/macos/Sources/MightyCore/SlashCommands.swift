@@ -1,16 +1,42 @@
 import Foundation
 
+/// Korean particles chosen by the last syllable of the preceding word.
+public enum KoreanParticle {
+    /// 로/으로: 으로 only after a Korean syllable with a final consonant other
+    /// than ㄹ; Latin words and open syllables take 로.
+    public static func ro(_ word: String) -> String {
+        guard let scalar = word.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(scalar) else { return "로" }
+        let final = (scalar - 0xAC00) % 28
+        return final == 0 || final == 8 ? "로" : "으로"
+    }
+}
+
+/// What choosing a built-in does in the app instead of sending prompt text.
+/// The CLIs' own commands (`/plugin`, `/clear`, `/model`…) do not exist in
+/// their headless modes, so the app performs the equivalent itself.
+public enum SlashCommandAction: Sendable, Equatable {
+    case openPlugins, newConversation, showUsage, openSettings, rename, help
+    case setModel(String), setPermission(String)
+}
+
+/// A built-in whose argument the palette completes after `/name `.
+public enum SlashArgument: Sendable, Equatable { case model, permission }
+
 /// A skill or custom command the composer can complete after a leading `/`.
 /// `invocation` is what the CLI expects (`archify`, `sc:analyze`,
 /// `oh-my-claudecode:autopilot`); the composer inserts `/<invocation> `.
+/// Entries with an `action` run in the app and clear the draft instead.
 public struct SlashCommand: Sendable, Equatable, Identifiable {
     public var invocation: String
     public var description: String
-    /// Where it came from, for the badge: 사용자 스킬 · 프로젝트 스킬 · 플러그인 <name> · 사용자 명령 · 프로젝트 명령 · Codex 스킬.
+    /// Where it came from, for the badge: 사용자 스킬 · 프로젝트 스킬 · 플러그인 <name> · 사용자 명령 · 프로젝트 명령 · Codex 스킬,
+    /// or one of `SlashCommandCatalog.appSource` / `modelSource` / `permissionSource` for built-ins and their choices.
     public var source: String
+    public var action: SlashCommandAction?
+    public var argument: SlashArgument?
     public var id: String { invocation }
-    public init(invocation: String, description: String, source: String) {
-        self.invocation = invocation; self.description = description; self.source = source
+    public init(invocation: String, description: String, source: String, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) {
+        self.invocation = invocation; self.description = description; self.source = source; self.action = action; self.argument = argument
     }
 }
 
@@ -29,6 +55,60 @@ public enum SlashCommandCatalog {
         guard !rest.contains(where: \.isWhitespace) else { return nil }
         guard rest.count <= 80 else { return nil }
         return String(rest)
+    }
+
+    /// `"/model cla"` → `("model", "cla")`, `"/model "` → `("model", "")`. Nil
+    /// unless exactly one space follows a plain command name.
+    public static func argumentQuery(from draft: String) -> (command: String, query: String)? {
+        guard draft.hasPrefix("/"), draft.count <= 160 else { return nil }
+        let parts = draft.dropFirst().split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, let command = validName(String(parts[0])) else { return nil }
+        let query = String(parts[1])
+        guard !query.contains(where: \.isWhitespace) else { return nil }
+        return (command, query)
+    }
+
+    // MARK: Built-ins
+
+    public static let appSource = "앱 기능"
+    public static let modelSource = "모델"
+    public static let permissionSource = "작업 권한"
+
+    /// The CLI's own slash commands that the app answers itself, using the
+    /// names each CLI's users already know. Gemini has no plugin browser here.
+    public static func builtins(provider: String) -> [SlashCommand] {
+        func app(_ name: String, _ description: String, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) -> SlashCommand {
+            SlashCommand(invocation: name, description: description, source: appSource, action: action, argument: argument)
+        }
+        let model = app("model", "모델 바꾸기 · 이름을 이어서 고르세요", argument: .model)
+        let rename = app("rename", "실행 창 이름 바꾸기", action: .rename)
+        let help = app("help", "이 실행 창에서 쓸 수 있는 앱 명령 보기", action: .help)
+        switch provider {
+        case "claude":
+            return [app("plugin", "플러그인 마켓플레이스 열기", action: .openPlugins), model,
+                    app("permissions", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
+                    app("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
+                    app("cost", "이 실행 창의 토큰·비용 보기", action: .showUsage), app("usage", "이 실행 창의 토큰·비용 보기", action: .showUsage),
+                    app("config", "MightyClaude 설정 열기", action: .openSettings), rename, help]
+        case "codex":
+            return [app("plugins", "플러그인 마켓플레이스 열기", action: .openPlugins), model,
+                    app("approvals", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
+                    app("new", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
+                    app("status", "이 실행 창의 토큰·비용 보기", action: .showUsage),
+                    app("settings", "MightyClaude 설정 열기", action: .openSettings), rename, help]
+        case "gemini":
+            return [model, app("approval-mode", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
+                    app("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
+                    app("stats", "이 실행 창의 토큰·비용 보기", action: .showUsage),
+                    app("settings", "MightyClaude 설정 열기", action: .openSettings), rename, help]
+        default: return []
+        }
+    }
+
+    /// The `/help` text: one line per built-in.
+    public static func helpText(provider: String) -> String {
+        let lines = builtins(provider: provider).map { "/" + $0.invocation + " · " + $0.description }
+        return "앱 명령 · " + ProviderOptions.label(provider) + " 실행 창\n" + lines.joined(separator: "\n") + "\n그 밖의 /이름은 스킬·사용자 명령·플러그인 명령으로 CLI에 전달됩니다."
     }
 
     /// Prefix matches first (by name), then substring matches of name or description.

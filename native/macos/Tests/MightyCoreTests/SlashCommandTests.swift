@@ -56,4 +56,44 @@ struct SlashCommandTests {
         #expect(SlashCommandCatalog.frontmatter("---\nname: x\ndescription: >\n  folded\n---") == ["name": "x"])
         #expect(SlashCommandCatalog.frontmatter("# no frontmatter") == [:])
     }
+
+    @Test func builtinsUseEachCLIsOwnNamesAndRunInTheApp() {
+        let claude = SlashCommandCatalog.builtins(provider: "claude")
+        #expect(claude.map(\.invocation) == ["plugin", "model", "permissions", "clear", "cost", "usage", "config", "rename", "help"])
+        #expect(claude.allSatisfy { $0.source == "앱 기능" && ($0.action != nil) != ($0.argument != nil) })
+        #expect(claude.first { $0.invocation == "plugin" }?.action == .openPlugins)
+        #expect(claude.first { $0.invocation == "model" }?.argument == .model)
+        #expect(claude.first { $0.invocation == "permissions" }?.argument == .permission)
+        #expect(SlashCommandCatalog.builtins(provider: "codex").map(\.invocation) == ["plugins", "model", "approvals", "new", "status", "settings", "rename", "help"])
+        let gemini = SlashCommandCatalog.builtins(provider: "gemini")
+        #expect(gemini.map(\.invocation) == ["model", "approval-mode", "clear", "stats", "settings", "rename", "help"])
+        #expect(!gemini.contains { $0.action == .openPlugins })
+        #expect(SlashCommandCatalog.builtins(provider: "shell").isEmpty)
+        let help = SlashCommandCatalog.helpText(provider: "claude")
+        #expect(help.hasPrefix("앱 명령 · Claude 실행 창\n/plugin · ") && help.contains("\n/clear · ") && help.contains("CLI에 전달"))
+        // Built-ins sort into the same prefix-first order as scanned commands.
+        let mixed = SlashCommandCatalog.filter(claude + [SlashCommand(invocation: "plan-review", description: "", source: "x")], query: "pl")
+        #expect(mixed.map(\.invocation) == ["plugin", "plan-review"])
+    }
+
+    @Test func argumentQueryFollowsASingleSpaceAfterABuiltinName() {
+        #expect(SlashCommandCatalog.argumentQuery(from: "/model ")?.command == "model")
+        #expect(SlashCommandCatalog.argumentQuery(from: "/model ")?.query == "")
+        #expect(SlashCommandCatalog.argumentQuery(from: "/model cla")?.query == "cla")
+        #expect(SlashCommandCatalog.argumentQuery(from: "/approval-mode plan")?.command == "approval-mode")
+        #expect(SlashCommandCatalog.argumentQuery(from: "/model") == nil)
+        #expect(SlashCommandCatalog.argumentQuery(from: "/model a b") == nil)
+        #expect(SlashCommandCatalog.argumentQuery(from: "/model  ") == nil)
+        #expect(SlashCommandCatalog.argumentQuery(from: "/bad name! x") == nil)
+        #expect(SlashCommandCatalog.argumentQuery(from: "model x") == nil)
+        let choices = ["default", "claude-opus-5", "claude-sonnet-5"].map { SlashCommand(invocation: "model " + $0, description: $0, source: "모델", action: .setModel($0)) }
+        #expect(SlashCommandCatalog.filter(choices, query: "model cla").map(\.invocation) == ["model claude-opus-5", "model claude-sonnet-5"])
+        #expect(SlashCommandCatalog.filter(choices, query: "model ").count == 3)
+    }
+
+    @Test func roParticleFollowsTheLastSyllable() {
+        #expect(KoreanParticle.ro("전체 접근") == "으로"); #expect(KoreanParticle.ro("읽기 전용") == "으로")
+        #expect(KoreanParticle.ro("계획") == "으로"); #expect(KoreanParticle.ro("작업 폴더") == "로"); #expect(KoreanParticle.ro("CLI 기본값") == "으로")
+        #expect(KoreanParticle.ro("Bypass") == "로"); #expect(KoreanParticle.ro("opus") == "로"); #expect(KoreanParticle.ro("하늘") == "로"); #expect(KoreanParticle.ro("") == "로")
+    }
 }
