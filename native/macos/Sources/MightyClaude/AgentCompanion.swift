@@ -19,12 +19,12 @@ struct CompanionApproval: Equatable, Identifiable {
     let request: ToolPermissionRequest
     var id: String { sessionId + "|" + request.runId + "|" + request.id }
     var presentation: ToolPermissionPresentation { ToolPermissionPresentation.make(toolName: request.toolName, inputJSON: request.inputJSON) }
-    /// A single-question, single-choice questionnaire can be answered from the
-    /// bubble by tapping an option; anything richer opens the pane instead.
-    var quickChoices: UserQuestionnaire.Question? {
-        guard request.canAnswerQuestions, let questionnaire = request.questionnaire, questionnaire.questions.count == 1,
-              let question = questionnaire.questions.first, !question.multiSelect else { return nil }
-        return question
+    /// Answered from the bubble one question at a time. The bubble has no 직접 입력
+    /// row (the pet never takes the keyboard), so a typed answer still needs the pane.
+    var quickQuestionnaire: UserQuestionnaire? {
+        guard request.canAnswerQuestions, let questionnaire = request.questionnaire, !questionnaire.questions.isEmpty,
+              questionnaire.questions.allSatisfy({ !$0.options.isEmpty }) else { return nil }
+        return questionnaire
     }
 }
 
@@ -53,6 +53,13 @@ final class AgentCompanion: ObservableObject {
     @Published private(set) var approvalBusy = false
     @Published private(set) var approvalError: String?
     @Published private(set) var pinnedAgent: String?
+    /// Where the user is in each pending questionnaire, by approval id, so paging
+    /// to another agent's request and back keeps the answers already given.
+    @Published private var progressByRequest: [String: QuestionnaireProgress] = [:]
+    var questionProgress: QuestionnaireProgress {
+        let key = approval?.id ?? ""
+        return progressByRequest[key] ?? QuestionnaireProgress(requestKey: key)
+    }
     private var subscriptions = Set<AnyCancellable>()
     private weak var store: AppStore?
     private var activities: [String: AgentActivity] = [:]
@@ -219,6 +226,8 @@ final class AgentCompanion: ObservableObject {
         }
         let preferred = shown?.id
         let next = candidates.first { $0.sessionId == preferred } ?? candidates.sorted { $0.sessionTitle < $1.sessionTitle }.first
+        let pending = Set(candidates.map(\.id))
+        if progressByRequest.keys.contains(where: { !pending.contains($0) }) { progressByRequest = progressByRequest.filter { pending.contains($0.key) } }
         if next != approval { approval = next; updateOverlay() }
         // Only publish real changes; a same-value assignment would still redraw
         // every view that observes the companion, including pane headers.
@@ -231,10 +240,42 @@ final class AgentCompanion: ObservableObject {
         guard let store, let approval, !approvalBusy else { return }
         Task { await store.answerPermission(sessionId: approval.sessionId, request: approval.request, allow: allow) }
     }
-    func answerApprovalChoice(_ label: String) {
-        guard let store, let approval, !approvalBusy, let question = approval.quickChoices,
-              question.options.contains(where: { $0.label == label }) else { return }
-        let answers = [question.question: UserQuestionAnswer(selectedOptions: [label])]
+    /// A single-choice tap records the answer and moves on; a multi-choice tap toggles.
+    /// Nothing is sent from a tap when there are several questions: the last one waits for 보내기.
+    func chooseOption(_ label: String) {
+        guard let approval, !approvalBusy, let questionnaire = approval.quickQuestionnaire else { return }
+        var progress = questionProgress
+        let step = progress.choose(label, in: questionnaire)
+        progressByRequest[approval.id] = progress
+        if questionnaire.questions.count == 1 { send(step, approval: approval) }
+    }
+    /// 다음 / 보내기: needed under a multi-choice question and on the last of several questions.
+    func needsCommitButton(_ question: UserQuestionnaire.Question, in questionnaire: UserQuestionnaire) -> Bool {
+        question.multiSelect || (questionnaire.questions.count > 1 && questionProgress.index + 1 == questionnaire.questions.count)
+    }
+    func canCommit(_ question: UserQuestionnaire.Question) -> Bool {
+        question.multiSelect ? !questionProgress.selected.isEmpty : questionProgress.answers[question.question] != nil
+    }
+    func commitQuestion() {
+        guard let approval, !approvalBusy, let questionnaire = approval.quickQuestionnaire,
+              let question = questionProgress.current(in: questionnaire), canCommit(question) else { return }
+        var progress = questionProgress
+        if question.multiSelect {
+            let step = progress.commit(customText: "", in: questionnaire)
+            progressByRequest[approval.id] = progress
+            send(step, approval: approval)
+        } else if (try? questionnaire.validatedAnswers(progress.answers)) != nil {
+            send(.complete(progress.answers), approval: approval)
+        }
+    }
+    func previousQuestion() {
+        guard let approval, !approvalBusy, let questionnaire = approval.quickQuestionnaire else { return }
+        var progress = questionProgress
+        progress.back(in: questionnaire)
+        progressByRequest[approval.id] = progress
+    }
+    private func send(_ step: QuestionnaireProgress.Step?, approval: CompanionApproval) {
+        guard let store, case .complete(let answers) = step else { return }
         Task { await store.answerQuestionnaire(sessionId: approval.sessionId, request: approval.request, answers: answers) }
     }
     func openApproval() { focus(approval?.sessionId) }

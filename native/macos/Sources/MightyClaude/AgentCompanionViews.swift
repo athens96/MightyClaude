@@ -289,24 +289,23 @@ struct CompanionApprovalBubble: View {
     let approval: CompanionApproval
     var body: some View {
         let presentation = approval.presentation
-        VStack(alignment: .leading, spacing: 7) {
+        let questionnaire = approval.quickQuestionnaire
+        let question = questionnaire.flatMap { companion.questionProgress.current(in: $0) }
+        return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Image(systemName: approval.quickChoices == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(.orange)
-                Text(approval.quickChoices == nil ? "승인 요청" : "선택 요청").font(.system(size: 11, weight: .semibold))
+                Image(systemName: questionnaire == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(.orange)
+                Text(Self.title(questionnaire, progress: companion.questionProgress)).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                    .accessibilityIdentifier("pet-question-progress")
                 Spacer(minLength: 0)
                 Text(approval.workspaceName.isEmpty ? approval.sessionTitle : approval.workspaceName + " · " + approval.sessionTitle)
                     .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
-            if let question = approval.quickChoices {
+            if let question {
                 Text(question.question).font(.system(size: 11, weight: .medium)).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
-                    Button { companion.answerApprovalChoice(option.label) } label: {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(option.label).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                            if !option.description.isEmpty { Text(option.description).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
-                    }.buttonStyle(.plain).accessibilityIdentifier("pet-choice-\(index)")
+                    CompanionOptionRow(option: option, multiple: question.multiSelect, picked: Self.picked(option.label, question: question, progress: companion.questionProgress)) {
+                        companion.chooseOption(option.label)
+                    }.accessibilityIdentifier("pet-choice-\(index)")
                 }
             } else {
                 Text(presentation.title + " · " + approval.request.toolName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
@@ -323,10 +322,24 @@ struct CompanionApprovalBubble: View {
             }
             if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(2) }
             HStack(spacing: 6) {
-                Button("열기") { companion.openApproval() }.accessibilityIdentifier("pet-approval-open")
+                // Four buttons share 234pt while a questionnaire is up, so 열기 shrinks to its icon there.
+                Button { companion.openApproval() } label: {
+                    if questionnaire == nil { Text("열기") } else { Image(systemName: "arrow.up.forward.app") }
+                }
+                .help("실행 창에서 열기").accessibilityLabel("실행 창에서 열기").accessibilityIdentifier("pet-approval-open")
                 Spacer(minLength: 0)
                 if companion.approvalBusy { ProgressView().controlSize(.mini) }
-                if approval.quickChoices == nil {
+                if let question, let questionnaire {
+                    if companion.questionProgress.index > 0 {
+                        Button("이전") { companion.previousQuestion() }.accessibilityIdentifier("pet-question-back")
+                    }
+                    if companion.needsCommitButton(question, in: questionnaire) {
+                        Button(Self.commitTitle(questionnaire, progress: companion.questionProgress)) { companion.commitQuestion() }
+                            .buttonStyle(.borderedProminent).disabled(!companion.canCommit(question))
+                            .accessibilityIdentifier("pet-question-next")
+                    }
+                    Button("취소") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
+                } else if questionnaire == nil {
                     Button("거부") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-deny")
                     Button("이번만 허용") { companion.answerApproval(allow: true) }
                         .buttonStyle(.borderedProminent).disabled(!approval.request.canAllow)
@@ -343,6 +356,44 @@ struct CompanionApprovalBubble: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(approval.workspaceName.isEmpty ? "" : approval.workspaceName + " 워크스페이스의 ")\(approval.sessionTitle) 승인 요청: \(presentation.headline ?? approval.request.summary)")
         .accessibilityIdentifier("pet-approval-bubble")
+    }
+
+    /// "선택 요청 2/3" while stepping through several questions.
+    static func title(_ questionnaire: UserQuestionnaire?, progress: QuestionnaireProgress) -> String {
+        guard let questionnaire else { return "승인 요청" }
+        let total = questionnaire.questions.count
+        return total > 1 ? "선택 요청 \(progress.index + 1)/\(total)" : "선택 요청"
+    }
+    static func commitTitle(_ questionnaire: UserQuestionnaire, progress: QuestionnaireProgress) -> String {
+        progress.index + 1 < questionnaire.questions.count ? "다음" : "보내기"
+    }
+    /// Toggled picks for a multi-choice question; the recorded answer when the user came back to one.
+    static func picked(_ label: String, question: UserQuestionnaire.Question, progress: QuestionnaireProgress) -> Bool {
+        if question.multiSelect { return progress.selected.contains(label) }
+        return progress.answers[question.question]?.selectedOptions.contains(label) == true
+    }
+}
+
+private struct CompanionOptionRow: View {
+    let option: UserQuestionnaire.Option
+    let multiple: Bool
+    let picked: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 6) {
+                if multiple { Image(systemName: picked ? "checkmark.square.fill" : "square").font(.system(size: 10)).foregroundStyle(picked ? Palette.accent : Color.secondary).padding(.top, 1) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.label).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    if !option.description.isEmpty { Text(option.description).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 5)
+            .background(picked ? Palette.accent.opacity(0.16) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain).accessibilityLabel(option.label).accessibilityValue(picked ? "선택됨" : "선택 안 됨")
     }
 }
 

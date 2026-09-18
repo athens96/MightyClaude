@@ -1,7 +1,9 @@
 import SwiftUI
 import MightyCore
 
-/// Selection is a local draft. Only the explicit submit action sends an answer.
+/// One question at a time: 다음 moves on once the current one is answered,
+/// 이전 goes back with the earlier picks intact. Selection is a local draft;
+/// only the explicit submit on the last question sends an answer.
 struct UserQuestionnaireCard: View {
     @EnvironmentObject private var store: AppStore
     let sessionId: String
@@ -12,12 +14,14 @@ struct UserQuestionnaireCard: View {
     @ViewState private var customQuestions = Set<Int>()
     @ViewState private var customText: [Int: String] = [:]
     @ViewState private var contentHeight: CGFloat = 300
+    @ViewState private var step = 0
 
     private var busy: Bool {
         store.permissionResponses.contains(store.permissionResponseKey(sessionId: sessionId, request: request))
     }
 
     private var answers: [String: UserQuestionAnswer] {
+        // Question texts are unique: `UserQuestionnaire` refuses to decode duplicates.
         Dictionary(uniqueKeysWithValues: questionnaire.questions.enumerated().map { index, question in
             // Retain the displayed option order, regardless of the order of clicks.
             let labels = question.options.map(\.label).filter { selections[index, default: []].contains($0) }
@@ -26,12 +30,25 @@ struct UserQuestionnaireCard: View {
         })
     }
 
-    private var answeredCount: Int {
-        questionnaire.questions.indices.filter { index in
-            !selections[index, default: []].isEmpty ||
-            (customQuestions.contains(index) && !customText[index, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }.count
+    private func answered(_ index: Int) -> Bool {
+        !selections[index, default: []].isEmpty ||
+        (customQuestions.contains(index) && !customText[index, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
+    private var answeredCount: Int { questionnaire.questions.indices.filter(answered).count }
+    private var lastStep: Int { max(0, questionnaire.questions.count - 1) }
+    /// Clamped: a replaced request may have fewer questions than the one before it.
+    private var currentStep: Int { min(max(0, step), lastStep) }
+
+    private var progressText: String {
+        let total = questionnaire.questions.count
+        return total > 1 ? "질문 \(currentStep + 1)/\(total)" : "질문 1개"
+    }
+    private func dotState(_ index: Int) -> String {
+        if index == currentStep { return "현재 질문" }
+        return answered(index) ? "답변함" : "답변 안 함"
+    }
+    /// Back is always allowed; forward only over questions that already have an answer.
+    private func canJump(to index: Int) -> Bool { index <= currentStep || (0..<index).allSatisfy(answered) }
 
     private var canAnswer: Bool { request.canAnswerQuestions && request.state == "pending" }
     private var canSubmit: Bool { canAnswer && (try? questionnaire.validatedAnswers(answers)) != nil }
@@ -41,17 +58,19 @@ struct UserQuestionnaireCard: View {
             HStack(spacing: 7) {
                 Image(systemName: "questionmark.bubble.fill").foregroundStyle(Palette.accent)
                 Text("선택 요청").fontWeight(.semibold)
-                Text("\(answeredCount)/\(questionnaire.questions.count) 답변")
+                Text(progressText)
                     .foregroundStyle(.secondary).monospacedDigit()
+                    .accessibilityLabel("질문 \(questionnaire.questions.count)개 중 \(currentStep + 1)번째, \(answeredCount)개 답변함")
                     .accessibilityIdentifier("questionnaire-progress")
+                if questionnaire.questions.count > 1 { stepDots }
                 Spacer(minLength: 0)
                 if count > 1 { Text("\(count)개 대기").foregroundStyle(.secondary) }
             }.font(.system(size: 11))
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Array(questionnaire.questions.enumerated()), id: \.offset) { index, question in
-                        questionSection(question, index: index)
+                    if questionnaire.questions.indices.contains(currentStep) {
+                        questionSection(questionnaire.questions[currentStep], index: currentStep).id(currentStep)
                     }
                 }.padding(.trailing, 5).padding(.vertical, 2)
                     .background { GeometryReader { proxy in
@@ -78,7 +97,7 @@ struct UserQuestionnaireCard: View {
             }
 
             HStack(spacing: 8) {
-                Text("답변을 보내면 작업이 계속됩니다.")
+                Text(currentStep < lastStep ? "답을 고르고 다음으로 넘어가세요." : "답변을 보내면 작업이 계속됩니다.")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -86,13 +105,23 @@ struct UserQuestionnaireCard: View {
                 Button("취소") {
                     Task { await store.answerPermission(sessionId: sessionId, request: request, allow: false) }
                 }.accessibilityIdentifier("questionnaire-cancel")
-                Button("답변 보내기") {
-                    let submittedAnswers = answers
-                    Task { await store.answerQuestionnaire(sessionId: sessionId, request: request, answers: submittedAnswers) }
+                if currentStep > 0 {
+                    Button("이전") { step = currentStep - 1 }.accessibilityIdentifier("questionnaire-back")
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canSubmit)
-                .accessibilityIdentifier("questionnaire-submit")
+                if currentStep < lastStep {
+                    Button("다음") { step = currentStep + 1 }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canAnswer || !answered(currentStep))
+                        .accessibilityIdentifier("questionnaire-next")
+                } else {
+                    Button("답변 보내기") {
+                        let submittedAnswers = answers
+                        Task { await store.answerQuestionnaire(sessionId: sessionId, request: request, answers: submittedAnswers) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSubmit)
+                    .accessibilityIdentifier("questionnaire-submit")
+                }
             }.controlSize(.small).disabled(busy)
         }
         .padding(12)
@@ -100,6 +129,23 @@ struct UserQuestionnaireCard: View {
         .overlay(alignment: .top) { Divider() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("questionnaire-\(request.id)")
+    }
+
+    /// Filled for answered questions, ringed for the one on screen; a dot jumps
+    /// back to a question already reached.
+    private var stepDots: some View {
+        HStack(spacing: 4) {
+            ForEach(questionnaire.questions.indices, id: \.self) { index in
+                Button { if canJump(to: index) { step = index } } label: {
+                    Circle().fill(answered(index) ? Palette.accent : Color.primary.opacity(0.2)).frame(width: 6, height: 6)
+                        .overlay { Circle().stroke(Palette.accent, lineWidth: index == currentStep ? 1.5 : 0).frame(width: 10, height: 10) }
+                        .frame(width: 12, height: 12).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).disabled(!canJump(to: index))
+                .accessibilityLabel("질문 \(index + 1)로 이동").accessibilityValue(dotState(index))
+                .accessibilityIdentifier("questionnaire-step-\(index)")
+            }
+        }.disabled(busy)
     }
 
     private func questionSection(_ question: UserQuestionnaire.Question, index: Int) -> some View {
