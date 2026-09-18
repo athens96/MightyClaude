@@ -69,4 +69,7 @@ fi
 # "Code Signing") makes "Always Allow" stick across rebuilds.
 CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:--}"
 codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
+# The build output must not compete with the installed app for the bundle id
+# in LaunchServices (duplicate registrations confuse the text-input session).
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$APP_PATH" >/dev/null 2>&1 || true
 printf '%s\n' "$APP_PATH"
