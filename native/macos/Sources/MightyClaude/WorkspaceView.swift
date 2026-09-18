@@ -57,26 +57,13 @@ struct WorkspaceView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Group {
-                    if let image = BrandAssets.icon { Image(nsImage: image).resizable().interpolation(.high).scaledToFit() }
-                    else { Image(systemName: "sparkles").resizable().scaledToFit().foregroundStyle(Palette.accent) }
-                }.frame(width: 36, height: 36).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("MightyClaude").font(.system(size: 15, weight: .semibold))
-                    Text("프로젝트와 실행을 한곳에서").font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 23)
-
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
                 TextField("워크스페이스 검색", text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
                     .focused($searchFocused)
                     .accessibilityLabel("워크스페이스 검색")
             }
-            .padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14)
+            .padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.top, 10)
 
             HStack {
                 Text("워크스페이스").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
@@ -104,8 +91,11 @@ struct WorkspaceView: View {
             .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.bottom, 12)
             Divider()
             HStack(spacing: 9) {
-                Image(systemName: "apple.logo").font(.system(size: 12)).foregroundStyle(.secondary)
-                Text("macOS Native").font(.system(size: 11)).foregroundStyle(.secondary)
+                Group {
+                    if let image = BrandAssets.icon { Image(nsImage: image).resizable().interpolation(.high).scaledToFit() }
+                    else { Image(systemName: "sparkles").resizable().scaledToFit().foregroundStyle(Palette.accent) }
+                }.frame(width: 20, height: 20).accessibilityHidden(true)
+                Text("Mighty Claude").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer()
                 Button { store.toggleTheme() } label: { Image(systemName: store.snapshot.theme == "dark" ? "sun.max" : "moon") }
                     .buttonStyle(.plain).help("화면 테마 변경").accessibilityLabel("화면 테마 변경")
