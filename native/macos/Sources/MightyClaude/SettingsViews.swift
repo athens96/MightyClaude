@@ -203,11 +203,12 @@ struct AppSettingsView: View {
                         }.padding(.vertical, 4)
                     }
                     HStack {
-                        Text("각 CLI의 로그인은 터미널에서 진행하세요.").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text("로그인 계정은 아래 CLI 계정에서 바꿀 수 있습니다.").font(.system(size: 11)).foregroundStyle(.secondary)
                         Spacer()
                         Button(store.isRefreshingRuntime ? "확인 중…" : "다시 확인") { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
                     }
                 } header: { Text("이 Mac의 CLI") }
+                CLIAccountsSettingsSection()
                 if let mods = store.runtime?.mods {
                     Section("Claude Mods") {
                         Text(mods.detail).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)

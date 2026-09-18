@@ -16,3 +16,6 @@ native/macos/.swiftpm/
 native/windows/**/bin/
 native/windows/**/obj/
 native/windows/.nuget/
+
+# swiftc output of scripts/update-manifest-sign.swift
+/.build/
