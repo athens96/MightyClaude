@@ -19,6 +19,20 @@ public struct OuroborosAction: Sendable, Equatable, Identifiable {
     public var id: String { skill }
 }
 
+/// The guided styles a Mighty pane can use besides the plain CLI style (nil).
+public enum MightyStyles {
+    public static let all = [OuroborosFlow.style, PaperthinCatalog.style]
+    public static func normalized(_ value: String?) -> String? { value.flatMap { all.contains($0) ? $0 : nil } }
+    /// Request block title for a guided prompt: the Ouroboros phase or the
+    /// Paperthin skill. Only panes on a guided style get one, so `/nba` typed
+    /// into a plain CLI pane stays an ordinary request. Either style's titles
+    /// show, because a pane keeps its earlier blocks when the style changes.
+    public static func requestTitle(forInput input: String, style: String?) -> String? {
+        guard normalized(style) != nil else { return nil }
+        return OuroborosFlow.requestTitle(forInput: input) ?? PaperthinCatalog.requestTitle(forInput: input)
+    }
+}
+
 public enum OuroborosFlow {
     public static let style = "ouroboros"
     public static let toolPrefix = "mcp__plugin_ouroboros_ouroboros__"

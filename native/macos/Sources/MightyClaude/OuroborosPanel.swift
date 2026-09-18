@@ -10,10 +10,11 @@ struct MightyStylePicker: View {
         Picker("요청 스타일", selection: Binding(get: { session.mightyStyle ?? "cli" }, set: { store.setMightyStyle(session.id, style: $0 == "cli" ? nil : $0) })) {
             Text("CLI").tag("cli")
             Text("Ouroboros").tag(OuroborosFlow.style)
+            Text("Paperthin").tag(PaperthinCatalog.style)
         }
         .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
         .disabled(session.status == "running")
-        .help("CLI: 지금처럼 자유롭게 요청 · Ouroboros: 인터뷰로 요구를 또렷하게 만든 뒤 시드 → 실행 → 평가 → 진화")
+        .help("CLI: 지금처럼 자유롭게 요청 · Ouroboros: 인터뷰로 요구를 또렷하게 만든 뒤 시드 → 실행 → 평가 → 진화 · Paperthin: 덜어내는 작은 스킬들을 지도에서 골라 실행")
         .accessibilityIdentifier("mighty-style-\(session.id)")
     }
 }
@@ -36,7 +37,7 @@ struct OuroborosPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             stepper
             // A waiting question always wins: nothing else may hide it.
-            if let (request, questionnaire) = store.ouroborosQuestion(for: session.id) { question(request, questionnaire) }
+            if let (request, questionnaire) = store.ouroborosQuestion(for: session.id) { AgentQuestionPanel(sessionId: session.id, request: request, questionnaire: questionnaire, onPrepare: onPrepare) }
             else {
                 if let prerequisites = store.ouroborosPrerequisites, !prerequisites.ready { setup(prerequisites) }
                 if running { progress } else if phase == .goal { start } else { next }
@@ -118,47 +119,4 @@ struct OuroborosPanel: View {
         }
     }
 
-    private func question(_ request: ToolPermissionRequest, _ questionnaire: UserQuestionnaire) -> some View {
-        let progress = store.ouroborosProgress(for: session.id, request: request)
-        let busy = store.permissionResponses.contains(store.permissionResponseKey(sessionId: session.id, request: request))
-        return VStack(alignment: .leading, spacing: 7) {
-            if let current = progress.current(in: questionnaire) {
-                HStack(spacing: 6) {
-                    Image(systemName: "questionmark.bubble.fill").foregroundStyle(Palette.accent)
-                    Text(current.header).font(.system(size: 11, weight: .semibold))
-                    if questionnaire.questions.count > 1 { Text("\(progress.index + 1)/\(questionnaire.questions.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
-                    Spacer()
-                    if progress.index > 0 { Button("이전") { store.ouroborosBack(session.id) }.controlSize(.mini).disabled(busy) }
-                    Button("답하지 않기") { Task { await store.answerPermission(sessionId: session.id, request: request, allow: false) } }.controlSize(.mini).disabled(busy)
-                }
-                Text(current.question).font(.system(size: 13)).lineSpacing(3).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("ouroboros-question-\(session.id)")
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(current.options, id: \.label) { option in
-                        let picked = progress.selected.contains(option.label)
-                        Button { onPrepare(); store.ouroborosChoose(session.id, option: option.label) } label: {
-                            HStack(alignment: .top, spacing: 7) {
-                                Image(systemName: current.multiSelect ? (picked ? "checkmark.square.fill" : "square") : "circle").font(.system(size: 11)).foregroundStyle(picked ? Palette.accent : Color.secondary).padding(.top, 1)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(option.label).font(.system(size: 12, weight: .medium)).multilineTextAlignment(.leading)
-                                    if !option.description.isEmpty { Text(option.description).font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true) }
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 9).padding(.vertical, 6)
-                            .background(picked ? Palette.accent.opacity(0.12) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
-                            .contentShape(RoundedRectangle(cornerRadius: 7))
-                        }
-                        .buttonStyle(.plain).disabled(busy)
-                    }
-                }
-                HStack(spacing: 6) {
-                    Text(current.multiSelect ? "여러 개를 고른 뒤 Enter, 또는 아래에 직접 적어 Enter" : "하나를 고르거나 아래에 직접 적어 Enter").font(.system(size: 10)).foregroundStyle(.tertiary)
-                    if current.multiSelect, !progress.selected.isEmpty { Button("선택 완료") { onPrepare(); store.ouroborosAnswer(session.id, text: "") }.controlSize(.mini).disabled(busy) }
-                    if busy { ProgressView().controlSize(.mini) }
-                }
-                if let error = store.permissionErrors[session.id] { Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(.orange) }
-            }
-        }
-    }
 }

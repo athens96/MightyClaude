@@ -5,18 +5,25 @@ import MightyCore
 /// pane's normal submit path, the agent's questions are answered from the
 /// composer, and Ouroboros' own state tools are approved without a prompt.
 extension AppStore {
-    func usesOuroboros(_ session: RunSession) -> Bool {
-        session.kind == "claude" && session.provider == "claude" && session.agentViewMode == "mighty" && session.mightyStyle == OuroborosFlow.style
-            && snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+    /// The guided style in effect for a pane: only local Claude panes in Mighty mode have one.
+    func guidedStyle(_ session: RunSession) -> String? {
+        guard session.kind == "claude", session.provider == "claude", session.agentViewMode == "mighty",
+              snapshot.workspaces.contains(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return nil }
+        return MightyStyles.normalized(session.mightyStyle)
     }
+    func usesOuroboros(_ session: RunSession) -> Bool { guidedStyle(session) == OuroborosFlow.style }
+    func usesPaperthin(_ session: RunSession) -> Bool { guidedStyle(session) == PaperthinCatalog.style }
+    /// Guided styles answer the agent's questions from the composer.
+    func usesGuidedStyle(_ session: RunSession) -> Bool { guidedStyle(session) != nil }
 
     func setMightyStyle(_ id: String, style: String?) {
         updateSession(id) { session in
             guard session.kind == "claude", session.provider == "claude" else { return }
-            session.mightyStyle = style == OuroborosFlow.style ? OuroborosFlow.style : nil
+            session.mightyStyle = MightyStyles.normalized(style)
         }
         ouroborosProgress.removeValue(forKey: id)
         if style == OuroborosFlow.style { refreshOuroborosPrerequisites() }
+        if style == PaperthinCatalog.style, let session = snapshot.sessions.first(where: { $0.id == id }) { refreshPaperthin(for: session) }
     }
 
     func refreshOuroborosPrerequisites() {
@@ -32,10 +39,48 @@ extension AppStore {
     func sendOuroboros(_ id: String, skill: String, text: String = "") {
         let takesText = OuroborosFlow.takesText(skill)
         guard let prompt = OuroborosFlow.prompt(skill: skill, text: takesText ? text : "") else { return }
-        let kept = takesText ? "" : (drafts[id] ?? "")
+        sendGuidedPrompt(id, prompt: prompt, consumesDraft: takesText)
+    }
+
+    /// Submits a style's prompt through the pane's normal path. A prompt that
+    /// did not use the draft puts it back afterwards, and so does a submit that
+    /// was refused (the prompt is still sitting in the draft then).
+    func sendGuidedPrompt(_ id: String, prompt: String, consumesDraft: Bool) {
+        let original = drafts[id] ?? ""
         drafts[id] = prompt
         submit(id)
-        if !kept.isEmpty { drafts[id] = kept }
+        if drafts[id] == prompt || !consumesDraft { drafts[id] = original }
+    }
+
+    // MARK: Paperthin
+
+    /// Every Paperthin skill reads what the user typed as its target (a path, an instruction).
+    func sendPaperthin(_ id: String, skill: String, text: String = "") {
+        guard let prompt = PaperthinCatalog.prompt(skill: skill, text: text) else { return }
+        sendGuidedPrompt(id, prompt: prompt, consumesDraft: true)
+    }
+
+    /// Re-reads whether the skills are installed and the workspace's newest casebook.
+    func refreshPaperthin(for session: RunSession) {
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
+        let path = workspace.path, workspaceId = workspace.id
+        Task.detached(priority: .utility) { [weak self] in
+            let installed = PaperthinCatalog.installed(workspacePath: path)
+            let casebook = PaperthinCasebook.latest(workspacePath: path)
+            await MainActor.run {
+                guard let self else { return }
+                self.paperthinInstalled = installed
+                if let casebook { self.paperthinCasebooks[workspaceId] = casebook } else { self.paperthinCasebooks.removeValue(forKey: workspaceId) }
+                self.paperthinLoaded.insert(workspaceId)
+            }
+        }
+    }
+
+    func startPaperthinInstall(from session: RunSession) {
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }),
+              let id = addSession(kind: "shell", workspaceId: workspace.id) else { error = "설치 터미널을 열지 못했습니다."; return }
+        updateSession(id) { $0.title = "Paperthin 설치" }
+        pendingTerminalInput[id] = PaperthinCatalog.installCommand
     }
 
     /// The agent's answerable question waiting in this pane, if any. The

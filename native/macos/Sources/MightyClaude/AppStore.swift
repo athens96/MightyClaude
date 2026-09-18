@@ -63,6 +63,11 @@ final class AppStore: ObservableObject {
     @Published var ouroborosProgress: [String: QuestionnaireProgress] = [:]
     @Published var ouroborosPrerequisites: OuroborosFlow.Prerequisites?
     @Published var ouroborosAutoAllowing = Set<String>()
+    /// nil until checked.
+    @Published var paperthinInstalled: Bool?
+    @Published var paperthinCasebooks: [String: PaperthinCasebook] = [:]
+    /// Workspaces whose casebook has been read at least once.
+    @Published var paperthinLoaded: Set<String> = []
     var questionnaireCache: [String: UserQuestionnaire] = [:]
     @Published var cliAccounts: [String: CLIAccountStatus] = [:]
     @Published var cliAccountBusy = Set<String>()
