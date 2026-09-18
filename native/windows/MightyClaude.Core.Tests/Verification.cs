@@ -85,6 +85,7 @@ internal static class Verification
         await Test("structured tool identity, duration, Mods dedup and cancellation", ActivityUsageVerification.Activities);
         await Test("Codex/Gemini direct usage snapshots and intact long Markdown", ActivityUsageVerification.ProviderUsage);
         await Test("Claude current context, cumulative totals and quota observation age", ActivityUsageVerification.ClaudeContext);
+        await Test("a leftover background task's report does not end the real request", ActivityUsageVerification.LeftoverTaskResult);
         await Test("optional metadata recovery, elapsed checkpoints and workspace state", ActivityUsageVerification.Persistence);
         await Test("remote activity/usage opt-in, identity mapping and legacy cursor fallback", ActivityUsageVerification.Remote);
         await Test("authenticated structured Mods output and usage boundaries", ActivityUsageVerification.Mods);

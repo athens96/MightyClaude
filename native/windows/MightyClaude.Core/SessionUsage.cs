@@ -123,7 +123,7 @@ internal sealed class SessionUsageTracker
             }
             Publish();
         }
-        if (type != "result") return;
+        if (type != "result" || ClaudeStream.IsNotificationResult(root)) return;
         resultSeen = true; value = value with { TokenScope = "run" };
         var models = MetadataJson.Property(root, "modelUsage");
         if (models.ValueKind == JsonValueKind.Object && models.EnumerateObject().Count() is > 0 and <= 128)

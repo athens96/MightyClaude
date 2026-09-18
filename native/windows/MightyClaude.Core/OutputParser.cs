@@ -126,7 +126,7 @@ public sealed class OutputParser
                 if (type == "user" && blocks.ValueKind == JsonValueKind.Array)
                     foreach (var block in blocks.EnumerateArray().Where(b => b.Text("type") == "tool_result")) Tool(block.Text("tool_use_id"), MetadataJson.Flag(block, "is_error") ? "error" : "completed", output: ActivitySupport.Output(MetadataJson.Property(block, "content")));
                 if (type == "system" && root.Text("subtype") == "permission_denied") Tool(root.Text("tool_use_id"), "error", root.Text("tool_name"), output: Error(MetadataJson.Property(root, "message"), "선택한 권한 모드 또는 Claude 규칙에서 거부했습니다."));
-                if (type == "result" && !child)
+                if (type == "result" && !child && !ClaudeStream.IsNotificationResult(root))
                 {
                     if (MetadataJson.Flag(root, "is_error") || root.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true)
                     { Failed = true; log("error", root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array ? string.Join('\n', errors.EnumerateArray().Select(e => Error(e, "실행 오류"))) : root.Text("result") ?? "Claude 실행 오류"); }
@@ -171,4 +171,13 @@ public sealed class OutputParser
         catch (InvalidOperationException) { log("system", "지원하지 않는 CLI 출력 레코드를 생략했습니다."); }
     }
     public void Flush() { lock (sync) { if (pending.Length > 0) log("assistant", pending.ToString()); if (pendingTruncated) log("system", "응답 한 메시지가 128 KiB를 넘어 뒷부분을 생략했습니다."); pending.Clear(); pendingTruncated = false; } }
+}
+
+public static class ClaudeStream
+{
+    // A resumed session whose earlier process left a background task behind first reports that task as
+    // stopped, and closes that report with a `result` of its own (`origin.kind == "task-notification"`)
+    // before it even reads the new request. It is not the request's result: OutputParser and
+    // SessionUsageTracker must not treat it as the turn ending.
+    public static bool IsNotificationResult(JsonElement value) => value.Text("type") == "result" && MetadataJson.Property(value, "origin").Text("kind") == "task-notification";
 }
