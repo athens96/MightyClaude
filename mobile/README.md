@@ -134,9 +134,11 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 - 슬래시 명령 중 `action`이 있는 것은 앱이 처리합니다: `model`·`permission`은 설정 선택,
   `rename`은 이름 변경, `clear`·`usage`·`help`는 `/command` 호출(본문이 오면 시트로 표시).
   `action`이 없으면 입력창에 `/이름 `만 넣습니다.
-- 프로바이더 표시는 브랜드 색을 씁니다(Claude `#D97757`, Codex `#10A37F`,
-  Gemini `#4285F4`→`#9B72CB`→`#D96570`). 이 앱에는 벡터 렌더러(`react-native-svg`)가 없고
-  네이티브 의존성을 늘리지 않기로 했으므로, Mac의 아웃라인 대신 **브랜드 색 칩**으로 그립니다.
+- 프로바이더 표시는 Mac과 **같은 아웃라인**을 브랜드 색으로 그립니다(Claude `#D97757`,
+  Codex `#10A37F`, Gemini는 `#4285F4`→`#9B72CB`→`#D96570` 그라디언트를 왼쪽 아래에서
+  오른쪽 위로). 아웃라인 데이터는 Mac의 `MightyCore/ProviderMark.swift`와 같은 24×24 경로로
+  `src/lib/provider-marks.ts`에 있고, `react-native-svg`로 그립니다.
+  **모르는 프로바이더는 아웃라인이 없으므로 중립 칩**으로 둡니다.
 
 ### Mighty 블록 보기 (`mighty`)
 
@@ -286,6 +288,7 @@ src/
              capabilities.ts, history.ts, questionnaire.ts, status-line.ts, commands.ts
              mighty.ts(블록·패널 파싱과 라벨), uploads.ts(한도·청크 계획·업로드 진행)
              file-slices.ts(expo-file-system 범위 읽기), device-token.ts, host-secrets.ts
+             provider-marks.ts(프로바이더 마크 24×24 아웃라인)
   store/     hosts.ts(secure store), live.ts(상태·기능·명령 캐시), toast.ts
   theme/     팔레트(밝게/어둡게) / 간격 / 상태·프로바이더·블록 라벨과 색
 ```
