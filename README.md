@@ -66,9 +66,9 @@ open release/native-macos/MightyClaude.app
 
 실행 중인 창에도 계속 입력할 수 있다. 이 Mac의 Claude 창은 보낸 글을 진행 중인 턴에 바로 전달하고 마이티 모드에 **중간 요청** 블록으로 표시하며, Codex·Gemini·원격·셸 창은 현재 요청이 끝난 뒤 순서대로 실행하는 대기열에 넣는다. 자세한 동작은 [docs/mighty-mode.md](docs/mighty-mode.md)를 참고한다.
 
-설정의 **구성 요소**에서 Tailscale 설치·실행·로그인과 에이전트 CLI 상태를 한 번에 확인하고 처리한다([docs/components.md](docs/components.md)).
+설정의 **구성 요소**에서 에이전트 CLI 상태와 필요한 플러그인을 한 번에 확인하고 처리한다([docs/components.md](docs/components.md)).
 
-휴대폰(iOS·Android)에서는 `mobile/`의 Expo 앱으로 Tailscale을 통해 이 Mac의 MightyClaude에 접속해 워크스페이스·실행 창을 보고 요청·중지·권한 답변을 보낼 수 있다. 설정의 **모바일 리모트**에서 켜고 QR로 페어링한다. 자세한 내용은 [docs/mobile-remote.md](docs/mobile-remote.md).
+휴대폰(iOS·Android)에서는 `mobile/`의 Expo 앱으로 이 Mac의 MightyClaude에 접속해 워크스페이스·실행 창을 보고 요청·중지·권한 답변을 보낼 수 있다. Mac과 휴대폰이 `relay/`의 릴레이 서버를 통해 종단 간 암호화로 연결되므로 포트 개방이나 VPN이 필요 없다. 설정의 **모바일 리모트**에 릴레이 주소를 넣고 QR로 페어링한다. 자세한 내용은 [docs/mobile-remote.md](docs/mobile-remote.md)와 [docs/relay.md](docs/relay.md).
 
 `/Applications`에 설치한 앱을 갱신할 때는 `bash scripts/install-macos.sh`를 사용하세요. 실행 중인 앱이 종료될 때까지 기다렸다가 백업 후 교체하고 다시 실행합니다. 실행 중인 앱의 번들을 디스크에서 바꾸면 macOS 입력기 연결이 끊겨 한글 조합이 자소 단위로 풀립니다.
 

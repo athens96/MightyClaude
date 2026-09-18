@@ -1,0 +1,63 @@
+# 릴레이 연결 (모바일 리모트 v2)
+
+휴대폰과 Mac이 모두 **릴레이 서버에 바깥으로 접속**해 연결된다. 포트 개방·Tailscale·VPN이 필요 없고, 릴레이는 암호문만 넘기는 단순 파이프라서 내용을 볼 수 없다. Paseo(getpaseo/paseo, Apache 2.0)의 릴레이 구조를 참고했으며 암호 프리미티브는 CryptoKit과 noble 라이브러리에 모두 있는 것으로 골랐다.
+
+## 구성
+
+| 역할 | 구현 | 위치 |
+|---|---|---|
+| 릴레이 | Node.js + `ws`, 상태 없음, `serverId`로 소켓을 짝지음 | `relay/` (Docker 이미지 포함) |
+| 호스트(데몬) | Mac 앱의 `MobileRelayService` | `native/macos/Sources/MightyCore/Remote/` |
+| 클라이언트 | Expo 앱의 `relayTransport` | `mobile/src/api/relay/` |
+
+## 릴레이 와이어 (평문, 릴레이가 해석)
+
+WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`.
+
+| 소켓 | 쿼리 | 동작 |
+|---|---|---|
+| 호스트 제어 | `serverId=…&role=server&v=1` | 호스트당 1개. 릴레이가 텍스트 JSON으로 알림: `{"type":"connected","connectionId"}`, `{"type":"disconnected","connectionId"}`. 새 제어 소켓이 오면 이전 제어 소켓은 코드 4409로 닫힌다 |
+| 클라이언트 데이터 | `serverId=…&role=client&connectionId=<uuid>&v=1` | 호스트 제어 소켓이 없으면 4404로 즉시 닫음. 있으면 제어 소켓에 `connected`를 보내고 호스트 데이터 소켓을 최대 10초 기다린다(그동안 프레임 64개까지 버퍼, 초과 시 4413). 시간 내 안 오면 4504 |
+| 호스트 데이터 | `serverId=…&role=server&connectionId=<uuid>&v=1` | 대기 중인 클라이언트가 없으면 4404. 있으면 두 소켓을 양방향으로 잇는다 |
+
+데이터 소켓의 프레임(텍스트·바이너리)은 그대로 상대에게 전달된다. 한쪽이 닫히면 다른 쪽도 같은 코드로 닫고 제어 소켓에 `disconnected`를 보낸다. 모든 소켓에 30초 간격 WebSocket ping, 프레임 최대 1 MiB, 호스트당 동시 연결 32개. `GET /healthz` → `200 ok`.
+
+## 종단 간 암호화 (릴레이는 해석 불가)
+
+- 호스트 정적 키: X25519. `<데이터 폴더>/mobile-remote/relay-keypair.json`(0600)에 `{v:1, publicKeyB64, secretKeyB64}`.
+- 클라이언트: 연결마다 새 X25519 키쌍.
+- 핸드셰이크(데이터 소켓의 평문 텍스트 프레임 2개):
+  1. 클라이언트 → `{"type":"hello","v":1,"clientKey":"<b64 32B>","nonce":"<b64 16B>"}`
+  2. 호스트 → `{"type":"ready","v":1,"serverKey":"<b64 32B>","nonce":"<b64 16B>"}`. 클라이언트는 `serverKey`가 페어링 때 받은 공개키와 같은지 확인한다.
+- 키 유도: `shared = X25519(내 비밀키, 상대 공개키)`, `key = HKDF-SHA256(ikm=shared, salt=clientNonce‖serverNonce, info="mightyclaude-relay-v1", 32B)`. 공유 비밀이 모두 0이면 거부.
+- 프레임: 바이너리 `[12B nonce][ChaCha20-Poly1305 암호문+16B 태그]`. nonce = `[방향 1B][0,0,0][카운터 8B big-endian]`, 방향은 클라이언트→호스트 0x01, 호스트→클라이언트 0x02. 카운터는 0부터 프레임마다 1씩 증가하고, 받는 쪽은 **직전보다 큰 카운터만** 받아들인다(재전송·순서 뒤바뀜 거부). 평문은 UTF-8 JSON.
+- 인증(암호화된 첫 메시지): 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…"}`, 호스트 → `{"type":"auth_ok","hostName":"…","hostId":"…","appVersion":"…"}` 또는 `{"type":"auth_error","reason":"pairing-key"}`를 보낸 뒤 소켓을 닫음(클라이언트는 이를 재페어링 필요로 표시). 호스트는 `auth_ok` 전에는 다른 메시지를 처리하지 않는다.
+
+## 암호화 채널 위의 메시지
+
+기존 m1 REST 의미를 그대로 터널링한다(라우트·본문은 `docs/mobile-remote.md`).
+
+- 요청: `{"id":"<uuid>","method":"GET"|"POST","path":"/m1/state?since=3&wait=10","body":{…}?}`
+- 응답: `{"id":"<같은 id>","status":200,"body":{…}}` (오류도 `status`와 `{protocol, error}` 본문)
+- 호스트 발신 알림: `{"type":"notify","scope":"state"|"session:<id>","revision":N}` — 클라이언트는 해당 스코프를 즉시 다시 요청한다. 롱폴 `wait`는 그대로 동작하므로 알림을 놓쳐도 최대 `wait`초 안에 따라잡는다.
+- 유지: 20초마다 `{"type":"ping"}` ↔ `{"type":"pong"}`(암호화). 60초 무응답이면 끊고 재접속.
+- 동시 요청은 `id`로 구분하며 최대 8개.
+
+## 페어링
+
+QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&relay=<wss://host:port 또는 ws://>&key=<pairingKey>&name=<percent-encoded 이름>`.
+
+`pairingKey`는 기존 모바일 리모트 키(32B base64url)를 그대로 쓴다. 키를 다시 만들면 모든 휴대폰이 재페어링해야 한다. 공개키가 바뀌는 일은 없다(키쌍은 파일을 지우지 않는 한 유지).
+
+## 재접속
+
+호스트: 제어 소켓이 끊기면 1초부터 2배씩 늘려 최대 30초 간격으로 재접속. 클라이언트: 1.5초부터 2배씩 최대 30초, 앱이 전면으로 오면 즉시.
+
+## 릴레이 실행
+
+```
+cd relay && npm install && npm start            # ws://0.0.0.0:8787
+docker build -t mightyclaude-relay relay && docker run -p 8787:8787 mightyclaude-relay
+```
+
+공개 인터넷에서는 TLS가 있는 리버스 프록시(Caddy, Cloudflare 등) 뒤에 두고 `wss://`로 쓴다. 릴레이 자체는 어떤 비밀도 알지 못한다.

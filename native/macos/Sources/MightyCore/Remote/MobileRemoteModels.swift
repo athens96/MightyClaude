@@ -6,10 +6,18 @@ import Foundation
 /// The contract is documented in docs/mobile-remote.md.
 public struct MobileRemoteSettings: Codable, Sendable, Equatable {
     public var enabled: Bool
-    public var port: Int
-    public static let defaultPort = 43138
-    public init(enabled: Bool = false, port: Int = MobileRemoteSettings.defaultPort) { self.enabled = enabled; self.port = port }
-    public var normalized: MobileRemoteSettings { MobileRemoteSettings(enabled: enabled, port: (1024...65535).contains(port) ? port : Self.defaultPort) }
+    /// `wss://host[:port]` (or `ws://` for a local test relay). Empty = not configured.
+    public var relayURL: String
+    public init(enabled: Bool = false, relayURL: String = "") { self.enabled = enabled; self.relayURL = relayURL }
+    enum CodingKeys: String, CodingKey { case enabled, relayURL }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        relayURL = try c.decodeIfPresent(String.self, forKey: .relayURL) ?? ""
+    }
+    public var normalized: MobileRemoteSettings {
+        MobileRemoteSettings(enabled: enabled, relayURL: RelayEndpoint.normalize(relayURL) ?? "")
+    }
 }
 
 public struct MobileInfo: Codable, Sendable, Equatable {
@@ -177,30 +185,23 @@ public struct MobileCreatedSession: Codable, Sendable, Equatable {
 /// What the desktop shows in its settings; the phone reads the QR/URL.
 public struct MobileHostStatus: Codable, Sendable, Equatable {
     public var enabled: Bool
-    public var listening: Bool
-    public var address: String?
-    public var port: Int
+    public var relayURL: String
+    public var relayConnected: Bool
+    public var clients: Int
+    public var serverId: String
+    public var publicKeyB64: String?
     public var key: String?
     public var pairingURL: String?
     public var hostName: String
     public var detail: String
-    public var tailscale: TailscaleState
-    public init(enabled: Bool = false, listening: Bool = false, address: String? = nil, port: Int = MobileRemoteSettings.defaultPort, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "", tailscale: TailscaleState = .init()) {
-        self.enabled = enabled; self.listening = listening; self.address = address; self.port = port; self.key = key; self.pairingURL = pairingURL
-        self.hostName = hostName; self.detail = detail; self.tailscale = tailscale
+    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "") {
+        self.enabled = enabled; self.relayURL = relayURL; self.relayConnected = relayConnected; self.clients = clients; self.serverId = serverId
+        self.publicKeyB64 = publicKeyB64; self.key = key; self.pairingURL = pairingURL; self.hostName = hostName; self.detail = detail
     }
 }
 
 public enum MobilePairing {
     public static let scheme = "mightyclaude"
-    /// `mightyclaude://pair?v=1&host=…&port=…&key=…&name=…`
-    public static func url(host: String, port: Int, key: String, name: String) -> String {
-        var components = URLComponents()
-        components.scheme = scheme; components.host = "pair"
-        components.queryItems = [.init(name: "v", value: "1"), .init(name: "host", value: host), .init(name: "port", value: String(port)),
-                                 .init(name: "key", value: key), .init(name: "name", value: String(name.prefix(120)))]
-        return components.string ?? ""
-    }
     public static func generateKey() -> String? {
         var random = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { return nil }
