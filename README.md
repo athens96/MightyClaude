@@ -172,6 +172,6 @@ scripts/                           플랫폼별 빌드·검증
 
 `electron/`, `src/`, `shared/`, `package.json`은 동작 비교와 회귀 검증용 참조 구현입니다. 네이티브 앱 빌드에는 `npm install`이 필요하지 않습니다. [참조 구현 안내](docs/electron-reference.md)
 
-기본 아이콘·펫의 생성 안내와 타사 라이선스는 `assets/`와 `native/licenses/`에 있습니다. 아이콘을 교체한 뒤 Mac에서 `bash scripts/package-icons.sh`를 실행하면 ICNS·ICO를 다시 생성합니다.
+이 프로젝트는 MIT 라이선스입니다(`LICENSE`). 릴레이 방식의 모바일 리모트는 Apache License 2.0으로 배포되는 Paseo의 설계를 참고했으며, 고지는 `NOTICE.md`와 `licenses/Apache-2.0.txt`에 있습니다. 기본 아이콘·펫의 생성 안내와 타사 라이선스는 `assets/`와 `native/licenses/`에 있습니다. 아이콘을 교체한 뒤 Mac에서 `bash scripts/package-icons.sh`를 실행하면 ICNS·ICO를 다시 생성합니다.
 
 배포용 코드 서명·Mac 공증·앱 자체 자동 업데이트는 별도입니다. CLI 업데이트 기능과 앱 업데이트는 다릅니다. 실제 수행한 검사와 아직 검증하지 못한 범위는 [검증 기록](docs/native-verification.md)에서 확인할 수 있습니다.
