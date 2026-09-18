@@ -33,13 +33,15 @@ enum MightyGraphInteractionDiagnostics {
             window.makeKeyAndOrderFront(nil)
             try await store.waitForSmoke(timeout: 3) {
                 probe = descendants(host, as: MightyGraphInteractionProbe.self).first
-                return window.isKeyWindow && probe.map { $0.bounds.width > 0 && $0.bounds.height > 0 } == true && editor(in: host, nodeID: rootID) != nil
+                return window.isKeyWindow && probe.map(ready) == true && editor(in: host, nodeID: rootID) != nil
             }
             guard let probe, probe.enclosingScrollView == nil,
                   let editor = editor(in: host, nodeID: rootID), let inner = editor.enclosingScrollView else { throw MightyError("고정 카메라 뷰포트와 네이티브 출력창을 찾지 못했습니다.") }
             // Initial centering has its own graph fixture. Here a known camera
-            // origin keeps both root and child hit targets fully in view.
+            // origin keeps both root and child hit targets fully in view — and
+            // the setter only lands once the probe has published it back.
             probe.setPanOffset(.zero)
+            try await store.waitForSmoke(timeout: 3) { probe.panOffset == .zero }
             editor.cancelInitialScroll()
             scroll(inner, to: NSPoint(x: 0, y: 200))
             try await Task.sleep(for: .milliseconds(100))
@@ -254,6 +256,16 @@ enum MightyGraphInteractionDiagnostics {
 
     private final class FlippedFixtureView: NSView { override var isFlipped: Bool { true } }
 
+    /// A probe is ready once it has a real viewport, agrees with the size
+    /// SwiftUI measured for it, and has admitted the camera target it was
+    /// given: only then does a plain `setPanOffset` mean what it says.
+    private static func ready(_ probe: MightyGraphInteractionProbe) -> Bool {
+        probe.bounds.width > 0 && probe.bounds.height > 0
+            && abs(probe.bounds.width - probe.expectedViewportSize.width) < 1
+            && abs(probe.bounds.height - probe.expectedViewportSize.height) < 1
+            && probe.targetToken == probe.consumedTargetToken
+    }
+
     private static func resizing(store: AppStore, window: NSWindow) async throws -> [String: Any] {
         var results: [[String: Any]] = []
         for zoom: CGFloat in [0.5, 1, 1.5] {
@@ -269,6 +281,9 @@ enum MightyGraphInteractionDiagnostics {
             root.addSubview(inner)
             let probe = MightyGraphInteractionProbe(frame: container.bounds)
             probe.sessionID = "resize-fixture"
+            // The camera is only admitted for the viewport SwiftUI measured; a
+            // hand-built probe states the same size it was given.
+            probe.expectedViewportSize = container.bounds.size
             probe.graphRoot = root
             container.addSubview(probe)
             let nodeID = "resize-node"

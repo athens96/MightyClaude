@@ -23,6 +23,10 @@ struct MightyGraphLayout {
     var nodes: [Node] = []
     var edges: [Edge] = []
     var size: CGSize = .zero
+    /// Node coordinates keep a fixed origin, so a wide tree reaches into
+    /// negative x rather than pushing the diagram. The drawn container starts
+    /// here instead of at 0; the camera still works in node coordinates.
+    var originX: CGFloat = 0
     static let siblingGap: CGFloat = 32
     static let rowGap: CGFloat = 52
 
@@ -72,10 +76,10 @@ struct MightyGraphLayout {
         var trees: [Tree] = []
         for (runIndex, run) in runs.enumerated() {
             let mainID = nodeID(run, suffix: "request")
-            let mainSize = size(mainID, width: 500, height: expanded.contains(mainID) ? 540 : 280)
+            let mainSize = size(mainID, width: MightyGraphCamera.requestWidth, height: expanded.contains(mainID) ? 540 : 280)
             let mainHeight = mainSize.height
             let resultID = nodeID(run, suffix: "result")
-            let resultSize = size(resultID, width: 500, height: expanded.contains(resultID) ? 440 : 200)
+            let resultSize = size(resultID, width: MightyGraphCamera.requestWidth, height: expanded.contains(resultID) ? 440 : 200)
             var visited = Set<Int>()
             let indexes = Dictionary(run.agents.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
             func branch(_ index: Int, depth: Int = 0) -> Tree? {
@@ -141,21 +145,27 @@ struct MightyGraphLayout {
         }
         let hasPending = (!running && runs.last.map(finished) != false) || !draft.isEmpty
         if hasPending {
-            let pendingSize = size("pending-input", width: 500, height: 140)
-            trees.append(Tree(nodes: [Node(id: "pending-input", content: .draft, frame: CGRect(origin: .zero, size: pendingSize))], edges: [], width: pendingSize.width, height: pendingSize.height, top: "pending-input", leaves: ["pending-input"]))
+            let pendingID = MightyGraphCamera.pendingNodeID
+            let pendingSize = size(pendingID, width: MightyGraphCamera.requestWidth, height: 140)
+            trees.append(Tree(nodes: [Node(id: pendingID, content: .draft, frame: CGRect(origin: .zero, size: pendingSize))], edges: [], width: pendingSize.width, height: pendingSize.height, top: pendingID, leaves: [pendingID]))
         }
-        let width = max(500, trees.map(\.width).max() ?? 500)
         var result = Self()
         var y: CGFloat = 24
         var previous: [String] = []
         for var tree in trees {
-            tree.offset(x: 24 + (width - tree.width) / 2, y: y)
+            // One fixed centreline for every tree. A tree's own width decides
+            // how far it reaches to each side and nothing else moves, so a new
+            // branch never slides the request and result cards already placed.
+            tree.offset(x: MightyGraphCamera.x(for: tree.width), y: y)
             result.nodes += tree.nodes
             result.edges += previous.map { Edge(source: $0, target: tree.top, joins: true) } + tree.edges
             previous = tree.leaves
             y += tree.height + rowGap
         }
-        result.size = CGSize(width: width + 48, height: max(188, y - rowGap + 24))
+        let leading = result.nodes.map(\.frame.minX).min() ?? MightyGraphCamera.x(for: MightyGraphCamera.requestWidth)
+        let trailing = result.nodes.map(\.frame.maxX).max() ?? (MightyGraphCamera.centreX + MightyGraphCamera.requestWidth / 2)
+        result.originX = MightyGraphCamera.originX(leadingMinX: leading)
+        result.size = CGSize(width: MightyGraphCamera.canvasWidth(leading: leading, trailing: trailing), height: max(188, y - rowGap + 24))
         if let resultFilesRunID, let runIndex = runs.firstIndex(where: { $0.id == resultFilesRunID }),
            runs[runIndex].status == "completed", finished(runs[runIndex]),
            let resultNode = result.nodes.first(where: { $0.content == .result(runIndex) }) {
@@ -165,7 +175,7 @@ struct MightyGraphLayout {
             // This is an attachment to the result, never a flow edge or a new
             // centerline. Only the trailing canvas extent grows horizontally.
             result.nodes.append(Node(id: panelID, content: .resultFiles(runIndex), frame: frame))
-            result.size.width = max(result.size.width, frame.maxX + 24)
+            result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
         }
         return result
     }
@@ -194,6 +204,8 @@ struct MightyGraphView: View {
     @ViewState private var zoom: CGFloat = 1
     @ViewState private var scrollTarget: MightyGraphScrollTarget?
     @ViewState private var selectedNodeID: String?
+    /// Counts history trims, so a second trim admits a second re-aim.
+    @ViewState private var trimSequence = 0
     @StateObject private var resultFiles = MightyGraphResultFilesModel()
 
     /// Kept out of the view body: long concatenations of conditionals are
@@ -230,6 +242,13 @@ struct MightyGraphView: View {
         let steerCount = runs.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
         let compactCount = runs.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
         let tokens = runs.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
+        // Hoisted out of the canvas call: older type checkers spend a long time
+        // on optional maps and conditionals written inline in an argument list.
+        let overlayView: AnyView = reference.map { AnyView(referenceOverlay($0)) } ?? AnyView(EmptyView())
+        let overlayLayout: MightyOverlayLayout? = reference == nil ? nil
+            : MightyOverlayLayout(onLeft: referenceOnLeft, storedWidth: bubbleWidth, storedHeight: bubbleHeight)
+        let fallbackNodeID = initialTarget(graph)
+        let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false)
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Label("마이티", systemImage: "point.3.connected.trianglepath.dotted")
@@ -248,18 +267,29 @@ struct MightyGraphView: View {
             .buttonStyle(.plain).padding(.horizontal, 12).padding(.vertical, 10)
             Divider()
             MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
-                              scrollTarget: scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: initialTarget(graph), alignTop: false), selection: $selectedNodeID, edges: graphEdges(graph),
-                              overlay: reference.map { AnyView(referenceOverlay($0)) } ?? AnyView(EmptyView()),
-                              overlayLayout: reference == nil ? nil : MightyOverlayLayout(onLeft: referenceOnLeft, storedWidth: bubbleWidth, storedHeight: bubbleHeight),
+                              scrollTarget: target,
+                              defaultNodeID: fallbackNodeID, selection: $selectedNodeID, edges: graphEdges(graph),
+                              overlay: overlayView,
+                              overlayLayout: overlayLayout,
                               onOverlayResize: { size, _ in
                                   // .zero is the corner's double click: back to the default size.
                                   if size == .zero { bubbleWidth = MightyGraphReferenceBubble.defaultWidth; bubbleHeight = 0 }
                                   else { bubbleWidth = Double(size.width); bubbleHeight = Double(size.height) }
                               },
                               onResize: resize, onResetSize: resetSize, card: card)
-                .onChange(of: runs.last?.id) { _, _ in
-                    guard let last = runs.last else { return }
-                    scrollTarget = MightyGraphScrollTarget(token: "run:" + last.id, nodeID: MightyGraphLayout.nodeID(last, suffix: "request"), alignTop: true)
+                // The whole id list, not just the last one: dropping the oldest
+                // runs moves every surviving card up without touching the last
+                // id, and nothing else would re-aim the camera.
+                .onChange(of: runs.map(\.id)) { previous, current in
+                    if let last = current.last, previous.last != last {
+                        scrollTarget = MightyGraphScrollTarget(token: "run:" + last, nodeID: MightyGraphBlockSize.nodeID(runID: last, suffix: "request"), alignTop: true)
+                        return
+                    }
+                    let anchor = MightyGraphCamera.trimAnchor(previousRunIDs: previous, runIDs: current, selectedNodeID: selectedNodeID,
+                                                              layoutNodeIDs: Set(graph.nodes.map(\.id)))
+                    guard case .reaim(let nodeID, let alignTop) = anchor else { return }
+                    trimSequence += 1
+                    scrollTarget = MightyGraphScrollTarget(token: MightyGraphCamera.trimToken(sequence: trimSequence, nodeID: nodeID), nodeID: nodeID, alignTop: alignTop)
                 }
         }
         .accessibilityElement(children: .contain)
@@ -296,8 +326,8 @@ struct MightyGraphView: View {
     }
 
     private func initialTarget(_ graph: MightyGraphLayout) -> String {
-        if graph.nodes.contains(where: { $0.content == .draft }) { return "pending-input" }
-        return runs.last.map { MightyGraphLayout.nodeID($0, suffix: "request") } ?? "pending-input"
+        if graph.nodes.contains(where: { $0.content == .draft }) { return MightyGraphCamera.pendingNodeID }
+        return runs.last.map { MightyGraphLayout.nodeID($0, suffix: "request") } ?? MightyGraphCamera.pendingNodeID
     }
 
     private func graphEdges(_ graph: MightyGraphLayout) -> some View {
@@ -313,6 +343,9 @@ struct MightyGraphView: View {
             }
         }
         .stroke(Palette.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+        // Routed in node coordinates, drawn in the container's, which starts at
+        // the diagram's leading edge rather than at x = 0.
+        .offset(x: -graph.originX)
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
@@ -445,6 +478,9 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     let zoom: CGFloat
     let sessionID: String
     let scrollTarget: MightyGraphScrollTarget?
+    /// Aimed at when the target's block no longer exists, so a camera is never
+    /// committed from the document origin after a block disappeared.
+    let defaultNodeID: String
     @Binding var selection: String?
     let edges: Edges
     var overlay: AnyView = AnyView(EmptyView())
@@ -458,8 +494,13 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
 
     var body: some View {
         GeometryReader { viewport in
-            let targetFrame = graph.nodes.first(where: { $0.id == scrollTarget?.nodeID })?.frame
-            let initialOffset = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: scrollTarget?.alignTop ?? false) } ?? .zero
+            let requested = graph.nodes.first(where: { $0.id == scrollTarget?.nodeID })
+            let target = requested ?? graph.nodes.first(where: { $0.id == defaultNodeID })
+            let targetFrame = target?.frame
+            // Top alignment belongs to the block that was asked for. The
+            // fallback is a different block, so it is simply centred.
+            let alignTop = requested != nil && (scrollTarget?.alignTop ?? false)
+            let initialOffset = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: alignTop) } ?? .zero
             let displayedOffset = cameraOffset ?? initialOffset
             let panBinding = Binding<CGPoint>(get: { cameraOffset ?? initialOffset }, set: { cameraOffset = $0 })
             let visible = CGRect(x: floor(-displayedOffset.x / zoom / 64) * 64 - 192,
@@ -499,12 +540,16 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                             }
                         }
                         .id(node.id)
-                        .position(x: node.frame.midX, y: node.frame.midY)
+                        .position(x: node.frame.midX - graph.originX, y: node.frame.midY)
                     }
                 }
+                // The container covers the whole diagram, whose leading edge is
+                // negative once a tree is wider than a request card; putting
+                // that edge back into the offset leaves the camera, the probe's
+                // hit testing and the culling rect all in node coordinates.
                 .frame(width: graph.size.width, height: graph.size.height, alignment: .topLeading)
                 .scaleEffect(zoom, anchor: .topLeading)
-                .offset(x: displayedOffset.x, y: displayedOffset.y)
+                .offset(x: displayedOffset.x + graph.originX * zoom, y: displayedOffset.y)
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .clipped()
@@ -513,7 +558,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
                 targetFrame: targetFrame,
-                alignTop: scrollTarget?.alignTop ?? false, selection: $selection, panOffset: panBinding, onResize: onResize,
+                alignTop: alignTop, selection: $selection, panOffset: panBinding, onResize: onResize,
                 overlay: AnyView(overlay.environment(\.colorScheme, colorScheme)), overlayLayout: overlayLayout, onOverlayResize: onOverlayResize,
                 content: diagram.environment(\.colorScheme, colorScheme))
                 .frame(width: viewport.size.width, height: viewport.size.height)
@@ -521,7 +566,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             .onChange(of: zoom) { old, new in
                 guard old > 0 else { return }
                 let center = CGPoint(x: viewport.size.width / 2, y: viewport.size.height / 2)
-                let previous = cameraOffset ?? targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: scrollTarget?.alignTop ?? false) } ?? .zero
+                let previous = cameraOffset ?? targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: alignTop) } ?? .zero
                 cameraOffset = CGPoint(x: center.x - (center.x - previous.x) * new / old,
                                        y: center.y - (center.y - previous.y) * new / old)
             }

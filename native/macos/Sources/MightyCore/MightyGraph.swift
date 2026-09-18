@@ -195,14 +195,38 @@ public enum MightyGraphSupport {
         return result
     }
 
+    /// The live history's byte budget, and the mark a trim goes down to. A trim
+    /// re-aims the graph's camera, so it must be rare: stopping at the limit
+    /// itself would leave the next streamed event over it again.
+    public static let liveHistoryLimit = 2 * 1024 * 1024
+    static let liveHistoryLowWater = liveHistoryLimit * 3 / 4
+    /// The one measure both the trigger and the trim use. It counts everything
+    /// `normalized` charges for and more, so a history under the low-water mark
+    /// never loses a further run to that budget.
+    static func liveHistoryBytes(_ values: [MightyGraphRun]) -> Int { values.reduce(0) { $0 + liveBytes($1) } }
+    private static func liveBytes(_ run: MightyGraphRun) -> Int {
+        512 + run.id.utf8.count + (run.sourceRunID?.utf8.count ?? 0) + run.input.utf8.count
+            + (run.finalOutput?.utf8.count ?? 0) * 3 + entryBytes(run.rootEntries)
+            + run.agents.reduce(0) { $0 + 768 + $1.id.utf8.count + ($1.parentID?.utf8.count ?? 0) + $1.title.utf8.count + $1.input.utf8.count + entryBytes($1.entries) }
+    }
+
     public static func boundedLiveHistory(_ values: [MightyGraphRun]) -> [MightyGraphRun] {
-        let estimate = values.reduce(0) { total, run in
-            total + 512 + run.input.utf8.count + (run.finalOutput?.utf8.count ?? 0) * 3
-                + entryBytes(run.rootEntries) + run.agents.reduce(0) { $0 + 768 + $1.title.utf8.count + $1.input.utf8.count + entryBytes($1.entries) }
+        var sizes = values.map(liveBytes)
+        var total = sizes.reduce(0, +)
+        guard total > liveHistoryLimit else { return values }
+        // Whole oldest runs first, down to the low-water mark, so the appends
+        // that follow stay under the limit instead of trimming on every event.
+        // The newest request is the one the user is watching: it never goes.
+        var kept = values
+        while total > liveHistoryLowWater, kept.count > 1 {
+            total -= sizes.removeFirst()
+            kept.removeFirst()
         }
-        guard estimate > 2 * 1024 * 1024 else { return values }
-        var budget = 2 * 1024 * 1024
-        return normalized(values, restoring: false, budget: &budget)
+        guard total > liveHistoryLimit else { return kept }
+        // One run larger than the whole budget on its own: keep it and clip its
+        // text rather than lose the request being watched.
+        var budget = liveHistoryLimit
+        return normalized(kept, restoring: false, budget: &budget)
     }
     private static func entryBytes(_ values: [LogEntry]) -> Int {
         values.reduce(0) { $0 + 512 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) }

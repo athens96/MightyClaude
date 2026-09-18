@@ -1,4 +1,5 @@
 import AppKit
+import MightyCore
 import SwiftUI
 
 /// Placement of the docked reference bubble. The native host and the probe
@@ -308,10 +309,30 @@ final class MightyGraphInteractionProbe: NSView {
     /// Commit even an unchanged position once, so the SwiftUI fallback stops
     /// following target geometry after a click or an inner-content scroll.
     private func commitInteractionPosition(_ value: CGPoint) {
+        // A degenerate or stale viewport produces offsets that put the document
+        // off screen, and committing one also consumes the pending admission
+        // that would have repaired it. Refusing must not lose the event either:
+        // the admission is rescheduled so the camera still arrives.
+        guard admissibleViewport else { scheduleInitialPosition(); return }
         let pendingInitialPosition = targetToken != nil && targetToken != consumedTargetToken
+        let targetCamera = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: bounds.size, zoom: zoom, alignTop: alignTop) }
+        guard let committed = MightyGraphCamera.admittedCamera(targetToken: targetToken, consumedToken: consumedTargetToken,
+                                                               targetCamera: targetCamera, current: panOffset, requested: value) else {
+            // A published target without a frame yet: leave its token pending
+            // rather than commit an offset the re-aim was about to replace.
+            scheduleInitialPosition(); return
+        }
         consumedTargetToken = targetToken
-        if pendingInitialPosition && value == panOffset { onPan(value) }
-        else { applyPan(value) }
+        if pendingInitialPosition && committed == panOffset { onPan(committed) }
+        else { applyPan(committed) }
+    }
+    /// The camera is admitted for the viewport SwiftUI measured. A probe that
+    /// was never told one — a hand-built fixture — speaks for its own bounds
+    /// instead; only a genuinely degenerate viewport is refused.
+    private var admissibleViewport: Bool {
+        guard bounds.width > 0, bounds.height > 0 else { return false }
+        guard expectedViewportSize != .zero else { return true }
+        return abs(bounds.width - expectedViewportSize.width) < 1 && abs(bounds.height - expectedViewportSize.height) < 1
     }
     private func applyPan(_ value: CGPoint) {
         guard value.x.isFinite, value.y.isFinite, value != panOffset else { return }
@@ -324,9 +345,7 @@ final class MightyGraphInteractionProbe: NSView {
             guard let self else { return }
             self.positioningScheduled = false
             guard !self.disposed, !self.isResizing, self.window != nil, let token = self.targetToken, token != self.consumedTargetToken,
-                  let frame = self.targetFrame, self.bounds.width > 0, self.bounds.height > 0,
-                  abs(self.bounds.width - self.expectedViewportSize.width) < 1,
-                  abs(self.bounds.height - self.expectedViewportSize.height) < 1 else { return }
+                  let frame = self.targetFrame, self.admissibleViewport else { return }
             self.consumedTargetToken = token
             let initial = MightyGraphLayout.cameraOffset(for: frame, viewport: self.bounds.size, zoom: self.zoom, alignTop: self.alignTop)
             if initial == self.panOffset {

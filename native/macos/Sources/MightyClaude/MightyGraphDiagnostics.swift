@@ -203,9 +203,17 @@ enum MightyGraphDiagnostics {
             try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-node-pending-input") != nil }
             guard let longContent = window.contentView else { throw MightyError("긴 그래프 검증 화면이 없습니다.") }
             let mounted = textViews(in: longContent).count
+            let mountedLongCards = mountedCards(window)
+            // Two-sided: the block the camera is aimed at is really on screen —
+            // a camera left outside the document culls every card and a blank
+            // canvas would otherwise pass — while the far history is not.
+            let oldestLongID = MightyGraphBlockSize.nodeID(runID: "long-history-0", suffix: "request")
+            guard mounted > 0, mountedLongCards.contains(MightyGraphCamera.pendingNodeID),
+                  !mountedLongCards.contains(oldestLongID) else { throw MightyError("긴 기록의 화면 안팎 그래프 카드 구성이 올바르지 않습니다.") }
             guard mounted < 24 else { throw MightyError("화면 밖의 그래프까지 네이티브 출력창을 만들었습니다.") }
             report["longHistoryVirtualized"] = true
             report["longHistoryMountedTranscripts"] = mounted
+            report["longHistoryMountedCards"] = mountedLongCards.count
             report["longHistoryRunCount"] = fixture.runs.count
             let newRun = MightyGraphRun(id: "new-visible-request", input: "새 요청은 현재 위치로 이동합니다.", status: "running")
             fixture.running = true
@@ -218,6 +226,36 @@ enum MightyGraphDiagnostics {
                 return viewport.insetBy(dx: -2, dy: -2).contains(request)
             }
             report["newRequestMovesOnceAfterDocumentGrowth"] = true
+            // Two root-level branches make this tree wider than a request card.
+            // On the fixed centreline the request card above them keeps its x,
+            // instead of every card in the document sliding sideways.
+            guard let beforeGrowth = frame(node(window, identifier: "mighty-request-\(newID)")) else { throw MightyError("새 요청 카드의 화면 위치를 읽지 못했습니다.") }
+            let branchEntry = LogEntry(id: "branch-progress", kind: "assistant", text: "가지가 늘어났습니다.", provider: "claude")
+            fixture.runs[fixture.runs.count - 1].agents = [
+                MightyGraphAgent(id: "branch-left", title: "왼쪽 가지", input: "왼쪽 확인", status: "running", entries: [branchEntry]),
+                MightyGraphAgent(id: "branch-right", title: "오른쪽 가지", input: "오른쪽 확인", status: "running", entries: [branchEntry])
+            ]
+            let branchID = MightyGraphLayout.nodeID(newRun, suffix: "agent:branch-left")
+            try await store.waitForSmoke(timeout: 3) { node(window, identifier: "mighty-node-\(branchID)") != nil }
+            guard let afterGrowth = frame(node(window, identifier: "mighty-request-\(newID)")) else { throw MightyError("가지가 늘어난 뒤 요청 카드가 사라졌습니다.") }
+            report["rootBranchGrowthGeometry"] = ["before": NSStringFromRect(beforeGrowth), "after": NSStringFromRect(afterGrowth)]
+            guard abs(afterGrowth.minX - beforeGrowth.minX) < 0.5 else { throw MightyError("새 하위 블록이 이미 보이던 요청 카드를 옆으로 밀었습니다.") }
+            report["rootBranchGrowthKeepsRequestX"] = true
+            // A history trim drops the OLDEST runs while the last run id stays
+            // the same. Every surviving card moves up; only a re-aim follows,
+            // and without one the committed camera sits past the document.
+            let beforeTrim = fixture.runs.map(\.id)
+            fixture.runs.removeFirst(8)
+            guard fixture.runs.last?.id == beforeTrim.last, fixture.runs.count < beforeTrim.count else { throw MightyError("기록 정리 검증이 마지막 요청까지 지웠습니다.") }
+            try await store.waitForSmoke(timeout: 3) {
+                guard let camera = camera(in: longContent), let request = frame(node(window, identifier: "mighty-request-\(newID)")) else { return false }
+                let viewport = window.convertToScreen(camera.convert(camera.bounds, to: nil))
+                let cards = mountedCards(window)
+                report["historyTrimCameraGeometry"] = ["request": NSStringFromRect(request), "viewport": NSStringFromRect(viewport),
+                                                       "cameraOffset": NSStringFromPoint(camera.panOffset), "mountedCards": cards.count]
+                return cards.contains(newID) && viewport.insetBy(dx: -2, dy: -2).contains(request)
+            }
+            report["historyTrimReAimsAtTheAnchoredBlock"] = true
             report["nodeCount"] = settled.nodes.count
             report["edgeCount"] = settled.edges.count
             let interaction = await MightyGraphInteractionDiagnostics.run(store: store)
@@ -240,8 +278,11 @@ enum MightyGraphDiagnostics {
 
     private static func verifyGeometry(_ layout: MightyGraphLayout) throws {
         guard Set(layout.nodes.map(\.id)).count == layout.nodes.count else { throw MightyError("그래프 노드 ID가 중복됐습니다.") }
+        // The diagram starts at its own leading edge, which a tree wider than a
+        // request card puts left of zero; the drawn container starts there too.
+        let canvas = CGRect(x: layout.originX, y: 0, width: layout.size.width, height: layout.size.height)
         for (index, node) in layout.nodes.enumerated() {
-            guard CGRect(origin: .zero, size: layout.size).contains(node.frame) else { throw MightyError("그래프 카드가 캔버스를 벗어났습니다.") }
+            guard canvas.contains(node.frame) else { throw MightyError("그래프 카드가 캔버스를 벗어났습니다.") }
             for other in layout.nodes.dropFirst(index + 1) where node.frame.intersects(other.frame) { throw MightyError("그래프 카드가 겹칩니다: \(node.id) / \(other.id)") }
         }
         for edge in layout.edges {
@@ -282,6 +323,19 @@ enum MightyGraphDiagnostics {
             if let found = node(child, identifier: identifier, depth: depth + 1) { return found }
         }
         return nil
+    }
+    /// Cards render as `Color.clear` once the camera leaves them behind, so
+    /// this names what is actually on screen rather than what the layout holds.
+    private static func mountedCards(_ element: Any, depth: Int = 0) -> Set<String> {
+        guard depth < 65, let object = element as? NSObject else { return [] }
+        var result = Set<String>()
+        if object.responds(to: NSSelectorFromString("accessibilityIdentifier")),
+           let identifier = object.value(forKey: "accessibilityIdentifier") as? String, identifier.hasPrefix("mighty-node-") {
+            result.insert(String(identifier.dropFirst("mighty-node-".count)))
+        }
+        guard object.responds(to: NSSelectorFromString("accessibilityChildren")) else { return result }
+        for child in object.value(forKey: "accessibilityChildren") as? [Any] ?? [] { result.formUnion(mountedCards(child, depth: depth + 1)) }
+        return result
     }
     private static func label(_ object: NSObject?) -> String {
         guard let object else { return "" }
