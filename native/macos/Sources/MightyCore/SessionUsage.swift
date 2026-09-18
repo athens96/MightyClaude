@@ -256,7 +256,7 @@ final class SessionUsageTracker {
             }
             publish()
         }
-        if type == "result" {
+        if type == "result", !ClaudeStream.isNotificationResult(event) {
             claudeResultSeen = true; value.tokenScope = "run"
             if let models = event["modelUsage"] as? [String: Any], !models.isEmpty, models.count <= 128 {
                 let rows = models.values.compactMap { $0 as? [String: Any] }

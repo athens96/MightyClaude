@@ -195,6 +195,8 @@ public final class CLIStreamParser {
                 }
             } else if type == "result" {
                 guard !claudeChild else { return }
+                // Not this request's result: see `ClaudeStream.isNotificationResult`.
+                guard !ClaudeStream.isNotificationResult(value) else { return }
                 if value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error") {
                     failed = true
                     let errors = (value["errors"] as? [String])?.joined(separator: "\n")
@@ -278,4 +280,17 @@ final class UTF8StreamDecoder {
         let text = String(decoding: pending, as: UTF8.self); pending.removeAll(); return text
     }
     func flush() -> String { defer { pending.removeAll() }; return String(decoding: pending, as: UTF8.self) }
+}
+
+public enum ClaudeStream {
+    /// A resumed session whose earlier process left a background task behind
+    /// first reports that task as stopped, and closes that report with a
+    /// `result` of its own (`origin.kind == "task-notification"`) before it even
+    /// reads the new request. It is not the request's result: treating it as one
+    /// closes Claude's stdin early, and every approval or question in the real
+    /// turn then fails with "Stream closed".
+    public static func isNotificationResult(_ event: [String: Any]) -> Bool {
+        guard event["type"] as? String == "result", let origin = event["origin"] as? [String: Any] else { return false }
+        return origin["kind"] as? String == "task-notification"
+    }
 }
