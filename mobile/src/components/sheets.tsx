@@ -197,6 +197,96 @@ export function ConfirmDialog({
   );
 }
 
+export interface SheetAction {
+  id: string;
+  label: string;
+  /** One line under the label; the host's own help text. */
+  description?: string;
+}
+
+/** Labelled actions with their help; used by "더 보기" on the Ouroboros panel. */
+export function ActionListSheet({
+  visible,
+  title,
+  note,
+  actions,
+  busy,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  note?: string;
+  actions: SheetAction[];
+  busy: boolean;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <Text style={styles.title}>{title}</Text>
+      {note ? <Text style={styles.note}>{note}</Text> : null}
+      {actions.length === 0 ? (
+        <Text style={styles.note}>지금 실행할 수 있는 것이 없습니다.</Text>
+      ) : (
+        <ScrollView style={styles.optionList}>
+          {actions.map((action) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
+              key={action.id}
+              onPress={() => onSelect(action.id)}
+              style={({ pressed }) => [
+                styles.option,
+                styles.optionStacked,
+                busy && styles.optionLocked,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.optionLabel}>{action.label}</Text>
+              {action.description ? (
+                <Text style={styles.optionDescription}>{action.description}</Text>
+              ) : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      <Button label="닫기" tone="ghost" onPress={onClose} />
+    </Sheet>
+  );
+}
+
+/** Title plus a few plain paragraphs; used for a Paperthin skill's description. */
+export function InfoSheet({
+  visible,
+  title,
+  lines,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  lines: string[];
+  onClose: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <Sheet visible={visible} onClose={onClose}>
+      <Text style={styles.title}>{title}</Text>
+      <ScrollView style={styles.messageBody}>
+        {/* Two lines of a skill's description can read the same; position is the key. */}
+        {lines.map((line, index) => (
+          <Text key={index} style={styles.note}>
+            {line}
+          </Text>
+        ))}
+      </ScrollView>
+      <Button label="닫기" tone="ghost" onPress={onClose} />
+    </Sheet>
+  );
+}
+
 /** Scrollable monospace body; shows what `/usage` and `/help` answered. */
 export function MessageSheet({
   visible,
@@ -254,6 +344,8 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
+    optionStacked: { alignItems: 'flex-start', flexDirection: 'column', gap: 2 },
+    optionDescription: { color: palette.textMuted, fontSize: 12 },
     optionLocked: { opacity: 0.45 },
     optionLabel: { color: palette.text, flex: 1, fontSize: 15 },
     optionMark: { color: palette.accent, fontSize: 12, fontWeight: '700' },

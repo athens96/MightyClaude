@@ -9,7 +9,8 @@ import Testing
 private final class StaticHost: MobileHostDelegate, @unchecked Sendable {
     func mobileState() async -> MobileState { MobileState(revision: 3, hostName: "Relay Mac", workspaces: [], sessions: []) }
     func mobileSession(id: String) async -> MobileSessionDetail? { nil }
-    func mobileSubmit(sessionId: String, text: String, mode: String?) async throws -> String { "started" }
+    func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String { "started" }
+    func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String { "started" }
     func mobileStop(sessionId: String) async throws {}
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws {}
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {}
@@ -45,6 +46,22 @@ struct RelayIntegrationTests {
     }
     private func sendEncrypted(_ socket: URLSessionWebSocketTask, _ cipher: inout RelayCipher, _ object: [String: Any]) async throws {
         try await socket.send(.data(try cipher.seal(try JSONSerialization.data(withJSONObject: object))))
+    }
+
+    /// One full phone-side connection: handshake, then the given auth frame,
+    /// then whatever the host answered. The socket stays open for the caller.
+    private func connect(offer: MobilePairingOffer, frame: [String: Any]) async throws -> (socket: URLSessionWebSocketTask, reply: [String: Any]) {
+        let key = Curve25519.KeyAgreement.PrivateKey(), nonce = RelayCrypto.randomBytes(16)
+        let url = try #require(RelayEndpoint.socketURL(relay: offer.relayURL, serverId: offer.serverId, role: "client", connectionId: UUID().uuidString.lowercased()))
+        let socket = URLSession.shared.webSocketTask(with: url)
+        socket.resume()
+        let hello = try JSONSerialization.data(withJSONObject: ["type": "hello", "v": 1, "clientKey": key.publicKey.rawRepresentation.base64EncodedString(), "nonce": nonce.base64EncodedString()])
+        try await socket.send(.string(String(decoding: hello, as: UTF8.self)))
+        let ready = try await receiveText(socket)
+        let serverNonce = try #require((ready["nonce"] as? String).flatMap { Data(base64Encoded: $0) })
+        var cipher = try RelayCipher(privateKey: key, peerPublicKey: try #require(Data(base64Encoded: offer.publicKeyB64)), clientNonce: nonce, serverNonce: serverNonce, isHost: false)
+        try await sendEncrypted(socket, &cipher, frame)
+        return (socket, try await receiveEncrypted(socket, &cipher))
     }
 
     @Test func phoneReachesTheHostThroughTheRelayWithEndToEndEncryption() async throws {
@@ -84,9 +101,15 @@ struct RelayIntegrationTests {
         #expect(ready["type"] as? String == "ready" && ready["serverKey"] as? String == offer.publicKeyB64)
         let serverNonce = try #require((ready["nonce"] as? String).flatMap { Data(base64Encoded: $0) })
         var cipher = try RelayCipher(privateKey: clientKey, peerPublicKey: Data(base64Encoded: offer.publicKeyB64)!, clientNonce: clientNonce, serverNonce: serverNonce, isHost: false)
-        try await sendEncrypted(socket, &cipher, ["type": "auth", "pairingKey": offer.pairingKey, "clientName": "Test phone"])
+        let clientId = "cGhvbmUtaW50ZWctMDE"
+        try await sendEncrypted(socket, &cipher, ["type": "auth", "pairingKey": offer.pairingKey, "clientId": clientId, "clientName": "Test phone"])
         let ok = try await receiveEncrypted(socket, &cipher)
         #expect(ok["type"] as? String == "auth_ok" && ok["hostName"] as? String == "Relay Mac" && ok["appVersion"] as? String == "1.2.3")
+        // First pairing hands the device token over exactly once.
+        let deviceToken = try #require(ok["deviceToken"] as? String)
+        #expect(MobileDeviceRegistry.validToken(deviceToken))
+        let listed = await service.status().devices
+        #expect(listed.map(\.id) == [clientId] && listed.first?.name == "Test phone" && listed.first?.connected == true)
 
         try await sendEncrypted(socket, &cipher, ["id": "r1", "method": "GET", "path": "/m1/state?since=0&wait=0"])
         let reply = try await receiveEncrypted(socket, &cipher)
@@ -118,6 +141,20 @@ struct RelayIntegrationTests {
         let refused = try await receiveEncrypted(badSocket, &badCipher)
         #expect(refused["type"] as? String == "auth_error")
         badSocket.cancel(with: .normalClosure, reason: nil)
+
+        // The phone comes back with its token and no pairing key at all, and no
+        // second token is issued.
+        let again = try await connect(offer: offer, frame: ["type": "auth", "clientId": clientId, "deviceToken": deviceToken, "clientName": "Test phone"])
+        #expect(again.reply["type"] as? String == "auth_ok" && again.reply["deviceToken"] == nil)
+        again.socket.cancel(with: .normalClosure, reason: nil)
+
+        // Revoked: the entry is gone, the pairing key is new, and the token is
+        // refused with the reason the app watches for.
+        let after = try await service.revokeDevice(clientId)
+        #expect(after.devices.isEmpty && after.key != offer.pairingKey)
+        let revoked = try await connect(offer: offer, frame: ["type": "auth", "clientId": clientId, "deviceToken": deviceToken])
+        #expect(revoked.reply["type"] as? String == "auth_error" && revoked.reply["reason"] as? String == "device-revoked")
+        revoked.socket.cancel(with: .normalClosure, reason: nil)
         await service.shutdown()
         withExtendedLifetime(host) {}
     }

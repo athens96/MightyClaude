@@ -25,6 +25,12 @@ export interface Palette {
   onBadge: string;
   /** Dimming behind modals. */
   overlay: string;
+  /** Mighty block tints, mirroring the Mac's SwiftUI system colours. */
+  blockAgent: string;
+  blockTask: string;
+  blockSteer: string;
+  blockCompact: string;
+  blockQuestion: string;
 }
 
 export const darkPalette: Palette = {
@@ -46,6 +52,11 @@ export const darkPalette: Palette = {
   onAccent: '#1a0f08',
   onBadge: '#14140f',
   overlay: 'rgba(0,0,0,0.6)',
+  blockAgent: '#bf5af2',
+  blockTask: '#40c8e0',
+  blockSteer: '#ff9f0a',
+  blockCompact: '#66d4cf',
+  blockQuestion: '#5e5ce6',
 };
 
 export const lightPalette: Palette = {
@@ -67,6 +78,11 @@ export const lightPalette: Palette = {
   onAccent: '#ffffff',
   onBadge: '#ffffff',
   overlay: 'rgba(0,0,0,0.35)',
+  blockAgent: '#af52de',
+  blockTask: '#30b0c7',
+  blockSteer: '#ff9500',
+  blockCompact: '#00c7be',
+  blockQuestion: '#5856d6',
 };
 
 /**
@@ -160,14 +176,22 @@ function labelFor(table: Record<string, string>, value: string): string {
   return table[value] ?? (value.length > 0 ? value : '알 수 없음');
 }
 
+/**
+ * Everything drawn with a status chip: a pane's own status, plus the `waiting` that
+ * `activity.state` and Mighty blocks add and a pane itself never reports.
+ */
+const chipLabels: Record<string, string> = { ...statusLabels, waiting: '기다리는 중' };
+
 export function statusLabel(status: string): string {
-  return labelFor(statusLabels, status);
+  return labelFor(chipLabels, status);
 }
 
 export function statusColor(palette: Palette, status: string): string {
   switch (status) {
     case 'running':
       return palette.accent;
+    case 'waiting':
+      return palette.warning;
     case 'completed':
       return palette.success;
     case 'error':
@@ -187,6 +211,29 @@ export function kindLabel(kind: string): string {
 
 export function providerLabel(provider: string): string {
   return labelFor(providerLabels, provider);
+}
+
+/**
+ * Tint for a Mighty block, mirroring the Mac: the request itself is the accent, and each
+ * child kind keeps its own colour. A kind the contract does not list is neutral.
+ */
+export function blockColor(palette: Palette, kind: string): string {
+  switch (kind) {
+    case 'main':
+      return palette.accent;
+    case 'agent':
+      return palette.blockAgent;
+    case 'task':
+      return palette.blockTask;
+    case 'steer':
+      return palette.blockSteer;
+    case 'compact':
+      return palette.blockCompact;
+    case 'question':
+      return palette.blockQuestion;
+    default:
+      return palette.textMuted;
+  }
 }
 
 /** Brand colours for a provider, or a neutral single colour for an unknown one. */

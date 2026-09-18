@@ -27,9 +27,21 @@ extension AppStore {
     }
 
     func refreshOuroborosPrerequisites() {
+        // Set before the task starts, not inside it: a phone's long poll asks
+        // again the moment it wakes, and would otherwise spawn one read per
+        // poll until the first answer finally lands.
+        guard !ouroborosPrerequisitesLoading else { return }
+        ouroborosPrerequisitesLoading = true
         Task.detached(priority: .utility) { [weak self] in
             let value = OuroborosFlow.prerequisites()
-            await MainActor.run { self?.ouroborosPrerequisites = value }
+            await MainActor.run {
+                guard let self else { return }
+                self.ouroborosPrerequisitesLoading = false
+                self.ouroborosPrerequisites = value
+                // The phone's Mighty payload carries this and it does not live
+                // in the snapshot, so the revision has to be nudged by hand.
+                self.mobileObserve()
+            }
         }
     }
 
@@ -64,14 +76,23 @@ extension AppStore {
     func refreshPaperthin(for session: RunSession) {
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
         let path = workspace.path, workspaceId = workspace.id
+        // Marked before the task starts: a phone watching this pane polls
+        // again as soon as it wakes, and every poll would otherwise start
+        // another scan of the workspace until the first one answered.
+        guard !paperthinLoading.contains(workspaceId) else { return }
+        paperthinLoading.insert(workspaceId)
         Task.detached(priority: .utility) { [weak self] in
             let installed = PaperthinCatalog.installed(workspacePath: path)
             let casebook = PaperthinCasebook.latest(workspacePath: path)
             await MainActor.run {
                 guard let self else { return }
+                self.paperthinLoading.remove(workspaceId)
                 self.paperthinInstalled = installed
                 if let casebook { self.paperthinCasebooks[workspaceId] = casebook } else { self.paperthinCasebooks.removeValue(forKey: workspaceId) }
                 self.paperthinLoaded.insert(workspaceId)
+                // Neither the casebook nor the install state lives in the
+                // snapshot, so a watching phone is told about them from here.
+                self.mobileObserve()
             }
         }
     }

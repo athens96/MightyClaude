@@ -210,11 +210,14 @@ struct MightyGraphView: View {
 
     /// Title, symbol and tint for a child block by kind.
     static func agentPresentation(_ agent: MightyGraphAgent) -> (title: String, icon: String, tint: Color) {
-        if agent.isSteer { return ("중간 요청", "text.bubble", .orange) }
-        if agent.isCompact { return (ContextCompaction.title, "arrow.down.right.and.arrow.up.left", .mint) }
-        if agent.isQuestion { return (agent.title.isEmpty ? "질문" : agent.title, "questionmark.bubble.fill", .indigo) }
-        if agent.isTask { return (agent.title.isEmpty ? "백그라운드 작업" : agent.title, "terminal", .teal) }
-        return (agent.title.isEmpty ? "하위 에이전트" : agent.title, "person.crop.square.filled.and.at.rectangle", .purple)
+        // The title comes from the core so the phone's Mighty view names the
+        // same block the same way; only the symbol and tint are Mac-only.
+        let title = MightyGraphSupport.blockTitle(agent)
+        if agent.isSteer { return (title, "text.bubble", .orange) }
+        if agent.isCompact { return (title, "arrow.down.right.and.arrow.up.left", .mint) }
+        if agent.isQuestion { return (title, "questionmark.bubble.fill", .indigo) }
+        if agent.isTask { return (title, "terminal", .teal) }
+        return (title, "person.crop.square.filled.and.at.rectangle", .purple)
     }
 
     private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID) }

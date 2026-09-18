@@ -105,6 +105,72 @@ function toBase64Url(standardBase64: string): string {
   return standardBase64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+/**
+ * Whether a relay address points inside the local network, which is the only place
+ * iOS still allows plain `ws://`: App Transport Security is configured with
+ * `NSAllowsLocalNetworking` alone, so loopback, the private IPv4 ranges, link-local
+ * addresses and Bonjour names keep working while a public `ws://` relay does not.
+ *
+ * Pure string work: no DNS, no sockets. A name that is not obviously local is treated
+ * as remote, because guessing the other way would hide the failure until connect time.
+ */
+export function isLocalRelayHost(relayUrl: string): boolean {
+  const host = hostnameOf(relayUrl);
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host.endsWith('.local')) return true;
+
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (ipv4) {
+    const parts = ipv4.slice(1).map((part) => Number(part));
+    if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+    const [a = 0, b = 0] = parts;
+    if (a === 127) return true;
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    // Link-local (169.254.0.0/16), which is what two devices pick with no DHCP.
+    if (a === 169 && b === 254) return true;
+    return false;
+  }
+
+  if (host.includes(':')) {
+    // IPv6: loopback, link-local (fe80::/10) and unique-local (fc00::/7).
+    const plain = host.replace(/%.*$/, '');
+    if (plain === '::1') return true;
+    if (/^fe[89ab][0-9a-f]?:/.test(plain)) return true;
+    if (/^f[cd][0-9a-f]{2}:/.test(plain)) return true;
+    return false;
+  }
+  return false;
+}
+
+/** The host part of `ws://host:port`, lowercased, with an IPv6 literal unbracketed. */
+function hostnameOf(relayUrl: string): string | undefined {
+  const match = /^wss?:\/\/([^/?#]+)$/i.exec(relayUrl.trim().replace(/\/+$/, ''));
+  const authority = match?.[1];
+  if (!authority) return undefined;
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(authority);
+  if (bracketed?.[1]) return bracketed[1].toLowerCase();
+  const withoutPort = authority.replace(/:\d+$/, '');
+  return withoutPort.length > 0 ? withoutPort.toLowerCase() : undefined;
+}
+
+/**
+ * The reason a relay cannot be reached from this phone, or undefined when it can. Only
+ * iOS refuses plain `ws://` outside the local network; Android keeps its cleartext
+ * allowance, so the same link still pairs there.
+ */
+export function relayTransportError(
+  relayUrl: string,
+  platform: string,
+): string | undefined {
+  if (platform !== 'ios') return undefined;
+  if (!/^ws:\/\//i.test(relayUrl.trim())) return undefined;
+  if (isLocalRelayHost(relayUrl)) return undefined;
+  return 'iOS에서는 로컬 네트워크 밖의 릴레이에 ws://로 연결할 수 없습니다. Mac에서 릴레이 주소를 wss://로 바꾼 뒤 다시 페어링하세요.';
+}
+
 /** Stable identity for a paired host: the relay `serverId`. */
 export function pairingFingerprint(serverId: string): string {
   return serverId;

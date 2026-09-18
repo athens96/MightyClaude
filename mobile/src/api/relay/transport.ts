@@ -11,6 +11,15 @@ import {
   randomUuid,
   toBase64,
 } from '@/api/relay/crypto';
+import {
+  afterAuthOk,
+  authFrameFor,
+  authRejectionFor,
+  deviceTokenFrom,
+  type AuthErrorReason,
+  type AuthRejection,
+  type DeviceAuthState,
+} from '@/lib/device-token';
 
 /** Wire version of both the relay query string and the handshake envelopes. */
 export const RELAY_WIRE_VERSION = 1;
@@ -30,6 +39,10 @@ export type RelayFailure =
   | 'host-offline'
   | 'host-not-attached'
   | 'unpaired'
+  | 'device-revoked'
+  | 'device-conflict'
+  | 'device-limit'
+  | 'auth-refused'
   | 'too-many'
   | 'relay-unreachable'
   | 'protocol'
@@ -40,6 +53,11 @@ const failureMessages: Record<RelayFailure, string> = {
   'host-offline': '호스트 오프라인',
   'host-not-attached': '호스트가 응답하지 않습니다',
   unpaired: '재페어링 필요',
+  'device-revoked': '이 기기의 연결이 Mac에서 해제되었습니다. 다시 페어링하세요.',
+  'device-conflict': '이 기기가 Mac에 이미 등록되어 있습니다. 잠시 후 다시 시도합니다.',
+  'device-limit':
+    'Mac의 기기 목록이 가득 찼거나 등록이 잠시 제한되었습니다. Mac 설정에서 쓰지 않는 기기를 해제한 뒤 다시 시도하세요.',
+  'auth-refused': '호스트가 인증을 거절했습니다. 잠시 후 다시 시도합니다.',
   'too-many': '연결이 너무 많습니다',
   'relay-unreachable': '릴레이 연결 안 됨',
   protocol: '릴레이 프로토콜 오류',
@@ -47,8 +65,38 @@ const failureMessages: Record<RelayFailure, string> = {
   closed: '연결이 끊어졌습니다',
 };
 
+/**
+ * The shared `auth_error.reason` vocabulary, as transport failures. Only the two final
+ * ones end the connection for good; everything else — including a word this build has
+ * never seen — keeps the stored secrets and the normal retry.
+ */
+const authFailures: Record<AuthErrorReason, RelayFailure> = {
+  'pairing-key': 'unpaired',
+  'device-revoked': 'device-revoked',
+  'device-conflict': 'device-conflict',
+  'device-limit': 'device-limit',
+  'legacy-refused': 'auth-refused',
+  malformed: 'auth-refused',
+  unknown: 'auth-refused',
+};
+
 export function describeRelayFailure(failure: RelayFailure): string {
   return failureMessages[failure];
+}
+
+/** A rejected key or a released device: neither fixes itself, both need pairing again. */
+export function isFinalFailure(failure: RelayFailure | undefined): boolean {
+  return failure === 'unpaired' || failure === 'device-revoked';
+}
+
+/**
+ * The banner for a connection that will not open again on its own. A released device
+ * says what happened in its own message; a rejected key only says "재페어링 필요", so
+ * that case adds which secret went stale.
+ */
+export function describeRepairNeeded(failureMessage: string | undefined): string {
+  if (failureMessage && failureMessage !== failureMessages.unpaired) return failureMessage;
+  return '재페어링 필요 — 저장된 키가 호스트와 일치하지 않습니다.';
 }
 
 /** A relay/transport-level failure, as opposed to an `ApiError` from the host. */
@@ -63,9 +111,9 @@ export class RelayError extends Error {
     this.closeCode = closeCode;
   }
 
-  /** True when the stored pairing key no longer matches the host. */
+  /** True when the stored pairing key or device token no longer opens this host. */
   get needsRepair(): boolean {
-    return this.failure === 'unpaired';
+    return isFinalFailure(this.failure);
   }
 }
 
@@ -98,13 +146,20 @@ export interface RelayTarget {
   relayUrl: string;
   /** Base64 X25519 public key captured at pairing time. */
   hostPublicKeyB64: string;
-  pairingKey: string;
+  /** Absent once this host has issued a device token. */
+  pairingKey?: string;
+  /** This install's id, sent so the host can register the device. */
+  clientId?: string;
+  /** Per-host device token; authenticates on its own. */
+  deviceToken?: string;
 }
 
 export interface RelayHostInfo {
   hostName: string;
   hostId: string;
   appVersion: string;
+  /** Sent once, on the connection that registered this device. */
+  deviceToken?: string;
 }
 
 export interface RelayNotification {
@@ -136,6 +191,13 @@ export interface ForegroundSignal {
   subscribe(listener: () => void): () => void;
 }
 
+/** The right to spend a host's pairing key, and the freshest state to spend it with. */
+export interface AuthLease {
+  auth: DeviceAuthState;
+  /** Called once the host has answered, or the attempt was abandoned. */
+  release: () => void;
+}
+
 export interface RelayConnectionOptions {
   /** Shown on the desktop as the connected device. */
   clientName?: string;
@@ -144,6 +206,23 @@ export interface RelayConnectionOptions {
   createSocket?: RelaySocketFactory;
   foreground?: ForegroundSignal;
   requestTimeoutMs?: number;
+  /**
+   * Called once, with the token the host issued, so it can be stored per host. A promise
+   * is awaited before the pairing-key lease is let go, so the next connection in line
+   * reads the stored token instead of spending the key a second time.
+   */
+  onDeviceToken?: (deviceToken: string) => void | Promise<void>;
+  /**
+   * Guards the one pairing-key authentication a host may have in flight. Given the state
+   * this connection was built with, it answers with the state to actually authenticate
+   * with — a token another connection has since adopted wins — and the release.
+   */
+  authorize?: (state: DeviceAuthState) => Promise<AuthLease>;
+  /**
+   * Answer to `device-conflict`: mints and stores a `clientId` for this host alone, used
+   * for exactly one more attempt with the pairing key.
+   */
+  mintClientId?: () => Promise<string | undefined>;
 }
 
 function defaultSocketFactory(url: string): RelaySocket {
@@ -214,13 +293,23 @@ export class RelayConnection {
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private lastPongAt = 0;
   private disposed = false;
-  private authErrorSeen = false;
+  private authFailure: RelayFailure | undefined;
+  private authRejection: AuthRejection | undefined;
   private unsubscribeForeground: (() => void) | undefined;
+  /** Held from the moment the pairing key goes out until the host has answered. */
+  private authLease: (() => void) | undefined;
+  /** `device-conflict` buys exactly one more attempt, under a fresh id. */
+  private clientIdRetried = false;
+  /** Moves from the pairing key to the device token the moment the host issues one. */
+  private auth: DeviceAuthState;
 
   private readonly clientName: string;
   private readonly autoReconnect: boolean;
   private readonly createSocket: RelaySocketFactory;
   private readonly requestTimeoutMs: number;
+  private readonly onDeviceToken: ((deviceToken: string) => void | Promise<void>) | undefined;
+  private readonly authorize: ((state: DeviceAuthState) => Promise<AuthLease>) | undefined;
+  private readonly mintClientId: (() => Promise<string | undefined>) | undefined;
 
   constructor(
     private readonly target: RelayTarget,
@@ -230,6 +319,14 @@ export class RelayConnection {
     this.autoReconnect = options.autoReconnect ?? true;
     this.createSocket = options.createSocket ?? defaultSocketFactory;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.onDeviceToken = options.onDeviceToken;
+    this.authorize = options.authorize;
+    this.mintClientId = options.mintClientId;
+    this.auth = {
+      clientId: target.clientId,
+      pairingKey: target.pairingKey,
+      deviceToken: target.deviceToken,
+    };
     if (options.foreground) {
       this.unsubscribeForeground = options.foreground.subscribe(() => this.reconnectNow());
     }
@@ -246,6 +343,16 @@ export class RelayConnection {
 
   get info(): RelayHostInfo | undefined {
     return this.hostInfo;
+  }
+
+  /** The token this tunnel authenticates with, once the host has issued one. */
+  get deviceToken(): string | undefined {
+    return this.auth.deviceToken;
+  }
+
+  /** The id this tunnel introduces itself with, after any `device-conflict` retry. */
+  get clientId(): string | undefined {
+    return this.auth.clientId;
   }
 
   onNotify(listener: (event: RelayNotification) => void): () => void {
@@ -278,7 +385,7 @@ export class RelayConnection {
   ): Promise<RelayResponse> {
     const id = randomUuid();
     return new Promise<RelayResponse>((resolve, reject) => {
-      if (this.disposed || this.currentFailure === 'unpaired') {
+      if (this.disposed || isFinalFailure(this.currentFailure)) {
         reject(new RelayError(this.currentFailure ?? 'closed'));
         return;
       }
@@ -300,7 +407,7 @@ export class RelayConnection {
   /** Cancels the backoff timer and dials again right away. */
   reconnectNow(): void {
     if (this.disposed || !this.autoReconnect) return;
-    if (this.currentFailure === 'unpaired' || this.socket) return;
+    if (isFinalFailure(this.currentFailure) || this.socket) return;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
@@ -330,7 +437,8 @@ export class RelayConnection {
 
   private connect(): void {
     if (this.disposed) return;
-    this.authErrorSeen = false;
+    this.authFailure = undefined;
+    this.authRejection = undefined;
     this.setState('connecting');
 
     const keyPair = generateKeyPair();
@@ -367,7 +475,7 @@ export class RelayConnection {
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
       try {
-        this.handleMessage(event.data, keyPair.secretKey, clientNonce);
+        this.handleMessage(event.data, keyPair.secretKey, clientNonce, socket);
       } catch (error) {
         const failure = error instanceof RelayError ? error.failure : 'protocol';
         this.dropSocket(socket, failure);
@@ -386,9 +494,14 @@ export class RelayConnection {
     };
   }
 
-  private handleMessage(data: unknown, secretKey: Uint8Array, clientNonce: Uint8Array): void {
+  private handleMessage(
+    data: unknown,
+    secretKey: Uint8Array,
+    clientNonce: Uint8Array,
+    socket: RelaySocket,
+  ): void {
     if (typeof data === 'string') {
-      this.handleHandshake(data, secretKey, clientNonce);
+      this.handleHandshake(data, secretKey, clientNonce, socket);
       return;
     }
     const bytes = toBytes(data);
@@ -408,7 +521,12 @@ export class RelayConnection {
     this.handleEnvelope(message);
   }
 
-  private handleHandshake(raw: string, secretKey: Uint8Array, clientNonce: Uint8Array): void {
+  private handleHandshake(
+    raw: string,
+    secretKey: Uint8Array,
+    clientNonce: Uint8Array,
+    socket: RelaySocket,
+  ): void {
     let parsed: { type?: string; serverKey?: string; nonce?: string };
     try {
       parsed = JSON.parse(raw) as typeof parsed;
@@ -431,11 +549,51 @@ export class RelayConnection {
       serverNonce: fromBase64(parsed.nonce),
     });
     this.cipher = new RelayCipher(key, DIRECTION_CLIENT_TO_HOST, DIRECTION_HOST_TO_CLIENT);
-    this.sendEncrypted({
-      type: 'auth',
-      pairingKey: this.target.pairingKey,
-      clientName: this.clientName,
-    });
+    this.authenticate(socket);
+  }
+
+  /**
+   * Sends the `auth` frame. A token authenticates on its own and goes out at once; a
+   * pairing key waits its turn, because the host answers it with a device token exactly
+   * once and two racing connections would mint two, of which one is thrown away.
+   */
+  private authenticate(socket: RelaySocket): void {
+    const frame = authFrameFor(this.auth, this.clientName);
+    if (!frame) {
+      throw new RelayError('unpaired', undefined, '이 호스트의 인증 정보가 없습니다.');
+    }
+    if (frame.pairingKey === undefined || !this.authorize) {
+      this.sendEncrypted(frame);
+      return;
+    }
+    void this.authorize(this.auth).then(
+      (lease) => {
+        if (this.socket !== socket) {
+          lease.release();
+          return;
+        }
+        this.auth = lease.auth;
+        this.authLease = lease.release;
+        // Another connection may have adopted a token while we queued; then this is a
+        // token authentication and the key is never spent at all.
+        const next = authFrameFor(this.auth, this.clientName);
+        if (!next) {
+          this.releaseAuthLease();
+          this.dropSocket(socket, 'unpaired');
+          return;
+        }
+        this.sendEncrypted(next);
+      },
+      () => {
+        if (this.socket === socket) this.dropSocket(socket, 'closed');
+      },
+    );
+  }
+
+  private releaseAuthLease(): void {
+    const release = this.authLease;
+    this.authLease = undefined;
+    release?.();
   }
 
   private handleEnvelope(message: unknown): void {
@@ -450,6 +608,8 @@ export class RelayConnection {
       hostName?: string;
       hostId?: string;
       appVersion?: string;
+      deviceToken?: unknown;
+      reason?: unknown;
     };
 
     if (typeof envelope.id === 'string' && envelope.type === undefined) {
@@ -461,16 +621,24 @@ export class RelayConnection {
 
     switch (envelope.type) {
       case 'auth_ok': {
-        this.onAuthenticated({
+        const deviceToken = deviceTokenFrom(envelope);
+        const info: RelayHostInfo = {
           hostName: envelope.hostName ?? '',
           hostId: envelope.hostId ?? '',
           appVersion: envelope.appVersion ?? '',
-        });
+        };
+        if (deviceToken) info.deviceToken = deviceToken;
+        this.onAuthenticated(info, deviceToken);
         return;
       }
       case 'auth_error': {
-        this.authErrorSeen = true;
-        throw new RelayError('unpaired');
+        // The host closes right after; remember what it said, in its own words. Only
+        // "pairing-key" and "device-revoked" end this host for good — a reason we do
+        // not recognise is treated as a hiccup, never as a reason to drop secrets.
+        const rejection = authRejectionFor(envelope.reason);
+        this.authRejection = rejection;
+        this.authFailure = authFailures[rejection.reason];
+        throw new RelayError(this.authFailure, undefined, rejection.message);
       }
       case 'notify': {
         if (typeof envelope.scope !== 'string') return;
@@ -494,7 +662,27 @@ export class RelayConnection {
     }
   }
 
-  private onAuthenticated(info: RelayHostInfo): void {
+  private onAuthenticated(info: RelayHostInfo, deviceToken: string | undefined): void {
+    const next = afterAuthOk(this.auth, deviceToken);
+    let stored: Promise<void> | undefined;
+    if (next !== this.auth) {
+      // From here on this tunnel — and every later one — authenticates by token.
+      this.auth = next;
+      if (deviceToken) {
+        const result = this.onDeviceToken?.(deviceToken);
+        if (result && typeof result.then === 'function') stored = result;
+      }
+    }
+    // The key stays leased until the token is stored, so whoever is waiting behind us
+    // reads the token rather than asking the host for a second one.
+    if (stored) {
+      void stored.then(
+        () => this.releaseAuthLease(),
+        () => this.releaseAuthLease(),
+      );
+    } else {
+      this.releaseAuthLease();
+    }
     this.hostInfo = info;
     this.reconnectDelayMs = RECONNECT_MIN_MS;
     this.lastPongAt = Date.now();
@@ -590,11 +778,19 @@ export class RelayConnection {
 
     const failure: RelayFailure =
       forcedFailure ??
-      (this.authErrorSeen ? 'unpaired' : undefined) ??
+      this.authFailure ??
       mapCloseCode(code) ??
       (this.currentState === 'connecting' ? 'relay-unreachable' : 'closed');
 
-    const error = new RelayError(failure, code);
+    const rejection = this.authRejection;
+    this.authRejection = undefined;
+    this.releaseAuthLease();
+
+    // `device-conflict` means this Mac already holds a token for our id: introduce
+    // ourselves under a fresh one, once. Nobody waiting is told anything yet.
+    if (rejection?.retryWithNewClientId && this.beginClientIdRetry()) return;
+
+    const error = new RelayError(failure, code, rejection?.message);
     this.failWaiters(error);
     this.failRequests(error);
 
@@ -604,14 +800,49 @@ export class RelayConnection {
     }
     this.setState('closed', failure);
 
-    // A rejected pairing key never fixes itself; everything else is worth retrying.
-    if (!this.autoReconnect || failure === 'unpaired') return;
+    // A rejected key or a released device never fixes itself; the rest is worth retrying.
+    if (!this.autoReconnect || isFinalFailure(failure)) return;
     const delay = this.reconnectDelayMs;
     this.reconnectDelayMs = Math.min(RECONNECT_MAX_MS, this.reconnectDelayMs * 2);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.connect();
     }, delay);
+  }
+
+  /**
+   * Starts the one retry a `device-conflict` earns. Answers false — and the caller then
+   * reports the failure as usual — when there is nothing to retry with: no minter, no
+   * pairing key to present the new id alongside, or one retry already spent.
+   */
+  private beginClientIdRetry(): boolean {
+    if (this.disposed || this.clientIdRetried) return false;
+    if (!this.mintClientId || !this.auth.pairingKey) return false;
+    this.clientIdRetried = true;
+    this.setState('connecting');
+    void this.mintClientId().then(
+      (clientId) => {
+        if (this.disposed) return;
+        if (!clientId) {
+          this.giveUp('device-conflict');
+          return;
+        }
+        this.auth = { ...this.auth, clientId };
+        this.connect();
+      },
+      () => {
+        if (!this.disposed) this.giveUp('device-conflict');
+      },
+    );
+    return true;
+  }
+
+  /** Ends a retry that could not even be started. */
+  private giveUp(failure: RelayFailure): void {
+    const error = new RelayError(failure);
+    this.failWaiters(error);
+    this.failRequests(error);
+    this.setState('closed', failure);
   }
 
   private failWaiters(error: Error): void {
@@ -633,6 +864,7 @@ export class RelayConnection {
     const socket = this.socket;
     this.socket = undefined;
     this.cipher = undefined;
+    this.releaseAuthLease();
     this.stopHeartbeat();
     if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);

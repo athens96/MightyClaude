@@ -8,8 +8,12 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileSession(id: String) async -> MobileSessionDetail?
     /// Returns what actually happened — "started", "steered" or "queued" — so
     /// the phone never shows a steer that silently became a queued item.
-    /// `mode` is already checked against `MobileWire.submitModes`.
-    func mobileSubmit(sessionId: String, text: String, mode: String?) async throws -> String
+    /// `mode` is already checked against `MobileWire.submitModes`, and the
+    /// uploads the phone named are already files the composer would accept.
+    func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String
+    /// Sends a guided style's prompt through the very same path, so `accepted`
+    /// means the same thing it does for `submit`.
+    func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String
     func mobileStop(sessionId: String) async throws
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
@@ -64,10 +68,27 @@ public actor MobileRemoteService {
     public static let maximumUnauthenticated = 4
     private var statusObserver: (@Sendable (MobileHostStatus) -> Void)?
     private let session: URLSession
+    private let uploads: MobileUploadStore
+    private let deviceRegistry: MobileDeviceRegistry
+    /// Which device each live connection authenticated as, so revoking one
+    /// phone can close exactly its sockets.
+    private var connectedDevices: [String: String] = [:]
+    /// How many requests may hold a submit's attachments in memory at once.
+    /// Eight phones asking for eight 5 MB files each would otherwise be
+    /// hundreds of megabytes of base64 alive at the same moment.
+    public static let concurrentAttachmentSubmits = 2
+    private var submitPermits = MobileRemoteService.concurrentAttachmentSubmits
+    private var submitWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Test seam: the two steps a revoke can fail at — rotating the key and
+    /// writing the list — are otherwise only reachable by breaking the
+    /// filesystem halfway through. Never set outside tests.
+    var keyRotationFailure: String?
 
     public init(dataDirectory: URL, hostName: String, appVersion: String = "0.1.0") {
         self.dataDirectory = dataDirectory; self.hostName = hostName; self.appVersion = appVersion
         hostId = Self.stableHostId(dataDirectory)
+        uploads = MobileUploadStore(directory: dataDirectory.appendingPathComponent("uploads", isDirectory: true))
+        deviceRegistry = MobileDeviceRegistry(url: dataDirectory.appendingPathComponent("devices.json"))
         let configuration = URLSessionConfiguration.ephemeral
         configuration.waitsForConnectivity = false
         configuration.timeoutIntervalForRequest = 30
@@ -75,6 +96,8 @@ public actor MobileRemoteService {
     }
 
     public func attach(_ delegate: MobileHostDelegate) { self.delegate = delegate }
+    /// Test seam; see `keyRotationFailure`.
+    func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
     public func observeStatus(_ observer: @escaping @Sendable (MobileHostStatus) -> Void) { statusObserver = observer }
 
@@ -103,6 +126,7 @@ public actor MobileRemoteService {
         return try regenerateKey()
     }
     public func regenerateKey() throws -> String {
+        if let keyRotationFailure { throw MightyError(keyRotationFailure) }
         guard let fresh = MobilePairing.generateKey() else { throw MightyError("연결 키를 생성하지 못했습니다.") }
         try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
@@ -112,10 +136,27 @@ public actor MobileRemoteService {
         else { try FileManager.default.moveItem(at: temporary, to: keyURL) }
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
         key = fresh
-        // Paired phones must re-pair: drop every live client.
-        for client in clients.values { Task { await client.close(reason: "pairing key rotated") } }
-        clients.removeAll(); unauthenticated.removeAll()
+        dropKeyDependentClients()
         return fresh
+    }
+
+    /// Closes every connection whose right to be here was the old pairing key:
+    /// handshakes still in flight and phones that authenticate with the key
+    /// each time ("구버전 앱"). A phone holding a device token never presents
+    /// the key, so rotating it must not interrupt that phone at all.
+    private func dropKeyDependentClients() {
+        let doomed = MobileAuthSupport.keyDependent(connections: Array(clients.keys), devices: connectedDevices, tokenHolders: deviceRegistry.tokenHolders())
+        close(connections: doomed, reason: "pairing key rotated")
+    }
+
+    /// Closes the named connections and forgets what they authenticated as.
+    private func close(connections: [String], reason: String) {
+        for connectionId in connections {
+            guard let client = clients.removeValue(forKey: connectionId) else { continue }
+            connectedDevices.removeValue(forKey: connectionId)
+            unauthenticated.remove(connectionId)
+            Task { await client.close(reason: reason) }
+        }
     }
     private func loadKeypair() throws -> RelayKeypair {
         if let keypair { return keypair }
@@ -130,7 +171,26 @@ public actor MobileRemoteService {
         let offer = (settings.enabled && relayConnected) ? offerIfAvailable() : nil
         return MobileHostStatus(enabled: settings.enabled, relayURL: settings.relayURL, relayConnected: relayConnected, clients: clients.count,
                                 serverId: hostId, publicKeyB64: (try? loadKeypair())?.publicKeyB64, key: offer?.pairingKey, pairingURL: offer?.url,
-                                hostName: hostName, detail: detail)
+                                hostName: hostName, detail: detail, devices: deviceRegistry.infos(connected: Set(connectedDevices.values)),
+                                registryWarning: deviceRegistry.warning())
+    }
+
+    /// Unpairs one phone. The order matters: the pairing key is rotated first,
+    /// so a phone reconnecting in the middle of a revoke finds the old QR dead
+    /// rather than a live key and a row still in the list. Only then does the
+    /// row go, its sockets close and its half-finished uploads with them.
+    /// Every other phone authenticates with its own token, which this does not
+    /// touch, so those connections are left alone.
+    @discardableResult public func revokeDevice(_ id: String) async throws -> MobileHostStatus {
+        guard deviceRegistry.contains(id) else { throw MightyError("이미 해제된 기기입니다.") }
+        // A rotation that fails leaves everything as it was, including the
+        // device: half a revoke would be reported as a whole one.
+        _ = try regenerateKey()
+        guard try deviceRegistry.remove(id) else { throw MightyError("이미 해제된 기기입니다.") }
+        close(connections: connectedDevices.filter { $0.value == id }.map(\.key), reason: "device revoked")
+        await uploads.discard(device: id)
+        publish()
+        return status()
     }
     private func offerIfAvailable() -> MobilePairingOffer? {
         guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let relay = RelayEndpoint.normalize(settings.relayURL) else { return nil }
@@ -141,9 +201,18 @@ public actor MobileRemoteService {
     public func apply(settings incoming: MobileRemoteSettings) async -> MobileHostStatus {
         let normalized = incoming.normalized
         let changed = normalized != settings
+        let relayChanged = normalized.enabled != settings.enabled || normalized.relayURL != settings.relayURL
+        let refusesLegacy = settings.allowLegacyPhones && !normalized.allowLegacyPhones
         settings = normalized
+        // The switch means "no phone without a token from now on", so the ones
+        // already in on the key alone go with it rather than staying until
+        // they happen to reconnect.
+        if refusesLegacy {
+            close(connections: connectedDevices.filter { $0.value == MobileDeviceRegistry.legacyId }.map(\.key), reason: "legacy phones refused")
+        }
         if settings.enabled, RelayEndpoint.normalize(settings.relayURL) != nil {
-            if changed || controlTask == nil { await start() }
+            if relayChanged || controlTask == nil { await start() }
+            else if changed { publish() }
         } else {
             await stop(reason: settings.enabled ? "릴레이 주소를 입력하면 연결합니다." : "모바일 리모트가 꺼져 있습니다.")
         }
@@ -179,7 +248,7 @@ public actor MobileRemoteService {
         generation += 1
         controlTask?.cancel(); controlTask = nil
         controlSocket?.cancel(with: .goingAway, reason: nil); controlSocket = nil
-        let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
+        let dropped = clients; clients.removeAll(); unauthenticated.removeAll(); connectedDevices.removeAll()
         for client in dropped.values { await client.close(reason: "host stopped") }
         relayConnected = false
         if !reason.isEmpty { detail = reason }
@@ -187,7 +256,9 @@ public actor MobileRemoteService {
         publish()
     }
 
-    public func shutdown() async { disposed = true; await stop(reason: "앱이 종료 중입니다.") }
+    /// Half-finished uploads are bytes nobody will ever claim, so the folder
+    /// goes with the host.
+    public func shutdown() async { disposed = true; await stop(reason: "앱이 종료 중입니다."); await uploads.shutdown() }
 
     /// Reconnects now when enabled but offline (settings sheet, network change).
     public func retryIfNeeded() async {
@@ -281,7 +352,8 @@ public actor MobileRemoteService {
         guard clients[connectionId] == nil, clients.count < Self.maximumClients, unauthenticated.count < Self.maximumUnauthenticated,
               let delegate, let keypair = try? loadKeypair(), let pairingKey = try? loadOrCreateKey(),
               let url = RelayEndpoint.socketURL(relay: settings.relayURL, serverId: hostId, role: "server", connectionId: connectionId) else { return }
-        let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair)
+        let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair,
+                                         devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones)
         let client = RelayClientConnection(id: connectionId, url: url, session: session, identity: identity, delegate: delegate, router: self)
         clients[connectionId] = client
         unauthenticated.insert(connectionId)
@@ -291,9 +363,14 @@ public actor MobileRemoteService {
         }
         publish()
     }
-    func authenticated(_ connectionId: String) { unauthenticated.remove(connectionId); publish() }
+    func authenticated(_ connectionId: String, deviceId: String) {
+        unauthenticated.remove(connectionId)
+        connectedDevices[connectionId] = deviceId
+        publish()
+    }
     private func forget(_ connectionId: String, generation current: Int) {
         unauthenticated.remove(connectionId)
+        connectedDevices.removeValue(forKey: connectionId)
         guard current == generation else { return }
         clients.removeValue(forKey: connectionId)
         publish()
@@ -339,8 +416,8 @@ public actor MobileRemoteService {
     private func errorReply(_ status: Int, _ message: String) -> MobileReply {
         MobileReply(status: status, body: (try? JSONSerialization.data(withJSONObject: ["protocol": 1, "error": String(message.prefix(1000))])) ?? Data("{}".utf8))
     }
-    private func decode<T: Decodable>(_ body: Data?, as type: T.Type) throws -> T {
-        guard let body, body.count <= Self.bodyLimit else { throw Failure(body == nil ? 400 : 413, body == nil ? "요청 본문이 필요합니다." : "요청이 너무 큽니다.") }
+    private func decode<T: Decodable>(_ body: Data?, as type: T.Type, limit: Int? = nil) throws -> T {
+        guard let body, body.count <= (limit ?? Self.bodyLimit) else { throw Failure(body == nil ? 400 : 413, body == nil ? "요청 본문이 필요합니다." : "요청이 너무 큽니다.") }
         do { return try JSONDecoder().decode(type, from: body) } catch { throw Failure(400, "요청 본문이 올바르지 않습니다.") }
     }
     private static func pollArguments(_ url: URLComponents) throws -> (since: Int, wait: TimeInterval) {
@@ -382,9 +459,42 @@ public actor MobileRemoteService {
         catch let failure as MightyError { throw Failure(409, failure.message) }
     }
 
+    /// The trimmed text a submit or a guided request may carry. Empty is a 400
+    /// unless the request brings files instead.
+    private static func requestText(_ raw: String, allowEmpty: Bool) throws -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.utf8.count <= MobileWire.maximumText else { throw Failure(400, "요청 내용은 32 KiB 이하여야 합니다.") }
+        guard allowEmpty || !text.isEmpty else { throw Failure(400, "요청 내용은 1자 이상이어야 합니다.") }
+        return text
+    }
+
+    /// The upload ids a submit may name: well-formed, few enough to be inside
+    /// the composer's own limit before a single byte is read back.
+    private static func uploadIds(_ raw: [String]?) throws -> [String] {
+        guard let raw, !raw.isEmpty else { return [] }
+        guard raw.count <= AttachmentSupport.maximumCount else { throw Failure(413, "첨부 파일은 요청당 최대 \(AttachmentSupport.maximumCount)개입니다.") }
+        guard raw.allSatisfy(CoreValidation.identifier) else { throw Failure(400, "첨부 식별자가 올바르지 않습니다.") }
+        return raw
+    }
+
+    /// Lets at most two requests hold a submit's materialised attachments at
+    /// once. A hand-rolled pair rather than a dependency: the actor already
+    /// serialises the bookkeeping, so the whole semaphore is these two calls.
+    private func acquireSubmitSlot() async {
+        if submitPermits > 0 { submitPermits -= 1; return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            submitWaiters.append(continuation)
+        }
+    }
+    private func releaseSubmitSlot() {
+        guard !submitWaiters.isEmpty else { submitPermits += 1; return }
+        submitWaiters.removeFirst().resume()
+    }
+
     /// Serves one m1 request. `path` carries the route and query, `body` the
-    /// JSON payload of a POST.
-    public func route(method: String, path: String, body: Data?) async -> MobileReply {
+    /// JSON payload of a POST. `deviceId` is the phone the connection proved
+    /// itself as; uploads belong to it and to no other.
+    public func route(method: String, path: String, body: Data?, deviceId: String) async -> MobileReply {
         do {
             guard let url = URLComponents(string: path), url.scheme == nil, url.host == nil else { throw Failure(400, "경로가 올바르지 않습니다.") }
             guard let delegate else { throw Failure(503, "앱이 준비되지 않았습니다.") }
@@ -443,11 +553,45 @@ public actor MobileRemoteService {
                 switch route[2] {
                 case "submit":
                     let request = try decode(body, as: MobileSubmitRequest.self)
-                    let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty, text.utf8.count <= 32_768 else { throw Failure(400, "요청 내용은 1자 이상 32 KiB 이하여야 합니다.") }
+                    let ids = try Self.uploadIds(request.attachments)
+                    let text = try Self.requestText(request.text, allowEmpty: !ids.isEmpty)
                     if let mode = request.mode, !MobileWire.submitModes.contains(mode) { throw Failure(400, "mode는 steer 또는 queue여야 합니다.") }
-                    let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode) }
-                    return reply(202, MobileSubmitResult(accepted: accepted))
+                    guard !ids.isEmpty else {
+                        let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode, attachments: []) }
+                        return reply(202, MobileSubmitResult(accepted: accepted))
+                    }
+                    // Reading the files back and holding them as base64 is the
+                    // one place a phone can make the host allocate megabytes,
+                    // so only a couple of requests are ever inside here.
+                    await acquireSubmitSlot()
+                    defer { releaseSubmitSlot() }
+                    let claimed = try await perform { try await uploads.attachments(ids: ids, sessionId: id, deviceId: deviceId) }
+                    do {
+                        let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode, attachments: claimed.attachments) }
+                        // Spent only now: a pane that refused the request leaves
+                        // the phone's uploads intact so it can simply send again.
+                        await uploads.spend(claimed.claim)
+                        return reply(202, MobileSubmitResult(accepted: accepted))
+                    } catch {
+                        await uploads.release(claimed.claim)
+                        throw error
+                    }
+                case "guided":
+                    let request = try decode(body, as: MobileGuidedRequest.self)
+                    guard MightyStyles.all.contains(request.style) else { throw Failure(400, "style은 ouroboros 또는 paperthin이어야 합니다.") }
+                    guard request.skill.utf8.count <= 64, request.skill.range(of: "^[a-z0-9][a-z0-9_-]*$", options: .regularExpression) != nil else {
+                        throw Failure(400, "skill 이름이 올바르지 않습니다.")
+                    }
+                    let text = try Self.requestText(request.text ?? "", allowEmpty: true)
+                    let done = try await perform { try await delegate.mobileGuided(sessionId: id, style: request.style, skill: request.skill, text: text) }
+                    return reply(202, MobileSubmitResult(accepted: done))
+                case "uploads":
+                    let request = try decode(body, as: MobileUploadRequest.self)
+                    // An upload belongs to the pane that asked for it; an
+                    // unknown pane is a 404 before a byte is reserved.
+                    guard await delegate.mobileSession(id: id) != nil else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
+                    let ticket = try await perform { try await uploads.begin(sessionId: id, deviceId: deviceId, name: request.name, size: request.size, mimeType: request.mimeType) }
+                    return reply(201, ticket)
                 case "stop":
                     do { try await delegate.mobileStop(sessionId: id) } catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileStopped())
@@ -470,6 +614,10 @@ public actor MobileRemoteService {
                     return reply(200, MobileOK())
                 case "close":
                     try await perform { try await delegate.mobileClose(sessionId: id) }
+                    // The pane is gone, so nothing can ever claim what it was
+                    // holding; the bytes go with it rather than waiting out the
+                    // expiry.
+                    await uploads.discard(sessionId: id)
                     return reply(200, MobileOK())
                 case "settings":
                     let request = try decode(body, as: MobileSettingsRequest.self)
@@ -481,6 +629,26 @@ public actor MobileRemoteService {
                     let message = try await perform { try await delegate.mobilePerformCommand(sessionId: id, action: request.action) }
                     return reply(200, MobileCommandResult(message: message))
                 default: break
+                }
+            }
+            if method == "POST", route.count >= 3, route[0] == "uploads", url.query == nil {
+                guard CoreValidation.identifier(route[1]) else { throw Failure(404, "업로드를 찾을 수 없습니다.") }
+                let uploadId = route[1]
+                if route.count == 4, route[2] == "chunks" {
+                    guard let index = Int(route[3]), route[3].range(of: "^[0-9]{1,6}$", options: .regularExpression) != nil else { throw Failure(400, "chunk 번호가 올바르지 않습니다.") }
+                    // This route alone carries a base64 chunk, so it has its own
+                    // body limit; the 64 KiB one would reject every full chunk.
+                    let request = try decode(body, as: MobileChunkRequest.self, limit: MobileUploadStore.chunkBodyLimit)
+                    guard let data = Data(base64Encoded: request.dataBase64), data.count <= MobileUploadStore.chunkSize else { throw Failure(400, "chunk 내용이 올바르지 않습니다.") }
+                    let received = try await perform { try await uploads.append(id: uploadId, deviceId: deviceId, index: index, data: data) }
+                    return reply(200, MobileChunkResult(received: received))
+                }
+                if route.count == 3, route[2] == "complete" {
+                    return reply(200, MobileUploadResult(attachment: try await perform { try await uploads.complete(id: uploadId, deviceId: deviceId) }))
+                }
+                if route.count == 3, route[2] == "cancel" {
+                    try await perform { try await uploads.cancel(id: uploadId, deviceId: deviceId) }
+                    return reply(200, MobileOK())
                 }
             }
             if method == "POST", route.count == 3, route[0] == "workspaces", route[2] == "sessions", url.query == nil {
@@ -504,6 +672,9 @@ struct RelayHostIdentity: Sendable {
     let appVersion: String
     let pairingKey: String
     let keypair: RelayKeypair
+    let devices: MobileDeviceRegistry
+    /// Whether an app that knows nothing about device tokens may still connect.
+    let allowLegacy: Bool
 }
 
 /// One phone: a relay data socket, the E2EE handshake, pairing-key check,
@@ -519,6 +690,12 @@ actor RelayClientConnection {
     private var socket: URLSessionWebSocketTask?
     private var cipher: RelayCipher?
     private var authenticated = false
+    /// The device this connection proved itself as; every upload it opens
+    /// belongs to that device and to no other.
+    private var deviceId = MobileDeviceRegistry.legacyId
+    /// A socket reads exactly one auth frame, so it can hand out at most one
+    /// device token. Asserted rather than assumed.
+    private var issuedToken = false
     private var inFlight = 0
     private var closed = false
     private var requestTasks: [String: Task<Void, Never>] = [:]
@@ -543,9 +720,9 @@ actor RelayClientConnection {
         }
         do {
             try await handshake(socket)
-            guard try await authenticate(socket) else { deadline.cancel(); await close(reason: "unauthorized"); return }
+            guard let device = try await authenticate(socket) else { deadline.cancel(); await close(reason: "unauthorized"); return }
             deadline.cancel()
-            await router?.authenticated(id)
+            await router?.authenticated(id, deviceId: device)
             let keepalive = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(20))
@@ -572,7 +749,8 @@ actor RelayClientConnection {
                 requestTasks[taskId] = Task { [weak self] in
                     guard let self else { return }
                     let reply: MobileReply
-                    if let router = await self.router { reply = await router.route(method: method, path: path, body: body) }
+                    let device = await self.deviceId
+                    if let router = await self.router { reply = await router.route(method: method, path: path, body: body, deviceId: device) }
                     else { reply = MobileReply(status: 503, body: Data(#"{"protocol":1,"error":"앱이 준비되지 않았습니다."}"#.utf8)) }
                     await self.finish(taskId: taskId, requestId: requestId, reply: reply)
                 }
@@ -604,19 +782,38 @@ actor RelayClientConnection {
         try await socket.send(.string(String(decoding: ready, as: UTF8.self)))
     }
 
-    private func authenticate(_ socket: URLSessionWebSocketTask) async throws -> Bool {
+    /// The auth frame of docs/relay.md, with the device-token fields. Returns
+    /// the device id the connection belongs to, or nil when it was refused.
+    /// Nothing here reaches a log: the key, the token and their hashes stay in
+    /// this function and the registry.
+    private func authenticate(_ socket: URLSessionWebSocketTask) async throws -> String? {
         let message = try await socket.receive()
-        guard case .data(let frame) = message else { return false }
+        guard case .data(let frame) = message else { return nil }
         let plaintext = try openFrame(frame)
-        guard let object = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
-              object["type"] as? String == "auth", let presented = object["pairingKey"] as? String, presented.utf8.count <= 256 else {
-            send(["type": "auth_error", "reason": "malformed"]); await flush(); return false
+        let object = (try? JSONSerialization.jsonObject(with: plaintext)) as? [String: Any] ?? [:]
+        switch MobileAuthSupport.decide(frame: object, pairingKey: identity.pairingKey, devices: identity.devices, allowLegacy: identity.allowLegacy) {
+        case .refused(let reason): return await refuse(reason)
+        case .token(let device): return accept(device: device, token: nil)
+        case .paired(let device, let token): return accept(device: device, token: token)
+        case .legacy: return accept(device: MobileDeviceRegistry.legacyId, token: nil)
         }
-        let left = Data(SHA256.hash(data: Data(presented.utf8))), right = Data(SHA256.hash(data: Data(identity.pairingKey.utf8)))
-        guard left == right else { send(["type": "auth_error", "reason": "pairing-key"]); await flush(); return false }
+    }
+
+    private func refuse(_ reason: String) async -> String? {
+        send(["type": "auth_error", "reason": reason]); await flush(); return nil
+    }
+
+    private func accept(device: String, token: String?) -> String {
         authenticated = true
-        send(["type": "auth_ok", "hostName": identity.hostName, "hostId": identity.hostId, "appVersion": identity.appVersion])
-        return true
+        deviceId = device
+        var frame: [String: Any] = ["type": "auth_ok", "hostName": identity.hostName, "hostId": identity.hostId, "appVersion": identity.appVersion]
+        if let token {
+            assert(!issuedToken, "one device token per socket")
+            issuedToken = true
+            frame["deviceToken"] = token
+        }
+        send(frame)
+        return device
     }
 
     private func openFrame(_ frame: Data) throws -> Data {

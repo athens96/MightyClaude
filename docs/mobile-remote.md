@@ -100,14 +100,14 @@ MobilePermission {
 | GET | `/m1/sessions/{id}/commands` | | `{ protocol, commands: [MobileCommand] }` |
 | POST | `/m1/sessions/{id}/command` | `{ action }` (`clear` `usage` `help`만) | `{ protocol, ok, message? }` — `usage`·`help`는 `message`에 본문 |
 | POST | `/m1/sessions/{id}/guided` | `{ style: "ouroboros" \| "paperthin", skill, text? }` | 202 `{ protocol, accepted }` — 호스트가 Mac과 같은 함수로 프롬프트를 만든다(`/ouroboros:seed`, `/re0 docs/spec.md`). 모르는 스킬 400, 그 스타일이 아닌 창 409 |
-| POST | `/m1/sessions/{id}/uploads` | `{ name, size, mimeType? }` | 201 `{ protocol, uploadId, chunkSize }` · 한도 초과 413 |
+| POST | `/m1/sessions/{id}/uploads` | `{ name, size, mimeType? }` | 201 `{ protocol, uploadId, chunkSize }` · 크기·개수 한도 초과 413 · 열어 둔 업로드가 너무 많으면 429(실행 창당 16개, 호스트 전체 64개) |
 | POST | `/m1/uploads/{uploadId}/chunks/{index}` | `{ dataBase64 }` | `{ protocol, ok, received }` — 순서대로 0부터. 이 라우트만 본문 한도 300 KiB |
 | POST | `/m1/uploads/{uploadId}/complete` | | `{ protocol, attachment: { id, name, size } }` · 크기가 선언과 다르면 400 |
 | POST | `/m1/uploads/{uploadId}/cancel` | | `{ protocol, ok }` |
 
 `POST /m1/workspaces/{id}/sessions`는 **로컬** 워크스페이스에서 `kind: "shell"`을 409로 거절한다(휴대폰에서 쓸 수 없는 창이 되기 때문).
 
-첨부 한도는 Mac과 같다: 요청당 파일 8개, 개당 5 MB, 합계 8 MB. `chunkSize`는 196 608바이트(192 KiB). 끝내지 않은 업로드는 10분 뒤 지운다. `submit`의 `attachments`는 `complete`를 마친 `uploadId`만 받고, 한 번 쓰면 사라진다.
+첨부 한도는 Mac과 같다: 요청당 파일 8개, 개당 5 MB, 합계 8 MB. `chunkSize`는 196 608바이트(192 KiB). 끝내지 않은 업로드는 10분 뒤 지운다. `submit`의 `attachments`는 `complete`를 마친, **같은 실행 창·같은 기기**의 `uploadId`만 받고(아니면 400), 한 번 쓰면 사라진다. 같은 업로드를 두 요청이 동시에 쓰면 하나만 성공한다. 전송이 실패하면 업로드는 그대로 남으므로 휴대폰이 `cancel`로 정리한다. 다른 기기의 `uploadId`로 `chunks`·`complete`·`cancel`을 부르면 404다. 실행 창을 닫거나 기기를 해제하면 그 업로드는 바로 지운다. 파일 이름은 경로·앞쪽 점·제어 문자·보이지 않는 방향 제어 문자를 없앤 120자 이내의 이름만 남긴다. 첨부가 있는 요청은 조정(steer)되지 않는다.
 
 ### 추가 필드
 
@@ -135,7 +135,8 @@ MobileMighty {
                 domains: [{ id, title, axis, question, skills: [{ name, emoji, summary, scope, userInvoked, readOnly }] }],
                 casebook?: { name, weight: "full" | "lightweight", files: [string] } }
 }
-MobileBlock { id, kind, title, status, summary?, output?, durationMs? }   // output은 2 000자까지
+MobileBlock { id, kind, title, status, summary?, output?, durationMs? }   // output은 2 000자까지. durationMs는 끝난 블록만(첫 기록~마지막 기록)
+                                             // 호스트는 요청당 블록 수를 제한하지 않는다. 휴대폰은 최근 200개만 그리고 나머지는 "이전 블록 N개 생략"으로 표시한다.
 ```
 
 `activity.durationMs`와 `activity.provider`는 이미 전송되고 있다(도구 소요 시간 표시에 쓴다).
@@ -146,14 +147,19 @@ MobileBlock { id, kind, title, status, summary?, output?, durationMs? }   // out
 
 ### 기기 관리
 
-휴대폰은 처음 페어링할 때 페어링 키로 인증하고, 호스트가 발급한 **기기 토큰**을 보안 저장소에 넣은 뒤부터는 토큰으로 인증한다. 자세한 프레임은 [relay.md](relay.md)의 "기기 토큰" 절을 따른다. Mac 설정의 **모바일 리모트**에 기기 목록(이름, 처음·마지막 접속)이 나오고, 한 대를 해제하면 그 기기의 토큰이 무효가 되어 즉시 끊기며 페어링 키도 새로 만들어진다(해제된 휴대폰이 옛 QR로 다시 페어링하지 못하게). 다른 기기는 토큰으로 계속 접속한다. 토큰을 모르는 구버전 앱은 페어링 키로만 인증하므로 "구버전 앱"으로 묶여 보이고, 키가 바뀌면 다시 페어링해야 한다.
+휴대폰은 처음 페어링할 때 페어링 키로 인증하고, 호스트가 발급한 **기기 토큰**을 보안 저장소에 넣은 뒤부터는 토큰으로 인증한다. 프레임·거절 사유·등록 제한은 [relay.md](relay.md)의 "기기 토큰" 절을 따른다. Mac 설정의 **모바일 리모트**에 기기 목록이 나오고, 한 대를 해제하면 페어링 키가 먼저 새로 만들어진 뒤 그 기기의 토큰이 무효가 되어 즉시 끊긴다(해제된 휴대폰이 옛 QR로 다시 페어링하지 못하게). 토큰을 받은 다른 기기는 그대로 접속한다. 토큰을 모르는 구버전 앱은 페어링 키로만 인증하므로 "구버전 앱"으로 묶여 보이고, 키가 바뀌면 다시 페어링해야 한다. 기기 토큰은 관리 기능이지 QR 유출에 대한 방어가 아니다.
+
+`guided`의 `text`는 두 스타일 모두 줄바꿈을 공백으로 접어 한 줄로 보낸다.
 
 ## 데스크톱 구현
 
 - `MightyCore/Remote/RelayChannel.swift`: X25519·HKDF·ChaCha20-Poly1305 채널, 호스트 키쌍 파일, 페어링 오퍼.
 - `MightyCore/Remote/MobileRemoteService.swift`: 릴레이 제어 소켓과 재접속, 휴대폰별 데이터 소켓(핸드셰이크·인증·요청 처리), m1 라우팅, 리비전 대기·알림. 페어링 키는 `<데이터 폴더>/mobile-remote/mobile-remote.key`, 키쌍은 `relay-keypair.json`(모두 소유자만 읽기).
 - `MightyClaude/AppStore+MobileRemote.swift`: 스냅샷·권한·대기열 변화를 리비전으로 바꾸고 명령을 실제 창에 적용하는 브리지.
-- 설정 화면의 **모바일 리모트** 절: 스위치, 릴레이 주소, 연결 상태, QR 코드, 키 다시 만들기.
+- 설정 화면의 **모바일 리모트** 절: 스위치, 릴레이 주소, 연결 상태, QR 코드, 키 다시 만들기, 구버전 앱 허용 스위치, 페어링된 기기 목록(이름·처음/마지막 접속·연결 중·새 기기 표시)과 기기별 해제.
+- `MightyCore/Remote/MobileRemoteSupport.swift`: 확장의 순수 규칙(이름·페이지·설정 검증, 상태줄·사용량 변환, 명령 매핑, 마이티 블록 투영과 리비전 요약, 안내형 프롬프트).
+- `MightyCore/Remote/MobileUploadStore.swift`: 첨부 업로드 저장소(0700 폴더·0600 파일, 순서·크기 검증, 기기·실행 창 범위, 단일 사용, 10분 만료).
+- `MightyCore/Remote/MobileDeviceRegistry.swift`: 기기 토큰 등록부와 인증 판정(`devices.json`).
 
 ## 모바일 앱
 

@@ -15,6 +15,23 @@ export const ENTRY_PAGE_SIZE = 50;
 /** Most `statusLine` lines the host may send. */
 export const MAX_STATUS_LINES = 6;
 
+/** Longest `output` the contract lets a Mighty block carry. */
+export const MAX_BLOCK_OUTPUT = 2000;
+
+/** Attachment limits, the same numbers the Mac enforces. */
+export const MAX_ATTACHMENTS = 8;
+export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const MAX_ATTACHMENTS_TOTAL_BYTES = 8 * 1024 * 1024;
+/** `chunkSize` the host announces today; used when an answer leaves it out. */
+export const DEFAULT_CHUNK_SIZE = 196_608;
+/** Body limit of the chunk route alone. */
+export const MAX_CHUNK_BODY_BYTES = 300 * 1024;
+/**
+ * Largest chunk whose base64 still fits `MAX_CHUNK_BODY_BYTES`: base64 grows three
+ * bytes into four, so `4 * ceil(n / 3) <= 307200` gives `n <= 230400`.
+ */
+export const MAX_CHUNK_BYTES = 230_400;
+
 export type SessionKind = 'claude' | 'shell';
 export type Provider = 'claude' | 'codex' | 'gemini';
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
@@ -24,6 +41,10 @@ export type SubmitMode = 'steer' | 'queue';
 export type AgentViewMode = 'plain' | 'mighty';
 export type MightyStyle = 'cli' | 'ouroboros' | 'paperthin';
 export type CommandSource = 'app' | 'builtin' | 'project' | 'user' | 'plugin';
+/** The two Mighty styles that drive the pane through `/guided`; `cli` has no panel. */
+export type GuidedStyle = 'ouroboros' | 'paperthin';
+export type MightyBlockKind = 'main' | 'agent' | 'task' | 'steer' | 'compact' | 'question';
+export type MightyBlockStatus = 'running' | 'waiting' | 'completed' | 'error' | 'stopped';
 export type CommandAction = 'model' | 'permission' | 'clear' | 'usage' | 'help' | 'rename';
 /** The command actions the host runs through `POST /command`. */
 export type MessageCommandAction = 'clear' | 'usage' | 'help';
@@ -212,6 +233,121 @@ export interface RateLimit {
   resetsAt?: string;
 }
 
+/**
+ * One block of a Mighty run. `kind` and `status` stay plain strings: the contract fixes
+ * the words the host uses today, and a word it adds later must render neutrally instead
+ * of being forced into one we know.
+ */
+export interface MobileBlock {
+  id: string;
+  kind: string;
+  title: string;
+  status: string;
+  summary?: string;
+  /** Up to `MAX_BLOCK_OUTPUT` characters. */
+  output?: string;
+  durationMs?: number;
+}
+
+export interface MobileMightyRun {
+  id: string;
+  /** What was asked; shown as a one-line preview. */
+  input: string;
+  title?: string;
+  status: string;
+  blocks: MobileBlock[];
+  /** Older blocks the phone dropped to keep the list drawable; absent when none were. */
+  omittedBlocks?: number;
+}
+
+/** One Ouroboros skill the host offers as a button. */
+export interface OuroborosAction {
+  skill: string;
+  title: string;
+  help: string;
+}
+
+export interface MobileOuroboros {
+  /** Phase id (`goal`, `interview`, …); an unknown one is shown as it arrived. */
+  phase: string;
+  /** False while a prerequisite (plugin, uvx) is missing on the Mac. */
+  ready: boolean;
+  /** Skills whose prompt carries what the user typed; the rest go out bare. */
+  takesText: string[];
+  next: OuroborosAction[];
+  all: OuroborosAction[];
+}
+
+export interface PaperthinSkill {
+  name: string;
+  emoji: string;
+  summary: string;
+  scope: string;
+  /** Only a human may fire it. */
+  userInvoked: boolean;
+  readOnly: boolean;
+}
+
+export interface PaperthinDomain {
+  id: string;
+  title: string;
+  /** Where the domain sits on the 2×2 map. */
+  axis: string;
+  question: string;
+  skills: PaperthinSkill[];
+}
+
+export interface PaperthinCasebook {
+  name: string;
+  weight: string;
+  files: string[];
+}
+
+export interface MobilePaperthin {
+  installed: boolean;
+  recommended?: string;
+  domains: PaperthinDomain[];
+  casebook?: PaperthinCasebook;
+}
+
+export interface MobileMighty {
+  style: string;
+  /** The last 20 requests, oldest first. */
+  runs: MobileMightyRun[];
+  ouroboros?: MobileOuroboros;
+  paperthin?: MobilePaperthin;
+}
+
+/** Body of `POST /guided`; `text` is left out when the skill takes none. */
+export interface GuidedRequest {
+  style: GuidedStyle;
+  skill: string;
+  text?: string;
+}
+
+export interface UploadTicket {
+  protocol: number;
+  uploadId: string;
+  chunkSize: number;
+}
+
+export interface ChunkReceipt {
+  protocol: number;
+  ok: boolean;
+  received: number;
+}
+
+export interface UploadAttachment {
+  id: string;
+  name: string;
+  size: number;
+}
+
+export interface CompletedUpload {
+  protocol: number;
+  attachment: UploadAttachment;
+}
+
 export interface MobileSessionDetail {
   protocol: number;
   revision: number;
@@ -224,6 +360,8 @@ export interface MobileSessionDetail {
   /** True when entries older than the first one are still on the host. */
   hasOlder?: boolean;
   settings?: MobileSettings;
+  /** Present only on a pane in Mighty view, on a host that advertised "mighty". */
+  mighty?: MobileMighty;
   statusLine?: StatusLine;
   rateLimits?: RateLimit[];
 }
@@ -271,7 +409,7 @@ export interface SettingsPatch {
 
 export interface SubmitOptions {
   mode?: SubmitMode;
-  /** Completed upload ids; unused until attachments ship. */
+  /** Upload ids that finished `/complete`; each may be used once. */
   attachments?: string[];
 }
 

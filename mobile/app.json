@@ -9,12 +9,13 @@
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0d0d0f",
     "ios": {
+      "bundleIdentifier": "dev.mightyclaude.mobile",
+      "buildNumber": "1",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "호스트 페어링 QR 코드를 스캔하기 위해 카메라를 사용합니다.",
         "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true,
-          "NSAllowsArbitraryLoads": true
+          "NSAllowsLocalNetworking": true
         }
       }
     },
@@ -45,6 +46,15 @@
           "recordAudioAndroid": false
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": false,
+          "cameraPermission": "호스트 페어링 QR 코드를 스캔하기 위해 카메라를 사용합니다.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-document-picker",
       [
         "expo-splash-screen",
         {

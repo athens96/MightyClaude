@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { acquireHostClient, type MobileClient } from '@/api/client';
+import { acquireHostClient, type HostCredentials, type MobileClient } from '@/api/client';
 import type { Capability, MobileCommand, MobileSessionDetail, MobileState } from '@/api/types';
 import { KEY_SEPARATOR } from '@/lib/keys';
 import { mergeSessionDetail, mergeState } from '@/lib/merge';
-import { useHostsStore } from '@/store/hosts';
+import { hostLeaseOptions, useHostsStore } from '@/store/hosts';
 
 function detailKey(hostId: string, sessionId: string): string {
   return `${hostId}${KEY_SEPARATOR}${sessionId}`;
@@ -110,19 +110,31 @@ export function useHostClient(hostId: string | undefined): MobileClient | undefi
     (state) => state.hosts.find((entry) => entry.id === hostId)?.hostPublicKeyB64,
   );
   const pairingKey = useHostsStore((state) => (hostId ? state.keys[hostId] : undefined));
+  const deviceToken = useHostsStore((state) => (hostId ? state.tokens[hostId] : undefined));
+  // A host that once answered `device-conflict` has its own id; everyone else shares one.
+  const clientId = useHostsStore((state) =>
+    hostId ? (state.clientIds[hostId] ?? state.clientId) : state.clientId,
+  );
   const [client, setClient] = useState<MobileClient | undefined>(undefined);
 
   const credentials = useMemo(() => {
-    if (!serverId || !relayUrl || !hostPublicKeyB64 || pairingKey === undefined) return undefined;
-    return { serverId, relayUrl, hostPublicKeyB64, pairingKey };
-  }, [serverId, relayUrl, hostPublicKeyB64, pairingKey]);
+    if (!serverId || !relayUrl || !hostPublicKeyB64) return undefined;
+    if (deviceToken === undefined && pairingKey === undefined) return undefined;
+    const value: HostCredentials = { serverId, relayUrl, hostPublicKeyB64 };
+    if (clientId) value.clientId = clientId;
+    if (deviceToken) value.deviceToken = deviceToken;
+    else if (pairingKey) value.pairingKey = pairingKey;
+    return value;
+  }, [serverId, relayUrl, hostPublicKeyB64, pairingKey, deviceToken, clientId]);
 
   useEffect(() => {
     if (!hostId || !credentials) {
       setClient(undefined);
       return undefined;
     }
-    const lease = acquireHostClient(hostId, credentials);
+    // The host hands the token out once and only lets one connection ask for it, so the
+    // gate, the token sink and the `device-conflict` answer all come from the store.
+    const lease = acquireHostClient(hostId, credentials, hostLeaseOptions(hostId));
     setClient(lease.client);
     return () => {
       lease.release();
