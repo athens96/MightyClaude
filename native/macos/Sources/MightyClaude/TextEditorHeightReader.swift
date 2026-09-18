@@ -7,7 +7,8 @@ struct TextEditorHeightReader: NSViewRepresentable {
     let text: String
     @Binding var height: CGFloat
     let canSubmit: Bool
-    let onSubmit: () -> Void
+    /// Called with `true` when ⌘ was held with Return.
+    let onSubmit: (Bool) -> Void
     /// Returns true when the palette consumed the key (arrows, Tab, Esc,
     /// Return while a completion is highlighted).
     var onNavigationKey: ((ComposerNavigationKey) -> Bool)?
@@ -30,7 +31,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
 
     final class HeightProbe: NSView {
         var onHeightChange: ((CGFloat) -> Void)?
-        var onSubmit: (() -> Void)?
+        var onSubmit: ((Bool) -> Void)?
         var onNavigationKey: ((ComposerNavigationKey) -> Bool)?
         var canSubmit = false
         var placeholder = "" { didSet { synchronizePlaceholder() } }
@@ -141,7 +142,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
             }
             guard event.keyCode == 36 || event.keyCode == 76 else { return event }
             guard modifiers.isEmpty || modifiers == .command else { return event }
-            if canSubmit, !event.isARepeat { onSubmit?() }
+            if canSubmit, !event.isARepeat { onSubmit?(modifiers == .command) }
             // Disabled sends are consumed too: Enter must not submit, insert an
             // unexpected newline, or fall through to another pane's shortcut.
             return nil
