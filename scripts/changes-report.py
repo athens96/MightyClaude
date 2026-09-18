@@ -25,16 +25,20 @@ def git(*args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--title", required=True); parser.add_argument("--base", required=True); parser.add_argument("--out", required=True)
+    parser.add_argument("--head", help="compare committed changes base..head instead of the working tree")
     parser.add_argument("paths", nargs="*")
     args = parser.parse_args()
     base_files = set(git("ls-tree", "-r", "--name-only", args.base).split("\n"))
-    changed = [line[3:] for line in git("status", "--short", "--untracked-files=all", "--", *args.paths).split("\n") if line.strip()]
+    if args.head:
+        changed = [line.split("\t")[-1] for line in git("diff", "--name-status", args.base, args.head, "--", *args.paths).split("\n") if line.strip()]
+    else:
+        changed = [line[3:] for line in git("status", "--short", "--untracked-files=all", "--", *args.paths).split("\n") if line.strip()]
     changed = sorted({p.split(" -> ")[-1] for p in changed if not p.endswith("/")})
     sections, rows = [], []
     for path in changed:
         if not os.path.isfile(path): continue
         if path in base_files:
-            diff = git("diff", args.base, "--", path)
+            diff = git("diff", args.base, args.head, "--", path) if args.head else git("diff", args.base, "--", path)
             if not diff.strip(): continue
             body = []
             for line in diff.split("\n"):
@@ -45,7 +49,7 @@ def main():
             rows.append(f'<tr><td>수정</td><td><a href="#{html.escape(path)}">{html.escape(path)}</a></td><td><span class="add">+{added}</span> <span class="del">−{removed}</span></td></tr>')
             sections.append(f'<details id="{html.escape(path)}" open><summary>수정 · {html.escape(path)}</summary><pre>{chr(10).join(body)}</pre></details>')
         else:
-            with open(path, encoding="utf-8", errors="replace") as handle: text = handle.read()
+            text = git("show", f"{args.head}:{path}") if args.head else open(path, encoding="utf-8", errors="replace").read()
             rows.append(f'<tr><td class="new">새 파일</td><td><a href="#{html.escape(path)}">{html.escape(path)}</a></td><td>{text.count(chr(10))}줄</td></tr>')
             sections.append(f'<details id="{html.escape(path)}"><summary>새 파일 · {html.escape(path)}</summary><pre>{html.escape(text)}</pre></details>')
     page = (f'<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>변경된 소스 · {html.escape(args.title)}</title><style>{CSS}</style></head><body>'
