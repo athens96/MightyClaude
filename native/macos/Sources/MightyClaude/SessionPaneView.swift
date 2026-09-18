@@ -57,6 +57,13 @@ struct SessionPaneView: View {
     }
     private var paletteVisible: Bool { !paletteCommands.isEmpty }
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
+    /// Present when a `statusLine` command produced something, or a
+    /// workspace-level command is waiting to be allowed.
+    private var statusLine: AppStore.StatusLineState? {
+        guard let state = store.statusLines[session.id] else { return nil }
+        let hasOutput = state.config != nil && (state.result?.lines.isEmpty == false || state.result?.error != nil)
+        return hasOutput || state.untrusted != nil ? state : nil
+    }
     private var settingsPopover: Binding<RunSession?> {
         Binding(get: { store.settingsSession?.id == session.id ? store.settingsSession : nil }, set: { value in
             if let value { store.settingsSession = value }
@@ -378,7 +385,11 @@ struct SessionPaneView: View {
                 .accessibilityElement(children: .combine).accessibilityIdentifier("run-blocked-\(session.id)")
             }
             composerToolbar
-            .padding(.horizontal, 10).padding(.bottom, 10)
+            .padding(.horizontal, 10).padding(.bottom, statusLine == nil ? 10 : 4)
+            if let statusLine {
+                StatusLineView(sessionID: session.id, state: statusLine, padding: statusLine.config?.padding ?? 0,
+                               onTrust: { store.trustStatusLine($0, sessionID: session.id) }, onDismiss: { store.dismissUntrustedStatusLine(sessionID: session.id) })
+            }
         }
         .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 15))
         .overlay { RoundedRectangle(cornerRadius: 15).stroke(attachmentDropTargeted || composerFocused ? Palette.accent.opacity(0.8) : Palette.border, lineWidth: attachmentDropTargeted || composerFocused ? 1.25 : 1).allowsHitTesting(false) }
@@ -387,6 +398,20 @@ struct SessionPaneView: View {
             return !providers.isEmpty
         }
         .padding(12)
+        // The status line follows the CLI's cadence loosely: on every state
+        // change, plus a slow tick so elapsed time and repo info stay fresh.
+        .task(id: session.id) {
+            let id = session.id
+            while !Task.isCancelled {
+                store.refreshStatusLine(sessionID: id)
+                let busy = store.snapshot.sessions.first { $0.id == id }?.status == "running"
+                try? await Task.sleep(for: .seconds(busy ? 10 : 60))
+            }
+        }
+        .onChange(of: session.status) { _, _ in store.refreshStatusLine(sessionID: session.id) }
+        .onChange(of: session.sessionUsage) { _, _ in store.refreshStatusLine(sessionID: session.id) }
+        .onChange(of: session.resumeId) { _, _ in store.refreshStatusLine(sessionID: session.id) }
+        .onChange(of: session.model) { _, _ in store.refreshStatusLine(sessionID: session.id) }
     }
 
     private var composerToolbar: some View {
