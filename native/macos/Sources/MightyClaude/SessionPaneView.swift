@@ -59,6 +59,23 @@ struct SessionPaneView: View {
     private var queued: [QueuedInput] { store.queuedInputs[session.id] ?? [] }
     /// Present when a `statusLine` command produced something, or a
     /// workspace-level command is waiting to be allowed.
+    /// Local Claude panes can show Claude's `statusLine`; the button flips
+    /// the same preference as Settings › 화면 for every pane at once.
+    private var showsStatusLineToggle: Bool {
+        session.kind == "claude" && session.provider == "claude" && !remoteCommand
+            && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+    }
+    private var statusLineToggle: some View {
+        let on = store.statusLineEnabled
+        return Button { store.statusLineEnabled.toggle() } label: {
+            Image(systemName: on ? "rectangle.bottomthird.inset.filled" : "rectangle").font(.system(size: 12)).frame(width: 16, height: 32)
+                .foregroundStyle(on ? Palette.accent : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(on ? "상태 줄 숨기기 · settings.json의 statusLine 출력을 입력창 아래에 보여주는 중" : "상태 줄 보이기 · settings.json의 statusLine 출력을 입력창 아래에 표시")
+        .accessibilityLabel("상태 줄").accessibilityValue(on ? "켜짐" : "꺼짐")
+        .accessibilityIdentifier("status-line-toggle-\(session.id)")
+    }
     private var statusLine: AppStore.StatusLineState? {
         guard let state = store.statusLines[session.id] else { return nil }
         let hasOutput = state.config != nil && (state.result?.lines.isEmpty == false || state.result?.error != nil)
@@ -443,6 +460,7 @@ struct SessionPaneView: View {
                         Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(.secondary).help("이전 대화를 이어갑니다.").accessibilityLabel("대화 이어짐")
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
+                    if showsStatusLineToggle { statusLineToggle }
                     if running {
                         // With text waiting, stop shrinks beside the send button
                         // so Enter and the arrow keep meaning "send".
