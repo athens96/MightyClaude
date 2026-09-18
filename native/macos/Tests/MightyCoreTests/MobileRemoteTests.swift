@@ -17,6 +17,8 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     var steerEffect = SubmitOutcome.steered
     /// The pane's view mode; guided styles exist only inside Mighty view.
     var viewMode = MobileWire.plainViewMode
+    /// The guided style this pane is in; a `guided` request for another one 409s.
+    var paneStyle = OuroborosFlow.style
     /// Non-nil when the pane cannot run at all (CLI updating, no connection).
     var blockedReason: String?
     /// Twelve saved entries, so paging has something to walk back through.
@@ -44,16 +46,40 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         return MobileSessionDetail(revision: sessionRevision, session: summary(), entries: [LogEntry(id: "entry-1", kind: "assistant", text: "안녕하세요")],
                                    permissions: [MobilePermission(request: request)], queued: [MobileQueuedItem(id: "q1", text: "next")], usage: MobileUsage(contextPercent: 12.5), elapsedSeconds: 3)
     }
-    func mobileSubmit(sessionId: String, text: String, mode: String?) async throws -> String {
-        lock.lock(); defer { lock.unlock() }
+    /// How long the pane takes to accept a submit, so two requests naming the
+    /// same upload can be made to overlap on purpose.
+    var submitDelayMilliseconds = 0
+    /// The most submits that were ever inside the pane at once.
+    private var liveSubmits = 0
+    var peakSubmits = 0
+    func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String {
+        lock.lock()
+        let delay = submitDelayMilliseconds
+        liveSubmits += 1; peakSubmits = max(peakSubmits, liveSubmits)
+        lock.unlock()
+        if delay > 0 { try? await Task.sleep(for: .milliseconds(delay)) }
+        lock.lock(); defer { liveSubmits -= 1; lock.unlock() }
         if failSubmit { throw MightyError("실행 준비가 필요합니다.") }
-        commands.append("submit:\(sessionId):\(text)")
+        let files = attachments.map(\.name).joined(separator: ",")
+        commands.append("submit:\(sessionId):\(text)" + (files.isEmpty ? "" : ":" + files))
         // Idle: `mode` only means "do not steer", and nothing would drain a
         // queue here, so the run starts either way.
         var effect = SubmitOutcome.started
-        if running { effect = mode == "queue" ? .queued : steerEffect }
+        // Files cannot ride a steer, so a busy pane queues them however the
+        // phone asked — the same rule the store applies.
+        if running { effect = (mode == "queue" || !attachments.isEmpty) ? .queued : steerEffect }
         guard let accepted = effect.accepted else { throw MobileHostError.conflict(MobileRemoteSupport.droppedMessage) }
         return accepted
+    }
+    func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        try known(sessionId)
+        guard style == paneStyle else { throw MobileHostError.conflict("이 실행 창은 \(style) 스타일이 아닙니다.") }
+        guard let prompt = MobileMightySupport.guidedPrompt(style: style, skill: skill, text: text) else {
+            throw MobileHostError.badRequest("이 스타일에 없는 스킬입니다.")
+        }
+        commands.append("guided:\(prompt)")
+        return running ? "queued" : "started"
     }
     func mobileStop(sessionId: String) async throws { lock.lock(); commands.append("stop:\(sessionId)"); lock.unlock() }
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws { lock.lock(); commands.append("perm:\(requestId):\(runId):\(allow)"); lock.unlock() }
@@ -127,9 +153,15 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
 }
 
 struct MobileRemoteTests {
-    private func call(_ service: MobileRemoteService, _ method: String, _ path: String, body: [String: Any]? = nil) async throws -> (Int, [String: Any]) {
+    /// The device a routed request arrives as. Uploads belong to it, so the
+    /// tests that cross devices name a second one explicitly.
+    private static let phone = "cGhvbmUtb25lLTAwMDAwMDA"
+    private static let other = "cGhvbmUtdHdvLTAwMDAwMDA"
+
+    private func call(_ service: MobileRemoteService, _ method: String, _ path: String, body: [String: Any]? = nil,
+                      device: String = MobileRemoteTests.phone) async throws -> (Int, [String: Any]) {
         let data = try body.map { try JSONSerialization.data(withJSONObject: $0) }
-        let reply = await service.route(method: method, path: path, body: data)
+        let reply = await service.route(method: method, path: path, body: data, deviceId: device)
         let object = (try? JSONSerialization.jsonObject(with: reply.body) as? [String: Any]) ?? [:]
         return (reply.status, object)
     }
@@ -200,8 +232,124 @@ struct MobileRemoteTests {
         // The set, not the order: the phone looks names up, it does not index.
         let advertised = Set(info.1["capabilities"] as? [String] ?? [])
         #expect(advertised == Set(MobileCapability.all))
-        // Not implemented in this round; the phone must not offer them.
-        #expect(advertised.isDisjoint(with: ["mighty", "attachments"]))
+        // Every name here is a route this host serves; nothing is promised early.
+        #expect(advertised.isSuperset(of: ["mighty", "attachments"]))
+        #expect(advertised.isDisjoint(with: ["notifications", "terminal"]))
+    }
+
+    @Test func theGuidedRouteBuildsTheMacsOwnPromptAndRefusesTheRest() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sent = try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "ouroboros", "skill": "interview", "text": "결제 흐름 정리"])
+        #expect(sent.0 == 202 && sent.1["accepted"] as? String == "queued")
+        // A skill that does not take text sends the bare prompt.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "ouroboros", "skill": "seed", "text": "무시됨"]).0 == 202)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "ouroboros", "skill": "nope"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "cli", "skill": "interview"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "ouroboros", "skill": "../etc"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["skill": "interview"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "ouroboros", "skill": "interview", "text": String(repeating: "가", count: 11_000)]).0 == 400)
+        // The pane is in the other style: nothing is sent.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "re0"]).0 == 409)
+        #expect(try await call(service, "POST", "/m1/sessions/missing/guided", body: ["style": "ouroboros", "skill": "seed"]).0 == 404)
+        host.paneStyle = PaperthinCatalog.style
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "re0", "text": "docs/spec.md"]).0 == 202)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "interview"]).0 == 400)
+        #expect(host.recorded() == ["guided:/ouroboros:interview 결제 흐름 정리", "guided:/ouroboros:seed", "guided:/re0 docs/spec.md"])
+    }
+
+    @Test func uploadsTravelInOrderAndOnlyACompleteOneCanBeSubmitted() async throws {
+        let host = FakeMobileHost()
+        host.running = false
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let payload = Data(("%PDF-1.4\n" + String(repeating: "a", count: 200_000)).utf8)
+        let opened = try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "../../report.pdf", "size": payload.count])
+        #expect(opened.0 == 201 && opened.1["chunkSize"] as? Int == 196_608)
+        let uploadId = try #require(opened.1["uploadId"] as? String)
+        let first = payload.prefix(196_608), second = payload.suffix(from: 196_608)
+        // Out of order in both directions, before anything has been accepted.
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/1", body: ["dataBase64": second.base64EncodedString()]).0 == 409)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/9", body: ["dataBase64": second.base64EncodedString()]).0 == 400)
+        let chunk = try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/0", body: ["dataBase64": first.base64EncodedString()])
+        #expect(chunk.0 == 200 && chunk.1["received"] as? Int == 196_608)
+        // The same chunk twice is a conflict, and the tail must be exactly what
+        // is left of the declared size.
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/0", body: ["dataBase64": first.base64EncodedString()]).0 == 409)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/complete").0 == 400)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/1", body: ["dataBase64": second.dropLast().base64EncodedString()]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/1", body: ["dataBase64": "not base64!!"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/1", body: ["dataBase64": second.base64EncodedString()]).0 == 200)
+        let done = try await call(service, "POST", "/m1/uploads/\(uploadId)/complete")
+        let attachment = done.1["attachment"] as? [String: Any]
+        // The phone's path separators never reach the name.
+        #expect(done.0 == 200 && attachment?["name"] as? String == "report.pdf" && attachment?["size"] as? Int == payload.count)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/complete").0 == 409)
+        let submitted = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이 문서 읽어줘", "attachments": [uploadId]])
+        #expect(submitted.0 == 202 && submitted.1["accepted"] as? String == "started")
+        // Spent: naming it again is a malformed request, not a second copy.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "다시", "attachments": [uploadId]]).0 == 400)
+        #expect(host.recorded() == ["submit:session-1:이 문서 읽어줘:report.pdf"])
+    }
+
+    @Test func uploadRoutesRefuseWhatTheContractForbids() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "big.bin", "size": 6 * 1024 * 1024]).0 == 413)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "empty.bin", "size": 0]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "...", "size": 10]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "a.bin"]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/missing/uploads", body: ["name": "a.bin", "size": 10]).0 == 404)
+        #expect(try await call(service, "POST", "/m1/uploads/nope/complete").0 == 404)
+        #expect(try await call(service, "POST", "/m1/uploads/..%2Fetc/cancel").0 == 404)
+        #expect(try await call(service, "POST", "/m1/uploads/nope/chunks/0", body: ["dataBase64": ""]).0 == 404)
+        // A submit naming an upload nobody opened is malformed, not a 404 pane.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "attachments": ["nope"]]).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "attachments": ["../etc"]]).0 == 400)
+        let many = (1...9).map { "upload-\($0)" }
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "attachments": many]).0 == 413)
+        // Text may be empty when files carry the request, never otherwise.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": " "]).0 == 400)
+        let opened = try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "note.txt", "size": 4])
+        let uploadId = try #require(opened.1["uploadId"] as? String)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/cancel").0 == 200)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/cancel").0 == 404)
+        // Sixteen open uploads per pane, and then 429 until one is finished or
+        // cancelled — a "come back later", not a size refusal.
+        for index in 0..<MobileUploadStore.maximumOpenPerSession {
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "f\(index).bin", "size": 4]).0 == 201)
+        }
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "over.bin", "size": 4]).0 == 429)
+        // Closing the pane hands its slots back.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/close").0 == 200)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "after.bin", "size": 4]).0 == 201)
+    }
+
+    /// The chunk route carries a base64 chunk and so has its own 300 KiB body
+    /// limit; every other route keeps the protocol's 64 KiB one.
+    @Test func onlyTheChunkRouteAcceptsABodyLargerThanSixtyFourKiB() async throws {
+        let host = FakeMobileHost()
+        host.running = false
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Past 64 KiB on an ordinary route the body is refused before it is read.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": String(repeating: "a", count: MobileRemoteService.bodyLimit + 1)]).0 == 413)
+        // Just inside it the body is read, and the text's own 32 KiB ceiling
+        // answers — proof the 413 above came from the body limit, not the text.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": String(repeating: "a", count: MobileRemoteService.bodyLimit - 64)]).0 == 400)
+
+        let payload = Data(repeating: 67, count: MobileUploadStore.chunkSize)
+        let opened = try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "big.bin", "size": payload.count])
+        let uploadId = try #require(opened.1["uploadId"] as? String)
+        let encoded = payload.base64EncodedString()
+        // A full chunk is four times 64 KiB once base64-encoded, and lands.
+        #expect(encoded.utf8.count > MobileRemoteService.bodyLimit && encoded.utf8.count < MobileUploadStore.chunkBodyLimit)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/0", body: ["dataBase64": encoded]).0 == 200)
+        // Beyond this route's own limit it is refused just the same.
+        let oversized = String(repeating: "A", count: MobileUploadStore.chunkBodyLimit + 1)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/1", body: ["dataBase64": oversized]).0 == 413)
     }
 
     @Test func submitReportsWhatActuallyHappenedAndRefusesAnUnknownMode() async throws {
@@ -361,6 +509,145 @@ struct MobileRemoteTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         #expect(try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "shell"]).0 == 409)
         #expect(try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "claude"]).0 == 201)
+    }
+
+    /// Opens an upload, sends its one chunk and finishes it, as a phone does.
+    private func upload(_ service: MobileRemoteService, device: String, name: String = "note.txt", bytes: Data = Data("문서".utf8)) async throws -> String {
+        let opened = try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": name, "size": bytes.count], device: device)
+        #expect(opened.0 == 201)
+        let uploadId = try #require(opened.1["uploadId"] as? String)
+        let chunk = try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/0", body: ["dataBase64": bytes.base64EncodedString()], device: device)
+        #expect(chunk.0 == 200)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/complete", device: device).0 == 200)
+        return uploadId
+    }
+
+    @Test func onePhoneCannotTouchAnotherPhonesUpload() async throws {
+        let host = FakeMobileHost()
+        host.running = false
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let opened = try await call(service, "POST", "/m1/sessions/session-1/uploads", body: ["name": "note.txt", "size": 4], device: Self.phone)
+        let uploadId = try #require(opened.1["uploadId"] as? String)
+        // Not 403: whether the id exists is not the other phone's business.
+        let bytes = Data(repeating: 65, count: 4)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/0", body: ["dataBase64": bytes.base64EncodedString()], device: Self.other).0 == 404)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/complete", device: Self.other).0 == 404)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/cancel", device: Self.other).0 == 404)
+        // The owner still has all of it, and only the owner may attach it.
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/chunks/0", body: ["dataBase64": bytes.base64EncodedString()], device: Self.phone).0 == 200)
+        #expect(try await call(service, "POST", "/m1/uploads/\(uploadId)/complete", device: Self.phone).0 == 200)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "attachments": [uploadId]], device: Self.other).0 == 400)
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x", "attachments": [uploadId]], device: Self.phone).0 == 202)
+        await service.shutdown()
+    }
+
+    @Test func twoSubmitsNamingOneUploadCannotBothSpendIt() async throws {
+        let host = FakeMobileHost()
+        host.running = false
+        host.submitDelayMilliseconds = 250
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let uploadId = try await upload(service, device: Self.phone)
+        // Both requests are inside the pane at the same time; exactly one of
+        // them may be carrying the file.
+        async let first = call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "하나", "attachments": [uploadId]])
+        async let second = call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "둘", "attachments": [uploadId]])
+        let statuses = [try await first.0, try await second.0].sorted()
+        #expect(statuses == [202, 400])
+        #expect(host.recorded().filter { $0.hasSuffix(":note.txt") }.count == 1)
+        // Spent by the one that won: nobody can name it again.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "셋", "attachments": [uploadId]]).0 == 400)
+        await service.shutdown()
+    }
+
+    @Test func aRefusedSubmitHandsTheUploadBackToThePhone() async throws {
+        let host = FakeMobileHost()
+        host.running = false
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let uploadId = try await upload(service, device: Self.phone)
+        host.failSubmit = true
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "보내줘", "attachments": [uploadId]]).0 == 409)
+        // The claim went back with the refusal, so sending again just works.
+        host.failSubmit = false
+        let retried = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "다시", "attachments": [uploadId]])
+        #expect(retried.0 == 202 && retried.1["accepted"] as? String == "started")
+        #expect(host.recorded() == ["submit:session-1:다시:note.txt"])
+        await service.shutdown()
+    }
+
+    @Test func onlyTwoSubmitsHoldTheirAttachmentsAtOnce() async throws {
+        let host = FakeMobileHost()
+        host.running = false
+        host.submitDelayMilliseconds = 200
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var ids: [String] = []
+        for index in 0..<4 { ids.append(try await upload(service, device: Self.phone, name: "f\(index).txt")) }
+        await withTaskGroup(of: Int.self) { group in
+            for id in ids {
+                group.addTask { (try? await self.call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "보내줘", "attachments": [id]]).0) ?? 0 }
+            }
+            for await status in group { #expect(status == 202) }
+        }
+        // Eight phones times eight 5 MB files would otherwise be hundreds of
+        // megabytes of base64 alive at one moment.
+        #expect(host.peakSubmits <= MobileRemoteService.concurrentAttachmentSubmits)
+        #expect(host.recorded().count == 4)
+        // A submit with no files does not queue behind them.
+        host.submitDelayMilliseconds = 0
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "글만"]).0 == 202)
+        await service.shutdown()
+    }
+
+    @Test func revokingRotatesTheKeyBeforeTheRowAndFailsWholeOrNotAtAll() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let clientId = "cGhvbmUtb25lLTAwMDAwMDA"
+        let seed = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+        guard case .issued = seed.issueToken(clientId: clientId, name: "iPhone") else { Issue.record("토큰을 발급하지 않았습니다."); return }
+
+        let host = FakeMobileHost()
+        host.running = false
+        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac")
+        await service.attach(host)
+        let key = try await service.loadOrCreateKey()
+        let uploadId = try await upload(service, device: clientId)
+
+        // The key is rotated first, so a rotation that fails leaves the phone
+        // paired: half a revoke must never be reported as a whole one.
+        await service.setKeyRotationFailure("연결 키를 저장하지 못했습니다.")
+        await #expect(throws: MightyError.self) { _ = try await service.revokeDevice(clientId) }
+        let unchanged = await service.status()
+        #expect(unchanged.devices.map(\.id) == [clientId])
+        #expect(try await service.loadOrCreateKey() == key)
+        // Its uploads are still its own, too.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "아직", "attachments": [uploadId]], device: clientId).0 == 202)
+
+        let second = try await upload(service, device: clientId)
+        await service.setKeyRotationFailure(nil)
+        let after = try await service.revokeDevice(clientId)
+        #expect(after.devices.isEmpty)
+        let rotated = try await service.loadOrCreateKey()
+        #expect(rotated != key && after.key == nil)
+        // Whatever the revoked phone was still holding went with it.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "이제", "attachments": [second]], device: clientId).0 == 400)
+        await #expect(throws: MightyError.self) { _ = try await service.revokeDevice(clientId) }
+        await service.shutdown()
+    }
+
+    @Test func legacyPhonesAreAllowedUnlessTheSettingSaysOtherwise() throws {
+        // Absent from an older saved file: allowed, so an upgrade breaks nothing.
+        let old = try JSONDecoder().decode(MobileRemoteSettings.self, from: Data(#"{"enabled":true,"relayURL":"wss://relay.example.com"}"#.utf8))
+        #expect(old.allowLegacyPhones && old.enabled)
+        let off = try JSONDecoder().decode(MobileRemoteSettings.self, from: Data(#"{"allowLegacyPhones":false}"#.utf8))
+        #expect(!off.allowLegacyPhones)
+        // Normalising keeps the choice; only the relay address is rewritten.
+        let normalized = MobileRemoteSettings(enabled: true, relayURL: "wss://relay.example.com/", allowLegacyPhones: false).normalized
+        #expect(!normalized.allowLegacyPhones && normalized.relayURL == "wss://relay.example.com")
+        #expect(MobileRemoteSettings() != MobileRemoteSettings(allowLegacyPhones: false))
     }
 
     @Test func keysPersistAndStatusExposesTheOfferOnlyWhileConnected() async throws {

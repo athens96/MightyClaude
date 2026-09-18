@@ -195,6 +195,56 @@ describe('the m1 capability extension routes', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
+  it('posts a guided skill with and without the composer text', async () => {
+    const fake = fakeChannel({ status: 202, body: { protocol: 1, accepted: 'started' } });
+    const client = createClient(fake.channel);
+    await client.guided('s1', { style: 'ouroboros', skill: 'interview', text: '  로그인  ' });
+    await client.guided('s1', { style: 'ouroboros', skill: 'seed' });
+    await client.guided('s1', { style: 'paperthin', skill: ' re0 ', text: '' });
+    expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'POST /m1/sessions/s1/guided',
+      'POST /m1/sessions/s1/guided',
+      'POST /m1/sessions/s1/guided',
+    ]);
+    expect(fake.calls.map((call) => call.body)).toEqual([
+      { style: 'ouroboros', skill: 'interview', text: '로그인' },
+      { style: 'ouroboros', skill: 'seed' },
+      { style: 'paperthin', skill: 're0' },
+    ]);
+  });
+
+  it('refuses an empty skill and oversized guided text before touching the tunnel', async () => {
+    const fake = fakeChannel(ok);
+    const client = createClient(fake.channel);
+    await expect(client.guided('s1', { style: 'paperthin', skill: '  ' })).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      client.guided('s1', { style: 'paperthin', skill: 're0', text: 'x'.repeat(32 * 1024 + 1) }),
+    ).rejects.toMatchObject({ status: 413 });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('walks the upload routes: open, chunks by index, complete, cancel', async () => {
+    const fake = fakeChannel({ status: 201, body: { protocol: 1, uploadId: 'u1', chunkSize: 8 } });
+    const client = createClient(fake.channel);
+    await client.createUpload('s1', { name: '사진.png', size: 20, mimeType: 'image/png' });
+    await client.createUpload('s1', { name: 'plain.bin', size: 3 });
+    await client.uploadChunk('u/1', 0, 'AAEC');
+    await client.completeUpload('u1');
+    await client.cancelUpload('u1');
+    expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'POST /m1/sessions/s1/uploads',
+      'POST /m1/sessions/s1/uploads',
+      'POST /m1/uploads/u%2F1/chunks/0',
+      'POST /m1/uploads/u1/complete',
+      'POST /m1/uploads/u1/cancel',
+    ]);
+    expect(fake.calls[0]?.body).toEqual({ name: '사진.png', size: 20, mimeType: 'image/png' });
+    expect(fake.calls[1]?.body).toEqual({ name: 'plain.bin', size: 3 });
+    expect(fake.calls[2]?.body).toEqual({ dataBase64: 'AAEC' });
+  });
+
   it('maps every new route’s host error onto ApiError', async () => {
     const cases: Array<[number, string, (client: MobileClient) => Promise<unknown>]> = [
       [404, '없는 항목입니다', (client) => client.removeQueued('s1', 'q1')],
@@ -206,6 +256,11 @@ describe('the m1 capability extension routes', () => {
       [503, '지금은 쓸 수 없습니다', (client) => client.commands('s1')],
       [400, '모르는 명령입니다', (client) => client.runCommand('s1', 'help')],
       [413, '첨부가 너무 큽니다', (client) => client.submit('s1', 'hi', { attachments: ['u1'] })],
+      [400, '모르는 스킬입니다', (client) => client.guided('s1', { style: 'ouroboros', skill: 'x' })],
+      [409, '이 스타일의 창이 아닙니다', (client) => client.guided('s1', { style: 'paperthin', skill: 're0' })],
+      [413, '한도를 넘었습니다', (client) => client.createUpload('s1', { name: 'a', size: 9 })],
+      [400, '크기가 다릅니다', (client) => client.completeUpload('u1')],
+      [404, '없는 업로드입니다', (client) => client.uploadChunk('u1', 0, 'AA==')],
     ];
     for (const [status, error, call] of cases) {
       const fake = fakeChannel({ status, body: { protocol: 1, error } });

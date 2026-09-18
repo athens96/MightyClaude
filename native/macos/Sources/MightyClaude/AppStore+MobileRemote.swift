@@ -32,7 +32,11 @@ struct MobileRemoteTracking {
         /// would offer. A phone holding a stale "editable" shows a control
         /// whose every value the host is about to refuse.
         var editable: Bool; var options: Int
-        init(_ session: RunSession, editable: Bool, options: Int) {
+        /// The Mighty payload's own identity: block ids and statuses, the
+        /// guided panel's state, the workspace's casebook. Not the streamed
+        /// text — see `AppStore.mobileMightyDigest`.
+        var mighty: Int
+        init(_ session: RunSession, editable: Bool, options: Int, mighty: Int) {
             status = session.status; title = session.title; provider = session.provider; model = session.model; resumeId = session.resumeId
             count = session.logs.count
             tail = session.logs.suffix(12).map { "\($0.id):\($0.text.utf8.count):\($0.activity?.state ?? "")" }
@@ -40,7 +44,7 @@ struct MobileRemoteTracking {
             settings = session.settings.effort + "|" + session.settings.permissionMode
             view = (session.agentViewMode ?? "") + "|" + (session.mightyStyle ?? "")
             limits = session.sessionUsage?.rateLimitsUpdatedAt
-            self.editable = editable; self.options = options
+            self.editable = editable; self.options = options; self.mighty = mighty
         }
     }
 }
@@ -61,8 +65,15 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await MainActor.run { store?.mobileState() ?? MobileState(revision: 0, hostName: "", workspaces: [], sessions: []) }
     }
     func mobileSession(id: String) async -> MobileSessionDetail? { await MainActor.run { store?.mobileSessionDetail(id) } }
-    func mobileSubmit(sessionId: String, text: String, mode: String?) async throws -> String {
-        let outcome = try await MainActor.run { try store.orClosing().mobileSubmit(sessionId, text: text, mode: mode) }
+    func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String {
+        try await settle(MainActor.run { try store.orClosing().mobileSubmit(sessionId, text: text, mode: mode, attachments: attachments) })
+    }
+    func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String {
+        try await settle(MainActor.run { try store.orClosing().mobileGuided(sessionId, style: style, skill: skill, text: text) })
+    }
+
+    /// Turns what the store started into the word the phone is told.
+    private func settle(_ outcome: MobileSubmitOutcome) async throws -> String {
         let effect: SubmitOutcome
         switch outcome {
         case .immediate(let value): effect = value
@@ -171,10 +182,11 @@ extension AppStore {
         await mobileRemote.shutdown()
     }
 
-    func setMobileRemote(enabled: Bool, relayURL: String? = nil) {
+    func setMobileRemote(enabled: Bool, relayURL: String? = nil, allowLegacyPhones: Bool? = nil) {
         var settings = snapshot.mobileRemote ?? MobileRemoteSettings()
         settings.enabled = enabled
         if let relayURL { settings.relayURL = relayURL }
+        if let allowLegacyPhones { settings.allowLegacyPhones = allowLegacyPhones }
         settings = settings.normalized
         snapshot.mobileRemote = settings
         mobileBusy = true
@@ -192,6 +204,17 @@ extension AppStore {
 
     func refreshMobileStatus() { Task { mobileStatus = await mobileRemote.status() } }
 
+    /// Unpairs one phone. The pairing key rotates with it, so the QR on screen
+    /// changes and the revoked phone cannot pair again with the old one.
+    func revokeMobileDevice(_ id: String) {
+        mobileBusy = true
+        Task {
+            do { mobileStatus = try await mobileRemote.revokeDevice(id) }
+            catch { self.error = error.localizedDescription; mobileStatus = await mobileRemote.status() }
+            mobileBusy = false
+        }
+    }
+
     // MARK: Revisions
 
     func mobileObserve(snapshot incoming: AppSnapshot? = nil, permissions: [String: [ToolPermissionRequest]]? = nil, queued: [String: [QueuedInput]]? = nil) {
@@ -208,7 +231,7 @@ extension AppStore {
         var nextSummaries: [String: MobileSessionSummary] = [:]
         for session in snapshot.sessions {
             let editable = MobileRemoteSupport.editable(status: session.status, pendingRun: pendingRuns.contains(session.id))
-            let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session))
+            let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session))
             let changed = mobileTracking.seen[session.id] != fingerprint
             if changed { mobileTracking.sessionRevisions[session.id, default: 0] += 1 }
             var summary = mobileSummary(session, revision: mobileTracking.sessionRevisions[session.id, default: 1], permissions: permissions, queued: queued)
@@ -287,7 +310,67 @@ extension AppStore {
                                    permissions: permissions, queued: (queuedInputs[id] ?? []).map { MobileQueuedItem(id: $0.id, text: $0.text) },
                                    usage: mobileUsage(session), elapsedSeconds: session.runTiming?.elapsed(),
                                    hasOlder: MobileRemoteSupport.hasOlder(entryCount: session.logs.count), settings: mobileSettings(session),
+                                   mighty: mobileMighty(session),
                                    statusLine: mobileStatusLine(id), rateLimits: MobileRemoteSupport.rateLimits(session.sessionUsage?.rateLimits ?? []))
+    }
+
+    // MARK: Mighty
+
+    /// The Mighty view of a pane: its style, its newest runs as blocks, and the
+    /// guided panel the Mac would draw beside the composer. Absent for panes
+    /// the Mac is not showing in Mighty view — the phone shows the transcript.
+    func mobileMighty(_ session: RunSession) -> MobileMighty? {
+        guard MobileRemoteSupport.sendsMighty(kind: session.kind, agentViewMode: session.agentViewMode) else { return nil }
+        let style = mobileStyle(session)
+        // The saved graph as it stands, not `mightyGraphRuns`: that property
+        // copies every entry of every run to stamp the provider on it, which a
+        // phone's payload never reads and a poll must not pay for.
+        let saved = session.graphRuns ?? MightyGraphSupport.legacyRuns(session)
+        let runs = MobileMightySupport.runs(saved, style: session.mightyStyle)
+        switch guidedStyle(session) {
+        case OuroborosFlow.style:
+            // The Mac reads the prerequisites when the style is chosen; a pane
+            // only ever watched from a phone has never triggered that read.
+            if ouroborosPrerequisites == nil { refreshOuroborosPrerequisites() }
+            let panel = MobileMightySupport.ouroboros(phase: OuroborosFlow.currentPhase(session: session), ready: ouroborosPrerequisites?.ready ?? false)
+            return MobileMighty(style: style, runs: runs, ouroboros: panel)
+        case PaperthinCatalog.style:
+            if !paperthinLoaded.contains(session.workspaceId) { refreshPaperthin(for: session) }
+            let panel = MobileMightySupport.paperthin(installed: paperthinInstalled ?? false, casebook: paperthinCasebooks[session.workspaceId])
+            return MobileMighty(style: style, runs: runs, paperthin: panel)
+        default:
+            return MobileMighty(style: style, runs: runs)
+        }
+    }
+
+    /// What a phone watching the Mighty view would notice change: the run and
+    /// block identities with their statuses, the guided panel's own state. The
+    /// streamed text is deliberately absent, or a long poll would wake on every
+    /// token and never sleep again.
+    func mobileMightyDigest(_ session: RunSession) -> Int {
+        guard MobileRemoteSupport.sendsMighty(kind: session.kind, agentViewMode: session.agentViewMode) else { return 0 }
+        var hasher = Hasher()
+        // The same source `mobileMighty` sends, reading a legacy pane's runs
+        // by identity alone rather than rebuilding them: this runs on every
+        // snapshot publish — during a stream, every token.
+        hasher.combine(MobileMightySupport.digest(session: session))
+        switch guidedStyle(session) {
+        case OuroborosFlow.style:
+            // The requests `currentPhase(session:)` would read, without
+            // rebuilding a legacy pane's runs: their inputs are its user
+            // entries, and that is the fallback the phase itself uses.
+            var prompts: [String] = []
+            if let saved = session.graphRuns { prompts = saved.map(\.input) }
+            else { prompts = session.logs.filter { $0.kind == "user" }.map(\.text) }
+            hasher.combine(OuroborosFlow.currentPhase(prompts: prompts).rawValue)
+            hasher.combine(ouroborosPrerequisites?.ready)
+        case PaperthinCatalog.style:
+            hasher.combine(paperthinInstalled)
+            let casebook = paperthinCasebooks[session.workspaceId]
+            hasher.combine(casebook?.name); hasher.combine(casebook?.files)
+        default: break
+        }
+        return hasher.finalize()
     }
 
     private func mobileUsage(_ session: RunSession) -> MobileUsage? {
@@ -348,14 +431,17 @@ extension AppStore {
 
     /// `mode: "queue"` only means "do not steer". A pane that is not running has
     /// nothing to drain its queue, so the request starts the run either way.
-    func mobileSubmit(_ id: String, text: String, mode: String? = nil) throws -> MobileSubmitOutcome {
+    /// Files never steer — `deferInput` holds that rule for the Mac composer
+    /// too — so a request with attachments queues and is told `queued`.
+    func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = []) throws -> MobileSubmitOutcome {
         guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창에는 휴대폰에서 명령을 보낼 수 없습니다.") }
+        guard !text.isEmpty || !attachments.isEmpty else { throw MightyError("보낼 내용이 없습니다.") }
         if let reason = runBlockedReason(session) { throw MightyError(reason) }
         if session.status == "running" || pendingRuns.contains(id) {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError("대기열이 가득 찼습니다.") }
-            let item = QueuedInput(text: text)
+            let item = QueuedInput(text: text, attachments: attachments)
             let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, steering: mode != "queue") }
             switch deferred.value {
             case .steering(let task): return .steering(task)
@@ -363,9 +449,22 @@ extension AppStore {
             case .refused: throw MightyError(deferred.failure ?? "대기열에 넣지 못했습니다.")
             }
         }
-        let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: [], restoringDraft: nil) }
+        let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: attachments, restoringDraft: nil) }
         guard started.value else { throw MightyError(started.failure ?? "실행을 시작하지 못했습니다.") }
         return .immediate(.started)
+    }
+
+    /// A guided style's button, pressed from the phone. The prompt is built by
+    /// the very functions the Mac's own buttons use and then travels the
+    /// ordinary submit path, so `accepted` means exactly what it does there and
+    /// the draft the Mac user is typing is left alone.
+    func mobileGuided(_ id: String, style: String, skill: String, text: String) throws -> MobileSubmitOutcome {
+        let session = try mobileAISession(id)
+        guard guidedStyle(session) == style else { throw MobileHostError.conflict("이 실행 창은 \(style) 스타일이 아닙니다.") }
+        guard let prompt = MobileMightySupport.guidedPrompt(style: style, skill: skill, text: text) else {
+            throw MobileHostError.badRequest("이 스타일에 없는 스킬입니다.")
+        }
+        return try mobileSubmit(id, text: prompt)
     }
 
     /// Runs a store call that reports failures through the shared `error`

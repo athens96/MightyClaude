@@ -27,19 +27,42 @@ export class RelayCryptoError extends Error {
 const STANDARD_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
+/** `=`, as a char code. */
+const PAD_CODE = 61;
+/**
+ * Characters handed to one `String.fromCharCode` call. Growing a string one character
+ * at a time costs a fresh allocation per chunk of a 5 MB attachment (≈7 M appends);
+ * building char codes and joining a few thousand at a time keeps that to a handful.
+ */
+const ENCODE_BATCH = 4096;
+
 function encodeBase64With(bytes: Uint8Array, alphabet: string, pad: boolean): string {
-  let out = '';
+  const parts: string[] = [];
+  const codes: number[] = [];
   for (let i = 0; i < bytes.length; i += 3) {
     const b0 = bytes[i] ?? 0;
     const b1 = bytes[i + 1];
     const b2 = bytes[i + 2];
     const triple = (b0 << 16) | ((b1 ?? 0) << 8) | (b2 ?? 0);
-    out += alphabet[(triple >> 18) & 63];
-    out += alphabet[(triple >> 12) & 63];
-    out += b1 === undefined ? (pad ? '=' : '') : alphabet[(triple >> 6) & 63];
-    out += b2 === undefined ? (pad ? '=' : '') : alphabet[triple & 63];
+    codes.push(alphabet.charCodeAt((triple >> 18) & 63));
+    codes.push(alphabet.charCodeAt((triple >> 12) & 63));
+    if (b1 === undefined) {
+      if (pad) codes.push(PAD_CODE);
+    } else {
+      codes.push(alphabet.charCodeAt((triple >> 6) & 63));
+    }
+    if (b2 === undefined) {
+      if (pad) codes.push(PAD_CODE);
+    } else {
+      codes.push(alphabet.charCodeAt(triple & 63));
+    }
+    if (codes.length >= ENCODE_BATCH) {
+      parts.push(String.fromCharCode(...codes));
+      codes.length = 0;
+    }
   }
-  return out;
+  if (codes.length > 0) parts.push(String.fromCharCode(...codes));
+  return parts.length === 1 ? (parts[0] ?? '') : parts.join('');
 }
 
 /** Standard base64 with `=` padding. */

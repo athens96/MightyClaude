@@ -5,6 +5,21 @@ import Foundation
 /// into wire shapes. Kept out of the app so the contract can be unit-tested
 /// without a store.
 public enum MobileRemoteSupport {
+    /// The invisible scalars a name the phone chose has no honest use for:
+    /// the bidirectional overrides and isolates, the zero-width marks and the
+    /// byte-order mark. "invoice\u{202E}gnp.exe" reads as "invoice.png" on
+    /// screen while still ending in .exe, so they go before anything else.
+    private static let invisibleScalars: [ClosedRange<UInt32>] = [
+        0x200B...0x200F, 0x202A...0x202E, 0x2066...0x2069, 0xFEFF...0xFEFF,
+    ]
+    public static func stripInvisibles(_ value: String) -> String {
+        var result = String.UnicodeScalarView()
+        for scalar in value.unicodeScalars where !invisibleScalars.contains(where: { $0.contains(scalar.value) }) {
+            result.append(scalar)
+        }
+        return String(result)
+    }
+
     /// A pane title the phone may set: trimmed, 1…80 characters, no control
     /// characters. Nil when the value is outside those bounds (400).
     public static func renameTitle(_ raw: String) -> String? {
@@ -76,6 +91,13 @@ public enum MobileRemoteSupport {
     /// The Mac stores nil for the plain CLI style; the wire says "cli".
     public static func style(_ raw: String?) -> String { MightyStyles.normalized(raw) ?? MobileWire.cliStyle }
 
+    /// Whether a pane's detail carries a `mighty` payload at all. Only a pane
+    /// the Mac itself is drawing as a graph has one; everywhere else the phone
+    /// shows the transcript, so the field is absent rather than empty.
+    public static func sendsMighty(kind: String, agentViewMode: String?) -> Bool {
+        kind != "shell" && viewMode(agentViewMode) == "mighty"
+    }
+
     /// Whether the pane may carry a guided style — the same rule
     /// `AppStore.guidedStyle(_:)` applies, Mighty view included. `viewMode` is
     /// the view the pane will be in, so a POST that enables Mighty and picks a
@@ -95,6 +117,178 @@ public enum MobileRemoteSupport {
 
     /// What the phone is told when a submit was dropped rather than accepted.
     public static let droppedMessage = "요청을 전달하지 못했습니다. 실행 창 상태를 확인하고 다시 보내 주세요."
+}
+
+/// The Mighty graph as a phone reads it. Every string that reaches the wire is
+/// one of the contract's fixed values: a core status or kind the table below
+/// does not name is mapped to the nearest one deliberately, never forwarded.
+public enum MobileMightySupport {
+    /// The wire status of a block. The buckets are the Mac's own
+    /// (`MightyGraphView.statusLabel`): failed is an error, cancelled and
+    /// interrupted are stops, and anything still in motion — idle, starting,
+    /// queued, or a word this build has never seen — reads as running.
+    public static func status(_ raw: String) -> String {
+        switch raw {
+        case "completed": return "completed"
+        case "error", "failed": return "error"
+        case "stopped", "cancelled", "interrupted": return "stopped"
+        case "waiting": return "waiting"
+        default: return "running"
+        }
+    }
+
+    /// `output` is bounded in characters, cut on a character boundary so a
+    /// multi-byte glyph is never split in half.
+    public static func output(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let clean = ActivitySupport.clean(raw, maximumBytes: 4 * MobileWire.maximumBlockOutput)
+        guard !clean.isEmpty else { return nil }
+        return String(clean.prefix(MobileWire.maximumBlockOutput))
+    }
+
+    private static func summary(_ raw: String) -> String? {
+        let clean = ActivitySupport.clean(raw, maximumBytes: MobileWire.maximumBlockSummary, singleLine: true)
+        return clean.isEmpty ? nil : clean
+    }
+
+    /// How long the block's own records span, once it has settled. The host
+    /// keeps no per-block clock, so this is the only honest figure available
+    /// and a block still in motion reports none at all.
+    static func duration(_ entries: [LogEntry], status: String) -> Double? {
+        guard status == "completed" || status == "error" || status == "stopped", entries.count > 1,
+              let first = AgentRunTiming.parseTimestamp(entries[0].timestamp),
+              let last = AgentRunTiming.parseTimestamp(entries[entries.count - 1].timestamp) else { return nil }
+        let milliseconds = last.timeIntervalSince(first) * 1_000
+        guard ActivitySupport.validDuration(milliseconds), milliseconds > 0 else { return nil }
+        return milliseconds.rounded()
+    }
+
+    /// The last answer a child block produced; `recordGraph` appends the node's
+    /// output as an assistant entry, so that entry is the block's result.
+    static func answer(_ entries: [LogEntry]) -> String? {
+        entries.last(where: { $0.kind == "assistant" && !$0.text.isEmpty })?.text
+    }
+
+    /// The blocks of one run: the request itself, then its children in the
+    /// order the graph recorded them.
+    public static func blocks(_ run: MightyGraphRun, ordinal: Int) -> [MobileBlock] {
+        let mainStatus = status(run.status)
+        var result = [MobileBlock(id: run.id + ":main", kind: "main", title: "요청 \(ordinal)", status: mainStatus,
+                                  summary: nil, output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus))]
+        for agent in run.agents {
+            let state = status(agent.status)
+            result.append(MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),
+                                      status: state, summary: summary(agent.input), output: output(answer(agent.entries)),
+                                      durationMs: duration(agent.entries, status: state)))
+        }
+        return result
+    }
+
+    /// The pane's newest runs, oldest first, as the phone lists them.
+    public static func runs(_ values: [MightyGraphRun], style: String?) -> [MobileMightyRun] {
+        let window = values.suffix(MobileWire.mightyRuns)
+        let offset = values.count - window.count
+        return window.enumerated().map { index, run in
+            MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
+                            title: MightyStyles.requestTitle(forInput: run.input, style: style),
+                            status: status(run.status), blocks: blocks(run, ordinal: offset + index + 1))
+        }
+    }
+
+    /// A cheap digest of what the phone would see change: run and block
+    /// identities with their statuses. Streaming text is deliberately absent —
+    /// hashing it would wake every long poll on every token.
+    /// Hashed rather than joined: this runs on every snapshot publish, which
+    /// during a stream is every token, so it must allocate nothing.
+    public static func digest(_ values: [MightyGraphRun]) -> Int {
+        var hasher = Hasher()
+        for run in values.suffix(MobileWire.mightyRuns) {
+            hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
+            for agent in run.agents { hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind) }
+        }
+        return hasher.finalize()
+    }
+
+    /// The digest of the very runs `MobileMighty` would carry. A pane with no
+    /// saved graph is grouped out of its transcript, so hashing an empty list
+    /// there would leave a phone's blocks moving without a long poll ever
+    /// waking — the payload and the digest have to read one source.
+    public static func digest(session: RunSession) -> Int {
+        if let saved = session.graphRuns { return digest(saved) }
+        var hasher = Hasher()
+        for run in legacyRunIdentities(session) {
+            hasher.combine(run.id); hasher.combine(run.status); hasher.combine(0)
+        }
+        return hasher.finalize()
+    }
+
+    /// What the newest legacy runs are called and how they stand, without
+    /// building them: `MightyGraphSupport.legacyRuns` copies every entry of
+    /// every run, and this is read on every snapshot publish. Walked backwards
+    /// and stopped at the window the payload sends, so a long transcript costs
+    /// no more than a short one.
+    static func legacyRunIdentities(_ session: RunSession) -> [(id: String, status: String)] {
+        var ids: [String] = []
+        var index = session.logs.count - 1
+        while index >= 0, ids.count < MobileWire.mightyRuns {
+            if session.logs[index].kind == "user" { ids.append(session.logs[index].id) }
+            index -= 1
+        }
+        // The transcript opens with replies to a request the pane no longer
+        // holds: those entries are grouped under one synthetic run.
+        if index < 0, let first = session.logs.first, first.kind != "user", ids.count < MobileWire.mightyRuns {
+            ids.append("history-" + session.id)
+        }
+        guard !ids.isEmpty else { return [] }
+        ids.reverse()
+        let last = session.status == "idle" ? "completed" : session.status
+        return ids.enumerated().map { (id: $0.element, status: $0.offset == ids.count - 1 ? last : "completed") }
+    }
+
+    /// The Ouroboros panel: where the flow stands and what may be sent next.
+    public static func ouroboros(phase: OuroborosPhase, ready: Bool) -> MobileOuroboros {
+        MobileOuroboros(phase: phase.rawValue, ready: ready,
+                        takesText: OuroborosFlow.allActions.map(\.skill).filter(OuroborosFlow.takesText),
+                        next: OuroborosFlow.nextActions(after: phase).map(skill),
+                        all: OuroborosFlow.allActions.map(skill))
+    }
+    private static func skill(_ action: OuroborosAction) -> MobileGuidedSkill {
+        MobileGuidedSkill(skill: action.skill, title: action.title, help: action.help)
+    }
+
+    /// The Paperthin map: the four domains with their skills, plus the newest
+    /// casebook the coil skills left in this workspace.
+    public static func paperthin(installed: Bool, casebook: PaperthinCasebook?) -> MobilePaperthin {
+        let domains = PaperthinDomain.allCases.map { domain in
+            MobilePaperthinDomain(id: domain.rawValue, title: domain.title, axis: domain.axis, question: domain.question,
+                                  skills: PaperthinCatalog.skills(in: domain).map { skill in
+                                      MobilePaperthinSkill(name: skill.name, emoji: skill.emoji, summary: skill.summary, scope: skill.scope,
+                                                           userInvoked: skill.userInvoked, readOnly: skill.readOnly)
+                                  })
+        }
+        return MobilePaperthin(installed: installed, recommended: PaperthinCatalog.recommendedCoilSkill(casebook: casebook), domains: domains,
+                               casebook: casebook.map { MobilePaperthinCasebook(name: $0.name, weight: $0.weight, files: $0.files) })
+    }
+
+    /// The prompt a guided request sends, built by the very functions the Mac's
+    /// own buttons use. Nil means the skill is not in that style's catalogue.
+    ///
+    /// The phone's text is folded to one line for both styles first. A skill
+    /// reads its argument up to the first line break, so a pasted paragraph
+    /// would otherwise reach one catalogue whole and the other cut in half —
+    /// the Mac's composer keeps its own behaviour, only this route normalises.
+    public static func guidedPrompt(style: String, skill: String, text: String) -> String? {
+        let oneLine = singleLine(text)
+        switch style {
+        case OuroborosFlow.style: return OuroborosFlow.prompt(skill: skill, text: OuroborosFlow.takesText(skill) ? oneLine : "")
+        case PaperthinCatalog.style: return PaperthinCatalog.prompt(skill: skill, text: oneLine)
+        default: return nil
+        }
+    }
+
+    static func singleLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
 }
 
 /// The terminal colours `StatusLineView` draws, as hex the phone can use.

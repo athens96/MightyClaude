@@ -172,6 +172,34 @@ describe('base64 helpers', () => {
     expect(Array.from(fromBase64('AQ'))).toEqual([1]);
   });
 
+  it('is byte-exact across the batch boundary the encoder joins on', () => {
+    // The encoder builds a few thousand characters at a time and joins them; a chunk of
+    // an attachment is far larger than one batch, so the seams are what matter here.
+    const reference = (bytes: Uint8Array, alphabet: string, pad: boolean) => {
+      let out = '';
+      for (let i = 0; i < bytes.length; i += 3) {
+        const b0 = bytes[i] ?? 0;
+        const b1 = bytes[i + 1];
+        const b2 = bytes[i + 2];
+        const triple = (b0 << 16) | ((b1 ?? 0) << 8) | (b2 ?? 0);
+        out += alphabet[(triple >> 18) & 63];
+        out += alphabet[(triple >> 12) & 63];
+        out += b1 === undefined ? (pad ? '=' : '') : alphabet[(triple >> 6) & 63];
+        out += b2 === undefined ? (pad ? '=' : '') : alphabet[triple & 63];
+      }
+      return out;
+    };
+    const standard = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    const urlSafe = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+    for (const length of [0, 1, 2, 3, 3071, 3072, 3073, 4096, 20_000]) {
+      const bytes = Uint8Array.from({ length }, (_, index) => (index * 31 + 7) % 256);
+      expect(toBase64(bytes)).toBe(reference(bytes, standard, true));
+      expect(toBase64Url(bytes)).toBe(reference(bytes, urlSafe, false));
+      expect(Array.from(fromBase64(toBase64(bytes)))).toEqual(Array.from(bytes));
+    }
+  });
+
   it('rejects non-base64 input', () => {
     expect(() => fromBase64('not*base64')).toThrow(RelayCryptoError);
   });

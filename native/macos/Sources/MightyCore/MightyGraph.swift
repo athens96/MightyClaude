@@ -79,6 +79,24 @@ public enum MightyGraphSupport {
     /// Codex via exec JSONL. Gemini's stream has no agent structure.
     public static let providers = ["claude", "codex"]
     public static func terminal(_ status: String) -> Bool { ["completed", "error", "stopped"].contains(status) }
+
+    /// The child-block kinds the core records; anything else is a sub-agent.
+    public static let childKinds = ["task", "steer", "compact", "question"]
+    public static func blockKind(_ agent: MightyGraphAgent) -> String {
+        guard let kind = agent.kind, childKinds.contains(kind) else { return "agent" }
+        return kind
+    }
+    /// The title a child block carries. The Mac's graph card and the phone's
+    /// Mighty view both read it here, so the two cannot drift apart.
+    public static func blockTitle(_ agent: MightyGraphAgent) -> String {
+        switch blockKind(agent) {
+        case "steer": return "중간 요청"
+        case "compact": return ContextCompaction.title
+        case "question": return agent.title.isEmpty ? "질문" : agent.title
+        case "task": return agent.title.isEmpty ? "백그라운드 작업" : agent.title
+        default: return agent.title.isEmpty ? "하위 에이전트" : agent.title
+        }
+    }
     static func nextState(_ previous: String, _ incoming: String) -> String {
         if ["error", "stopped"].contains(previous) { return previous }
         if ["error", "stopped"].contains(incoming) { return incoming }

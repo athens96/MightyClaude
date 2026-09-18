@@ -12,7 +12,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import { Button, Card, Chip, ErrorBanner } from '@/components/ui';
 import { describeError, probeHost } from '@/api/client';
-import { parsePairingUrl, type PairingPayload } from '@/lib/pairing';
+import { parsePairingUrl, relayTransportError, type PairingPayload } from '@/lib/pairing';
 import { useHostsStore } from '@/store/hosts';
 import { showToast } from '@/store/toast';
 import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
@@ -28,21 +28,35 @@ export default function PairScreen() {
   const [error, setError] = useState<string | undefined>(undefined);
   const [link, setLink] = useState('');
   const addHost = useHostsStore((state) => state.addHost);
+  const ensureClientId = useHostsStore((state) => state.ensureClientId);
 
   const pair = useCallback(
     async (payload: PairingPayload) => {
       setBusy(true);
       setError(undefined);
       try {
+        // iOS allows plain `ws://` only inside the local network, so a public relay
+        // behind `ws://` would fail as a silent connection timeout. Say so instead.
+        const blocked = relayTransportError(payload.relayUrl, Platform.OS);
+        if (blocked) {
+          setError(blocked);
+          return;
+        }
+        // `clientId` travels with the pairing key so the Mac can register this phone and
+        // answer with a device token; a Mac that knows no tokens simply ignores it. It
+        // is read here rather than from the store, so a cold start or a deep link into
+        // this screen can never pair without one.
+        const clientId = await ensureClientId();
         const info = await probeHost({
           serverId: payload.serverId,
           relayUrl: payload.relayUrl,
           hostPublicKeyB64: payload.hostPublicKeyB64,
           pairingKey: payload.pairingKey,
+          clientId,
         });
         const saved = await addHost(
           { ...payload, name: payload.name || info.hostName || payload.serverId },
-          { hostId: info.hostId, appVersion: info.appVersion },
+          { hostId: info.hostId, appVersion: info.appVersion, deviceToken: info.deviceToken },
         );
         showToast(`${saved.name} 페어링 완료`, 'success');
         router.replace(`/host/${saved.id}`);
@@ -52,7 +66,7 @@ export default function PairScreen() {
         setBusy(false);
       }
     },
-    [addHost],
+    [addHost, ensureClientId],
   );
 
   const onScanned = useCallback(

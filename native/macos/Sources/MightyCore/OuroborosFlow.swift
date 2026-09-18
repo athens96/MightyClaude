@@ -38,7 +38,9 @@ public enum OuroborosFlow {
     public static let toolPrefix = "mcp__plugin_ouroboros_ouroboros__"
     public static let installCommand = "claude plugin marketplace add Q00/ouroboros && claude plugin install ouroboros@ouroboros"
 
-    static let actions: [String: OuroborosAction] = Dictionary(uniqueKeysWithValues: [
+    /// Every skill the style offers, in the order a surface that lists them all
+    /// should show them (the flow's own order, helpers last).
+    public static let allActions: [OuroborosAction] = [
         OuroborosAction(skill: "interview", title: "인터뷰 시작", systemImage: "questionmark.bubble", help: "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)"),
         OuroborosAction(skill: "auto", title: "자동 진행", systemImage: "wand.and.stars", help: "목표에서 시드 생성과 실행까지 한 번에 진행합니다"),
         OuroborosAction(skill: "seed", title: "시드 생성", systemImage: "leaf", help: "인터뷰 결과를 불변 명세(시드)로 굳힙니다"),
@@ -48,7 +50,8 @@ public enum OuroborosFlow {
         OuroborosAction(skill: "ralph", title: "랄프 루프", systemImage: "infinity", help: "수렴할 때까지 진화 단계를 계속 돌립니다"),
         OuroborosAction(skill: "status", title: "상태", systemImage: "gauge.with.dots.needle.33percent", help: "세션 상태와 목표 이탈(drift)을 확인합니다"),
         OuroborosAction(skill: "unstuck", title: "막힘 풀기", systemImage: "lightbulb", help: "다섯 가지 관점으로 막힌 지점을 다시 봅니다"),
-    ].map { ($0.skill, $0) })
+    ]
+    static let actions: [String: OuroborosAction] = Dictionary(uniqueKeysWithValues: allActions.map { ($0.skill, $0) })
 
     public static func action(_ skill: String) -> OuroborosAction? { actions[skill] }
 
@@ -91,11 +94,15 @@ public enum OuroborosFlow {
         return .goal
     }
     public static func currentPhase(session: RunSession) -> OuroborosPhase {
-        let requests = session.mightyGraphRuns.map(\.input)
+        // The saved graph as it stands, not `mightyGraphRuns`: that property
+        // copies every entry of every run to stamp the provider on it, and a
+        // phase is decided from request text alone.
+        let requests = (session.graphRuns ?? MightyGraphSupport.legacyRuns(session)).map(\.input)
         return currentPhase(prompts: requests.isEmpty ? session.logs.filter { $0.kind == "user" }.map(\.text) : requests)
     }
     /// Skills whose prompt carries what the user typed; the others go out bare.
-    public static func takesText(_ skill: String) -> Bool { ["interview", "auto", "unstuck", "pm"].contains(skill) }
+    public static let textSkills = ["interview", "auto", "unstuck", "pm"]
+    public static func takesText(_ skill: String) -> Bool { textSkills.contains(skill) }
 
     /// Buttons offered once a phase's turn has ended, the natural next step first.
     public static func nextActions(after phase: OuroborosPhase) -> [OuroborosAction] {

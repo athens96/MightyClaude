@@ -70,6 +70,11 @@ final class AppStore: ObservableObject {
     @Published var paperthinCasebooks: [String: PaperthinCasebook] = [:]
     /// Workspaces whose casebook has been read at least once.
     @Published var paperthinLoaded: Set<String> = []
+    /// Reads already in flight. Both refreshes are asked for from a phone's
+    /// long poll, which repeats until the first answer lands — without these
+    /// a watched pane would spawn a process on every poll.
+    var ouroborosPrerequisitesLoading = false
+    var paperthinLoading: Set<String> = []
     var questionnaireCache: [String: UserQuestionnaire] = [:]
     @Published var cliAccounts: [String: CLIAccountStatus] = [:]
     @Published var cliAccountBusy = Set<String>()

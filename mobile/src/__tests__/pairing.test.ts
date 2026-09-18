@@ -3,9 +3,11 @@ import {
   LEGACY_PAIRING_ERROR,
   describeRelayTarget,
   formatPairingUrl,
+  isLocalRelayHost,
   normalizeRelayUrl,
   pairingFingerprint,
   parsePairingUrl,
+  relayTransportError,
   type PairingPayload,
 } from '@/lib/pairing';
 
@@ -113,6 +115,77 @@ describe('normalizeRelayUrl', () => {
     expect(normalizeRelayUrl('wss://relay.example.com/ws')).toBeUndefined();
     expect(normalizeRelayUrl('http://relay.example.com')).toBeUndefined();
     expect(normalizeRelayUrl('   ')).toBeUndefined();
+  });
+});
+
+describe('isLocalRelayHost', () => {
+  it('accepts loopback, the private ranges and link-local addresses', () => {
+    for (const host of [
+      'localhost',
+      'dev.localhost',
+      '127.0.0.1',
+      '127.1.2.3',
+      '10.0.0.7',
+      '192.168.1.42',
+      '172.16.0.1',
+      '172.31.255.254',
+      '169.254.1.1',
+    ]) {
+      expect(isLocalRelayHost(`ws://${host}:8787`)).toBe(true);
+    }
+  });
+
+  it('accepts Bonjour names, which is how the Mac announces itself on a LAN', () => {
+    expect(isLocalRelayHost('ws://mac-studio.local:8787')).toBe(true);
+    expect(isLocalRelayHost('WS://Mac-Studio.Local')).toBe(true);
+  });
+
+  it('accepts IPv6 loopback, link-local and unique-local literals', () => {
+    expect(isLocalRelayHost('ws://[::1]:8787')).toBe(true);
+    expect(isLocalRelayHost('ws://[fe80::1ff:fe23:4567:890a]:8787')).toBe(true);
+    expect(isLocalRelayHost('ws://[fd12:3456::1]:8787')).toBe(true);
+    expect(isLocalRelayHost('ws://[2001:db8::1]:8787')).toBe(false);
+  });
+
+  it('treats a public name or address as remote', () => {
+    for (const host of [
+      'relay.example.com',
+      '203.0.113.9',
+      '172.32.0.1',
+      '172.15.0.1',
+      '11.0.0.1',
+      '192.169.1.1',
+      '169.253.1.1',
+      'localhost.attacker.com',
+      'notlocalhost',
+    ]) {
+      expect(isLocalRelayHost(`ws://${host}:8787`)).toBe(false);
+    }
+  });
+
+  it('refuses malformed addresses and out-of-range octets rather than guessing', () => {
+    expect(isLocalRelayHost('')).toBe(false);
+    expect(isLocalRelayHost('http://127.0.0.1')).toBe(false);
+    expect(isLocalRelayHost('ws://')).toBe(false);
+    expect(isLocalRelayHost('ws://10.0.0.999')).toBe(false);
+  });
+});
+
+describe('relayTransportError', () => {
+  it('stops a non-local ws:// relay on iOS at pairing time', () => {
+    const message = relayTransportError('ws://relay.example.com:8787', 'ios');
+    expect(message).toContain('wss://');
+    expect(message).toContain('ws://');
+  });
+
+  it('leaves LAN ws:// and every wss:// alone', () => {
+    expect(relayTransportError('ws://192.168.0.5:8787', 'ios')).toBeUndefined();
+    expect(relayTransportError('ws://mac-studio.local:8787', 'ios')).toBeUndefined();
+    expect(relayTransportError('wss://relay.example.com', 'ios')).toBeUndefined();
+  });
+
+  it('leaves Android cleartext as it was', () => {
+    expect(relayTransportError('ws://relay.example.com:8787', 'android')).toBeUndefined();
   });
 });
 

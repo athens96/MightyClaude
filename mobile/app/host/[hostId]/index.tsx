@@ -3,13 +3,14 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError } from '@/api/client';
+import { describeRepairNeeded } from '@/api/relay/transport';
 import type { MobileState } from '@/api/types';
 import { Button, EmptyState, ErrorBanner } from '@/components/ui';
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
 import { SessionRow } from '@/components/session-row';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { groupSessionsByWorkspace } from '@/lib/merge';
-import { useHostsStore } from '@/store/hosts';
+import { useForgetRefusedSecret, useHostsStore } from '@/store/hosts';
 import { useHostClient, useHostState, useLiveStore } from '@/store/live';
 import { showToast } from '@/store/toast';
 import { spacing, useStyles, usePalette, type Palette } from '@/theme';
@@ -59,6 +60,12 @@ export default function HostScreen() {
     subscribe,
   });
 
+  // A refused secret is never presented again: it is dropped the moment the host says so.
+  useForgetRefusedSecret(hostId, poll.needsRepair, poll.error);
+  const needsRepair = useHostsStore(
+    (store) => store.status[hostId ?? '']?.reachability === 'unauthorized',
+  );
+
   const groups = useMemo(() => (state ? groupSessionsByWorkspace(state) : []), [state]);
   const activeWorkspace = groups.find((group) => group.workspace.id === creatingFor);
 
@@ -92,8 +99,8 @@ export default function HostScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ title: state?.hostName ?? host.name }} />
 
-      {poll.needsRepair ? (
-        <ErrorBanner message="재페어링 필요 — 저장된 키가 호스트와 일치하지 않습니다." />
+      {poll.needsRepair || needsRepair ? (
+        <ErrorBanner message={describeRepairNeeded(poll.error)} />
       ) : poll.error ? (
         <ErrorBanner message={poll.error} />
       ) : null}

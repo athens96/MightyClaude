@@ -14,6 +14,7 @@ import {
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError, isNotFound } from '@/api/client';
+import { describeRepairNeeded } from '@/api/relay/transport';
 import {
   ENTRY_PAGE_SIZE,
   type LogEntry,
@@ -26,6 +27,9 @@ import {
 } from '@/api/types';
 import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
+import { MightyRunList } from '@/components/mighty-blocks';
+import { OuroborosPanel } from '@/components/ouroboros-panel';
+import { PaperthinPanel } from '@/components/paperthin-panel';
 import { PermissionCard } from '@/components/permission-card';
 import { QueuedList } from '@/components/queued-list';
 import {
@@ -36,7 +40,8 @@ import {
   type SettingField,
 } from '@/components/session-header';
 import { ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, Sheet } from '@/components/sheets';
-import { Button, EmptyState, ErrorBanner } from '@/components/ui';
+import { Button, Chip, EmptyState, ErrorBanner } from '@/components/ui';
+import { useAttachments } from '@/hooks/use-attachments';
 import { useCapabilities } from '@/hooks/use-capabilities';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { hasCapability } from '@/lib/capabilities';
@@ -48,9 +53,12 @@ import {
   prependOlderPage,
   retainDropped,
 } from '@/lib/history';
+import { guidedRequestFor, guidedStyleOf, normalizeMighty } from '@/lib/mighty';
+import { sendWithAttachments, type SendRequest } from '@/lib/send';
+import { useForgetRefusedSecret } from '@/store/hosts';
 import { useHostClient, useLiveStore, useSessionCommands, useSessionDetail } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { spacing, useStyles, type Palette } from '@/theme';
+import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
  * The host reports what actually happened, not what was asked for: "다음 요청" on a pane
@@ -64,6 +72,9 @@ const acceptedMessages: Record<string, string> = {
 };
 
 const NO_ENTRIES: LogEntry[] = [];
+
+/** Which body the screen shows: the transcript, or the Mighty block list. */
+type BodyView = 'log' | 'blocks';
 
 function patchFor(field: SettingField, id: string): SettingsPatch {
   switch (field) {
@@ -81,6 +92,7 @@ function patchFor(field: SettingField, id: string): SettingsPatch {
 }
 
 export default function SessionScreen() {
+  const palette = usePalette();
   const styles = useStyles(makeStyles);
   const { hostId, sessionId } = useLocalSearchParams<{ hostId: string; sessionId: string }>();
   const client = useHostClient(hostId);
@@ -102,6 +114,10 @@ export default function SessionScreen() {
   const [renaming, setRenaming] = useState(false);
   const [closing, setClosing] = useState(false);
   const [picker, setPicker] = useState<SettingField | undefined>(undefined);
+  const [text, setText] = useState('');
+  /** Set once the user picks a body themselves; until then the pane's own view decides. */
+  const [chosenView, setChosenView] = useState<BodyView | undefined>(undefined);
+  const [guidedSkill, setGuidedSkill] = useState<string | undefined>(undefined);
   /** Set while the view mode waits for a style, so both go to the host in one POST. */
   const [pendingViewMode, setPendingViewMode] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<{ title: string; body: string } | undefined>(undefined);
@@ -123,6 +139,8 @@ export default function SessionScreen() {
   const canHistory = hasCapability(capabilities, 'history');
   const canSettings = hasCapability(capabilities, 'settings');
   const canCommands = hasCapability(capabilities, 'commands');
+  const canMighty = hasCapability(capabilities, 'mighty');
+  const canAttach = hasCapability(capabilities, 'attachments');
 
   /** Back to where we came from, or to the host when this screen was deep-linked into. */
   const leavePane = useCallback(() => {
@@ -183,6 +201,9 @@ export default function SessionScreen() {
     subscribe,
   });
 
+  // A refused secret is never presented again: it is dropped the moment the host says so.
+  useForgetRefusedSecret(hostId, poll.needsRepair, poll.error);
+
   const session = detail?.session;
   const live = detail?.entries ?? NO_ENTRIES;
   const liveRef = useRef(live);
@@ -200,6 +221,8 @@ export default function SessionScreen() {
     previousLive.current = NO_ENTRIES;
     closedRef.current = false;
     setClosed(false);
+    setChosenView(undefined);
+    setText('');
   }, [sessionId]);
 
   // The host sends only the newest entries and replaces that window wholesale, so what
@@ -265,24 +288,49 @@ export default function SessionScreen() {
     [loadOlder],
   );
 
+  const onAttachmentError = useCallback((message: string) => showToast(message, 'error'), []);
+  const attachments = useAttachments(onAttachmentError);
+  const attachFiles = attachments.files;
+  const clearAttachments = attachments.clear;
+  const uploadAttachments = attachments.upload;
+  const cancelAttachments = attachments.cancel;
+
+  // Files belong to the pane they were picked for; leaving the screen — or switching
+  // panes — also stops a run in flight, which cancels the uploads it had opened instead
+  // of leaving them on the host for ten minutes.
+  useEffect(() => {
+    clearAttachments();
+    return cancelAttachments;
+  }, [cancelAttachments, clearAttachments, sessionId]);
+
   const send = useCallback(
-    async (text: string, mode?: SubmitMode): Promise<boolean> => {
+    async (value: string, mode?: SubmitMode): Promise<boolean> => {
       if (!client || !sessionId) return false;
       setSending(true);
       try {
-        const result = await client.submit(sessionId, text, mode ? { mode } : undefined);
+        // Uploads go first, and a `submit` that fails afterwards gives them back: the
+        // host keeps 16 open uploads per pane, so leaking a few would make the next
+        // attempt fail before it started.
+        const request: SendRequest = { client, sessionId, text: value };
+        if (mode) request.mode = mode;
+        if (attachFiles.length > 0) {
+          request.upload = () => uploadAttachments(client, sessionId);
+        }
+        const result = await sendWithAttachments(request);
+        if (!result.ok) {
+          showToast(result.error, 'error');
+          return false;
+        }
         showToast(acceptedMessages[result.accepted] ?? '전송', 'success');
+        clearAttachments();
         atBottom.current = true;
         poll.refresh();
         return true;
-      } catch (error) {
-        showToast(describeError(error), 'error');
-        return false;
       } finally {
         setSending(false);
       }
     },
-    [client, poll, sessionId],
+    [attachFiles.length, clearAttachments, client, poll, sessionId, uploadAttachments],
   );
 
   const stop = useCallback(() => {
@@ -505,6 +553,106 @@ export default function SessionScreen() {
 
   const running = session?.status === 'running';
 
+  // The host sends `mighty` only for a pane in Mighty view; an unknown shape is dropped
+  // rather than trusted, so nothing here can be fed a field we cannot draw.
+  const mighty = useMemo(
+    () => (canMighty ? normalizeMighty(detail?.mighty) : undefined),
+    [canMighty, detail?.mighty],
+  );
+  const guidedStyle = guidedStyleOf(mighty);
+  // An AskUserQuestion card is the one thing the pane is waiting on: the guided panels
+  // step aside for it rather than offering a second thing to press.
+  const questionPending =
+    detail?.permissions.some((permission) => permission.questionnaire !== undefined) ?? false;
+  const view: BodyView =
+    chosenView ?? (mighty && session?.agentViewMode === 'mighty' ? 'blocks' : 'log');
+
+  const runGuided = useCallback(
+    (skill: string) => {
+      if (!client || !sessionId || !guidedStyle || !mighty) return;
+      const request = guidedRequestFor(
+        guidedStyle,
+        skill,
+        text,
+        mighty.ouroboros?.takesText ?? [],
+      );
+      setGuidedSkill(skill);
+      void (async () => {
+        try {
+          const result = await client.guided(sessionId, request);
+          showToast(acceptedMessages[result.accepted] ?? '전송', 'success');
+          // Only text that actually went with the skill leaves the composer.
+          if (request.text) setText('');
+          atBottom.current = true;
+          poll.refresh();
+        } catch (error) {
+          showToast(describeError(error), 'error');
+        } finally {
+          setGuidedSkill(undefined);
+        }
+      })();
+    },
+    [client, guidedStyle, mighty, poll, sessionId, text],
+  );
+
+  const headerNode = detail ? (
+    <View>
+      <SessionHeader
+        detail={detail}
+        settings={settings}
+        showStatus={hasCapability(capabilities, 'status')}
+        onEditSetting={openPicker}
+      />
+      {mighty ? (
+        <View style={styles.viewSwitch}>
+          <Chip
+            label="대화"
+            color={palette.accent}
+            selected={view === 'log'}
+            onPress={() => setChosenView('log')}
+          />
+          <Chip
+            label="블록"
+            color={palette.accent}
+            selected={view === 'blocks'}
+            onPress={() => setChosenView('blocks')}
+          />
+        </View>
+      ) : null}
+      {view === 'log' && loadingOlder ? (
+        <View style={styles.olderRow}>
+          <ActivityIndicator size="small" />
+          <Text style={styles.olderText}>이전 기록 불러오는 중…</Text>
+        </View>
+      ) : view === 'log' && canLoadOlder ? (
+        <Text style={styles.olderText}>위로 당기면 이전 기록을 더 불러옵니다.</Text>
+      ) : null}
+    </View>
+  ) : null;
+
+  const footerNode = detail ? (
+    <View style={styles.footer}>
+      {detail.permissions.map((permission) => (
+        <PermissionCard
+          key={permission.id}
+          permission={permission}
+          busy={deciding}
+          onDecide={(allow) => void decide(permission.id, permission.runId, allow)}
+          onAnswer={(answers) => void answer(permission.id, permission.runId, answers)}
+        />
+      ))}
+
+      <QueuedList
+        items={detail.queued}
+        manageable={canQueue}
+        canRunNext={!running}
+        busy={queueBusy}
+        onRemove={removeQueued}
+        onRunNext={runNext}
+      />
+    </View>
+  ) : null;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -530,78 +678,65 @@ export default function SessionScreen() {
       />
 
       {closed ? null : poll.needsRepair ? (
-        <ErrorBanner message="재페어링 필요 — 저장된 키가 호스트와 일치하지 않습니다." />
+        <ErrorBanner message={describeRepairNeeded(poll.error)} />
       ) : poll.error ? (
         <ErrorBanner message={poll.error} />
       ) : null}
 
-      <FlatList
-        ref={listRef}
-        data={entries}
-        keyExtractor={(entry) => entry.id}
-        renderItem={({ item }) => <LogEntryView entry={item} />}
-        contentContainerStyle={styles.list}
-        onScroll={onScroll}
-        scrollEventThrottle={64}
-        keyboardShouldPersistTaps="handled"
-        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
-        ListHeaderComponent={
-          detail ? (
-            <View>
-              <SessionHeader
-                detail={detail}
-                settings={settings}
-                showStatus={hasCapability(capabilities, 'status')}
-                onEditSetting={openPicker}
-              />
-              {loadingOlder ? (
-                <View style={styles.olderRow}>
-                  <ActivityIndicator size="small" />
-                  <Text style={styles.olderText}>이전 기록 불러오는 중…</Text>
-                </View>
-              ) : canLoadOlder ? (
-                <Text style={styles.olderText}>위로 당기면 이전 기록을 더 불러옵니다.</Text>
-              ) : null}
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          <EmptyState title={poll.loading ? '불러오는 중…' : '기록이 없습니다'} />
-        }
-        ListFooterComponent={
-          detail ? (
-            <View style={styles.footer}>
-              {detail.permissions.map((permission) => (
-                <PermissionCard
-                  key={permission.id}
-                  permission={permission}
-                  busy={deciding}
-                  onDecide={(allow) => void decide(permission.id, permission.runId, allow)}
-                  onAnswer={(answers) => void answer(permission.id, permission.runId, answers)}
-                />
-              ))}
-
-              <QueuedList
-                items={detail.queued}
-                manageable={canQueue}
-                canRunNext={!running}
-                busy={queueBusy}
-                onRemove={removeQueued}
-                onRunNext={runNext}
-              />
-            </View>
-          ) : null
-        }
-      />
+      {view === 'blocks' && mighty ? (
+        <MightyRunList
+          runs={mighty.runs}
+          contentContainerStyle={styles.list}
+          header={headerNode}
+          footer={footerNode}
+        />
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={entries}
+          keyExtractor={(entry) => entry.id}
+          renderItem={({ item }) => <LogEntryView entry={item} />}
+          contentContainerStyle={styles.list}
+          onScroll={onScroll}
+          scrollEventThrottle={64}
+          keyboardShouldPersistTaps="handled"
+          maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+          ListHeaderComponent={headerNode}
+          ListEmptyComponent={
+            <EmptyState title={poll.loading ? '불러오는 중…' : '기록이 없습니다'} />
+          }
+          ListFooterComponent={footerNode}
+        />
+      )}
 
       <View style={{ paddingBottom: insets.bottom + spacing.sm }}>
+        {!questionPending && guidedStyle === 'ouroboros' && mighty?.ouroboros ? (
+          <OuroborosPanel
+            ouroboros={mighty.ouroboros}
+            hasText={text.trim().length > 0}
+            busySkill={guidedSkill}
+            disabled={!client || sending}
+            onRun={runGuided}
+          />
+        ) : null}
+        {!questionPending && guidedStyle === 'paperthin' && mighty?.paperthin ? (
+          <PaperthinPanel
+            paperthin={mighty.paperthin}
+            busySkill={guidedSkill}
+            disabled={!client || sending}
+            onRun={runGuided}
+          />
+        ) : null}
         <Composer
+          text={text}
+          onChangeText={setText}
           disabled={!client || session === undefined || sending}
           terminal={session?.terminal ?? false}
           running={running}
           sending={sending}
           submitModes={hasCapability(capabilities, 'submit-mode')}
           commands={canCommands ? commands : []}
+          attachments={canAttach && session?.kind === 'claude' ? attachments : undefined}
           onSend={send}
           onStop={stop}
           onCommand={onCommand}
@@ -689,4 +824,5 @@ const makeStyles = (palette: Palette) =>
     menuTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     olderText: { color: palette.textFaint, fontSize: 12, paddingVertical: spacing.xs },
+    viewSwitch: { flexDirection: 'row', gap: spacing.xs, paddingVertical: spacing.xs },
   });

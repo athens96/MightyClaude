@@ -2,12 +2,16 @@ import {
   RelayConnection,
   RelayError,
   describeRelayFailure,
+  type AuthLease,
+  type RelayConnectionOptions,
   type RelayHostInfo,
   type RelayNotification,
   type RelayState,
 } from '@/api/relay/transport';
 import { appForeground } from '@/api/relay/foreground';
+import { LeasePool, type PoolIdentity } from '@/lib/connection-pool';
 import { clientDeviceName } from '@/lib/device';
+import type { DeviceAuthState } from '@/lib/device-token';
 import { KEY_SEPARATOR } from '@/lib/keys';
 import {
   ENTRY_PAGE_SIZE,
@@ -15,10 +19,13 @@ import {
   MAX_TEXT_BYTES,
   MAX_TITLE_LENGTH,
   MAX_WAIT_SECONDS,
+  type ChunkReceipt,
   type CommandResponse,
   type CommandsResponse,
+  type CompletedUpload,
   type CreateSessionResponse,
   type EntriesPage,
+  type GuidedRequest,
   type HostInfo,
   type MessageCommandAction,
   type MobileSessionDetail,
@@ -31,14 +38,21 @@ import {
   type StopResponse,
   type SubmitOptions,
   type SubmitResponse,
+  type UploadTicket,
 } from '@/api/types';
 
-/** Everything needed to open an encrypted tunnel to one paired desktop. */
+/**
+ * Everything needed to open an encrypted tunnel to one paired desktop. A host that has
+ * issued a device token is reached with that alone; one that has not (or an older Mac
+ * that knows no tokens) keeps using the pairing key.
+ */
 export interface HostCredentials {
   serverId: string;
   relayUrl: string;
   hostPublicKeyB64: string;
-  pairingKey: string;
+  pairingKey?: string;
+  clientId?: string;
+  deviceToken?: string;
 }
 
 export interface PollOptions {
@@ -187,6 +201,25 @@ export interface MobileClient {
     action: MessageCommandAction,
     signal?: AbortSignal,
   ): Promise<CommandResponse>;
+  /** Sends a guided Ouroboros/Paperthin skill ("mighty"); the host builds the prompt. */
+  guided(sessionId: string, input: GuidedRequest, signal?: AbortSignal): Promise<SubmitResponse>;
+  /** Opens an upload and learns the host's chunk size ("attachments"). */
+  createUpload(
+    sessionId: string,
+    input: { name: string; size: number; mimeType?: string },
+    signal?: AbortSignal,
+  ): Promise<UploadTicket>;
+  /** Sends chunk `index`, base64 encoded; chunks go out in order from 0. */
+  uploadChunk(
+    uploadId: string,
+    index: number,
+    dataBase64: string,
+    signal?: AbortSignal,
+  ): Promise<ChunkReceipt>;
+  /** Seals an upload; the host checks the size against what was declared. */
+  completeUpload(uploadId: string, signal?: AbortSignal): Promise<CompletedUpload>;
+  /** Drops an upload, finished or not. */
+  cancelUpload(uploadId: string, signal?: AbortSignal): Promise<OkResponse>;
   respondPermission(
     sessionId: string,
     input: { requestId: string; runId: string; allow: boolean },
@@ -364,6 +397,61 @@ export function createClient(channel: RelayChannel): MobileClient {
         signal,
       ),
 
+    guided: (sessionId, input, signal) => {
+      const skill = input.skill.trim();
+      if (skill.length === 0) {
+        return Promise.reject(new ApiError(400, '실행할 스킬이 없습니다.'));
+      }
+      const text = input.text?.trim();
+      if (text !== undefined && byteLength(text) > MAX_TEXT_BYTES) {
+        return Promise.reject(new ApiError(413, '메시지가 너무 깁니다 (최대 32KiB).'));
+      }
+      // An empty `text` is the same as none: the host then sends the bare skill.
+      const body: Record<string, unknown> = { style: input.style, skill };
+      if (text) body.text = text;
+      return request<SubmitResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/guided`,
+        body,
+        signal,
+      );
+    },
+
+    createUpload: (sessionId, input, signal) => {
+      const body: Record<string, unknown> = { name: input.name, size: input.size };
+      if (input.mimeType) body.mimeType = input.mimeType;
+      return request<UploadTicket>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/uploads`,
+        body,
+        signal,
+      );
+    },
+
+    uploadChunk: (uploadId, index, dataBase64, signal) =>
+      request<ChunkReceipt>(
+        'POST',
+        `/m1/uploads/${encodeURIComponent(uploadId)}/chunks/${index}`,
+        { dataBase64 },
+        signal,
+      ),
+
+    completeUpload: (uploadId, signal) =>
+      request<CompletedUpload>(
+        'POST',
+        `/m1/uploads/${encodeURIComponent(uploadId)}/complete`,
+        {},
+        signal,
+      ),
+
+    cancelUpload: (uploadId, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/uploads/${encodeURIComponent(uploadId)}/cancel`,
+        {},
+        signal,
+      ),
+
     respondPermission: (sessionId, input, signal) =>
       request<OkResponse>(
         'POST',
@@ -392,22 +480,21 @@ export function createClient(channel: RelayChannel): MobileClient {
 
 // --------------------------------------------------------------- shared pool
 
-interface PoolEntry {
-  fingerprint: string;
-  connection: RelayConnection;
-  client: MobileClient;
-  refs: number;
+const pool = new LeasePool<RelayConnection, MobileClient>();
+
+/** Everything but the secret: a change here always means a different tunnel. */
+function fingerprintOf(credentials: HostCredentials): string {
+  return [credentials.serverId, credentials.relayUrl, credentials.hostPublicKeyB64].join(
+    KEY_SEPARATOR,
+  );
 }
 
-const pool = new Map<string, PoolEntry>();
-
-function fingerprintOf(credentials: HostCredentials): string {
-  return [
-    credentials.serverId,
-    credentials.relayUrl,
-    credentials.hostPublicKeyB64,
-    credentials.pairingKey,
-  ].join(KEY_SEPARATOR);
+function identityOf(credentials: HostCredentials): PoolIdentity {
+  return {
+    fingerprint: fingerprintOf(credentials),
+    secret: credentials.deviceToken ?? credentials.pairingKey ?? '',
+    clientId: credentials.clientId ?? '',
+  };
 }
 
 export interface HostLease {
@@ -416,58 +503,63 @@ export interface HostLease {
   release: () => void;
 }
 
+export interface HostLeaseOptions {
+  /** Called with the token the host issued on this tunnel, so it can be stored. */
+  onDeviceToken?: (deviceToken: string) => void | Promise<void>;
+  /** Serialises the pairing-key authentication across this host's connections. */
+  authorize?: (state: DeviceAuthState) => Promise<AuthLease>;
+  /** Mints this host's own `clientId` after a `device-conflict`. */
+  mintClientId?: () => Promise<string | undefined>;
+}
+
+function connectionOptions(options: HostLeaseOptions): RelayConnectionOptions {
+  const built: RelayConnectionOptions = { clientName: clientDeviceName() };
+  if (options.onDeviceToken) built.onDeviceToken = options.onDeviceToken;
+  if (options.authorize) built.authorize = options.authorize;
+  if (options.mintClientId) built.mintClientId = options.mintClientId;
+  return built;
+}
+
 /**
  * One shared, reference-counted connection per host: every mounted screen leases the
- * same tunnel and the socket closes once the last one releases it.
+ * same tunnel and the socket closes once the last one releases it — a beat later, so a
+ * screen whose credentials change inside one React commit keeps the tunnel it had.
  */
-export function acquireHostClient(hostId: string, credentials: HostCredentials): HostLease {
-  const fingerprint = fingerprintOf(credentials);
-  let entry = pool.get(hostId);
-  if (entry && entry.fingerprint !== fingerprint) {
-    entry.connection.close();
-    pool.delete(hostId);
-    entry = undefined;
-  }
-  if (!entry) {
+export function acquireHostClient(
+  hostId: string,
+  credentials: HostCredentials,
+  options: HostLeaseOptions = {},
+): HostLease {
+  const lease = pool.acquire(hostId, identityOf(credentials), () => {
     const connection = new RelayConnection(credentials, {
-      clientName: clientDeviceName(),
+      ...connectionOptions(options),
       foreground: appForeground,
     });
-    entry = { fingerprint, connection, client: createClient(connection), refs: 0 };
-    pool.set(hostId, entry);
-  }
-  entry.refs += 1;
-  const leased = entry;
-  let released = false;
-  return {
-    client: leased.client,
-    connection: leased.connection,
-    release: () => {
-      if (released) return;
-      released = true;
-      leased.refs -= 1;
-      if (leased.refs > 0) return;
-      if (pool.get(hostId) === leased) pool.delete(hostId);
-      leased.connection.close();
-    },
-  };
+    return { connection, value: createClient(connection) };
+  });
+  return { client: lease.value, connection: lease.connection, release: lease.release };
+}
+
+/** The host's live tunnel, when one is already open. */
+export function peekHostConnection(hostId: string): RelayConnection | undefined {
+  return pool.peek(hostId);
 }
 
 /** Drops a host's shared connection, e.g. after unpairing. */
 export function closeHostClient(hostId: string): void {
-  const entry = pool.get(hostId);
-  if (!entry) return;
-  pool.delete(hostId);
-  entry.connection.close();
+  pool.close(hostId);
 }
 
 /**
  * One-shot reachability check for the hosts list: connect, handshake, authenticate,
  * then hang up. Rejects with a `RelayError` carrying the reason.
  */
-export async function probeHost(credentials: HostCredentials): Promise<RelayHostInfo> {
+export async function probeHost(
+  credentials: HostCredentials,
+  options: HostLeaseOptions = {},
+): Promise<RelayHostInfo> {
   const connection = new RelayConnection(credentials, {
-    clientName: clientDeviceName(),
+    ...connectionOptions(options),
     autoReconnect: false,
   });
   try {

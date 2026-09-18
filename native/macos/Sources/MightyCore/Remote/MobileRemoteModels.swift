@@ -8,15 +8,22 @@ public struct MobileRemoteSettings: Codable, Sendable, Equatable {
     public var enabled: Bool
     /// `wss://host[:port]` (or `ws://` for a local test relay). Empty = not configured.
     public var relayURL: String
-    public init(enabled: Bool = false, relayURL: String = "") { self.enabled = enabled; self.relayURL = relayURL }
-    enum CodingKeys: String, CodingKey { case enabled, relayURL }
+    /// Whether apps that predate device tokens may connect with the pairing
+    /// key alone. On by default so an upgrade breaks nothing; turning it off
+    /// means every phone must carry a token this host can revoke on its own.
+    public var allowLegacyPhones: Bool
+    public init(enabled: Bool = false, relayURL: String = "", allowLegacyPhones: Bool = true) {
+        self.enabled = enabled; self.relayURL = relayURL; self.allowLegacyPhones = allowLegacyPhones
+    }
+    enum CodingKeys: String, CodingKey { case enabled, relayURL, allowLegacyPhones }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         relayURL = try c.decodeIfPresent(String.self, forKey: .relayURL) ?? ""
+        allowLegacyPhones = try c.decodeIfPresent(Bool.self, forKey: .allowLegacyPhones) ?? true
     }
     public var normalized: MobileRemoteSettings {
-        MobileRemoteSettings(enabled: enabled, relayURL: RelayEndpoint.normalize(relayURL) ?? "")
+        MobileRemoteSettings(enabled: enabled, relayURL: RelayEndpoint.normalize(relayURL) ?? "", allowLegacyPhones: allowLegacyPhones)
     }
 }
 
@@ -35,7 +42,7 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// The m1 extensions this host implements. A phone shows a feature only when
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
-    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "status"]
+    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments"]
 }
 
 /// The fixed string vocabularies of the extension (docs/mobile-remote.md,
@@ -53,6 +60,24 @@ public enum MobileWire {
     public static let maximumTitle = 80
     public static let maximumPageLimit = 100
     public static let defaultPageLimit = 50
+    /// Mighty blocks. `main` is the request itself; the rest are child blocks.
+    /// Built with appends rather than one concatenation: an older Swift
+    /// type-checks the chained `+` far more slowly than it does this.
+    public static let blockKinds: [String] = {
+        var kinds: [String] = ["main"]
+        kinds.append(contentsOf: MightyGraphSupport.childKinds)
+        kinds.append("agent")
+        return kinds
+    }()
+    public static let blockStatuses = ["running", "waiting", "completed", "error", "stopped"]
+    /// The contract's ceiling on a block's `output`, counted in characters.
+    public static let maximumBlockOutput = 2_000
+    /// A block's own prompt, bounded like an activity summary.
+    public static let maximumBlockSummary = 1_000
+    /// How many of a pane's newest runs the Mighty payload carries.
+    public static let mightyRuns = 20
+    /// The text a guided request may carry, the same ceiling `submit` has.
+    public static let maximumText = 32_768
 }
 
 /// What submitting text finally did. The app's own submit path answers in
@@ -71,16 +96,22 @@ public enum MobileHostError: Error, Sendable, Equatable {
     case badRequest(String)
     case notFound(String)
     case conflict(String)
+    case tooLarge(String)
+    /// Too many at once rather than too big: the caller may retry after the
+    /// ones it already holds are finished or cancelled.
+    case tooMany(String)
     public var status: Int {
         switch self {
         case .badRequest: return 400
         case .notFound: return 404
         case .conflict: return 409
+        case .tooLarge: return 413
+        case .tooMany: return 429
         }
     }
     public var message: String {
         switch self {
-        case .badRequest(let text), .notFound(let text), .conflict(let text): return text
+        case .badRequest(let text), .notFound(let text), .conflict(let text), .tooLarge(let text), .tooMany(let text): return text
         }
     }
 }
@@ -198,13 +229,15 @@ public struct MobileSessionDetail: Codable, Sendable, Equatable {
     /// True when the host still holds entries older than the ones sent here.
     public var hasOlder: Bool?
     public var settings: MobileSettings?
+    /// Present only for a pane the Mac is showing in Mighty view.
+    public var mighty: MobileMighty?
     public var statusLine: MobileStatusLine?
     public var rateLimits: [MobileRateLimit]?
     public static let maximumEntries = 80
     public init(revision: Int, session: MobileSessionSummary, entries: [LogEntry], permissions: [MobilePermission] = [], queued: [MobileQueuedItem] = [], usage: MobileUsage? = nil, elapsedSeconds: Double? = nil,
-                hasOlder: Bool? = nil, settings: MobileSettings? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil) {
+                hasOlder: Bool? = nil, settings: MobileSettings? = nil, mighty: MobileMighty? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil) {
         self.revision = revision; self.session = session; self.entries = entries; self.permissions = permissions; self.queued = queued; self.usage = usage; self.elapsedSeconds = elapsedSeconds
-        self.hasOlder = hasOlder; self.settings = settings; self.statusLine = statusLine; self.rateLimits = rateLimits
+        self.hasOlder = hasOlder; self.settings = settings; self.mighty = mighty; self.statusLine = statusLine; self.rateLimits = rateLimits
     }
 }
 
@@ -242,6 +275,112 @@ public struct MobileSettings: Codable, Sendable, Equatable {
     public init(editable: Bool, model: String, permissionMode: String, effort: String? = nil, agentViewMode: String, mightyStyle: String, options: MobileSettingsOptions) {
         self.editable = editable; self.model = model; self.permissionMode = permissionMode; self.effort = effort
         self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.options = options
+    }
+}
+
+/// One block of the Mighty graph as a phone draws it: the request itself
+/// (`main`) or one of its children. `output` is bounded to 2 000 characters,
+/// so a long answer is shown in the transcript, not here.
+public struct MobileBlock: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var kind: String
+    public var title: String
+    public var status: String
+    public var summary: String?
+    public var output: String?
+    public var durationMs: Double?
+    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil) {
+        self.id = id; self.kind = kind; self.title = title; self.status = status
+        self.summary = summary; self.output = output; self.durationMs = durationMs
+    }
+}
+
+public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var input: String
+    /// The guided style's own name for the request ("인터뷰", "♻️ re0"); absent
+    /// on a plain CLI pane, where a request is just a request.
+    public var title: String?
+    public var status: String
+    public var blocks: [MobileBlock]
+    public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock]) {
+        self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks
+    }
+}
+
+/// One button of a guided style: the skill to send and what it does.
+public struct MobileGuidedSkill: Codable, Sendable, Equatable, Identifiable {
+    public var skill: String
+    public var title: String
+    public var help: String
+    public var id: String { skill }
+    public init(skill: String, title: String, help: String) { self.skill = skill; self.title = title; self.help = help }
+}
+
+public struct MobileOuroboros: Codable, Sendable, Equatable {
+    public var phase: String
+    /// Whether the plugin and uvx are both in place; false means the phone
+    /// shows the Mac's own setup notice instead of the buttons.
+    public var ready: Bool
+    public var takesText: [String]
+    public var next: [MobileGuidedSkill]
+    public var all: [MobileGuidedSkill]
+    public init(phase: String, ready: Bool, takesText: [String], next: [MobileGuidedSkill], all: [MobileGuidedSkill]) {
+        self.phase = phase; self.ready = ready; self.takesText = takesText; self.next = next; self.all = all
+    }
+}
+
+public struct MobilePaperthinSkill: Codable, Sendable, Equatable, Identifiable {
+    public var name: String
+    public var emoji: String
+    public var summary: String
+    public var scope: String
+    public var userInvoked: Bool
+    public var readOnly: Bool
+    public var id: String { name }
+    public init(name: String, emoji: String, summary: String, scope: String, userInvoked: Bool, readOnly: Bool) {
+        self.name = name; self.emoji = emoji; self.summary = summary; self.scope = scope
+        self.userInvoked = userInvoked; self.readOnly = readOnly
+    }
+}
+
+public struct MobilePaperthinDomain: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var title: String
+    public var axis: String
+    public var question: String
+    public var skills: [MobilePaperthinSkill]
+    public init(id: String, title: String, axis: String, question: String, skills: [MobilePaperthinSkill]) {
+        self.id = id; self.title = title; self.axis = axis; self.question = question; self.skills = skills
+    }
+}
+
+public struct MobilePaperthinCasebook: Codable, Sendable, Equatable {
+    public var name: String
+    public var weight: String
+    public var files: [String]
+    public init(name: String, weight: String, files: [String]) { self.name = name; self.weight = weight; self.files = files }
+}
+
+public struct MobilePaperthin: Codable, Sendable, Equatable {
+    public var installed: Bool
+    public var recommended: String?
+    public var domains: [MobilePaperthinDomain]
+    public var casebook: MobilePaperthinCasebook?
+    public init(installed: Bool, recommended: String? = nil, domains: [MobilePaperthinDomain], casebook: MobilePaperthinCasebook? = nil) {
+        self.installed = installed; self.recommended = recommended; self.domains = domains; self.casebook = casebook
+    }
+}
+
+/// The Mighty view of a pane: its style, its newest runs as blocks, and the
+/// guided panel of whichever style it is in (never both).
+public struct MobileMighty: Codable, Sendable, Equatable {
+    public var style: String
+    public var runs: [MobileMightyRun]
+    public var ouroboros: MobileOuroboros?
+    public var paperthin: MobilePaperthin?
+    public init(style: String, runs: [MobileMightyRun], ouroboros: MobileOuroboros? = nil, paperthin: MobilePaperthin? = nil) {
+        self.style = style; self.runs = runs; self.ouroboros = ouroboros; self.paperthin = paperthin
     }
 }
 
@@ -302,7 +441,46 @@ public struct MobileCommandResult: Codable, Sendable, Equatable {
 public struct MobileSubmitRequest: Codable, Sendable {
     public var text: String
     public var mode: String?
-    public init(text: String, mode: String? = nil) { self.text = text; self.mode = mode }
+    /// Upload ids the phone finished; each is spent by the submit that names it.
+    public var attachments: [String]?
+    public init(text: String, mode: String? = nil, attachments: [String]? = nil) { self.text = text; self.mode = mode; self.attachments = attachments }
+}
+public struct MobileGuidedRequest: Codable, Sendable {
+    public var style: String
+    public var skill: String
+    public var text: String?
+    public init(style: String, skill: String, text: String? = nil) { self.style = style; self.skill = skill; self.text = text }
+}
+public struct MobileUploadRequest: Codable, Sendable {
+    public var name: String
+    public var size: Int
+    public var mimeType: String?
+    public init(name: String, size: Int, mimeType: String? = nil) { self.name = name; self.size = size; self.mimeType = mimeType }
+}
+public struct MobileUploadTicket: Codable, Sendable, Equatable {
+    public var `protocol`: Int = 1
+    public var uploadId: String
+    public var chunkSize: Int
+    public init(uploadId: String, chunkSize: Int) { self.uploadId = uploadId; self.chunkSize = chunkSize }
+}
+public struct MobileChunkRequest: Codable, Sendable { public var dataBase64: String; public init(dataBase64: String) { self.dataBase64 = dataBase64 } }
+public struct MobileChunkResult: Codable, Sendable, Equatable {
+    public var `protocol`: Int = 1
+    public var ok: Bool = true
+    public var received: Int
+    public init(received: Int) { self.received = received }
+}
+/// A finished upload as the phone refers to it in `submit`.
+public struct MobileUploadAttachment: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var name: String
+    public var size: Int
+    public init(id: String, name: String, size: Int) { self.id = id; self.name = name; self.size = size }
+}
+public struct MobileUploadResult: Codable, Sendable, Equatable {
+    public var `protocol`: Int = 1
+    public var attachment: MobileUploadAttachment
+    public init(attachment: MobileUploadAttachment) { self.attachment = attachment }
 }
 public struct MobileRenameRequest: Codable, Sendable { public var title: String; public init(title: String) { self.title = title } }
 public struct MobileCommandRequest: Codable, Sendable { public var action: String; public init(action: String) { self.action = action } }
@@ -366,9 +544,15 @@ public struct MobileHostStatus: Codable, Sendable, Equatable {
     public var pairingURL: String?
     public var hostName: String
     public var detail: String
-    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "") {
+    /// Every phone this host has admitted, whether it is connected now or not.
+    public var devices: [MobileDeviceInfo]
+    /// What went wrong with the device list file itself, if anything: the
+    /// sheet has to say so, because the phones in it are no longer admitted.
+    public var registryWarning: String?
+    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "", devices: [MobileDeviceInfo] = [], registryWarning: String? = nil) {
         self.enabled = enabled; self.relayURL = relayURL; self.relayConnected = relayConnected; self.clients = clients; self.serverId = serverId
         self.publicKeyB64 = publicKeyB64; self.key = key; self.pairingURL = pairingURL; self.hostName = hostName; self.detail = detail
+        self.devices = devices; self.registryWarning = registryWarning
     }
 }
 
