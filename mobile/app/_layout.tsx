@@ -4,8 +4,12 @@ import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastHost } from '@/components/toast-host';
+import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
 import { colors } from '@/theme';
+
+// `@noble/*` reads `globalThis.crypto.getRandomValues`, which React Native lacks.
+installCryptoPolyfill();
 
 const navigationTheme: typeof DarkTheme = {
   ...DarkTheme,

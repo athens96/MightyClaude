@@ -13,7 +13,8 @@ const reachabilityLabels: Record<Reachability, string> = {
   checking: '확인 중…',
   online: '연결됨',
   unauthorized: '재페어링 필요',
-  offline: '연결 불가',
+  offline: '호스트 오프라인',
+  'relay-offline': '릴레이 연결 안 됨',
 };
 
 const reachabilityColors: Record<Reachability, string> = {
@@ -22,6 +23,7 @@ const reachabilityColors: Record<Reachability, string> = {
   online: colors.success,
   unauthorized: colors.danger,
   offline: colors.grey,
+  'relay-offline': colors.warning,
 };
 
 function HostRow({ host }: { host: PairedHost }) {
@@ -59,7 +61,6 @@ function HostRow({ host }: { host: PairedHost }) {
           <Text style={[styles.status, { color: reachabilityColors[status] }]}>
             {reachabilityLabels[status]}
           </Text>
-          {host.platform ? <Text style={styles.meta}>· {host.platform}</Text> : null}
           {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
         </View>
       </Card>

@@ -1,140 +1,140 @@
-import { ApiError, NetworkError, byteLength, createClient } from '@/api/client';
+import { ApiError, byteLength, createClient, describeError, needsRepair } from '@/api/client';
+import { RelayError } from '@/api/relay/transport';
+import type { RelayChannel } from '@/api/client';
+import type { RelayNotification } from '@/api/relay/transport';
 
 interface Recorded {
-  url: string;
-  init: RequestInit;
+  method: 'GET' | 'POST';
+  path: string;
+  body?: unknown;
 }
 
-function mockFetch(
-  body: unknown,
-  status = 200,
-): { calls: Recorded[]; restore: () => void } {
+function fakeChannel(response: { status: number; body: unknown }) {
   const calls: Recorded[] = [];
-  const original = globalThis.fetch;
-  const fake = jest.fn(async (url: string, init: RequestInit) => {
-    calls.push({ url, init });
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      text: async () => JSON.stringify(body),
-    } as Response;
-  });
-  globalThis.fetch = fake as unknown as typeof fetch;
-  return { calls, restore: () => (globalThis.fetch = original) };
+  const listeners = new Set<(event: RelayNotification) => void>();
+  const channel: RelayChannel = {
+    request: (method, path, body) => {
+      calls.push({ method, path, body });
+      return Promise.resolve(response);
+    },
+    onNotify: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  return { channel, calls, emit: (event: RelayNotification) => listeners.forEach((l) => l(event)) };
 }
 
-const credentials = { host: '100.64.1.2', port: 43138, key: 'secret-key' };
+const okState = { status: 200, body: { protocol: 1, revision: 7, hostName: 'h', workspaces: [], sessions: [] } };
 
-describe('createClient', () => {
-  it('builds urls against the host origin', () => {
-    const client = createClient(credentials);
-    expect(client.baseUrl).toBe('http://100.64.1.2:43138');
-    expect(client.buildUrl('/m1/info')).toBe('http://100.64.1.2:43138/m1/info');
-  });
-
-  it('sends the bearer key and protocol header, and no Origin', () => {
-    const headers = createClient(credentials).buildHeaders(true);
-    expect(headers.Authorization).toBe('Bearer secret-key');
-    expect(headers['x-mighty-mobile-version']).toBe('1');
-    expect(headers['Content-Type']).toBe('application/json');
-    expect(headers.Origin).toBeUndefined();
-  });
-
-  it('omits Content-Type for bodyless requests', () => {
-    expect(createClient(credentials).buildHeaders(false)['Content-Type']).toBeUndefined();
-  });
-
-  it('clamps the long-poll wait and passes since', async () => {
-    const mock = mockFetch({ protocol: 1, revision: 7, hostName: 'h', workspaces: [], sessions: [] });
-    const client = createClient(credentials);
+describe('createClient over a relay channel', () => {
+  it('clamps the long-poll wait and passes since inside the tunnelled path', async () => {
+    const fake = fakeChannel(okState);
+    const client = createClient(fake.channel);
     await client.state({ since: 3, wait: 99 });
     await client.state({ since: 3, wait: -5 });
     await client.state();
-    mock.restore();
-    expect(mock.calls.map((call) => call.url)).toEqual([
-      'http://100.64.1.2:43138/m1/state?since=3&wait=10',
-      'http://100.64.1.2:43138/m1/state?since=3&wait=0',
-      'http://100.64.1.2:43138/m1/state?wait=0',
+    expect(fake.calls.map((call) => call.path)).toEqual([
+      '/m1/state?since=3&wait=10',
+      '/m1/state?since=3&wait=0',
+      '/m1/state?wait=0',
     ]);
+    expect(fake.calls.every((call) => call.method === 'GET')).toBe(true);
   });
 
-  it('percent-encodes path segments', async () => {
-    const mock = mockFetch({ protocol: 1, accepted: 'started' });
-    await createClient(credentials).submit('a/b c', 'hi');
-    mock.restore();
-    expect(mock.calls[0]?.url).toBe('http://100.64.1.2:43138/m1/sessions/a%2Fb%20c/submit');
-    expect(mock.calls[0]?.init.method).toBe('POST');
-    expect(mock.calls[0]?.init.body).toBe(JSON.stringify({ text: 'hi' }));
-  });
-
-  it('posts permission and answer payloads verbatim', async () => {
-    const mock = mockFetch({ protocol: 1, ok: true });
-    const client = createClient(credentials);
-    await client.respondPermission('s1', { requestId: 'r1', runId: 'run1', allow: true });
+  it('percent-encodes path segments and sends bodies verbatim', async () => {
+    const fake = fakeChannel({ status: 200, body: { protocol: 1, accepted: 'started' } });
+    const client = createClient(fake.channel);
+    await client.submit('a/b c', 'hi');
     await client.answer('s1', {
       requestId: 'r1',
       runId: 'run1',
       answers: { '어떻게 할까요?': { selectedOptions: ['계속'], customText: '빠르게' } },
     });
-    mock.restore();
-    expect(mock.calls[0]?.init.body).toBe(
-      JSON.stringify({ requestId: 'r1', runId: 'run1', allow: true }),
-    );
-    expect(mock.calls[1]?.url).toBe('http://100.64.1.2:43138/m1/sessions/s1/answers');
-    expect(JSON.parse(String(mock.calls[1]?.init.body))).toEqual({
+    expect(fake.calls[0]).toEqual({
+      method: 'POST',
+      path: '/m1/sessions/a%2Fb%20c/submit',
+      body: { text: 'hi' },
+    });
+    expect(fake.calls[1]?.path).toBe('/m1/sessions/s1/answers');
+    expect(fake.calls[1]?.body).toEqual({
       requestId: 'r1',
       runId: 'run1',
       answers: { '어떻게 할까요?': { selectedOptions: ['계속'], customText: '빠르게' } },
     });
   });
 
-  it('creates workspace sessions', async () => {
-    const mock = mockFetch({ protocol: 1, sessionId: 'new' }, 201);
-    const result = await createClient(credentials).createSession('ws1', {
-      kind: 'claude',
-      provider: 'codex',
-    });
-    mock.restore();
-    expect(mock.calls[0]?.url).toBe('http://100.64.1.2:43138/m1/workspaces/ws1/sessions');
-    expect(result.sessionId).toBe('new');
+  it('routes the remaining m1 routes unchanged', async () => {
+    const fake = fakeChannel({ status: 200, body: { protocol: 1, ok: true } });
+    const client = createClient(fake.channel);
+    await client.info();
+    await client.session('s1', { since: 2, wait: 10 });
+    await client.stop('s1');
+    await client.respondPermission('s1', { requestId: 'r', runId: 'run', allow: true });
+    await client.createSession('ws1', { kind: 'claude', provider: 'codex' });
+    expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /m1/info',
+      'GET /m1/sessions/s1?since=2&wait=10',
+      'POST /m1/sessions/s1/stop',
+      'POST /m1/sessions/s1/permission',
+      'POST /m1/workspaces/ws1/sessions',
+    ]);
   });
 
-  it('turns error bodies into ApiError with the server message', async () => {
-    const mock = mockFetch({ protocol: 1, error: '세션이 실행 중이 아닙니다' }, 409);
-    await expect(createClient(credentials).stop('s1')).rejects.toMatchObject({
+  it('turns non-2xx statuses into ApiError with the host message', async () => {
+    const fake = fakeChannel({ status: 409, body: { protocol: 1, error: '세션이 실행 중이 아닙니다' } });
+    await expect(createClient(fake.channel).stop('s1')).rejects.toMatchObject({
       name: 'ApiError',
       status: 409,
       message: '세션이 실행 중이 아닙니다',
     });
-    mock.restore();
   });
 
   it('flags 401 as needing re-pairing', async () => {
-    const mock = mockFetch({ protocol: 1, error: 'unauthorized' }, 401);
-    const error = await createClient(credentials)
+    const fake = fakeChannel({ status: 401, body: { protocol: 1, error: 'unauthorized' } });
+    const error = await createClient(fake.channel)
       .info()
       .catch((caught: unknown) => caught);
-    mock.restore();
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).needsRepair).toBe(true);
+    expect(needsRepair(error)).toBe(true);
+    expect(describeError(error)).toBe('재페어링 필요');
   });
 
-  it('rejects oversized submissions before hitting the network', async () => {
-    const mock = mockFetch({ protocol: 1, accepted: 'started' });
+  it('rejects oversized submissions before touching the tunnel', async () => {
+    const fake = fakeChannel(okState);
     await expect(
-      createClient(credentials).submit('s1', 'x'.repeat(32 * 1024 + 1)),
+      createClient(fake.channel).submit('s1', 'x'.repeat(32 * 1024 + 1)),
     ).rejects.toBeInstanceOf(ApiError);
-    mock.restore();
-    expect(mock.calls).toHaveLength(0);
+    expect(fake.calls).toHaveLength(0);
   });
 
-  it('wraps transport failures as NetworkError', async () => {
-    const original = globalThis.fetch;
-    globalThis.fetch = jest.fn(async () => {
-      throw new TypeError('Network request failed');
-    }) as unknown as typeof fetch;
-    await expect(createClient(credentials).info()).rejects.toBeInstanceOf(NetworkError);
-    globalThis.fetch = original;
+  it('honours an abort signal without cancelling the host-side work', async () => {
+    const fake = fakeChannel(okState);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(createClient(fake.channel).state({ signal: controller.signal })).rejects.toThrow(
+      /취소/,
+    );
+  });
+
+  it('forwards notify events to subscribers', () => {
+    const fake = fakeChannel(okState);
+    const seen: RelayNotification[] = [];
+    const off = createClient(fake.channel).onNotify((event) => seen.push(event));
+    fake.emit({ scope: 'session:s1', revision: 9 });
+    off();
+    fake.emit({ scope: 'session:s1', revision: 10 });
+    expect(seen).toEqual([{ scope: 'session:s1', revision: 9 }]);
+  });
+});
+
+describe('describeError / needsRepair', () => {
+  it('maps relay failures to Korean status text', () => {
+    expect(describeError(new RelayError('host-offline'))).toBe('호스트 오프라인');
+    expect(describeError(new RelayError('relay-unreachable'))).toBe('릴레이 연결 안 됨');
+    expect(describeError(new RelayError('unpaired'))).toBe('재페어링 필요');
+    expect(needsRepair(new RelayError('unpaired'))).toBe(true);
+    expect(needsRepair(new RelayError('host-offline'))).toBe(false);
   });
 });
 

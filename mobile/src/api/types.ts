@@ -1,7 +1,6 @@
 /** Wire types for the MightyClaude mobile protocol ("m1", protocol version 1). */
 
 export const PROTOCOL_VERSION = 1;
-export const DEFAULT_PORT = 43138;
 /** Server-side limit for submitted text. */
 export const MAX_TEXT_BYTES = 32 * 1024;
 /** Server-side limit for the long-poll `wait` query parameter, in seconds. */

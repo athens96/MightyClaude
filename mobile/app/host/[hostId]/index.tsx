@@ -39,11 +39,22 @@ export default function HostScreen() {
     [applyState, hostId],
   );
 
+  const subscribe = useCallback(
+    (onChange: (revision: number) => void) => {
+      if (!client) return () => undefined;
+      return client.onNotify((event) => {
+        if (event.scope === 'state') onChange(event.revision);
+      });
+    },
+    [client],
+  );
+
   const poll = useLongPoll<MobileState>({
     enabled: Boolean(client && hostId),
     fetchPage,
     revisionOf: (data) => data.revision,
     onData,
+    subscribe,
   });
 
   const groups = useMemo(() => (state ? groupSessionsByWorkspace(state) : []), [state]);

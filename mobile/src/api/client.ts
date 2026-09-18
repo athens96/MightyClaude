@@ -1,4 +1,13 @@
-import { buildBaseUrl } from '@/lib/pairing';
+import {
+  RelayConnection,
+  RelayError,
+  describeRelayFailure,
+  type RelayHostInfo,
+  type RelayNotification,
+  type RelayState,
+} from '@/api/relay/transport';
+import { appForeground } from '@/api/relay/foreground';
+import { clientDeviceName } from '@/lib/device';
 import {
   MAX_TEXT_BYTES,
   MAX_WAIT_SECONDS,
@@ -14,10 +23,12 @@ import {
   type SubmitResponse,
 } from '@/api/types';
 
+/** Everything needed to open an encrypted tunnel to one paired desktop. */
 export interface HostCredentials {
-  host: string;
-  port: number;
-  key: string;
+  serverId: string;
+  relayUrl: string;
+  hostPublicKeyB64: string;
+  pairingKey: string;
 }
 
 export interface PollOptions {
@@ -28,7 +39,7 @@ export interface PollOptions {
   signal?: AbortSignal;
 }
 
-/** An HTTP-level failure reported by the host with a `{ protocol, error }` body. */
+/** An m1-level failure reported by the host with a `{ protocol, error }` body. */
 export class ApiError extends Error {
   readonly status: number;
 
@@ -38,17 +49,9 @@ export class ApiError extends Error {
     this.status = status;
   }
 
-  /** 401 means the stored key no longer matches the host. */
+  /** 401 means the stored pairing key no longer matches the host. */
   get needsRepair(): boolean {
     return this.status === 401;
-  }
-}
-
-/** A transport failure: host unreachable, DNS failure, timeout, TLS error. */
-export class NetworkError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NetworkError';
   }
 }
 
@@ -56,12 +59,19 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError');
 }
 
+/** True when the caller should send the user back through pairing. */
+export function needsRepair(error: unknown): boolean {
+  if (error instanceof ApiError) return error.needsRepair;
+  if (error instanceof RelayError) return error.needsRepair;
+  return false;
+}
+
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.needsRepair) return '재페어링 필요';
     return error.message;
   }
-  if (error instanceof NetworkError) return '호스트에 연결할 수 없습니다.';
+  if (error instanceof RelayError) return describeRelayFailure(error.failure);
   if (error instanceof Error) return error.message;
   return '알 수 없는 오류';
 }
@@ -99,10 +109,22 @@ export function byteLength(text: string): number {
   return bytes;
 }
 
+/** The part of `RelayConnection` the client needs; keeps tests free of sockets. */
+export interface RelayChannel {
+  request(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    timeoutMs?: number,
+  ): Promise<{ status: number; body: unknown }>;
+  onNotify(listener: (event: RelayNotification) => void): () => void;
+  onStateChange?(listener: (state: RelayState, failure?: string) => void): () => void;
+  ready?(): Promise<RelayHostInfo>;
+}
+
 export interface MobileClient {
-  readonly baseUrl: string;
-  buildUrl(path: string): string;
-  buildHeaders(withBody: boolean): Record<string, string>;
+  /** Fires when the host says a scope changed, so pending polls can re-issue. */
+  onNotify(listener: (event: RelayNotification) => void): () => void;
   info(signal?: AbortSignal): Promise<HostInfo>;
   state(options?: PollOptions): Promise<MobileState>;
   session(sessionId: string, options?: PollOptions): Promise<MobileSessionDetail>;
@@ -125,113 +147,192 @@ export interface MobileClient {
   ): Promise<CreateSessionResponse>;
 }
 
-export function createClient(credentials: HostCredentials): MobileClient {
-  const baseUrl = buildBaseUrl(credentials.host, credentials.port);
+class AbortedError extends Error {
+  constructor() {
+    super('요청이 취소되었습니다.');
+    this.name = 'AbortError';
+  }
+}
 
-  const buildUrl = (path: string): string => `${baseUrl}${path}`;
-
-  const buildHeaders = (withBody: boolean): Record<string, string> => {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${credentials.key}`,
-      'x-mighty-mobile-version': '1',
-      Accept: 'application/json',
-    };
-    if (withBody) headers['Content-Type'] = 'application/json';
-    return headers;
-  };
-
+/**
+ * Wraps a relay channel in the m1 REST surface the screens already use. Each call
+ * becomes one `{id, method, path, body}` frame and resolves from `{id, status, body}`.
+ */
+export function createClient(channel: RelayChannel): MobileClient {
   async function request<T>(
+    method: 'GET' | 'POST',
     path: string,
-    init: { method: 'GET' | 'POST'; body?: unknown; signal?: AbortSignal },
+    body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
-    const hasBody = init.body !== undefined;
-    let response: Response;
-    try {
-      response = await fetch(buildUrl(path), {
-        method: init.method,
-        headers: buildHeaders(hasBody),
-        body: hasBody ? JSON.stringify(init.body) : undefined,
-        signal: init.signal,
-      });
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      throw new NetworkError(error instanceof Error ? error.message : String(error));
-    }
+    if (signal?.aborted) throw new AbortedError();
+    const inflight = channel.request(method, path, body);
+    // The host answers the abandoned request at its own pace; we simply stop waiting.
+    const response = signal
+      ? await Promise.race([
+          inflight,
+          new Promise<never>((_, reject) => {
+            signal.addEventListener('abort', () => reject(new AbortedError()), { once: true });
+          }),
+        ])
+      : await inflight;
 
-    const raw = await response.text();
-    let parsed: unknown = null;
-    if (raw.length > 0) {
-      try {
-        parsed = JSON.parse(raw) as unknown;
-      } catch {
-        parsed = null;
-      }
+    if (response.status < 200 || response.status >= 300) {
+      throw new ApiError(response.status, errorMessageFrom(response.body, response.status));
     }
-
-    if (!response.ok) {
-      throw new ApiError(response.status, errorMessageFrom(parsed, response.status));
-    }
-    if (parsed === null) {
+    if (response.body === null || response.body === undefined) {
       throw new ApiError(response.status, '응답을 해석할 수 없습니다.');
     }
-    return parsed as T;
+    return response.body as T;
   }
 
   return {
-    baseUrl,
-    buildUrl,
-    buildHeaders,
+    onNotify: (listener) => channel.onNotify(listener),
 
-    info: (signal) => request<HostInfo>('/m1/info', { method: 'GET', signal }),
+    info: (signal) => request<HostInfo>('GET', '/m1/info', undefined, signal),
 
     state: (options) =>
-      request<MobileState>(`/m1/state${pollQuery(options)}`, {
-        method: 'GET',
-        signal: options?.signal,
-      }),
+      request<MobileState>('GET', `/m1/state${pollQuery(options)}`, undefined, options?.signal),
 
     session: (sessionId, options) =>
       request<MobileSessionDetail>(
+        'GET',
         `/m1/sessions/${encodeURIComponent(sessionId)}${pollQuery(options)}`,
-        { method: 'GET', signal: options?.signal },
+        undefined,
+        options?.signal,
       ),
 
     submit: (sessionId, text, signal) => {
       if (byteLength(text) > MAX_TEXT_BYTES) {
         return Promise.reject(new ApiError(413, '메시지가 너무 깁니다 (최대 32KiB).'));
       }
-      return request<SubmitResponse>(`/m1/sessions/${encodeURIComponent(sessionId)}/submit`, {
-        method: 'POST',
-        body: { text },
+      return request<SubmitResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/submit`,
+        { text },
         signal,
-      });
+      );
     },
 
     stop: (sessionId, signal) =>
-      request<StopResponse>(`/m1/sessions/${encodeURIComponent(sessionId)}/stop`, {
-        method: 'POST',
-        body: {},
+      request<StopResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/stop`,
+        {},
         signal,
-      }),
+      ),
 
     respondPermission: (sessionId, input, signal) =>
-      request<OkResponse>(`/m1/sessions/${encodeURIComponent(sessionId)}/permission`, {
-        method: 'POST',
-        body: input,
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/permission`,
+        input,
         signal,
-      }),
+      ),
 
     answer: (sessionId, input, signal) =>
-      request<OkResponse>(`/m1/sessions/${encodeURIComponent(sessionId)}/answers`, {
-        method: 'POST',
-        body: input,
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/answers`,
+        input,
         signal,
-      }),
+      ),
 
     createSession: (workspaceId, input, signal) =>
       request<CreateSessionResponse>(
+        'POST',
         `/m1/workspaces/${encodeURIComponent(workspaceId)}/sessions`,
-        { method: 'POST', body: input, signal },
+        input,
+        signal,
       ),
   };
 }
+
+// --------------------------------------------------------------- shared pool
+
+interface PoolEntry {
+  fingerprint: string;
+  connection: RelayConnection;
+  client: MobileClient;
+  refs: number;
+}
+
+const pool = new Map<string, PoolEntry>();
+
+function fingerprintOf(credentials: HostCredentials): string {
+  return [
+    credentials.serverId,
+    credentials.relayUrl,
+    credentials.hostPublicKeyB64,
+    credentials.pairingKey,
+  ].join(' ');
+}
+
+export interface HostLease {
+  client: MobileClient;
+  connection: RelayConnection;
+  release: () => void;
+}
+
+/**
+ * One shared, reference-counted connection per host: every mounted screen leases the
+ * same tunnel and the socket closes once the last one releases it.
+ */
+export function acquireHostClient(hostId: string, credentials: HostCredentials): HostLease {
+  const fingerprint = fingerprintOf(credentials);
+  let entry = pool.get(hostId);
+  if (entry && entry.fingerprint !== fingerprint) {
+    entry.connection.close();
+    pool.delete(hostId);
+    entry = undefined;
+  }
+  if (!entry) {
+    const connection = new RelayConnection(credentials, {
+      clientName: clientDeviceName(),
+      foreground: appForeground,
+    });
+    entry = { fingerprint, connection, client: createClient(connection), refs: 0 };
+    pool.set(hostId, entry);
+  }
+  entry.refs += 1;
+  const leased = entry;
+  let released = false;
+  return {
+    client: leased.client,
+    connection: leased.connection,
+    release: () => {
+      if (released) return;
+      released = true;
+      leased.refs -= 1;
+      if (leased.refs > 0) return;
+      if (pool.get(hostId) === leased) pool.delete(hostId);
+      leased.connection.close();
+    },
+  };
+}
+
+/** Drops a host's shared connection, e.g. after unpairing. */
+export function closeHostClient(hostId: string): void {
+  const entry = pool.get(hostId);
+  if (!entry) return;
+  pool.delete(hostId);
+  entry.connection.close();
+}
+
+/**
+ * One-shot reachability check for the hosts list: connect, handshake, authenticate,
+ * then hang up. Rejects with a `RelayError` carrying the reason.
+ */
+export async function probeHost(credentials: HostCredentials): Promise<RelayHostInfo> {
+  const connection = new RelayConnection(credentials, {
+    clientName: clientDeviceName(),
+    autoReconnect: false,
+  });
+  try {
+    return await connection.ready();
+  } finally {
+    connection.close();
+  }
+}
+
+export { RelayError };
