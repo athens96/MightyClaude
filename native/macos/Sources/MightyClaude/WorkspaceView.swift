@@ -198,6 +198,7 @@ struct WorkspaceView: View {
                         Button("실행 창 닫기", role: .destructive) { store.closeSession(session.id) }
                     }
                 }
+                workspaceAddMenu(workspace)
             }
         }.padding(.bottom, selected ? 12 : 1)
     }
@@ -222,12 +223,12 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            workspaceAddMenu(workspace)
         }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 10)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-header-\(workspace.id)")
     }
 
+    /// Last row of a workspace's pane list in the sidebar, laid out like the rows above it.
     private func workspaceAddMenu(_ workspace: Workspace) -> some View {
         Menu {
             ForEach(ProviderOptions.ids, id: \.self) { provider in
@@ -243,12 +244,19 @@ struct WorkspaceView: View {
                 Label(workspace.remote == nil ? "새 터미널" : "새 원격 명령", systemImage: "terminal")
             }
         } label: {
-            Image(systemName: "plus.circle.fill").font(.system(size: 20, weight: .semibold)).frame(width: 28, height: 28)
-                .foregroundStyle(Palette.canvas, Palette.accent)
+            HStack(spacing: 8) {
+                Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 12)
+                Text("에이전트 추가").font(.system(size: 11))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.accent)
+            .padding(.leading, 26).padding(.trailing, 12).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
         .disabled(store.hasModal)
-        .help("이 워크스페이스에 실행 창 추가")
+        .help("이 워크스페이스에 Claude · Codex · Gemini 실행 창이나 터미널 추가")
         .accessibilityLabel("\(workspace.name)에 실행 창 추가")
         .accessibilityIdentifier("workspace-add-session-\(workspace.id)")
     }
