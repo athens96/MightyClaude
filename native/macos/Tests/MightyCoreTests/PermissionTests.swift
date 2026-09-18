@@ -129,6 +129,24 @@ struct PermissionTests {
         #expect(replayWrites.last == Data("prompt\n".utf8)); replay.cancelAll()
     }
 
+    /// Recorded from `claude --resume` after a process that left `sleep 600` running in the background.
+    @Test func aLeftoverTaskReportDoesNotEndTheRequest() throws {
+        var logs: [String] = []; var results = 0
+        let parser = CLIStreamParser(provider: "claude", log: { logs.append($1) }, resume: { _ in }, activityNamespace: "run", activity: { _ in }, result: { results += 1 })
+        parser.push(try json(["type": "system", "subtype": "task_notification", "task_id": "b9f44slha", "status": "stopped", "summary": "Background shell command didn't finish before the previous session ended"]) + Data([10]))
+        let leftover: [String: Any] = ["type": "result", "subtype": "success", "is_error": false, "num_turns": 0, "result": "", "total_cost_usd": 0, "origin": ["kind": "task-notification"]]
+        parser.push(try json(leftover) + Data([10]))
+        // Claude's stdin must stay open: the real turn has not started and may still ask for approval.
+        #expect(results == 0 && logs.isEmpty)
+        #expect(ClaudeStream.isNotificationResult(leftover))
+        parser.push(try json(["type": "assistant", "message": ["content": [["type": "text", "text": "pong"]]]]) + Data([10]))
+        let real: [String: Any] = ["type": "result", "subtype": "success", "is_error": false, "num_turns": 1, "result": "pong"]
+        parser.push(try json(real) + Data([10])); parser.flush()
+        #expect(results == 1 && logs == ["pong"])
+        #expect(!ClaudeStream.isNotificationResult(real) && !ClaudeStream.isNotificationResult(["type": "result", "origin": ["kind": "user"]]))
+        #expect(!ClaudeStream.isNotificationResult(["type": "assistant", "origin": ["kind": "task-notification"]]))
+    }
+
     @Test func controlsDoNotLeakIntoLogsAndDirectPermissionStateOutranksDelayedMods() throws {
         var controls: [Data] = []; var logs: [String] = []; var activities: [AgentActivity] = []; var results = 0
         let parser = CLIStreamParser(provider: "claude", log: { logs.append($1) }, resume: { _ in }, activityNamespace: "run", activity: { activities.append($0) }, control: { controls.append($0) }, result: { results += 1 })

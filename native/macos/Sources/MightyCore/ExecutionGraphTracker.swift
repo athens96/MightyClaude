@@ -256,7 +256,7 @@ final class ExecutionGraphTracker {
             }
             // Task completion arrives as an injected user message, not a tool event.
             if let text = Self.text(message["content"]), text.contains("<task-notification>") { settleTasks(in: text) }
-        } else if type == "result" {
+        } else if type == "result", !ClaudeStream.isNotificationResult(value) {
             if parentTool == nil {
                 // Main output comes only from the CLI's actual root result.
                 update(mainID) { $0.output = value["result"] as? String }
