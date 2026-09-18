@@ -17,6 +17,8 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var isTask: Bool { kind == "task" }
     /// A mid-turn message the user sent to a running Claude request.
     public var isSteer: Bool { kind == "steer" }
+    /// The CLI summarized its context mid-turn; the block is complete on arrival.
+    public var isCompact: Bool { kind == "compact" }
 }
 
 public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
@@ -140,7 +142,7 @@ public enum MightyGraphSupport {
                 agent.title = bounded(agent.title, maximum: 240, budget: &budget)
                 agent.input = bounded(agent.input, maximum: 16_384, budget: &budget)
                 agent.status = states.contains(agent.status) ? agent.status : "stopped"
-                if !["task", "steer"].contains(agent.kind ?? "") { agent.kind = nil }
+                if !["task", "steer", "compact"].contains(agent.kind ?? "") { agent.kind = nil }
                 agent.usage = agent.usage?.normalized
                 agent.activityGeneration = ExecutionGraphSupport.normalizedGeneration(agent.activityGeneration)
                 if restoring && !terminal(agent.status) { agent.status = "stopped" }
@@ -248,7 +250,7 @@ extension RunSession {
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
-                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration)
+                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration)
                 if let output = node.output, !output.isEmpty {
                     let answerID = provider == "codex"
                         ? ExecutionGraphSupport.identifier(node.runId, node.id + ":answer:\(node.activityGeneration ?? 0)")

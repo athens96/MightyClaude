@@ -55,6 +55,15 @@ struct SlashCommandPalette: View {
                     .foregroundStyle(highlighted ? Palette.canvas.opacity(0.75) : Color.secondary.opacity(0.7))
             }
             Spacer(minLength: 0)
+            if command.action != nil {
+                Image(systemName: "arrow.turn.down.left").font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(highlighted ? Palette.canvas.opacity(0.75) : Color.secondary.opacity(0.7))
+                    .help("앱에서 바로 실행됩니다")
+            } else if command.argument != nil {
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(highlighted ? Palette.canvas.opacity(0.75) : Color.secondary.opacity(0.7))
+                    .help("이어서 선택합니다")
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(highlighted ? Palette.accent : Color.clear)

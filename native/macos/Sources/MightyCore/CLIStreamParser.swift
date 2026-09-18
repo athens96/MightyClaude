@@ -180,6 +180,8 @@ public final class CLIStreamParser {
             if !claudeChild { resumeIfValid(value["session_id"]) }
             if type == "system", value["subtype"] as? String == "permission_denied" {
                 tool(id: value["tool_use_id"] as? String, name: value["tool_name"] as? String, state: "error", output: errorText(value["message"], fallback: "Claude 권한 규칙 또는 선택한 모드에서 거부했습니다."))
+            } else if type == "system", value["subtype"] as? String == "compact_boundary" {
+                if !claudeChild { log("system", ContextCompaction.title + " · " + ContextCompaction.claudeSummary(value["compact_metadata"])) }
             } else if type == "assistant", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
                 let content = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: "\n")
                 if !claudeChild { emitUnique(content, id: (value["uuid"] as? String) ?? (message["id"] as? String) ?? "message") }
@@ -216,6 +218,7 @@ public final class CLIStreamParser {
                     if activity == nil, ended, let output, !output.isEmpty { log("output", output) }
                 case "file_change": tool(id: item["id"] as? String, name: "file_change", input: item, state: state)
                 case "web_search": tool(id: item["id"] as? String, name: "web_search", input: item, state: state)
+                case "context_compaction": if ended { log("system", ContextCompaction.title + " · " + ContextCompaction.codexSummary) }
                 case "collab_tool_call", "collab_agent_tool_call":
                     if let collaboration = CodexCollaborationItem(item) {
                         tool(id: collaboration.id, name: collaboration.tool, state: state,
