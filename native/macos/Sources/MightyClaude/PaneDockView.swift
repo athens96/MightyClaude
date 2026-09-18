@@ -192,14 +192,14 @@ private struct PaneDockGroup: View {
                             PaneDockTab(session: session, groupId: node.id, selected: session.id == selected?.id, nextSessionId: sessions.indices.contains(index + 1) ? sessions[index + 1].id : nil)
                                 .id(session.id)
                         }
-                    }.padding(5)
+                    }.padding(.horizontal, 5).padding(.vertical, 4)
                 }
                 .scrollIndicators(.hidden)
                 .onChange(of: node.selectedSessionId) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
             }
             .frame(minWidth: 0, maxWidth: .infinity)
         }
-        .frame(height: 36)
+        .frame(height: 38)
         .background(Palette.subtle, in: UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11))
         .overlay(alignment: .bottom) { Rectangle().fill(sessions.contains(where: { $0.id == store.snapshot.activeSessionId }) ? Palette.accent.opacity(0.55) : Palette.border).frame(height: 1) }
         .accessibilityElement(children: .contain)
@@ -216,7 +216,9 @@ private struct PaneDockTab: View {
     let nextSessionId: String?
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
+            // The click/drag handle covers the whole tab up to the close
+            // button, padding included, so the tab's visible shape is its hit area.
             HStack(spacing: 6) {
                 Group {
                     if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 10)) }
@@ -225,12 +227,14 @@ private struct PaneDockTab: View {
                 Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125)
                 if session.status == "running" { StatusDot(status: session.status) }
             }
-            .frame(height: 26).allowsHitTesting(false).accessibilityHidden(true)
+            .padding(.leading, 10).padding(.trailing, 6)
+            .frame(minWidth: 56, minHeight: 30, maxHeight: 30, alignment: .leading)
+            .allowsHitTesting(false).accessibilityHidden(true)
             .overlay { PaneDockTabHandle(store: store, sessionId: session.id, workspaceId: session.workspaceId, groupId: groupId, title: session.title, nextSessionId: nextSessionId) }
-            Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 15, height: 18) }
+            Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: 30).contentShape(Rectangle()) }
                 .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("\(session.title) 탭 닫기")
         }
-        .padding(.leading, 9).padding(.trailing, 4).frame(height: 26)
+        .padding(.trailing, 2).frame(height: 30)
         .foregroundStyle(selected ? Color.primary : Color.secondary)
         .background(selected ? Palette.panel : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? Palette.border : Color.clear) }
