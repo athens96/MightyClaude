@@ -1,25 +1,35 @@
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
-import { ApiError, createClient, describeError } from '@/api/client';
-import { buildBaseUrl, pairingFingerprint, type PairingPayload } from '@/lib/pairing';
+import { closeHostClient, describeError, probeHost, type HostCredentials } from '@/api/client';
+import { RelayError } from '@/api/relay/transport';
+import { describeRelayTarget, type PairingPayload } from '@/lib/pairing';
 
-const INDEX_KEY = 'mightyclaude.hosts.index';
-const SECRET_PREFIX = 'mightyclaude.hostkey.';
+const INDEX_KEY = 'mightyclaude.hosts.v2.index';
+const SECRET_PREFIX = 'mightyclaude.hostkey.v2.';
+/** v1 (Tailscale) storage; dropped on first load of this build. */
+const LEGACY_INDEX_KEY = 'mightyclaude.hosts.index';
 
 export interface PairedHost {
-  /** Local, storage-safe identifier derived from host+port. */
+  /** Storage-safe identifier derived from the relay `serverId`. */
   id: string;
   name: string;
-  host: string;
-  port: number;
+  serverId: string;
+  relayUrl: string;
+  /** Host static X25519 public key (standard base64). */
+  hostPublicKeyB64: string;
   /** Host-reported identity captured at pairing time. */
   hostId: string;
   appVersion: string;
-  platform: string;
   pairedAt: string;
 }
 
-export type Reachability = 'unknown' | 'checking' | 'online' | 'unauthorized' | 'offline';
+export type Reachability =
+  | 'unknown'
+  | 'checking'
+  | 'online'
+  | 'unauthorized'
+  | 'offline'
+  | 'relay-offline';
 
 export interface HostStatus {
   reachability: Reachability;
@@ -32,18 +42,19 @@ interface HostsState {
   status: Record<string, HostStatus>;
   loaded: boolean;
   load: () => Promise<void>;
-  addHost: (payload: PairingPayload, info: { hostId: string; appVersion: string; platform: string }) => Promise<PairedHost>;
+  addHost: (payload: PairingPayload, info: { hostId: string; appVersion: string }) => Promise<PairedHost>;
   removeHost: (id: string) => Promise<void>;
   refreshReachability: (id: string) => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
 /** SecureStore keys accept only alphanumerics, `.`, `-` and `_`. */
-export function storageIdFor(host: string, port: number): string {
-  return pairingFingerprint(host, port).replace(/[^A-Za-z0-9._-]/g, '_');
+export function storageIdFor(serverId: string): string {
+  return serverId.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
-function parseIndex(raw: string | null): PairedHost[] {
+/** Keeps only v2 entries; v1 hosts (host/port/key) are silently discarded. */
+export function parseIndex(raw: string | null): PairedHost[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -51,11 +62,42 @@ function parseIndex(raw: string | null): PairedHost[] {
     return parsed.filter((entry): entry is PairedHost => {
       if (entry === null || typeof entry !== 'object') return false;
       const candidate = entry as Partial<PairedHost>;
-      return typeof candidate.id === 'string' && typeof candidate.host === 'string' && typeof candidate.port === 'number';
+      return (
+        typeof candidate.id === 'string' &&
+        typeof candidate.serverId === 'string' &&
+        typeof candidate.relayUrl === 'string' &&
+        typeof candidate.hostPublicKeyB64 === 'string' &&
+        candidate.serverId.length > 0 &&
+        candidate.relayUrl.length > 0 &&
+        candidate.hostPublicKeyB64.length > 0
+      );
     });
   } catch {
     return [];
   }
+}
+
+export function credentialsFor(host: PairedHost, pairingKey: string): HostCredentials {
+  return {
+    serverId: host.serverId,
+    relayUrl: host.relayUrl,
+    hostPublicKeyB64: host.hostPublicKeyB64,
+    pairingKey,
+  };
+}
+
+function reachabilityFor(error: unknown): Reachability {
+  if (error instanceof RelayError) {
+    switch (error.failure) {
+      case 'unpaired':
+        return 'unauthorized';
+      case 'relay-unreachable':
+        return 'relay-offline';
+      default:
+        return 'offline';
+    }
+  }
+  return 'offline';
 }
 
 export const useHostsStore = create<HostsState>((set, get) => ({
@@ -65,6 +107,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
   loaded: false,
 
   load: async () => {
+    await SecureStore.deleteItemAsync(LEGACY_INDEX_KEY).catch(() => undefined);
     const hosts = parseIndex(await SecureStore.getItemAsync(INDEX_KEY));
     const keys: Record<string, string> = {};
     await Promise.all(
@@ -79,23 +122,24 @@ export const useHostsStore = create<HostsState>((set, get) => ({
   },
 
   addHost: async (payload, info) => {
-    const id = storageIdFor(payload.host, payload.port);
+    const id = storageIdFor(payload.serverId);
     const host: PairedHost = {
       id,
       name: payload.name,
-      host: payload.host,
-      port: payload.port,
+      serverId: payload.serverId,
+      relayUrl: payload.relayUrl,
+      hostPublicKeyB64: payload.hostPublicKeyB64,
       hostId: info.hostId,
       appVersion: info.appVersion,
-      platform: info.platform,
       pairedAt: new Date().toISOString(),
     };
     const hosts = [...get().hosts.filter((entry) => entry.id !== id), host];
-    await SecureStore.setItemAsync(`${SECRET_PREFIX}${id}`, payload.key);
+    await SecureStore.setItemAsync(`${SECRET_PREFIX}${id}`, payload.pairingKey);
     await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(hosts));
+    closeHostClient(id);
     set((prev) => ({
       hosts,
-      keys: { ...prev.keys, [id]: payload.key },
+      keys: { ...prev.keys, [id]: payload.pairingKey },
       status: { ...prev.status, [id]: { reachability: 'online' } },
     }));
     return host;
@@ -103,6 +147,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
 
   removeHost: async (id) => {
     const hosts = get().hosts.filter((entry) => entry.id !== id);
+    closeHostClient(id);
     await SecureStore.deleteItemAsync(`${SECRET_PREFIX}${id}`);
     await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(hosts));
     set((prev) => {
@@ -116,19 +161,20 @@ export const useHostsStore = create<HostsState>((set, get) => ({
 
   refreshReachability: async (id) => {
     const host = get().hosts.find((entry) => entry.id === id);
-    const key = get().keys[id];
-    if (!host || key === undefined) return;
+    const pairingKey = get().keys[id];
+    if (!host || pairingKey === undefined) return;
     set((prev) => ({ status: { ...prev.status, [id]: { reachability: 'checking' } } }));
     try {
-      const info = await createClient({ host: host.host, port: host.port, key }).info();
+      const info = await probeHost(credentialsFor(host, pairingKey));
       set((prev) => ({
         status: { ...prev.status, [id]: { reachability: 'online', detail: info.hostName } },
       }));
     } catch (error) {
-      const reachability: Reachability =
-        error instanceof ApiError && error.needsRepair ? 'unauthorized' : 'offline';
       set((prev) => ({
-        status: { ...prev.status, [id]: { reachability, detail: describeError(error) } },
+        status: {
+          ...prev.status,
+          [id]: { reachability: reachabilityFor(error), detail: describeError(error) },
+        },
       }));
     }
   },
@@ -143,5 +189,5 @@ export function useHost(id: string | undefined): PairedHost | undefined {
 }
 
 export function hostAddress(host: PairedHost): string {
-  return buildBaseUrl(host.host, host.port).replace('http://', '');
+  return describeRelayTarget(host.relayUrl, host.serverId);
 }

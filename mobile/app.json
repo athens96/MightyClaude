@@ -24,8 +24,12 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "permissions": ["android.permission.CAMERA"],
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "predictiveBackGestureEnabled": false,
+      "package": "dev.mightyclaude.mobile",
+      "versionCode": 1
     },
     "web": {
       "output": "static",
@@ -47,6 +51,14 @@
           "backgroundColor": "#0d0d0f",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 120
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ],

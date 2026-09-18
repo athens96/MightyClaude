@@ -11,8 +11,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import { Button, Card, Chip, ErrorBanner } from '@/components/ui';
-import { createClient, describeError } from '@/api/client';
-import { DEFAULT_PORT, PROTOCOL_VERSION } from '@/api/types';
+import { describeError, probeHost } from '@/api/client';
 import { parsePairingUrl, type PairingPayload } from '@/lib/pairing';
 import { useHostsStore } from '@/store/hosts';
 import { showToast } from '@/store/toast';
@@ -25,10 +24,7 @@ export default function PairScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [host, setHost] = useState('');
-  const [port, setPort] = useState(String(DEFAULT_PORT));
-  const [key, setKey] = useState('');
-  const [name, setName] = useState('');
+  const [link, setLink] = useState('');
   const addHost = useHostsStore((state) => state.addHost);
 
   const pair = useCallback(
@@ -36,17 +32,15 @@ export default function PairScreen() {
       setBusy(true);
       setError(undefined);
       try {
-        const info = await createClient({
-          host: payload.host,
-          port: payload.port,
-          key: payload.key,
-        }).info();
-        if (info.protocol !== PROTOCOL_VERSION) {
-          throw new Error(`호스트 프로토콜 버전이 다릅니다 (${info.protocol}).`);
-        }
+        const info = await probeHost({
+          serverId: payload.serverId,
+          relayUrl: payload.relayUrl,
+          hostPublicKeyB64: payload.hostPublicKeyB64,
+          pairingKey: payload.pairingKey,
+        });
         const saved = await addHost(
-          { ...payload, name: payload.name || info.hostName },
-          { hostId: info.hostId, appVersion: info.appVersion, platform: info.platform },
+          { ...payload, name: payload.name || info.hostName || payload.serverId },
+          { hostId: info.hostId, appVersion: info.appVersion },
         );
         showToast(`${saved.name} 페어링 완료`, 'success');
         router.replace(`/host/${saved.id}`);
@@ -73,26 +67,13 @@ export default function PairScreen() {
   );
 
   const onManualSubmit = useCallback(() => {
-    const parsedPort = Number(port.trim());
-    if (!host.trim()) {
-      setError('호스트 주소를 입력하세요.');
+    const parsed = parsePairingUrl(link);
+    if (!parsed.ok) {
+      setError(parsed.error);
       return;
     }
-    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-      setError('포트 번호가 올바르지 않습니다.');
-      return;
-    }
-    if (!key.trim()) {
-      setError('페어링 키를 입력하세요.');
-      return;
-    }
-    void pair({
-      host: host.trim(),
-      port: parsedPort,
-      key: key.trim(),
-      name: name.trim() || host.trim(),
-    });
-  }, [host, key, name, pair, port]);
+    void pair(parsed.value);
+  }, [link, pair]);
 
   return (
     <KeyboardAvoidingView
@@ -102,7 +83,7 @@ export default function PairScreen() {
       <View style={styles.modes}>
         <Chip label="QR 스캔" selected={mode === 'qr'} color={colors.accent} onPress={() => setMode('qr')} />
         <Chip
-          label="직접 입력"
+          label="링크 붙여넣기"
           selected={mode === 'manual'}
           color={colors.accent}
           onPress={() => setMode('manual')}
@@ -138,15 +119,22 @@ export default function PairScreen() {
             </View>
           )}
           <Text style={styles.hint}>
-            데스크톱 MightyClaude의 &ldquo;모바일 연결&rdquo; QR 코드를 화면에 맞추세요.
+            Mac의 설정 → 모바일 리모트에서 QR 코드를 띄우고 화면에 맞추세요.
           </Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-          <Field label="호스트 (Tailscale IP)" value={host} onChange={setHost} placeholder="100.x.y.z" autoCapitalize="none" />
-          <Field label="포트" value={port} onChange={setPort} placeholder={String(DEFAULT_PORT)} keyboardType="number-pad" />
-          <Field label="페어링 키" value={key} onChange={setKey} placeholder="호스트에 표시된 키" autoCapitalize="none" secure />
-          <Field label="이름 (선택)" value={name} onChange={setName} placeholder="내 맥북" />
+          <Field
+            label="페어링 링크"
+            value={link}
+            onChange={setLink}
+            placeholder="mightyclaude://pair?v=2&sid=…"
+            autoCapitalize="none"
+            multiline
+          />
+          <Text style={styles.hint}>
+            Mac의 설정 → 모바일 리모트에서 페어링 링크를 복사해 붙여넣으세요.
+          </Text>
           <Button label="연결하기" tone="primary" busy={busy} onPress={onManualSubmit} />
         </ScrollView>
       )}
@@ -159,9 +147,8 @@ interface FieldProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  keyboardType?: 'default' | 'number-pad';
   autoCapitalize?: 'none' | 'sentences';
-  secure?: boolean;
+  multiline?: boolean;
 }
 
 function Field({
@@ -169,9 +156,8 @@ function Field({
   value,
   onChange,
   placeholder,
-  keyboardType = 'default',
   autoCapitalize = 'sentences',
-  secure = false,
+  multiline = false,
 }: FieldProps) {
   return (
     <View style={styles.field}>
@@ -181,11 +167,10 @@ function Field({
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={colors.textFaint}
-        keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={false}
-        secureTextEntry={secure}
-        style={styles.input}
+        multiline={multiline}
+        style={[styles.input, multiline && styles.inputMultiline]}
       />
     </View>
   );
@@ -225,4 +210,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
   },
+  inputMultiline: { minHeight: 96, textAlignVertical: 'top' },
 });

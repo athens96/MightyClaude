@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { ApiError, describeError, isAbortError } from '@/api/client';
+import { describeError, isAbortError, needsRepair } from '@/api/client';
 import { nextBackoff } from '@/lib/merge';
 
 export interface LongPollOptions<T> {
@@ -9,6 +9,12 @@ export interface LongPollOptions<T> {
   fetchPage: (since: number | undefined, signal: AbortSignal) => Promise<T>;
   revisionOf: (data: T) => number;
   onData: (data: T) => void;
+  /**
+   * Optional push channel (the relay's `notify`). Calling back with a revision newer
+   * than the one we are waiting on re-issues the request immediately instead of
+   * waiting out the long poll.
+   */
+  subscribe?: (onChange: (revision: number) => void) => () => void;
 }
 
 export interface LongPollHandle {
@@ -24,14 +30,14 @@ export interface LongPollHandle {
  * in-flight request on blur and backing off exponentially on transport errors.
  */
 export function useLongPoll<T>(options: LongPollOptions<T>): LongPollHandle {
-  const { enabled, fetchPage, revisionOf, onData } = options;
+  const { enabled, fetchPage, revisionOf, onData, subscribe } = options;
   const [error, setError] = useState<string | undefined>(undefined);
-  const [needsRepair, setNeedsRepair] = useState(false);
+  const [repairNeeded, setRepairNeeded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [generation, setGeneration] = useState(0);
 
-  const latest = useRef({ fetchPage, revisionOf, onData });
-  latest.current = { fetchPage, revisionOf, onData };
+  const latest = useRef({ fetchPage, revisionOf, onData, subscribe });
+  latest.current = { fetchPage, revisionOf, onData, subscribe };
 
   const refresh = useCallback(() => {
     setGeneration((value) => value + 1);
@@ -45,8 +51,10 @@ export function useLongPoll<T>(options: LongPollOptions<T>): LongPollHandle {
       }
 
       let cancelled = false;
+      let restarting = false;
       let controller: AbortController | undefined;
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const cursor: { since: number | undefined } = { since: undefined };
 
       const sleep = (ms: number) =>
         new Promise<void>((resolve) => {
@@ -54,28 +62,44 @@ export function useLongPoll<T>(options: LongPollOptions<T>): LongPollHandle {
         });
 
       setLoading(true);
-      setNeedsRepair(false);
+      setRepairNeeded(false);
+
+      // Abandon the waiting request and ask again; the host answers the old one at
+      // its own pace and we drop that stale response by revision.
+      const unsubscribe = latest.current.subscribe?.((revision) => {
+        if (cancelled) return;
+        if (cursor.since !== undefined && revision <= cursor.since) return;
+        restarting = true;
+        controller?.abort();
+      });
 
       void (async () => {
-        let since: number | undefined;
         let backoff: number | undefined;
 
         while (!cancelled) {
           controller = new AbortController();
           try {
-            const data = await latest.current.fetchPage(since, controller.signal);
+            const data = await latest.current.fetchPage(cursor.since, controller.signal);
             if (cancelled) return;
-            since = latest.current.revisionOf(data);
-            latest.current.onData(data);
+            const revision = latest.current.revisionOf(data);
+            if (cursor.since === undefined || revision >= cursor.since) {
+              cursor.since = revision;
+              latest.current.onData(data);
+            }
             backoff = undefined;
             setError(undefined);
             setLoading(false);
           } catch (caught) {
-            if (cancelled || isAbortError(caught)) return;
+            if (cancelled) return;
+            if (isAbortError(caught)) {
+              if (!restarting) return;
+              restarting = false;
+              continue;
+            }
             setLoading(false);
             setError(describeError(caught));
-            if (caught instanceof ApiError && caught.needsRepair) {
-              setNeedsRepair(true);
+            if (needsRepair(caught)) {
+              setRepairNeeded(true);
               return;
             }
             backoff = nextBackoff(backoff);
@@ -87,6 +111,7 @@ export function useLongPoll<T>(options: LongPollOptions<T>): LongPollHandle {
 
       return () => {
         cancelled = true;
+        unsubscribe?.();
         if (timer) clearTimeout(timer);
         controller?.abort();
       };
@@ -94,5 +119,5 @@ export function useLongPoll<T>(options: LongPollOptions<T>): LongPollHandle {
     }, [enabled, generation]),
   );
 
-  return { error, loading, needsRepair, refresh };
+  return { error, loading, needsRepair: repairNeeded, refresh };
 }

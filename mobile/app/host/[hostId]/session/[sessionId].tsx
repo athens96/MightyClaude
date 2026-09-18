@@ -56,11 +56,23 @@ export default function SessionScreen() {
     [applyDetail, hostId, sessionId],
   );
 
+  const subscribe = useCallback(
+    (onChange: (revision: number) => void) => {
+      if (!client || !sessionId) return () => undefined;
+      const scope = `session:${sessionId}`;
+      return client.onNotify((event) => {
+        if (event.scope === scope) onChange(event.revision);
+      });
+    },
+    [client, sessionId],
+  );
+
   const poll = useLongPoll<MobileSessionDetail>({
     enabled: Boolean(client && sessionId),
     fetchPage,
     revisionOf: (data) => data.revision,
     onData,
+    subscribe,
   });
 
   const entryCount = detail?.entries.length ?? 0;
