@@ -55,6 +55,9 @@ final class AppStore: ObservableObject {
     @Published var componentAction: String?
     @Published var componentMessage: String?
     @Published var componentMessageIsError = false
+    /// Slash-command completion (AppStore+SlashCommands.swift).
+    @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
+    var slashScansInFlight = Set<String>()
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
     @Published var attachmentPanelSession: String?

@@ -352,3 +352,8 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 - `MobileRemoteService` no longer opens an HTTP listener. It keeps a control WebSocket to the relay (`relay/`), accepts one data socket per phone, runs the X25519 + HKDF + ChaCha20-Poly1305 handshake from docs/relay.md, checks the pairing key, and tunnels the m1 routes as `{id, method, path, body}` messages; `notify` pushes revision changes to connected phones.
 - `RelayChannelTests` covers key derivation, nonce layout, replay/reorder/direction rejection, tampering, keypair persistence (0600), offer round trip and endpoint normalization. `MobileRemoteTests` exercises the routes and long-poll through `route(...)`. `RelayIntegrationTests` starts the real Node relay (`relay/dist/server.js`) and drives host + phone through it: connected status, QR offer, handshake, auth, request, notify, ping, auth_error.
 - Tailscale installer and its settings row were removed; the desktop-to-desktop `/v1` share still uses Tailscale.
+
+## 2026-09-18: Slash-command completion in the composer
+
+- `SlashCommandCatalog` scans user/project skills and commands, installed Claude plugins (`installed_plugins.json` → `installPath/skills|commands`) and Codex skills without running any CLI; `SlashCommandTests` covers frontmatter parsing, folder/name precedence, group namespacing, plugin prefixes, project shadowing, query extraction and ranking.
+- The composer's key monitor now forwards ↑/↓/Tab/Esc/Return to an open palette (never while IME marked text exists) before its own Return handling; selection replaces the draft through `ComposerInputController.replaceDraft`, which keeps the caret at the end. Smoke test still passes because its drafts never start with `/`.
