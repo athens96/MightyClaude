@@ -59,6 +59,17 @@ final class AppStore: ObservableObject {
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
     @Published var statusLines: [String: StatusLineState] = [:]
     @Published var appUpdate = AppUpdateState()
+    @Published var cliAccounts: [String: CLIAccountStatus] = [:]
+    @Published var cliAccountBusy = Set<String>()
+    @Published var cliAccountRefreshing = Set<String>()
+    /// Shown inside the provider's settings row (the sheet hides `error`).
+    @Published var cliAccountMessages: [String: String] = [:]
+    /// Providers whose sign-in terminal was opened and not yet confirmed.
+    @Published var cliLoginPending = Set<String>()
+    var cliLoginSessions: [String: String] = [:]
+    var cliLoginTasks: [String: Task<Void, Never>] = [:]
+    var pendingTerminalInput: [String: String] = [:]
+    let cliAccountService = CLIAccountService()
     /// Korean composition broke in a composer; shown until reconnected or dismissed.
     @Published var inputMethodProblem: InputMethodMonitor.Problem?
     var appUpdateServiceStorage: AppUpdateService?
@@ -334,6 +345,7 @@ final class AppStore: ObservableObject {
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
+            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.cancel()
             draftRevisions.removeValue(forKey: id)
@@ -354,6 +366,7 @@ final class AppStore: ObservableObject {
                 await stop(session.id)
                 drafts.removeValue(forKey: session.id)
                 statusLines.removeValue(forKey: session.id)
+                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.cancel()
                 draftRevisions.removeValue(forKey: session.id)
