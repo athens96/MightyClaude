@@ -389,6 +389,23 @@ struct SessionPaneView: View {
                 .font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 12)
                 .accessibilityIdentifier("attachment-error-\(session.id)")
             }
+            if let problem = store.inputMethodProblem, composerFocused {
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(.orange).padding(.top, 1)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("한글 조합이 끊긴 것 같습니다 (자모가 따로 입력됨)").fontWeight(.medium)
+                        Text(problem.recoveryAttempts == 0 ? "입력기 다시 연결을 눌러 보세요. 그래도 안 되면 앱을 종료(⌘Q)하고 다시 여세요." : "다시 연결을 시도했습니다. 여전히 그렇다면 앱을 종료(⌘Q)하고 다시 여세요.")
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
+                    }
+                    Spacer(minLength: 4)
+                    Button("입력기 다시 연결") { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)
+                    Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
+                        .buttonStyle(.plain).accessibilityLabel("입력기 안내 닫기")
+                }
+                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
+                .accessibilityIdentifier("input-method-problem-\(session.id)")
+            }
             if let reason = blockedReason {
                 HStack(alignment: .top, spacing: 7) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)

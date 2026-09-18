@@ -34,6 +34,9 @@ struct MightyClaudeApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(store.activeWorkspace == nil || store.hasModal)
                 Divider()
+                Button("입력기 다시 연결") { store.reconnectInputMethod(editor: nil) }
+                Button("입력기 진단 저장") { store.saveInputMethodDiagnostics() }
+                Divider()
                 Button("설정…") { store.showSettings = true }
                     .keyboardShortcut(",", modifiers: .command)
                     .disabled(store.hasModal)
