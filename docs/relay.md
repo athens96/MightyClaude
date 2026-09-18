@@ -33,6 +33,16 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 - 프레임: 바이너리 `[12B nonce][ChaCha20-Poly1305 암호문+16B 태그]`. nonce = `[방향 1B][0,0,0][카운터 8B big-endian]`, 방향은 클라이언트→호스트 0x01, 호스트→클라이언트 0x02. 카운터는 0부터 프레임마다 1씩 증가하고, 받는 쪽은 **직전보다 큰 카운터만** 받아들인다(재전송·순서 뒤바뀜 거부). 평문은 UTF-8 JSON.
 - 인증(암호화된 첫 메시지): 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…"}`, 호스트 → `{"type":"auth_ok","hostName":"…","hostId":"…","appVersion":"…"}` 또는 `{"type":"auth_error","reason":"pairing-key"}`를 보낸 뒤 소켓을 닫음(클라이언트는 이를 재페어링 필요로 표시). 호스트는 `auth_ok` 전에는 다른 메시지를 처리하지 않는다.
 
+### 기기 토큰 (기기별 해제)
+
+인증 프레임은 선택 필드로 확장된다. 필드를 모르는 구버전 앱·호스트는 지금처럼 동작한다.
+
+- 처음 페어링: 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…","clientId":"<b64url 16B, 앱이 한 번 만들어 보안 저장소에 보관>"}`. 호스트는 키가 맞으면 기기를 등록하고 `auth_ok`에 `"deviceToken":"<b64url 32B>"`를 넣어 **한 번만** 돌려준다. 호스트는 토큰의 SHA-256만 저장한다(`<데이터 폴더>/mobile-remote/devices.json`, 0600: `[{ id, name, tokenHash, firstSeen, lastSeen }]`, 최대 32대).
+- 이후 접속: 클라이언트 → `{"type":"auth","clientId":"…","deviceToken":"…","clientName":"…"}` (`pairingKey` 없음). 호스트는 해시를 상수 시간으로 비교한다. 등록되지 않았거나 해제된 기기면 `{"type":"auth_error","reason":"device-revoked"}` 후 소켓을 닫고, 클라이언트는 재페어링 필요로 표시한다.
+- `clientId` 없이 `pairingKey`만 보내는 구버전 앱은 키가 맞으면 받아들이되 기기 목록에는 "구버전 앱"으로 묶는다(토큰을 발급하지 않는다).
+- 해제: 호스트가 그 기기의 항목을 지우고, 열려 있는 그 기기의 소켓을 닫고, 페어링 키를 새로 만든다. 다른 기기는 토큰으로 계속 인증되므로 영향이 없다.
+- 토큰·키·해시는 로그에 남기지 않는다.
+
 ## 암호화 채널 위의 메시지
 
 기존 m1 REST 의미를 그대로 터널링한다(라우트·본문은 `docs/mobile-remote.md`).

@@ -6,12 +6,23 @@ import Foundation
 public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileState() async -> MobileState
     func mobileSession(id: String) async -> MobileSessionDetail?
-    /// Returns "started", "steered" or "queued"; throws when the pane cannot run.
-    func mobileSubmit(sessionId: String, text: String) async throws -> String
+    /// Returns what actually happened — "started", "steered" or "queued" — so
+    /// the phone never shows a steer that silently became a queued item.
+    /// `mode` is already checked against `MobileWire.submitModes`.
+    func mobileSubmit(sessionId: String, text: String, mode: String?) async throws -> String
     func mobileStop(sessionId: String) async throws
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
+    func mobileRemoveQueued(sessionId: String, itemId: String) async throws
+    func mobileRunNextQueued(sessionId: String) async throws
+    func mobileRename(sessionId: String, title: String) async throws
+    func mobileClose(sessionId: String) async throws
+    func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage
+    func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws
+    func mobileCommands(sessionId: String) async throws -> [MobileCommand]
+    /// Returns the body of `usage`/`help`; nil when the action has no text.
+    func mobilePerformCommand(sessionId: String, action: String) async throws -> String?
 }
 
 /// A routed reply: HTTP-like status plus a JSON body.
@@ -344,6 +355,32 @@ public actor MobileRemoteService {
         }
         return (since, wait)
     }
+    private static func entriesArguments(_ url: URLComponents) throws -> (before: String, limit: Int) {
+        var before: String?
+        var limit = MobileWire.defaultPageLimit
+        for item in url.queryItems ?? [] {
+            guard let value = item.value else { throw Failure(400, "질의 값이 올바르지 않습니다.") }
+            switch item.name {
+            case "before":
+                guard CoreValidation.identifier(value) else { throw Failure(400, "before가 올바르지 않습니다.") }
+                before = value
+            case "limit":
+                guard let number = Int(value), (1...MobileWire.maximumPageLimit).contains(number) else { throw Failure(400, "limit은 1에서 \(MobileWire.maximumPageLimit) 사이여야 합니다.") }
+                limit = number
+            default: throw Failure(400, "알 수 없는 질의입니다.")
+            }
+        }
+        guard let before else { throw Failure(400, "before가 필요합니다.") }
+        return (before, limit)
+    }
+
+    /// Runs a host call and turns its refusal into the status the contract
+    /// names; a plain `MightyError` keeps meaning "cannot do that now".
+    private func perform<T>(_ work: () async throws -> T) async throws -> T {
+        do { return try await work() }
+        catch let failure as MobileHostError { throw Failure(failure.status, failure.message) }
+        catch let failure as MightyError { throw Failure(409, failure.message) }
+    }
 
     /// Serves one m1 request. `path` carries the route and query, `body` the
     /// JSON payload of a POST.
@@ -381,6 +418,26 @@ public actor MobileRemoteService {
                 }
                 return reply(200, detail)
             }
+            if method == "GET", route.count == 3, route[0] == "sessions", route[2] == "entries" {
+                let id = try sessionID(route[1])
+                let page = try Self.entriesArguments(url)
+                return reply(200, try await perform { try await delegate.mobileEntries(sessionId: id, before: page.before, limit: page.limit) })
+            }
+            if method == "GET", route.count == 3, route[0] == "sessions", route[2] == "commands", url.query == nil {
+                let id = try sessionID(route[1])
+                return reply(200, MobileCommandList(commands: try await perform { try await delegate.mobileCommands(sessionId: id) }))
+            }
+            if method == "POST", route.count == 4, route[0] == "sessions", route[2] == "queue", route[3] == "run-next", url.query == nil {
+                let id = try sessionID(route[1])
+                try await perform { try await delegate.mobileRunNextQueued(sessionId: id) }
+                return reply(200, MobileOK())
+            }
+            if method == "POST", route.count == 5, route[0] == "sessions", route[2] == "queue", route[4] == "remove", url.query == nil {
+                let id = try sessionID(route[1])
+                guard CoreValidation.identifier(route[3]) else { throw Failure(404, "대기 중인 항목을 찾을 수 없습니다.") }
+                try await perform { try await delegate.mobileRemoveQueued(sessionId: id, itemId: route[3]) }
+                return reply(200, MobileOK())
+            }
             if method == "POST", route.count == 3, route[0] == "sessions", url.query == nil {
                 let id = try sessionID(route[1])
                 switch route[2] {
@@ -388,8 +445,9 @@ public actor MobileRemoteService {
                     let request = try decode(body, as: MobileSubmitRequest.self)
                     let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty, text.utf8.count <= 32_768 else { throw Failure(400, "요청 내용은 1자 이상 32 KiB 이하여야 합니다.") }
-                    do { return reply(202, MobileSubmitResult(accepted: try await delegate.mobileSubmit(sessionId: id, text: text))) }
-                    catch let failure as MightyError { throw Failure(409, failure.message) }
+                    if let mode = request.mode, !MobileWire.submitModes.contains(mode) { throw Failure(400, "mode는 steer 또는 queue여야 합니다.") }
+                    let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode) }
+                    return reply(202, MobileSubmitResult(accepted: accepted))
                 case "stop":
                     do { try await delegate.mobileStop(sessionId: id) } catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileStopped())
@@ -405,6 +463,23 @@ public actor MobileRemoteService {
                     do { try await delegate.mobileAnswers(sessionId: id, requestId: request.requestId, runId: request.runId, answers: request.answers) }
                     catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileOK())
+                case "rename":
+                    let request = try decode(body, as: MobileRenameRequest.self)
+                    guard let title = MobileRemoteSupport.renameTitle(request.title) else { throw Failure(400, "이름은 앞뒤 공백을 뺀 1~\(MobileWire.maximumTitle)자여야 합니다.") }
+                    try await perform { try await delegate.mobileRename(sessionId: id, title: title) }
+                    return reply(200, MobileOK())
+                case "close":
+                    try await perform { try await delegate.mobileClose(sessionId: id) }
+                    return reply(200, MobileOK())
+                case "settings":
+                    let request = try decode(body, as: MobileSettingsRequest.self)
+                    try await perform { try await delegate.mobileApplySettings(sessionId: id, request: request) }
+                    return reply(200, MobileOK())
+                case "command":
+                    let request = try decode(body, as: MobileCommandRequest.self)
+                    guard MobileWire.performedActions.contains(request.action) else { throw Failure(400, "action은 clear · usage · help 중 하나여야 합니다.") }
+                    let message = try await perform { try await delegate.mobilePerformCommand(sessionId: id, action: request.action) }
+                    return reply(200, MobileCommandResult(message: message))
                 default: break
                 }
             }
@@ -414,8 +489,8 @@ public actor MobileRemoteService {
                 guard ["claude", "shell"].contains(request.kind) else { throw Failure(400, "kind는 claude 또는 shell이어야 합니다.") }
                 let provider = request.provider ?? "claude"
                 guard ProviderOptions.ids.contains(provider) else { throw Failure(400, "지원하지 않는 실행기입니다.") }
-                do { return reply(201, MobileCreatedSession(sessionId: try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider))) }
-                catch let failure as MightyError { throw Failure(409, failure.message) }
+                let created = try await perform { try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider) }
+                return reply(201, MobileCreatedSession(sessionId: created))
             }
             throw Failure(404, "모바일 경로를 찾을 수 없습니다.")
         } catch let failure as Failure { return errorReply(failure.status, failure.message) }

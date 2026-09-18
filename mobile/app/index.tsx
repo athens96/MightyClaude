@@ -6,7 +6,7 @@ import { Badge, Button, Card, EmptyState } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost, type Reachability } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
 import { countAttention } from '@/lib/merge';
-import { colors, spacing } from '@/theme';
+import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const reachabilityLabels: Record<Reachability, string> = {
   unknown: '확인 전',
@@ -17,22 +17,33 @@ const reachabilityLabels: Record<Reachability, string> = {
   'relay-offline': '릴레이 연결 안 됨',
 };
 
-const reachabilityColors: Record<Reachability, string> = {
-  unknown: colors.textFaint,
-  checking: colors.textMuted,
-  online: colors.success,
-  unauthorized: colors.danger,
-  offline: colors.grey,
-  'relay-offline': colors.warning,
-};
+function reachabilityColor(palette: Palette, reachability: Reachability): string {
+  switch (reachability) {
+    case 'online':
+      return palette.success;
+    case 'unauthorized':
+      return palette.danger;
+    case 'offline':
+      return palette.grey;
+    case 'relay-offline':
+      return palette.warning;
+    case 'checking':
+      return palette.textMuted;
+    case 'unknown':
+      return palette.textFaint;
+  }
+}
 
 function HostRow({ host }: { host: PairedHost }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
   const status = useHostsStore((state) => state.status[host.id]?.reachability ?? 'unknown');
   const attention = useLiveStore((store) => {
     const state = store.states[host.id];
     return state ? countAttention(state) : 0;
   });
   const removeHost = useHostsStore((state) => state.removeHost);
+  const color = reachabilityColor(palette, status);
 
   const confirmRemove = useCallback(() => {
     Alert.alert('호스트 삭제', `${host.name} 페어링을 삭제할까요?`, [
@@ -57,10 +68,8 @@ function HostRow({ host }: { host: PairedHost }) {
         </View>
         <Text style={styles.address}>{hostAddress(host)}</Text>
         <View style={styles.rowBottom}>
-          <View style={[styles.dot, { backgroundColor: reachabilityColors[status] }]} />
-          <Text style={[styles.status, { color: reachabilityColors[status] }]}>
-            {reachabilityLabels[status]}
-          </Text>
+          <View style={[styles.dot, { backgroundColor: color }]} />
+          <Text style={[styles.status, { color }]}>{reachabilityLabels[status]}</Text>
           {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
         </View>
       </Card>
@@ -69,6 +78,8 @@ function HostRow({ host }: { host: PairedHost }) {
 }
 
 export default function HostsScreen() {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
   const hosts = useHostsStore((state) => state.hosts);
   const loaded = useHostsStore((state) => state.loaded);
   const refreshAll = useHostsStore((state) => state.refreshAll);
@@ -93,7 +104,7 @@ export default function HostsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => void onRefresh()}
-            tintColor={colors.accent}
+            tintColor={palette.accent}
           />
         }
         ListEmptyComponent={
@@ -112,31 +123,32 @@ export default function HostsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { backgroundColor: colors.background, flex: 1 },
-  list: { padding: spacing.lg },
-  separator: { height: spacing.md },
-  pressed: { opacity: 0.7 },
-  rowTop: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  hostName: { color: colors.text, flex: 1, fontSize: 17, fontWeight: '700' },
-  address: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
-  rowBottom: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  dot: { borderRadius: 4, height: 8, width: 8 },
-  status: { fontSize: 12, fontWeight: '600' },
-  meta: { color: colors.textFaint, fontSize: 12 },
-  footer: {
-    backgroundColor: colors.background,
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    bottom: 0,
-    left: 0,
-    padding: spacing.lg,
-    position: 'absolute',
-    right: 0,
-  },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    screen: { backgroundColor: palette.background, flex: 1 },
+    list: { padding: spacing.lg },
+    separator: { height: spacing.md },
+    pressed: { opacity: 0.7 },
+    rowTop: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    hostName: { color: palette.text, flex: 1, fontSize: 17, fontWeight: '700' },
+    address: { color: palette.textMuted, fontSize: 13, marginTop: 2 },
+    rowBottom: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
+    },
+    dot: { borderRadius: 4, height: 8, width: 8 },
+    status: { fontSize: 12, fontWeight: '600' },
+    meta: { color: palette.textFaint, fontSize: 12 },
+    footer: {
+      backgroundColor: palette.background,
+      borderTopColor: palette.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      bottom: 0,
+      left: 0,
+      padding: spacing.lg,
+      position: 'absolute',
+      right: 0,
+    },
+  });

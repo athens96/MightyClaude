@@ -1,32 +1,39 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
-import { colors } from '@/theme';
+import { darkPalette, useStyles, usePalette, type Palette } from '@/theme';
 
 // `@noble/*` reads `globalThis.crypto.getRandomValues`, which React Native lacks.
 installCryptoPolyfill();
 
-const navigationTheme: typeof DarkTheme = {
-  ...DarkTheme,
-  dark: true,
-  colors: {
-    ...DarkTheme.colors,
-    primary: colors.accent,
-    background: colors.background,
-    card: colors.surface,
-    text: colors.text,
-    border: colors.border,
-    notification: colors.accent,
-  },
-};
-
 export default function RootLayout() {
   const load = useHostsStore((state) => state.load);
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const dark = palette === darkPalette;
+
+  // Navigation carries its own colours, so it follows the system scheme with the app.
+  const navigationTheme = useMemo(() => {
+    const base = dark ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      dark,
+      colors: {
+        ...base.colors,
+        primary: palette.accent,
+        background: palette.background,
+        card: palette.surface,
+        text: palette.text,
+        border: palette.border,
+        notification: palette.accent,
+      },
+    };
+  }, [dark, palette]);
 
   useEffect(() => {
     void load();
@@ -36,13 +43,13 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider value={navigationTheme}>
         <View style={styles.root}>
-          <StatusBar style="light" />
+          <StatusBar style={dark ? 'light' : 'dark'} />
           <Stack
             screenOptions={{
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
-              headerTitleStyle: { color: colors.text, fontSize: 16 },
-              contentStyle: { backgroundColor: colors.background },
+              headerStyle: { backgroundColor: palette.background },
+              headerTintColor: palette.text,
+              headerTitleStyle: { color: palette.text, fontSize: 16 },
+              contentStyle: { backgroundColor: palette.background },
             }}
           >
             <Stack.Screen name="index" options={{ title: '호스트' }} />
@@ -57,6 +64,7 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { backgroundColor: colors.background, flex: 1 },
-});
+const makeStyles = (palette: Palette) =>
+  StyleSheet.create({
+    root: { backgroundColor: palette.background, flex: 1 },
+  });

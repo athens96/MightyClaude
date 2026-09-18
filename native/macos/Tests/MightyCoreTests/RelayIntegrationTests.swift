@@ -9,11 +9,19 @@ import Testing
 private final class StaticHost: MobileHostDelegate, @unchecked Sendable {
     func mobileState() async -> MobileState { MobileState(revision: 3, hostName: "Relay Mac", workspaces: [], sessions: []) }
     func mobileSession(id: String) async -> MobileSessionDetail? { nil }
-    func mobileSubmit(sessionId: String, text: String) async throws -> String { "started" }
+    func mobileSubmit(sessionId: String, text: String, mode: String?) async throws -> String { "started" }
     func mobileStop(sessionId: String) async throws {}
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws {}
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {}
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String { "new" }
+    func mobileRemoveQueued(sessionId: String, itemId: String) async throws {}
+    func mobileRunNextQueued(sessionId: String) async throws {}
+    func mobileRename(sessionId: String, title: String) async throws {}
+    func mobileClose(sessionId: String) async throws {}
+    func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage { MobileEntriesPage(entries: [], hasMore: false) }
+    func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws {}
+    func mobileCommands(sessionId: String) async throws -> [MobileCommand] { [] }
+    func mobilePerformCommand(sessionId: String, action: String) async throws -> String? { nil }
 }
 
 struct RelayIntegrationTests {

@@ -54,12 +54,12 @@ extension AppStore {
         switch argument {
         case .model:
             return modelOptions(for: session).map { option in
-                SlashCommand(invocation: command + " " + option.value, description: option.displayName + (option.value == session.model ? " · 현재" : ""), source: SlashCommandCatalog.modelSource, action: .setModel(option.value))
+                SlashCommand(invocation: command + " " + option.value, description: option.displayName + (option.value == session.model ? " · 현재" : ""), source: SlashCommandCatalog.modelSource, origin: .app, action: .setModel(option.value))
             }
         case .permission:
             return permissionModes(for: session).map { mode in
                 SlashCommand(invocation: command + " " + mode, description: permissionLabel(mode, provider: session.provider) + (mode == session.settings.permissionMode ? " · 현재" : ""),
-                             source: SlashCommandCatalog.permissionSource, action: .setPermission(mode))
+                             source: SlashCommandCatalog.permissionSource, origin: .app, action: .setPermission(mode))
             }
         }
     }
@@ -110,6 +110,23 @@ extension AppStore {
 
     private func slashNote(_ id: String, _ text: String) {
         updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: text)); $0.logs = Array($0.logs.suffix(400)) }
+    }
+
+    /// Waits, briefly, for this pane's first scan. A workspace nobody opened on
+    /// the Mac has no cache yet, and answering a phone from an empty one would
+    /// claim the pane has nothing but built-ins. A scan slower than `timeout`
+    /// answers with whatever is cached; the next poll gets the rest.
+    func awaitSlashCommands(for session: RunSession, timeout: TimeInterval) async {
+        refreshSlashCommands(for: session)
+        let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
+        let path = workspace?.remote == nil ? workspace?.path : nil
+        let key = Self.slashCatalogKey(provider: session.provider, workspacePath: path)
+        let deadline = Date().addingTimeInterval(timeout)
+        // The scan publishes through @Published, so polling is the cheapest way
+        // to notice it without a second notification channel.
+        while slashCatalogs[key] == nil, Date() < deadline, !ending {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
     }
 
     /// Rescans when the cache is missing or older than 30 s.
