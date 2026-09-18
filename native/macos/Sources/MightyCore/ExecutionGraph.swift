@@ -106,7 +106,7 @@ public enum ExecutionGraphSupport {
     public static func normalized(_ node: ExecutionGraphNode, restoring: Bool = false) -> ExecutionGraphNode? {
         guard CoreValidation.identifier(node.id), CoreValidation.identifier(node.runId),
               node.parentId.map({ CoreValidation.identifier($0) && $0 != node.id }) ?? true,
-              ["main", "agent", "task", "steer", "compact"].contains(node.kind), ActivitySupport.states.contains(node.state),
+              ["main", "agent", "task", "steer", "compact", "question"].contains(node.kind), ActivitySupport.states.contains(node.state),
               node.updatedAt.utf8.count <= 80, AgentRunTiming.parseTimestamp(node.updatedAt) != nil else { return nil }
         var result = node
         if result.kind == "main" { result.parentId = nil }

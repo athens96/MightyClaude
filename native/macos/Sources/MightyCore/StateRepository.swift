@@ -193,6 +193,7 @@ public actor StateRepository {
             if restoring && session.status == "running" { session.status = "stopped" }
             if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
             session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
+            session.mightyStyle = session.kind == "claude" && session.provider == "claude" && session.mightyStyle == OuroborosFlow.style ? OuroborosFlow.style : nil
             session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
             // A history the budget emptied is not "no history": drop the empty
             // array so the graph is rebuilt from the logs, as for old sessions.

@@ -59,6 +59,11 @@ final class AppStore: ObservableObject {
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
     @Published var statusLines: [String: StatusLineState] = [:]
     @Published var appUpdate = AppUpdateState()
+    /// Composer-side progress through the agent's pending questions, per pane.
+    @Published var ouroborosProgress: [String: QuestionnaireProgress] = [:]
+    @Published var ouroborosPrerequisites: OuroborosFlow.Prerequisites?
+    @Published var ouroborosAutoAllowing = Set<String>()
+    var questionnaireCache: [String: UserQuestionnaire] = [:]
     @Published var cliAccounts: [String: CLIAccountStatus] = [:]
     @Published var cliAccountBusy = Set<String>()
     @Published var cliAccountRefreshing = Set<String>()
@@ -345,7 +350,7 @@ final class AppStore: ObservableObject {
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
-            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id)
+            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); ouroborosProgress.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.cancel()
             draftRevisions.removeValue(forKey: id)
@@ -366,7 +371,7 @@ final class AppStore: ObservableObject {
                 await stop(session.id)
                 drafts.removeValue(forKey: session.id)
                 statusLines.removeValue(forKey: session.id)
-                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id)
+                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); ouroborosProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.cancel()
                 draftRevisions.removeValue(forKey: session.id)
@@ -639,6 +644,7 @@ final class AppStore: ObservableObject {
         requests.removeAll { $0.id == permission.id && $0.runId == permission.runId }
         if permission.state == "pending", session.status == "running" { requests.append(permission) }
         toolPermissions[event.sessionId] = requests
+        autoAllowOuroborosTool(permission, session: session)
         if previousFirst != requests.first.map({ permissionResponseKey(sessionId: event.sessionId, request: $0) }) {
             permissionErrors.removeValue(forKey: event.sessionId)
         }

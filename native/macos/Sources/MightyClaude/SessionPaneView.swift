@@ -11,6 +11,7 @@ struct SessionPaneView: View {
     @ViewState private var editorHeight: CGFloat = 22
     @ViewState private var attachmentDropTargeted = false
     @ViewState private var stopping = false
+    @ViewState private var ouroborosStartingNew = false
     @ViewState private var paletteIndex = 0
     @ViewState private var paletteDismissedFor: String?
 
@@ -41,8 +42,29 @@ struct SessionPaneView: View {
     private var selectedModelName: String { models.first(where: { $0.value == session.model })?.displayName ?? session.model }
     /// Sending stays possible while a run is busy: a local Claude turn takes
     /// the text immediately, other panes queue it for after the current request.
-    private var canSend: Bool { !stopping && !importingAttachments && blockedReason == nil && (!draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty)) }
+    private var canSend: Bool {
+        guard !stopping, !importingAttachments, blockedReason == nil else { return false }
+        if !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty) { return true }
+        // Multi-select picks in the Ouroboros question panel are confirmed with Enter on an empty draft.
+        return ouroboros && store.ouroborosCanConfirm(session.id)
+    }
     private var steers: Bool { store.canSteer(session) }
+    /// Mighty mode's Ouroboros style: the composer leads the interview loop.
+    private var ouroboros: Bool { store.usesOuroboros(session) }
+    private var offersMightyStyle: Bool {
+        session.kind == "claude" && session.provider == "claude" && session.agentViewMode == "mighty"
+            && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+    }
+    private var ouroborosPhase: OuroborosPhase { ouroborosStartingNew ? .goal : OuroborosFlow.currentPhase(session: session) }
+    private var composerPlaceholder: String {
+        if ouroboros {
+            if store.ouroborosQuestion(for: session.id) != nil { return "직접 답하려면 여기에 적고 Enter…" }
+            if !running, ouroborosPhase == .goal { return "무엇을 만들까요? 목표를 적고 Enter로 인터뷰를 시작하세요…" }
+            if !running { return "이어서 요청하거나 위에서 다음 단계를 고르세요…" }
+        }
+        if running { return steers ? "Enter: 다음 요청으로 대기 · ⌘Enter: 실행 중인 작업에 바로 전달" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다" }
+        return session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…"
+    }
     /// The draft while it is a `/name` being typed or a built-in's `/name arg`,
     /// or nil when the palette should be closed.
     private var paletteDraft: String? {
@@ -342,6 +364,14 @@ struct SessionPaneView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 9) {
+            if offersMightyStyle {
+                HStack(spacing: 8) {
+                    MightyStylePicker(session: session)
+                    Text(ouroboros ? "인터뷰 → 시드 → 실행 → 평가 → 진화" : "자유 요청").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
+                }.padding(.horizontal, 12).padding(.top, 9)
+                if ouroboros { OuroborosPanel(session: session, running: running, startingNew: $ouroborosStartingNew, onPrepare: { composerInput.prepareForSubmission() }) }
+            }
             if !attachments.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 7) {
@@ -370,7 +400,7 @@ struct SessionPaneView: View {
                     if text != nil { store.refreshSlashCommands(for: session) }
                 }
                 .frame(height: editorHeight)
-                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: { submitComposer(command: $0) }, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: running ? (steers ? "Enter: 다음 요청으로 대기 · ⌘Enter: 실행 중인 작업에 바로 전달" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다") : session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…").allowsHitTesting(false))
+                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: { submitComposer(command: $0) }, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: composerPlaceholder).allowsHitTesting(false))
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
                 .help(running ? (steers ? "Enter: 현재 작업이 끝난 뒤 실행 · ⌘Enter: 실행 중인 Claude에 바로 전달 · Shift+Enter: 줄바꿈" : "Enter: 현재 작업이 끝난 뒤 실행 · Shift+Enter: 줄바꿈") : "Enter 또는 ⌘Enter로 전송 · Shift+Enter로 줄바꿈")
             if importingAttachments {
@@ -446,6 +476,7 @@ struct SessionPaneView: View {
         .onChange(of: session.sessionUsage) { _, _ in store.refreshStatusLine(sessionID: session.id) }
         .onChange(of: session.resumeId) { _, _ in store.refreshStatusLine(sessionID: session.id) }
         .onChange(of: session.model) { _, _ in store.refreshStatusLine(sessionID: session.id) }
+        .task(id: session.mightyStyle) { if ouroboros { store.refreshOuroborosPrerequisites() } }
     }
 
     private var composerToolbar: some View {
@@ -558,6 +589,22 @@ struct SessionPaneView: View {
     /// ⌘Enter hands the text to the running Claude turn instead.
     private func submitComposer(command: Bool = false) {
         guard canSend, !store.hasModal else { return }
+        if ouroboros, attachments.isEmpty {
+            composerInput.prepareForSubmission()
+            let text = draft.wrappedValue
+            // Enter answers the agent's waiting question…
+            if store.ouroborosQuestion(for: session.id) != nil {
+                if store.ouroborosAnswer(session.id, text: text) { composerInput.replaceDraft(""); store.drafts[session.id] = "" }
+                return
+            }
+            // …or, before any interview, turns the goal into `/ouroboros:interview <goal>`.
+            if !running, ouroborosPhase == .goal, !text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/"), OuroborosFlow.skill(inPrompt: text) == nil {
+                ouroborosStartingNew = false
+                composerInput.replaceDraft("")
+                store.sendOuroboros(session.id, skill: "interview", text: text)
+                return
+            }
+        }
         if session.kind != "shell", attachments.isEmpty, let builtin = typedBuiltin {
             if let argument = builtin.argument {
                 let query = SlashCommandCatalog.argumentQuery(from: draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))?.query ?? ""

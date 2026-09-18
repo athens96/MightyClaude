@@ -83,3 +83,7 @@ Codex 실행 창은 `codex exec --json`이 내보내는 JSONL을 사용한다. �
 - 확인 기준은 Codex CLI 0.153.4와 openai/codex의 exec 이벤트 정의다. `collab_tool_call`과 이전 이름 `collab_agent_tool_call`을 허용하며, 보고되지 않은 이름·역할·시간·토큰 수를 만들어 내지 않는다. 백그라운드 명령 작업 블록은 Claude 전용이다. 플러그인 브라우저·참조 링크·말풍선·블록 크기 조절은 Claude와 Codex 모두 지원한다.
 
 이번 화면은 네이티브 Mac의 Claude·Codex 실행 창에 적용된다. Gemini CLI 스트림에는 에이전트 구조가 없어 기본 화면만 제공한다.
+
+## 요청 스타일
+
+마이티 모드의 입력창 위에서 `CLI | Ouroboros` 스타일을 고를 수 있다(이 Mac의 Claude 실행 창). CLI는 이 문서의 기본 동작이고, Ouroboros는 인터뷰 질문을 주고받으며 시드 → 실행 → 평가 → 진화로 이어지는 안내형 흐름이다. 자세한 내용은 [ouroboros-mode.md](ouroboros-mode.md).

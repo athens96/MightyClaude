@@ -196,8 +196,9 @@ struct MightyGraphView: View {
 
     /// Kept out of the view body: long concatenations of conditionals are
     /// slow for older type checkers.
-    static func headerSummary(runs: Int, agents: Int, tasks: Int, steers: Int, compactions: Int, tokens: GraphTokenUsage) -> String {
+    static func headerSummary(runs: Int, agents: Int, tasks: Int, steers: Int, compactions: Int, questions: Int = 0, tokens: GraphTokenUsage) -> String {
         var parts = ["요청 \(runs)", "하위 에이전트 \(agents)"]
+        if questions > 0 { parts.append("질문 \(questions)") }
         if tasks > 0 { parts.append("백그라운드 작업 \(tasks)") }
         if steers > 0 { parts.append("중간 요청 \(steers)") }
         if compactions > 0 { parts.append("컨텍스트 정리 \(compactions)") }
@@ -209,6 +210,7 @@ struct MightyGraphView: View {
     static func agentPresentation(_ agent: MightyGraphAgent) -> (title: String, icon: String, tint: Color) {
         if agent.isSteer { return ("중간 요청", "text.bubble", .orange) }
         if agent.isCompact { return (ContextCompaction.title, "arrow.down.right.and.arrow.up.left", .mint) }
+        if agent.isQuestion { return (agent.title.isEmpty ? "질문" : agent.title, "questionmark.bubble.fill", .indigo) }
         if agent.isTask { return (agent.title.isEmpty ? "백그라운드 작업" : agent.title, "terminal", .teal) }
         return (agent.title.isEmpty ? "하위 에이전트" : agent.title, "person.crop.square.filled.and.at.rectangle", .purple)
     }
@@ -217,7 +219,8 @@ struct MightyGraphView: View {
 
     var body: some View {
         let graph = layout
-        let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact }.count }
+        let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
+        let questionCount = runs.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
         let taskCount = runs.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
         let steerCount = runs.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
         let compactCount = runs.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
@@ -226,7 +229,7 @@ struct MightyGraphView: View {
             HStack(spacing: 10) {
                 Label("마이티", systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 12, weight: .semibold))
-                Text(Self.headerSummary(runs: runs.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, tokens: tokens))
+                Text(Self.headerSummary(runs: runs.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens))
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
                 Spacer(minLength: 8)
@@ -328,7 +331,7 @@ struct MightyGraphView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
             let run = runs[index]
-            transcriptCard(node, title: "요청 \(index + 1) · \(ProviderOptions.label(provider))", icon: "arrow.up.message", status: run.status,
+            transcriptCard(node, title: (OuroborosFlow.requestTitle(forInput: run.input).map { $0 + " · " } ?? "") + "요청 \(index + 1) · \(ProviderOptions.label(provider))", icon: "arrow.up.message", status: run.status,
                            input: run.input, entries: run.rootEntries, tint: Palette.accent, usage: run.usage)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]
