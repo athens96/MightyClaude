@@ -228,7 +228,7 @@ private final class AgentTranscriptScrollView: NSScrollView {
 }
 
 @MainActor
-final class AgentTranscriptTextView: NSTextView {
+final class AgentTranscriptTextView: SelectableTextView {
     var onFocus: (() -> Void)?
     var onSelectionFinished: (() -> Void)?
     private(set) var isTrackingSelection = false
@@ -299,6 +299,8 @@ final class AgentTranscriptTextView: NSTextView {
         cancelInitialScroll()
         onFocus?()
         isTrackingSelection = true
+        // super is SelectableTextView: it runs AppKit's tracking loop and then
+        // takes the first responder back if the drag selected anything.
         defer { isTrackingSelection = false; onSelectionFinished?() }
         super.mouseDown(with: event)
     }
@@ -393,15 +395,6 @@ final class AgentTranscriptTextView: NSTextView {
         guard let manager = layoutManager, manager.numberOfGlyphs > 0, document.value.length > 0 else { return 0 }
         let glyph = manager.glyphIndexForCharacter(at: min(max(0, index), document.value.length - 1))
         return manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil).minY + textContainerOrigin.y
-    }
-
-    override func writeSelection(to pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
-        if type == .string {
-            let selected = selectedRanges.map(\.rangeValue).filter { NSMaxRange($0) <= (string as NSString).length }
-                .map { (string as NSString).substring(with: $0).replacingOccurrences(of: "\u{FFFC}", with: "") }.joined(separator: "\n")
-            return pasteboard.setString(selected, forType: .string)
-        }
-        return super.writeSelection(to: pasteboard, type: type)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

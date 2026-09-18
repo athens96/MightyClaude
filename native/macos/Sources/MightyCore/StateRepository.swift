@@ -181,7 +181,7 @@ public actor StateRepository {
         let candidates = value.sessions.prefix(128).filter { session in
             CoreValidation.identifier(session.id) && sessionIds.insert(session.id).inserted && workspaceIds.contains(session.workspaceId) && ["claude", "shell"].contains(session.kind)
         }
-        let logShares = fairShares(demands: candidates.map { approximateLogBytes(Array($0.logs.suffix(400))) }, total: totalLogBudget)
+        let logShares = fairShares(demands: candidates.map { approximateLogBytes(TranscriptRetention.trimmed($0.logs)) }, total: totalLogBudget)
         let graphShares = fairShares(demands: candidates.map { approximateGraphBytes($0.graphRuns ?? []) }, total: totalGraphBudget)
         for (position, original) in candidates.enumerated() {
             var session = original
@@ -198,7 +198,7 @@ public actor StateRepository {
             // A history the budget emptied is not "no history": drop the empty
             // array so the graph is rebuilt from the logs, as for old sessions.
             if let runs = session.graphRuns, runs.isEmpty, !session.logs.isEmpty { session.graphRuns = nil }
-            session.logs = session.logs.suffix(400).compactMap { entry in
+            session.logs = TranscriptRetention.trimmed(session.logs).compactMap { entry in
                 guard CoreValidation.identifier(entry.id), ["user", "assistant", "system", "output", "error"].contains(entry.kind), logBudget > 0 else { return nil }
                 var log = entry; log.text = ActivitySupport.prefixUTF8(log.text, maximumBytes: min(log.kind == "assistant" ? 131_072 : 32_768, logBudget)); logBudget -= log.text.utf8.count
                 if let provider = log.provider, !ProviderOptions.ids.contains(provider) { log.provider = nil }

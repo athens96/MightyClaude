@@ -109,7 +109,7 @@ extension AppStore {
     }
 
     private func slashNote(_ id: String, _ text: String) {
-        updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: text)); $0.logs = Array($0.logs.suffix(400)) }
+        updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: text)); $0.logs = TranscriptRetention.trimmed($0.logs) }
     }
 
     /// Waits, briefly, for this pane's first scan. A workspace nobody opened on

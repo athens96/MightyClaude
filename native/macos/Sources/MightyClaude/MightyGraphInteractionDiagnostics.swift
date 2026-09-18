@@ -145,6 +145,29 @@ enum MightyGraphInteractionDiagnostics {
             guard selected.contains("본문 0"), selected.contains("본문 1"), !changed(probe.panOffset, textPan), !probe.isPanning else { throw MightyError("본문 드래그가 문단 선택 대신 카메라를 움직였습니다.") }
             report["nativeTextDragSelectsWithoutPanning"] = true
             report["nativeSelectedRange"] = ["location": editor.selectedRange().location, "length": editor.selectedRange().length]
+
+            // The selection outlives its focus here: a pan, a block resize or a
+            // click on card chrome all hand first responder to the canvas, and
+            // AppKit gives ⌘C to the first responder alone. Copy into a private
+            // pasteboard so the check never touches the user's clipboard, and
+            // press the key the way a Korean input source delivers it ("ㅊ").
+            // The scope ends with the block, so the editor is handed its own
+            // pasteboard back before anything else in this check runs.
+            do {
+                let board = NSPasteboard(name: NSPasteboard.Name("dev.mightyclaude.diagnostics.copy"))
+                board.clearContents()
+                editor.copyPasteboard = board
+                defer { editor.copyPasteboard = .general; board.releaseGlobally() }
+                guard window.makeFirstResponder(probe), window.firstResponder === probe else { throw MightyError("⌘C 검증용 포커스 이동에 실패했습니다.") }
+                guard commandC(window) else { throw MightyError("포커스를 잃은 블록이 ⌘C 키 동등키를 받지 못했습니다.") }
+                let copied = board.string(forType: .string)
+                report["copiedAfterFocusLeftTheCard"] = copied ?? "none"
+                // Attachment placeholders are layout, and the copy path drops
+                // them, so the expectation is the selection without them too.
+                let expected = selected.replacingOccurrences(of: "\u{FFFC}", with: "")
+                guard copied == expected else { throw MightyError("포커스를 잃은 블록에서 ⌘C가 선택한 본문을 복사하지 못했습니다.") }
+                report["copyFollowsSelectionAfterFocusLeavesTheCard"] = true
+            }
             try escape(window)
             try await store.waitForSmoke(timeout: 3) { probe.selectedNodeID == nil }
             report["escapeClearsSelection"] = true
@@ -500,6 +523,15 @@ enum MightyGraphInteractionDiagnostics {
         let glyph = manager.glyphIndexForCharacter(at: character)
         let rect = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
         return editor.convert(NSPoint(x: rect.minX + editor.textContainerOrigin.x + 0.25, y: rect.midY + editor.textContainerOrigin.y), to: nil)
+    }
+    /// A Korean input source reports "ㅊ" for the C key, so the key equivalent
+    /// carries exactly what AppKit delivers on that layout: only the key code
+    /// still says "the user pressed ⌘C".
+    private static func commandC(_ window: NSWindow) -> Bool {
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil, characters: "ㅊ", charactersIgnoringModifiers: "ㅊ",
+                                           isARepeat: false, keyCode: TranscriptCopyClaim.copyKeyCode) else { return false }
+        return window.performKeyEquivalent(with: event)
     }
     private static func escape(_ window: NSWindow) throws {
         guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) else { throw MightyError("Escape 이벤트를 만들지 못했습니다.") }
