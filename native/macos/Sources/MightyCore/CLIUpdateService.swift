@@ -63,7 +63,10 @@ public actor CLIUpdateService {
 
     // Filesystem fixtures use the real process implementation with private roots
     // and short deadlines. These overrides are not exposed to the app or wire.
-    init(environment: [String: String], homeDirectory: URL, metadataTimeout: TimeInterval = 2, updateTimeout: TimeInterval = 10) {
+    // The probe only has to beat a hung CLI. Two seconds was not enough for a
+    // shell fixture when the whole suite spawns processes in parallel, and a
+    // missed probe reads as "unknown" rather than as a timeout.
+    init(environment: [String: String], homeDirectory: URL, metadataTimeout: TimeInterval = 15, updateTimeout: TimeInterval = 30) {
         configuration = CLIUpdateConfiguration(environment: environment, home: homeDirectory, metadataTimeout: metadataTimeout, updateTimeout: updateTimeout)
     }
 
