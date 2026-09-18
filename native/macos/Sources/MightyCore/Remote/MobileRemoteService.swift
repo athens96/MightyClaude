@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 /// The app-side view the mobile protocol exposes. Implemented by the app
 /// store's bridge; every method is called off the main actor and hops itself.
@@ -14,53 +14,74 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
 }
 
-/// Tailscale-only HTTP listener for phones. Long-polls resolve when the app
-/// reports a new revision; the key persists in the data folder so a paired
-/// phone survives app restarts (unlike the desktop-to-desktop share).
+/// A routed reply: HTTP-like status plus a JSON body.
+public struct MobileReply: Sendable {
+    public var status: Int
+    public var body: Data
+    public init(status: Int, body: Data) { self.status = status; self.body = body }
+}
+
+/// Phone access through a relay (docs/relay.md). The host dials out to the
+/// relay, so no port, VPN or Tailscale is needed; every client connection is
+/// end-to-end encrypted and admitted only with the pairing key. The m1 REST
+/// routes are tunnelled as JSON request/response messages.
 public actor MobileRemoteService {
     public static let maximumWait: TimeInterval = 10
     public static let bodyLimit = 64 * 1024
+    public static let maximumClients = 32
     private let dataDirectory: URL
-    private let testing: Bool
     private weak var delegate: MobileHostDelegate?
-    private var server: HTTPServer?
-    private var generation = UUID()
     private var settings = MobileRemoteSettings()
     private var key: String?
-    private var address: String?
-    private var boundPort: Int?
-    private var serverGeneration: UUID?
-    private var detail = "모바일 리모트가 꺼져 있습니다."
-    private var tailscale = TailscaleState()
-    private var hostName: String
+    private var keypair: RelayKeypair?
     private let hostId: String
+    private var hostName: String
     private var appVersion: String
+    private var detail = "모바일 리모트가 꺼져 있습니다."
     private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     private var revisions: [String: Int] = [:]
-    private var peerRates: [String: (Date, Int)] = [:]
     private var disposed = false
+    private var generation = 0
+    private var controlTask: Task<Void, Never>?
+    private var controlSocket: URLSessionWebSocketTask?
+    private var relayConnected = false
+    private var lastRelayError: String?
+    private var clients: [String: RelayClientConnection] = [:]
+    /// Connections still inside the handshake; capped separately so a peer who
+    /// only knows the serverId cannot fill every slot by stalling.
+    private var unauthenticated = Set<String>()
+    public static let maximumUnauthenticated = 4
+    private var statusObserver: (@Sendable (MobileHostStatus) -> Void)?
+    private let session: URLSession
 
-    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.1.0", allowLoopbackForTests: Bool = false) {
-        self.dataDirectory = dataDirectory; self.hostName = hostName; self.appVersion = appVersion; self.testing = allowLoopbackForTests
+    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.1.0") {
+        self.dataDirectory = dataDirectory; self.hostName = hostName; self.appVersion = appVersion
         hostId = Self.stableHostId(dataDirectory)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 30
+        session = URLSession(configuration: configuration)
     }
 
     public func attach(_ delegate: MobileHostDelegate) { self.delegate = delegate }
     public func setAppVersion(_ value: String) { appVersion = value }
+    public func observeStatus(_ observer: @escaping @Sendable (MobileHostStatus) -> Void) { statusObserver = observer }
 
     private static func stableHostId(_ directory: URL) -> String {
         let url = directory.appendingPathComponent("host-id")
         if let existing = try? String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), CoreValidation.identifier(existing) { return existing }
-        let value = UUID().uuidString
+        let value = UUID().uuidString.lowercased()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try? value.write(to: url, atomically: true, encoding: .utf8)
         return value
     }
 
-    // MARK: Key
+    // MARK: Keys
 
     private var keyURL: URL { dataDirectory.appendingPathComponent("mobile-remote.key") }
-    /// Loads the saved key or mints one. The file is owner-only; the value is
+    private var keypairURL: URL { dataDirectory.appendingPathComponent("relay-keypair.json") }
+
+    /// Loads the saved pairing key or mints one. Owner-only file; the value is
     /// the only secret a phone needs, so it never enters the login Keychain.
     public func loadOrCreateKey() throws -> String {
         if let key { return key }
@@ -72,8 +93,6 @@ public actor MobileRemoteService {
     }
     public func regenerateKey() throws -> String {
         guard let fresh = MobilePairing.generateKey() else { throw MightyError("연결 키를 생성하지 못했습니다.") }
-        // Owner-only from the first byte: create the temp file with 0600 and
-        // swap it in, rather than chmod after a world-readable write.
         try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
         let temporary = dataDirectory.appendingPathComponent("mobile-remote.key." + UUID().uuidString)
@@ -82,76 +101,202 @@ public actor MobileRemoteService {
         else { try FileManager.default.moveItem(at: temporary, to: keyURL) }
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
         key = fresh
-        generation = UUID() // Old bearer tokens stop working immediately.
+        // Paired phones must re-pair: drop every live client.
+        for client in clients.values { Task { await client.close(reason: "pairing key rotated") } }
+        clients.removeAll(); unauthenticated.removeAll()
         return fresh
+    }
+    private func loadKeypair() throws -> RelayKeypair {
+        if let keypair { return keypair }
+        let loaded = try RelayKeypair.load(from: keypairURL)
+        keypair = loaded
+        return loaded
     }
 
     // MARK: Lifecycle
 
     public func status() -> MobileHostStatus {
-        let listening = server != nil && boundPort != nil
-        let pairing = listening ? key.flatMap { key in address.map { MobilePairing.url(host: $0, port: boundPort ?? settings.port, key: key, name: hostName) } } : nil
-        return MobileHostStatus(enabled: settings.enabled, listening: listening, address: address.map { host in "http://\(host.contains(":") ? "[\(host)]" : host):\(boundPort ?? settings.port)" },
-                                port: boundPort ?? settings.port, key: listening ? key : nil, pairingURL: pairing, hostName: hostName, detail: detail, tailscale: tailscale)
+        let offer = (settings.enabled && relayConnected) ? offerIfAvailable() : nil
+        return MobileHostStatus(enabled: settings.enabled, relayURL: settings.relayURL, relayConnected: relayConnected, clients: clients.count,
+                                serverId: hostId, publicKeyB64: (try? loadKeypair())?.publicKeyB64, key: offer?.pairingKey, pairingURL: offer?.url,
+                                hostName: hostName, detail: detail)
     }
+    private func offerIfAvailable() -> MobilePairingOffer? {
+        guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let relay = RelayEndpoint.normalize(settings.relayURL) else { return nil }
+        return MobilePairingOffer(serverId: hostId, publicKeyB64: keypair.publicKeyB64, relayURL: relay, pairingKey: key, name: hostName)
+    }
+    private func publish() { statusObserver?(status()) }
 
     public func apply(settings incoming: MobileRemoteSettings) async -> MobileHostStatus {
-        settings = testing && incoming.port == 0 ? incoming : incoming.normalized
-        if settings.enabled { await start() } else { await stop(reason: "모바일 리모트가 꺼져 있습니다.") }
+        let normalized = incoming.normalized
+        let changed = normalized != settings
+        settings = normalized
+        if settings.enabled, RelayEndpoint.normalize(settings.relayURL) != nil {
+            if changed || controlTask == nil { await start() }
+        } else {
+            await stop(reason: settings.enabled ? "릴레이 주소를 입력하면 연결합니다." : "모바일 리모트가 꺼져 있습니다.")
+        }
         return status()
     }
 
-    /// Opens the listener on the first Tailscale IP. Safe to call again: a
-    /// running listener on the same port is kept, a changed port restarts it.
-    @discardableResult public func start() async -> MobileHostStatus {
-        guard !disposed else { return status() }
-        // A rotated key changes the generation; the old listener must go.
-        if server != nil, boundPort == settings.port, serverGeneration == generation { return status() }
+    /// Keeps a control socket open to the relay and reconnects with backoff.
+    private func start() async {
+        guard !disposed else { return }
         await stop(reason: "")
-        let probe = testing
-            ? TailscaleProbe(state: .init(available: true, addresses: ["127.0.0.1"], deviceName: "Loopback test", detail: "격리된 루프백 테스트"), peers: ["127.0.0.1"])
-            : await TailscaleDiscovery.inspect()
-        tailscale = probe.state
-        guard probe.state.available, let host = probe.state.addresses.first(where: { !$0.contains(":") }) ?? probe.state.addresses.first else {
-            detail = "Tailscale이 연결되면 자동으로 켜집니다. " + probe.state.detail; return status()
-        }
-        let token: String
-        do { token = try loadOrCreateKey() } catch { detail = error.localizedDescription; return status() }
+        generation += 1
         let current = generation
-        let allowLoopback = testing
-        let server = HTTPServer(address: host, port: UInt16(testing && settings.port == 0 ? 0 : settings.port), requestBodyLimit: { _ in Self.bodyLimit }) { request in
-            await self.serve(request, token: token, generation: current, allowLoopback: allowLoopback)
+        detail = "릴레이에 연결하는 중…"
+        publish()
+        controlTask = Task { [weak self] in
+            var attempt = 0
+            while !Task.isCancelled {
+                guard let self, await self.generation == current else { return }
+                let started = Date()
+                let ok = await self.runControlSocket(generation: current)
+                if Task.isCancelled { return }
+                // A socket that died within seconds (e.g. evicted with 4409 by a
+                // duplicate host) must back off like a failure, not retry at once.
+                attempt = ok && Date().timeIntervalSince(started) > 5 ? 0 : attempt + 1
+                let delay = min(30.0, pow(2.0, Double(attempt - 1)))
+                await self.setDisconnected(retryIn: delay)
+                try? await Task.sleep(for: .seconds(delay))
+            }
         }
-        do {
-            let bound = try await server.start()
-            guard !disposed, generation == current else { await server.stop(); return status() }
-            self.server = server; boundPort = Int(bound); address = host; serverGeneration = current
-            detail = "휴대폰에서 QR 코드를 스캔해 연결하세요."
-        } catch {
-            detail = "포트 \(settings.port)을 열지 못했습니다: \(error.localizedDescription)"
-        }
-        return status()
     }
 
     public func stop(reason: String = "모바일 리모트가 꺼져 있습니다.") async {
-        if let server { await server.stop() }
-        server = nil; boundPort = nil; address = nil; serverGeneration = nil
+        generation += 1
+        controlTask?.cancel(); controlTask = nil
+        controlSocket?.cancel(with: .goingAway, reason: nil); controlSocket = nil
+        let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
+        for client in dropped.values { await client.close(reason: "host stopped") }
+        relayConnected = false
         if !reason.isEmpty { detail = reason }
         resumeWaiters(scope: nil)
+        publish()
     }
 
-    public func shutdown() async { disposed = true; await stop(reason: "앱이 종료 중입니다."); }
+    public func shutdown() async { disposed = true; await stop(reason: "앱이 종료 중입니다.") }
 
-    /// Re-checks Tailscale when the listener is enabled but not open yet.
-    public func retryIfNeeded() async { if settings.enabled, server == nil, !disposed { await start() } }
+    /// Reconnects now when enabled but offline (settings sheet, network change).
+    public func retryIfNeeded() async {
+        guard settings.enabled, !relayConnected, !disposed, RelayEndpoint.normalize(settings.relayURL) != nil else { return }
+        await start()
+    }
+
+    private func setDisconnected(retryIn delay: TimeInterval) {
+        relayConnected = false
+        detail = (lastRelayError.map { $0 + " · " } ?? "릴레이와 연결이 끊겼습니다. ") + "\(Int(delay))초 후 다시 시도합니다."
+        publish()
+    }
+
+    /// One control-socket session. Returns true when it connected at all.
+    private func runControlSocket(generation current: Int) async -> Bool {
+        guard let url = RelayEndpoint.socketURL(relay: settings.relayURL, serverId: hostId, role: "server", connectionId: nil) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
+        let socket = session.webSocketTask(with: url)
+        socket.maximumMessageSize = 1024 * 1024
+        controlSocket = socket
+        socket.resume()
+        var connected = false
+        do {
+            // The relay stays silent until a phone shows up, so prove the
+            // socket is open with a ping before reporting "connected".
+            try await Self.ping(socket)
+            connected = true; relayConnected = true; lastRelayError = nil
+            detail = "휴대폰에서 QR 코드를 스캔해 연결하세요."
+            publish()
+            while !Task.isCancelled, generation == self.generation {
+                let message = try await socket.receive()
+                guard case .string(let text) = message, let data = text.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = object["type"] as? String else { continue }
+                switch type {
+                case "connected":
+                    if let id = object["connectionId"] as? String, Self.validConnectionId(id) { acceptClient(connectionId: id, generation: current) }
+                case "disconnected":
+                    if let id = object["connectionId"] as? String, let client = clients.removeValue(forKey: id) { await client.close(reason: "relay disconnected"); publish() }
+                case "ping":
+                    try? await socket.send(.string(#"{"type":"pong"}"#))
+                default: break
+                }
+            }
+        } catch {
+            if generation == self.generation { lastRelayError = Self.describe(error, socket: socket) }
+        }
+        socket.cancel(with: .normalClosure, reason: nil)
+        // A newer generation may already own live clients; never touch its state.
+        guard generation == self.generation else { return connected }
+        if !connected, lastRelayError == nil { lastRelayError = "릴레이에 연결하지 못했습니다." }
+        if controlSocket === socket { controlSocket = nil }
+        let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
+        relayConnected = false
+        for client in dropped.values { await client.close(reason: "control socket closed") }
+        return connected
+    }
+
+    private static func ping(_ socket: URLSessionWebSocketTask) async throws {
+        let once = OnceFlag()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    socket.sendPing { error in
+                        guard once.claim() else { return }
+                        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(10))
+                throw MightyError("릴레이가 ping에 응답하지 않습니다.")
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+    }
+
+    static func validConnectionId(_ value: String) -> Bool { value.range(of: "^[A-Za-z0-9-]{8,64}$", options: .regularExpression) != nil }
+
+    private static func describe(_ error: Error, socket: URLSessionWebSocketTask) -> String {
+        switch socket.closeCode.rawValue {
+        case 4400: return "릴레이가 요청을 거부했습니다(잘못된 매개변수)."
+        case 4409: return "같은 호스트 ID로 다른 앱이 릴레이에 연결했습니다."
+        default:
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain { return "릴레이 연결 오류: " + nsError.localizedDescription }
+            return "릴레이 연결이 끊겼습니다."
+        }
+    }
+
+    private func acceptClient(connectionId: String, generation current: Int) {
+        guard clients[connectionId] == nil, clients.count < Self.maximumClients, unauthenticated.count < Self.maximumUnauthenticated,
+              let delegate, let keypair = try? loadKeypair(), let pairingKey = try? loadOrCreateKey(),
+              let url = RelayEndpoint.socketURL(relay: settings.relayURL, serverId: hostId, role: "server", connectionId: connectionId) else { return }
+        let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair)
+        let client = RelayClientConnection(id: connectionId, url: url, session: session, identity: identity, delegate: delegate, router: self)
+        clients[connectionId] = client
+        unauthenticated.insert(connectionId)
+        Task { [weak self] in
+            await client.run()
+            await self?.forget(connectionId, generation: current)
+        }
+        publish()
+    }
+    func authenticated(_ connectionId: String) { unauthenticated.remove(connectionId); publish() }
+    private func forget(_ connectionId: String, generation current: Int) {
+        unauthenticated.remove(connectionId)
+        guard current == generation else { return }
+        clients.removeValue(forKey: connectionId)
+        publish()
+    }
 
     // MARK: Revisions
 
     /// The app calls this whenever the state or a session changed. Scope is
-    /// "state" or "session:<id>"; waiters of that scope wake up.
+    /// "state" or "session:<id>"; waiters wake and connected phones are told.
     public func notify(scope: String, revision: Int) {
+        if revisions[scope] == nil, revisions.count >= 512, let stale = revisions.keys.first(where: { $0 != "state" && $0 != scope }) { revisions.removeValue(forKey: stale) }
         revisions[scope] = revision
         resumeWaiters(scope: scope)
+        for client in clients.values { Task { await client.notify(scope: scope, revision: revision) } }
     }
     private func resumeWaiters(scope: String?) {
         let keys = scope.map { [$0] } ?? Array(waiters.keys)
@@ -162,15 +307,12 @@ public actor MobileRemoteService {
     private func wait(scope: String, beyond since: Int, seconds: TimeInterval) async {
         guard seconds > 0, (revisions[scope] ?? 0) <= since else { return }
         let id = UUID()
-        // Registration happens synchronously on the actor, so the timeout's
-        // unregister can never run before it; every continuation is removed
-        // from `waiters` by exactly one of notify / stop / timeout.
         let timeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             await self?.unregister(scope: scope, id: id)
         }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            guard server != nil, (revisions[scope] ?? 0) <= since, waiters.values.reduce(0, { $0 + $1.count }) < 256 else { continuation.resume(); return }
+            guard (revisions[scope] ?? 0) <= since, waiters.values.reduce(0, { $0 + $1.count }) < 256 else { continuation.resume(); return }
             waiters[scope, default: [:]][id] = continuation
         }
         timeout.cancel()
@@ -179,126 +321,277 @@ public actor MobileRemoteService {
         if let continuation = waiters[scope]?.removeValue(forKey: id) { continuation.resume() }
     }
 
-    // MARK: Requests
+    // MARK: Routing (shared by the tunnel and tests)
 
-    private struct HTTPFailure: Error { let status: Int; let message: String; init(_ status: Int, _ message: String) { self.status = status; self.message = message } }
-    private func response<T: Encodable>(_ status: Int, _ value: T) -> HTTPResponse {
-        HTTPResponse(status: status, body: (try? JSONEncoder().encode(value)) ?? Data("{}".utf8), headers: ["x-mighty-mobile-version": "1"])
+    private struct Failure: Error { let status: Int; let message: String; init(_ status: Int, _ message: String) { self.status = status; self.message = message } }
+    private func reply<T: Encodable>(_ status: Int, _ value: T) -> MobileReply { MobileReply(status: status, body: (try? JSONEncoder().encode(value)) ?? Data("{}".utf8)) }
+    private func errorReply(_ status: Int, _ message: String) -> MobileReply {
+        MobileReply(status: status, body: (try? JSONSerialization.data(withJSONObject: ["protocol": 1, "error": String(message.prefix(1000))])) ?? Data("{}".utf8))
     }
-    private func errorResponse(_ status: Int, _ message: String) -> HTTPResponse {
-        var result = HTTPResponse.json(status, ["protocol": 1, "error": String(message.prefix(1000))]); result.headers["x-mighty-mobile-version"] = "1"; return result
+    private func decode<T: Decodable>(_ body: Data?, as type: T.Type) throws -> T {
+        guard let body, body.count <= Self.bodyLimit else { throw Failure(body == nil ? 400 : 413, body == nil ? "요청 본문이 필요합니다." : "요청이 너무 큽니다.") }
+        do { return try JSONDecoder().decode(type, from: body) } catch { throw Failure(400, "요청 본문이 올바르지 않습니다.") }
     }
-
-    private func authorize(_ request: HTTPRequest, token: String, generation current: UUID, allowLoopback: Bool) throws {
-        guard generation == current, server != nil else { throw HTTPFailure(503, "모바일 리모트가 종료되었습니다.") }
-        let peer = request.remoteAddress
-        guard RemoteIPPolicy.allowed(peer, allowLoopback: allowLoopback) else { throw HTTPFailure(403, "Tailscale 네트워크의 연결만 허용합니다.") }
-        guard request.headers["origin"] == nil, request.headers["sec-fetch-site"] == nil else { throw HTTPFailure(403, "브라우저 요청은 허용하지 않습니다.") }
-        let now = Date()
-        let rate = peerRates[peer] ?? (now, 0)
-        let count = now.timeIntervalSince(rate.0) < 1 ? rate.1 + 1 : 1
-        peerRates[peer] = (count == 1 ? now : rate.0, count)
-        if peerRates.count > 64 { peerRates = peerRates.filter { now.timeIntervalSince($0.value.0) < 1 } }
-        guard count <= 30 else { throw HTTPFailure(429, "요청이 너무 많습니다.") }
-        guard let header = request.headers["authorization"], header.hasPrefix("Bearer ") else { throw HTTPFailure(401, "연결 키가 필요합니다.") }
-        let presented = String(header.dropFirst(7))
-        let left = Data(SHA256.hash(data: Data(presented.utf8))), right = Data(SHA256.hash(data: Data(token.utf8)))
-        guard presented.utf8.count <= 256, left == right else { throw HTTPFailure(401, "연결 키가 올바르지 않습니다.") }
-        guard request.headers["x-mighty-mobile-version"] == "1" else { throw HTTPFailure(426, "모바일 프로토콜 버전이 다릅니다.") }
-    }
-
-    private func decode<T: Decodable>(_ request: HTTPRequest, as type: T.Type) throws -> T {
-        guard request.headers["content-type"]?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == "application/json" else { throw HTTPFailure(415, "JSON 요청이 필요합니다.") }
-        guard request.body.count <= Self.bodyLimit else { throw HTTPFailure(413, "요청이 너무 큽니다.") }
-        do { return try JSONDecoder().decode(type, from: request.body) } catch { throw HTTPFailure(400, "요청 본문이 올바르지 않습니다.") }
-    }
-
     private static func pollArguments(_ url: URLComponents) throws -> (since: Int, wait: TimeInterval) {
         var since = 0; var wait: TimeInterval = 0
         for item in url.queryItems ?? [] {
-            guard let value = item.value, value.range(of: "^[0-9]{1,12}$", options: .regularExpression) != nil, let number = Int(value) else { throw HTTPFailure(400, "질의 값이 올바르지 않습니다.") }
+            guard let value = item.value, value.range(of: "^[0-9]{1,12}$", options: .regularExpression) != nil, let number = Int(value) else { throw Failure(400, "질의 값이 올바르지 않습니다.") }
             switch item.name {
             case "since": since = number
             case "wait": wait = min(Double(number), maximumWait)
-            default: throw HTTPFailure(400, "알 수 없는 질의입니다.")
+            default: throw Failure(400, "알 수 없는 질의입니다.")
             }
         }
         return (since, wait)
     }
 
-    private func serve(_ request: HTTPRequest, token: String, generation current: UUID, allowLoopback: Bool) async -> HTTPResponse {
+    /// Serves one m1 request. `path` carries the route and query, `body` the
+    /// JSON payload of a POST.
+    public func route(method: String, path: String, body: Data?) async -> MobileReply {
         do {
-            try authorize(request, token: token, generation: current, allowLoopback: allowLoopback)
-            guard let url = URLComponents(string: request.target), url.scheme == nil, url.host == nil else { throw HTTPFailure(400, "경로가 올바르지 않습니다.") }
-            guard let delegate else { throw HTTPFailure(503, "앱이 준비되지 않았습니다.") }
+            guard let url = URLComponents(string: path), url.scheme == nil, url.host == nil else { throw Failure(400, "경로가 올바르지 않습니다.") }
+            guard let delegate else { throw Failure(503, "앱이 준비되지 않았습니다.") }
             let parts = url.path.split(separator: "/").map(String.init)
-            guard parts.first == "m1" else { throw HTTPFailure(404, "모바일 경로를 찾을 수 없습니다.") }
+            guard parts.first == "m1" else { throw Failure(404, "모바일 경로를 찾을 수 없습니다.") }
             let route = Array(parts.dropFirst())
             func sessionID(_ value: String) throws -> String {
-                guard CoreValidation.identifier(value) else { throw HTTPFailure(404, "실행 창을 찾을 수 없습니다.") }
+                guard CoreValidation.identifier(value) else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
                 return value
             }
-            if request.method == "GET", route == ["info"] {
-                return response(200, MobileInfo(hostId: hostId, hostName: hostName, appVersion: appVersion))
+            if method == "GET", route == ["info"] {
+                return reply(200, MobileInfo(hostId: hostId, hostName: hostName, appVersion: appVersion))
             }
-            if request.method == "GET", route == ["state"] {
+            if method == "GET", route == ["state"] {
                 let poll = try Self.pollArguments(url)
                 var state = await delegate.mobileState()
                 if state.revision <= poll.since {
                     await wait(scope: "state", beyond: poll.since, seconds: poll.wait)
                     state = await delegate.mobileState()
                 }
-                return response(200, state)
+                return reply(200, state)
             }
-            if request.method == "GET", route.count == 2, route[0] == "sessions" {
+            if method == "GET", route.count == 2, route[0] == "sessions" {
                 let id = try sessionID(route[1])
                 let poll = try Self.pollArguments(url)
-                guard var detail = await delegate.mobileSession(id: id) else { throw HTTPFailure(404, "실행 창을 찾을 수 없습니다.") }
+                guard var detail = await delegate.mobileSession(id: id) else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
                 if detail.revision <= poll.since {
                     await wait(scope: "session:" + id, beyond: poll.since, seconds: poll.wait)
-                    guard let fresh = await delegate.mobileSession(id: id) else { throw HTTPFailure(404, "실행 창을 찾을 수 없습니다.") }
+                    guard let fresh = await delegate.mobileSession(id: id) else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
                     detail = fresh
                 }
-                return response(200, detail)
+                return reply(200, detail)
             }
-            if request.method == "POST", route.count == 3, route[0] == "sessions", url.query == nil {
+            if method == "POST", route.count == 3, route[0] == "sessions", url.query == nil {
                 let id = try sessionID(route[1])
                 switch route[2] {
                 case "submit":
-                    let body = try decode(request, as: MobileSubmitRequest.self)
-                    let text = body.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty, text.utf8.count <= 32_768 else { throw HTTPFailure(400, "요청 내용은 1자 이상 32 KiB 이하여야 합니다.") }
-                    do { return response(202, MobileSubmitResult(accepted: try await delegate.mobileSubmit(sessionId: id, text: text))) }
-                    catch let failure as MightyError { throw HTTPFailure(409, failure.message) }
+                    let request = try decode(body, as: MobileSubmitRequest.self)
+                    let text = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty, text.utf8.count <= 32_768 else { throw Failure(400, "요청 내용은 1자 이상 32 KiB 이하여야 합니다.") }
+                    do { return reply(202, MobileSubmitResult(accepted: try await delegate.mobileSubmit(sessionId: id, text: text))) }
+                    catch let failure as MightyError { throw Failure(409, failure.message) }
                 case "stop":
-                    do { try await delegate.mobileStop(sessionId: id) } catch let failure as MightyError { throw HTTPFailure(409, failure.message) }
-                    return response(200, MobileStopped())
+                    do { try await delegate.mobileStop(sessionId: id) } catch let failure as MightyError { throw Failure(409, failure.message) }
+                    return reply(200, MobileStopped())
                 case "permission":
-                    let body = try decode(request, as: MobilePermissionAnswer.self)
-                    guard CoreValidation.identifier(body.requestId), CoreValidation.identifier(body.runId) else { throw HTTPFailure(400, "권한 요청 식별자가 올바르지 않습니다.") }
-                    do { try await delegate.mobilePermission(sessionId: id, requestId: body.requestId, runId: body.runId, allow: body.allow) }
-                    catch let failure as MightyError { throw HTTPFailure(409, failure.message) }
-                    return response(200, MobileOK())
+                    let request = try decode(body, as: MobilePermissionAnswer.self)
+                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId) else { throw Failure(400, "권한 요청 식별자가 올바르지 않습니다.") }
+                    do { try await delegate.mobilePermission(sessionId: id, requestId: request.requestId, runId: request.runId, allow: request.allow) }
+                    catch let failure as MightyError { throw Failure(409, failure.message) }
+                    return reply(200, MobileOK())
                 case "answers":
-                    let body = try decode(request, as: MobileQuestionAnswers.self)
-                    guard CoreValidation.identifier(body.requestId), CoreValidation.identifier(body.runId), body.answers.count <= 16 else { throw HTTPFailure(400, "답변 형식이 올바르지 않습니다.") }
-                    do { try await delegate.mobileAnswers(sessionId: id, requestId: body.requestId, runId: body.runId, answers: body.answers) }
-                    catch let failure as MightyError { throw HTTPFailure(409, failure.message) }
-                    return response(200, MobileOK())
+                    let request = try decode(body, as: MobileQuestionAnswers.self)
+                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId), request.answers.count <= 16 else { throw Failure(400, "답변 형식이 올바르지 않습니다.") }
+                    do { try await delegate.mobileAnswers(sessionId: id, requestId: request.requestId, runId: request.runId, answers: request.answers) }
+                    catch let failure as MightyError { throw Failure(409, failure.message) }
+                    return reply(200, MobileOK())
                 default: break
                 }
             }
-            if request.method == "POST", route.count == 3, route[0] == "workspaces", route[2] == "sessions", url.query == nil {
-                guard CoreValidation.identifier(route[1]) else { throw HTTPFailure(404, "워크스페이스를 찾을 수 없습니다.") }
-                let body = try decode(request, as: MobileCreateSessionRequest.self)
-                guard ["claude", "shell"].contains(body.kind) else { throw HTTPFailure(400, "kind는 claude 또는 shell이어야 합니다.") }
-                let provider = body.provider ?? "claude"
-                guard ProviderOptions.ids.contains(provider) else { throw HTTPFailure(400, "지원하지 않는 실행기입니다.") }
-                do { return response(201, MobileCreatedSession(sessionId: try await delegate.mobileCreateSession(workspaceId: route[1], kind: body.kind, provider: provider))) }
-                catch let failure as MightyError { throw HTTPFailure(409, failure.message) }
+            if method == "POST", route.count == 3, route[0] == "workspaces", route[2] == "sessions", url.query == nil {
+                guard CoreValidation.identifier(route[1]) else { throw Failure(404, "워크스페이스를 찾을 수 없습니다.") }
+                let request = try decode(body, as: MobileCreateSessionRequest.self)
+                guard ["claude", "shell"].contains(request.kind) else { throw Failure(400, "kind는 claude 또는 shell이어야 합니다.") }
+                let provider = request.provider ?? "claude"
+                guard ProviderOptions.ids.contains(provider) else { throw Failure(400, "지원하지 않는 실행기입니다.") }
+                do { return reply(201, MobileCreatedSession(sessionId: try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider))) }
+                catch let failure as MightyError { throw Failure(409, failure.message) }
             }
-            throw HTTPFailure(404, "모바일 경로를 찾을 수 없습니다.")
-        } catch let failure as HTTPFailure { return errorResponse(failure.status, failure.message) }
-        catch { return errorResponse(500, error.localizedDescription) }
+            throw Failure(404, "모바일 경로를 찾을 수 없습니다.")
+        } catch let failure as Failure { return errorReply(failure.status, failure.message) }
+        catch { return errorReply(500, error.localizedDescription) }
     }
+}
+
+struct RelayHostIdentity: Sendable {
+    let hostId: String
+    let hostName: String
+    let appVersion: String
+    let pairingKey: String
+    let keypair: RelayKeypair
+}
+
+/// One phone: a relay data socket, the E2EE handshake, pairing-key check,
+/// then tunnelled requests. Frames are sealed and opened on this actor so the
+/// cipher counters stay ordered.
+actor RelayClientConnection {
+    let id: String
+    private let url: URL
+    private let session: URLSession
+    private let identity: RelayHostIdentity
+    private weak var delegate: MobileHostDelegate?
+    private weak var router: MobileRemoteService?
+    private var socket: URLSessionWebSocketTask?
+    private var cipher: RelayCipher?
+    private var authenticated = false
+    private var inFlight = 0
+    private var closed = false
+    private var requestTasks: [String: Task<Void, Never>] = [:]
+    private var outbound: [Data] = []
+    private var writer: Task<Void, Never>?
+    static let handshakeDeadline: TimeInterval = 10
+
+    init(id: String, url: URL, session: URLSession, identity: RelayHostIdentity, delegate: MobileHostDelegate, router: MobileRemoteService) {
+        self.id = id; self.url = url; self.session = session; self.identity = identity; self.delegate = delegate; self.router = router
+    }
+
+    func run() async {
+        let socket = session.webSocketTask(with: url)
+        socket.maximumMessageSize = 1024 * 1024
+        self.socket = socket
+        socket.resume()
+        // A peer that stalls inside the handshake must not hold a slot.
+        let deadline = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.handshakeDeadline))
+            guard let self, !Task.isCancelled, await !self.authenticated else { return }
+            await self.close(reason: "handshake timeout")
+        }
+        do {
+            try await handshake(socket)
+            guard try await authenticate(socket) else { deadline.cancel(); await close(reason: "unauthorized"); return }
+            deadline.cancel()
+            await router?.authenticated(id)
+            let keepalive = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(20))
+                    guard let self, !Task.isCancelled else { return }
+                    await self.send(["type": "ping"])
+                }
+            }
+            defer { keepalive.cancel() }
+            while !closed {
+                let message = try await socket.receive()
+                guard case .data(let frame) = message else { continue }
+                let plaintext = try openFrame(frame)
+                guard let object = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any] else { continue }
+                if let type = object["type"] as? String {
+                    if type == "ping" { send(["type": "pong"]) }
+                    continue
+                }
+                guard let requestId = object["id"] as? String, requestId.count <= 64, let method = object["method"] as? String, ["GET", "POST"].contains(method),
+                      let path = object["path"] as? String, path.hasPrefix("/"), path.utf8.count <= 2048 else { continue }
+                guard inFlight < 8 else { send(["id": requestId, "status": 429, "body": ["protocol": 1, "error": "동시 요청이 너무 많습니다."]]); continue }
+                let body: Data? = (object["body"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                inFlight += 1
+                let taskId = requestId + ":" + UUID().uuidString
+                requestTasks[taskId] = Task { [weak self] in
+                    guard let self else { return }
+                    let reply: MobileReply
+                    if let router = await self.router { reply = await router.route(method: method, path: path, body: body) }
+                    else { reply = MobileReply(status: 503, body: Data(#"{"protocol":1,"error":"앱이 준비되지 않았습니다."}"#.utf8)) }
+                    await self.finish(taskId: taskId, requestId: requestId, reply: reply)
+                }
+            }
+        } catch {
+            // Handshake failures, decryption errors and closed sockets all end here.
+        }
+        deadline.cancel()
+        await close(reason: "")
+    }
+
+    private func finish(taskId: String, requestId: String, reply: MobileReply) {
+        requestTasks.removeValue(forKey: taskId)
+        inFlight = max(0, inFlight - 1)
+        guard !Task.isCancelled else { return }
+        let body = (try? JSONSerialization.jsonObject(with: reply.body)) ?? [:]
+        send(["id": requestId, "status": reply.status, "body": body])
+    }
+
+    private func handshake(_ socket: URLSessionWebSocketTask) async throws {
+        let message = try await socket.receive()
+        guard case .string(let text) = message, let data = text.data(using: .utf8), let hello = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              hello["type"] as? String == "hello", hello["v"] as? Int == 1,
+              let clientKey = (hello["clientKey"] as? String).flatMap({ Data(base64Encoded: $0) }), clientKey.count == 32,
+              let clientNonce = (hello["nonce"] as? String).flatMap({ Data(base64Encoded: $0) }), clientNonce.count == 16 else { throw MightyError("핸드셰이크가 올바르지 않습니다.") }
+        let serverNonce = RelayCrypto.randomBytes(16)
+        let ready = try JSONSerialization.data(withJSONObject: ["type": "ready", "v": 1, "serverKey": identity.keypair.publicKeyB64, "nonce": serverNonce.base64EncodedString()], options: [.sortedKeys])
+        cipher = try RelayCipher(privateKey: identity.keypair.privateKey, peerPublicKey: clientKey, clientNonce: clientNonce, serverNonce: serverNonce, isHost: true)
+        try await socket.send(.string(String(decoding: ready, as: UTF8.self)))
+    }
+
+    private func authenticate(_ socket: URLSessionWebSocketTask) async throws -> Bool {
+        let message = try await socket.receive()
+        guard case .data(let frame) = message else { return false }
+        let plaintext = try openFrame(frame)
+        guard let object = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
+              object["type"] as? String == "auth", let presented = object["pairingKey"] as? String, presented.utf8.count <= 256 else {
+            send(["type": "auth_error", "reason": "malformed"]); await flush(); return false
+        }
+        let left = Data(SHA256.hash(data: Data(presented.utf8))), right = Data(SHA256.hash(data: Data(identity.pairingKey.utf8)))
+        guard left == right else { send(["type": "auth_error", "reason": "pairing-key"]); await flush(); return false }
+        authenticated = true
+        send(["type": "auth_ok", "hostName": identity.hostName, "hostId": identity.hostId, "appVersion": identity.appVersion])
+        return true
+    }
+
+    private func openFrame(_ frame: Data) throws -> Data {
+        guard var cipher else { throw MightyError("암호 채널이 준비되지 않았습니다.") }
+        let plaintext = try cipher.open(frame)
+        self.cipher = cipher
+        return plaintext
+    }
+
+    /// Seals synchronously (so counters follow call order) and hands the frame
+    /// to a single writer task, which keeps the wire order equal to the
+    /// counter order the client insists on.
+    private func send(_ object: [String: Any]) {
+        guard !closed, var cipher, let data = try? JSONSerialization.data(withJSONObject: object) else { return }
+        guard let frame = try? cipher.seal(data) else { return }
+        self.cipher = cipher
+        outbound.append(frame)
+        if writer == nil { writer = Task { [weak self] in await self?.drain() } }
+    }
+    private func drain() async {
+        while !closed, !outbound.isEmpty, let socket {
+            let frame = outbound.removeFirst()
+            try? await socket.send(.data(frame))
+        }
+        writer = nil
+    }
+    /// Waits for queued frames to leave (used before an intentional close).
+    private func flush() async {
+        while writer != nil { try? await Task.sleep(for: .milliseconds(20)) }
+    }
+
+    func notify(scope: String, revision: Int) {
+        guard authenticated else { return }
+        send(["type": "notify", "scope": scope, "revision": revision])
+    }
+
+    func close(reason: String) async {
+        guard !closed else { return }
+        closed = true
+        for task in requestTasks.values { task.cancel() }
+        requestTasks.removeAll()
+        outbound.removeAll()
+        socket?.cancel(with: .normalClosure, reason: reason.isEmpty ? nil : Data(reason.utf8))
+        socket = nil
+    }
+}
+
+/// Lets a callback that may fire more than once resume a continuation exactly once.
+final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool { lock.lock(); defer { lock.unlock() }; if claimed { return false }; claimed = true; return true }
 }

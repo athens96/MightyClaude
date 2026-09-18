@@ -346,3 +346,9 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 - `TailscaleInstaller` inspects app bundle + CLI and maps `BackendState` to phases; installs via Homebrew cask with `NONINTERACTIVE=1`, falls back to the App Store page, opens the `tailscale login` URL, and runs `tailscale up`. `ComponentInstallerTests` drives it with fixture scripts (mode file for backend states, brew argument/env log, failure path, store fallback).
 - Settings gains 구성 요소 rows for Tailscale, each agent CLI (copyable install command when missing, CLI update when Claude Code is too old for Mods) and any `ComponentCatalog.requiredPlugins` entry (empty; the Mod is bundled).
+
+## 2026-09-18: Relay transport replaces the Tailscale listener for phones
+
+- `MobileRemoteService` no longer opens an HTTP listener. It keeps a control WebSocket to the relay (`relay/`), accepts one data socket per phone, runs the X25519 + HKDF + ChaCha20-Poly1305 handshake from docs/relay.md, checks the pairing key, and tunnels the m1 routes as `{id, method, path, body}` messages; `notify` pushes revision changes to connected phones.
+- `RelayChannelTests` covers key derivation, nonce layout, replay/reorder/direction rejection, tampering, keypair persistence (0600), offer round trip and endpoint normalization. `MobileRemoteTests` exercises the routes and long-poll through `route(...)`. `RelayIntegrationTests` starts the real Node relay (`relay/dist/server.js`) and drives host + phone through it: connected status, QR offer, handshake, auth, request, notify, ping, auth_error.
+- Tailscale installer and its settings row were removed; the desktop-to-desktop `/v1` share still uses Tailscale.

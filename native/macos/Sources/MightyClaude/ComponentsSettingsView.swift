@@ -17,7 +17,7 @@ struct ComponentsSettingsSection: View {
                 .accessibilityIdentifier("components-message")
             }
             HStack {
-                Text("Tailscale은 앱이 직접 설치·실행·로그인을 돕고, 에이전트 CLI는 상태와 설치 명령을 보여줍니다.").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("에이전트 CLI의 상태와 설치 명령, 앱이 요구하는 플러그인을 보여줍니다.").font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
                 Button(store.componentsRefreshing ? "확인 중…" : "다시 확인") { Task { await store.refreshComponents() } }
                     .disabled(store.componentsRefreshing || store.componentAction != nil).accessibilityIdentifier("components-refresh")
@@ -72,7 +72,6 @@ struct ComponentsSettingsSection: View {
 
     @ViewBuilder private func icon(_ component: ComponentStatus) -> some View {
         if ProviderOptions.ids.contains(component.id) { ProviderIcon(provider: component.id, size: 13) }
-        else if component.id == "tailscale" { Image(systemName: "network").font(.system(size: 13)) }
         else { Image(systemName: "puzzlepiece.extension").font(.system(size: 13)) }
     }
 

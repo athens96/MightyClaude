@@ -1,0 +1,26 @@
+{
+  "clientNonceB64" : "AAMGCQwPEhUYGx4hJCcqLQ==",
+  "clientPublicKeyB64" : "VxR2nRFr92Q2rnS8eT0sMK0ZA8WaxSc4BcfiaYtBDDY=",
+  "clientSecretKeyB64" : "ZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5\/gIGCg4Q=",
+  "clientToHostFramesB64" : [
+    "AQAAAAAAAAAAAAAAB+6iJ+gxfnK7DUqnmq4bIxmLuZHw1K4Fqkdac3dKpyvvhPzdXqbUfiK9rEABJRmNLVA02JqYXo43",
+    "AQAAAAAAAAAAAAAB8Ir0ujMyjx+M6QxL+SNPErDTzWPyIxAXs3HfktEw17G15NoVa1+Bx\/FC8Y+abU0f96yOFvJkf+e6n\/Hy"
+  ],
+  "clientToHostPlaintexts" : [
+    "{\"type\":\"auth\",\"pairingKey\":\"vector-key\"}",
+    "{\"id\":\"r1\",\"method\":\"GET\",\"path\":\"\/m1\/info\"}"
+  ],
+  "hostPublicKeyB64" : "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9\/AsrhtHHw=",
+  "hostSecretKeyB64" : "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+  "hostToClientFramesB64" : [
+    "AgAAAAAAAAAAAAAAtKSpSf9vDvb6nR8G4CD44qmoLiYKSQRtdwLzBHr1MjtVeT1N14HvS1\/Y2ryKGVF3OB\/VVPS\/vYriDg==",
+    "AgAAAAAAAAAAAAABJHfL8KwiO2rSSdd4M07p9+TWsrpLhAujLPcSW83ftO9z3DtQym\/h4FmRC4zQ\/zuLRuFtaouagtg3PCEg9T8="
+  ],
+  "hostToClientPlaintexts" : [
+    "{\"type\":\"auth_ok\",\"hostName\":\"Vector Mac\"}",
+    "{\"type\":\"notify\",\"scope\":\"state\",\"revision\":7}"
+  ],
+  "serverNonceB64" : "yMfGxcTDwsHAv769vLu6uQ==",
+  "sessionKeyB64" : "oq9ebdtstxyJ2U9dQJoFb3c\/f6aourHLfM3280jBaVg=",
+  "v" : 1
+}

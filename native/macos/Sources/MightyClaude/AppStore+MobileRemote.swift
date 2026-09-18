@@ -98,16 +98,9 @@ extension AppStore {
         Task {
             await mobileRemote.attach(bridge)
             await mobileRemote.setAppVersion(version)
+            // The service reconnects on its own; the observer keeps the UI current.
+            await mobileRemote.observeStatus { [weak self] status in Task { @MainActor in self?.mobileStatus = status } }
             mobileStatus = await mobileRemote.apply(settings: settings)
-        }
-        mobileRetryTask = Task { [weak self] in
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(30)) } catch { break }
-                guard let self, !self.ending else { break }
-                // Tailscale may come up after launch; keep trying while enabled.
-                await self.mobileRemote.retryIfNeeded()
-                self.mobileStatus = await self.mobileRemote.status()
-            }
         }
     }
 
@@ -116,10 +109,10 @@ extension AppStore {
         await mobileRemote.shutdown()
     }
 
-    func setMobileRemote(enabled: Bool, port: Int? = nil) {
+    func setMobileRemote(enabled: Bool, relayURL: String? = nil) {
         var settings = snapshot.mobileRemote ?? MobileRemoteSettings()
         settings.enabled = enabled
-        if let port { settings.port = port }
+        if let relayURL { settings.relayURL = relayURL }
         settings = settings.normalized
         snapshot.mobileRemote = settings
         mobileBusy = true

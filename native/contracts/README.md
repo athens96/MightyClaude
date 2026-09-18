@@ -44,22 +44,24 @@ The host generates `jobId` independently of any client pane ID. Poll events
 contain that job ID; the client remaps it to its local pane ID. Disconnecting
 stops the client's jobs. Reconnecting requires an explicit user operation.
 
-## Mobile protocol (m1)
+## Mobile protocol (m1) over the relay
 
-A separate Tailscale-only listener (default port 43138, `MobileRemoteService`) lets the phone app in `mobile/` read the desktop's workspaces and panes and send commands. Headers on every request: `Authorization: Bearer <key>` and `x-mighty-mobile-version: 1`; no `Origin`. The key is persisted in `<data>/mobile-remote/mobile-remote.key` (owner-only) and shown as `mightyclaude://pair?v=1&host=…&port=…&key=…&name=…` (QR) in Settings.
+Phones reach the desktop through a relay (`relay/`, Node + `ws`) that both sides dial outbound; the relay only forwards ciphertext. The host keeps a control socket (`/ws?serverId=…&role=server&v=1`) and opens one data socket per phone (`…&connectionId=…`). On each data socket: plaintext `hello`/`ready` (X25519 keys + 16-byte nonces), HKDF-SHA256 (`mightyclaude-relay-v1`), then ChaCha20-Poly1305 frames `[12B nonce = direction ‖ 0,0,0 ‖ counter][ciphertext+tag]` with strictly increasing counters. The first encrypted message is `auth` carrying the pairing key; the host answers `auth_ok` or `auth_error`. Full text: `docs/relay.md`.
 
-| Method | Route | Notes |
+Requests travel as `{id, method, path, body?}` → `{id, status, body}`; the host also pushes `{type:"notify", scope, revision}` and answers `ping` with `pong`.
+
+| Method | Path | Notes |
 |---|---|---|
 | GET | `/m1/info` | `{protocol, hostId, hostName, appVersion, platform}` |
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | Long-poll until the state revision passes `since`; `MobileState` |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>` | Long-poll per session; `MobileSessionDetail` (last 80 entries, pending permissions as structured cards, queue, usage) |
 | POST | `/m1/sessions/{id}/submit` | `{text}` → 202 `{accepted: started\|steered\|queued}`, 409 when blocked |
-| POST | `/m1/sessions/{id}/stop` | |
-| POST | `/m1/sessions/{id}/permission` | `{requestId, runId, allow}` |
+| POST | `/m1/sessions/{id}/stop` | `{protocol, stopped: true}` |
+| POST | `/m1/sessions/{id}/permission` | `{requestId, runId, allow}` → `{protocol, ok: true}` |
 | POST | `/m1/sessions/{id}/answers` | `{requestId, runId, answers: {question: {selectedOptions, customText?}}}` |
 | POST | `/m1/workspaces/{id}/sessions` | `{kind, provider?}` → 201 `{sessionId}` |
 
-Limits: 64 KiB body, 32 KiB text, 30 requests/s per peer, 10 s maximum wait, peers only from 100.64/10 or fd7a:115c:a1e0::/48. Wire types live in `MightyCore/Remote/MobileRemoteModels.swift`; the full shapes are in `docs/mobile-remote.md`.
+Pairing string: `mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url X25519 public key>&relay=<ws(s)://host[:port]>&key=<pairing key>&name=<host name>`. Keys live in `<data>/mobile-remote/` (`mobile-remote.key`, `relay-keypair.json`, owner-only). Limits: 64 KiB body, 32 KiB text, 8 in-flight requests per phone, 32 phones, 10 s maximum wait. Wire types: `MightyCore/Remote/MobileRemoteModels.swift`; crypto: `RelayChannel.swift`.
 
 ## Providers
 

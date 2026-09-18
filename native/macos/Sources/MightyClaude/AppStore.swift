@@ -55,8 +55,6 @@ final class AppStore: ObservableObject {
     @Published var componentAction: String?
     @Published var componentMessage: String?
     @Published var componentMessageIsError = false
-    let tailscaleInstaller = TailscaleInstaller()
-    var lastTailscaleInspection: TailscaleInspection?
     @Published var attachmentErrors: [String: String] = [:]
     @Published var importingAttachments = Set<String>()
     @Published var attachmentPanelSession: String?
