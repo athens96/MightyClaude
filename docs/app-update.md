@@ -79,5 +79,6 @@ mightyclaude/0.2.0/MightyClaude-macos.zip     ← latest.json의 macos.url
 
 - 앱은 ad-hoc 서명이라 Gatekeeper 격리 속성이 붙으면 실행이 막힐 수 있다. 앱이 직접 내려받은 파일에는 격리 속성이 붙지 않으므로 도우미는 속성을 건드리지 않는다.
 - `updates/` 폴더에는 마지막으로 받은 버전 하나만 남는다.
+- 같은 번들 ID의 앱 복사본(빌드 결과물, 백업)이 LaunchServices에 여러 개 등록되면 입력기 세션이 실행 중인 앱을 다른 번들로 볼 수 있다(한글 자소 분리). 도우미와 `scripts/install-macos.sh`는 백업을 `MightyClaude.app.bak`으로 두고, 설치 후 복사본을 등록 해제하고 설치된 앱만 다시 등록하며, 옛 프로세스가 사라진 뒤 2초 기다렸다가 재실행한다. `scripts/build-macos.sh`도 빌드 결과물을 등록 해제한다.
 - 실행 중인 앱의 위치에 쓸 수 없으면(예: 읽기 전용 볼륨) 설치 단계에서 안내하고 멈춘다.
 - 스모크 테스트 프로필에서는 자동 확인을 하지 않는다.

@@ -282,6 +282,13 @@ public actor AppUpdateService {
     /// The helper waits for the running app to exit, copies the new bundle
     /// beside the old one, swaps them in one move, keeps a backup until the
     /// swap succeeded, and relaunches. Paths are single-quoted for `sh`.
+    ///
+    /// Two extra steps keep the macOS input method attached to the right
+    /// bundle: the staged copy is unregistered from LaunchServices and the
+    /// installed one re-registered, and the relaunch waits two seconds after
+    /// the old process is gone. Every build carries a fresh ad-hoc signature,
+    /// so duplicate registrations of the same bundle id are what confuse the
+    /// text-input session (Korean composition falling apart into jamo).
     public static func installScript(stagedApp: URL, destination: URL, pid: Int32, relaunch: Bool = true) -> String {
         func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
@@ -295,23 +302,27 @@ public actor AppUpdateService {
         BACKUP=\(quote(NSTemporaryDirectory() + "MightyClaude-app-backup-" + stamp))
         PID=\(pid)
         NEW="$DESTINATION.update-new"
+        LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
         if kill -0 "$PID" 2>/dev/null; then echo "MightyClaude가 종료되지 않아 업데이트를 건너뜁니다." >&2; exit 1; fi
+        sleep 2
         [ -d "$SOURCE" ] || { echo "설치할 앱이 없습니다: $SOURCE" >&2; exit 1; }
         rm -rf "$NEW"
         ditto "$SOURCE" "$NEW" || { echo "새 앱을 복사하지 못했습니다." >&2; rm -rf "$NEW"; exit 1; }
         if [ -d "$DESTINATION" ]; then
-          mkdir -p "$BACKUP" && ditto "$DESTINATION" "$BACKUP/MightyClaude.app" || { echo "백업하지 못했습니다." >&2; rm -rf "$NEW"; exit 1; }
+          mkdir -p "$BACKUP" && ditto "$DESTINATION" "$BACKUP/MightyClaude.app.bak" || { echo "백업하지 못했습니다." >&2; rm -rf "$NEW"; exit 1; }
           rm -rf "$DESTINATION"
         fi
         if ! mv "$NEW" "$DESTINATION"; then
           echo "앱을 교체하지 못해 이전 버전을 되돌립니다." >&2
           rm -rf "$DESTINATION" "$NEW"
-          [ -d "$BACKUP/MightyClaude.app" ] && ditto "$BACKUP/MightyClaude.app" "$DESTINATION"
+          [ -d "$BACKUP/MightyClaude.app.bak" ] && ditto "$BACKUP/MightyClaude.app.bak" "$DESTINATION"
           exit 1
         fi
         rm -rf "$BACKUP"
+        "$LSREGISTER" -u "$SOURCE" >/dev/null 2>&1 || true
         rm -rf "$(dirname "$SOURCE")"
+        "$LSREGISTER" -f "$DESTINATION" >/dev/null 2>&1 || true
         echo "설치 완료: $DESTINATION"
         \(relaunch ? "open -n \"$DESTINATION\"" : "true")
         """

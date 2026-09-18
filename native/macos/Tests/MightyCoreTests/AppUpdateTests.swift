@@ -159,6 +159,7 @@ import Testing
         try Data("zip".utf8).write(to: package)
         let script = AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 4242, relaunch: false)
         #expect(script.hasPrefix("#!/bin/sh") && script.contains("PATH=/usr/bin:/bin") && script.contains("PID=4242") && script.contains("kill -0 \"$PID\""))
+        #expect(script.contains("MightyClaude.app.bak") && script.contains("lsregister") && script.contains("\nsleep 2\n"))
         #expect(script.contains("DESTINATION='" + root.path + "/Apps (it'\\''s here)/MightyClaude.app'"))
         #expect(!script.contains("open -n") && AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 1).contains("open -n \"$DESTINATION\""))
         // Run the real helper: pid 4242 belongs to nobody, so it proceeds at once.
