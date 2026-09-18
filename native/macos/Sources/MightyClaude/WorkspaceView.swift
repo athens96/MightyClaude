@@ -224,7 +224,7 @@ struct WorkspaceView: View {
             ForEach(ProviderOptions.ids, id: \.self) { provider in
                 Button { addSession(in: workspace, kind: "claude", provider: provider) } label: {
                     Label { Text("새 \(ProviderOptions.label(provider)) 실행 창") } icon: {
-                        if let image = ProviderIconImage.image(provider: provider, pointSize: 12, color: .labelColor) { Image(nsImage: image) }
+                        if let image = ProviderIconImage.image(provider: provider, pointSize: 12) { Image(nsImage: image) }
                         else { Image(systemName: Palette.symbol(provider)) }
                     }
                 }

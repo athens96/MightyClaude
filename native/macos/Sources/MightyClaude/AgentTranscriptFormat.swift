@@ -62,7 +62,8 @@ enum AgentTranscriptFormat {
     }
 
     private static func providerSymbol(_ provider: String, color: NSColor) -> NSAttributedString {
-        guard let image = ProviderIconImage.image(provider: provider, pointSize: 11, color: color) else { return NSAttributedString(string: "•") }
+        // The mark keeps its brand colour; `color` only styles the fallback bullet.
+        guard let image = ProviderIconImage.image(provider: provider, pointSize: 11) else { return NSAttributedString(string: "•", attributes: [.foregroundColor: color]) }
         let attachment = NSTextAttachment()
         attachment.image = image
         attachment.bounds = NSRect(x: 0, y: -2, width: 13, height: 13)
