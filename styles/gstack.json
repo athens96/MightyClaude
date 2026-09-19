@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "id": "gstack",
+  "name": "gstack",
+  "summary": "오피스아워부터 계획 리뷰 · 구현 · QA · 출시 · 회고까지, 역할별 스킬로 한 사람이 팀처럼 출시합니다",
+  "subtitle": "계획 → 구현 → 검증 → 출시 → 회고",
+  "placeholders": {
+    "idle": "대상(파일 경로 · URL · 지시)을 적고 위에서 스킬을 고르세요 · Enter는 그대로 요청합니다…",
+    "answering": "직접 답하려면 여기에 적고 Enter…"
+  },
+  "guidance": {
+    "next": "{phase} 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "running": "{phase} 진행 중 · 고른 스킬은 다음 요청으로 대기합니다"
+  },
+  "prerequisites": {
+    "mode": "any",
+    "report": "first",
+    "probes": [
+      { "kind": "skill", "name": "_gstack-command", "scopes": ["user", "workspace"],
+        "missing": "gstack 스킬이 설치되어 있지 않습니다",
+        "hint": "터미널 실행 창이 열리고 설치 명령이 채워집니다. 내용을 읽고 Enter는 직접 누르세요." },
+      { "kind": "skill", "name": "gstack", "scopes": ["user", "workspace"],
+        "missing": "gstack 스킬이 설치되어 있지 않습니다" },
+      { "kind": "skill", "name": "office-hours", "scopes": ["user", "workspace"],
+        "missing": "gstack 스킬이 설치되어 있지 않습니다" }
+    ]
+  },
+  "install": {
+    "command": "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+    "paneTitle": "gstack 설치"
+  },
+  "phases": [
+    { "id": "plan",  "title": "계획", "order": 0 },
+    { "id": "build", "title": "구현", "order": 1 },
+    { "id": "qa",    "title": "검증", "order": 2 },
+    { "id": "ship",  "title": "출시", "order": 3 },
+    { "id": "retro", "title": "회고", "order": 4 }
+  ],
+  "groups": [
+    { "id": "flow", "title": "흐름",
+      "actions": ["office-hours", "spec", "autoplan", "plan-ceo-review", "plan-eng-review", "plan-design-review", "plan-devex-review",
+                  "investigate", "codex", "health",
+                  "qa", "qa-only", "review", "design-review", "devex-review", "cso", "benchmark",
+                  "ship", "land-and-deploy", "canary", "document-release",
+                  "retro", "learn",
+                  "context-save", "context-restore", "freeze", "unfreeze"] }
+  ],
+  "actions": [
+    { "id": "office-hours", "title": "오피스아워", "glyph": "🎓", "scope": "아이디어 하나", "help": "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다", "prompt": "/office-hours {text}", "takesText": true, "foldText": "oneLine", "requiresText": true, "phase": "plan" },
+    { "id": "spec", "title": "스펙 작성", "glyph": "📐", "scope": "의도 하나", "help": "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다", "prompt": "/spec {text}", "takesText": true, "foldText": "oneLine", "requiresText": true, "phase": "plan" },
+    { "id": "autoplan", "title": "자동 리뷰 파이프라인", "glyph": "🧭", "scope": "계획 하나", "help": "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다", "prompt": "/autoplan {text}", "takesText": true, "foldText": "oneLine", "phase": "plan" },
+    { "id": "plan-ceo-review", "title": "CEO 리뷰", "glyph": "👑", "scope": "계획 하나", "help": "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다", "prompt": "/plan-ceo-review {text}", "takesText": true, "foldText": "oneLine", "phase": "plan", "flags": ["userInvoked"] },
+    { "id": "plan-eng-review", "title": "엔지니어링 리뷰", "glyph": "🏗️", "scope": "계획 하나", "help": "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다", "prompt": "/plan-eng-review {text}", "takesText": true, "foldText": "oneLine", "phase": "plan", "flags": ["userInvoked"] },
+    { "id": "plan-design-review", "title": "디자인 계획 리뷰", "glyph": "🎨", "scope": "계획 하나", "help": "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다", "prompt": "/plan-design-review {text}", "takesText": true, "foldText": "oneLine", "phase": "plan", "flags": ["userInvoked"] },
+    { "id": "plan-devex-review", "title": "DX 계획 리뷰", "glyph": "⚙️", "scope": "계획 하나", "help": "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다", "prompt": "/plan-devex-review {text}", "takesText": true, "foldText": "oneLine", "phase": "plan", "flags": ["userInvoked"] },
+    { "id": "investigate", "title": "원인 조사", "glyph": "🔍", "scope": "버그 하나", "help": "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다", "prompt": "/investigate {text}", "takesText": true, "foldText": "oneLine", "requiresText": true, "phase": "build" },
+    { "id": "codex", "title": "코덱스 교차 검토", "glyph": "🤖", "scope": "변경 하나", "help": "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다", "prompt": "/codex {text}", "takesText": true, "foldText": "oneLine", "phase": "build" },
+    { "id": "health", "title": "코드 건강도", "glyph": "🩺", "scope": "저장소 하나", "help": "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다", "prompt": "/health {text}", "takesText": true, "foldText": "oneLine", "phase": "build" },
+    { "id": "qa", "title": "QA 및 수정", "glyph": "🧪", "scope": "웹 앱 하나", "help": "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다", "prompt": "/qa {text}", "takesText": true, "foldText": "oneLine", "requiresText": true, "phase": "qa" },
+    { "id": "qa-only", "title": "QA 리포트", "glyph": "📋", "scope": "웹 앱 하나", "help": "고치지 않고 찾은 것만 보고합니다", "prompt": "/qa-only {text}", "takesText": true, "foldText": "oneLine", "requiresText": true, "phase": "qa", "flags": ["readOnly"] },
+    { "id": "review", "title": "PR 리뷰", "glyph": "🔎", "scope": "브랜치 하나", "help": "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다", "prompt": "/review {text}", "takesText": true, "foldText": "oneLine", "phase": "qa" },
+    { "id": "design-review", "title": "디자인 QA", "glyph": "🖌️", "scope": "화면 하나", "help": "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다", "prompt": "/design-review {text}", "takesText": true, "foldText": "oneLine", "phase": "qa" },
+    { "id": "devex-review", "title": "DX 감사", "glyph": "🛠️", "scope": "온보딩 흐름 하나", "help": "실제로 돌려 보며 개발자 경험을 감사합니다", "prompt": "/devex-review {text}", "takesText": true, "foldText": "oneLine", "phase": "qa" },
+    { "id": "cso", "title": "보안 감사", "glyph": "🕵️", "scope": "저장소 하나", "help": "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다", "prompt": "/cso {text}", "takesText": true, "foldText": "oneLine", "phase": "qa" },
+    { "id": "benchmark", "title": "성능 측정", "glyph": "⏱️", "scope": "페이지 하나", "help": "브라우즈 데몬으로 성능 회귀를 감지합니다", "prompt": "/benchmark {text}", "takesText": true, "foldText": "oneLine", "requiresText": true, "phase": "qa" },
+    { "id": "ship", "title": "PR 출시", "glyph": "🚢", "scope": "브랜치 하나", "help": "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다", "prompt": "/ship {text}", "takesText": true, "foldText": "oneLine", "phase": "ship" },
+    { "id": "land-and-deploy", "title": "머지 후 배포", "glyph": "🛬", "scope": "PR 하나", "help": "PR을 랜딩하고 배포까지 이어 갑니다", "prompt": "/land-and-deploy {text}", "takesText": true, "foldText": "oneLine", "phase": "ship" },
+    { "id": "canary", "title": "카나리 감시", "glyph": "🐤", "scope": "배포 하나", "help": "배포 직후 카나리로 오류를 지켜봅니다", "prompt": "/canary {text}", "takesText": true, "foldText": "oneLine", "phase": "ship" },
+    { "id": "document-release", "title": "릴리스 문서", "glyph": "📝", "scope": "출시 하나", "help": "출시 뒤 바뀐 것을 문서에 반영합니다", "prompt": "/document-release {text}", "takesText": true, "foldText": "oneLine", "phase": "ship" },
+    { "id": "retro", "title": "회고", "glyph": "🔁", "scope": "한 주", "help": "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다", "prompt": "/retro {text}", "takesText": true, "foldText": "oneLine", "phase": "retro" },
+    { "id": "learn", "title": "학습 기록", "glyph": "📚", "scope": "프로젝트 하나", "help": "프로젝트 학습 기록을 보고 정리합니다", "prompt": "/learn {text}", "takesText": true, "foldText": "oneLine", "phase": "retro" },
+    { "id": "context-save", "title": "컨텍스트 저장", "glyph": "💾", "scope": "현재 세션", "help": "지금 작업 맥락을 저장합니다", "prompt": "/context-save {text}", "takesText": true, "foldText": "oneLine" },
+    { "id": "context-restore", "title": "컨텍스트 복원", "glyph": "📂", "scope": "저장된 세션", "help": "저장해 둔 작업 맥락을 다시 불러옵니다", "prompt": "/context-restore {text}", "takesText": true, "foldText": "oneLine", "flags": ["readOnly"] },
+    { "id": "freeze", "title": "편집 범위 고정", "glyph": "🧊", "scope": "디렉터리 하나", "help": "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다", "prompt": "/freeze {text}", "takesText": true, "foldText": "oneLine", "requiresText": true },
+    { "id": "unfreeze", "title": "고정 해제", "glyph": "🌊", "scope": "현재 세션", "help": "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다", "prompt": "/unfreeze {text}", "takesText": true, "foldText": "oneLine" }
+  ],
+  "aliases": [
+    { "name": "plan-tune",           "phase": "plan" },
+    { "name": "design-consultation", "phase": "plan" },
+    { "name": "design-shotgun",      "phase": "plan" },
+    { "name": "design-html",         "phase": "build" },
+    { "name": "browse",              "phase": "qa" },
+    { "name": "ios-qa",              "phase": "qa" },
+    { "name": "landing-report",      "phase": "ship" },
+    { "name": "document-generate",   "phase": "ship" }
+  ],
+  "recognition": { "prefixes": ["/"], "lowercase": false },
+  "rules": {
+    "start": { "kind": "none" },
+    "phase": { "kind": "lastRecognisedAction", "default": "plan" },
+    "next": {
+      "kind": "byPhase",
+      "map": {
+        "plan":  ["office-hours", "spec", "autoplan", "plan-eng-review", "investigate"],
+        "build": ["qa", "review", "health", "investigate"],
+        "qa":    ["review", "ship", "cso", "investigate"],
+        "ship":  ["canary", "document-release", "retro"],
+        "retro": ["learn", "office-hours", "spec"]
+      }
+    },
+    "enter": { "kind": "verbatim" },
+    "recommend": { "kind": "none" },
+    "initialGroup": { "kind": "fixed", "group": "flow" }
+  },
+  "capabilities": [],
+  "autoAllow": [],
+  "presentation": { "icon": "cube", "tint": "orange" }
+}

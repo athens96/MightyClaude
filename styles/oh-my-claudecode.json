@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "id": "oh-my-claudecode",
+  "name": "oh-my-claudecode",
+  "summary": "계획 → 실행 → 리뷰 → 검증을 스킬과 에이전트로 이어 붙이는 멀티 에이전트 오케스트레이션",
+  "subtitle": "계획 → 실행 → 리뷰 → 검증",
+  "placeholders": {
+    "idle": "이어서 요청하거나 위에서 다음 단계를 고르세요…",
+    "initial": "무엇을 할까요? 목표를 적고 Enter로 계획을 시작하세요…",
+    "answering": "직접 답하려면 여기에 적고 Enter…"
+  },
+  "guidance": {
+    "start": "무엇을 할까요? 목표를 아래에 적으면 계획부터 세우고 실행 · 리뷰 · 검증까지 이어갑니다.",
+    "next": "{phase} 단계입니다. 다음 단계를 고르거나, 아래에 적어 같은 대화를 이어가세요.",
+    "running": "{phase} 진행 중 · 질문이 오면 여기에 표시됩니다"
+  },
+  "prerequisites": {
+    "mode": "all",
+    "report": "first",
+    "probes": [
+      { "kind": "plugin", "prefix": "oh-my-claudecode@", "install": true,
+        "missing": "oh-my-claudecode 플러그인이 설치되어 있지 않습니다",
+        "hint": "설치는 Claude CLI의 플러그인 명령으로 진행합니다. 터미널 실행 창이 열리고 명령이 채워집니다. Enter는 직접 누르세요." }
+    ]
+  },
+  "install": {
+    "command": "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+    "paneTitle": "oh-my-claudecode 설치"
+  },
+  "phases": [
+    { "id": "goal",    "title": "목표", "order": 0 },
+    { "id": "plan",    "title": "계획", "order": 1 },
+    { "id": "execute", "title": "실행", "order": 2 },
+    { "id": "review",  "title": "리뷰", "order": 3 },
+    { "id": "verify",  "title": "검증", "order": 4 }
+  ],
+  "groups": [
+    { "id": "flow", "title": "흐름",
+      "actions": ["plan", "ralplan", "deep-interview", "execute", "autopilot", "ralph", "team",
+                  "review", "verify", "research", "external-context", "trace", "debug", "wiki", "remember", "cancel"] }
+  ],
+  "actions": [
+    { "id": "plan", "title": "계획", "help": "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다", "prompt": "/oh-my-claudecode:plan {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "phase": "plan", "icon": "map" },
+    { "id": "ralplan", "title": "합의 계획", "help": "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다", "prompt": "/oh-my-claudecode:ralplan {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "phase": "plan", "icon": "arrow.triangle.branch" },
+    { "id": "deep-interview", "title": "심층 인터뷰", "help": "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다", "prompt": "/oh-my-claudecode:deep-interview {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "phase": "plan", "flags": ["userInvoked"], "icon": "questionmark.bubble" },
+    { "id": "execute", "title": "실행", "help": "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다", "prompt": "/oh-my-claudecode:execute {text}", "takesText": true, "foldText": "trimOnly", "phase": "execute", "icon": "hammer" },
+    { "id": "autopilot", "title": "오토파일럿", "help": "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다", "prompt": "/oh-my-claudecode:autopilot {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "phase": "execute", "flags": ["userInvoked"], "icon": "wand.and.stars" },
+    { "id": "ralph", "title": "랄프 루프", "help": "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다", "prompt": "/oh-my-claudecode:ralph {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "phase": "execute", "flags": ["userInvoked"], "icon": "infinity" },
+    { "id": "team", "title": "팀 실행", "help": "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다", "prompt": "/oh-my-claudecode:team {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "phase": "execute", "flags": ["userInvoked"], "icon": "puzzlepiece" },
+    { "id": "review", "title": "리뷰", "help": "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다", "prompt": "/oh-my-claudecode:review {text}", "takesText": true, "foldText": "trimOnly", "phase": "review", "flags": ["readOnly"], "icon": "magnifyingglass" },
+    { "id": "verify", "title": "검증", "help": "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다", "prompt": "/oh-my-claudecode:verify {text}", "takesText": true, "foldText": "trimOnly", "phase": "verify", "flags": ["readOnly"], "icon": "checkmark.seal", "tint": "green" },
+    { "id": "research", "title": "리서치", "help": "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다", "prompt": "/oh-my-claudecode:research {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "icon": "book" },
+    { "id": "external-context", "title": "외부 문서", "help": "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다", "prompt": "/oh-my-claudecode:external-context {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "flags": ["readOnly"], "icon": "tray" },
+    { "id": "trace", "title": "추적", "help": "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다", "prompt": "/oh-my-claudecode:trace {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "icon": "point.3.connected.trianglepath.dotted" },
+    { "id": "debug", "title": "진단", "help": "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다", "prompt": "/oh-my-claudecode:debug {text}", "takesText": true, "foldText": "trimOnly", "requiresText": true, "icon": "bolt" },
+    { "id": "wiki", "title": "위키", "help": "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다", "prompt": "/oh-my-claudecode:wiki {text}", "takesText": true, "foldText": "trimOnly", "icon": "bookmark" },
+    { "id": "remember", "title": "기억", "help": "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다", "prompt": "/oh-my-claudecode:remember {text}", "takesText": true, "foldText": "trimOnly", "icon": "doc.text" },
+    { "id": "cancel", "title": "모드 취소", "help": "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다", "prompt": "/oh-my-claudecode:cancel {text}", "takesText": true, "foldText": "trimOnly", "flags": ["userInvoked"], "icon": "flag", "tint": "red" }
+  ],
+  "aliases": [
+    { "name": "drydock",         "phase": "plan" },
+    { "name": "deepinit",        "phase": "plan" },
+    { "name": "launch",          "phase": "execute" },
+    { "name": "ultragoal",       "phase": "execute" },
+    { "name": "autoresearch",    "phase": "execute" },
+    { "name": "ai-slop-cleaner", "phase": "review" },
+    { "name": "visual-verdict",  "phase": "verify" }
+  ],
+  "recognition": { "prefixes": ["/oh-my-claudecode:"], "lowercase": true },
+  "rules": {
+    "start": { "kind": "actions", "phase": "goal", "actions": ["plan", "ralplan", "deep-interview", "autopilot", "research"], "resetTitle": "새 목표" },
+    "phase": { "kind": "lastRecognisedAction", "default": "goal" },
+    "next": {
+      "kind": "byPhase",
+      "map": {
+        "goal":    [],
+        "plan":    ["execute", "ralplan", "review", "research"],
+        "execute": ["review", "verify", "trace", "debug"],
+        "review":  ["verify", "execute", "trace"],
+        "verify":  ["execute", "review", "remember"]
+      }
+    },
+    "enter": { "kind": "rewriteBareDraftTo", "action": "plan", "phase": "goal" },
+    "recommend": { "kind": "none" },
+    "initialGroup": { "kind": "fixed", "group": "flow" }
+  },
+  "capabilities": [],
+  "autoAllow": [
+    { "server": "plugin_oh-my-claudecode_t", "tool": "state_read" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "state_get_status" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "state_list_active" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "notepad_read" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "notepad_stats" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "project_memory_read" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "shared_memory_read" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "shared_memory_list" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "trace_summary" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "trace_timeline" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "wiki_query" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "wiki_read" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "wiki_list" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "session_search" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "list_omc_skills" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "ast_grep_search" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_servers" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_diagnostics" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_document_symbols" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_workspace_symbols" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_hover" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_goto_definition" },
+    { "server": "plugin_oh-my-claudecode_t", "tool": "lsp_find_references" }
+  ],
+  "presentation": { "icon": "arrow.triangle.branch", "tint": "indigo" }
+}

@@ -1,0 +1,2582 @@
+{
+  "afterFirstAction" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🎓",
+        "help" : "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다",
+        "id" : "office-hours",
+        "prominent" : true,
+        "requiresText" : true,
+        "scope" : "아이디어 하나",
+        "takesText" : true,
+        "title" : "오피스아워"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📐",
+        "help" : "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다",
+        "id" : "spec",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "의도 하나",
+        "takesText" : true,
+        "title" : "스펙 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다",
+        "id" : "autoplan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "자동 리뷰 파이프라인"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "👑",
+        "help" : "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다",
+        "id" : "plan-ceo-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "CEO 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🏗️",
+        "help" : "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다",
+        "id" : "plan-eng-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "엔지니어링 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🎨",
+        "help" : "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다",
+        "id" : "plan-design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "디자인 계획 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "⚙️",
+        "help" : "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다",
+        "id" : "plan-devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "DX 계획 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔍",
+        "help" : "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다",
+        "id" : "investigate",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "버그 하나",
+        "takesText" : true,
+        "title" : "원인 조사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🤖",
+        "help" : "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다",
+        "id" : "codex",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "변경 하나",
+        "takesText" : true,
+        "title" : "코덱스 교차 검토"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🩺",
+        "help" : "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다",
+        "id" : "health",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "코드 건강도"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧪",
+        "help" : "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다",
+        "id" : "qa",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 및 수정"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📋",
+        "help" : "고치지 않고 찾은 것만 보고합니다",
+        "id" : "qa-only",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 리포트"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔎",
+        "help" : "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🖌️",
+        "help" : "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다",
+        "id" : "design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "화면 하나",
+        "takesText" : true,
+        "title" : "디자인 QA"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛠️",
+        "help" : "실제로 돌려 보며 개발자 경험을 감사합니다",
+        "id" : "devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "온보딩 흐름 하나",
+        "takesText" : true,
+        "title" : "DX 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🕵️",
+        "help" : "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다",
+        "id" : "cso",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "보안 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "⏱️",
+        "help" : "브라우즈 데몬으로 성능 회귀를 감지합니다",
+        "id" : "benchmark",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "페이지 하나",
+        "takesText" : true,
+        "title" : "성능 측정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🚢",
+        "help" : "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다",
+        "id" : "ship",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 출시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛬",
+        "help" : "PR을 랜딩하고 배포까지 이어 갑니다",
+        "id" : "land-and-deploy",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "PR 하나",
+        "takesText" : true,
+        "title" : "머지 후 배포"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🐤",
+        "help" : "배포 직후 카나리로 오류를 지켜봅니다",
+        "id" : "canary",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "배포 하나",
+        "takesText" : true,
+        "title" : "카나리 감시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📝",
+        "help" : "출시 뒤 바뀐 것을 문서에 반영합니다",
+        "id" : "document-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "출시 하나",
+        "takesText" : true,
+        "title" : "릴리스 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔁",
+        "help" : "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다",
+        "id" : "retro",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "한 주",
+        "takesText" : true,
+        "title" : "회고"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📚",
+        "help" : "프로젝트 학습 기록을 보고 정리합니다",
+        "id" : "learn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "프로젝트 하나",
+        "takesText" : true,
+        "title" : "학습 기록"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "💾",
+        "help" : "지금 작업 맥락을 저장합니다",
+        "id" : "context-save",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 저장"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📂",
+        "help" : "저장해 둔 작업 맥락을 다시 불러옵니다",
+        "id" : "context-restore",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장된 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 복원"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧊",
+        "help" : "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다",
+        "id" : "freeze",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "디렉터리 하나",
+        "takesText" : true,
+        "title" : "편집 범위 고정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌊",
+        "help" : "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다",
+        "id" : "unfreeze",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "고정 해제"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "office-hours",
+          "spec",
+          "autoplan",
+          "plan-ceo-review",
+          "plan-eng-review",
+          "plan-design-review",
+          "plan-devex-review",
+          "investigate",
+          "codex",
+          "health",
+          "qa",
+          "qa-only",
+          "review",
+          "design-review",
+          "devex-review",
+          "cso",
+          "benchmark",
+          "ship",
+          "land-and-deploy",
+          "canary",
+          "document-release",
+          "retro",
+          "learn",
+          "context-save",
+          "context-restore",
+          "freeze",
+          "unfreeze"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "office-hours",
+      "spec",
+      "autoplan",
+      "plan-eng-review",
+      "investigate"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "gstack · 계획",
+      "icon" : "cube",
+      "source" : "user",
+      "tint" : "orange"
+    },
+    "setup" : {
+      "installCommand" : "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "cube",
+      "id" : "gstack",
+      "name" : "gstack",
+      "source" : "user",
+      "tint" : "orange"
+    }
+  },
+  "capabilityOpen" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🎓",
+        "help" : "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다",
+        "id" : "office-hours",
+        "prominent" : true,
+        "requiresText" : true,
+        "scope" : "아이디어 하나",
+        "takesText" : true,
+        "title" : "오피스아워"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📐",
+        "help" : "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다",
+        "id" : "spec",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "의도 하나",
+        "takesText" : true,
+        "title" : "스펙 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다",
+        "id" : "autoplan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "자동 리뷰 파이프라인"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "👑",
+        "help" : "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다",
+        "id" : "plan-ceo-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "CEO 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🏗️",
+        "help" : "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다",
+        "id" : "plan-eng-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "엔지니어링 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🎨",
+        "help" : "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다",
+        "id" : "plan-design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "디자인 계획 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "⚙️",
+        "help" : "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다",
+        "id" : "plan-devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "DX 계획 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔍",
+        "help" : "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다",
+        "id" : "investigate",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "버그 하나",
+        "takesText" : true,
+        "title" : "원인 조사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🤖",
+        "help" : "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다",
+        "id" : "codex",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "변경 하나",
+        "takesText" : true,
+        "title" : "코덱스 교차 검토"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🩺",
+        "help" : "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다",
+        "id" : "health",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "코드 건강도"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧪",
+        "help" : "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다",
+        "id" : "qa",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 및 수정"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📋",
+        "help" : "고치지 않고 찾은 것만 보고합니다",
+        "id" : "qa-only",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 리포트"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔎",
+        "help" : "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🖌️",
+        "help" : "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다",
+        "id" : "design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "화면 하나",
+        "takesText" : true,
+        "title" : "디자인 QA"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛠️",
+        "help" : "실제로 돌려 보며 개발자 경험을 감사합니다",
+        "id" : "devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "온보딩 흐름 하나",
+        "takesText" : true,
+        "title" : "DX 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🕵️",
+        "help" : "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다",
+        "id" : "cso",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "보안 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "⏱️",
+        "help" : "브라우즈 데몬으로 성능 회귀를 감지합니다",
+        "id" : "benchmark",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "페이지 하나",
+        "takesText" : true,
+        "title" : "성능 측정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🚢",
+        "help" : "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다",
+        "id" : "ship",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 출시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛬",
+        "help" : "PR을 랜딩하고 배포까지 이어 갑니다",
+        "id" : "land-and-deploy",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "PR 하나",
+        "takesText" : true,
+        "title" : "머지 후 배포"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🐤",
+        "help" : "배포 직후 카나리로 오류를 지켜봅니다",
+        "id" : "canary",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "배포 하나",
+        "takesText" : true,
+        "title" : "카나리 감시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📝",
+        "help" : "출시 뒤 바뀐 것을 문서에 반영합니다",
+        "id" : "document-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "출시 하나",
+        "takesText" : true,
+        "title" : "릴리스 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔁",
+        "help" : "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다",
+        "id" : "retro",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "한 주",
+        "takesText" : true,
+        "title" : "회고"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📚",
+        "help" : "프로젝트 학습 기록을 보고 정리합니다",
+        "id" : "learn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "프로젝트 하나",
+        "takesText" : true,
+        "title" : "학습 기록"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "💾",
+        "help" : "지금 작업 맥락을 저장합니다",
+        "id" : "context-save",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 저장"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📂",
+        "help" : "저장해 둔 작업 맥락을 다시 불러옵니다",
+        "id" : "context-restore",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장된 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 복원"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧊",
+        "help" : "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다",
+        "id" : "freeze",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "디렉터리 하나",
+        "takesText" : true,
+        "title" : "편집 범위 고정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌊",
+        "help" : "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다",
+        "id" : "unfreeze",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "고정 해제"
+      }
+    ],
+    "attachments" : [
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "DESIGN.local.md",
+        "readOnly" : true,
+        "title" : "DESIGN"
+      },
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "RETRO.local.md",
+        "readOnly" : true,
+        "title" : "RETRO"
+      }
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "office-hours",
+          "spec",
+          "autoplan",
+          "plan-ceo-review",
+          "plan-eng-review",
+          "plan-design-review",
+          "plan-devex-review",
+          "investigate",
+          "codex",
+          "health",
+          "qa",
+          "qa-only",
+          "review",
+          "design-review",
+          "devex-review",
+          "cso",
+          "benchmark",
+          "ship",
+          "land-and-deploy",
+          "canary",
+          "document-release",
+          "retro",
+          "learn",
+          "context-save",
+          "context-restore",
+          "freeze",
+          "unfreeze"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "office-hours",
+      "spec",
+      "autoplan",
+      "plan-eng-review",
+      "investigate"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "gstack · 계획",
+      "icon" : "cube",
+      "source" : "user",
+      "tint" : "orange"
+    },
+    "setup" : {
+      "installCommand" : "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "cube",
+      "id" : "gstack",
+      "name" : "gstack",
+      "source" : "user",
+      "tint" : "orange"
+    }
+  },
+  "empty" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🎓",
+        "help" : "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다",
+        "id" : "office-hours",
+        "prominent" : true,
+        "requiresText" : true,
+        "scope" : "아이디어 하나",
+        "takesText" : true,
+        "title" : "오피스아워"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📐",
+        "help" : "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다",
+        "id" : "spec",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "의도 하나",
+        "takesText" : true,
+        "title" : "스펙 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다",
+        "id" : "autoplan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "자동 리뷰 파이프라인"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "👑",
+        "help" : "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다",
+        "id" : "plan-ceo-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "CEO 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🏗️",
+        "help" : "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다",
+        "id" : "plan-eng-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "엔지니어링 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🎨",
+        "help" : "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다",
+        "id" : "plan-design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "디자인 계획 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "⚙️",
+        "help" : "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다",
+        "id" : "plan-devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "DX 계획 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔍",
+        "help" : "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다",
+        "id" : "investigate",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "버그 하나",
+        "takesText" : true,
+        "title" : "원인 조사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🤖",
+        "help" : "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다",
+        "id" : "codex",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "변경 하나",
+        "takesText" : true,
+        "title" : "코덱스 교차 검토"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🩺",
+        "help" : "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다",
+        "id" : "health",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "코드 건강도"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧪",
+        "help" : "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다",
+        "id" : "qa",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 및 수정"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📋",
+        "help" : "고치지 않고 찾은 것만 보고합니다",
+        "id" : "qa-only",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 리포트"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔎",
+        "help" : "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🖌️",
+        "help" : "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다",
+        "id" : "design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "화면 하나",
+        "takesText" : true,
+        "title" : "디자인 QA"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛠️",
+        "help" : "실제로 돌려 보며 개발자 경험을 감사합니다",
+        "id" : "devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "온보딩 흐름 하나",
+        "takesText" : true,
+        "title" : "DX 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🕵️",
+        "help" : "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다",
+        "id" : "cso",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "보안 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "⏱️",
+        "help" : "브라우즈 데몬으로 성능 회귀를 감지합니다",
+        "id" : "benchmark",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "페이지 하나",
+        "takesText" : true,
+        "title" : "성능 측정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🚢",
+        "help" : "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다",
+        "id" : "ship",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 출시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛬",
+        "help" : "PR을 랜딩하고 배포까지 이어 갑니다",
+        "id" : "land-and-deploy",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "PR 하나",
+        "takesText" : true,
+        "title" : "머지 후 배포"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🐤",
+        "help" : "배포 직후 카나리로 오류를 지켜봅니다",
+        "id" : "canary",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "배포 하나",
+        "takesText" : true,
+        "title" : "카나리 감시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📝",
+        "help" : "출시 뒤 바뀐 것을 문서에 반영합니다",
+        "id" : "document-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "출시 하나",
+        "takesText" : true,
+        "title" : "릴리스 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔁",
+        "help" : "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다",
+        "id" : "retro",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "한 주",
+        "takesText" : true,
+        "title" : "회고"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📚",
+        "help" : "프로젝트 학습 기록을 보고 정리합니다",
+        "id" : "learn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "프로젝트 하나",
+        "takesText" : true,
+        "title" : "학습 기록"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "💾",
+        "help" : "지금 작업 맥락을 저장합니다",
+        "id" : "context-save",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 저장"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📂",
+        "help" : "저장해 둔 작업 맥락을 다시 불러옵니다",
+        "id" : "context-restore",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장된 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 복원"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧊",
+        "help" : "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다",
+        "id" : "freeze",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "디렉터리 하나",
+        "takesText" : true,
+        "title" : "편집 범위 고정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌊",
+        "help" : "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다",
+        "id" : "unfreeze",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "고정 해제"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "office-hours",
+          "spec",
+          "autoplan",
+          "plan-ceo-review",
+          "plan-eng-review",
+          "plan-design-review",
+          "plan-devex-review",
+          "investigate",
+          "codex",
+          "health",
+          "qa",
+          "qa-only",
+          "review",
+          "design-review",
+          "devex-review",
+          "cso",
+          "benchmark",
+          "ship",
+          "land-and-deploy",
+          "canary",
+          "document-release",
+          "retro",
+          "learn",
+          "context-save",
+          "context-restore",
+          "freeze",
+          "unfreeze"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "office-hours",
+      "spec",
+      "autoplan",
+      "plan-eng-review",
+      "investigate"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "gstack · 계획",
+      "icon" : "cube",
+      "source" : "user",
+      "tint" : "orange"
+    },
+    "setup" : {
+      "installCommand" : "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "cube",
+      "id" : "gstack",
+      "name" : "gstack",
+      "source" : "user",
+      "tint" : "orange"
+    }
+  },
+  "firstGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🎓",
+        "help" : "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다",
+        "id" : "office-hours",
+        "prominent" : true,
+        "requiresText" : true,
+        "scope" : "아이디어 하나",
+        "takesText" : true,
+        "title" : "오피스아워"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📐",
+        "help" : "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다",
+        "id" : "spec",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "의도 하나",
+        "takesText" : true,
+        "title" : "스펙 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다",
+        "id" : "autoplan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "자동 리뷰 파이프라인"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "👑",
+        "help" : "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다",
+        "id" : "plan-ceo-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "CEO 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🏗️",
+        "help" : "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다",
+        "id" : "plan-eng-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "엔지니어링 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🎨",
+        "help" : "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다",
+        "id" : "plan-design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "디자인 계획 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "⚙️",
+        "help" : "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다",
+        "id" : "plan-devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "DX 계획 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔍",
+        "help" : "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다",
+        "id" : "investigate",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "버그 하나",
+        "takesText" : true,
+        "title" : "원인 조사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🤖",
+        "help" : "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다",
+        "id" : "codex",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "변경 하나",
+        "takesText" : true,
+        "title" : "코덱스 교차 검토"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🩺",
+        "help" : "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다",
+        "id" : "health",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "코드 건강도"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧪",
+        "help" : "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다",
+        "id" : "qa",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 및 수정"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📋",
+        "help" : "고치지 않고 찾은 것만 보고합니다",
+        "id" : "qa-only",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 리포트"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔎",
+        "help" : "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🖌️",
+        "help" : "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다",
+        "id" : "design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "화면 하나",
+        "takesText" : true,
+        "title" : "디자인 QA"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛠️",
+        "help" : "실제로 돌려 보며 개발자 경험을 감사합니다",
+        "id" : "devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "온보딩 흐름 하나",
+        "takesText" : true,
+        "title" : "DX 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🕵️",
+        "help" : "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다",
+        "id" : "cso",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "보안 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "⏱️",
+        "help" : "브라우즈 데몬으로 성능 회귀를 감지합니다",
+        "id" : "benchmark",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "페이지 하나",
+        "takesText" : true,
+        "title" : "성능 측정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🚢",
+        "help" : "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다",
+        "id" : "ship",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 출시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛬",
+        "help" : "PR을 랜딩하고 배포까지 이어 갑니다",
+        "id" : "land-and-deploy",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "PR 하나",
+        "takesText" : true,
+        "title" : "머지 후 배포"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🐤",
+        "help" : "배포 직후 카나리로 오류를 지켜봅니다",
+        "id" : "canary",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "배포 하나",
+        "takesText" : true,
+        "title" : "카나리 감시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📝",
+        "help" : "출시 뒤 바뀐 것을 문서에 반영합니다",
+        "id" : "document-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "출시 하나",
+        "takesText" : true,
+        "title" : "릴리스 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔁",
+        "help" : "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다",
+        "id" : "retro",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "한 주",
+        "takesText" : true,
+        "title" : "회고"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📚",
+        "help" : "프로젝트 학습 기록을 보고 정리합니다",
+        "id" : "learn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "프로젝트 하나",
+        "takesText" : true,
+        "title" : "학습 기록"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "💾",
+        "help" : "지금 작업 맥락을 저장합니다",
+        "id" : "context-save",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 저장"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📂",
+        "help" : "저장해 둔 작업 맥락을 다시 불러옵니다",
+        "id" : "context-restore",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장된 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 복원"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧊",
+        "help" : "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다",
+        "id" : "freeze",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "디렉터리 하나",
+        "takesText" : true,
+        "title" : "편집 범위 고정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌊",
+        "help" : "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다",
+        "id" : "unfreeze",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "고정 해제"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "office-hours",
+          "spec",
+          "autoplan",
+          "plan-ceo-review",
+          "plan-eng-review",
+          "plan-design-review",
+          "plan-devex-review",
+          "investigate",
+          "codex",
+          "health",
+          "qa",
+          "qa-only",
+          "review",
+          "design-review",
+          "devex-review",
+          "cso",
+          "benchmark",
+          "ship",
+          "land-and-deploy",
+          "canary",
+          "document-release",
+          "retro",
+          "learn",
+          "context-save",
+          "context-restore",
+          "freeze",
+          "unfreeze"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "office-hours",
+      "spec",
+      "autoplan",
+      "plan-eng-review",
+      "investigate"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "gstack · 계획",
+      "icon" : "cube",
+      "source" : "user",
+      "tint" : "orange"
+    },
+    "setup" : {
+      "installCommand" : "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "cube",
+      "id" : "gstack",
+      "name" : "gstack",
+      "source" : "user",
+      "tint" : "orange"
+    }
+  },
+  "lastGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🎓",
+        "help" : "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다",
+        "id" : "office-hours",
+        "prominent" : true,
+        "requiresText" : true,
+        "scope" : "아이디어 하나",
+        "takesText" : true,
+        "title" : "오피스아워"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📐",
+        "help" : "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다",
+        "id" : "spec",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "의도 하나",
+        "takesText" : true,
+        "title" : "스펙 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다",
+        "id" : "autoplan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "자동 리뷰 파이프라인"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "👑",
+        "help" : "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다",
+        "id" : "plan-ceo-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "CEO 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🏗️",
+        "help" : "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다",
+        "id" : "plan-eng-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "엔지니어링 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🎨",
+        "help" : "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다",
+        "id" : "plan-design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "디자인 계획 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "⚙️",
+        "help" : "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다",
+        "id" : "plan-devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "DX 계획 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔍",
+        "help" : "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다",
+        "id" : "investigate",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "버그 하나",
+        "takesText" : true,
+        "title" : "원인 조사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🤖",
+        "help" : "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다",
+        "id" : "codex",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "변경 하나",
+        "takesText" : true,
+        "title" : "코덱스 교차 검토"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🩺",
+        "help" : "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다",
+        "id" : "health",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "코드 건강도"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧪",
+        "help" : "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다",
+        "id" : "qa",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 및 수정"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📋",
+        "help" : "고치지 않고 찾은 것만 보고합니다",
+        "id" : "qa-only",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 리포트"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔎",
+        "help" : "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🖌️",
+        "help" : "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다",
+        "id" : "design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "화면 하나",
+        "takesText" : true,
+        "title" : "디자인 QA"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛠️",
+        "help" : "실제로 돌려 보며 개발자 경험을 감사합니다",
+        "id" : "devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "온보딩 흐름 하나",
+        "takesText" : true,
+        "title" : "DX 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🕵️",
+        "help" : "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다",
+        "id" : "cso",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "보안 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "⏱️",
+        "help" : "브라우즈 데몬으로 성능 회귀를 감지합니다",
+        "id" : "benchmark",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "페이지 하나",
+        "takesText" : true,
+        "title" : "성능 측정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🚢",
+        "help" : "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다",
+        "id" : "ship",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 출시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛬",
+        "help" : "PR을 랜딩하고 배포까지 이어 갑니다",
+        "id" : "land-and-deploy",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "PR 하나",
+        "takesText" : true,
+        "title" : "머지 후 배포"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🐤",
+        "help" : "배포 직후 카나리로 오류를 지켜봅니다",
+        "id" : "canary",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "배포 하나",
+        "takesText" : true,
+        "title" : "카나리 감시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📝",
+        "help" : "출시 뒤 바뀐 것을 문서에 반영합니다",
+        "id" : "document-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "출시 하나",
+        "takesText" : true,
+        "title" : "릴리스 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔁",
+        "help" : "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다",
+        "id" : "retro",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "한 주",
+        "takesText" : true,
+        "title" : "회고"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📚",
+        "help" : "프로젝트 학습 기록을 보고 정리합니다",
+        "id" : "learn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "프로젝트 하나",
+        "takesText" : true,
+        "title" : "학습 기록"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "💾",
+        "help" : "지금 작업 맥락을 저장합니다",
+        "id" : "context-save",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 저장"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📂",
+        "help" : "저장해 둔 작업 맥락을 다시 불러옵니다",
+        "id" : "context-restore",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장된 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 복원"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧊",
+        "help" : "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다",
+        "id" : "freeze",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "디렉터리 하나",
+        "takesText" : true,
+        "title" : "편집 범위 고정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌊",
+        "help" : "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다",
+        "id" : "unfreeze",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "고정 해제"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "office-hours",
+          "spec",
+          "autoplan",
+          "plan-ceo-review",
+          "plan-eng-review",
+          "plan-design-review",
+          "plan-devex-review",
+          "investigate",
+          "codex",
+          "health",
+          "qa",
+          "qa-only",
+          "review",
+          "design-review",
+          "devex-review",
+          "cso",
+          "benchmark",
+          "ship",
+          "land-and-deploy",
+          "canary",
+          "document-release",
+          "retro",
+          "learn",
+          "context-save",
+          "context-restore",
+          "freeze",
+          "unfreeze"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "office-hours",
+      "spec",
+      "autoplan",
+      "plan-eng-review",
+      "investigate"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "gstack · 계획",
+      "icon" : "cube",
+      "source" : "user",
+      "tint" : "orange"
+    },
+    "setup" : {
+      "installCommand" : "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "cube",
+      "id" : "gstack",
+      "name" : "gstack",
+      "source" : "user",
+      "tint" : "orange"
+    }
+  },
+  "notReady" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🎓",
+        "help" : "YC 오피스아워 두 모드 — 지금 만드는 것을 설명하면 만들 가치가 있는지부터 같이 따집니다",
+        "id" : "office-hours",
+        "prominent" : true,
+        "requiresText" : true,
+        "scope" : "아이디어 하나",
+        "takesText" : true,
+        "title" : "오피스아워"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📐",
+        "help" : "막연한 의도를 다섯 단계로 실행 가능한 스펙(이슈 · 티켓)으로 만듭니다",
+        "id" : "spec",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "의도 하나",
+        "takesText" : true,
+        "title" : "스펙 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "CEO · 디자인 · 엔지니어링 · DX 리뷰를 차례로 돌리고 여섯 가지 결정 원칙으로 자동 판단합니다",
+        "id" : "autoplan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "자동 리뷰 파이프라인"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "👑",
+        "help" : "창업자 모드로 계획을 다시 봅니다. 더 크게 볼 곳과 범위를 되묻습니다",
+        "id" : "plan-ceo-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "CEO 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🏗️",
+        "help" : "엔지니어링 매니저 모드로 아키텍처와 구현 계획을 점검합니다",
+        "id" : "plan-eng-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "엔지니어링 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🎨",
+        "help" : "디자이너의 눈으로 계획 단계의 UX 결정을 되묻습니다",
+        "id" : "plan-design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "디자인 계획 리뷰"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "⚙️",
+        "help" : "개발자 경험 관점에서 온보딩과 도구 사용성을 계획 단계에서 점검합니다",
+        "id" : "plan-devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "DX 계획 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔍",
+        "help" : "증상에서 근본 원인까지 체계적으로 좁혀 들어갑니다",
+        "id" : "investigate",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "버그 하나",
+        "takesText" : true,
+        "title" : "원인 조사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🤖",
+        "help" : "OpenAI Codex CLI를 불러 바깥 목소리로 같은 변경을 다시 봅니다",
+        "id" : "codex",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "변경 하나",
+        "takesText" : true,
+        "title" : "코덱스 교차 검토"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🩺",
+        "help" : "코드 품질 대시보드를 만들어 저장소의 현재 상태를 보여 줍니다",
+        "id" : "health",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "코드 건강도"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧪",
+        "help" : "웹 앱을 체계적으로 QA하고 찾은 버그를 고칩니다",
+        "id" : "qa",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 및 수정"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📋",
+        "help" : "고치지 않고 찾은 것만 보고합니다",
+        "id" : "qa-only",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "웹 앱 하나",
+        "takesText" : true,
+        "title" : "QA 리포트"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔎",
+        "help" : "랜딩 전 PR 리뷰 — 프로덕션에서 터질 것을 먼저 찾습니다",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 리뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🖌️",
+        "help" : "시각적 불일치 · 간격 · 위계 · AI 슬롭 패턴을 찾아 고칩니다",
+        "id" : "design-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "화면 하나",
+        "takesText" : true,
+        "title" : "디자인 QA"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛠️",
+        "help" : "실제로 돌려 보며 개발자 경험을 감사합니다",
+        "id" : "devex-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "온보딩 흐름 하나",
+        "takesText" : true,
+        "title" : "DX 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🕵️",
+        "help" : "보안 책임자 모드로 OWASP · STRIDE 관점의 취약점을 감사합니다",
+        "id" : "cso",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장소 하나",
+        "takesText" : true,
+        "title" : "보안 감사"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "⏱️",
+        "help" : "브라우즈 데몬으로 성능 회귀를 감지합니다",
+        "id" : "benchmark",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "페이지 하나",
+        "takesText" : true,
+        "title" : "성능 측정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🚢",
+        "help" : "기준 브랜치 병합 · 테스트 · diff 리뷰 · 버전 · 체인지로그 · 커밋 · 푸시 · PR까지 한 번에 진행합니다",
+        "id" : "ship",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "브랜치 하나",
+        "takesText" : true,
+        "title" : "PR 출시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛬",
+        "help" : "PR을 랜딩하고 배포까지 이어 갑니다",
+        "id" : "land-and-deploy",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "PR 하나",
+        "takesText" : true,
+        "title" : "머지 후 배포"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🐤",
+        "help" : "배포 직후 카나리로 오류를 지켜봅니다",
+        "id" : "canary",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "배포 하나",
+        "takesText" : true,
+        "title" : "카나리 감시"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📝",
+        "help" : "출시 뒤 바뀐 것을 문서에 반영합니다",
+        "id" : "document-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "출시 하나",
+        "takesText" : true,
+        "title" : "릴리스 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔁",
+        "help" : "주간 엔지니어링 회고 — 무엇을 출시했고 무엇을 배웠는지 정리합니다",
+        "id" : "retro",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "한 주",
+        "takesText" : true,
+        "title" : "회고"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "📚",
+        "help" : "프로젝트 학습 기록을 보고 정리합니다",
+        "id" : "learn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "프로젝트 하나",
+        "takesText" : true,
+        "title" : "학습 기록"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "💾",
+        "help" : "지금 작업 맥락을 저장합니다",
+        "id" : "context-save",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 저장"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📂",
+        "help" : "저장해 둔 작업 맥락을 다시 불러옵니다",
+        "id" : "context-restore",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "저장된 세션",
+        "takesText" : true,
+        "title" : "컨텍스트 복원"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧊",
+        "help" : "이번 세션의 파일 편집을 지정한 디렉터리 안으로 제한합니다",
+        "id" : "freeze",
+        "prominent" : false,
+        "requiresText" : true,
+        "scope" : "디렉터리 하나",
+        "takesText" : true,
+        "title" : "편집 범위 고정"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌊",
+        "help" : "고정을 풀어 모든 디렉터리를 다시 편집할 수 있게 합니다",
+        "id" : "unfreeze",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 세션",
+        "takesText" : true,
+        "title" : "고정 해제"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "office-hours",
+          "spec",
+          "autoplan",
+          "plan-ceo-review",
+          "plan-eng-review",
+          "plan-design-review",
+          "plan-devex-review",
+          "investigate",
+          "codex",
+          "health",
+          "qa",
+          "qa-only",
+          "review",
+          "design-review",
+          "devex-review",
+          "cso",
+          "benchmark",
+          "ship",
+          "land-and-deploy",
+          "canary",
+          "document-release",
+          "retro",
+          "learn",
+          "context-save",
+          "context-restore",
+          "freeze",
+          "unfreeze"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 대상을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "office-hours",
+      "spec",
+      "autoplan",
+      "plan-eng-review",
+      "investigate"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "gstack · 계획",
+      "icon" : "cube",
+      "source" : "user",
+      "tint" : "orange"
+    },
+    "setup" : {
+      "hint" : "터미널 실행 창이 열리고 설치 명령이 채워집니다. 내용을 읽고 Enter는 직접 누르세요.",
+      "installCommand" : "git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup",
+      "missing" : [
+        "gstack 스킬이 설치되어 있지 않습니다"
+      ],
+      "ready" : false
+    },
+    "style" : {
+      "icon" : "cube",
+      "id" : "gstack",
+      "name" : "gstack",
+      "source" : "user",
+      "tint" : "orange"
+    }
+  }
+}
