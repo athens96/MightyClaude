@@ -1,11 +1,11 @@
 #!/bin/bash
-# 용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v1
+# 용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v2
 #
 # 태그 이후의 diff가 매니페스트와 그 테스트만 담고 있는지 본다
 # (docs/mighty-styles.md §8.3). git만 쓰므로 DEVELOPER_DIR이 필요 없다.
 set -uo pipefail
 
-TAG="${1:-mighty-style-engine-v1}"
+TAG="${1:-mighty-style-engine-v2}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # git이 대답하지 못하면 검사가 성립하지 않는다. 그때는 통과가 아니라 2다 —
