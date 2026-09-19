@@ -1475,6 +1475,8 @@ MobileStylePanel {
 
 태그 `mighty-style-engine-v1`이 다음을 얼린다.
 
+> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이며 검사 스크립트와 CI의 기본 태그다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다.
+
 - **스키마 v1** — 1장의 모든 필드·타입·한도. `guidance`(1.7)와 `rules.start`(1.6)를 포함한다.
 - **규칙 어휘** — `StartRule` 2종, `PhaseRule` 2종, `NextRule` 2종, `EnterRule` 2종(제약 3개 포함), `RecommendRule` 2종, `InitialGroupRule` 2종.
 - **Probe 종류** — `plugin`, `executable`, `skill`. `mode`·`report` 어휘와 per-probe `install`.
@@ -1490,7 +1492,7 @@ MobileStylePanel {
 ### 8.3 `scripts/check-style-freeze.sh`
 
 ```
-용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v1
+용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v2
 ```
 **태그 커밋의 모양.** 태그 `T`는 **`styles/FREEZE` 하나만 더하는 커밋**이고, 그 내용은 **`T`의 부모 `P`의 SHA 40자 한 줄**이다. `P`가 마지막 엔진 커밋이다. 자기 자신의 SHA를 담을 수는 없으므로(자기 참조) 부모를 담는다.
 

@@ -16,10 +16,10 @@ jobs:
       - name: Check the manifest-only freeze after the tag
         run: |
           set -euo pipefail
-          if git rev-parse -q --verify refs/tags/mighty-style-engine-v1 >/dev/null; then
+          if git rev-parse -q --verify refs/tags/mighty-style-engine-v2 >/dev/null; then
             bash scripts/check-style-freeze.sh
           else
-            echo "mighty-style-engine-v1 태그가 아직 없어 고정 검사를 건너뜁니다."
+            echo "mighty-style-engine-v2 태그가 아직 없어 고정 검사를 건너뜁니다."
           fi
       - name: Report the selected Apple toolchain
         run: |
