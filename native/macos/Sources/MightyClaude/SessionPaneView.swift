@@ -64,6 +64,13 @@ struct SessionPaneView: View {
         if guidedSelection.startingNew, case .actions(let start, _, _) = style.manifest.rules.start { return style.manifest.phase(start) }
         return style.evaluator.currentPhase(session: session)
     }
+    /// The precedence sweep of §1.10, built once per render rather than three
+    /// times per visible request block — and only for a pane that really runs
+    /// a style, because a plain CLI pane has no prefixes at all.
+    private var styleTitles: StyleRequestTitles {
+        guard style != nil else { return StyleRequestTitles() }
+        return StyleRequestTitles(styles: store.styleRegistry.runnableInPrecedence(workspace: store.styleWorkspaceRef(session)))
+    }
     /// The style the pane aimed at but has not been said yes to yet (§6.1).
     private var pendingStyle: RegisteredStyle? {
         guard let id = session.mightyStyle, let found = store.applicableStyles(session).first(where: { $0.id == id }) else { return nil }
@@ -72,8 +79,9 @@ struct SessionPaneView: View {
     /// The prefix the Enter rule would send, drawn as a non-editable chip while
     /// the rule can actually fire (§1.6).
     private var armedPrefix: String? {
-        guard let style, store.guidedQuestion(for: session.id) == nil, attachments.isEmpty else { return nil }
-        return style.evaluator.enterArmedPrefix(phase: guidedPhase, running: running, hasRequests: hasRequests)
+        guard let style, store.guidedQuestion(for: session.id) == nil else { return nil }
+        return style.evaluator.enterArmedPrefix(draft: draft.wrappedValue, phase: guidedPhase, hasAttachments: !attachments.isEmpty,
+                                                running: running, hasRequests: hasRequests, startingNew: guidedSelection.startingNew)
     }
     /// Whether this pane has ever sent a request, read without rebuilding a
     /// legacy pane's runs — the composer asks on every keystroke.
@@ -362,7 +370,7 @@ struct SessionPaneView: View {
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
-                    styleTitles: StyleTitleSource(registry: store.styleRegistry, workspace: store.styleWorkspaceRef(session)),
+                    styleTitles: styleTitles,
                     styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title) {
                     store.selectSession(session.id)
                 }
@@ -399,18 +407,20 @@ struct SessionPaneView: View {
                     Text(verbatim: styleHint).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, 12).padding(.top, 9)
-                if store.styleNeedsRechoosing(session) {
+                // One state, one message: a manifest that changed on disk is
+                // both "re-choose" and "needs confirming", and the strip is the
+                // one that says what to do about it.
+                if let pending = pendingStyle {
+                    GuidedApprovalStrip(name: pending.manifest.name, source: pending.source, sessionID: session.id) { openApproval(pending) }
+                        .padding(.horizontal, 12)
+                } else if store.styleNeedsRechoosing(session) {
                     Text("이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요")
                         .font(.system(size: 10)).foregroundStyle(.orange).padding(.horizontal, 12)
                         .accessibilityIdentifier("mighty-style-changed-\(session.id)")
                 }
-                if let pending = pendingStyle {
-                    GuidedApprovalStrip(name: pending.manifest.name, source: pending.source, sessionID: session.id) { openApproval(pending) }
-                        .padding(.horizontal, 12)
-                }
                 if let style {
-                    GuidedPanel(session: session, style: style, running: running, selection: $guidedSelection,
-                                onPrepare: { composerInput.prepareForSubmission() })
+                    GuidedPanel(session: session, style: style, running: running, phase: guidedPhase,
+                                selection: $guidedSelection, onPrepare: { composerInput.prepareForSubmission() })
                 }
             }
             if !attachments.isEmpty {
@@ -531,8 +541,14 @@ struct SessionPaneView: View {
         .onChange(of: session.model) { _, _ in store.refreshStatusLine(sessionID: session.id) }
         // A workspace's own manifests are read when it first draws a pane.
         .task(id: session.workspaceId) { store.scanWorkspaceStyles(for: session) }
-        .task(id: session.mightyStyle) { if let style { store.refreshStyle(style, for: session) } }
-        .onChange(of: running) { _, busy in if !busy, let style { store.refreshStyleCapabilities(style, for: session) } }
+        // The style id alone does not change when a restored pane's registry
+        // finally arrives, so the hash of the resolved style is watched too.
+        .task(id: styleIdentity) { if let style { store.refreshStyle(style, for: session) } }
+        // A run may have installed the plugin or written a new cycle folder.
+        .onChange(of: running) { _, busy in if !busy, let style { store.refreshStyle(style, for: session) } }
+        // A different style means a different catalogue: the group the user
+        // was in and the reset chip both belong to the one they left.
+        .onChange(of: session.mightyStyle) { _, _ in guidedSelection = GuidedSelection() }
         .sheet(item: $styleCandidate) { item in
             StyleApprovalSheet(candidate: item, onApproved: { approved in
                 store.setMightyStyle(session.id, style: approved.id)
@@ -540,10 +556,17 @@ struct SessionPaneView: View {
         }
     }
 
+    /// Both halves of what the pane is actually running: the id it stored, and
+    /// the bytes the registry resolved it to.
+    private var styleIdentity: String {
+        (session.mightyStyle ?? "") + "|" + (style?.hash ?? "")
+    }
+
     /// A pending row in the picker opens the card; only saying yes there moves
-    /// the pane onto that style (§4.5).
+    /// the pane onto that style (§4.5). The bytes are not handed along: this
+    /// file is already on disk and approving it must not copy it anywhere.
     private func openApproval(_ style: RegisteredStyle) {
-        styleCandidate = StyleApprovalCandidate(style: style, data: store.styleBytes(for: style))
+        styleCandidate = StyleApprovalCandidate(style: style, data: nil)
     }
 
     private var composerToolbar: some View {
@@ -659,20 +682,22 @@ struct SessionPaneView: View {
         if let style {
             composerInput.prepareForSubmission()
             let text = draft.wrappedValue
-            // A waiting question always wins: Enter answers it, never the rule.
-            if store.guidedQuestion(for: session.id) != nil {
+            // A waiting question always wins; otherwise the style's own Enter
+            // rule decides, all six conditions of §1.6 together.
+            switch StyleComposer.enter(style.evaluator, draft: text, phase: guidedPhase,
+                                       answering: store.guidedQuestion(for: session.id) != nil,
+                                       hasAttachments: !attachments.isEmpty, running: running,
+                                       hasRequests: hasRequests, startingNew: guidedSelection.startingNew) {
+            case .answerQuestion:
                 if store.guidedAnswer(session.id, text: text) { composerInput.replaceDraft(""); store.drafts[session.id] = "" }
                 return
-            }
-            // …otherwise the style's own Enter rule decides, all six conditions
-            // of §1.6 together.
-            let behaviour = style.evaluator.enterBehaviour(draft: text, phase: guidedPhase, hasAttachments: !attachments.isEmpty,
-                                                           running: running, hasRequests: hasRequests)
-            if case .rewrite(let actionId) = behaviour {
+            case .rewrite(let actionId):
                 guidedSelection.startingNew = false
                 composerInput.replaceDraft("")
                 store.sendStyleAction(session.id, actionId: actionId, text: text)
                 return
+            case .verbatim:
+                break
             }
         }
         if session.kind != "shell", attachments.isEmpty, let builtin = typedBuiltin {

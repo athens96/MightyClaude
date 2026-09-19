@@ -62,10 +62,10 @@ public actor StyleTrustStore {
 
     @discardableResult
     private func readIfNeeded() throws -> [StyleApprovalRecord] {
-        if loaded {
-            if locked { throw StyleTrustFailure.locked(path: file.path) }
-            return records
-        }
+        if locked { throw StyleTrustFailure.locked(path: file.path) }
+        // A second run of the same profile writes this file behind our back, so
+        // "already loaded" is only good while the stamp still matches (§4.3).
+        if loaded, stamp == Self.stamp(file) { return records }
         loaded = true
         guard FileManager.default.fileExists(atPath: file.path) else { records = []; stamp = nil; return [] }
         // The file is the only one whose contents are themselves the authority,
@@ -134,8 +134,16 @@ public actor StyleTrustStore {
     private func mutate(_ body: (inout [StyleApprovalRecord]) throws -> Void) throws {
         var current = try readIfNeeded()
         // An actor only serialises one process; a second run of the same
-        // profile must not wipe what this one wrote (§4.3).
-        if stamp != Self.stamp(file), let merged = try? Self.reread(file) { current = Self.merge(current, merged) }
+        // profile must not wipe what this one wrote (§4.3). If that second
+        // run left the file unreadable, closing is the answer — overwriting it
+        // would erase every refusal it holds.
+        if stamp != Self.stamp(file), FileManager.default.fileExists(atPath: file.path) {
+            guard Self.isOwnedAndPrivate(directory), Self.isOwnedAndPrivate(file), let merged = try? Self.reread(file) else {
+                try lock()
+                return
+            }
+            current = Self.merge(current, merged)
+        }
         try body(&current)
         try write(current)
     }
@@ -155,17 +163,24 @@ public actor StyleTrustStore {
     }
 
     private static func reread(_ file: URL) throws -> [StyleApprovalRecord] {
-        guard let data = CLIAccountSupport.boundedData(file, maximumBytes: 4 * 1024 * 1024) else { return [] }
+        guard let data = CLIAccountSupport.boundedData(file, maximumBytes: 4 * 1024 * 1024) else { throw StyleTrustFailure.locked(path: file.path) }
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         let parsed = try decoder.decode(StyleApprovalFile.self, from: data)
-        return parsed.version == 1 ? parsed.records : []
+        guard parsed.version == 1 else { throw StyleTrustFailure.locked(path: file.path) }
+        return parsed.records
     }
 
-    /// Same place, same state: the newer decision wins.
+    /// Same place, same state: the newer decision wins. An approval is keyed by
+    /// the place alone, so a merge cannot leave two live approvals at one file
+    /// — that is §4.3's "one per place", and without it a commit that reverts a
+    /// manifest to already-approved bytes runs with no prompt. A refusal keeps
+    /// its hash in the key so none of them is ever dropped (§4.2).
     static func merge(_ mine: [StyleApprovalRecord], _ theirs: [StyleApprovalRecord]) -> [StyleApprovalRecord] {
         var byKey: [String: StyleApprovalRecord] = [:]
         for record in theirs + mine {
-            let key = [record.source.rawValue, record.workspacePath ?? "", record.path, record.state, record.hash].joined(separator: "\u{1}")
+            var parts = [record.source.rawValue, record.workspacePath ?? "", record.path, record.state]
+            if record.state != StyleApprovalState.approved.rawValue { parts.append(record.hash) }
+            let key = parts.joined(separator: "\u{1}")
             if let existing = byKey[key], existing.decidedAt >= record.decidedAt { continue }
             byKey[key] = record
         }

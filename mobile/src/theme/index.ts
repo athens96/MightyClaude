@@ -173,7 +173,11 @@ export const providerColors: Record<Provider, string[]> = {
  * a value we do not know is shown as-is, and an empty one becomes a neutral label.
  */
 function labelFor(table: Record<string, string>, value: string): string {
-  return table[value] ?? (value.length > 0 ? value : '알 수 없음');
+  // `Object.hasOwn`, because the key is a word the host chose: a plain object answers
+  // `constructor` with a function, which reaches `<Text>` as something that is not a
+  // string and draws nothing at all.
+  const label = Object.hasOwn(table, value) ? table[value] : undefined;
+  return label ?? (value.length > 0 ? value : '알 수 없음');
 }
 
 /**
@@ -266,7 +270,10 @@ export function tintColor(palette: Palette, tint: string | undefined): string {
 
 /** Brand colours for a provider, or a neutral single colour for an unknown one. */
 export function providerColorsFor(palette: Palette, provider: string): string[] {
-  return providerColors[provider as Provider] ?? [palette.textMuted];
+  const colors = Object.hasOwn(providerColors, provider)
+    ? providerColors[provider as Provider]
+    : undefined;
+  return colors ?? [palette.textMuted];
 }
 
 /**

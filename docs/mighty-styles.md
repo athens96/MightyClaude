@@ -240,18 +240,21 @@ rules: {
   3. 앞뒤 공백을 제거한 글이 `/`로 시작하지 않는다.
   4. 그 글이 `recognition.prefixes` 중 하나로 시작하고 접두사를 뗀 첫 이름이 비어 있지 않은 경우가 **아니다** — 즉 `namesSomething(inPrompt:)`가 거짓이다. 그 이름이 행동·별칭으로 해석되는지는 **보지 않는다**(1.4).
   5. 현재 단계가 `phase`와 같다.
-  6. **이 실행 창에 요청이 하나도 없다.**
+  6. **이 실행 창에 요청이 하나도 없다**, 또는 사용자가 방금 `rules.start.resetTitle` 칩(되돌리기 칩)을 눌렀다.
 
   (1–5는 오늘의 `SessionPaneView.swift:608-622`와 같다. 대기 중인 질문이 있으면 Enter는 언제나 그 질문에 답하며, 이 규칙보다 먼저다.)
 
+  **조건 6에 되돌리기 칩이 들어 있는 이유.** 되돌리기 칩은 오늘 Ouroboros의 `새 목표`다. 누르면 화면이 진입 단계로 돌아가고 `인터뷰 시작`·`자동 진행`이 다시 그려지는데, 그 상태에서 사용자가 새 목표를 치고 Enter를 누르는 것이 그 칩의 **유일한 용도**다. "요청이 하나도 없다"만 보면 그 Enter가 맨 문장으로 나가 버린다 — `새 목표`를 누를 수 있는 실행 창에는 언제나 요청이 있기 때문이다. 그러면서도 제약 2는 깨지지 않는다: **누가 눌렀는지가 사실**이고, 매니페스트는 자기 칩을 대신 눌러 줄 수 없다. 매니페스트가 정할 수 있는 것은 칩의 이름뿐이다.
+
   `rewriteBareDraftTo`에는 세 가지 제약이 더 붙는다.
   1. `action`이 가리키는 행동은 `takesText: true`여야 한다(`E_ENTER_ACTION_TEXT`). 사용자가 친 글이 **버려지는** 규칙은 표현할 수 없다. 그렇지 않으면 `"아니 아직 배포하지 마"`를 치고 Enter를 눌렀을 때 앱이 정확히 `/ship`만 보내는 매니페스트를 쓸 수 있다.
-  2. 조건 6이 그 제약이다. 조건 4(`recognition`)와 조건 5(`phase`)는 **둘 다 매니페스트가 정하므로 스스로를 영원히 참으로 만들 수 있다** — 아무도 치지 않을 접두사 하나(`"zzzzz-never"`)와 언제나 같은 값을 내는 `phase` 규칙이면 사용자의 **모든** Enter가 작성자가 고른 명령으로 바뀐다. "첫 요청"만은 매니페스트가 조작할 수 없는 사실이다. Ouroboros는 오늘도 첫 제출이 곧 단계를 옮기므로 값이 바뀌지 않는다.
-  3. 규칙이 발동 가능한 상태일 때 입력창은 **보낼 명령의 접두사를 비편집 칩으로 왼쪽에 그린다**(예: `/ouroboros:interview`). `placeholders.initial`은 매니페스트의 글이므로 이 사실을 알리는 데 쓰지 않는다 — 작성자가 "그냥 메모하세요"라고 적을 수 있다.
+  2. 조건 6이 그 제약이다. 조건 4(`recognition`)와 조건 5(`phase`)는 **둘 다 매니페스트가 정하므로 스스로를 영원히 참으로 만들 수 있다** — 아무도 치지 않을 접두사 하나(`"zzzzz-never"`)와 언제나 같은 값을 내는 `phase` 규칙이면 사용자의 **모든** Enter가 작성자가 고른 명령으로 바뀐다. "첫 요청"도 "사용자가 되돌리기 칩을 눌렀다"도 매니페스트가 조작할 수 없는 사실이다.
+  3. 규칙이 발동 가능한 상태일 때 입력창은 **보낼 명령의 접두사를 비편집 칩으로 왼쪽에 그린다**(예: `/ouroboros:interview`). `placeholders.initial`은 매니페스트의 글이므로 이 사실을 알리는 데 쓰지 않는다 — 작성자가 "그냥 메모하세요"라고 적을 수 있다. 칩은 **지금 입력창에 들어 있는 글까지 포함해** 여섯 조건을 모두 본다: 조건 3·4가 거짓인 글(`/help`, `ooo 뭐 좀`)을 치고 있는 동안 칩이 떠 있으면, 칩이 약속한 것과 Enter가 보내는 것이 달라진다.
 
 **RecommendRule**
 - `{ "kind": "none" }`
-- `{ "kind": "capability", "capability": name, "map": { state: actionId }, "group": groupId? }` — 내장 기능이 돌려주는 닫힌 상태 값을 행동 id로 옮긴다. `map`은 그 기능의 상태 값을 **빠짐없이** 담아야 한다(`E_CAPABILITY_MAP`). `group`이 있으면 그 그룹을 보고 있을 때만 추천이 나온다.
+- `{ "kind": "capability", "capability": name, "map": { state: actionId }, "group": groupId? }` — 내장 기능이 돌려주는 닫힌 상태 값을 행동 id로 옮긴다. `map`은 그 기능의 상태 값을 **빠짐없이** 담아야 한다(`E_CAPABILITY_MAP`). 추천 값 자체는 **보고 있는 그룹과 무관하다**: 기능의 상태가 답이고, 그 행동이 지금 그려지는 줄에 없으면 강조될 칩이 없을 뿐이다. `group`은 **어느 그룹의 첨부 줄에 이 기능이 붙는지만** 말한다(6.1의 6번).
+  > 근거: 폰에는 고른 그룹이 없고 투영은 언제나 `selectedGroupId: nil`로 부른다. 추천을 그룹으로 막으면 `initialGroup`이 고른 기본 그룹이 `rules.recommend.group`과 다른 순간 — Paperthin에서 케이스북이 `absent`일 때가 정확히 그렇다 — 폰의 `mighty.paperthin.recommended`가 `re0-plan`에서 `null`로 떨어진다. 8.1의 완료 기준 1이 금지하는 값 변화다.
 
 **InitialGroupRule**
 - `{ "kind": "fixed", "group": groupId }`
@@ -299,7 +302,7 @@ autoAllow: [{ "server": string?, "tool": string }]
 - `server` — `^[A-Za-z0-9_-]{1,64}$`이고 `__`를 **포함할 수 없으며** `_`로 **끝날 수 없다**. 와이어 이름은 정확히 `mcp__<server>__<tool>`로 조립된다. Ouroboros 플러그인의 서버 이름은 `plugin_ouroboros_ouroboros`다(`OuroborosFlow.swift:38`). 하이픈을 허용하는 이유: 실제로 쓰이는 서버 이름에 하이픈이 들어간다(oh-my-claudecode의 `plugin_oh-my-claudecode_t`).
 - `tool` — `^[A-Za-z0-9_-]{1,64}$`이고 `__`를 포함할 수 없으며 `_`로 **시작할 수 없다**.
 - 끝/앞 밑줄을 함께 막아야 `mcp__<server>__<tool>`의 분해가 **유일해진다**. `__`만 막으면 `server: "a_"` + `tool: "_b"`가 `mcp__a____b`를 만들고, 이는 서버 `a`의 도구 `__b`로도 읽힌다. 위반은 `E_AUTOALLOW_SHAPE`.
-- **소속 규칙.** `server`가 있는 항목은, 이 매니페스트의 `prerequisites.probes` 중 `kind: "plugin"`인 probe의 `prefix`에서 뒤의 `@`를 뗀 이름 `P`에 대해 `plugin_<P>_`로 **시작해야 한다**. 아니면 `E_AUTOALLOW_FOREIGN_SERVER`. 스타일은 **자기가 설치를 요구하는 플러그인의 도구만** 자동 허용할 수 있고, 사용자가 따로 설정한 MCP 서버(`mcp-atlassian`, 사내 서버 등)나 **다른 플러그인의 도구는 어떤 매니페스트도 자동 허용할 수 없다**. 근거: 오늘 `ouroboros@` probe ↔ `plugin_ouroboros_ouroboros`, `oh-my-claudecode@` probe ↔ `plugin_oh-my-claudecode_t`가 모두 이 규칙을 만족한다(1.13·A.3). Paperthin·gstack은 `autoAllow`가 비어 있어 무관하다.
+- **소속 규칙.** `server`가 있는 항목은, 이 매니페스트의 `prerequisites.probes` 중 `kind: "plugin"`이고 `prefix`가 **`@`로 끝나는** probe에 대해, 그 `@`를 뗀 이름 `P`에 대해 `plugin_<P>_`로 **시작해야 한다**. 아니면 `E_AUTOALLOW_FOREIGN_SERVER`. `@`로 끝나지 않는 `prefix`는 소속을 만들지 못한다: 그런 probe는 설치 목록의 키를 `hasPrefix`로 보므로, `prefix: "a"` 하나가 설치된 플러그인 `a_b`를 만족시키면서 `plugin_a_b_*` 서버 전부를 주장하게 된다. 남는 헐거움은 `docs/styles-followups.md`에 적었다 — Claude Code의 플러그인 이름에 `_`가 들어갈 수 있는 한, 이름 하나를 정확히 짚는 검사는 probe가 설치된 키로 풀려야 가능하고 그것은 검증 시점에 없는 정보다. 스타일은 **자기가 설치를 요구하는 플러그인의 도구만** 자동 허용할 수 있고, 사용자가 따로 설정한 MCP 서버(`mcp-atlassian`, 사내 서버 등)나 **다른 플러그인의 도구는 어떤 매니페스트도 자동 허용할 수 없다**. 근거: 오늘 `ouroboros@` probe ↔ `plugin_ouroboros_ouroboros`, `oh-my-claudecode@` probe ↔ `plugin_oh-my-claudecode_t`가 모두 이 규칙을 만족한다(1.13·A.3). Paperthin·gstack은 `autoAllow`가 비어 있어 무관하다.
 - `server`를 생략할 수 있는 것은 **`tool`이 정확히 `ToolSearch`일 때뿐**이다(런타임의 도구 검색, MCP가 아니다). 그 밖에 `server` 없는 항목은 `E_AUTOALLOW_SERVER`. 그리고 `ToolSearch`는 **번들 매니페스트에서만** 허용한다 — 비번들이 쓰면 `E_AUTOALLOW_TOOLSEARCH_BUNDLED`. 근거: `ToolSearch`는 실행이 아니라 *도구 표면의 확장*이며, 프롬프트 없이 런타임이 새 도구 스키마(`WebFetch`·`RemoteTrigger`·`CronCreate`·쓰기 가능한 MCP 도구 전부)를 끌어오게 하는 유일한 열쇠다. 제3자가 이것을 조용히 가질 이유가 없다.
 - `tool`이 `AskUserQuestion`이면 `E_AUTOALLOW_QUESTION`으로 파일 전체가 거부된다. 또한 엔진은 런타임에도 이 이름을 무조건 거절한다 — 두 겹으로 막는다.
 - 같은 `(server, tool)` 쌍이 두 번 나오면 `E_AUTOALLOW_DUPLICATE`.
@@ -347,7 +350,7 @@ v1 목록(33개):
 
 `checkmark.seal`은 **하나의 예외로 남긴다**: 오늘 Ouroboros의 `evaluate` 행동이 쓰는 심볼이고(`OuroborosFlow.swift:46`), 완료 기준 1이 값 보존을 요구한다. 대신 아래 두 장치가 남는다 — 요청 블록 제목은 언제나 앱이 쓴 `요청 N · <provider>` 꼬리를 달고 있고(아래), 비번들 스타일의 이름 옆에는 언제나 출처 배지가 붙는다.
 
-`glyph`는 **정확히 1자**(grapheme cluster 하나)이고, 유니코드의 이모지 표현을 갖는 문자여야 한다(아니면 `E_TYPE`). 8자를 허용하면 칩 하나가 문장이 된다. 폰은 SF Symbol 렌더러가 없으므로 `icon`을 무시하고 `glyph`(없으면 종류별 중립 표식)를 그린다 — 오늘 `mobile/src/lib/mighty.ts:32-42`가 하는 일 그대로다.
+`glyph`는 **정확히 1자**(grapheme cluster 하나)이고, 유니코드의 이모지 표현을 갖는 문자여야 한다(아니면 `E_TYPE`). 8자를 허용하면 칩 하나가 문장이 된다. 이 검사 **하나로만** 판정한다 — 1.11의 금지 문자 목록은 `glyph`에 적용되지 않는다. ZWJ(U+200D)가 그 목록에 있고 `👩‍💻`·`🏳️‍🌈`·`👨‍👩‍👧`가 모두 ZWJ로 묶인 **한 자**이기 때문이며, 근거는 1.11에 적었다. 폰은 SF Symbol 렌더러가 없으므로 `icon`을 무시하고 `glyph`(없으면 종류별 중립 표식)를 그린다 — 오늘 `mobile/src/lib/mighty.ts:32-42`가 하는 일 그대로다.
 
 **요청 블록 제목 접두사.** 매니페스트가 정할 수 있는 것은 제목 전체가 아니라 **접두사**다.
 
@@ -359,7 +362,7 @@ v1 목록(33개):
 
 2번과 3번의 순서가 중요하다. 단계 제목이 위에 있으면 단계를 가진 행동이 모두 자기 이름 대신 단계 이름으로 보여서, gstack처럼 단계를 촘촘히 쓰는 카탈로그에서 `/qa`와 `/qa-only`가 그래프에서 구별되지 않는다. 이 순서는 두 내장 스타일의 오늘 값을 모두 그대로 만든다(Ouroboros 행동에는 `glyph`가 없고, Paperthin 행동에는 `phase`가 없다): `/ouroboros:evaluate` → `평가`(3), `/ouroboros:unstuck` → `막힘 풀기`(4), `/prism README.md` → `🔺 prism`(2), `/nba` → `🎯 nba`(2), `/ouroboros:seed` → `시드`(3).
 
-**접두사는 레지스트리가 정한다.** 한 실행 창의 요청 블록 제목은 그 창의 매니페스트 하나가 아니라, **그 실행 창에서 실행 가능한(`runnable`) 모든 스타일**을 우선순위(`bundled` > `user` > `workspace`, 같은 출처 안에서는 id 사전순)로 훑어 **처음 인식되는 스타일의 규칙**으로 정한다. 적격한 가이드 실행 창이 아니면 접두사가 없다.
+**접두사는 레지스트리가 정한다.** 한 실행 창의 요청 블록 제목은 그 창의 매니페스트 하나가 아니라, **그 실행 창에서 실행 가능한(`runnable`) 모든 스타일**을 우선순위(`bundled` > `user` > `workspace`, 같은 출처 안에서는 id 사전순)로 훑어 **처음 인식되는 스타일의 규칙**으로 정한다. **훑기는 그 실행 창이 실제로 스타일을 돌리고 있을 때만 한다**(`guidedStyle(_:) != nil`) — CLI 실행 창의 요청 블록에는 접두사도 아이콘도 색도 붙지 않는다. 오늘 `MightyStyles.requestTitle(forInput:style: nil)`이 `nil`을 내는 것과 같고, 맥과 폰 와이어 양쪽에 똑같이 적용된다.
 
 - 근거: 오늘 `MightyStyles.requestTitle(forInput:style:)`(`OuroborosFlow.swift:30-33`)이 가이드 스타일 창이기만 하면 Ouroboros → Paperthin 순으로 둘 다 시도한다. 실행 창은 스타일이 바뀌어도 이전 블록을 그대로 갖고 있기 때문이다(`:28-29`의 주석). 오라클이 이 값을 단언한다: `requestTitle(forInput: "/ouroboros:seed", style: "paperthin") == "시드"`, `("/nba", style: "paperthin") == "🎯 nba"`(`PaperthinCatalogTests.swift:24`). 매니페스트 하나만 보면 이 두 값이 `nil`로 회귀한다.
 - **미승인 스타일은 여기에 참여하지 않는다.** `runnable`만 훑으므로, 승인 전 스타일은 제목을 통해서도 존재를 드러내지 않는다(4.5).
@@ -376,6 +379,8 @@ v1 목록(33개):
 
 **출처 표식은 이름을 따라다닌다.** 비번들 스타일의 `name`이 나오는 **모든 자리** — 선택기, 그래프 머리말, 설정, 승인 카드·시트, 설치 터미널 창 제목, 폰의 `presentation.headerTitle` — 에 출처 배지(`사용자 등록` / `저장소에서 발견됨`)를 **이름 바로 옆에** 함께 그린다. 설정 화면에만 있는 배지는 위조를 막지 못한다. 폰 페이로드의 `style`에 `source: "bundled"|"user"|"workspace"`를 더한다(7.3).
 
+설치 터미널 창의 제목은 셸 세션에 문자열 하나로만 실려 가므로, 배지를 **그 문자열 안에** 넣는다: `<paneTitle> · <name>`, 비번들이면 뒤에 `· <배지>`. 이 자리가 특히 중요한 이유는 하나뿐이다 — 여섯 자리 중 **프리필된 셸 명령으로 끝나는 유일한 화면**이고, 1.11이 인정하듯 동형 문자로 지은 이름(`Ouroborοs`, 그리스 ο)을 막는 것은 배지뿐이다.
+
 ### 1.11 한도
 
 | 대상 | 한도 |
@@ -384,16 +389,19 @@ v1 목록(33개):
 | `actions` | 100 |
 | `groups` | 16 · `phases` 16 · `aliases` 64 · `autoAllow` **32** · `capabilities` 4 · `prerequisites.probes` 16 · `recognition.prefixes` 4 |
 | JSON 중첩 깊이 | 8. **파싱 전** 사전 스캔에서 센다(2장) |
-| 문자열 | 1.1–1.10의 각 필드에 적힌 값. 어떤 문자열도 400자를 넘지 않는다. **JSON 키 이름도 문자열과 똑같이 다룬다** |
-| 제어·보이지 않는 문자 | 모든 문자열과 키에서 금지: U+0000–U+001F, U+007F–U+009F, U+00AD, U+061C, U+200B–U+200F, U+202A–U+202E, U+2028, U+2029, U+2060, U+2066–U+2069, U+FEFF (`E_CONTROL_CHAR`) |
-| 구분자 | `name` · `phases[].title` · `actions[].requestTitle`에 U+00B7(`·`)를 쓸 수 없다 (`E_RESERVED_SEPARATOR`) |
+| 문자열 | 1.1–1.10의 각 필드에 적힌 값. 어떤 문자열도 400자를 넘지 않는다 |
+| JSON 키 이름 | **문자열과 똑같이 다룬다**: 금지 문자 검사(`E_CONTROL_CHAR`)와 길이 **64자**(`E_STRING_LENGTH`). 스키마 1의 키는 전부 짧은 영문 낱말이고, 작성자가 고르는 키는 id(최대 40)뿐이다. 그리고 키 리터럴에는 **이스케이프를 쓸 수 없다**(`E_KEY_ESCAPE`, 2장) |
+| 제어·보이지 않는 문자 | 모든 문자열과 키에서 금지: U+0000–U+001F, U+007F–U+009F, U+00AD, U+061C, U+200B–U+200F, U+202A–U+202E, U+2028, U+2029, U+2060, U+2066–U+2069, U+FEFF (`E_CONTROL_CHAR`). **`actions[].glyph`만은 예외**로, 1.10의 "이모지 한 자" 검사 하나로 판정한다 |
+| 구분자 | `name` · `phases[].title` · `actions[].requestTitle` · `install.paneTitle`에 U+00B7(`·`)를 쓸 수 없다 (`E_RESERVED_SEPARATOR`) |
 | 정수 | `schema`·`phases[].order`는 정수값이고 `Int` 범위 안이어야 한다 (`E_TYPE`) |
 
 **금지 문자 목록의 근거.** 방향 제어(U+202A–U+202E, U+2066–U+2069, U+200E/F, U+061C)는 승인 화면의 글을 뒤집는 데 쓰인다. 너비 0 문자와 연결자(U+200B–U+200D, U+2060, U+FEFF, U+00AD)는 `"Ouro<U+200B>boros"`처럼 **눈에는 같고 문자열 비교에는 다른** 이름을 만든다 — 1.2의 예약 이름 검사를 그냥 통과해 버린다. 줄·문단 구분자(U+2028·U+2029)는 SwiftUI `Text`가 줄을 바꾸므로, 400자짜리 `install.command`나 `help`의 뒷부분을 승인 카드 밖으로 밀어내고 그 뒤를 새 문단처럼 보이게 한다.
 
 **막지 못하는 것.** 키릴 `О`·그리스 `Ο`·전각 문자 같은 **동형 문자**는 이 목록으로 걸리지 않는다. `Оuroboros`(키릴 О)는 유효한 이름이다. 그것을 막는 것은 1.10의 출처 배지다 — 이름이 아무리 비슷해도 `저장소에서 발견됨`이 이름 바로 옆에 붙는다.
 
-**`·` 금지의 근거.** 앱이 머리말과 요청 제목을 조립할 때 쓰는 문자다. `"name": "Ouroboros · 승인됨"`은 머리말 안에서 앱 크롬을 위조하고, `"requestTitle": "✅ 권한 허용됨"`은 그래프와 폰에서 앱이 쓴 상태처럼 읽힌다.
+**`·` 금지의 근거.** 앱이 머리말과 요청 제목을 조립할 때 쓰는 문자다. `"name": "Ouroboros · 승인됨"`은 머리말 안에서 앱 크롬을 위조하고, `"requestTitle": "✅ 권한 허용됨"`은 그래프와 폰에서 앱이 쓴 상태처럼 읽힌다. `install.paneTitle`이 이 목록에 있는 이유는 1.10의 조립(`<paneTitle> · <name> · <배지>`)에 그대로 들어가기 때문이다 — 작성자가 `·`를 쓸 수 있으면 프리필된 셸 명령이 든 탭의 제목 전체를 스스로 짤 수 있다.
+
+**`glyph`가 금지 문자 목록에서 빠지는 근거.** U+200B–U+200D를 막는 목적은 `"Ouro<U+200B>boros"`처럼 **이름**을 위조하는 것이고, 그중 U+200D(ZWJ)는 `👩‍💻`·`🏳️‍🌈`·`👨‍👩‍👧`를 **한 grapheme cluster**로 묶는 문자다. `glyph`는 정의상 한 자이므로 위조할 이름이 없다. 그래서 `glyph`는 1.10의 이모지 검사 하나로만 판정한다.
 
 **정수의 근거.** 실측: 이 툴체인의 `JSONSerialization`은 `1e400`을 값으로 만들지 않고 **잡을 수 있는 오류로 거부하며**(`NSCocoaErrorDomain 3840, "Number wound up as NaN"`), `1.0`과 `1`을 구별하지 않고 둘 다 정수 1로 읽는다. 위험한 것은 그 사이다: `1e308`은 유한한 `Double`로 파싱되고 `Int(1e308)`은 **오류가 아니라 트랩**이다. 그래서 정수 필드는 값이 정확한 정수이고 `Int` 범위 안일 때만 받고, `Double`을 거쳐 `Int(_:)`로 바꾸지 않는다. `1.0`은 정수 1과 같은 값으로 받아들인다 — 파서가 이미 구별하지 않는다.
 
@@ -627,13 +635,17 @@ v1 목록(33개):
 
 **① 크기**는 파일 바이트 수만 본다(`E_TOO_LARGE`). 이것이 제일 먼저다.
 
-**⓪ 사전 스캔**은 크기 검사 직후, `JSONSerialization`에 바이트를 넘기기 **전에** 원시 바이트를 한 번 훑는 재귀 없는 스캐너다. 문자열 리터럴 안팎을 구별하고 `\"` 이스케이프를 건너뛰며 세 가지를 본다.
+**⓪ 사전 스캔**은 크기 검사 직후, `JSONSerialization`에 바이트를 넘기기 **전에** 원시 바이트를 한 번 훑는 재귀 없는 스캐너다. 문자열 리터럴 안팎을 구별하고 `\"` 이스케이프를 건너뛰며 다섯 가지를 본다.
 
 1. **중첩 깊이** — 문자열 밖의 `[`·`{`·`]`·`}`를 세어 최대 깊이를 구한다. 8을 넘으면 `E_TOO_DEEP`이고 파서에는 넘기지 않는다.
 2. **중복 키** — 같은 객체 안에 같은 키가 두 번 나오면 `E_DUPLICATE_KEY`.
 3. **`schema`가 첫 키인가** — 최상위 객체의 첫 키가 `schema`가 아니면 `E_SCHEMA_NOT_FIRST`.
+4. **키 이름의 모양** — 키 리터럴에 역슬래시가 하나라도 있으면 `E_KEY_ESCAPE`. 그리고 키는 값 문자열과 **똑같이** 1.11의 금지 문자 검사(`E_CONTROL_CHAR`)와 길이 검사(64자, `E_STRING_LENGTH`)를 받는다.
+5. **최상위 뒤의 잔여물** — 최상위 컨테이너가 닫힌 뒤에는 공백만 올 수 있다. 값이 하나 더 있으면 `E_NOT_JSON`이다(파일 하나에 문서 둘).
 
-셋 다 파싱 뒤에는 알 수 없거나(JSON 객체는 순서도 중복도 보존하지 않는다) 우리 한도가 아닌 파서의 한도로 판정된다. 사전 스캔이 그 세 가지가 사는 유일한 자리다.
+다섯 다 파싱 뒤에는 알 수 없거나(JSON 객체는 순서도 중복도 보존하지 않고, 이스케이프도 남지 않는다) 우리 한도가 아닌 파서의 한도로 판정된다. 사전 스캔이 그 다섯 가지가 사는 유일한 자리다.
+
+> **왜 키의 이스케이프를 아예 거절하는가.** `"autoAllow"`와 `"autoAllow"`는 `JSONSerialization`에게 **한 키**이고(먼저 나온 것이 이긴다) 사람과 사전 스캔에게는 **다른 두 문자열**이다. 4.4는 승인 카드가 파일 내용 전부를 보여 주기로 했으므로, 그 한 줄로 카드의 원본 JSON 구역이 `"autoAllow":[]`라고 읽히는 동안 엔진이 `Bash`·`Write`를 허용하는 파일을 쓸 수 있다 — 실측으로 확인된 입력이다. 이스케이프를 **풀어서** 비교하는 대신 **거절**하는 이유는 1.1이 모든 키 이름을 영문 식별자로 고정했기 때문이다: 정상적인 매니페스트에 이스케이프가 필요한 키는 없다.
 
 > **왜 깊이를 앞에서 재는가 — 그리고 무엇은 사실이 아닌가.** "Foundation의 JSON 파서는 재귀 하강이라 깊은 입력에서 스택을 넘기고, 스택 오버플로는 Swift에서 잡을 수 없다"는 흔한 주장은 **이 툴체인에서 사실이 아니다**. 실측(Swift 6.4 / macOS CLT): `[`가 131 072개인 256 KB 입력에 대해 `JSONSerialization.jsonObject(with:)`는 프로세스를 죽이지 않고 `NSCocoaErrorDomain 3840, "Too many nested arrays or dictionaries"`를 **던진다**. 배열 중첩을 이분 탐색하면 513단까지 받고 그 위는 거부한다. 즉 중첩 폭탄으로 앱이 죽지는 않는다.
 >
@@ -645,6 +657,7 @@ v1 목록(33개):
 | `E_TOO_DEEP` | JSON 중첩이 너무 깊습니다 (최대 8단계). |
 | `E_DUPLICATE_KEY` | 같은 항목이 두 번 적혀 있습니다: `<경로>`. |
 | `E_SCHEMA_NOT_FIRST` | schema는 파일의 첫 항목이어야 합니다. |
+| `E_KEY_ESCAPE` | 항목 이름에는 이스케이프를 쓸 수 없습니다: `<경로>`. |
 | `E_NOT_JSON` | JSON 형식이 아닙니다. |
 | `E_SCHEMA_MISSING` | schema 필드가 없습니다. |
 | `E_SCHEMA_VERSION` | 이 앱은 schema 1만 읽습니다. |
@@ -688,7 +701,7 @@ v1 목록(33개):
 | `E_PLACEHOLDER_INITIAL` | initial placeholder는 Enter 규칙이 rewriteBareDraftTo일 때만 쓸 수 있습니다. |
 | `E_ID_COLLISION` | 이미 같은 id의 스타일이 있습니다: `<id>` (`<우선 출처>`). |
 
-**메시지에 끼워 넣는 값은 그 자체가 공격자의 글이다.** `<경로>`·`<값>`·`<도구>`·`<와이어 이름>`은 **64자로 자르고**(넘으면 뒤에 `…`), 1.11의 금지 문자를 U+FFFD로 바꾼 뒤에 쓴다. `E_UNKNOWN_FIELD`의 `<경로>`는 매니페스트의 **키 이름**으로 조립되므로 특히 그렇다 — 승인도 되기 전에 20만 자짜리 키가 설정 화면의 거부 목록에 그대로 그려질 수 있다. 키 이름은 값 문자열과 똑같이 다룬다(1.11).
+**메시지에 끼워 넣는 값은 그 자체가 공격자의 글이다.** `<경로>`·`<값>`·`<도구>`·`<와이어 이름>`은 **64자로 자르고**(넘치면 마지막 한 자리가 `…`이므로 화면에 나가는 길이는 정확히 64다), 1.11의 금지 문자를 U+FFFD로 바꾼 뒤에 쓴다. `E_UNKNOWN_FIELD`의 `<경로>`는 매니페스트의 **키 이름**으로 조립되므로 특히 그렇다 — 승인도 되기 전에 20만 자짜리 키가 설정 화면의 거부 목록에 그대로 그려질 수 있다. 키 이름은 값 문자열과 똑같이 다루므로(1.11) 그 키는 애초에 `E_STRING_LENGTH`로 거부되지만, 메시지의 한도는 그것과 무관하게 걸린다. 같은 "자른 뒤 `…`"는 1.8의 80자 한도에도 그대로 적용된다.
 
 **아이콘은 닫힌 목록이므로 검증된다.** 1.10의 33개 밖이면 `E_UNKNOWN_ICON`으로 매니페스트 전체가 거부된다. 대체 심볼 규칙도, "이름은 맞는데 그려지지 않는다"는 상태도 없다. 승인 화면은 아이콘 이름을 **문자열로도 함께** 보여 준다 — 사용자가 본 것과 그려진 것이 다를 여지를 없앤다.
 
@@ -728,6 +741,8 @@ BundledStyleSource.directories() -> [URL]
   각 후보 + "MightyClaude_MightyCore.bundle/Styles" 중 존재하는 디렉터리를 순서대로 돌려준다.
   하나도 없으면 빈 배열.
 ```
+후보에 **`.app`을 담고 있는 폴더는 넣지 않는다.** 거기에 떨어진 `MightyClaude_MightyCore.bundle`은 `bundled` 출처로 읽히고, 그것은 사전 승인이며 예약 id·예약 이름·`ToolSearch` 자동 허용이 모두 허용되고 승인 카드가 뜨지 않는다는 뜻이다. 올바로 조립된 앱은 이 후보를 한 번도 쓰지 않으므로 잃을 것이 없다.
+
 `BundledStyleMarker`는 이 목적만을 위한 **빈 `final class`**다 — `Bundle(for:)`가 `AnyClass`를 받으므로, MightyCore가 그 밖에는 값 타입만 쓰더라도 클래스 하나는 있어야 한다. `Bundle.main.resourceURL`이 `swift test`에서는 테스트 러너의 리소스 폴더를, 조립된 `.app`에서는 `Contents/Resources`를 가리키므로 양쪽 모두 첫 후보에서 잡힌다. 빈 배열이 돌아오면 번들 스타일이 0개가 되고 모든 실행 창이 일반 CLI로 떨어진다 — 크래시는 없다.
 
 그 무해한 실패가 **출시되지 않도록** 두 겹의 관문을 둔다.
@@ -804,7 +819,13 @@ BundledStyleSource.directories() -> [URL]
 
 **권한 검사.** 읽을 때 `approvals.json`이 현재 uid 소유가 아니거나 group/other에 쓰기 비트가 있으면 같은 잠금 상태로 간다. 폴더에도 같은 검사를 한다. 근거: 스타일 파일은 스스로를 지킨다(해시가 검사된다). `approvals.json`은 **내용 자체가 권위인 유일한 파일**인데 검증이 하나도 없었다.
 
-**쓰기는 원자적으로.** 같은 폴더의 임시 파일에 0600으로 쓰고 `rename(2)`으로 바꾼다. 쓰기 직전 파일의 `(mtime, size, inode)`가 `load()` 때와 다르면 다시 읽어 **병합한다**(같은 키의 더 최근 `decidedAt`이 이긴다). `StyleTrustStore`는 `actor`지만 actor는 **한 프로세스 안에서만** 직렬화한다 — 같은 프로필의 두 번째 실행, 크래시 후 재실행, 기본 프로필의 스모크 러너가 서로의 기록을 통째로 지우지 않게 하려는 것이다.
+**쓰기는 원자적으로.** 같은 폴더의 임시 파일에 0600으로 쓰고 `rename(2)`으로 바꾼다. 쓰기 직전 파일의 `(mtime, size, inode)`가 `load()` 때와 다르면 다시 읽어 **병합한다**. `StyleTrustStore`는 `actor`지만 actor는 **한 프로세스 안에서만** 직렬화한다 — 같은 프로필의 두 번째 실행, 크래시 후 재실행, 기본 프로필의 스모크 러너가 서로의 기록을 통째로 지우지 않게 하려는 것이다. 같은 이유로 `load()`도 스탬프가 달라졌으면 다시 읽는다: 한 번 읽고 캐시해 버리면 두 번째 실행이 쓴 승인이 이 실행의 모든 스캔에 보이지 않는다.
+
+병합의 키는 **상태에 따라 다르다.**
+- `approved`: `(source, workspacePath, path)` — **자리뿐이다**. 같은 자리의 승인은 병합 뒤에도 하나만 남고, 더 최근 `decidedAt`이 이긴다. 해시를 키에 넣으면 위의 "자리당 하나"가 두 프로세스 창에서 깨진다: A가 H1 승인을 들고 있는 동안 B가 H2를 승인하고, A의 다음 쓰기가 둘을 다시 합쳐 버리면 파일을 H1 바이트로 되돌리는 커밋 하나가 프롬프트 없이 통과한다.
+- 그 밖(`revoked`): `(source, workspacePath, path, state, hash)` — **거부는 하나도 버리지 않는다**(4.2의 자리 결속, 상한의 규칙과 같은 이유).
+
+**다시 읽기도 같은 관문을 지난다.** 병합 직전의 재읽기는 처음 읽을 때와 똑같이 소유·권한을 확인하고, 그중 하나라도 어긋나거나 JSON이 깨졌거나 `version`이 1이 아니면 **잠금 상태로 가고 파일을 덮어쓰지 않는다**. 처음 읽기만 닫히고 재읽기가 열려 있으면, 로드 뒤에 깨진 파일이 이 프로세스의 메모리로 조용히 덮어써진다 — 그 파일에 든 거부 전부가 사라진다.
 
 **상한에서 버리는 것은 `approved`뿐이다.** 레코드 수는 256개로 제한하고, 넘으면 `decidedAt`이 오래된 **`approved`** 레코드부터 버린다. `revoked`는 버리지 않는다. 남은 것이 전부 `revoked`라 버릴 것이 없으면 새 레코드를 쓰지 않고 `"신뢰 기록이 가득 찼습니다. 설정에서 오래된 항목을 지우세요."`로 실패한다. 거부를 버리는 것은 스스로 허용으로 바뀌는 일이다.
 
@@ -829,7 +850,9 @@ BundledStyleSource.directories() -> [URL]
 **보여 준 바이트가 곧 쓰이는 바이트다.** 승인 카드는 `DiscoveredStyleFile.data`(**한 번의 읽기**)에서 만들고, 해시도 그 `data`에서 계산하고, `styles/`로의 복사도 **그 `data`를 쓴다** — 원본 파일을 다시 읽지 않는다. 카드가 떠 있는 동안 원본이 바뀌어도 사용자가 승인한 것은 읽은 그 바이트이며, 바뀐 파일은 다음 스캔에서 `pending`으로 다시 나타난다.
 > 없으면: 사용자가 100개짜리 카드를 읽는 몇 분 동안 Dropbox 동기화·`git pull`·같이 사는 프로세스가 원본을 바꿔치기하고, `FileManager.copyItem`이 **새 바이트**를 복사하며, 해시를 복사본에서 계산하면 사용자가 본 적 없는 `autoAllow`가 곧장 `approved`가 된다.
 
-등록·발견 이후의 모든 사용(행동 목록, 자동 허용 판정, 투영)도 그 `data`에서 디코딩된 `RegisteredStyle.manifest`만 쓴다. **디스크는 스캔 시점에만 읽는다.**
+등록·발견 이후의 모든 사용(행동 목록, 자동 허용 판정, 투영)도 그 `data`에서 디코딩된 `RegisteredStyle.manifest`만 쓴다. **디스크는 스캔 시점에만 읽는다.** 그 한 번의 읽기도 **메모리 매핑이 아니다**: 매핑된 `Data`는 파일의 살아 있는 창이라 카드가 떠 있는 동안 원본이 바뀌면 카드·해시·복사본이 함께 흔들리고, 원본을 잘라 내면 `SIGBUS`로 앱이 죽는다.
+
+**복사는 사용자가 고른 파일에만 일어난다.** 승인 시 `styles/`로 바이트를 쓰는 것은 `user` 출처이면서 **아직 그 자리에 파일이 없을 때**뿐이다. 저장소에서 발견된 매니페스트를 승인하면서 복사하면, 다음 스캔에서 `user` 사본이 우선순위로 이기고 저장소 원본이 `E_ID_COLLISION`으로 거부되며, 승인 레코드는 `workspace` 자리에 적혔으므로 사본은 `pending`이다 — 사용자가 "허용"을 눌렀는데 그 스타일이 사라지고, 저장소를 지워도 공격자가 쓴 바이트가 앱의 데이터 폴더에 남는다.
 
 시점:
 - `user` — **등록할 때** 묻는다. 설정에서 파일을 고르면 먼저 검증하고, 카드를 띄우고, 사용자가 허용해야 `styles/`로 복사하고 레코드를 남긴다. 사용자가 그 폴더에 직접 떨어뜨린 파일은 목록에 `pending`으로 나타나고 같은 카드를 거쳐야 한다.
@@ -1085,14 +1108,20 @@ public struct StyleEvaluator: Sendable {
     public func startActions(phase: StylePhase?) -> [StyleAction]      // start 규칙이 걸리면 비어 있지 않다
     public var resetTitle: String? { get }
     public func nextActions(phase: StylePhase?, group: StyleGroup?) -> [StyleAction]
-    public func recommendedAction(capabilityStates: [String: String], group: StyleGroup?) -> String?
+    /// 6.1의 7번: 실행 중인 byPhase 스타일은 빈 배열, 그 밖에는 start 또는 next.
+    public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool) -> [StyleAction]
+    public func recommendedAction(capabilityStates: [String: String]) -> String?
+    public var recommendGroupId: String? { get }                       // 첨부 줄이 붙는 그룹 (1.6)
     public func initialGroup(capabilityStates: [String: String]) -> StyleGroup?
     public func drawsGroupMap() -> Bool                                // 그룹 ≥2 && axis 있음 && next == byGroup
+    public var drawsPhaseProgress: Bool { get }                        // next == byPhase
 
     // 입력창
     public func enterBehaviour(draft: String, phase: StylePhase?, hasAttachments: Bool,
-                               running: Bool, hasRequests: Bool) -> StyleEnterBehaviour  // .verbatim | .rewrite(actionId)
-    public func enterArmedPrefix(phase: StylePhase?, running: Bool, hasRequests: Bool) -> String?
+                               running: Bool, hasRequests: Bool,
+                               startingNew: Bool = false) -> StyleEnterBehaviour          // .verbatim | .rewrite(actionId)
+    public func enterArmedPrefix(draft: String, phase: StylePhase?, hasAttachments: Bool = false,
+                                 running: Bool, hasRequests: Bool, startingNew: Bool = false) -> String?
     public func placeholder(phase: StylePhase?, running: Bool, answering: Bool) -> String
     public func guidanceLine(phase: StylePhase?, running: Bool) -> String?
 
@@ -1150,7 +1179,8 @@ public enum StylePanelProjection {
                             selectedGroupId: String?,
                             capabilityStates: [String: String],
                             attachments: [StyleAttachmentItem],
-                            prerequisites: StylePrerequisiteResult) -> StylePanel
+                            prerequisites: StylePrerequisiteResult,
+                            running: Bool = false) -> StylePanel   // 6.1의 7번을 폰에도 (7.3)
     /// 골든 직렬화: UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개.
     public static func serialise(_ panel: StylePanel) throws -> Data
 }
@@ -1221,10 +1251,14 @@ public enum TerminalInputPolicy {
 1. **단계 표시줄** — `phases`가 비어 있지 않을 때. `order` 순, 현재 단계 강조, 지나온 단계 옅게 (오늘 `OuroborosPanel.swift:50-63` 그대로).
 2. **질문 패널** — 대기 중인 `AskUserQuestion`이 있으면 **이 자리 하나만** 그리고 아래를 모두 감춘다(오늘 `OuroborosPanel.swift:39-40`).
 3. **준비물 블록** — `prerequisites`가 미충족일 때. `report` 규칙이 고른 `missing` 줄들 + `hint` + `[설치]`(`canInstall`일 때만) + `[다시 확인]`.
-4. **승인 띠** — 이 실행 창이 고르려 한 스타일이 `pending`일 때 `"확인이 필요합니다 · [내용 보기]"` **한 줄**. `[내용 보기]`가 4.4의 승인 **시트**를 연다. 시트에 `[허용]` `[지금은 안 함]`.
+4. **승인 띠** — 이 실행 창이 고르려 한 스타일이 `pending`일 때 `"확인이 필요합니다 · [내용 보기]"` **한 줄**. `[내용 보기]`가 4.4의 승인 **시트**를 연다. 시트에 `[허용]` `[지금은 안 함]`. 3.4의 `"이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요"`와 **동시에 나오지 않는다**: 승인된 매니페스트가 디스크에서 바뀌면 두 조건이 함께 참이 되는데, 한 상태에 두 문장은 사용자에게 두 문제처럼 읽힌다. 띠가 있으면 띠만 그린다 — 무엇을 하면 되는지 말하는 쪽이 그쪽이다.
 5. **그룹 지도** — `evaluator.drawsGroupMap()`일 때(그룹 ≥2, `axis` 하나 이상, `next`가 `byGroup`). 오늘의 2×2 버튼 줄과 같은 모양, 선택된 그룹의 `question`이 아래에 한 줄.
 6. **첨부 줄** — 내장 기능이 첨부를 선언했고 `rules.recommend.group`(또는 첨부를 낸 그룹)을 보고 있을 때. **항목이 0개여도 그린다**: 폴더 이름 · `detail` 배지 · 파일 칩 **6개까지**(누르면 기본 앱으로 연다) · 새로고침, 비었으면 기능이 준 빈 상태 문구(1.8).
 7. **행동 칩** — 현재 단계가 `rules.start.phase`면 `startActions`, 아니면 `NextRule`의 결과. `byPhase`·`start`는 첫 번째가 prominent, `byGroup`은 추천 행동이 강조된다. `glyph`·`title`·`userInvoked`(사람 아이콘)·`readOnly`(눈 아이콘), 툴팁은 `help · 범위: scope · 호출자 · 읽기 전용`. `requiresText`인 행동은 입력창이 비면 비활성. `resetTitle`이 있으면 줄 끝에 그 칩(되돌린 상태에서는 `취소` 칩).
+
+   **그리는 모양은 그룹 지도가 정한다.** 5번을 그리는 스타일의 7번은 **격자**(`LazyVGrid`, 세 칸 기준 높이 상한)이고, 그렇지 않으면 가로 한 줄이다. 그룹 지도가 있다는 것은 이 줄이 고른 그룹의 **카탈로그**라는 뜻이고, 카탈로그는 오늘 Paperthin이 그리던 격자다. 개수로 가르면(`> 6`) 같은 스타일의 네 그룹 중 셋이 줄로, 하나가 격자로 그려진다.
+
+   **실행 중에는 `next`의 종류가 가른다.** `byPhase` 스타일은 순서이므로 진행 중인 단계가 끝나기 전에는 **고를 다음 단계가 없다**: 칩 줄 전체(되돌리기 칩 포함) 대신 진행 표시(spinner)를 그리고, 8번은 `guidance.running`을 쓴다(오늘 Ouroboros). `byGroup` 스타일은 카탈로그이므로 칩을 그대로 두고, 누른 것이 다음 요청으로 줄을 선다(오늘 Paperthin). 같은 규칙이 폰 투영에도 그대로 간다(7.3).
 8. **안내 한 줄** — `evaluator.guidanceLine(phase:running:)`(1.7). 값이 없으면 줄을 그리지 않는다.
 
 **입력창의 무장 표시.** Enter 규칙이 지금 발동 가능하면(`enterArmedPrefix`가 값을 주면) 입력창 왼쪽에 그 접두사를 **비편집 칩**으로 그린다(1.6).
@@ -1355,7 +1389,7 @@ MobileStylePanel {
 }
 ```
 - `actions`는 **카탈로그 전체**(≤100)다. 화면에 무엇을 낼지는 `groups`와 `next`가 정한다.
-- `next`는 시작 규칙이 걸린 상태면 `start.actions`, 아니면 `NextRule`의 결과다. 폰은 어느 쪽인지 알 필요가 없다.
+- `next`는 시작 규칙이 걸린 상태면 `start.actions`, 아니면 `NextRule`의 결과다. 폰은 어느 쪽인지 알 필요가 없다. 실행 중인 실행 창에서는 6.1의 7번 규칙이 그대로 적용된다: `byPhase` 스타일이면 `next`가 **빈 배열**이고 `guidance`는 `guidance.running`이며, `byGroup` 스타일이면 둘 다 평소와 같다. 맥이 칩을 감추는 동안 폰이 같은 칩을 내밀면 두 화면이 서로 다른 말을 한다.
 - `prominent`는 `next`의 첫 항목에만 true다. 폰은 둘 중 무엇을 봐도 된다.
 - `requiresText`는 **UI 힌트**다. 폰은 입력이 비었을 때 그 칩을 비활성으로 그리되, 라우트는 이 값을 강제하지 않는다(1.3.3).
 - `attachments`는 **읽기 전용 정보**다. 폰에는 파일을 여는 길이 없으므로 경로를 싣지 않는다. 문자열은 이미 1.8의 정규화를 거쳤다.
@@ -1374,13 +1408,15 @@ MobileStylePanel {
 | `ouroboros.phase` | 현재 단계 `id` |
 | `ouroboros.ready` | `prerequisites.ready` |
 | `ouroboros.takesText` | `actions.filter(takesText).map(id)` (매니페스트 순서) |
-| `ouroboros.next` / `.all` | `next` / 전체 목록을 `{skill: id, title, help}`로 |
+| `ouroboros.next` / `.all` | **`NextRule`의 결과만** / 전체 목록을 `{skill: id, title, help}`로 |
 | `paperthin.installed` | `prerequisites.ready` |
 | `paperthin.recommended` | `recommended` |
 | `paperthin.domains[]` | `groups[]` → `{id, title, axis, question, skills}`; `skills[]`는 `{name: actionId, emoji: glyph, summary: help, scope, userInvoked, readOnly}` |
 | `paperthin.casebook` | `attachments`를 낸 내장 기능의 원본 — `{name: 폴더명, weight, files}` |
 
 어댑터는 `id == "ouroboros"` / `"paperthin"`일 때만 동작한다.
+
+**`ouroboros.next`가 `panel.next`가 아닌 이유.** 옛 `OuroborosFlow.nextActions(after:)`는 단계 지도 하나만 보았고 `goal`에서 빈 배열을 돌려주었다 — 옛 폰은 그때 `all`로 떨어지도록 만들어져 있다. `panel.next`는 진입 단계에서 `start.actions`(`인터뷰 시작`·`자동 진행`)까지 실으므로, 그대로 쓰면 옛 폰의 `goal` 화면이 오늘과 달라진다. 레거시 필드만 단계 지도를 보고, 새 `panel.next`는 위의 규칙 그대로다.
 
 ### 7.5 라우트
 
@@ -1429,7 +1465,7 @@ MobileStylePanel {
 5. `docs/mobile-remote.md`가 7장으로 갱신되고, `docs/ouroboros-mode.md`·`docs/paperthin-mode.md`의 "구현 위치" 표가 엔진을 가리킨다.
 6. **골든 기록 모드가 이미 존재한다**(8.4). 태그 이후에는 엔진 코드를 못 고치므로, 태그 이전에 들어 있어야 한다.
 7. **`StyleGoldenContractTests`가 이미 존재한다**(8.4). 태그 이후에 추가되는 매니페스트를 검사하는 것이 **태그 이전에 얼어붙은 코드**가 되게 하는 장치다.
-8. `scripts/check-style-freeze.sh`가 저장소에 있고, `styles/FREEZE`가 태그와 같은 커밋에 있다.
+8. `scripts/check-style-freeze.sh`가 저장소에 있고 **macOS 워크플로가 그것을 부른다**(태그가 있을 때만 돌고, 없으면 건너뛴 줄을 찍는다). `styles/FREEZE`는 태그 커밋이 더하는 **유일한 파일**이고 내용은 그 커밋의 부모 SHA다(8.3).
 
 검증: `cd native/macos && swift test` 전부 통과, `cd mobile && npm run typecheck && npx jest` 전부 통과.
 
@@ -1445,9 +1481,9 @@ MobileStylePanel {
 - **내장 기능 목록** — `paperthin.casebook` 하나. 그 상태 값 3개와 빈 상태 문구.
 - **팔레트** — 1.10의 9개 이름.
 - **아이콘 목록** — 1.10의 33개 이름.
-- **오류 코드 목록** — 2장.
-- **검증 순서** — 2장의 ⓪①②③④와 사전 스캔이 보는 세 가지.
-- **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3)과 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개).
+- **오류 코드 목록** — 2장의 **47개**.
+- **검증 순서** — 2장의 ⓪①②③④와 사전 스캔이 보는 다섯 가지.
+- **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 6가지**(8.4).
 - **폰 페이로드** — `MobileStylePanel`의 모양, `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
 - **터미널 입력 정책** — `TerminalInput`의 모양과 `autoRun`의 출처 규칙(1.5·5.7).
 
@@ -1456,16 +1492,28 @@ MobileStylePanel {
 ```
 용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v1
 ```
+**태그 커밋의 모양.** 태그 `T`는 **`styles/FREEZE` 하나만 더하는 커밋**이고, 그 내용은 **`T`의 부모 `P`의 SHA 40자 한 줄**이다. `P`가 마지막 엔진 커밋이다. 자기 자신의 SHA를 담을 수는 없으므로(자기 참조) 부모를 담는다.
+
 동작:
-1. **`styles/FREEZE`를 읽는다.** 태그와 **같은 커밋에** 담기는 파일이며, 내용은 그 커밋의 SHA 한 줄이다. 파일이 없거나, 태그가 없거나, `git rev-parse <tag>^{commit}`이 그 SHA와 다르면 `종료 코드 2`와 `태그 <tag>가 FREEZE와 맞지 않습니다.`
-2. `git diff --name-only <tag>..HEAD`를 읽는다.
+1. **`git show "<tag>:styles/FREEZE"`로 읽는다**(작업 트리가 아니다). 그리고 셋을 모두 확인한다.
+   - 내용이 40자리 16진수인가. 아니면 `종료 코드 2`와 `styles/FREEZE의 내용이 40자리 커밋 SHA가 아닙니다.`
+   - `git rev-parse "<tag>^{commit}^"`(태그 커밋의 부모)가 그 SHA와 같은가.
+   - `git diff --no-renames --name-only "<tag>^" "<tag>"`가 **정확히 `styles/FREEZE` 한 줄**인가.
+
+   하나라도 어긋나면 `종료 코드 2`와 `태그 <tag>가 FREEZE와 맞지 않습니다.`
+2. `git -c core.quotePath=false diff --no-renames --name-only <tag>..HEAD`를 읽는다.
 3. 각 경로를 **먼저 금지 목록**, 그다음 허용 목록에 대어 본다.
    - 금지(먼저 본다): `styles/FREEZE`
    - 허용: `styles/**` · `native/macos/Tests/MightyCoreTests/StylesThirdParty*Tests.swift` · `mobile/src/__tests__/styles-thirdparty-*.test.ts` · `docs/styles-followups.md`
+   - 테스트 두 글롭의 `*`는 **경로 조각 하나**이므로 `/`를 넘지 않는다. `StylesThirdPartyEvil/DeepTests.swift`는 바깥이다.
 4. 금지 목록에 걸리거나 허용 목록 밖의 경로가 하나라도 있으면 그 목록을 한 줄씩 찍고 `종료 코드 1`.
 5. 전부 안쪽이면 `OK: <N> files, all inside the manifest-only allow-list`와 `종료 코드 0`.
 
-**1번이 1번인 이유.** 태그의 존재만 보면 `git tag -f mighty-style-engine-v1 HEAD` 한 줄로 `git diff`가 비고 스크립트가 `OK: 0 files`를 찍는다 — 고정 장치가 스스로를 고정하지 못한다. 커밋 SHA를 저장소 안의 파일에 박아 두고, 그 파일 자체를 허용 목록 **밖**에 두어야 태그를 옮기는 순간 검사가 실패한다.
+**git이 실패하면 2다.** 저장소가 아니거나, 태그가 없거나, `diff`가 오류로 끝나면(부분 클론의 promisor 불통, 개체 손상) 검사는 **성립하지 않은 것**이지 통과가 아니다. 목록이 비어서 `OK: 0 files`를 찍는 것과 목록을 읽지 못한 것은 같은 상태가 아니다.
+
+**`--no-renames`가 필요한 이유.** 이름 변경은 기본 출력에서 목적지 한 줄로만 나오므로, `git mv <엔진 파일> styles/`가 허용 목록 안의 경로 하나로 보이고 엔진 파일이 사라진 사실은 보이지 않는다. 이름 변경 감지는 유사도 50%에서 걸리므로 파일을 도려내면서 동시에 옮길 수도 있다.
+
+**1번이 1번인 이유.** 태그의 존재만 보면 `git tag -f mighty-style-engine-v1 HEAD` 한 줄로 `git diff`가 비고 스크립트가 `OK: 0 files`를 찍는다 — 고정 장치가 스스로를 고정하지 못한다. 커밋 SHA를 저장소 안의 파일에 박아 두고, 그 파일 자체를 허용 목록 **밖**에 두고, 태그 커밋이 그 파일 하나만 담게 해야 태그를 옮기는 순간 셋 중 하나가 반드시 깨진다.
 
 **허용 목록을 좁힌 세 가지.**
 - `docs/**`를 뺐다. 이 계약·고정된 스키마·고정된 규칙 어휘가 전부 `docs/` 안에 있어서, 태그 이후에 문서를 고쳐 이미 한 일을 합법화할 수 있었다. 남는 것은 `docs/styles-followups.md`(10장의 기록) 하나뿐이고, 다른 문서 수정은 태그 **이전**의 별도 커밋으로 간다.
@@ -1492,7 +1540,9 @@ styles/golden/gstack.panel.json
 
 > `styles/*.json`을 글롭해서, 찾은 **모든** 매니페스트에 대해 ① 디코딩·검증이 통과하고 ② `styles/golden/<id>.panel.json`이 존재하며 ③ 그 내용이 아래 고정 입력들에 대한 `StylePanelProjection.make(...)` 결과를 `serialise`한 바이트와 **정확히 같은지** 단언한다.
 
-고정 입력 4가지: 빈 요청 기록 · 그 스타일의 첫 행동을 부른 기록 하나 · 준비물 충족 / 미충족 · 첫 그룹 선택.
+고정 입력 **6가지**: 빈 요청 기록(`empty`) · 그 스타일의 첫 행동을 부른 기록 하나(`afterFirstAction`) · 준비물 미충족(`notReady`) · 첫 그룹 선택(`firstGroup`) · **마지막 그룹 선택(`lastGroup`)** · **선언된 내장 기능이 모두 `open`이고 첨부 2개(`capabilityOpen`)**.
+
+> 뒤의 두 가지가 없으면 여섯이 아니라 넷이고, 넷은 서로 겹친다. 앞의 네 입력은 모두 `initialGroup` 규칙이 고르는 **기본 그룹**에 떨어지므로, 기본이 아닌 그룹의 `byGroup` 결과도, 추천 규칙 전체(`recommended`가 언제나 `null`)도, 첨부 투영(`attachments`가 언제나 `[]`)도 어느 골든에도 기록되지 않는다. 기능을 선언하지 않은 스타일도 `capabilityOpen`에서 첨부 2개를 받는다 — 첨부의 모양은 스타일과 무관한 고정 계약이기 때문이다.
 
 이 파일이 없으면 고정 장치에 구멍이 남는다. 태그 이후에 쓰이는 `StylesThirdPartyGstackTests.swift`는 허용 목록 **안**에 있고 골든을 기록한 바로 그 손이 쓰므로, 무엇이든 단언할 수 있다 — "기록 모드가 태그 이전에 존재한다"는 사실만으로는 그것이 **실제로 쓰였는지** 아무 얼어붙은 코드도 확인하지 않는다. 글롭이 그 고리를 닫는다: 매니페스트를 추가하는 것만으로 얼어붙은 코드가 골든을 요구하고 검사한다. 태그 이후의 테스트 파일은 장식이지 계약이 아니다.
 
@@ -1536,15 +1586,15 @@ scripts/check-style-freeze.sh                       # 0
 | `StylesBundledTests` | 번들 매니페스트 2개가 3.2의 탐색으로 발견되고 디코딩·검증을 통과한다. id가 `ouroboros`·`paperthin`. `swift test`와 `.app` 양쪽 후보 경로에서 실패 없이 돈다 |
 | `StylesOuroborosTests` | 5.9의 값 전부 |
 | `StylesPaperthinTests` | 5.9의 값 전부 |
-| `StyleManifestTests` | 2장 오류 코드 **하나마다 최소 한 개**의 거부 픽스처(46개). 유효 최소 매니페스트가 통과한다 |
-| `StyleRegistryTests` | 우선순위 3종, 같은 출처 안 충돌의 결정적 순서, `applicable`이 남의 워크스페이스 매니페스트를 내지 않음, 원격 워크스페이스가 workspace 출처를 내지 않음, `mightyStyle` 정규화(3.4), **레지스트리 제목**이 교차 스타일 값을 낸다(1.10), 해시 불일치 창이 제목을 잃는다 |
-| `StyleTrustTests` | 승인 → `approved`, 1바이트 수정 → 스캔 후 `pending`, 취소 → `revoked`, 내용이 바뀌어도 자리가 `revoked`, 레코드 파일 권한 0600, 256개 상한, 잠금 상태, 원자적 병합 |
-| `StyleEvaluatorTests` | 프롬프트 치환 4경우(텍스트 있음/없음 × 두 접기), `recognised` vs `namesSomething`의 차이(`"ooo 이거 해줘"`), 별칭, 단계 계산, `start`/`byPhase`/`byGroup`, Enter 6조건 각각의 거짓 경우, `initialGroup` 3상태, `guidance`의 `{phase}` 치환과 단계 없을 때의 삭제 |
-| `StyleCapabilityTests` | 케이스북 3상태, 파일 순서, 링크 미추적(폴더 링크·항목 링크·하드 링크), 24개 스캔 상한, 6개 칩 상한, 빈 상태 문구, **출력 문자열 정규화**(U+202E가 든 폴더명 → U+FFFD) |
+| `StyleManifestTests` | 2장 오류 코드 **하나마다 최소 한 개**의 거부 픽스처(47개). 목록은 **프로덕션의 `StyleErrorCodes.all`과 집합으로 같아야** 한다 — 테스트 안의 숫자 리터럴은 새 코드를 알아차리지 못한다. 유효 최소 매니페스트가 통과한다. 키의 이스케이프(`E_KEY_ESCAPE`, 확인된 `autoAllow` 공격 입력 포함) · 키의 제어 문자·길이 · 최상위 뒤 잔여물 · `map` 없는 규칙 · `glyph`의 ZWJ 이모지 · `lowercase` 인식 아래의 대문자 id/match/별칭 |
+| `StyleRegistryTests` | 우선순위 3종, 같은 출처 안 충돌의 결정적 순서(§3.3의 이름순), `applicable`이 남의 워크스페이스 매니페스트를 내지 않음, 원격 워크스페이스가 workspace 출처를 내지 않음, `mightyStyle` 정규화(3.4), **레지스트리 제목**이 교차 스타일 값을 낸다(1.10), 인식되지 않은 입력은 아이콘·색도 얻지 않는다, 스타일 없는 실행 창은 훑을 것이 없다, 해시 불일치 창이 제목을 잃는다, 링크·하드 링크 픽스처는 32개 상한 **안쪽**에 정렬되는 이름을 쓴다 |
+| `StyleTrustTests` | 승인 → `approved`, 1바이트 수정 → 스캔 후 `pending`, 취소 → `revoked`, 내용이 바뀌어도 자리가 `revoked`, 레코드 파일 권한 0600, 256개 상한, 잠금 상태, 원자적 병합, **병합이 자리당 승인 하나를 지키고 거부는 전부 남긴다**(4.3), 로드 뒤 깨진 파일은 잠기고 덮어쓰이지 않는다, 두 번째 프로세스의 승인이 다음 `load()`에 보인다 |
+| `StyleEvaluatorTests` | 프롬프트 치환 4경우(텍스트 있음/없음 × 두 접기), `recognised` vs `namesSomething`의 차이(`"ooo 이거 해줘"`), 별칭, 단계 계산, `start`/`byPhase`/`byGroup`, Enter 6조건 각각의 거짓 경우와 **되돌리기 칩 예외**, 무장 칩이 입력창의 글까지 본다, 질문이 Enter 규칙보다 먼저다(`StyleComposer`), 실행 중 `byPhase`는 칩이 없고 `byGroup`은 그대로다, `initialGroup` 3상태, 추천이 그룹과 무관하다, `guidance`의 `{phase}` 치환과 단계 없을 때의 삭제 |
+| `StyleCapabilityTests` | 케이스북 3상태, 파일 순서, 링크 미추적(폴더 링크·항목 링크·하드 링크), **정렬 뒤** 24개 상한(긴 이력에서 최신 폴더를 놓치지 않는다), 6개 칩 상한, 빈 상태 문구, **출력 문자열 정규화**(U+202E가 든 폴더명 → U+FFFD), 80자 한도가 `…`를 포함해 정확히 80 |
 | `StyleProjectionTests` | 투영이 매니페스트와 상태를 빠짐없이 옮긴다. `source`가 실린다. 레거시 어댑터가 내장 둘의 옛 페이로드를 **오늘과 같은 값**으로 만든다 |
-| `StyleGoldenContractTests` | 8.4 — `styles/*.json` 글롭, 골든 존재·일치. 태그 이전에 쓰이고 허용 목록 밖에 산다 |
+| `StyleGoldenContractTests` | 8.4 — `styles/*.json` 글롭, 골든 존재·일치. `styles/` 폴더가 아예 없으면 **소리 내어 실패한다**(빈 글롭과 잘못된 경로가 구별되지 않으면 관문 전체가 조용한 no-op이 된다). 태그 이전에 쓰이고 허용 목록 밖에 산다 |
 | `TerminalInputPolicyTests` | 9.3의 `installIsNeverRun` |
-| `MobileRemoteExtensionTests` (기존) | `styleId`/`panel` 인코딩, `options.styles`, `/guided` 새·옛 형식, 미승인 400, 빈 글로도 `interview`가 나간다(1.3.3) |
+| `MobileRemoteExtensionTests` (기존) | `styleId`/`panel` 인코딩, `options.styles`, `/guided` 새·옛 형식, 미승인 400, 빈 글로도 `interview`가 나간다(1.3.3). 레거시 페이로드의 단언은 **매니페스트에서 다시 읽은 값이 아니라 리터럴**이다(삭제된 `OuroborosFlowTests`·`PaperthinCatalogTests`가 박아 두었던 id 목록 그대로). `/guided`의 관문 판정(`guidedDecision`), 폰이 그룹을 고르지 않아도 추천이 살아 있다, 128개 요청 창에서 밀려난 단계는 진입 단계로 읽힌다 |
 
 픽스처가 자명하지 않은 코드들: `E_SCHEMA_NOT_FIRST`(`{"id":"x","schema":1,…}`) · `E_DUPLICATE_KEY`(`"enter"` 두 번) · `E_TOO_DEEP`(9단, 그리고 `[`가 131 072개) · `E_RESERVED_NAME`(`"ＯＵＲＯＢＯＲＯＳ"` 전각) · `E_RESERVED_SEPARATOR`(`"name": "Flow · 승인됨"`) · `E_FOLD_TEXT`(`takesText:false` + `foldText`) · `E_PROMPT_RECOGNITION`(`id:"a"`, `prompt:"/b"`) · `E_START_PHASE`(없는 단계) · `E_PHASE_RULE_NONE`(`phases` 있음 + `phase:none`) · `E_ENTER_ACTION_TEXT`(`takesText:false` 행동을 가리키는 Enter) · `E_PROBE_NAME_SHAPE`(`"-bad"`) · `E_SCOPES`(`[]`, `["user","user"]`) · `E_AUTOALLOW_FOREIGN_SERVER`(`plugin_other_x`) · `E_AUTOALLOW_TOOLSEARCH_BUNDLED`(비번들 + `ToolSearch`) · `E_AUTOALLOW_SHAPE`(`server:"a_"`, `tool:"_b"`) · `E_UNKNOWN_ICON`(`"lock.fill"`) · `E_TYPE`(`"order": 1e308`, `glyph` 2자, `glyph`가 이모지가 아닌 문자).
 
@@ -1583,10 +1633,14 @@ scripts/check-style-freeze.sh                       # 0
 | `unapprovedGuidedIs400` | `/guided`와 `/settings`가 **같은 문자열**로 400 `"알 수 없는 스타일입니다."` (404도 409도 아님), 둘 다 디스크를 읽지 않는다 |
 | `oversizeAndDepthRefused` | 256 KB+1바이트 → `E_TOO_LARGE`; 9단 중첩 → `E_TOO_DEEP`; **`[`가 131 072개인 파일 → `E_TOO_DEEP`이고**(`E_NOT_JSON`이 아니고) **프로세스가 살아 있다** |
 | `duplicateKeysRefused` | `"enter"`가 두 번 → `E_DUPLICATE_KEY` |
+| `escapedKeysRefused` | 키 리터럴에 `\uXXXX`·`\"`가 있으면 `E_KEY_ESCAPE`. 확인된 공격 입력(`"autoAllow":[]`가 원본에 보이는데 엔진은 `Bash`·`Write`를 허용)이 거부된다 |
+| `installTitleCannotForgeChrome` | `install.paneTitle`에 `·` → `E_RESERVED_SEPARATOR`. 비번들 스타일의 설치 창 제목에 출처 배지가 붙는다 |
+| `approvingARepositoryStyleCopiesNothing` | 워크스페이스 매니페스트 승인이 `<데이터 폴더>/styles/`에 파일을 만들지 않는다 |
+| `mergeKeepsOneApprovalPerPlace` | 두 프로세스 창에서 같은 자리의 `approved`가 하나만 남고, 되돌린 옛 바이트는 `pending`이다. `revoked`는 전부 남는다 |
 | `controlCharsRefused` | `title`에 U+202E → `E_CONTROL_CHAR`; `name`에 U+200B → `E_CONTROL_CHAR`; `help`에 U+2028 → `E_CONTROL_CHAR` |
 | `errorMessagesAreBounded` | 20만 자 키 이름 → 메시지의 `<경로>`가 64자 + `…`이고 제어 문자가 U+FFFD로 바뀌어 있다 |
 | `capabilityOutputIsNormalised` | U+202E가 든 케이스북 폴더 이름이 Mac 패널과 폰 페이로드 양쪽에서 U+FFFD로 바뀌어 나온다 |
-| `enterRewriteIsFirstRequestOnly` | 요청이 하나라도 있으면 `enterBehaviour`가 `.verbatim`이다. `takesText:false` 행동을 가리키면 매니페스트가 `E_ENTER_ACTION_TEXT`로 거부된다 |
+| `enterRewriteIsFirstRequestOnly` | 요청이 하나라도 있으면 `enterBehaviour`가 `.verbatim`이다 — **되돌리기 칩을 누른 상태만 예외**이며, 그 상태에서도 나머지 다섯 조건은 그대로 걸린다. `takesText:false` 행동을 가리키면 매니페스트가 `E_ENTER_ACTION_TEXT`로 거부된다 |
 | `installIsNeverRun` | `TerminalInputPolicy.apply`가 `autoRun: false` 입력에 대해 스파이 싱크의 `sendEnter()`를 **부르지 않는다**(`paste(text:)`만 부른다). `autoRun: true`면 둘 다 부른다. 줄바꿈이 든 입력은 붙여넣기 자체가 거부되고 `.refused` 를 돌려준다. 그리고 `AppStore`가 매니페스트 설치를 시작하면 `pendingTerminalInput`의 `autoRun`이 false다 |
 
 ---
@@ -1613,6 +1667,8 @@ scripts/check-style-freeze.sh                       # 0
 16. **단계 막대와 그룹 선택기의 공존.** `byPhase`와 `byGroup`은 배타적이고(1.4), `byPhase`를 쓰면 `groups`는 승인 카드와 폰 페이로드의 설명으로만 남는다. "단계로 진행하면서 그룹으로 고르기"는 못 쓴다.
 17. **닫힌 아이콘 목록.** 스푸핑을 막기 위해 `icon`을 33개로 고정했다(1.10). 임의의 SF Symbol을 쓰려는 스타일은 `glyph`(이모지 1자)로 내려가거나 목록 확장을 기다려야 한다. 목록 확장은 앱 업데이트지 매니페스트가 아니다.
 18. **`requiresText`는 라우트에서 강제되지 않는다.** UI 힌트이며 `/guided`는 보지 않는다(1.3.3). "이 행동은 폰에서도 반드시 글이 있어야 한다"는 표현할 수 없다.
+
+리뷰에서 나와 고정 이후로 미룬 두 가지도 같은 파일에 적혀 있다: 플러그인 이름의 `_` 때문에 1.9의 소속 규칙이 이름 하나를 정확히 짚지 못하는 잔여 헐거움(19), 그리고 이 기능 이전부터 있던 Ghostty 붙여넣기 확인의 자동 응답(20). 둘 다 매니페스트에서 닿지 않는다.
 
 ---
 

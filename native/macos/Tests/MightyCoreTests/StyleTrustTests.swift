@@ -136,6 +136,64 @@ struct StyleTrustTests {
         #expect(paths == ["/data/styles/a.json", "/data/styles/b.json", "/data/styles/c.json"])
     }
 
+    /// §4.3's "one approval per place" has to survive the merge too: two live
+    /// approvals at one file mean a commit reverting the manifest to already
+    /// approved bytes runs with no prompt and no badge change.
+    @Test func aMergeKeepsOneApprovalPerPlaceAndEveryRefusal() async throws {
+        let root = StyleFixtures.temporaryDirectory("style-trust-merge")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let mine = store(root), theirs = store(root)
+        let path = root.appendingPathComponent("flow.json").path
+        let v1 = StyleFixtures.data(StyleFixtures.flat, ["summary": "\"v1\""])
+        let v2 = StyleFixtures.data(StyleFixtures.flat, ["summary": "\"v2\""])
+        // Process A approves v1 and keeps that snapshot; process B approves v2.
+        try await mine.approve(try style(v1, path: path))
+        try await theirs.approve(try style(v2, path: path))
+        // A's next write merges B's file in — and must not resurrect v1.
+        try await mine.approve(try style(v2, path: "/data/styles/other.json"))
+        let records = try await mine.load()
+        let here = records.filter { $0.path == path }
+        #expect(here.count == 1 && here.first?.hash == StyleHash.of(v2))
+        let file = StyleFixtures.discovered(v1, source: .user, url: URL(fileURLWithPath: path))
+        #expect(StyleTrustStore.state(for: file, in: records) == .pending)
+        #expect(StyleTrustStore.state(for: StyleFixtures.discovered(v2, source: .user, url: URL(fileURLWithPath: path)), in: records) == .approved)
+
+        // Refusals are keyed by their bytes as well, so none of them is lost.
+        let refusals = [StyleApprovalRecord(styleId: "flow", source: .user, path: "/x.json", hash: "h1", state: "revoked", decidedAt: Date(timeIntervalSince1970: 1)),
+                        StyleApprovalRecord(styleId: "flow", source: .user, path: "/x.json", hash: "h2", state: "revoked", decidedAt: Date(timeIntervalSince1970: 2))]
+        #expect(StyleTrustStore.merge(refusals, []).count == 2)
+        let approvals = [StyleApprovalRecord(styleId: "flow", source: .user, path: "/x.json", hash: "h1", state: "approved", decidedAt: Date(timeIntervalSince1970: 1)),
+                         StyleApprovalRecord(styleId: "flow", source: .user, path: "/x.json", hash: "h2", state: "approved", decidedAt: Date(timeIntervalSince1970: 2))]
+        #expect(StyleTrustStore.merge(approvals, []).map(\.hash) == ["h2"])
+    }
+
+    /// A store another process left unreadable is closed, not overwritten —
+    /// the first read already does this, and so must the re-read (§4.3).
+    @Test func aStoreThatTurnsUnreadableAfterLoadingIsClosedNotRewritten() async throws {
+        let root = StyleFixtures.temporaryDirectory("style-trust-corrupt")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let trust = store(root)
+        let file = root.appendingPathComponent("style-trust/approvals.json")
+        try await trust.approve(try style(StyleFixtures.data(), path: "/data/styles/a.json"))
+        #expect(try await trust.load().count == 1)
+        // A second process leaves a half-written file behind.
+        let broken = Data("{\"version\":1,\"records\":[".utf8)
+        try broken.write(to: file)
+        await #expect(throws: StyleTrustFailure.self) { try await trust.approve(try style(StyleFixtures.data(), path: "/data/styles/b.json")) }
+        #expect(try Data(contentsOf: file) == broken)
+        #expect(await trust.isLocked)
+    }
+
+    /// A second process's approvals are visible to this one's next scan.
+    @Test func loadSeesWhatAnotherProcessWroteAfterTheFirstRead() async throws {
+        let root = StyleFixtures.temporaryDirectory("style-trust-stale")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let mine = store(root), theirs = store(root)
+        #expect(try await mine.load().isEmpty)
+        try await theirs.approve(try style(StyleFixtures.data(), path: "/data/styles/a.json"))
+        #expect(try await mine.load().map(\.path) == ["/data/styles/a.json"])
+    }
+
     @Test func theTrustStoreIsOutsideTheScannedFolder() async throws {
         let root = StyleFixtures.temporaryDirectory("style-data")
         defer { try? FileManager.default.removeItem(at: root) }

@@ -49,19 +49,29 @@ export const MAX_RUNS = 20;
 export const MAX_BLOCKS_PER_RUN = 200;
 
 /**
- * C0/C1 controls and the bidi overrides. Newline and tab survive in block output, which
- * is shown as a monospace excerpt.
+ * Contract 1.11's banned set, collapsed to a space so a preview stays one line. Written
+ * with `\u` escapes: the characters themselves would be invisible in this file.
  */
-const UNSAFE_PREVIEW = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNSAFE_PREVIEW =
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
+
+/**
+ * Both tables are keyed by a word the host chose, so the lookup goes through `Object.hasOwn`:
+ * a plain object answers `constructor` with a function and `__proto__` with an object,
+ * and either one would reach `<Text>` as something that is not a string.
+ */
+function labelled(table: Record<string, string>, key: string): string | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
 
 /** The label for a block kind, or the word the host sent when we do not know it. */
 export function blockKindLabel(kind: string): string {
-  return BLOCK_KIND_LABELS[kind] ?? (kind.length > 0 ? kind : '블록');
+  return labelled(BLOCK_KIND_LABELS, kind) ?? (kind.length > 0 ? kind : '블록');
 }
 
 /** The mark for a block kind; an unknown kind gets the neutral one. */
 export function blockKindMark(kind: string): string {
-  return BLOCK_KIND_MARKS[kind] ?? UNKNOWN_BLOCK_MARK;
+  return labelled(BLOCK_KIND_MARKS, kind) ?? UNKNOWN_BLOCK_MARK;
 }
 
 /** The block's own title, falling back to what its kind is called. */
@@ -150,6 +160,9 @@ export function normalizeMighty(raw: unknown): MobileMighty | undefined {
   if (styleId.length > 0) mighty.styleId = styleId;
   const panel = normalizeStylePanel(raw.panel);
   if (panel) mighty.panel = panel;
+  // A panel that arrived and could not be read is not the same as no panel at all:
+  // `panelOf` says so on screen rather than falling back to the legacy payload.
+  else if (raw.panel !== undefined && raw.panel !== null) mighty.panelUnreadable = true;
   const ouroboros = normalizeLegacyOuroboros(raw.ouroboros);
   if (ouroboros) mighty.ouroboros = ouroboros;
   const paperthin = normalizeLegacyPaperthin(raw.paperthin);

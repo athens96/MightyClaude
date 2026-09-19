@@ -58,10 +58,24 @@ struct StyleRegistryTests {
         #expect(bundles.requestTitle(forInput: "ooo 이거 해줘", workspace: nil) == nil)
         #expect(bundles.requestIcon(forInput: "/ouroboros:seed", workspace: nil)?.rawValue == "leaf")
         #expect(bundles.requestTint(forInput: "/nba", workspace: nil) == .accent)
+        // Nothing recognised means no icon and no tint of its own, or every
+        // plain request block would wear the style's presentation (§1.10).
+        #expect(bundles.requestIcon(forInput: "/help 좀", workspace: nil) == nil)
+        #expect(bundles.requestIcon(forInput: "그냥 문장", workspace: nil) == nil)
+        #expect(bundles.requestTint(forInput: "/help 좀", workspace: nil) == .accent)
+        #expect(bundles.requestTitle(forInput: "/help 좀", workspace: nil) == nil)
+        // A pane that runs no style at all sweeps nothing: the old
+        // `MightyStyles.requestTitle(forInput:style:nil)` answered nil, and an
+        // empty sweep is how that pane is expressed now (§1.10).
+        let plain = StyleRequestTitles()
+        #expect(plain.prefix("/nba") == nil && plain.icon("/nba") == nil && plain.tint("/nba") == .accent)
         // An unapproved style names nothing, not even through a title (§4.5).
         let pending = file("flow", source: .user, name: "/data/styles/flow.json")
         let quiet = StyleRegistry(styles: StyleRegistry.make(files: [pending], approvals: []).styles)
         #expect(quiet.styles[0].approval == .pending && quiet.requestTitle(forInput: "/go", workspace: nil) == nil)
+        #expect(quiet.runnableInPrecedence(workspace: nil).isEmpty)
+        // Precedence is `bundled` > `user` > `workspace`, id order within one.
+        #expect(bundles.runnableInPrecedence(workspace: nil).map(\.id) == ["ouroboros", "paperthin"])
     }
 
     @Test func savedStyleIsNormalisedByShapeAndOptionallyByKnownIds() throws {
@@ -95,12 +109,17 @@ struct StyleRegistryTests {
         let found = StyleSourceScanner.workspace(path: workspace.path)
         #expect(found.count == StyleLimits.maximumFilesPerSource && found.allSatisfy { $0.workspacePath == workspace.path.resolvedStylePath })
         // A hard link is indistinguishable from a plain file except by count.
+        // The names sort *before* the 32 plain files, or the read would stop
+        // at the cap and never look at them — and the guard would go untested.
         let linked = root.appendingPathComponent("elsewhere.json")
         try StyleFixtures.write(StyleFixtures.data(), to: linked)
-        try FileManager.default.linkItem(at: linked, to: directory.appendingPathComponent("aa-hard.json"))
-        try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("ab-soft.json"), withDestinationURL: linked)
-        let names = Set(StyleSourceScanner.workspace(path: workspace.path).map(\.url.lastPathComponent))
-        #expect(!names.contains("aa-hard.json") && !names.contains("ab-soft.json"))
+        try FileManager.default.linkItem(at: linked, to: directory.appendingPathComponent("00a-hard.json"))
+        try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("00b-soft.json"), withDestinationURL: linked)
+        let found2 = StyleSourceScanner.workspace(path: workspace.path)
+        let names = Set(found2.map(\.url.lastPathComponent))
+        #expect(!names.contains("00a-hard.json") && !names.contains("00b-soft.json"))
+        // Both are inside the window the read actually examines.
+        #expect(names.contains("00.json") && names.contains("01.json") && found2.count == StyleLimits.maximumFilesPerSource)
         // A linked styles folder puts the source outside the repository.
         let outside = root.appendingPathComponent("outside", isDirectory: true)
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)

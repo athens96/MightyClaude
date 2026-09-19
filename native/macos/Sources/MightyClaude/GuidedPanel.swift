@@ -73,6 +73,9 @@ struct GuidedPanel: View {
     let session: RunSession
     let style: RegisteredStyle
     let running: Bool
+    /// The pane works its phase out once and hands it down: reading it here
+    /// too would walk the whole request history again on every keystroke.
+    let phase: StylePhase?
     @Binding var selection: GuidedSelection
     /// Commits a syllable the input method is still composing before the
     /// panel reads or replaces the draft.
@@ -80,18 +83,18 @@ struct GuidedPanel: View {
 
     private var manifest: StyleManifest { style.manifest }
     private var evaluator: StyleEvaluator { style.evaluator }
-    private var states: [String: String] { store.styleStates(for: session) }
-    private var phase: StylePhase? { evaluator.currentPhase(session: session) }
+    private var states: [String: String] { store.styleStates(style, for: session) }
     private var group: StyleGroup? {
         selection.groupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: states)
     }
     private var draft: String { (store.drafts[session.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var capabilitiesLoaded: Bool { store.styleCapabilitiesLoaded.contains(session.workspaceId) }
+    private var capabilitiesLoaded: Bool { store.styleCapabilitiesAreLoaded(style, for: session) }
     private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: 5, alignment: .leading)]
 
     var body: some View {
-        let chips = StyleChips.make(evaluator, phase: phase, group: group, startingNew: selection.startingNew, capabilityStates: states)
-        let setup = store.stylePrerequisites[style.id]
+        let chips = StyleChips.make(evaluator, phase: phase, group: group, startingNew: selection.startingNew,
+                                    capabilityStates: states, running: running)
+        let setup = store.stylePrerequisite(style, for: session)
         return VStack(alignment: .leading, spacing: 8) {
             if !manifest.phases.isEmpty { stepper(chips.phaseId) }
             // A waiting question always wins: nothing else may hide it.
@@ -107,7 +110,7 @@ struct GuidedPanel: View {
                     }
                 }
                 if showsAttachments { attachmentRow }
-                actionRow(chips)
+                if chips.progress { progressRow } else { actionRow(chips) }
                 if let guidance = evaluator.guidanceLine(phase: chips.phaseId.flatMap { manifest.phase($0) }, running: running) {
                     Text(verbatim: guidance).font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -197,14 +200,10 @@ struct GuidedPanel: View {
 
     /// The group whose recommendation the built-in feature feeds, when there
     /// is one; otherwise the row belongs to the whole style (§6.1).
-    private var attachmentGroupId: String? {
-        guard case .capability(_, _, let group) = manifest.rules.recommend else { return nil }
-        return group
-    }
     private var showsAttachments: Bool {
         guard !manifest.capabilities.isEmpty else { return false }
-        guard let attachmentGroupId else { return true }
-        return group?.id == attachmentGroupId
+        guard let named = evaluator.recommendGroupId else { return true }
+        return group?.id == named
     }
     /// The empty line the feature itself supplies (§1.8).
     private var attachmentEmptyDetail: String {
@@ -212,7 +211,7 @@ struct GuidedPanel: View {
     }
 
     private var attachmentRow: some View {
-        let items = store.styleChips(for: session)
+        let items = store.styleChips(style, for: session)
         return HStack(spacing: 6) {
             Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(.secondary)
             if items.isEmpty {
@@ -257,11 +256,21 @@ struct GuidedPanel: View {
 
     // MARK: 7 · actions
 
+    /// A sequence in flight offers nothing to press, so the row is a spinner
+    /// and the guidance line below it says what is running (§6.1).
+    private var progressRow: some View {
+        HStack(spacing: 7) {
+            ProgressView().controlSize(.small)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore).accessibilityLabel("실행 중")
+        .accessibilityIdentifier("mighty-progress-\(session.id)")
+    }
+
     private func actionRow(_ chips: StyleChipList) -> some View {
         let recommended = chips.recommendedId
-        let grid = manifest.groups.count > 1 && chips.actions.count > 6
         return Group {
-            if grid {
+            if chips.grid {
                 VStack(alignment: .leading, spacing: 5) {
                     ScrollView {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 5) {

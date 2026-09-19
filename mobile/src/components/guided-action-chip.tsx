@@ -2,11 +2,15 @@ import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 import type { StyleAction } from '@/api/types';
 import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
-/** The Mac's `readOnly`/`userInvoked` marks; this app has no SF Symbol renderer. */
-const FLAG_MARKS: Record<string, string> = {
-  userInvoked: '👤',
-  readOnly: '👁',
-};
+/**
+ * The Mac's `readOnly`/`userInvoked` marks; this app has no SF Symbol renderer. A `Map`,
+ * because `flags` carries whatever words the host sent: a plain object would answer
+ * `constructor` with a function and hand `<Text>` something that is not a string.
+ */
+const FLAG_MARKS = new Map<string, string>([
+  ['userInvoked', '👤'],
+  ['readOnly', '👁'],
+]);
 
 /**
  * One action of a guided style. The chip carries the manifest's own glyph and title —
@@ -36,7 +40,9 @@ export function GuidedActionChip({
 }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
-  const marks = action.flags.map((flag) => FLAG_MARKS[flag]).filter((mark) => mark !== undefined);
+  const marks = action.flags
+    .map((flag) => FLAG_MARKS.get(flag))
+    .filter((mark): mark is string => mark !== undefined);
   const label = action.help ? `${action.title} · ${action.help}` : action.title;
 
   return (

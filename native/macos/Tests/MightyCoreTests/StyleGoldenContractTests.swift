@@ -6,14 +6,26 @@ import Testing
 /// manifest to `styles/` is by itself enough to make frozen code demand and
 /// check its golden (§8.4). Zero manifests is a valid state today.
 struct StyleGoldenContractTests {
-    private func manifests() -> [URL] {
-        let found = (try? FileManager.default.contentsOfDirectory(at: StyleGolden.stylesDirectory,
-                                                                  includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+    private func manifests() throws -> [URL] {
+        // A wrong `stylesDirectory` and an empty one look identical from a
+        // glob, and the empty answer is the one that passes: say so loudly
+        // rather than let the whole gate become a no-op (§8.4).
+        var isDirectory: ObjCBool = false
+        let path = StyleGolden.stylesDirectory.path
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            Issue.record("styles 폴더를 찾지 못했습니다: \(path). StyleGolden.repositoryRoot를 확인하세요.")
+            return []
+        }
+        let found = try FileManager.default.contentsOfDirectory(at: StyleGolden.stylesDirectory,
+                                                                includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
         return found.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
     @Test func everyManifestInTheRepositoryDecodesAndMatchesItsGolden() throws {
-        for url in manifests() {
+        // The goldens the bundled pair records live here too, so the directory
+        // is never empty and the glob is never silently vacuous.
+        #expect(FileManager.default.fileExists(atPath: StyleGolden.goldenDirectory.path))
+        for url in try manifests() {
             let data = try Data(contentsOf: url)
             let manifest = try StyleManifestDecoder.decode(data, source: .user)
             #expect(url.lastPathComponent == manifest.id + ".json")
@@ -28,8 +40,7 @@ struct StyleGoldenContractTests {
     @Test func theBundledStylesHaveGoldens() throws {
         for id in ["ouroboros", "paperthin"] {
             let style = StyleFixtures.bundled(id)
-            let states = StyleCapabilityID.all.isEmpty ? [:] : [StyleCapabilityID.casebook: "absent"]
-            try StyleGolden.check(StyleGolden.projection(for: style, casebookStates: states), id: id)
+            try StyleGolden.check(StyleGolden.projection(for: style, casebookStates: [StyleCapabilityID.casebook: "absent"]), id: id)
         }
     }
 

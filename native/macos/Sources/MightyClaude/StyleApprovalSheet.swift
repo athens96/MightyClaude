@@ -135,10 +135,10 @@ struct StyleApprovalSheet: View {
 
     private func allow() {
         if autoAllowCount > 0, !confirming { confirming = true; return }
-        let approved = style
-        store.approveStyle(approved, data: candidate.data) { ok in
-            if ok { onApproved(approved) }
-        }
+        // `data` is present only for a file the user picked, which is not yet
+        // on disk; the style handed back is the one the fresh registry
+        // resolved, so the pane binds to the bytes just approved (§4.4, §4.5).
+        store.approveStyle(style, data: candidate.data) { approved in onApproved(approved) }
         onClose()
     }
 }

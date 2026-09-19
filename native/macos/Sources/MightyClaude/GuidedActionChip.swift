@@ -78,18 +78,6 @@ struct GuidedApprovalStrip: View {
     }
 }
 
-/// Request-block titles, icons and colours as the graph asks for them: the
-/// registry sweeps every runnable style in precedence order, because a pane
-/// keeps the blocks it made under an earlier style (§1.10).
-struct StyleTitleSource {
-    var registry = StyleRegistry()
-    var workspace: StyleWorkspaceRef?
-
-    func prefix(_ input: String) -> String? { registry.requestTitle(forInput: input, workspace: workspace) }
-    func icon(_ input: String) -> StyleIcon? { registry.requestIcon(forInput: input, workspace: workspace) }
-    func tint(_ input: String) -> StyleTint { registry.requestTint(forInput: input, workspace: workspace) }
-}
-
 /// The badge that follows a non-bundled name wherever it is drawn (§1.10).
 struct SourceBadge: View {
     let text: String

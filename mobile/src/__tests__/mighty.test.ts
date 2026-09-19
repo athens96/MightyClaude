@@ -286,4 +286,26 @@ describe('which panes draw a guided panel', () => {
     expect(panelOf(normalizeMighty({ style: 'gstack', runs: [] }))).toBeUndefined();
     expect(panelOf(undefined)).toBeUndefined();
   });
+
+  it('keeps a panel it could not read apart from a pane that has none', () => {
+    // No panel at all is a CLI pane; a panel that arrived unreadable is a host change
+    // this app does not know about, and the screen says so instead of quietly dropping
+    // to the legacy payload.
+    const unreadable = normalizeMighty({ style: 'cli', styleId: 'gstack', runs: [], panel: 7 });
+    expect(unreadable?.panel).toBeUndefined();
+    expect(unreadable?.panelUnreadable).toBe(true);
+    expect(panelOf(unreadable, true)?.setup.ready).toBe(false);
+    expect(normalizeMighty({ style: 'cli', runs: [] })?.panelUnreadable).toBeUndefined();
+  });
+});
+
+describe('block labels keyed by what the host sent', () => {
+  it('reads a prototype key as an unknown kind, not as a function', () => {
+    // A plain object answers `constructor` with a function and `__proto__` with an
+    // object, either of which would reach `<Text>` as something that is not a string.
+    for (const key of ['__proto__', 'constructor', 'toString', 'valueOf']) {
+      expect({ key, label: blockKindLabel(key) }).toEqual({ key, label: key });
+      expect({ key, mark: blockKindMark(key) }).toEqual({ key, mark: blockKindMark('hologram') });
+    }
+  });
 });

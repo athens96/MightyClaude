@@ -9,6 +9,19 @@ enum StyleCandidateOutcome {
     case refused(String)
 }
 
+/// A probe with `scopes: ["workspace"]` reads the pane's repository, so the
+/// answer belongs to the pair, not to the style alone (§1.5).
+struct StylePrerequisiteKey: Hashable {
+    var styleId: String
+    var workspacePath: String?
+}
+
+/// One built-in feature read in one workspace (§1.8).
+struct StyleCapabilityKey: Hashable {
+    var workspaceId: String
+    var name: String
+}
+
 /// Mighty mode's guided styles: the registry and its trust store, the pane's
 /// binding to one manifest, the prompts its buttons send, the agent's
 /// questions answered from the composer, and the style's own auto-allow list.
@@ -27,33 +40,51 @@ extension AppStore {
 
     /// Re-reads the three sources. There is no file watcher: a manifest that
     /// changed on disk stays as it was until the next scan (§3.1).
-    func rescanStyles(workspacePath: String? = nil) {
+    ///
+    /// The returned task settles once the new registry has been published, so
+    /// a caller that must act on the result — approving a style and then
+    /// putting the pane on it — can wait for it. Scans are chained rather than
+    /// run together: two overlapping sweeps would publish in arrival order.
+    @discardableResult
+    func rescanStyles(workspacePath: String? = nil) -> Task<Void, Never> {
         if let workspacePath { scannedStyleWorkspaces.insert(workspacePath) }
-        guard !styleScanInFlight else { styleScanAgain = true; return }
-        styleScanInFlight = true
+        let previous = styleScanTask
         let directory = styleDirectory
-        let workspaces = scannedStyleWorkspaces
         let store = styleTrust
-        // The whole scan runs off the main actor; only the result comes back.
-        Task.detached(priority: .utility) { [weak self] in
-            let files = Self.discover(directory: directory, workspaces: workspaces)
-            let records = (try? await store.load()) ?? []
-            let locked = await store.isLocked
-            let trustPath = await store.path
-            let made = StyleRegistry.make(files: files, approvals: records)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.styleScanInFlight = false
-                self.styleDiscovered = files
-                self.styleRegistry = StyleRegistry(styles: made.styles)
-                self.styleRejections = made.rejections
-                self.styleTrustLocked = locked
-                self.styleTrustPath = trustPath
-                // Approval, revocation and rescans change nothing in the
-                // snapshot, so a watching phone is told by hand (§4.6).
-                self.mobileObserve()
-                if self.styleScanAgain { self.styleScanAgain = false; self.rescanStyles() }
-            }
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            let workspaces = self.scannedStyleWorkspaces
+            // The whole scan runs off the main actor; only the result comes back.
+            let scanned = await Task.detached(priority: .utility) { () -> ([DiscoveredStyleFile], [StyleApprovalRecord], Bool, String) in
+                let files = Self.discover(directory: directory, workspaces: workspaces)
+                let records = (try? await store.load()) ?? []
+                return (files, records, await store.isLocked, await store.path)
+            }.value
+            let made = StyleRegistry.make(files: scanned.0, approvals: scanned.1)
+            self.styleDiscovered = scanned.0
+            self.styleRegistry = StyleRegistry(styles: made.styles)
+            self.styleRejections = made.rejections
+            self.styleTrustLocked = scanned.2
+            self.styleTrustPath = scanned.3
+            // Approval, revocation and rescans change nothing in the
+            // snapshot, so a watching phone is told by hand (§4.6).
+            self.mobileObserve()
+            // A restored pane has no style-id change to react to, so the reads
+            // its panel needs are started here, once the registry is known.
+            self.refreshStylesInView()
+        }
+        styleScanTask = task
+        return task
+    }
+
+    /// Every pane that really runs a style gets its prerequisites and built-in
+    /// features read. Both calls are cached and debounced, so this is cheap to
+    /// repeat and is the only thing that covers a pane restored from disk.
+    func refreshStylesInView() {
+        for session in snapshot.sessions {
+            guard let style = guidedStyle(session) else { continue }
+            refreshStyle(style, for: session)
         }
     }
 
@@ -63,6 +94,24 @@ extension AppStore {
         files += StyleSourceScanner.user(directory: directory)
         for path in workspaces.sorted() { files += StyleSourceScanner.workspace(path: path) }
         return files
+    }
+
+    /// A removed workspace keeps nothing behind: its scanned path would be
+    /// walked by every later scan, and its readings and manifest bytes would
+    /// sit in memory for the life of the process.
+    func forgetWorkspaceStyles(_ workspace: Workspace) {
+        scannedStyleWorkspaces.remove(workspace.path)
+        styleCapabilityStates = styleCapabilityStates.filter { $0.key.workspaceId != workspace.id }
+        styleAttachments = styleAttachments.filter { $0.key.workspaceId != workspace.id }
+        styleCapabilitiesLoaded = styleCapabilitiesLoaded.filter { $0.workspaceId != workspace.id }
+        styleCapabilityLoading = styleCapabilityLoading.filter { $0.workspaceId != workspace.id }
+        styleCapabilityAgain = styleCapabilityAgain.filter { $0.workspaceId != workspace.id }
+        styleCasebooks.removeValue(forKey: workspace.id)
+        stylePrerequisites = stylePrerequisites.filter { $0.key.workspacePath != workspace.path }
+        stylePrerequisiteAgain = stylePrerequisiteAgain.filter { $0.workspacePath != workspace.path }
+        // The rescan is what drops that workspace's discovered files, and with
+        // them the manifest bytes the approval card would have shown.
+        rescanStyles()
     }
 
     /// Called when a workspace draws its first pane, so a repo's manifests are
@@ -104,6 +153,8 @@ extension AppStore {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
         // An unapproved style is never entered from here: the sheet does it.
         let chosen = style.flatMap { value in applicableStyles(session).first { $0.id == value && $0.isRunnable } }
+        // Only choosing CLI clears a pane; a style that cannot be entered leaves it as it was.
+        if style != nil, chosen == nil { return }
         updateSession(id) { session in
             guard session.kind == "claude", session.provider == "claude" else { return }
             session.mightyStyle = chosen?.id
@@ -122,25 +173,44 @@ extension AppStore {
 
     // MARK: Prerequisites
 
-    /// Re-reads whether this style's requirements are met, cached per style id.
+    /// The path a probe with `scopes: ["workspace"]` reads, which is part of
+    /// the answer: the same style is ready in one clone and not in another.
+    func stylePrerequisiteKey(_ style: RegisteredStyle, for session: RunSession) -> StylePrerequisiteKey {
+        StylePrerequisiteKey(styleId: style.id,
+                             workspacePath: snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }?.path)
+    }
+
+    func stylePrerequisite(_ style: RegisteredStyle, for session: RunSession) -> StylePrerequisiteResult? {
+        stylePrerequisites[stylePrerequisiteKey(style, for: session)]
+    }
+
+    /// Re-reads whether this style's requirements are met, cached per style and
+    /// workspace path.
     func refreshStylePrerequisites(_ style: RegisteredStyle, for session: RunSession) {
-        let workspacePath = snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }?.path
+        loadStylePrerequisites(stylePrerequisiteKey(style, for: session),
+                               prerequisites: style.manifest.prerequisites, install: style.manifest.install)
+    }
+
+    private func loadStylePrerequisites(_ key: StylePrerequisiteKey, prerequisites: StylePrerequisites, install: StyleInstall?) {
         // Marked before the task starts, not inside it: a phone's long poll
         // asks again the moment it wakes, and would otherwise spawn one read
         // per poll until the first answer finally lands.
-        guard stylePrerequisiteLoading.insert(style.id).inserted else { return }
-        let prerequisites = style.manifest.prerequisites
-        let install = style.manifest.install
-        let id = style.id
+        guard stylePrerequisiteLoading.insert(key).inserted else { stylePrerequisiteAgain.insert(key); return }
+        let workspacePath = key.workspacePath
         Task.detached(priority: .utility) { [weak self] in
             let value = StylePrerequisiteProbe.evaluate(prerequisites, install: install, workspacePath: workspacePath)
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.stylePrerequisiteLoading.remove(id)
-                self.stylePrerequisites[id] = value
+                self.stylePrerequisiteLoading.remove(key)
+                self.stylePrerequisites[key] = value
                 // The phone's Mighty payload carries this and it does not live
                 // in the snapshot, so the revision has to be nudged by hand.
                 self.mobileObserve()
+                // A press of 다시 확인 while a read was already in flight is a
+                // request for a *fresh* answer, not for the one in flight.
+                if self.stylePrerequisiteAgain.remove(key) != nil {
+                    self.loadStylePrerequisites(key, prerequisites: prerequisites, install: install)
+                }
             }
         }
     }
@@ -148,12 +218,19 @@ extension AppStore {
     // MARK: Built-in capabilities
 
     /// Re-reads the named built-in features for this pane's workspace, cached
-    /// per workspace because that is what they read (§1.8).
+    /// per workspace **and feature name** because that is what they read (§1.8):
+    /// two styles naming different features in one workspace must not erase
+    /// each other's readings.
     func refreshStyleCapabilities(_ style: RegisteredStyle, for session: RunSession) {
-        let names = style.manifest.capabilities
-        guard !names.isEmpty, let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
-        let workspaceId = workspace.id, path = workspace.path
-        guard styleCapabilityLoading.insert(workspaceId).inserted else { return }
+        guard !style.manifest.capabilities.isEmpty,
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
+        loadStyleCapabilities(style.manifest.capabilities, workspaceId: workspace.id, path: workspace.path)
+    }
+
+    private func loadStyleCapabilities(_ names: [String], workspaceId: String, path: String) {
+        let keys = Set(names.map { StyleCapabilityKey(workspaceId: workspaceId, name: $0) })
+        guard styleCapabilityLoading.isDisjoint(with: keys) else { styleCapabilityAgain.formUnion(keys); return }
+        styleCapabilityLoading.formUnion(keys)
         Task.detached(priority: .utility) { [weak self] in
             let value = StyleCapabilities.evaluate(names, workspacePath: path)
             // The legacy phone payload carries the casebook itself, so the
@@ -161,18 +238,39 @@ extension AppStore {
             let casebook = names.contains(StyleCapabilityID.casebook) ? StyleCasebook.latest(workspacePath: path) : nil
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.styleCapabilityLoading.remove(workspaceId)
-                self.styleCapabilityStates[workspaceId] = value.states
-                self.styleAttachments[workspaceId] = value.attachments
+                self.styleCapabilityLoading.subtract(keys)
+                for key in keys {
+                    self.styleCapabilityStates[key] = value.states[key.name]
+                    self.styleAttachments[key] = value.attachments
+                    self.styleCapabilitiesLoaded.insert(key)
+                }
                 if let casebook { self.styleCasebooks[workspaceId] = casebook } else { self.styleCasebooks.removeValue(forKey: workspaceId) }
-                self.styleCapabilitiesLoaded.insert(workspaceId)
                 self.mobileObserve()
+                if !self.styleCapabilityAgain.isDisjoint(with: keys) {
+                    self.styleCapabilityAgain.subtract(keys)
+                    self.loadStyleCapabilities(names, workspaceId: workspaceId, path: path)
+                }
             }
         }
     }
 
-    func styleStates(for session: RunSession) -> [String: String] { styleCapabilityStates[session.workspaceId] ?? [:] }
-    func styleChips(for session: RunSession) -> [StyleAttachmentItem] { styleAttachments[session.workspaceId] ?? [] }
+    /// Only the features this style declared: another style's reading in the
+    /// same workspace is not part of this style's state (§1.8).
+    func styleStates(_ style: RegisteredStyle, for session: RunSession) -> [String: String] {
+        var states: [String: String] = [:]
+        for name in style.manifest.capabilities {
+            states[name] = styleCapabilityStates[StyleCapabilityKey(workspaceId: session.workspaceId, name: name)]
+        }
+        return states
+    }
+
+    func styleChips(_ style: RegisteredStyle, for session: RunSession) -> [StyleAttachmentItem] {
+        style.manifest.capabilities.flatMap { styleAttachments[StyleCapabilityKey(workspaceId: session.workspaceId, name: $0)] ?? [] }
+    }
+
+    func styleCapabilitiesAreLoaded(_ style: RegisteredStyle, for session: RunSession) -> Bool {
+        style.manifest.capabilities.allSatisfy { styleCapabilitiesLoaded.contains(StyleCapabilityKey(workspaceId: session.workspaceId, name: $0)) }
+    }
 
     // MARK: Sending
 
@@ -202,7 +300,7 @@ extension AppStore {
         guard let install = style.manifest.install else { return }
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }),
               let id = addSession(kind: "shell", workspaceId: workspace.id) else { error = "설치 터미널을 열지 못했습니다."; return }
-        updateSession(id) { $0.title = StyleChrome.installPaneTitle(install.paneTitle, styleName: style.manifest.name) }
+        updateSession(id) { $0.title = StyleChrome.installPaneTitle(install.paneTitle, styleName: style.manifest.name, source: style.source) }
         pendingTerminalInput[id] = TerminalInput(text: install.command, autoRun: false)
     }
 
@@ -307,23 +405,39 @@ extension AppStore {
     /// Says yes to the bytes that were shown. A workspace manifest is already
     /// on disk; a file the user picked is copied from the very bytes the card
     /// was built from, never re-read (§4.4).
-    func approveStyle(_ style: RegisteredStyle, data: Data? = nil, then: ((Bool) -> Void)? = nil) {
+    ///
+    /// `then` runs after the rescan has published the new registry, because
+    /// its whole job is to move the pane onto a style that only becomes
+    /// runnable in that registry (§4.5). It is never called with `true` for a
+    /// refused approval, so a pane already on another style keeps it.
+    func approveStyle(_ style: RegisteredStyle, data: Data? = nil, then: ((RegisteredStyle) -> Void)? = nil) {
         let store = styleTrust
         Task { [weak self] in
             var failure: String?
-            if let data {
+            // Only a file the user picked is copied, and only while it is not
+            // already where it would be written: approving a manifest found in
+            // a repository must not drop a second copy into the app's own data
+            // directory, where it would win precedence and refuse the original.
+            if let data, style.source == .user, !FileManager.default.fileExists(atPath: style.path) {
                 failure = await MainActor.run { self?.writeUserStyle(data, id: style.id) }
             }
             if failure == nil {
                 do { try await store.approve(style) }
                 catch { failure = Self.styleTrustMessage(error) }
             }
-            await MainActor.run {
-                guard let self else { return }
-                if let failure { self.error = failure }
+            guard let self else { return }
+            if let failure {
+                self.error = failure
                 self.rescanStyles()
-                then?(failure == nil)
+                return
             }
+            await self.rescanStyles().value
+            // The registry now holds the approved bytes; the pane may move.
+            guard let approved = self.styleRegistry.resolve(style.id), approved.hash == style.hash, approved.isRunnable else {
+                self.error = self.error ?? "스타일을 허용하지 못했습니다: " + style.manifest.name
+                return
+            }
+            then?(approved)
         }
     }
 
@@ -388,10 +502,14 @@ extension AppStore {
 
     /// The manifest limit applies before a byte is parsed, and the app module
     /// cannot reach the engine's own bounded reader (§1.11).
+    /// A plain read, never `.mappedIfSafe`: a mapped `Data` is a live view of
+    /// the file, so the card, the hash and the copy would all drift if the
+    /// original were rewritten while the card was open — and truncating it
+    /// under the mapping raises `SIGBUS` (§4.4).
     static func boundedStyleData(_ url: URL) -> Data? {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         guard size <= StyleLimits.maximumBytes else { return nil }
-        return try? Data(contentsOf: url, options: [.mappedIfSafe])
+        return try? Data(contentsOf: url)
     }
 
     /// The copy is named from the validated id, never from the file the user

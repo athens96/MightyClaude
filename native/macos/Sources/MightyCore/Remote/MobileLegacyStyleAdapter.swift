@@ -14,11 +14,15 @@ public enum MobileLegacyStyleAdapter {
 
     static func ouroboros(style: RegisteredStyle, panel: StylePanel) -> MobileOuroboros {
         let actions = style.manifest.actions
-        let byId = Dictionary(actions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // The old field is the phase map alone: at `goal` it was empty and the
+        // older phone fell back to `all`. `panel.next` now also carries the
+        // start rule's buttons, which that phone never saw (§7.4).
+        let phase = panel.phase.flatMap { style.manifest.phase($0.id) }
+        let next = style.evaluator.nextActions(phase: phase, group: nil)
         return MobileOuroboros(phase: panel.phase?.id ?? style.manifest.orderedPhases.first?.id ?? "",
                                ready: panel.setup.ready,
                                takesText: actions.filter(\.takesText).map(\.id),
-                               next: panel.next.compactMap { byId[$0] }.map(skill),
+                               next: next.map(skill),
                                all: actions.map(skill))
     }
 

@@ -6,6 +6,7 @@ import type {
   OuroborosAction,
   PaperthinDomain,
   PaperthinSkill,
+  SettingOption,
   StyleAction,
   StyleAttachment,
   StyleGroup,
@@ -35,12 +36,20 @@ export const MAX_SETUP_MISSING = 16;
 export const ACTION_FLAGS = ['userInvoked', 'readOnly'] as const;
 
 /**
- * C0/C1 controls and the bidi overrides, which can reorder what a row appears to say.
- * The Mac normalises manifest strings before they leave; this is the second layer.
+ * Contract 1.11's banned set, in full: C0/C1 controls, the bidi overrides and isolates
+ * that can reorder what a row appears to say, the zero-width characters and joiners that
+ * make `"Ouro<U+200B>boros"` read as a name it is not, and the line/paragraph separators
+ * that break a text box open. The Mac refuses a manifest carrying any of them; this is
+ * the second layer (contract 1.8), so it strips rather than refuses.
+ *
+ * Written with `\u` escapes on purpose: a file whose job is to delete invisible
+ * characters must not carry six of them where no reviewer can see them.
  */
-const UNSAFE_INLINE = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNSAFE_INLINE =
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
+/** The same set, less the whitespace a multi-line box keeps: tab, newline, return. */
 const UNSAFE_BLOCK =
-  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
 /** One line of safe text, trimmed and cut; anything that is not a string becomes ''. */
 export function inlineText(value: unknown, limit: number): string {
@@ -70,10 +79,16 @@ function stringList(value: unknown): string[] {
 
 // ------------------------------------------------------------------ presentation
 
-const SOURCE_BADGES: Record<string, string> = {
-  user: '사용자 등록',
-  workspace: '저장소에서 발견됨',
-};
+/**
+ * A `Map`, not an object literal: every table here is keyed by a word the host chose, and
+ * `{}` answers `__proto__` with an object and `constructor` with a function. Both would
+ * leave `<Text>` holding something that is not a string — one crashes the screen, the
+ * other draws nothing, which is exactly the unbadged name contract 1.10 exists to prevent.
+ */
+const SOURCE_BADGES = new Map<string, string>([
+  ['user', '사용자 등록'],
+  ['workspace', '저장소에서 발견됨'],
+]);
 
 /**
  * The badge drawn next to a style's name. Only the exact word `bundled` goes without
@@ -82,28 +97,75 @@ const SOURCE_BADGES: Record<string, string> = {
  */
 export function sourceBadge(source: string | undefined): string | undefined {
   if (source === 'bundled') return undefined;
-  return (source === undefined ? undefined : SOURCE_BADGES[source]) ?? '출처 불명';
+  return (source === undefined ? undefined : SOURCE_BADGES.get(source)) ?? '출처 불명';
 }
 
 /** The Mac's names for the Ouroboros phases; an unknown id is shown as it arrived. */
-const PHASE_LABELS: Record<string, string> = {
-  goal: '목표',
-  interview: '인터뷰',
-  seed: '시드',
-  run: '실행',
-  evaluate: '평가',
-  evolve: '진화',
-};
+const PHASE_LABELS = new Map<string, string>([
+  ['goal', '목표'],
+  ['interview', '인터뷰'],
+  ['seed', '시드'],
+  ['run', '실행'],
+  ['evaluate', '평가'],
+  ['evolve', '진화'],
+]);
 
 export function ouroborosPhaseLabel(phase: string): string {
-  return PHASE_LABELS[phase] ?? (phase.length > 0 ? phase : '단계');
+  return PHASE_LABELS.get(phase) ?? (phase.length > 0 ? phase : '단계');
+}
+
+/** The wire word for a pane running no guided style at all (contract 7.2). */
+const CLI_STYLE = 'cli';
+
+/**
+ * `MobileSettings.options.styles` as the picker draws it. Host JSON, so it is read as
+ * defensively as the panel is: an entry that is not an object, or one without an id, is
+ * dropped rather than followed into a crash. A style whose name is not one the app
+ * shipped is named with its source wherever the name appears, the picker included
+ * (contract 1.10); `cli` is the one entry that is no style at all, so it arrives without
+ * a source and wears no badge.
+ */
+export function styleOptions(raw: unknown): SettingOption[] {
+  return arrayOf(raw).flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const id = inlineText(entry.id, 40);
+    if (id.length === 0) return [];
+    const label = inlineText(entry.label, 80);
+    const option: SettingOption = { id, label: label.length > 0 ? label : id };
+    if (id === CLI_STYLE && entry.source === undefined) return [option];
+    const source = typeof entry.source === 'string' ? inlineText(entry.source, 40) : undefined;
+    const badge = sourceBadge(source);
+    if (badge) option.badge = badge;
+    return [option];
+  });
 }
 
 // ------------------------------------------------------------------ parsing
 
+/**
+ * The ids `POST /guided` accepts (contract 7.5). Every character is ASCII, so the route's
+ * 64-byte ceiling and this pattern's 64-character one are the same ceiling. An id outside
+ * it can only ever come back as a 400, so it gets no chip rather than a dead one.
+ */
+const POSTABLE_ACTION_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+
+function isPostableActionId(id: string): boolean {
+  return POSTABLE_ACTION_ID.test(id);
+}
+
+/**
+ * An action id, or '' when the route would refuse it. Read with room to spare on purpose:
+ * cutting a too-long id at 64 would hand back a different id, and a 70-character one
+ * whose head matches a real action would draw a chip under that action's name.
+ */
+function actionIdOf(value: unknown): string {
+  const id = inlineText(value, 128);
+  return isPostableActionId(id) ? id : '';
+}
+
 function parseAction(raw: unknown): StyleAction | undefined {
   if (!isRecord(raw)) return undefined;
-  const id = inlineText(raw.id, 64);
+  const id = actionIdOf(raw.id);
   if (id.length === 0) return undefined;
   const title = inlineText(raw.title, 40);
   const action: StyleAction = {
@@ -150,7 +212,7 @@ function actionIdList(raw: unknown, known: ReadonlySet<string>): string[] {
   const seen = new Set<string>();
   const ids: string[] = [];
   for (const entry of arrayOf(raw)) {
-    const id = inlineText(entry, 64);
+    const id = actionIdOf(entry);
     if (id.length === 0 || seen.has(id) || !known.has(id)) continue;
     seen.add(id);
     ids.push(id);
@@ -255,7 +317,7 @@ export function normalizeStylePanel(raw: unknown): StylePanel | undefined {
   if (presentationTint.length > 0) panel.presentation.tint = presentationTint;
   const phase = parsePhase(raw.phase);
   if (phase) panel.phase = phase;
-  const recommended = inlineText(raw.recommended, 64);
+  const recommended = actionIdOf(raw.recommended);
   if (recommended.length > 0 && known.has(recommended)) panel.recommended = recommended;
   const guidance = inlineText(raw.guidance, 160);
   if (guidance.length > 0) panel.guidance = guidance;
@@ -277,7 +339,19 @@ const OUROBOROS_MISSING = 'Mac에서 Ouroboros 준비가 끝나지 않았습니�
 const OUROBOROS_HINT = 'Mac의 실행 창에서 설치한 뒤 다시 시도하세요.';
 const PAPERTHIN_MISSING = 'Paperthin 스킬이 설치되어 있지 않습니다.';
 const PAPERTHIN_HINT = '스킬 설치는 Mac에서 합니다.';
-const PAPERTHIN_GUIDANCE = '대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 길게 누르면 설명이 나옵니다.';
+/**
+ * Word for word the bundled manifest's own `guidance.next`, so the same style says the
+ * same thing whichever host the phone is talking to. The long-press hint it used to
+ * carry is app chrome, not manifest text, and the panel now draws it for every style.
+ */
+const PAPERTHIN_GUIDANCE = '대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.';
+
+/** The host titles a casebook file without its `.local.md` suffix; so does this. */
+const CASEBOOK_SUFFIX = '.local.md';
+
+function attachmentTitle(file: string): string {
+  return file.endsWith(CASEBOOK_SUFFIX) ? file.slice(0, -CASEBOOK_SUFFIX.length) : file;
+}
 
 function parseOuroborosAction(raw: unknown): OuroborosAction | undefined {
   if (!isRecord(raw)) return undefined;
@@ -357,7 +431,9 @@ export function normalizeLegacyPaperthin(raw: unknown): MobilePaperthin | undefi
 }
 
 function ouroborosPanel(ouroboros: MobileOuroboros): StylePanel {
-  const catalogue = [...ouroboros.all, ...ouroboros.next];
+  const catalogue = [...ouroboros.all, ...ouroboros.next].filter((entry) =>
+    isPostableActionId(entry.skill),
+  );
   const actions = dedupeById(
     catalogue.map((entry) => ({
       id: entry.skill,
@@ -429,7 +505,9 @@ function paperthinGroup(domain: PaperthinDomain, index: number): StyleGroup {
 
 function paperthinPanel(paperthin: MobilePaperthin): StylePanel {
   const actions = dedupeById(
-    paperthin.domains.flatMap((domain) => domain.skills.map(paperthinAction)),
+    paperthin.domains.flatMap((domain) =>
+      domain.skills.filter((skill) => isPostableActionId(skill.name)).map(paperthinAction),
+    ),
   );
   const known = new Set(actions.map((action) => action.id));
   const groups = dedupeById(paperthin.domains.map(paperthinGroup))
@@ -445,7 +523,7 @@ function paperthinPanel(paperthin: MobilePaperthin): StylePanel {
     actions,
     next: groups[0]?.actions ?? [],
     attachments: (casebook?.files ?? []).map((file) => {
-      const attachment: StyleAttachment = { id: file, title: file, readOnly: true };
+      const attachment: StyleAttachment = { id: file, title: attachmentTitle(file), readOnly: true };
       if (detail.length > 0) attachment.detail = detail;
       return attachment;
     }),
@@ -472,6 +550,29 @@ export function legacyStylePanel(mighty: MobileMighty): StylePanel | undefined {
 }
 
 /**
+ * A pane whose host sent a `panel` this app could not read. Drawn rather than hidden: the
+ * legacy fallback would show a working-looking pane silently missing its stepper, its
+ * groups and its attachments, and no chip that answered would be trustworthy. The source
+ * is left empty on purpose, so the name wears the "출처 불명" badge (contract 1.10).
+ */
+function unreadablePanel(styleId: string): StylePanel {
+  const id = styleId.length > 0 ? styleId : '스타일';
+  return {
+    style: { id, name: id, source: '' },
+    groups: [],
+    actions: [],
+    next: [],
+    attachments: [],
+    setup: {
+      ready: false,
+      missing: ['호스트가 보낸 스타일 정보를 읽을 수 없습니다.'],
+      hint: 'Mac 앱과 이 앱의 버전이 서로 맞는지 확인하세요.',
+    },
+    presentation: { headerTitle: id, source: '' },
+  };
+}
+
+/**
  * The panel to draw for a pane, or undefined for a plain CLI one. A host that advertised
  * "style" owns the answer; an older host is read through the legacy adapter.
  */
@@ -480,7 +581,13 @@ export function panelOf(
   styleAware = true,
 ): StylePanel | undefined {
   if (!mighty) return undefined;
-  if (styleAware && mighty.panel) return mighty.panel;
+  if (styleAware) {
+    if (mighty.panel) return mighty.panel;
+    // The host advertised "style" and sent a panel we could not read: something changed
+    // that this app does not know about, and quietly dropping to the legacy payload
+    // would hide it behind two chips that happen to still work.
+    if (mighty.panelUnreadable) return unreadablePanel(mighty.styleId ?? mighty.style);
+  }
   return legacyStylePanel(mighty);
 }
 
@@ -544,14 +651,21 @@ export function styleViewModel(panel: StylePanel, selectedGroupId?: string): Sty
     .map((id) => byId.get(id))
     .filter((action): action is StyleAction => action !== undefined);
   const drawn = new Set(shown.map((action) => action.id));
+  // With a map on screen the emphasis belongs to the selected group cell, and a filled
+  // chip would be positional: the host marks one action of the group it opened on, so
+  // picking any other group would make the panel's primary action vanish. Without a map
+  // the flat list is the step being asked for, and its head is drawn filled.
+  const prominentId = showMap
+    ? undefined
+    : (shown.find((action) => action.prominent) ?? shown[0])?.id;
 
   const model: StyleViewModel = {
     headerTitle: panel.presentation.headerTitle,
     showMap,
     groups: panel.groups,
-    actions: shown.map((action, index) => ({
+    actions: shown.map((action) => ({
       action,
-      prominent: action.prominent || (!showMap && index === 0),
+      prominent: action.id === prominentId,
       recommended: action.id === panel.recommended,
     })),
     rest: panel.actions.filter((action) => !drawn.has(action.id)),
@@ -581,14 +695,21 @@ export function styleViewModel(panel: StylePanel, selectedGroupId?: string): Sty
  * What `POST /guided` is asked to do. The composer text travels only for an action the
  * host said takes it; `requiresText` is a UI hint the route does not check (contract
  * 1.3.3), so an empty composer still sends the bare action.
+ *
+ * `styleAware` is the same capability check that chose the panel. A host without "style"
+ * only ever decodes the old `{style, skill}` body, and only the two built-in ids can
+ * reach it, because `legacyStylePanel` answers for nothing else (contract 7.4, 7.5).
  */
 export function guidedRequestFor(
   panel: StylePanel,
   actionId: string,
   text: string,
+  styleAware = true,
 ): GuidedRequest {
   const action = panel.actions.find((entry) => entry.id === actionId);
   const trimmed = text.trim();
-  if (!action?.takesText || trimmed.length === 0) return { styleId: panel.style.id, actionId };
-  return { styleId: panel.style.id, actionId, text: trimmed };
+  const request: GuidedRequest = { styleId: panel.style.id, actionId };
+  if (!styleAware) request.legacy = true;
+  if (action?.takesText && trimmed.length > 0) request.text = trimmed;
+  return request;
 }

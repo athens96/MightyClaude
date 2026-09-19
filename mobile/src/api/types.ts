@@ -435,6 +435,11 @@ export interface MobileMighty {
   /** The style actually running, or absent on a host without "style". */
   styleId?: string;
   panel?: StylePanel;
+  /**
+   * Set by the normaliser, not by the wire: the host sent a `panel` this app could not
+   * read. It is kept apart from `panel` being absent, which simply means a CLI pane.
+   */
+  panelUnreadable?: boolean;
   ouroboros?: MobileOuroboros;
   paperthin?: MobilePaperthin;
 }
@@ -444,6 +449,12 @@ export interface GuidedRequest {
   styleId: string;
   actionId: string;
   text?: string;
+  /**
+   * Set against a host without the "style" capability, whose route only knows the old
+   * `{style, skill}` body and answers 400 to anything else. Only the two built-in ids
+   * reach it, because that host sends no other style's panel (contract 7.4, 7.5).
+   */
+  legacy?: boolean;
 }
 
 export interface UploadTicket {

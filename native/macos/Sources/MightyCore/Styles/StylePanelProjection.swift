@@ -64,15 +64,14 @@ public enum StylePanelProjection {
                             selectedGroupId: String?,
                             capabilityStates: [String: String],
                             attachments: [StyleAttachmentItem],
-                            prerequisites: StylePrerequisiteResult) -> StylePanel {
+                            prerequisites: StylePrerequisiteResult,
+                            running: Bool = false) -> StylePanel {
         let manifest = style.manifest
         let evaluator = style.evaluator
         let phase = evaluator.currentPhase(prompts: prompts)
         let ordered = manifest.orderedPhases
         let selected = selectedGroupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: capabilityStates)
-        let startActions = evaluator.startActions(phase: phase)
-        let next = startActions.isEmpty ? evaluator.nextActions(phase: phase, group: selected) : startActions
-        let nextIds = next.map(\.id)
+        let nextIds = evaluator.visibleActions(phase: phase, group: selected, running: running).map(\.id)
 
         let panelPhase = phase.flatMap { value -> StylePanel.Phase? in
             guard let index = ordered.firstIndex(where: { $0.id == value.id }) else { return nil }
@@ -97,11 +96,11 @@ public enum StylePanelProjection {
                           groups: groups,
                           actions: actions,
                           next: nextIds,
-                          recommended: evaluator.recommendedAction(capabilityStates: capabilityStates, group: selected),
+                          recommended: evaluator.recommendedAction(capabilityStates: capabilityStates),
                           attachments: attachments.map { StylePanel.Attachment(id: $0.id, title: $0.title, detail: $0.detail, readOnly: $0.readOnly) },
                           setup: StylePanel.Setup(ready: prerequisites.ready, missing: prerequisites.missing,
                                                   hint: prerequisites.hint, installCommand: manifest.install?.command),
-                          guidance: evaluator.guidanceLine(phase: phase, running: false),
+                          guidance: evaluator.guidanceLine(phase: phase, running: running),
                           presentation: StylePanel.Presentation(headerTitle: headerTitle, source: style.source,
                                                                 icon: manifest.presentation.icon?.rawValue, tint: manifest.presentation.tint))
     }

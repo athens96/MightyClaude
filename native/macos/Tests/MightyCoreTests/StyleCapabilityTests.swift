@@ -94,7 +94,28 @@ struct StyleCapabilityTests {
         try write("w", folder.appendingPathComponent(String(repeating: "b", count: 100) + ".local.md"))
         let result = StyleCapabilities.evaluate([StyleCapabilityID.casebook], workspacePath: workspace.path)
         let item = try #require(result.attachments.first)
-        #expect(item.title.count <= StyleLimits.maximumCapabilityString + 1)
-        #expect((item.detail ?? "").count <= StyleLimits.maximumCapabilityString + 1)
+        // The ellipsis is inside the budget: "cut to 80" means 80 on screen.
+        #expect(item.title.count == StyleLimits.maximumCapabilityString && item.title.hasSuffix("\u{2026}"))
+        #expect((item.detail ?? "").count == StyleLimits.maximumCapabilityString)
+    }
+
+    /// The 24 newest folders are taken after the sort, never before it: the
+    /// order `contentsOfDirectory` returns is arbitrary, so capping first
+    /// drops the newest cycles at random in a long history (§1.8).
+    @Test func theNewestCycleIsFoundInALongHistory() throws {
+        let root = StyleFixtures.temporaryDirectory("casebook-history")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = root.appendingPathComponent("repo", isDirectory: true)
+        let iterations = workspace.appendingPathComponent(".re0/iteration", isDirectory: true)
+        for index in 0..<1_100 {
+            let folder = iterations.appendingPathComponent(String(format: "0.0.%04d-old", index))
+            try write("retro", folder.appendingPathComponent("RETRO.local.md"), modified: Date(timeIntervalSinceNow: -86_400))
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -86_400)], ofItemAtPath: folder.path)
+        }
+        // The newest folder sorts last by name, so only the mtime finds it.
+        let newest = iterations.appendingPathComponent("zz-newest")
+        try write("design", newest.appendingPathComponent("DESIGN.local.md"))
+        try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: newest.path)
+        #expect(StyleCasebook.latest(workspacePath: workspace.path)?.name == "zz-newest")
     }
 }

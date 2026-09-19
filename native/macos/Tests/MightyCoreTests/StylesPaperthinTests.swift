@@ -11,7 +11,14 @@ struct StylesPaperthinTests {
     @Test func catalog() {
         let manifest = style.manifest
         #expect(manifest.actions.count == 28 && Set(manifest.actions.map(\.id)).count == 28)
+        #expect(manifest.groups.map(\.id) == ["depth", "breadth", "coil", "mesh"])
         #expect(manifest.groups.map { $0.actions.count } == [19, 2, 6, 1])
+        // The counts sum to 28 even if one skill sat in two groups and another
+        // in none, so the partition itself is what is asserted.
+        let grouped = manifest.groups.flatMap(\.actions)
+        #expect(Set(grouped) == Set(manifest.actions.map(\.id)) && grouped.count == manifest.actions.count)
+        #expect(manifest.group("coil")?.actions == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
+        #expect(manifest.group("mesh")?.actions == ["prism"] && manifest.group("breadth")?.actions == ["ssotize", "re0-upgrade"])
         // The twelve skills only the human can fire (docs/invocation.md).
         let userOnly = Set(manifest.actions.filter { $0.flags.contains(.userInvoked) }.map(\.id))
         #expect(userOnly == ["hate", "macrothink", "feynman", "reorder", "dedash", "debloat", "re0-git", "re0-release", "re0-merge", "re0-upgrade", "re0-plan", "prism"])
@@ -59,7 +66,7 @@ struct StylesPaperthinTests {
 
         func recommended(_ path: String) -> String? {
             let states = StyleCapabilities.evaluate(manifest.capabilities, workspacePath: path).states
-            return evaluator.recommendedAction(capabilityStates: states, group: manifest.group("coil"))
+            return evaluator.recommendedAction(capabilityStates: states)
         }
         func initialGroup(_ path: String) -> String? {
             evaluator.initialGroup(capabilityStates: StyleCapabilities.evaluate(manifest.capabilities, workspacePath: path).states)?.id
