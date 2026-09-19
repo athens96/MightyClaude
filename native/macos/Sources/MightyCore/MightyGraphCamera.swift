@@ -30,6 +30,17 @@ public enum MightyGraphCamera {
         max(trailing + margin, requestWidth + margin * 2) - originX(leadingMinX: leading)
     }
 
+    /// A node's x inside the drawn container, which starts at the diagram's
+    /// leading edge rather than at 0. Edges are routed in node coordinates too,
+    /// so their whole path is translated by `drawnX(nodeX: 0, originX:)`.
+    public static func drawnX(nodeX: CGFloat, originX: CGFloat) -> CGFloat { nodeX - originX }
+    /// The camera offset that puts that shift back, applied outside the zoom.
+    /// Together the pair is an identity: a node ends up exactly where the
+    /// camera in node coordinates says it should.
+    public static func drawnOffsetX(cameraX: CGFloat, originX: CGFloat, zoom: CGFloat) -> CGFloat {
+        cameraX + originX * zoom
+    }
+
     /// What the camera must do after the run list changed on its own.
     public enum Anchor: Equatable, Sendable {
         /// The document did not move under the camera; a manual position stays.
@@ -57,20 +68,121 @@ public enum MightyGraphCamera {
     public static func trimAnchor(previousRunIDs: [String], runIDs: [String], selectedNodeID: String?,
                                   layoutNodeIDs: Set<String>) -> Anchor {
         guard let last = runIDs.last else {
-            // The list emptied: every card the camera knew is gone, and the
-            // draft block is where the next request will appear.
-            guard !previousRunIDs.isEmpty, layoutNodeIDs.contains(pendingNodeID) else { return .hold }
-            return .reaim(nodeID: pendingNodeID, alignTop: true)
+            guard !previousRunIDs.isEmpty else { return .hold }
+            return reaimAnchor(newestRunID: nil, selectedNodeID: selectedNodeID, layoutNodeIDs: layoutNodeIDs)
         }
         // A new (or removed) last request keeps its own camera behaviour, and
         // streaming content alone never reaches here: no id changed.
         guard last == previousRunIDs.last, Set(previousRunIDs) != Set(runIDs) else { return .hold }
+        return reaimAnchor(newestRunID: last, selectedNodeID: selectedNodeID, layoutNodeIDs: layoutNodeIDs)
+    }
+
+    /// Where the camera belongs once the document moved under it, whatever
+    /// moved it. Every re-aim uses this one rule: the user's own block if it
+    /// survived, otherwise the newest request placed as a new request is,
+    /// otherwise — with no request left at all — the draft block, which is
+    /// where the next one will appear. `.hold` rather than aim at nothing.
+    public static func reaimAnchor(newestRunID: String?, selectedNodeID: String?, layoutNodeIDs: Set<String>) -> Anchor {
         if let selectedNodeID, !isAuxiliary(nodeID: selectedNodeID), layoutNodeIDs.contains(selectedNodeID) {
             return .reaim(nodeID: selectedNodeID, alignTop: false)
         }
-        let newest = MightyGraphBlockSize.nodeID(runID: last, suffix: "request")
+        guard let newestRunID else {
+            guard layoutNodeIDs.contains(pendingNodeID) else { return .hold }
+            return .reaim(nodeID: pendingNodeID, alignTop: true)
+        }
+        let newest = MightyGraphBlockSize.nodeID(runID: newestRunID, suffix: "request")
         guard layoutNodeIDs.contains(newest) else { return .hold }
         return .reaim(nodeID: newest, alignTop: true)
+    }
+
+    /// The run-id rule above names one cause. This one names none: after a
+    /// layout pass that moved cards under a camera nobody touched, did every
+    /// card leave the viewport? A user who deliberately panned into empty
+    /// space had nothing visible before either, so they are never corrected.
+    public static func isStranded(previousFrames: [CGRect], currentFrames: [CGRect], camera: CGPoint,
+                                  viewport: CGSize, zoom: CGFloat) -> Bool {
+        lostFrameIndex(previousFrames: previousFrames, currentFrames: currentFrames, camera: camera, viewport: viewport, zoom: zoom) != nil
+    }
+
+    /// The previous frame the user saw most of, when the pass stranded them:
+    /// the re-aim goes back to that card rather than somewhere they never were.
+    public static func lostFrameIndex(previousFrames: [CGRect], currentFrames: [CGRect], camera: CGPoint,
+                                      viewport: CGSize, zoom: CGFloat) -> Int? {
+        guard zoom.isFinite, zoom > 0, camera.x.isFinite, camera.y.isFinite,
+              viewport.width > 0, viewport.height > 0, viewport.width.isFinite, viewport.height.isFinite,
+              !currentFrames.isEmpty else { return nil }
+        let visible = CGRect(x: -camera.x / zoom, y: -camera.y / zoom,
+                             width: viewport.width / zoom, height: viewport.height / zoom)
+        func shown(_ frame: CGRect, atLeast points: CGFloat) -> CGFloat? {
+            let shared = frame.intersection(visible), least = points / zoom
+            guard !shared.isNull, shared.width >= min(least, frame.width), shared.height >= min(least, frame.height) else { return nil }
+            return shared.width * shared.height
+        }
+        // A corner of one card is somewhere the user parked, not a view of the
+        // graph: a small nudge would strand it and the re-aim would be a yank.
+        var best: (index: Int, area: CGFloat)?
+        for (index, frame) in previousFrames.enumerated() {
+            guard let area = shown(frame, atLeast: strandedOverlap), area > (best?.area ?? -1) else { continue }
+            best = (index, area)
+        }
+        guard let best else { return nil }
+        // A hairline of a card is a blank screen to whoever is reading it.
+        return currentFrames.contains { shown($0, atLeast: strandedResidue) != nil } ? nil : best.index
+    }
+
+    /// Screen points of a card that must have been showing before its loss counts.
+    public static let strandedOverlap: CGFloat = 24
+    /// Less than this left of every card reads as a blank screen.
+    public static let strandedResidue: CGFloat = 4
+
+    /// The memory the stranded rule needs between layout passes. A pass is
+    /// judged against the last frames seen through the SAME camera: whoever
+    /// moved the camera since — the user or an admitted target — owns what it
+    /// shows, and a pass that arrives mid-interaction is judged later rather
+    /// than dropped, so the net cannot be disarmed by bad timing.
+    public struct StrandedWatch {
+        public struct Loss: Equatable {
+            /// The card the user saw most of before the layout took it away.
+            public let lookedAtNodeID: String
+            public let newestRunID: String?
+        }
+        private var frames: [CGRect] = []
+        private var nodeIDs: [String] = []
+        private var camera: CGPoint?
+        private var zoom: CGFloat = 1
+        private var newestRunID: String?
+        /// A move arrived while unsettled and still waits for its verdict.
+        public private(set) var isWithholding = false
+        public init() {}
+
+        /// `settled` is false while a drag, a resize, a recent user move or a
+        /// pending camera target is still deciding where the camera goes.
+        public mutating func observe(nodes: [(String, CGRect)], camera: CGPoint, zoom: CGFloat, viewport: CGSize,
+                                     newestRunID: String?, settled: Bool) -> Loss? {
+            // The draft block comes and goes with the composer's text: it is
+            // neither something that moved nor something the user lost.
+            let after = nodes.filter { $0.0 != MightyGraphCamera.pendingNodeID }
+            // A new or removed newest request has its own camera rule.
+            guard camera == self.camera, zoom == self.zoom, newestRunID == self.newestRunID else {
+                rebase(after, camera: camera, zoom: zoom, newestRunID: newestRunID)
+                return nil
+            }
+            let moved = nodeIDs.count != after.count || zip(zip(nodeIDs, frames), after).contains { $0.0 != $1.0 || $0.1 != $1.1 }
+            // Back at the baseline: there is no longer a move to judge.
+            guard moved else { isWithholding = false; return nil }
+            guard settled else { isWithholding = true; return nil }
+            let lost = MightyGraphCamera.lostFrameIndex(previousFrames: frames, currentFrames: after.map(\.1),
+                                                        camera: camera, viewport: viewport, zoom: zoom)
+            let loss = lost.map { Loss(lookedAtNodeID: nodeIDs[$0], newestRunID: newestRunID) }
+            rebase(after, camera: camera, zoom: zoom, newestRunID: newestRunID)
+            return loss
+        }
+
+        private mutating func rebase(_ nodes: [(String, CGRect)], camera: CGPoint, zoom: CGFloat, newestRunID: String?) {
+            nodeIDs = nodes.map(\.0); frames = nodes.map(\.1)
+            self.camera = camera; self.zoom = zoom; self.newestRunID = newestRunID
+            isWithholding = false
+        }
     }
 
     /// A second trim must re-aim again even when it lands on the same block, so
