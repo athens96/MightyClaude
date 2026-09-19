@@ -27,9 +27,8 @@ import {
 } from '@/api/types';
 import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
+import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
-import { OuroborosPanel } from '@/components/ouroboros-panel';
-import { PaperthinPanel } from '@/components/paperthin-panel';
 import { PermissionCard } from '@/components/permission-card';
 import { QueuedList } from '@/components/queued-list';
 import {
@@ -53,7 +52,8 @@ import {
   prependOlderPage,
   retainDropped,
 } from '@/lib/history';
-import { guidedRequestFor, guidedStyleOf, normalizeMighty } from '@/lib/mighty';
+import { normalizeMighty } from '@/lib/mighty';
+import { guidedRequestFor, panelOf } from '@/lib/styles';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
 import { useForgetRefusedSecret } from '@/store/hosts';
 import { useHostClient, useLiveStore, useSessionCommands, useSessionDetail } from '@/store/live';
@@ -88,6 +88,8 @@ function patchFor(field: SettingField, id: string): SettingsPatch {
       return { agentViewMode: id };
     case 'mightyStyle':
       return { mightyStyle: id };
+    case 'styleId':
+      return { styleId: id };
   }
 }
 
@@ -117,7 +119,7 @@ export default function SessionScreen() {
   const [text, setText] = useState('');
   /** Set once the user picks a body themselves; until then the pane's own view decides. */
   const [chosenView, setChosenView] = useState<BodyView | undefined>(undefined);
-  const [guidedSkill, setGuidedSkill] = useState<string | undefined>(undefined);
+  const [guidedAction, setGuidedAction] = useState<string | undefined>(undefined);
   /** Set while the view mode waits for a style, so both go to the host in one POST. */
   const [pendingViewMode, setPendingViewMode] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<{ title: string; body: string } | undefined>(undefined);
@@ -141,6 +143,9 @@ export default function SessionScreen() {
   const canCommands = hasCapability(capabilities, 'commands');
   const canMighty = hasCapability(capabilities, 'mighty');
   const canAttach = hasCapability(capabilities, 'attachments');
+  // "style": the host drives the pane from a style manifest and sends `panel`. Without
+  // it the built-in two still arrive as their old payloads and are read through those.
+  const canStyle = hasCapability(capabilities, 'style');
 
   /** Back to where we came from, or to the host when this screen was deep-linked into. */
   const leavePane = useCallback(() => {
@@ -482,17 +487,14 @@ export default function SessionScreen() {
       // The host offers the other Mighty styles only once the pane is in Mighty view, so
       // when there is a real choice the view is held back and both keys travel in one
       // POST; with `cli` alone there is nothing to choose and the view goes on its own.
-      if (
-        picker === 'agentViewMode' &&
-        id === 'mighty' &&
-        optionsFor(settings, 'mightyStyle').length > 1
-      ) {
+      const styleField: SettingField = canStyle ? 'styleId' : 'mightyStyle';
+      if (picker === 'agentViewMode' && id === 'mighty' && optionsFor(settings, styleField).length > 1) {
         setPendingViewMode(id);
-        setPicker('mightyStyle');
+        setPicker(styleField);
         return;
       }
       const patch = patchFor(picker, id);
-      if (picker === 'mightyStyle' && pendingViewMode) patch.agentViewMode = pendingViewMode;
+      if (picker === styleField && pendingViewMode) patch.agentViewMode = pendingViewMode;
       void (async () => {
         setSavingSetting(true);
         try {
@@ -507,7 +509,7 @@ export default function SessionScreen() {
         }
       })();
     },
-    [client, closePicker, pendingViewMode, picker, poll, sessionId, settings],
+    [canStyle, client, closePicker, pendingViewMode, picker, poll, sessionId, settings],
   );
 
   const runHostCommand = useCallback(
@@ -559,40 +561,35 @@ export default function SessionScreen() {
     () => (canMighty ? normalizeMighty(detail?.mighty) : undefined),
     [canMighty, detail?.mighty],
   );
-  const guidedStyle = guidedStyleOf(mighty);
-  // An AskUserQuestion card is the one thing the pane is waiting on: the guided panels
-  // step aside for it rather than offering a second thing to press.
+  const panel = useMemo(() => panelOf(mighty, canStyle), [canStyle, mighty]);
+  // An AskUserQuestion card is the one thing the pane is waiting on: the guided panel
+  // steps aside for it rather than offering a second thing to press.
   const questionPending =
     detail?.permissions.some((permission) => permission.questionnaire !== undefined) ?? false;
   const view: BodyView =
     chosenView ?? (mighty && session?.agentViewMode === 'mighty' ? 'blocks' : 'log');
 
   const runGuided = useCallback(
-    (skill: string) => {
-      if (!client || !sessionId || !guidedStyle || !mighty) return;
-      const request = guidedRequestFor(
-        guidedStyle,
-        skill,
-        text,
-        mighty.ouroboros?.takesText ?? [],
-      );
-      setGuidedSkill(skill);
+    (actionId: string) => {
+      if (!client || !sessionId || !panel) return;
+      const request = guidedRequestFor(panel, actionId, text);
+      setGuidedAction(actionId);
       void (async () => {
         try {
           const result = await client.guided(sessionId, request);
           showToast(acceptedMessages[result.accepted] ?? '전송', 'success');
-          // Only text that actually went with the skill leaves the composer.
+          // Only text that actually went with the action leaves the composer.
           if (request.text) setText('');
           atBottom.current = true;
           poll.refresh();
         } catch (error) {
           showToast(describeError(error), 'error');
         } finally {
-          setGuidedSkill(undefined);
+          setGuidedAction(undefined);
         }
       })();
     },
-    [client, guidedStyle, mighty, poll, sessionId, text],
+    [client, panel, poll, sessionId, text],
   );
 
   const headerNode = detail ? (
@@ -601,6 +598,7 @@ export default function SessionScreen() {
         detail={detail}
         settings={settings}
         showStatus={hasCapability(capabilities, 'status')}
+        styleAware={canStyle}
         onEditSetting={openPicker}
       />
       {mighty ? (
@@ -710,19 +708,11 @@ export default function SessionScreen() {
       )}
 
       <View style={{ paddingBottom: insets.bottom + spacing.sm }}>
-        {!questionPending && guidedStyle === 'ouroboros' && mighty?.ouroboros ? (
-          <OuroborosPanel
-            ouroboros={mighty.ouroboros}
+        {!questionPending && panel ? (
+          <GuidedPanel
+            panel={panel}
             hasText={text.trim().length > 0}
-            busySkill={guidedSkill}
-            disabled={!client || sending}
-            onRun={runGuided}
-          />
-        ) : null}
-        {!questionPending && guidedStyle === 'paperthin' && mighty?.paperthin ? (
-          <PaperthinPanel
-            paperthin={mighty.paperthin}
-            busySkill={guidedSkill}
+            busyActionId={guidedAction}
             disabled={!client || sending}
             onRun={runGuided}
           />

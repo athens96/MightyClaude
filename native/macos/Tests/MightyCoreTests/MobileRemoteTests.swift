@@ -259,6 +259,28 @@ struct MobileRemoteTests {
         #expect(host.recorded() == ["guided:/ouroboros:interview 결제 흐름 정리", "guided:/ouroboros:seed", "guided:/re0 docs/spec.md"])
     }
 
+    @Test func theGuidedRouteTakesTheNewShapeAndHidesUnknownStylesAlike() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The new shape reaches the same place as the old one (§7.5).
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "ouroboros", "actionId": "interview", "text": "목표"]).0 == 202)
+        // Both shapes together: the new one wins, so the old skill is ignored.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "ouroboros", "actionId": "seed", "style": "paperthin", "skill": "re0"]).0 == 202)
+        #expect(host.recorded() == ["guided:/ouroboros:interview 목표", "guided:/ouroboros:seed"])
+        // The wire word for "no style" and a malformed id answer alike, so a
+        // style the host does not run is not told apart from one that is not
+        // there at all (§4.5). Whether a registered-but-unapproved id reaches
+        // the same answer is the host's own judgement, asserted where it lives.
+        for body in [["styleId": "cli", "actionId": "interview"], ["styleId": "Bad_Shape", "actionId": "interview"],
+                     ["styleId": String(repeating: "a", count: 41), "actionId": "interview"]] {
+            let reply = try await call(service, "POST", "/m1/sessions/session-1/guided", body: body)
+            #expect(reply.0 == 400 && reply.1["error"] as? String == MobileRemoteSupport.unknownStyleMessage)
+        }
+        // An id the host does run but a pane that is not in it stays a 409.
+        #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["styleId": "paperthin", "actionId": "re0"]).0 == 409)
+    }
+
     @Test func uploadsTravelInOrderAndOnlyACompleteOneCanBeSubmitted() async throws {
         let host = FakeMobileHost()
         host.running = false

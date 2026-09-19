@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "id": "ouroboros",
+  "name": "Ouroboros",
+  "summary": "인터뷰로 요구를 또렷하게 만든 뒤 시드 → 실행 → 평가 → 진화",
+  "subtitle": "인터뷰 → 시드 → 실행 → 평가 → 진화",
+  "placeholders": {
+    "idle": "이어서 요청하거나 위에서 다음 단계를 고르세요…",
+    "initial": "무엇을 만들까요? 목표를 적고 Enter로 인터뷰를 시작하세요…",
+    "answering": "직접 답하려면 여기에 적고 Enter…"
+  },
+  "guidance": {
+    "start": "무엇을 만들까요? 목표를 아래에 적으면 질문을 주고받으며 요구를 또렷하게 만듭니다.",
+    "next": "{phase} 단계가 끝났습니다. 다음 단계를 고르거나, 아래에 적어 같은 대화를 이어가세요.",
+    "running": "{phase} 진행 중 · 질문이 오면 여기에 표시됩니다"
+  },
+  "prerequisites": {
+    "mode": "all",
+    "report": "first",
+    "probes": [
+      { "kind": "plugin", "prefix": "ouroboros@", "install": true,
+        "missing": "Ouroboros 플러그인이 설치되어 있지 않습니다",
+        "hint": "설치는 Claude CLI의 플러그인 명령으로 진행합니다. 터미널 실행 창이 열리고 명령이 채워집니다. Enter는 직접 누르세요." },
+      { "kind": "executable", "name": "uvx", "install": false,
+        "missing": "uvx가 필요합니다 (Ouroboros MCP 서버 실행용)",
+        "hint": "터미널에서 `brew install uv` 또는 https://docs.astral.sh/uv 의 안내로 설치한 뒤 다시 확인하세요." }
+    ]
+  },
+  "install": {
+    "command": "claude plugin marketplace add Q00/ouroboros && claude plugin install ouroboros@ouroboros",
+    "paneTitle": "Ouroboros 설치"
+  },
+  "phases": [
+    { "id": "goal",      "title": "목표",   "order": 0 },
+    { "id": "interview", "title": "인터뷰", "order": 1 },
+    { "id": "seed",      "title": "시드",   "order": 2 },
+    { "id": "run",       "title": "실행",   "order": 3 },
+    { "id": "evaluate",  "title": "평가",   "order": 4 },
+    { "id": "evolve",    "title": "진화",   "order": 5 }
+  ],
+  "groups": [
+    { "id": "flow", "title": "흐름",
+      "actions": ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck"] }
+  ],
+  "actions": [
+    { "id": "interview", "title": "인터뷰 시작", "help": "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)", "prompt": "/ouroboros:interview {text}", "takesText": true,  "foldText": "trimOnly", "requiresText": true, "phase": "interview", "icon": "questionmark.bubble" },
+    { "id": "auto",      "title": "자동 진행",   "help": "목표에서 시드 생성과 실행까지 한 번에 진행합니다",                    "prompt": "/ouroboros:auto {text}",      "takesText": true,  "foldText": "trimOnly", "requiresText": true, "phase": "interview", "icon": "wand.and.stars" },
+    { "id": "seed",      "title": "시드 생성",   "help": "인터뷰 결과를 불변 명세(시드)로 굳힙니다",                           "prompt": "/ouroboros:seed",             "takesText": false, "phase": "seed",      "icon": "leaf" },
+    { "id": "run",       "title": "실행",        "help": "시드를 Double Diamond 흐름으로 실행합니다",                          "prompt": "/ouroboros:run",              "takesText": false, "phase": "run",       "icon": "play.fill" },
+    { "id": "evaluate",  "title": "평가",        "help": "기계 · 의미 · 합의 3단계로 결과를 검증합니다",                       "prompt": "/ouroboros:evaluate",         "takesText": false, "phase": "evaluate",  "icon": "checkmark.seal" },
+    { "id": "evolve",    "title": "진화",        "help": "평가를 반영해 다음 세대 시드로 수렴할 때까지 반복합니다",             "prompt": "/ouroboros:evolve",           "takesText": false, "phase": "evolve",    "icon": "arrow.triangle.2.circlepath" },
+    { "id": "ralph",     "title": "랄프 루프",   "help": "수렴할 때까지 진화 단계를 계속 돌립니다",                            "prompt": "/ouroboros:ralph",            "takesText": false, "phase": "evolve",    "icon": "infinity" },
+    { "id": "status",    "title": "상태",        "help": "세션 상태와 목표 이탈(drift)을 확인합니다",                          "prompt": "/ouroboros:status",           "takesText": false, "icon": "gauge.with.dots.needle.33percent" },
+    { "id": "unstuck",   "title": "막힘 풀기",   "help": "다섯 가지 관점으로 막힌 지점을 다시 봅니다",                         "prompt": "/ouroboros:unstuck {text}",   "takesText": true,  "foldText": "trimOnly", "icon": "lightbulb" }
+  ],
+  "aliases": [
+    { "name": "pm",          "phase": "interview" },
+    { "name": "socratic",    "phase": "interview" },
+    { "name": "crystallize", "phase": "seed" },
+    { "name": "execute",     "phase": "run" },
+    { "name": "eval",        "phase": "evaluate" },
+    { "name": "qa",          "phase": "evaluate" }
+  ],
+  "recognition": { "prefixes": ["/ouroboros:", "ooo "], "lowercase": true },
+  "rules": {
+    "start": { "kind": "actions", "phase": "goal", "actions": ["interview", "auto"], "resetTitle": "새 목표" },
+    "phase": { "kind": "lastRecognisedAction", "default": "goal" },
+    "next": {
+      "kind": "byPhase",
+      "map": {
+        "goal":      [],
+        "interview": ["seed", "status", "unstuck"],
+        "seed":      ["run", "evaluate", "status"],
+        "run":       ["evaluate", "evolve", "status", "unstuck"],
+        "evaluate":  ["evolve", "run", "status", "unstuck"],
+        "evolve":    ["ralph", "evaluate", "status", "unstuck"]
+      }
+    },
+    "enter": { "kind": "rewriteBareDraftTo", "action": "interview", "phase": "goal" },
+    "recommend": { "kind": "none" },
+    "initialGroup": { "kind": "fixed", "group": "flow" }
+  },
+  "capabilities": [],
+  "autoAllow": [
+    { "tool": "ToolSearch" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_interview" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_pm_interview" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_lateral_think" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_generate_seed" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_brownfield" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_session_status" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_job_status" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_job_wait" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_job_result" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_query_events" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_query_projection" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_lineage_status" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_measure_drift" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_ac_dashboard" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_ac_tree_hud" },
+    { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_session_signal_targets" }
+  ],
+  "presentation": { "icon": "point.3.connected.trianglepath.dotted", "tint": "accent" }
+}

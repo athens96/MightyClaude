@@ -923,4 +923,68 @@ struct MobileRemoteExtensionTests {
         let modelOnly = MobileUsageText.text(usage: MobileUsage(model: "opus"), model: "opus")
         #expect(!modelOnly.contains("$") && !modelOnly.contains("컨텍스트"))
     }
+
+    @Test func theStyleFieldsRideBesideTheFixedVocabulary() throws {
+        // `mightyStyle` keeps its three words; the truth travels in `styleId`,
+        // so an old phone sees a plain CLI pane rather than a wrong one (§7.2).
+        #expect(MobileWire.mightyStyles == ["cli", "ouroboros", "paperthin"])
+        #expect(MobileCapability.all.contains("style"))
+        let summary = try encoded(MobileSessionSummary(id: "s", workspaceId: "w", title: "t", kind: "claude", provider: "claude",
+                                                       model: "default", status: "idle", revision: 1, updatedAt: "now",
+                                                       mightyStyle: "cli", styleId: "oh-my-claudecode"))
+        #expect(summary["mightyStyle"] as? String == "cli" && summary["styleId"] as? String == "oh-my-claudecode")
+        let plainSummary = try encoded(MobileSessionSummary(id: "s", workspaceId: "w", title: "t", kind: "claude", provider: "claude",
+                                                            model: "default", status: "idle", revision: 1, updatedAt: "now"))
+        #expect(plainSummary["styleId"] == nil)
+
+        let style = StyleFixtures.bundled("paperthin")
+        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: "coil",
+                                              capabilityStates: [StyleCapabilityID.casebook: "absent"], attachments: [],
+                                              prerequisites: StylePrerequisiteResult(ready: true))
+        let legacy = MobileLegacyStyleAdapter.payloads(style: style, panel: panel, casebook: nil)
+        let mighty = try encoded(MobileMighty(style: "paperthin", styleId: "paperthin", runs: [], panel: panel, paperthin: legacy.paperthin))
+        #expect(mighty["styleId"] as? String == "paperthin")
+        let wire = try #require(mighty["panel"] as? [String: Any])
+        #expect((wire["actions"] as? [Any])?.count == 28 && (wire["groups"] as? [Any])?.count == 4)
+        #expect((wire["presentation"] as? [String: Any])?["source"] as? String == "bundled")
+        #expect(mighty["paperthin"] != nil)
+        // A plain pane carries neither.
+        let plain = try encoded(MobileMighty(style: "cli", runs: []))
+        #expect(plain["panel"] == nil && plain["styleId"] as? String == "cli")
+    }
+
+    @Test func settingsCarryTheOpenStyleListAndAcceptOnlyItsMembers() throws {
+        let styles = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
+        #expect(styles.map(\.id) == ["cli", "ouroboros", "paperthin"])
+        #expect(styles[1].label == "Ouroboros" && styles[1].source == .bundled && styles[0].source == nil)
+        let options = MobileSettingsOptions(models: [MobileOption(id: "default", label: "기본")],
+                                            permissionModes: [MobileOption(id: "default", label: "기본")],
+                                            mightyStyles: MobileRemoteSupport.styleOptionIds(guided: true).map { MobileOption(id: $0, label: $0) },
+                                            styles: styles)
+        try MobileRemoteSupport.validate(MobileSettingsRequest(styleId: "paperthin"), options: options)
+        // Unregistered and unapproved answer with the very same string (§4.5).
+        #expect(throws: MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage)) {
+            try MobileRemoteSupport.validate(MobileSettingsRequest(styleId: "secret-style"), options: options)
+        }
+        // The host sends `mightyStyle: "cli"` beside an open id, so the phone
+        // must be able to hand that very pair back.
+        try MobileRemoteSupport.validate(MobileSettingsRequest(mightyStyle: "cli", styleId: "ouroboros"), options: options)
+        let unapproved = MobileSettingsOptions(models: [], permissionModes: [], mightyStyles: [], styles: MobileRemoteSupport.styleOptions([
+            try StyleFixtures.registered(StyleFixtures.data(), approval: .pending),
+        ]))
+        #expect(unapproved.styles.map(\.id) == ["cli"])
+    }
+
+    @Test func guidedAcceptsBothShapesAndPrefersTheNewOne() throws {
+        let new = MobileGuidedRequest(styleId: "gstack", actionId: "ship", text: "지금")
+        #expect(new.resolvedStyle == "gstack" && new.resolvedAction == "ship")
+        let old = MobileGuidedRequest(style: "ouroboros", skill: "interview")
+        #expect(old.resolvedStyle == "ouroboros" && old.resolvedAction == "interview")
+        // Both together: the new shape wins outright, skill included (§7.5).
+        let both = MobileGuidedRequest(styleId: "gstack", actionId: "ship", style: "ouroboros", skill: "interview")
+        #expect(both.resolvedStyle == "gstack" && both.resolvedAction == "ship")
+        #expect(MobileGuidedRequest().resolvedStyle == nil)
+        let decoded = try JSONDecoder().decode(MobileGuidedRequest.self, from: Data(#"{"styleId":"gstack","actionId":"ship"}"#.utf8))
+        #expect(decoded.resolvedStyle == "gstack" && decoded.style == nil)
+    }
 }

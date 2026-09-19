@@ -69,12 +69,18 @@ public enum MobileRemoteSupport {
     /// `options` must already describe the pane **after** the request's view
     /// mode is applied, so one POST can turn Mighty on and pick a style.
     public static func validate(_ request: MobileSettingsRequest, options: MobileSettingsOptions) throws {
-        let fields = [request.model, request.permissionMode, request.effort, request.agentViewMode, request.mightyStyle]
+        let fields = [request.model, request.permissionMode, request.effort, request.agentViewMode, request.mightyStyle, request.styleId]
         guard fields.contains(where: { $0 != nil }) else { throw MobileHostError.badRequest("바꿀 설정을 하나 이상 보내세요.") }
         try require(request.model, in: options.models, field: "model")
         try require(request.permissionMode, in: options.permissionModes, field: "permissionMode")
         try require(request.effort, in: options.efforts ?? [], field: "effort")
-        try require(request.mightyStyle, in: options.mightyStyles, field: "mightyStyle")
+        // The host itself sends `mightyStyle: "cli"` beside an open `styleId`,
+        // so the phone must be able to hand the pair straight back (§7.2).
+        if let styleId = request.styleId {
+            guard options.styles.contains(where: { $0.id == styleId }) else { throw MobileHostError.badRequest(unknownStyleMessage) }
+        } else {
+            try require(request.mightyStyle, in: options.mightyStyles, field: "mightyStyle")
+        }
         if let mode = request.agentViewMode, !MobileWire.agentViewModes.contains(mode) {
             throw MobileHostError.badRequest("agentViewMode는 plain 또는 mighty여야 합니다.")
         }
@@ -110,6 +116,15 @@ public enum MobileRemoteSupport {
     public static func styleOptionIds(guided: Bool) -> [String] {
         guided ? [MobileWire.cliStyle] + MightyStyles.all : [MobileWire.cliStyle]
     }
+
+    /// `options.styles`: the CLI plus the styles this pane may really pick.
+    public static func styleOptions(_ styles: [RegisteredStyle]) -> [MobileStyleOption] {
+        [MobileStyleOption(id: MobileWire.cliStyle, label: MobileWire.cliStyle)]
+            + styles.filter(\.isRunnable).map { MobileStyleOption(id: $0.id, label: $0.manifest.name, source: $0.source) }
+    }
+
+    /// One string for "not registered" and "not approved" alike (§4.5).
+    public static let unknownStyleMessage = "알 수 없는 스타일입니다."
 
     /// The Mac disables its composer pickers while a run is live or pending;
     /// the phone must grey out the same ones or it offers a guaranteed 409.

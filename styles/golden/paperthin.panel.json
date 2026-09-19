@@ -1,0 +1,1931 @@
+{
+  "afterFirstAction" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "♻️",
+        "help" : "drift된 아티팩트를 또 다른 패치가 아니라 깨끗한 v0로 다시 씁니다",
+        "id" : "re0",
+        "prominent" : true,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "re0"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧭",
+        "help" : "요청을 어떻게 읽었는지 확인하고, 실제로 남은 갈림길만 드러냅니다",
+        "id" : "readchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "지시 하나",
+        "takesText" : true,
+        "title" : "readchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🏹",
+        "help" : "넘겨받은 데이터를 읽고, 물어보는 대신 확인할 의도를 먼저 제안합니다",
+        "id" : "aim",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "넘겨받은 데이터 하나",
+        "takesText" : true,
+        "title" : "aim"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📏",
+        "help" : "충분한 가장 싼 tier와 reasoning effort를 고릅니다",
+        "id" : "modelchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "modelchk"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "😈",
+        "help" : "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다",
+        "id" : "hate",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "hate"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧠",
+        "help" : "bait를 걷어내고 새 읽기를 펼친 뒤 divergence를 먼저 보고합니다",
+        "id" : "macrothink",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "방향 하나",
+        "takesText" : true,
+        "title" : "macrothink"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧐",
+        "help" : "방금 내린 결정을 설명할 수 있을 때까지 밀어붙이고, 안 되면 그 빈틈을 드러냅니다",
+        "id" : "feynman",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "결정 하나",
+        "takesText" : true,
+        "title" : "feynman"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛣️",
+        "help" : "안전하지 않은 스코프를 앞에서 도려내고, 안전한 나머지는 전력으로 실행한 뒤 descope를 기록합니다",
+        "id" : "autobahn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "autobahn"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🔃",
+        "help" : "drift된 목록을 하나의 명시된 원칙 아래 논리적 순서로 다시 맞춥니다. 항목만 옮기고, 표현은 바꾸지 않습니다",
+        "id" : "reorder",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "목록 하나",
+        "takesText" : true,
+        "title" : "reorder"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧰",
+        "help" : "우연히 섞인 도구 이름을 그것이 뜻한 메커니즘으로 바꿉니다",
+        "id" : "detool",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "durable 아티팩트 하나",
+        "takesText" : true,
+        "title" : "detool"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "✂️",
+        "help" : "em dash와 비슷한 tell을 지우고, 각 위치에 맞는 문장부호를 고릅니다",
+        "id" : "dedash",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 문장",
+        "takesText" : true,
+        "title" : "dedash"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗜️",
+        "help" : "bloat된 아티팩트를 load-bearing한 밀도까지 압축합니다. 단어는 잘라내되, 규칙은 절대 잘라내지 않습니다",
+        "id" : "debloat",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "debloat"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🚿",
+        "help" : "맥락 없는 새 눈으로 차갑게 읽습니다. 이것이 혼자서도 서는가?",
+        "id" : "shower",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "shower"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔬",
+        "help" : "주장된 것을 양방향으로 소스에 대조합니다. 말도 안 되는 것이 팩트일 수 있고, 당연한 것이 거짓일 수 있는가?",
+        "id" : "factchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "클레임 하나",
+        "takesText" : true,
+        "title" : "factchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧪",
+        "help" : "leakage가 있는지 audit합니다. 외부 ground truth가 실제로 들어오는가?",
+        "id" : "mandela",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "eval 하나",
+        "takesText" : true,
+        "title" : "mandela"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🥄",
+        "help" : "변경 뒤마다 레포 자체의 clean-and-true 체크로 아웃풋을 맛봅니다",
+        "id" : "sip",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 아웃풋",
+        "takesText" : true,
+        "title" : "sip"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧾",
+        "help" : "완료된 커밋 메시지를 다시 써서 `git log`만으로 handoff가 되게 합니다",
+        "id" : "re0-git",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "커밋 하나",
+        "takesText" : true,
+        "title" : "re0-git"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🚀",
+        "help" : "shipping·releasing 체크리스트를 실행하고, 확인 후 태그·퍼블리시합니다",
+        "id" : "re0-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "릴리스 하나",
+        "takesText" : true,
+        "title" : "re0-release"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🤝",
+        "help" : "기여를 리뷰하고 반영합니다: gate를 통과시키고, 작성자 크레딧을 유지하고, 닫기 전에 승인하고, 변경 사항을 설명합니다",
+        "id" : "re0-merge",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "기여 하나",
+        "takesText" : true,
+        "title" : "re0-merge"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧲",
+        "help" : "흩어진 곳을 감사한 뒤 한 집으로 모아 나머지가 그곳을 가리키게 합니다",
+        "id" : "ssotize",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "팩트 하나, 여러 위치",
+        "takesText" : true,
+        "title" : "ssotize"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧰",
+        "help" : "한 번에 현재 전체 카탈로그로 올립니다: 이름 바뀐 건 정리, 새 건 추가, 전부 먼저 확인",
+        "id" : "re0-upgrade",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 스킬 설치",
+        "takesText" : true,
+        "title" : "re0-upgrade"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗂️",
+        "help" : "re0-loop의 첫 turn 전에 새 iteration 폴더를 열고 DESIGN/WORKFLOW/EVIDENCE를 씁니다",
+        "id" : "re0-plan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "새 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-plan"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌀",
+        "help" : "build → QA → re0-memo → re0-work 루프를 돌려 배움이 코드가 아니라 축적되게 합니다",
+        "id" : "re0-loop",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "전체 루프",
+        "takesText" : true,
+        "title" : "re0-loop"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "끝났거나 실패한 사이클에서 교훈과 anti-pattern을 뽑아냅니다",
+        "id" : "re0-memo",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "완료된 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-memo"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧱",
+        "help" : "재사용할 자격을 얻은 교훈만 남기고 v0에서 다시 시작합니다",
+        "id" : "re0-work",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재시작 하나",
+        "takesText" : true,
+        "title" : "re0-work"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🗺️",
+        "help" : "실시간 state에서 잃어버린 context를 재구성합니다: 누구에게 필요한지, 무엇이 바뀌었는지, 새 단어가 무엇을 뜻하는지",
+        "id" : "catchup",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재진입 하나",
+        "takesText" : true,
+        "title" : "catchup"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🎯",
+        "help" : "살아 있는 사이클 state를 읽고 메뉴가 아니라 단 하나의 다음 최선 행동을 돌려줍니다",
+        "id" : "nba",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 사이클",
+        "takesText" : true,
+        "title" : "nba"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🔺",
+        "help" : "아티팩트 하나를 독립적인 렌즈들로 쪼갠 뒤, 충돌하는 지점과 그것을 푸는 질문을 돌려줍니다",
+        "id" : "prism",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "prism"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "re0",
+          "readchk",
+          "aim",
+          "modelchk",
+          "hate",
+          "macrothink",
+          "feynman",
+          "autobahn",
+          "reorder",
+          "detool",
+          "dedash",
+          "debloat",
+          "shower",
+          "factchk",
+          "mandela",
+          "sip",
+          "re0-git",
+          "re0-release",
+          "re0-merge"
+        ],
+        "axis" : "하나 · 지금",
+        "id" : "depth",
+        "question" : "이 하나가 깨끗하고 참인가?",
+        "selected" : true,
+        "title" : "depth"
+      },
+      {
+        "actions" : [
+          "ssotize",
+          "re0-upgrade"
+        ],
+        "axis" : "여럿 · 지금",
+        "id" : "breadth",
+        "question" : "하나의 진실이 모든 곳에서 일관적인가?",
+        "selected" : false,
+        "title" : "breadth"
+      },
+      {
+        "actions" : [
+          "re0-plan",
+          "re0-loop",
+          "re0-memo",
+          "re0-work",
+          "catchup",
+          "nba"
+        ],
+        "axis" : "하나 · 반복",
+        "id" : "coil",
+        "question" : "각 패스가 다음 패스를 가르쳤는가?",
+        "selected" : false,
+        "title" : "coil"
+      },
+      {
+        "actions" : [
+          "prism"
+        ],
+        "axis" : "여러 시선",
+        "id" : "mesh",
+        "question" : "집단이 진실로 수렴하는가?",
+        "selected" : false,
+        "title" : "mesh"
+      }
+    ],
+    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "re0",
+      "readchk",
+      "aim",
+      "modelchk",
+      "hate",
+      "macrothink",
+      "feynman",
+      "autobahn",
+      "reorder",
+      "detool",
+      "dedash",
+      "debloat",
+      "shower",
+      "factchk",
+      "mandela",
+      "sip",
+      "re0-git",
+      "re0-release",
+      "re0-merge"
+    ],
+    "presentation" : {
+      "headerTitle" : "Paperthin",
+      "icon" : "square.grid.2x2",
+      "source" : "bundled",
+      "tint" : "accent"
+    },
+    "setup" : {
+      "installCommand" : "npx skills@latest add LilMGenius/paperthin --global --agent claude-code",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "square.grid.2x2",
+      "id" : "paperthin",
+      "name" : "Paperthin",
+      "source" : "bundled",
+      "tint" : "accent"
+    }
+  },
+  "empty" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "♻️",
+        "help" : "drift된 아티팩트를 또 다른 패치가 아니라 깨끗한 v0로 다시 씁니다",
+        "id" : "re0",
+        "prominent" : true,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "re0"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧭",
+        "help" : "요청을 어떻게 읽었는지 확인하고, 실제로 남은 갈림길만 드러냅니다",
+        "id" : "readchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "지시 하나",
+        "takesText" : true,
+        "title" : "readchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🏹",
+        "help" : "넘겨받은 데이터를 읽고, 물어보는 대신 확인할 의도를 먼저 제안합니다",
+        "id" : "aim",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "넘겨받은 데이터 하나",
+        "takesText" : true,
+        "title" : "aim"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📏",
+        "help" : "충분한 가장 싼 tier와 reasoning effort를 고릅니다",
+        "id" : "modelchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "modelchk"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "😈",
+        "help" : "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다",
+        "id" : "hate",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "hate"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧠",
+        "help" : "bait를 걷어내고 새 읽기를 펼친 뒤 divergence를 먼저 보고합니다",
+        "id" : "macrothink",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "방향 하나",
+        "takesText" : true,
+        "title" : "macrothink"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧐",
+        "help" : "방금 내린 결정을 설명할 수 있을 때까지 밀어붙이고, 안 되면 그 빈틈을 드러냅니다",
+        "id" : "feynman",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "결정 하나",
+        "takesText" : true,
+        "title" : "feynman"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛣️",
+        "help" : "안전하지 않은 스코프를 앞에서 도려내고, 안전한 나머지는 전력으로 실행한 뒤 descope를 기록합니다",
+        "id" : "autobahn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "autobahn"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🔃",
+        "help" : "drift된 목록을 하나의 명시된 원칙 아래 논리적 순서로 다시 맞춥니다. 항목만 옮기고, 표현은 바꾸지 않습니다",
+        "id" : "reorder",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "목록 하나",
+        "takesText" : true,
+        "title" : "reorder"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧰",
+        "help" : "우연히 섞인 도구 이름을 그것이 뜻한 메커니즘으로 바꿉니다",
+        "id" : "detool",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "durable 아티팩트 하나",
+        "takesText" : true,
+        "title" : "detool"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "✂️",
+        "help" : "em dash와 비슷한 tell을 지우고, 각 위치에 맞는 문장부호를 고릅니다",
+        "id" : "dedash",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 문장",
+        "takesText" : true,
+        "title" : "dedash"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗜️",
+        "help" : "bloat된 아티팩트를 load-bearing한 밀도까지 압축합니다. 단어는 잘라내되, 규칙은 절대 잘라내지 않습니다",
+        "id" : "debloat",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "debloat"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🚿",
+        "help" : "맥락 없는 새 눈으로 차갑게 읽습니다. 이것이 혼자서도 서는가?",
+        "id" : "shower",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "shower"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔬",
+        "help" : "주장된 것을 양방향으로 소스에 대조합니다. 말도 안 되는 것이 팩트일 수 있고, 당연한 것이 거짓일 수 있는가?",
+        "id" : "factchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "클레임 하나",
+        "takesText" : true,
+        "title" : "factchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧪",
+        "help" : "leakage가 있는지 audit합니다. 외부 ground truth가 실제로 들어오는가?",
+        "id" : "mandela",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "eval 하나",
+        "takesText" : true,
+        "title" : "mandela"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🥄",
+        "help" : "변경 뒤마다 레포 자체의 clean-and-true 체크로 아웃풋을 맛봅니다",
+        "id" : "sip",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 아웃풋",
+        "takesText" : true,
+        "title" : "sip"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧾",
+        "help" : "완료된 커밋 메시지를 다시 써서 `git log`만으로 handoff가 되게 합니다",
+        "id" : "re0-git",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "커밋 하나",
+        "takesText" : true,
+        "title" : "re0-git"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🚀",
+        "help" : "shipping·releasing 체크리스트를 실행하고, 확인 후 태그·퍼블리시합니다",
+        "id" : "re0-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "릴리스 하나",
+        "takesText" : true,
+        "title" : "re0-release"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🤝",
+        "help" : "기여를 리뷰하고 반영합니다: gate를 통과시키고, 작성자 크레딧을 유지하고, 닫기 전에 승인하고, 변경 사항을 설명합니다",
+        "id" : "re0-merge",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "기여 하나",
+        "takesText" : true,
+        "title" : "re0-merge"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧲",
+        "help" : "흩어진 곳을 감사한 뒤 한 집으로 모아 나머지가 그곳을 가리키게 합니다",
+        "id" : "ssotize",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "팩트 하나, 여러 위치",
+        "takesText" : true,
+        "title" : "ssotize"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧰",
+        "help" : "한 번에 현재 전체 카탈로그로 올립니다: 이름 바뀐 건 정리, 새 건 추가, 전부 먼저 확인",
+        "id" : "re0-upgrade",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 스킬 설치",
+        "takesText" : true,
+        "title" : "re0-upgrade"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗂️",
+        "help" : "re0-loop의 첫 turn 전에 새 iteration 폴더를 열고 DESIGN/WORKFLOW/EVIDENCE를 씁니다",
+        "id" : "re0-plan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "새 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-plan"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌀",
+        "help" : "build → QA → re0-memo → re0-work 루프를 돌려 배움이 코드가 아니라 축적되게 합니다",
+        "id" : "re0-loop",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "전체 루프",
+        "takesText" : true,
+        "title" : "re0-loop"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "끝났거나 실패한 사이클에서 교훈과 anti-pattern을 뽑아냅니다",
+        "id" : "re0-memo",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "완료된 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-memo"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧱",
+        "help" : "재사용할 자격을 얻은 교훈만 남기고 v0에서 다시 시작합니다",
+        "id" : "re0-work",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재시작 하나",
+        "takesText" : true,
+        "title" : "re0-work"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🗺️",
+        "help" : "실시간 state에서 잃어버린 context를 재구성합니다: 누구에게 필요한지, 무엇이 바뀌었는지, 새 단어가 무엇을 뜻하는지",
+        "id" : "catchup",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재진입 하나",
+        "takesText" : true,
+        "title" : "catchup"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🎯",
+        "help" : "살아 있는 사이클 state를 읽고 메뉴가 아니라 단 하나의 다음 최선 행동을 돌려줍니다",
+        "id" : "nba",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 사이클",
+        "takesText" : true,
+        "title" : "nba"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🔺",
+        "help" : "아티팩트 하나를 독립적인 렌즈들로 쪼갠 뒤, 충돌하는 지점과 그것을 푸는 질문을 돌려줍니다",
+        "id" : "prism",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "prism"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "re0",
+          "readchk",
+          "aim",
+          "modelchk",
+          "hate",
+          "macrothink",
+          "feynman",
+          "autobahn",
+          "reorder",
+          "detool",
+          "dedash",
+          "debloat",
+          "shower",
+          "factchk",
+          "mandela",
+          "sip",
+          "re0-git",
+          "re0-release",
+          "re0-merge"
+        ],
+        "axis" : "하나 · 지금",
+        "id" : "depth",
+        "question" : "이 하나가 깨끗하고 참인가?",
+        "selected" : true,
+        "title" : "depth"
+      },
+      {
+        "actions" : [
+          "ssotize",
+          "re0-upgrade"
+        ],
+        "axis" : "여럿 · 지금",
+        "id" : "breadth",
+        "question" : "하나의 진실이 모든 곳에서 일관적인가?",
+        "selected" : false,
+        "title" : "breadth"
+      },
+      {
+        "actions" : [
+          "re0-plan",
+          "re0-loop",
+          "re0-memo",
+          "re0-work",
+          "catchup",
+          "nba"
+        ],
+        "axis" : "하나 · 반복",
+        "id" : "coil",
+        "question" : "각 패스가 다음 패스를 가르쳤는가?",
+        "selected" : false,
+        "title" : "coil"
+      },
+      {
+        "actions" : [
+          "prism"
+        ],
+        "axis" : "여러 시선",
+        "id" : "mesh",
+        "question" : "집단이 진실로 수렴하는가?",
+        "selected" : false,
+        "title" : "mesh"
+      }
+    ],
+    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "re0",
+      "readchk",
+      "aim",
+      "modelchk",
+      "hate",
+      "macrothink",
+      "feynman",
+      "autobahn",
+      "reorder",
+      "detool",
+      "dedash",
+      "debloat",
+      "shower",
+      "factchk",
+      "mandela",
+      "sip",
+      "re0-git",
+      "re0-release",
+      "re0-merge"
+    ],
+    "presentation" : {
+      "headerTitle" : "Paperthin",
+      "icon" : "square.grid.2x2",
+      "source" : "bundled",
+      "tint" : "accent"
+    },
+    "setup" : {
+      "installCommand" : "npx skills@latest add LilMGenius/paperthin --global --agent claude-code",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "square.grid.2x2",
+      "id" : "paperthin",
+      "name" : "Paperthin",
+      "source" : "bundled",
+      "tint" : "accent"
+    }
+  },
+  "firstGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "♻️",
+        "help" : "drift된 아티팩트를 또 다른 패치가 아니라 깨끗한 v0로 다시 씁니다",
+        "id" : "re0",
+        "prominent" : true,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "re0"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧭",
+        "help" : "요청을 어떻게 읽었는지 확인하고, 실제로 남은 갈림길만 드러냅니다",
+        "id" : "readchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "지시 하나",
+        "takesText" : true,
+        "title" : "readchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🏹",
+        "help" : "넘겨받은 데이터를 읽고, 물어보는 대신 확인할 의도를 먼저 제안합니다",
+        "id" : "aim",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "넘겨받은 데이터 하나",
+        "takesText" : true,
+        "title" : "aim"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📏",
+        "help" : "충분한 가장 싼 tier와 reasoning effort를 고릅니다",
+        "id" : "modelchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "modelchk"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "😈",
+        "help" : "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다",
+        "id" : "hate",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "hate"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧠",
+        "help" : "bait를 걷어내고 새 읽기를 펼친 뒤 divergence를 먼저 보고합니다",
+        "id" : "macrothink",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "방향 하나",
+        "takesText" : true,
+        "title" : "macrothink"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧐",
+        "help" : "방금 내린 결정을 설명할 수 있을 때까지 밀어붙이고, 안 되면 그 빈틈을 드러냅니다",
+        "id" : "feynman",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "결정 하나",
+        "takesText" : true,
+        "title" : "feynman"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛣️",
+        "help" : "안전하지 않은 스코프를 앞에서 도려내고, 안전한 나머지는 전력으로 실행한 뒤 descope를 기록합니다",
+        "id" : "autobahn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "autobahn"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🔃",
+        "help" : "drift된 목록을 하나의 명시된 원칙 아래 논리적 순서로 다시 맞춥니다. 항목만 옮기고, 표현은 바꾸지 않습니다",
+        "id" : "reorder",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "목록 하나",
+        "takesText" : true,
+        "title" : "reorder"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧰",
+        "help" : "우연히 섞인 도구 이름을 그것이 뜻한 메커니즘으로 바꿉니다",
+        "id" : "detool",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "durable 아티팩트 하나",
+        "takesText" : true,
+        "title" : "detool"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "✂️",
+        "help" : "em dash와 비슷한 tell을 지우고, 각 위치에 맞는 문장부호를 고릅니다",
+        "id" : "dedash",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 문장",
+        "takesText" : true,
+        "title" : "dedash"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗜️",
+        "help" : "bloat된 아티팩트를 load-bearing한 밀도까지 압축합니다. 단어는 잘라내되, 규칙은 절대 잘라내지 않습니다",
+        "id" : "debloat",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "debloat"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🚿",
+        "help" : "맥락 없는 새 눈으로 차갑게 읽습니다. 이것이 혼자서도 서는가?",
+        "id" : "shower",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "shower"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔬",
+        "help" : "주장된 것을 양방향으로 소스에 대조합니다. 말도 안 되는 것이 팩트일 수 있고, 당연한 것이 거짓일 수 있는가?",
+        "id" : "factchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "클레임 하나",
+        "takesText" : true,
+        "title" : "factchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧪",
+        "help" : "leakage가 있는지 audit합니다. 외부 ground truth가 실제로 들어오는가?",
+        "id" : "mandela",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "eval 하나",
+        "takesText" : true,
+        "title" : "mandela"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🥄",
+        "help" : "변경 뒤마다 레포 자체의 clean-and-true 체크로 아웃풋을 맛봅니다",
+        "id" : "sip",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 아웃풋",
+        "takesText" : true,
+        "title" : "sip"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧾",
+        "help" : "완료된 커밋 메시지를 다시 써서 `git log`만으로 handoff가 되게 합니다",
+        "id" : "re0-git",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "커밋 하나",
+        "takesText" : true,
+        "title" : "re0-git"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🚀",
+        "help" : "shipping·releasing 체크리스트를 실행하고, 확인 후 태그·퍼블리시합니다",
+        "id" : "re0-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "릴리스 하나",
+        "takesText" : true,
+        "title" : "re0-release"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🤝",
+        "help" : "기여를 리뷰하고 반영합니다: gate를 통과시키고, 작성자 크레딧을 유지하고, 닫기 전에 승인하고, 변경 사항을 설명합니다",
+        "id" : "re0-merge",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "기여 하나",
+        "takesText" : true,
+        "title" : "re0-merge"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧲",
+        "help" : "흩어진 곳을 감사한 뒤 한 집으로 모아 나머지가 그곳을 가리키게 합니다",
+        "id" : "ssotize",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "팩트 하나, 여러 위치",
+        "takesText" : true,
+        "title" : "ssotize"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧰",
+        "help" : "한 번에 현재 전체 카탈로그로 올립니다: 이름 바뀐 건 정리, 새 건 추가, 전부 먼저 확인",
+        "id" : "re0-upgrade",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 스킬 설치",
+        "takesText" : true,
+        "title" : "re0-upgrade"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗂️",
+        "help" : "re0-loop의 첫 turn 전에 새 iteration 폴더를 열고 DESIGN/WORKFLOW/EVIDENCE를 씁니다",
+        "id" : "re0-plan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "새 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-plan"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌀",
+        "help" : "build → QA → re0-memo → re0-work 루프를 돌려 배움이 코드가 아니라 축적되게 합니다",
+        "id" : "re0-loop",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "전체 루프",
+        "takesText" : true,
+        "title" : "re0-loop"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "끝났거나 실패한 사이클에서 교훈과 anti-pattern을 뽑아냅니다",
+        "id" : "re0-memo",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "완료된 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-memo"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧱",
+        "help" : "재사용할 자격을 얻은 교훈만 남기고 v0에서 다시 시작합니다",
+        "id" : "re0-work",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재시작 하나",
+        "takesText" : true,
+        "title" : "re0-work"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🗺️",
+        "help" : "실시간 state에서 잃어버린 context를 재구성합니다: 누구에게 필요한지, 무엇이 바뀌었는지, 새 단어가 무엇을 뜻하는지",
+        "id" : "catchup",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재진입 하나",
+        "takesText" : true,
+        "title" : "catchup"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🎯",
+        "help" : "살아 있는 사이클 state를 읽고 메뉴가 아니라 단 하나의 다음 최선 행동을 돌려줍니다",
+        "id" : "nba",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 사이클",
+        "takesText" : true,
+        "title" : "nba"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🔺",
+        "help" : "아티팩트 하나를 독립적인 렌즈들로 쪼갠 뒤, 충돌하는 지점과 그것을 푸는 질문을 돌려줍니다",
+        "id" : "prism",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "prism"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "re0",
+          "readchk",
+          "aim",
+          "modelchk",
+          "hate",
+          "macrothink",
+          "feynman",
+          "autobahn",
+          "reorder",
+          "detool",
+          "dedash",
+          "debloat",
+          "shower",
+          "factchk",
+          "mandela",
+          "sip",
+          "re0-git",
+          "re0-release",
+          "re0-merge"
+        ],
+        "axis" : "하나 · 지금",
+        "id" : "depth",
+        "question" : "이 하나가 깨끗하고 참인가?",
+        "selected" : true,
+        "title" : "depth"
+      },
+      {
+        "actions" : [
+          "ssotize",
+          "re0-upgrade"
+        ],
+        "axis" : "여럿 · 지금",
+        "id" : "breadth",
+        "question" : "하나의 진실이 모든 곳에서 일관적인가?",
+        "selected" : false,
+        "title" : "breadth"
+      },
+      {
+        "actions" : [
+          "re0-plan",
+          "re0-loop",
+          "re0-memo",
+          "re0-work",
+          "catchup",
+          "nba"
+        ],
+        "axis" : "하나 · 반복",
+        "id" : "coil",
+        "question" : "각 패스가 다음 패스를 가르쳤는가?",
+        "selected" : false,
+        "title" : "coil"
+      },
+      {
+        "actions" : [
+          "prism"
+        ],
+        "axis" : "여러 시선",
+        "id" : "mesh",
+        "question" : "집단이 진실로 수렴하는가?",
+        "selected" : false,
+        "title" : "mesh"
+      }
+    ],
+    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "re0",
+      "readchk",
+      "aim",
+      "modelchk",
+      "hate",
+      "macrothink",
+      "feynman",
+      "autobahn",
+      "reorder",
+      "detool",
+      "dedash",
+      "debloat",
+      "shower",
+      "factchk",
+      "mandela",
+      "sip",
+      "re0-git",
+      "re0-release",
+      "re0-merge"
+    ],
+    "presentation" : {
+      "headerTitle" : "Paperthin",
+      "icon" : "square.grid.2x2",
+      "source" : "bundled",
+      "tint" : "accent"
+    },
+    "setup" : {
+      "installCommand" : "npx skills@latest add LilMGenius/paperthin --global --agent claude-code",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "square.grid.2x2",
+      "id" : "paperthin",
+      "name" : "Paperthin",
+      "source" : "bundled",
+      "tint" : "accent"
+    }
+  },
+  "notReady" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "♻️",
+        "help" : "drift된 아티팩트를 또 다른 패치가 아니라 깨끗한 v0로 다시 씁니다",
+        "id" : "re0",
+        "prominent" : true,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "re0"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧭",
+        "help" : "요청을 어떻게 읽었는지 확인하고, 실제로 남은 갈림길만 드러냅니다",
+        "id" : "readchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "지시 하나",
+        "takesText" : true,
+        "title" : "readchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🏹",
+        "help" : "넘겨받은 데이터를 읽고, 물어보는 대신 확인할 의도를 먼저 제안합니다",
+        "id" : "aim",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "넘겨받은 데이터 하나",
+        "takesText" : true,
+        "title" : "aim"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "📏",
+        "help" : "충분한 가장 싼 tier와 reasoning effort를 고릅니다",
+        "id" : "modelchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "modelchk"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "😈",
+        "help" : "친절하기를 거부합니다. 계획을 죽일 수 있는 반론 하나와 가장 싼 테스트를 냅니다",
+        "id" : "hate",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "계획 하나",
+        "takesText" : true,
+        "title" : "hate"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧠",
+        "help" : "bait를 걷어내고 새 읽기를 펼친 뒤 divergence를 먼저 보고합니다",
+        "id" : "macrothink",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "방향 하나",
+        "takesText" : true,
+        "title" : "macrothink"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🧐",
+        "help" : "방금 내린 결정을 설명할 수 있을 때까지 밀어붙이고, 안 되면 그 빈틈을 드러냅니다",
+        "id" : "feynman",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "결정 하나",
+        "takesText" : true,
+        "title" : "feynman"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🛣️",
+        "help" : "안전하지 않은 스코프를 앞에서 도려내고, 안전한 나머지는 전력으로 실행한 뒤 descope를 기록합니다",
+        "id" : "autobahn",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "작업 하나",
+        "takesText" : true,
+        "title" : "autobahn"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🔃",
+        "help" : "drift된 목록을 하나의 명시된 원칙 아래 논리적 순서로 다시 맞춥니다. 항목만 옮기고, 표현은 바꾸지 않습니다",
+        "id" : "reorder",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "목록 하나",
+        "takesText" : true,
+        "title" : "reorder"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧰",
+        "help" : "우연히 섞인 도구 이름을 그것이 뜻한 메커니즘으로 바꿉니다",
+        "id" : "detool",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "durable 아티팩트 하나",
+        "takesText" : true,
+        "title" : "detool"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "✂️",
+        "help" : "em dash와 비슷한 tell을 지우고, 각 위치에 맞는 문장부호를 고릅니다",
+        "id" : "dedash",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 문장",
+        "takesText" : true,
+        "title" : "dedash"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗜️",
+        "help" : "bloat된 아티팩트를 load-bearing한 밀도까지 압축합니다. 단어는 잘라내되, 규칙은 절대 잘라내지 않습니다",
+        "id" : "debloat",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "debloat"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🚿",
+        "help" : "맥락 없는 새 눈으로 차갑게 읽습니다. 이것이 혼자서도 서는가?",
+        "id" : "shower",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "shower"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🔬",
+        "help" : "주장된 것을 양방향으로 소스에 대조합니다. 말도 안 되는 것이 팩트일 수 있고, 당연한 것이 거짓일 수 있는가?",
+        "id" : "factchk",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "클레임 하나",
+        "takesText" : true,
+        "title" : "factchk"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🧪",
+        "help" : "leakage가 있는지 audit합니다. 외부 ground truth가 실제로 들어오는가?",
+        "id" : "mandela",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "eval 하나",
+        "takesText" : true,
+        "title" : "mandela"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🥄",
+        "help" : "변경 뒤마다 레포 자체의 clean-and-true 체크로 아웃풋을 맛봅니다",
+        "id" : "sip",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 아웃풋",
+        "takesText" : true,
+        "title" : "sip"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧾",
+        "help" : "완료된 커밋 메시지를 다시 써서 `git log`만으로 handoff가 되게 합니다",
+        "id" : "re0-git",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "커밋 하나",
+        "takesText" : true,
+        "title" : "re0-git"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🚀",
+        "help" : "shipping·releasing 체크리스트를 실행하고, 확인 후 태그·퍼블리시합니다",
+        "id" : "re0-release",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "릴리스 하나",
+        "takesText" : true,
+        "title" : "re0-release"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🤝",
+        "help" : "기여를 리뷰하고 반영합니다: gate를 통과시키고, 작성자 크레딧을 유지하고, 닫기 전에 승인하고, 변경 사항을 설명합니다",
+        "id" : "re0-merge",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "기여 하나",
+        "takesText" : true,
+        "title" : "re0-merge"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧲",
+        "help" : "흩어진 곳을 감사한 뒤 한 집으로 모아 나머지가 그곳을 가리키게 합니다",
+        "id" : "ssotize",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "팩트 하나, 여러 위치",
+        "takesText" : true,
+        "title" : "ssotize"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🧰",
+        "help" : "한 번에 현재 전체 카탈로그로 올립니다: 이름 바뀐 건 정리, 새 건 추가, 전부 먼저 확인",
+        "id" : "re0-upgrade",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "내 스킬 설치",
+        "takesText" : true,
+        "title" : "re0-upgrade"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "glyph" : "🗂️",
+        "help" : "re0-loop의 첫 turn 전에 새 iteration 폴더를 열고 DESIGN/WORKFLOW/EVIDENCE를 씁니다",
+        "id" : "re0-plan",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "새 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-plan"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🌀",
+        "help" : "build → QA → re0-memo → re0-work 루프를 돌려 배움이 코드가 아니라 축적되게 합니다",
+        "id" : "re0-loop",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "전체 루프",
+        "takesText" : true,
+        "title" : "re0-loop"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧭",
+        "help" : "끝났거나 실패한 사이클에서 교훈과 anti-pattern을 뽑아냅니다",
+        "id" : "re0-memo",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "완료된 사이클 하나",
+        "takesText" : true,
+        "title" : "re0-memo"
+      },
+      {
+        "flags" : [
+
+        ],
+        "glyph" : "🧱",
+        "help" : "재사용할 자격을 얻은 교훈만 남기고 v0에서 다시 시작합니다",
+        "id" : "re0-work",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재시작 하나",
+        "takesText" : true,
+        "title" : "re0-work"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🗺️",
+        "help" : "실시간 state에서 잃어버린 context를 재구성합니다: 누구에게 필요한지, 무엇이 바뀌었는지, 새 단어가 무엇을 뜻하는지",
+        "id" : "catchup",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "재진입 하나",
+        "takesText" : true,
+        "title" : "catchup"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "glyph" : "🎯",
+        "help" : "살아 있는 사이클 state를 읽고 메뉴가 아니라 단 하나의 다음 최선 행동을 돌려줍니다",
+        "id" : "nba",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "현재 사이클",
+        "takesText" : true,
+        "title" : "nba"
+      },
+      {
+        "flags" : [
+          "userInvoked",
+          "readOnly"
+        ],
+        "glyph" : "🔺",
+        "help" : "아티팩트 하나를 독립적인 렌즈들로 쪼갠 뒤, 충돌하는 지점과 그것을 푸는 질문을 돌려줍니다",
+        "id" : "prism",
+        "prominent" : false,
+        "requiresText" : false,
+        "scope" : "아티팩트 하나",
+        "takesText" : true,
+        "title" : "prism"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "re0",
+          "readchk",
+          "aim",
+          "modelchk",
+          "hate",
+          "macrothink",
+          "feynman",
+          "autobahn",
+          "reorder",
+          "detool",
+          "dedash",
+          "debloat",
+          "shower",
+          "factchk",
+          "mandela",
+          "sip",
+          "re0-git",
+          "re0-release",
+          "re0-merge"
+        ],
+        "axis" : "하나 · 지금",
+        "id" : "depth",
+        "question" : "이 하나가 깨끗하고 참인가?",
+        "selected" : true,
+        "title" : "depth"
+      },
+      {
+        "actions" : [
+          "ssotize",
+          "re0-upgrade"
+        ],
+        "axis" : "여럿 · 지금",
+        "id" : "breadth",
+        "question" : "하나의 진실이 모든 곳에서 일관적인가?",
+        "selected" : false,
+        "title" : "breadth"
+      },
+      {
+        "actions" : [
+          "re0-plan",
+          "re0-loop",
+          "re0-memo",
+          "re0-work",
+          "catchup",
+          "nba"
+        ],
+        "axis" : "하나 · 반복",
+        "id" : "coil",
+        "question" : "각 패스가 다음 패스를 가르쳤는가?",
+        "selected" : false,
+        "title" : "coil"
+      },
+      {
+        "actions" : [
+          "prism"
+        ],
+        "axis" : "여러 시선",
+        "id" : "mesh",
+        "question" : "집단이 진실로 수렴하는가?",
+        "selected" : false,
+        "title" : "mesh"
+      }
+    ],
+    "guidance" : "대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.",
+    "next" : [
+      "re0",
+      "readchk",
+      "aim",
+      "modelchk",
+      "hate",
+      "macrothink",
+      "feynman",
+      "autobahn",
+      "reorder",
+      "detool",
+      "dedash",
+      "debloat",
+      "shower",
+      "factchk",
+      "mandela",
+      "sip",
+      "re0-git",
+      "re0-release",
+      "re0-merge"
+    ],
+    "presentation" : {
+      "headerTitle" : "Paperthin",
+      "icon" : "square.grid.2x2",
+      "source" : "bundled",
+      "tint" : "accent"
+    },
+    "setup" : {
+      "hint" : "터미널 실행 창을 열어 다음 명령을 넣습니다(Claude Code의 전역 스킬 폴더에 연결): npx skills@latest add LilMGenius/paperthin --global --agent claude-code",
+      "installCommand" : "npx skills@latest add LilMGenius/paperthin --global --agent claude-code",
+      "missing" : [
+        "Paperthin 스킬이 설치되어 있지 않습니다"
+      ],
+      "ready" : false
+    },
+    "style" : {
+      "icon" : "square.grid.2x2",
+      "id" : "paperthin",
+      "name" : "Paperthin",
+      "source" : "bundled",
+      "tint" : "accent"
+    }
+  }
+}

@@ -27,6 +27,13 @@ describe('parseCapabilities', () => {
     expect(parseCapabilities(undefined)).toEqual([]);
   });
 
+  it('knows "style", so the guided panel turns on only where the host has it', () => {
+    expect(parseCapabilities(info(['mighty', 'style']))).toEqual(['mighty', 'style']);
+    const older = parseCapabilities(info(['mighty']));
+    expect(hasCapability(older, 'mighty')).toBe(true);
+    expect(hasCapability(older, 'style')).toBe(false);
+  });
+
   it('drops anything that is not a name we know', () => {
     expect(parseCapabilities(info(['queue', 'teleport', '', 7, null, { name: 'pane' }]))).toEqual([
       'queue',

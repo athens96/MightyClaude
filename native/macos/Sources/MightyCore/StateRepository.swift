@@ -169,7 +169,19 @@ public actor StateRepository {
         return bytes + bytes / 4 + 4096
     }
 
-    public nonisolated static func normalize(_ value: AppSnapshot, restoring: Bool, at date: Date = Date()) -> AppSnapshot {
+    /// `knownStyleIds` is the caller's own list; nil keeps the shape check
+    /// only. The app never passes it — a workspace manifest is scanned after
+    /// its panes are restored, so filtering by id would wipe them every launch
+    /// (docs/mighty-styles.md §3.4).
+    private nonisolated static func normalizedStyle(_ session: RunSession, knownStyleIds: Set<String>?) -> String? {
+        guard session.kind == "claude", session.provider == "claude", let style = session.mightyStyle else { return nil }
+        guard MightyStyleIDs.isValidShape(style) else { return nil }
+        guard let knownStyleIds else { return style }
+        return knownStyleIds.contains(style) ? style : nil
+    }
+
+    public nonisolated static func normalize(_ value: AppSnapshot, restoring: Bool, at date: Date = Date(),
+                                             knownStyleIds: Set<String>? = nil) -> AppSnapshot {
         var output = AppSnapshot(); var workspaceIds = Set<String>(); var sessionIds = Set<String>()
         for var workspace in value.workspaces.prefix(64) {
             guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path, remote: workspace.remote != nil) else { continue }
@@ -193,7 +205,8 @@ public actor StateRepository {
             if restoring && session.status == "running" { session.status = "stopped" }
             if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
             session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
-            session.mightyStyle = session.kind == "claude" && session.provider == "claude" ? MightyStyles.normalized(session.mightyStyle) : nil
+            session.mightyStyle = normalizedStyle(session, knownStyleIds: knownStyleIds)
+            if session.mightyStyle == nil { session.mightyStyleHash = nil }
             session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
             // A history the budget emptied is not "no history": drop the empty
             // array so the graph is rebuilt from the logs, as for old sessions.
