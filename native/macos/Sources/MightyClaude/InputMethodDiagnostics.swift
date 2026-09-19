@@ -25,6 +25,7 @@ final class InputMethodMonitor {
     private var fallbackReported = false
     var dataDirectory: URL?
     var onProblem: ((Problem) -> Void)?
+    var onRecovered: (() -> Void)?
     private(set) var problem: Problem?
     private let launchedAt = Date()
 
@@ -58,6 +59,15 @@ final class InputMethodMonitor {
         let conjoining = text.unicodeScalars.count == 1 && text.unicodeScalars.first.map { (0x1100...0x11FF).contains($0.value) } == true
         record("insertText \(Self.codes(text)) replace=\(replaced) marked=\(composedThisKey) source=\(source ?? "-")" + (conjoining ? " conjoining=true" : ""))
         let koreanSource = InputMethodSymptom.isKoreanInputSource(source)
+        // A warning that outlives the fault is its own bug: once a key press
+        // composes again, take the notice down without being asked.
+        if problem != nil, keyDepth > 0,
+           InputMethodSymptom.provesComposition(text, hasReplacementRange: replacementRange.location != NSNotFound, koreanSource: koreanSource) {
+            record("recovered: the input method is composing again")
+            clearProblem()
+            onRecovered?()
+            return false
+        }
         let caret = min(editor.selectedRange().location, (editor.string as NSString).length)
         let before = (editor.string as NSString).substring(with: NSRange(location: max(0, caret - 2), length: min(2, caret)))
         guard detector.observeInsert(textBeforeCaret: before, koreanSource: koreanSource, at: Date().timeIntervalSince1970) else { return false }

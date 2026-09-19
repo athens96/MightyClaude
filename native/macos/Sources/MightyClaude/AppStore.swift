@@ -197,6 +197,7 @@ final class AppStore: ObservableObject {
         companion.configure(store: self)
         InputMethodMonitor.shared.dataDirectory = dataDirectory
         InputMethodMonitor.shared.onProblem = { [weak self] problem in self?.inputMethodProblem = problem }
+        InputMethodMonitor.shared.onRecovered = { [weak self] in self?.inputMethodProblem = nil }
         loading = false
         Task {
             await refreshRuntime()
