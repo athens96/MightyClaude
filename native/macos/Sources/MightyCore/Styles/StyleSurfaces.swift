@@ -27,9 +27,13 @@ public enum StyleChrome {
     }
 
     /// The install pane's title. The app opens its own sign-in panes through
-    /// the same mechanism, so the style's name is appended to tell them apart.
-    public static func installPaneTitle(_ paneTitle: String, styleName: String) -> String {
-        paneTitle + " " + separator + " " + styleName
+    /// the same mechanism, so the style's name is appended to tell them apart —
+    /// and the badge travels with the name here as everywhere else (§1.10),
+    /// because this is the one surface that ends in a prefilled shell command.
+    public static func installPaneTitle(_ paneTitle: String, styleName: String, source: StyleSource) -> String {
+        var value = paneTitle + " " + separator + " " + styleName
+        if let badge = sourceBadge(source) { value += " " + separator + " " + badge }
+        return value
     }
 
     /// The badge that follows a non-bundled name everywhere it appears (§1.10).
@@ -62,9 +66,14 @@ public struct StyleChipList: Sendable, Equatable {
     public var reset: StyleResetChip
     /// The phase the row was built for, which `startingNew` may have moved.
     public var phaseId: String?
-    public init(actions: [StyleAction], prominentId: String?, recommendedId: String?, reset: StyleResetChip, phaseId: String?) {
+    /// A catalogue drawn under a group map is a grid; a phase row is one line.
+    public var grid: Bool
+    /// The row is replaced by a spinner: a sequence has no next step mid-run.
+    public var progress: Bool
+    public init(actions: [StyleAction], prominentId: String?, recommendedId: String?, reset: StyleResetChip,
+                phaseId: String?, grid: Bool = false, progress: Bool = false) {
         self.actions = actions; self.prominentId = prominentId; self.recommendedId = recommendedId
-        self.reset = reset; self.phaseId = phaseId
+        self.reset = reset; self.phaseId = phaseId; self.grid = grid; self.progress = progress
     }
 }
 
@@ -72,22 +81,30 @@ public enum StyleChips {
     /// `phase` is the pane's own phase; `startingNew` is the reset chip having
     /// been pressed, which shows the start rule's row instead.
     public static func make(_ evaluator: StyleEvaluator, phase: StylePhase?, group: StyleGroup?,
-                            startingNew: Bool, capabilityStates: [String: String] = [:]) -> StyleChipList {
+                            startingNew: Bool, capabilityStates: [String: String] = [:],
+                            running: Bool = false) -> StyleChipList {
         let manifest = evaluator.manifest
         var effective = phase
         if startingNew, case .actions(let startPhase, _, _) = manifest.rules.start { effective = manifest.phase(startPhase) }
         let start = evaluator.startActions(phase: effective)
-        let actions = start.isEmpty ? evaluator.nextActions(phase: effective, group: group) : start
+        let actions = evaluator.visibleActions(phase: effective, group: group, running: running)
         // `byGroup` has no prominent chip: the recommendation plays that role.
         var prominent = actions.first?.id
         if start.isEmpty, case .byGroup = manifest.rules.next { prominent = nil }
+        // A sequence in flight has no next step, so its whole row goes and a
+        // spinner takes its place; a catalogue keeps its chips (§6.1).
+        let waiting = running && evaluator.drawsPhaseProgress
         let reset: StyleResetChip
-        if startingNew { reset = .cancel }
+        if waiting { reset = .none }
+        else if startingNew { reset = .cancel }
         else if start.isEmpty, let title = evaluator.resetTitle { reset = .reset(title) }
         else { reset = .none }
         return StyleChipList(actions: actions, prominentId: prominent,
-                             recommendedId: evaluator.recommendedAction(capabilityStates: capabilityStates, group: group),
-                             reset: reset, phaseId: effective?.id)
+                             recommendedId: evaluator.recommendedAction(capabilityStates: capabilityStates),
+                             reset: reset, phaseId: effective?.id,
+                             // Whenever the group map is drawn the row under it
+                             // is a catalogue, and a catalogue is a grid (§6.1).
+                             grid: evaluator.drawsGroupMap(), progress: waiting)
     }
 
     /// The chip's tooltip: `help · 범위: scope · 호출자 · 읽기 전용` (§6.1).
@@ -99,6 +116,27 @@ public enum StyleChips {
         if action.flags.contains(.userInvoked) { parts.append("사람만 부를 수 있는 스킬") }
         if action.flags.contains(.readOnly) { parts.append("읽기 전용") }
         return parts.joined(separator: " " + StyleChrome.separator + " ")
+    }
+}
+
+/// What Enter does in a guided pane's composer. The order is the composer's,
+/// not the manifest's: a waiting question always wins, and only then does the
+/// style's own Enter rule get a say (§1.6, §6.1).
+public enum StyleComposerEnter: Sendable, Equatable {
+    case answerQuestion
+    case rewrite(actionId: String)
+    case verbatim
+}
+
+public enum StyleComposer {
+    public static func enter(_ evaluator: StyleEvaluator, draft: String, phase: StylePhase?, answering: Bool,
+                             hasAttachments: Bool, running: Bool, hasRequests: Bool, startingNew: Bool) -> StyleComposerEnter {
+        guard !answering else { return .answerQuestion }
+        switch evaluator.enterBehaviour(draft: draft, phase: phase, hasAttachments: hasAttachments,
+                                        running: running, hasRequests: hasRequests, startingNew: startingNew) {
+        case .rewrite(let actionId): return .rewrite(actionId: actionId)
+        case .verbatim: return .verbatim
+        }
     }
 }
 

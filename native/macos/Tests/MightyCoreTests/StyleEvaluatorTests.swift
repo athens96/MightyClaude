@@ -76,13 +76,67 @@ struct StyleEvaluatorTests {
         #expect(behaviour(draft: "xx 이거 해줘") == .verbatim)                 // 4
         #expect(behaviour(phase: two) == .verbatim)                          // 5
         #expect(behaviour(requests: true) == .verbatim)                      // 6
-        #expect(style.enterArmedPrefix(phase: one, running: false, hasRequests: false) == "/x:plan")
-        #expect(style.enterArmedPrefix(phase: two, running: false, hasRequests: false) == nil)
-        #expect(style.enterArmedPrefix(phase: one, running: true, hasRequests: false) == nil)
+        // …and the exemption to 6: the reset chip is the user's own statement
+        // that this is a fresh start, which no manifest can assert (§1.6).
+        #expect(style.enterBehaviour(draft: "결제 모듈", phase: one, hasAttachments: false, running: false,
+                                     hasRequests: true, startingNew: true) == .rewrite(actionId: "plan"))
+        // The exemption reopens condition 6 only; the other five still hold.
+        #expect(style.enterBehaviour(draft: "/x:note", phase: one, hasAttachments: false, running: false,
+                                     hasRequests: true, startingNew: true) == .verbatim)
+        #expect(style.enterBehaviour(draft: "결제 모듈", phase: two, hasAttachments: false, running: false,
+                                     hasRequests: true, startingNew: true) == .verbatim)
+        #expect(style.enterArmedPrefix(draft: "결제 모듈", phase: one, running: false, hasRequests: false) == "/x:plan")
+        #expect(style.enterArmedPrefix(draft: "결제 모듈", phase: two, running: false, hasRequests: false) == nil)
+        #expect(style.enterArmedPrefix(draft: "결제 모듈", phase: one, running: true, hasRequests: false) == nil)
+        // The chip reads the draft too: it may not name a rewrite Enter would
+        // not perform.
+        #expect(style.enterArmedPrefix(draft: "/x:note", phase: one, running: false, hasRequests: false) == nil)
+        #expect(style.enterArmedPrefix(draft: "xx 이거 해줘", phase: one, running: false, hasRequests: false) == nil)
+        #expect(style.enterArmedPrefix(draft: "결제", phase: one, hasAttachments: true, running: false, hasRequests: false) == nil)
         // A verbatim style never rewrites, whatever the draft is.
         let paperthin = StyleFixtures.bundled("paperthin").evaluator
         #expect(paperthin.enterBehaviour(draft: "무엇이든", phase: nil, hasAttachments: false, running: false, hasRequests: false) == .verbatim)
-        #expect(paperthin.enterArmedPrefix(phase: nil, running: false, hasRequests: false) == nil)
+        #expect(paperthin.enterArmedPrefix(draft: "무엇이든", phase: nil, running: false, hasRequests: false) == nil)
+    }
+
+    /// The composer's own order, moved into the engine so it can be asserted:
+    /// a waiting question wins over everything the manifest says (§6.1).
+    @Test func theComposerAnswersAQuestionBeforeItConsultsTheEnterRule() throws {
+        let style = try evaluator()
+        let one = style.manifest.phase("one")
+        func enter(answering: Bool, requests: Bool = false, startingNew: Bool = false, draft: String = "결제 모듈") -> StyleComposerEnter {
+            StyleComposer.enter(style, draft: draft, phase: one, answering: answering, hasAttachments: false,
+                                running: false, hasRequests: requests, startingNew: startingNew)
+        }
+        #expect(enter(answering: true) == .answerQuestion)
+        #expect(enter(answering: true, requests: true) == .answerQuestion)
+        #expect(enter(answering: false) == .rewrite(actionId: "plan"))
+        #expect(enter(answering: false, requests: true) == .verbatim)
+        #expect(enter(answering: false, requests: true, startingNew: true) == .rewrite(actionId: "plan"))
+        #expect(enter(answering: false, draft: "/x:note") == .verbatim)
+        // A style with no rewrite rule sends what was typed, question aside.
+        let paperthin = StyleFixtures.bundled("paperthin").evaluator
+        #expect(StyleComposer.enter(paperthin, draft: "무엇이든", phase: nil, answering: false, hasAttachments: false,
+                                    running: false, hasRequests: false, startingNew: true) == .verbatim)
+        #expect(StyleComposer.enter(paperthin, draft: "무엇이든", phase: nil, answering: true, hasAttachments: false,
+                                    running: false, hasRequests: false, startingNew: false) == .answerQuestion)
+    }
+
+    /// A sequence in flight has no next step; a catalogue keeps its chips.
+    @Test func aRunHidesAPhaseRowButNotAGroupCatalogue() throws {
+        let ouroboros = StyleFixtures.bundled("ouroboros")
+        let seed = ouroboros.evaluator.currentPhase(prompts: ["/ouroboros:seed"])
+        let busy = StyleChips.make(ouroboros.evaluator, phase: seed, group: nil, startingNew: false, running: true)
+        #expect(busy.actions.isEmpty && busy.reset == .none && busy.progress && !busy.grid)
+        let idle = StyleChips.make(ouroboros.evaluator, phase: seed, group: nil, startingNew: false, running: false)
+        #expect(idle.actions.map(\.id) == ["run", "evaluate", "status"] && !idle.progress)
+
+        let paperthin = StyleFixtures.bundled("paperthin")
+        let coil = paperthin.manifest.group("coil")
+        let running = StyleChips.make(paperthin.evaluator, phase: nil, group: coil, startingNew: false,
+                                      capabilityStates: [StyleCapabilityID.casebook: "open"], running: true)
+        #expect(running.actions.map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
+        #expect(!running.progress && running.grid)
     }
 
     @Test func placeholdersAndGuidanceSubstituteThePhase() throws {
@@ -107,10 +161,13 @@ struct StyleEvaluatorTests {
         #expect(paperthin.initialGroup(capabilityStates: ["paperthin.casebook": "absent"])?.id == "depth")
         #expect(paperthin.initialGroup(capabilityStates: ["paperthin.casebook": "open"])?.id == "coil")
         #expect(paperthin.initialGroup(capabilityStates: ["paperthin.casebook": "complete"])?.id == "coil")
-        let coil = paperthin.manifest.group("coil"), depth = paperthin.manifest.group("depth")
-        #expect(paperthin.recommendedAction(capabilityStates: ["paperthin.casebook": "open"], group: coil) == "re0-loop")
-        // The recommendation belongs to one group only.
-        #expect(paperthin.recommendedAction(capabilityStates: ["paperthin.casebook": "open"], group: depth) == nil)
+        let coil = paperthin.manifest.group("coil")
+        // The recommendation is the feature's answer, not the chosen group's:
+        // the rule's own group only says which row the attachments belong to.
+        #expect(paperthin.recommendedAction(capabilityStates: ["paperthin.casebook": "open"]) == "re0-loop")
+        #expect(paperthin.recommendedAction(capabilityStates: ["paperthin.casebook": "absent"]) == "re0-plan")
+        #expect(paperthin.recommendedAction(capabilityStates: [:]) == nil)
+        #expect(paperthin.recommendGroupId == "coil" && StyleFixtures.bundled("ouroboros").evaluator.recommendGroupId == nil)
         #expect(paperthin.nextActions(phase: nil, group: coil).map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
         #expect(paperthin.nextActions(phase: nil, group: nil).isEmpty)
     }

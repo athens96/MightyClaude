@@ -108,11 +108,29 @@ public struct StyleEvaluator: Sendable {
         }
     }
 
-    public func recommendedAction(capabilityStates: [String: String], group: StyleGroup?) -> String? {
-        guard case .capability(let name, let map, let onlyGroup) = manifest.rules.recommend else { return nil }
-        if let onlyGroup, group?.id != onlyGroup { return nil }
+    /// The rule's `group` says which group's attachment row the feature feeds;
+    /// it does not gate the recommendation itself, so every surface that has
+    /// no group of its own still gets the value (§1.6).
+    /// The chips a surface actually draws. A `byPhase` style is a sequence, so
+    /// while a run is in flight there is no next step to offer and the panel
+    /// shows a spinner instead; a `byGroup` style is a catalogue, and picking
+    /// from it queues the next request, which is what it did before (§6.1).
+    public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool) -> [StyleAction] {
+        if running, drawsPhaseProgress { return [] }
+        let start = startActions(phase: phase)
+        return start.isEmpty ? nextActions(phase: phase, group: group) : start
+    }
+
+    public func recommendedAction(capabilityStates: [String: String]) -> String? {
+        guard case .capability(let name, let map, _) = manifest.rules.recommend else { return nil }
         guard let state = capabilityStates[name] else { return nil }
         return map[state]
+    }
+
+    /// The group the recommend rule belongs to, if it named one (§6.1).
+    public var recommendGroupId: String? {
+        guard case .capability(_, _, let group) = manifest.rules.recommend else { return nil }
+        return group
     }
 
     /// Read once, when the panel opens: a later state change does not move the
@@ -126,6 +144,13 @@ public struct StyleEvaluator: Sendable {
         }
     }
 
+    /// A `byPhase` style is a sequence: there is no next step until the current
+    /// one finishes, so a run in flight is drawn as progress, not as chips.
+    public var drawsPhaseProgress: Bool {
+        if case .byPhase = manifest.rules.next { return true }
+        return false
+    }
+
     public func drawsGroupMap() -> Bool {
         guard case .byGroup = manifest.rules.next else { return false }
         return manifest.groups.count >= 2 && manifest.groups.contains { $0.axis != nil }
@@ -134,10 +159,14 @@ public struct StyleEvaluator: Sendable {
     // MARK: - composer
 
     /// All six conditions of §1.6 must hold; condition 6 is the one a
-    /// manifest cannot make permanently true about itself.
-    public func enterBehaviour(draft: String, phase: StylePhase?, hasAttachments: Bool, running: Bool, hasRequests: Bool) -> StyleEnterBehaviour {
+    /// manifest cannot make permanently true about itself — and pressing the
+    /// reset chip is the user's own statement that this is a fresh start, so
+    /// it counts the same way a first request would.
+    public func enterBehaviour(draft: String, phase: StylePhase?, hasAttachments: Bool, running: Bool,
+                               hasRequests: Bool, startingNew: Bool = false) -> StyleEnterBehaviour {
         guard case .rewriteBareDraftTo(let action, let rulePhase) = manifest.rules.enter else { return .verbatim }
-        guard !running, !hasAttachments, !hasRequests else { return .verbatim }
+        guard !running, !hasAttachments else { return .verbatim }
+        guard !hasRequests || startingNew else { return .verbatim }
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") else { return .verbatim }
         guard !namesSomething(inPrompt: draft) else { return .verbatim }
         guard phase?.id == rulePhase else { return .verbatim }
@@ -146,9 +175,13 @@ public struct StyleEvaluator: Sendable {
 
     /// The prefix the composer draws as a non-editable chip while the rule is
     /// armed: `placeholders.initial` is the author's text and cannot say this.
-    public func enterArmedPrefix(phase: StylePhase?, running: Bool, hasRequests: Bool) -> String? {
-        guard case .rewriteBareDraftTo(let action, let rulePhase) = manifest.rules.enter else { return nil }
-        guard !running, !hasRequests, phase?.id == rulePhase else { return nil }
+    /// The draft is read too, so the chip never promises a rewrite that the
+    /// very next Enter would not perform.
+    public func enterArmedPrefix(draft: String, phase: StylePhase?, hasAttachments: Bool = false, running: Bool,
+                                 hasRequests: Bool, startingNew: Bool = false) -> String? {
+        guard case .rewriteBareDraftTo(let action, _) = manifest.rules.enter else { return nil }
+        guard case .rewrite = enterBehaviour(draft: draft, phase: phase, hasAttachments: hasAttachments, running: running,
+                                             hasRequests: hasRequests, startingNew: startingNew) else { return nil }
         return byId[action]?.prompt(text: "")
     }
 

@@ -85,8 +85,14 @@ struct StylesOuroborosTests {
         #expect(evaluator.guidanceLine(phase: phase("seed"), running: false) == "시드 단계가 끝났습니다. 다음 단계를 고르거나, 아래에 적어 같은 대화를 이어가세요.")
         #expect(evaluator.guidanceLine(phase: phase("seed"), running: true) == "시드 진행 중 \u{00B7} 질문이 오면 여기에 표시됩니다")
         #expect(evaluator.guidanceLine(phase: phase("goal"), running: false)?.hasPrefix("무엇을 만들까요?") == true)
-        #expect(evaluator.enterArmedPrefix(phase: phase("goal"), running: false, hasRequests: false) == "/ouroboros:interview")
-        #expect(evaluator.enterArmedPrefix(phase: phase("goal"), running: false, hasRequests: true) == nil)
-        #expect(!evaluator.drawsGroupMap())
+        #expect(evaluator.enterArmedPrefix(draft: "결제 모듈", phase: phase("goal"), running: false, hasRequests: false) == "/ouroboros:interview")
+        #expect(evaluator.enterArmedPrefix(draft: "결제 모듈", phase: phase("goal"), running: false, hasRequests: true) == nil)
+        // 새 목표 is the user's own reset, so the rule is armed again (§1.6).
+        #expect(evaluator.enterArmedPrefix(draft: "결제 모듈", phase: phase("goal"), running: false,
+                                           hasRequests: true, startingNew: true) == "/ouroboros:interview")
+        // The chip never promises a rewrite this very Enter would not do.
+        #expect(evaluator.enterArmedPrefix(draft: "/help", phase: phase("goal"), running: false, hasRequests: false) == nil)
+        #expect(evaluator.enterArmedPrefix(draft: "ooo 뭐 좀", phase: phase("goal"), running: false, hasRequests: false) == nil)
+        #expect(!evaluator.drawsGroupMap() && evaluator.drawsPhaseProgress)
     }
 }

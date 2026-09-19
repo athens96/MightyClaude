@@ -336,22 +336,28 @@ struct MobileRemoteExtensionTests {
         let ouroboros = try #require(MobileLegacyStyleAdapter.payloads(style: flow, panel: seeded, casebook: nil).ouroboros)
         #expect(ouroboros.phase == "seed" && !ouroboros.ready)
         #expect(ouroboros.next.map(\.skill) == ["run", "evaluate", "status"])
-        #expect(ouroboros.all.map(\.skill) == flow.manifest.actions.map(\.id))
+        // The literal catalogue the deleted `OuroborosFlowTests` pinned.
+        #expect(ouroboros.all.map(\.skill) == ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck"])
         #expect(ouroboros.takesText == ["interview", "auto", "unstuck"])
-        #expect(ouroboros.takesText.allSatisfy { flow.manifest.action($0)?.takesText == true })
-        #expect(ouroboros.all.first { $0.skill == "seed" }?.title == flow.manifest.action("seed")?.title)
-        // Every phase is reported by its own id, as the old payload did.
+        #expect(ouroboros.all.first { $0.skill == "seed" }?.title == "시드 생성")
+        // The literal phase walk, as the old payload reported it.
+        var phases: [String] = []
         for phase in flow.manifest.orderedPhases {
             let panel = StylePanelProjection.make(style: flow, prompts: ["/ouroboros:" + phase.id], selectedGroupId: nil,
                                                   capabilityStates: [:], attachments: [],
                                                   prerequisites: StylePrerequisiteResult(ready: true))
-            let id = MobileLegacyStyleAdapter.payloads(style: flow, panel: panel, casebook: nil).ouroboros?.phase
-            #expect(id == (flow.manifest.action(phase.id) == nil ? "goal" : phase.id))
+            phases.append(MobileLegacyStyleAdapter.payloads(style: flow, panel: panel, casebook: nil).ouroboros?.phase ?? "")
         }
+        // `goal` has no action of its own, so a pane there reports the entry.
+        #expect(flow.manifest.orderedPhases.map(\.id) == ["goal", "interview", "seed", "run", "evaluate", "evolve"])
+        #expect(phases == ["goal", "interview", "seed", "run", "evaluate", "evolve"])
 
         let thin = StyleFixtures.bundled("paperthin")
         let casebook = StyleCasebook(name: "v3-relay", path: "/tmp/x", files: ["DESIGN.local.md", "RETRO.local.md"], modifiedAt: Date())
-        let map = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: "coil",
+        // The phone has no group of its own, and production never passes one:
+        // the recommendation has to survive that, or it disappears exactly
+        // where the old payload said `re0-plan` (§7.4).
+        let map = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: nil,
                                             capabilityStates: [StyleCapabilityID.casebook: "complete"], attachments: [],
                                             prerequisites: StylePrerequisiteResult(ready: true))
         let paperthin = try #require(MobileLegacyStyleAdapter.payloads(style: thin, panel: map, casebook: casebook).paperthin)
@@ -360,15 +366,68 @@ struct MobileRemoteExtensionTests {
         #expect(paperthin.recommended == "re0-work")
         let depth = try #require(paperthin.domains.first { $0.id == "depth" })
         #expect(depth.axis == "하나 \u{00B7} 지금" && depth.question == "이 하나가 깨끗하고 참인가?")
-        #expect(depth.skills.map(\.name) == thin.manifest.group("depth")?.actions)
-        #expect(depth.skills.first { $0.name == "hate" }?.userInvoked == true)
-        #expect(paperthin.domains.reduce(0) { $0 + $1.skills.count } == 28)
-        // Nothing on disk yet: the first step of a cycle is what is recommended.
-        let absent = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: "coil",
+        // The literal first four of the domain the deleted tests pinned.
+        #expect(depth.skills.prefix(4).map(\.name) == ["re0", "readchk", "aim", "modelchk"])
+        #expect(depth.skills.count == 19 && depth.skills.first { $0.name == "hate" }?.userInvoked == true)
+        #expect(paperthin.domains.map { $0.skills.count } == [19, 2, 6, 1])
+        // Nothing on disk yet: the first step of a cycle is what is recommended,
+        // and that is the value an older phone read without any group at all.
+        let absent = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: nil,
                                                capabilityStates: [StyleCapabilityID.casebook: "absent"], attachments: [],
                                                prerequisites: StylePrerequisiteResult(ready: false))
         let none = try #require(MobileLegacyStyleAdapter.payloads(style: thin, panel: absent, casebook: nil).paperthin)
         #expect(!none.installed && none.recommended == "re0-plan" && none.casebook == nil)
+        // A workspace whose feature has not been read yet has no answer at all.
+        let unread = StylePanelProjection.make(style: thin, prompts: [], selectedGroupId: nil, capabilityStates: [:],
+                                               attachments: [], prerequisites: StylePrerequisiteResult(ready: true))
+        #expect(MobileLegacyStyleAdapter.payloads(style: thin, panel: unread, casebook: nil).paperthin?.recommended == nil)
+    }
+
+    /// The `/guided` gate, decided from the registry in memory alone: neither
+    /// an unregistered nor an unapproved style reads the disk, so the two
+    /// cannot be told apart by timing either (§4.5).
+    @Test func theGuidedRouteAnswersUnknownAndUnapprovedAlike() throws {
+        let flow = StyleFixtures.bundled("ouroboros")
+        let data = StyleFixtures.data()
+        let file = StyleFixtures.discovered(data, source: .user, url: URL(fileURLWithPath: "/data/styles/flow.json"))
+        let pending = StyleRegistry(styles: StyleRegistry.make(files: [file], approvals: []).styles)
+        func decide(_ registry: StyleRegistry, pane: RegisteredStyle?, styleId: String, actionId: String, text: String = "") -> MobileRemoteSupport.GuidedDecision {
+            MobileRemoteSupport.guidedDecision(registry: registry, workspace: nil, pane: pane, styleId: styleId, actionId: actionId, text: text)
+        }
+        #expect(decide(pending, pane: nil, styleId: "flow", actionId: "go") == .unknownStyle)
+        #expect(decide(pending, pane: nil, styleId: "nothing-here", actionId: "go") == .unknownStyle)
+        let approvals = [StyleApprovalRecord(styleId: "flow", source: .user, path: file.url.path, hash: file.hash, state: "approved", decidedAt: Date())]
+        let approved = StyleRegistry(styles: StyleRegistry.make(files: [file], approvals: approvals).styles)
+        let style = try #require(approved.resolve("flow"))
+        #expect(decide(approved, pane: nil, styleId: "flow", actionId: "go") == .otherPane(styleId: "flow"))
+        #expect(decide(approved, pane: flow, styleId: "flow", actionId: "go") == .otherPane(styleId: "flow"))
+        #expect(decide(approved, pane: style, styleId: "flow", actionId: "nope") == .unknownAction)
+        #expect(decide(approved, pane: style, styleId: "flow", actionId: "go") == .send(prompt: "/go"))
+        // A bundled style needs no record at all, and its text still folds.
+        let bundles = StyleRegistry(styles: BundledStyles.shared.styles())
+        #expect(decide(bundles, pane: flow, styleId: "ouroboros", actionId: "interview", text: "결제 흐름\n둘째")
+                    == .send(prompt: "/ouroboros:interview 결제 흐름 둘째"))
+    }
+
+    /// The pane's phase comes from its request history, and that history is a
+    /// 128-run window: if the only phase-carrying request falls out of it the
+    /// flow reads as the entry phase again, never as a stale one (§1.6).
+    @Test func theRunWindowIsWhatThePhaseIsReadFrom() throws {
+        let flow = StyleFixtures.bundled("ouroboros")
+        var session = RunSession(workspaceId: "ws", title: "Claude")
+        session.beginGraphRun(input: "/ouroboros:seed", id: "r0")
+        #expect(flow.evaluator.currentPhase(session: session)?.id == "seed")
+        for index in 1...128 { session.beginGraphRun(input: "그냥 요청 \(index)", id: "r\(index)") }
+        #expect(session.graphRuns?.count == 128 && session.graphRuns?.contains { $0.id == "r0" } == false)
+        #expect(flow.evaluator.currentPhase(session: session)?.id == "goal")
+        // The logs are not consulted while the window still holds requests, so
+        // a trimmed run does not resurrect its phase through them either.
+        session.logs = [LogEntry(kind: "user", text: "/ouroboros:seed")]
+        #expect(flow.evaluator.currentPhase(session: session)?.id == "goal")
+        // With no runs at all the logs are the fallback, as they always were.
+        var logsOnly = RunSession(workspaceId: "ws", title: "Claude", logs: [LogEntry(kind: "user", text: "/ouroboros:seed")])
+        logsOnly.graphRuns = []
+        #expect(flow.evaluator.currentPhase(session: logsOnly)?.id == "seed")
     }
 
     @Test func guidedPromptsAreTheVeryStringsTheMacButtonsSend() throws {

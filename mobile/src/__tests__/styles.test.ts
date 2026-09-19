@@ -1,9 +1,13 @@
 import {
+  blockText,
   guidedRequestFor,
+  inlineText,
   legacyStylePanel,
   normalizeStylePanel,
   ouroborosPhaseLabel,
+  panelOf,
   sourceBadge,
+  styleOptions,
   styleViewModel,
 } from '@/lib/styles';
 
@@ -156,12 +160,12 @@ describe('normalizeStylePanel', () => {
   it('strips control and bidi characters from what it will draw', () => {
     const panel = normalizeStylePanel(
       panelPayload({
-        style: { id: 'evil', name: '‮gnitset‬', source: 'user' },
+        style: { id: 'evil', name: '\u202egnitset\u202c', source: 'user' },
         actions: [
           {
-            id: 'a‎1',
+            id: 'a\u200e1',
             title: 'a\u0007b',
-            help: '⁦거꾸로⁩',
+            help: '\u2066거꾸로\u2069',
             takesText: false,
             requiresText: false,
           },
@@ -171,7 +175,7 @@ describe('normalizeStylePanel', () => {
         phase: undefined,
         recommended: undefined,
         attachments: [],
-        presentation: { headerTitle: '‮위조‬', source: 'user' },
+        presentation: { headerTitle: '\u202e위조\u202c', source: 'user' },
       }),
     );
     expect(panel?.style.name).toBe('gnitset');
@@ -436,15 +440,21 @@ describe('legacyStylePanel', () => {
             ],
           },
         ],
-        casebook: { name: '2026-09-cycle', weight: 'full', files: ['DESIGN.md', 'RETRO.md'] },
+        casebook: {
+          name: '2026-09-cycle',
+          weight: 'full',
+          files: ['DESIGN.local.md', 'NOTES.md'],
+        },
       },
     })!;
     expect(panel.style.id).toBe('paperthin');
     expect(panel.groups.map((group) => group.id)).toEqual(['coil', 'edge']);
     expect(panel.recommended).toBe('re0-memo');
+    // The host titles a casebook file without its `.local.md` suffix; one casebook must
+    // not read as two different sets of files depending on which host answered.
     expect(panel.attachments).toEqual([
-      { id: 'DESIGN.md', title: 'DESIGN.md', detail: '2026-09-cycle · full', readOnly: true },
-      { id: 'RETRO.md', title: 'RETRO.md', detail: '2026-09-cycle · full', readOnly: true },
+      { id: 'DESIGN.local.md', title: 'DESIGN', detail: '2026-09-cycle · full', readOnly: true },
+      { id: 'NOTES.md', title: 'NOTES.md', detail: '2026-09-cycle · full', readOnly: true },
     ]);
     // Every Paperthin skill takes the composer text: it is the skill's target.
     expect(panel.actions.every((action) => action.takesText)).toBe(true);
@@ -454,7 +464,11 @@ describe('legacyStylePanel', () => {
     expect(model.showMap).toBe(true);
     expect(model.selectedGroupId).toBe('coil');
     expect(model.actions.map((view) => view.action.id)).toEqual(['re0-memo']);
-    expect(model.guidance).toContain('길게 누르면');
+    // Word for word the bundled manifest's `guidance.next`, so the same style says the
+    // same thing on both paths; the long-press hint is the panel's, not the manifest's.
+    expect(model.guidance).toBe('대상(파일 경로나 지시)을 아래에 적고 스킬을 누르세요. 비워 두면 스킬만 보냅니다.');
+    // A map on screen means the emphasis is the group cell's, so no chip is filled.
+    expect(model.actions.every((view) => !view.prominent)).toBe(true);
     expect(guidedRequestFor(panel, 're0-memo', 'docs/spec.md')).toEqual({
       styleId: 'paperthin',
       actionId: 're0-memo',
@@ -467,5 +481,232 @@ describe('legacyStylePanel', () => {
     expect(legacyStylePanel({ style: 'cli', runs: [] })).toBeUndefined();
     // The id without its payload has nothing to fold.
     expect(legacyStylePanel({ style: 'ouroboros', runs: [] })).toBeUndefined();
+  });
+});
+
+/** Contract 1.11's banned set, one scalar per entry, as code points. */
+const BANNED_SCALARS = [
+  0x0000, 0x0007, 0x001f, 0x007f, 0x009f, 0x00ad, 0x061c, 0x200b, 0x200c, 0x200d, 0x200e,
+  0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2060, 0x2066, 0x2067,
+  0x2068, 0x2069, 0xfeff,
+];
+
+describe('the §1.11 sanitisers', () => {
+  it('strips every banned scalar from one-line text', () => {
+    for (const code of BANNED_SCALARS) {
+      const name = `Ouro${String.fromCodePoint(code)}boros`;
+      expect({ code, out: inlineText(name, 40) }).toEqual({ code, out: 'Ouroboros' });
+    }
+  });
+
+  it('strips every banned scalar from block text, keeping tab, newline and return', () => {
+    for (const code of BANNED_SCALARS) {
+      const command = `npx${String.fromCodePoint(code)} install`;
+      expect({ code, out: blockText(command, 80) }).toEqual({ code, out: 'npx install' });
+    }
+    // The three the install box lives on: U+0009, U+000A, U+000D.
+    const kept = String.fromCodePoint(9, 10, 13);
+    expect(blockText(`a${kept}b`, 80)).toBe(`a${kept}b`);
+    // …and they are gone from a line that has to stay one line.
+    expect(inlineText(`a${kept}b`, 80)).toBe('ab');
+  });
+});
+
+describe('lookups keyed by what the host sent', () => {
+  // A plain object answers `__proto__` with an object and `constructor` with a function.
+  // `<Text>` throws on the first and silently draws nothing for the second — which is a
+  // style with no source badge, exactly what contract 1.10 exists to prevent.
+  const prototypeKeys = ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty'];
+
+  it('badges a prototype key like any other word it does not know', () => {
+    for (const key of prototypeKeys) {
+      expect({ key, badge: sourceBadge(key) }).toEqual({ key, badge: '출처 불명' });
+    }
+  });
+
+  it('passes a prototype key through as a phase name', () => {
+    for (const key of prototypeKeys) {
+      expect({ key, label: ouroborosPhaseLabel(key) }).toEqual({ key, label: key });
+    }
+  });
+
+  it('draws a panel whose source is a prototype key without throwing', () => {
+    for (const key of prototypeKeys) {
+      const panel = normalizeStylePanel(
+        panelPayload({
+          style: { id: 'evil', name: 'evil', source: key },
+          presentation: { headerTitle: 'evil', source: key },
+        }),
+      )!;
+      const model = styleViewModel(panel);
+      expect({ key, badge: model.sourceBadge }).toEqual({ key, badge: '출처 불명' });
+      expect(typeof model.headerTitle).toBe('string');
+    }
+  });
+});
+
+describe('styleOptions', () => {
+  it('reads the host list and badges everything that is not bundled', () => {
+    expect(
+      styleOptions([
+        { id: 'cli', label: '없음' },
+        { id: 'ouroboros', label: 'Ouroboros', source: 'bundled' },
+        { id: 'gstack', label: 'gstack', source: 'workspace' },
+      ]),
+    ).toEqual([
+      { id: 'cli', label: '없음' },
+      { id: 'ouroboros', label: 'Ouroboros' },
+      { id: 'gstack', label: 'gstack', badge: '저장소에서 발견됨' },
+    ]);
+  });
+
+  it('drops what it cannot draw and never reads a prototype key as bundled', () => {
+    expect(styleOptions(undefined)).toEqual([]);
+    expect(styleOptions('gstack')).toEqual([]);
+    expect(styleOptions([null, 7, [], { label: '아이디 없음' }])).toEqual([]);
+    // `cli` goes unbadged only when it arrives with no source at all.
+    expect(styleOptions([{ id: 'cli', label: '없음', source: 'user' }])).toEqual([
+      { id: 'cli', label: '없음', badge: '사용자 등록' },
+    ]);
+    expect(styleOptions([{ id: 'x', label: '', source: '__proto__' }])).toEqual([
+      { id: 'x', label: 'x', badge: '출처 불명' },
+    ]);
+  });
+});
+
+describe('action ids the route would refuse', () => {
+  // Contract 7.5: `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$`. A chip for anything else could
+  // only ever come back as a 400, so it is never drawn.
+  it('drops them from the catalogue, the groups and the next list', () => {
+    const panel = normalizeStylePanel(
+      panelPayload({
+        groups: [],
+        actions: [
+          { id: '-lead', title: '앞이 하이픈', takesText: false, requiresText: false },
+          { id: '스킬', title: '한글 아이디', takesText: false, requiresText: false },
+          { id: 'a/b', title: '슬래시', takesText: false, requiresText: false },
+          { id: 'a'.repeat(65), title: '너무 김', takesText: false, requiresText: false },
+          { id: 'ok.id:1-2_3', title: '괜찮음', takesText: false, requiresText: false },
+        ],
+        next: ['-lead', '스킬', 'ok.id:1-2_3'],
+        recommended: '스킬',
+      }),
+    )!;
+    expect(panel.actions.map((action) => action.id)).toEqual(['ok.id:1-2_3']);
+    expect(panel.next).toEqual(['ok.id:1-2_3']);
+    expect(panel.recommended).toBeUndefined();
+  });
+});
+
+describe('a style with nothing to offer right now', () => {
+  // The Mac sends an empty `next` while a run is in flight; the catalogue is still there
+  // and "더 보기" is still the way to it.
+  it('keeps the whole catalogue reachable through rest', () => {
+    const panel = normalizeStylePanel(panelPayload({ groups: [], next: [] }))!;
+    const model = styleViewModel(panel);
+    expect(model.showMap).toBe(false);
+    expect(model.actions).toEqual([]);
+    expect(model.rest.map((action) => action.id)).toEqual(['spec', 'ship', 'qa']);
+    expect(model.takesText).toEqual([]);
+  });
+});
+
+describe('which chip is drawn filled', () => {
+  it('follows the host, falling back to the head of the list', () => {
+    const hostMarked = normalizeStylePanel(panelPayload({ groups: [] }))!;
+    expect(
+      styleViewModel(hostMarked)
+        .actions.filter((view) => view.prominent)
+        .map((view) => view.action.id),
+    ).toEqual(['spec']);
+
+    // Nothing marked: the step being asked for is the head of `next`.
+    const unmarked = normalizeStylePanel(
+      panelPayload({
+        groups: [],
+        actions: [
+          { id: 'spec', title: '명세', takesText: false, requiresText: false },
+          { id: 'ship', title: '출시', takesText: false, requiresText: false },
+        ],
+        next: ['spec', 'ship'],
+        recommended: undefined,
+      }),
+    )!;
+    const model = styleViewModel(unmarked);
+    expect(model.actions.map((view) => view.prominent)).toEqual([true, false]);
+  });
+
+  it('draws none at all while a group map is on screen', () => {
+    // The host marks one action of the group it opened on. Drawn filled, it would vanish
+    // the moment the user picks any other group: the same gesture would toggle a primary
+    // action in and out of existence.
+    const panel = normalizeStylePanel(panelPayload())!;
+    for (const groupId of [undefined, 'make', 'check']) {
+      const model = styleViewModel(panel, groupId);
+      expect({ groupId, prominent: model.actions.some((view) => view.prominent) }).toEqual({
+        groupId,
+        prominent: false,
+      });
+    }
+  });
+});
+
+describe('guidedRequestFor against an older host', () => {
+  const panel = normalizeStylePanel(panelPayload())!;
+
+  it('marks the request legacy so the client sends the old body', () => {
+    expect(guidedRequestFor(panel, 'spec', '결제 모듈', false)).toEqual({
+      styleId: 'gstack',
+      actionId: 'spec',
+      text: '결제 모듈',
+      legacy: true,
+    });
+    expect(guidedRequestFor(panel, 'ship', '결제 모듈', false)).toEqual({
+      styleId: 'gstack',
+      actionId: 'ship',
+      legacy: true,
+    });
+    // A host that advertised "style" gets the new pair and no marker.
+    expect(guidedRequestFor(panel, 'ship', '', true).legacy).toBeUndefined();
+  });
+});
+
+describe('panelOf', () => {
+  const generic = normalizeStylePanel(panelPayload())!;
+  const ouroboros = {
+    phase: 'interview',
+    ready: true,
+    takesText: ['interview'],
+    next: [{ skill: 'interview', title: '인터뷰', help: '' }],
+    all: [{ skill: 'interview', title: '인터뷰', help: '' }],
+  };
+
+  it('lets a style-aware host own the answer and reads an older one legacily', () => {
+    expect(panelOf(undefined)).toBeUndefined();
+    expect(panelOf({ style: 'ouroboros', runs: [], panel: generic }, true)).toBe(generic);
+    // The same payload against a host without "style": the legacy adapter answers.
+    const legacy = panelOf({ style: 'ouroboros', runs: [], panel: generic, ouroboros }, false);
+    expect(legacy?.style.id).toBe('ouroboros');
+    expect(legacy).not.toBe(generic);
+    // No panel and no legacy payload at all is a plain CLI pane.
+    expect(panelOf({ style: 'cli', runs: [] }, true)).toBeUndefined();
+    expect(panelOf({ style: 'gstack', runs: [] }, false)).toBeUndefined();
+  });
+
+  it('says so when a style-aware host sent a panel it could not read', () => {
+    // Silently drawing the legacy payload would show a working-looking pane missing its
+    // stepper, its groups and its attachments, with no sign anything was dropped.
+    const broken = panelOf(
+      { style: 'ouroboros', runs: [], styleId: 'ouroboros', panelUnreadable: true, ouroboros },
+      true,
+    )!;
+    expect(broken.actions).toEqual([]);
+    expect(broken.setup.ready).toBe(false);
+    expect(broken.setup.missing).toEqual(['호스트가 보낸 스타일 정보를 읽을 수 없습니다.']);
+    expect(styleViewModel(broken).sourceBadge).toBe('출처 불명');
+    // An older host never advertised "style", so the same flag leaves it alone.
+    expect(
+      panelOf({ style: 'ouroboros', runs: [], panelUnreadable: true, ouroboros }, false)?.style.id,
+    ).toBe('ouroboros');
   });
 });

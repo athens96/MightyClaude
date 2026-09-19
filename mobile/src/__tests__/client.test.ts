@@ -217,6 +217,25 @@ describe('the m1 capability extension routes', () => {
     ]);
   });
 
+  it('posts the old body to a host that never learned the "style" capability', async () => {
+    // That host decodes `{style, skill}` and nothing else, so the new pair would come
+    // back 400 for every chip on screen (contract 7.5). Only the two built-in ids reach
+    // this path, because an older host sends no other style's panel to draw from.
+    const fake = fakeChannel({ status: 202, body: { protocol: 1, accepted: 'started' } });
+    const client = createClient(fake.channel);
+    await client.guided('s1', {
+      styleId: 'ouroboros',
+      actionId: 'interview',
+      text: '  로그인  ',
+      legacy: true,
+    });
+    await client.guided('s1', { styleId: 'paperthin', actionId: 're0', legacy: true });
+    expect(fake.calls.map((call) => call.body)).toEqual([
+      { style: 'ouroboros', skill: 'interview', text: '로그인' },
+      { style: 'paperthin', skill: 're0' },
+    ]);
+  });
+
   it('refuses an empty action and oversized guided text before touching the tunnel', async () => {
     const fake = fakeChannel(ok);
     const client = createClient(fake.channel);

@@ -84,7 +84,9 @@ struct StyleSettingsSection: View {
                 }.controlSize(.small)
             }
             if row.canRevoke { Button("취소") { style.map { store.revokeStyle($0) } }.controlSize(.small) }
-            if row.canAllowAgain { Button("다시 허용") { style.map { store.allowStyleAgain($0) } }.controlSize(.small) }
+            // The button drops the refusal; the style then goes back through
+            // the approval card like any other pending one (§4.2).
+            if row.canAllowAgain { Button("차단 해제") { style.map { store.allowStyleAgain($0) } }.controlSize(.small) }
             if row.canRemove { Button("제거", role: .destructive) { style.map { store.removeStyle($0) } }.controlSize(.small) }
             Spacer(minLength: 0)
         }

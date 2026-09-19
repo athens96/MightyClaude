@@ -18,6 +18,10 @@ bash "$PROJECT_ROOT/scripts/package-icons.sh"
 BIN_PATH="$("$SWIFT_EXECUTABLE" build --disable-sandbox --package-path "$PROJECT_ROOT/native/macos" --scratch-path "$BUILD_SCRATCH" -c "$BUILD_CONFIGURATION" --show-bin-path)"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources/mods"
 cp "$BIN_PATH/MightyClaude" "$APP_PATH/Contents/MacOS/MightyClaude"
+# `ditto` merges rather than replaces, so a Styles/ left by an earlier build
+# would satisfy the gate below even after the manifests stopped being packaged.
+STYLE_BUNDLE="$APP_PATH/Contents/Resources/MightyClaude_MightyCore.bundle"
+rm -rf "$STYLE_BUNDLE/Contents/Resources/Styles" "$STYLE_BUNDLE/Styles"
 # SwiftPM resource bundles contain Ghostty's terminfo and shell integration.
 # They must travel with the app; a development checkout is not a runtime dependency.
 for resource_bundle in "$BIN_PATH"/*.bundle; do
@@ -28,9 +32,10 @@ done
 # The bundled style manifests must travel inside that bundle. Losing them is
 # silent at runtime — every pane just falls back to the plain CLI — so the
 # second gate of docs/mighty-styles.md §3.2 is here, at assembly.
-STYLE_BUNDLE="$APP_PATH/Contents/Resources/MightyClaude_MightyCore.bundle"
+# `-s` rather than `-f`: a zero-byte ouroboros.json is exactly the failure this
+# gate exists to catch, and it passes an existence check.
 for style_name in ouroboros paperthin; do
-  if [ ! -f "$STYLE_BUNDLE/Contents/Resources/Styles/$style_name.json" ] && [ ! -f "$STYLE_BUNDLE/Styles/$style_name.json" ]; then
+  if [ ! -s "$STYLE_BUNDLE/Contents/Resources/Styles/$style_name.json" ] && [ ! -s "$STYLE_BUNDLE/Styles/$style_name.json" ]; then
     echo "번들 스타일 매니페스트가 없습니다: $style_name.json ($STYLE_BUNDLE)" >&2
     exit 1
   fi

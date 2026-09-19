@@ -177,28 +177,48 @@ public struct StyleRegistry: Sendable {
 
     /// A pane keeps its earlier request blocks when its style changes, so the
     /// title comes from every runnable style, not just this pane's (§1.10).
-    func runnableInPrecedence(workspace: StyleWorkspaceRef?) -> [RegisteredStyle] {
+    public func runnableInPrecedence(workspace: StyleWorkspaceRef?) -> [RegisteredStyle] {
         applicable(workspace: workspace).filter(\.isRunnable).sorted {
             $0.source.precedence != $1.source.precedence ? $0.source.precedence < $1.source.precedence : $0.id < $1.id
         }
     }
 
     public func requestTitle(forInput input: String, workspace: StyleWorkspaceRef?) -> String? {
-        for style in runnableInPrecedence(workspace: workspace) {
+        StyleRequestTitles(styles: runnableInPrecedence(workspace: workspace)).prefix(input)
+    }
+
+    public func requestIcon(forInput input: String, workspace: StyleWorkspaceRef?) -> StyleIcon? {
+        StyleRequestTitles(styles: runnableInPrecedence(workspace: workspace)).icon(input)
+    }
+
+    public func requestTint(forInput input: String, workspace: StyleWorkspaceRef?) -> StyleTint {
+        StyleRequestTitles(styles: runnableInPrecedence(workspace: workspace)).tint(input)
+    }
+}
+
+/// The precedence sweep of §1.10 over an already-ordered list. A graph redraws
+/// every visible block on every keystroke, so the list is built once per render
+/// rather than three times per block.
+public struct StyleRequestTitles: Sendable {
+    private let styles: [RegisteredStyle]
+    public init(styles: [RegisteredStyle] = []) { self.styles = styles }
+
+    public func prefix(_ input: String) -> String? {
+        for style in styles {
             if let title = style.evaluator.requestTitle(forInput: input) { return title }
         }
         return nil
     }
 
-    public func requestIcon(forInput input: String, workspace: StyleWorkspaceRef?) -> StyleIcon? {
-        for style in runnableInPrecedence(workspace: workspace) where style.evaluator.recognised(inPrompt: input) != nil {
+    public func icon(_ input: String) -> StyleIcon? {
+        for style in styles where style.evaluator.recognised(inPrompt: input) != nil {
             return style.evaluator.requestIcon(forInput: input)
         }
         return nil
     }
 
-    public func requestTint(forInput input: String, workspace: StyleWorkspaceRef?) -> StyleTint {
-        for style in runnableInPrecedence(workspace: workspace) where style.evaluator.recognised(inPrompt: input) != nil {
+    public func tint(_ input: String) -> StyleTint {
+        for style in styles where style.evaluator.recognised(inPrompt: input) != nil {
             return style.evaluator.requestTint(forInput: input)
         }
         return .accent
@@ -215,10 +235,12 @@ public enum BundledStyleSource {
 
     /// The places the resource bundle sits: beside the app's own resources in
     /// an assembled `.app`, and beside the test runner under `swift test`.
+    /// The directory that *contains* the `.app` is deliberately not among
+    /// them — anything dropped there would be read as a pre-approved bundled
+    /// style, and no correct layout ever needs it.
     static func searchRoots() -> [URL] {
         let marker = Bundle(for: BundledStyleMarker.self)
         return [Bundle.main.resourceURL, marker.resourceURL, marker.bundleURL, Bundle.main.bundleURL,
-                Bundle.main.bundleURL.deletingLastPathComponent(),
                 Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent()].compactMap { $0 }
     }
 

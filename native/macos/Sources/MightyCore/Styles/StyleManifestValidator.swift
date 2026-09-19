@@ -58,7 +58,23 @@ public enum StyleManifestValidator {
         var seenMatch: Set<String> = []
         for action in manifest.actions {
             guard let match = action.match else { continue }
-            guard !actionIds.contains(match), seenMatch.insert(match).inserted else { throw StyleErrors.aliasCollision(match) }
+            // §1.3.4 forbids a clash with *another* action's id; naming itself
+            // is redundant but harmless.
+            guard !actionIds.subtracting([action.id]).contains(match), seenMatch.insert(match).inserted else { throw StyleErrors.aliasCollision(match) }
+        }
+        // Recognition lowercases the name it reads, but the lookup tables are
+        // keyed by the id, the `match` and the alias name as written. An
+        // uppercase id under this rule would pass every other check and then
+        // never be recognised at runtime (§1.3.4, §1.4).
+        if manifest.recognition.lowercase {
+            for action in manifest.actions {
+                guard action.id == action.id.lowercased(), action.match == action.match?.lowercased() else {
+                    throw StyleErrors.promptRecognition(action.id)
+                }
+            }
+            for alias in manifest.aliases where alias.name != alias.name.lowercased() {
+                throw StyleErrors.promptRecognition(alias.name)
+            }
         }
         // A prompt the recognition rule cannot read back is an action that is
         // never recognised: no title, no phase move, nothing to notice it (§1.3.4).
@@ -123,6 +139,9 @@ public enum StyleManifestValidator {
     }
 
     private static func autoAllow(_ manifest: StyleManifest, source: StyleSource) throws {
+        // Only a probe whose prefix ends with `@` establishes ownership: a bare
+        // prefix matches installed plugin keys by `hasPrefix`, so `a` would
+        // claim `a_b` and every `plugin_a_b_*` server with it (§1.9).
         let plugins = manifest.prerequisites.probes.compactMap(\.pluginName)
         var seen: Set<String> = []
         for entry in manifest.autoAllow {

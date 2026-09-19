@@ -10,9 +10,13 @@ const sourceLabels: Record<string, string> = {
   plugin: '플러그인',
 };
 
-/** Unknown sources from the host are shown as they came, never as a wrong label. */
+/**
+ * Unknown sources from the host are shown as they came, never as a wrong label. The
+ * lookup goes through `Object.hasOwn`: a plain object answers `constructor` with a
+ * function, which `<Text>` would silently draw as nothing.
+ */
 function sourceLabel(source: string): string {
-  return sourceLabels[source] ?? source;
+  return (Object.hasOwn(sourceLabels, source) ? sourceLabels[source] : undefined) ?? source;
 }
 
 /** The "/" list above the composer: filtered host commands, one tap to pick one. */

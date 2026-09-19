@@ -71,6 +71,14 @@ const acceptedMessages: Record<string, string> = {
   queued: '대기열에 추가',
 };
 
+/**
+ * The lookup goes through `Object.hasOwn`: the key is the word the host sent, and a plain
+ * object answers `constructor` with a function, which the toast would then try to draw.
+ */
+function acceptedMessage(accepted: string): string {
+  return (Object.hasOwn(acceptedMessages, accepted) ? acceptedMessages[accepted] : undefined) ?? '전송';
+}
+
 const NO_ENTRIES: LogEntry[] = [];
 
 /** Which body the screen shows: the transcript, or the Mighty block list. */
@@ -120,6 +128,13 @@ export default function SessionScreen() {
   /** Set once the user picks a body themselves; until then the pane's own view decides. */
   const [chosenView, setChosenView] = useState<BodyView | undefined>(undefined);
   const [guidedAction, setGuidedAction] = useState<string | undefined>(undefined);
+  const guidedRunning = useRef(false);
+  /**
+   * The group of the style map the user is looking at. It lives here rather than inside
+   * the panel so an AskUserQuestion card — which takes the panel off screen while it is
+   * answered — gives the user back the group they picked, not the host's.
+   */
+  const [guidedGroup, setGuidedGroup] = useState<string | undefined>(undefined);
   /** Set while the view mode waits for a style, so both go to the host in one POST. */
   const [pendingViewMode, setPendingViewMode] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<{ title: string; body: string } | undefined>(undefined);
@@ -326,7 +341,7 @@ export default function SessionScreen() {
           showToast(result.error, 'error');
           return false;
         }
-        showToast(acceptedMessages[result.accepted] ?? '전송', 'success');
+        showToast(acceptedMessage(result.accepted), 'success');
         clearAttachments();
         atBottom.current = true;
         poll.refresh();
@@ -562,6 +577,12 @@ export default function SessionScreen() {
     [canMighty, detail?.mighty],
   );
   const panel = useMemo(() => panelOf(mighty, canStyle), [canStyle, mighty]);
+  // A pane that switches style keeps this screen mounted, so the group the user was
+  // looking at has to go with the style it belonged to.
+  const panelStyleId = panel?.style.id;
+  useEffect(() => {
+    setGuidedGroup(undefined);
+  }, [panelStyleId]);
   // An AskUserQuestion card is the one thing the pane is waiting on: the guided panel
   // steps aside for it rather than offering a second thing to press.
   const questionPending =
@@ -571,25 +592,33 @@ export default function SessionScreen() {
 
   const runGuided = useCallback(
     (actionId: string) => {
-      if (!client || !sessionId || !panel) return;
-      const request = guidedRequestFor(panel, actionId, text);
+      // `guidedAction` only disables the chips on the next render, so two taps inside one
+      // frame would both fire; the ref is what actually holds the door.
+      if (!client || !sessionId || !panel || guidedRunning.current) return;
+      // Against a host without "style" the body has to go out in the old shape, and it is
+      // the same capability that chose which panel is on screen (contract 7.5).
+      const request = guidedRequestFor(panel, actionId, text, canStyle);
+      guidedRunning.current = true;
       setGuidedAction(actionId);
       void (async () => {
         try {
           const result = await client.guided(sessionId, request);
-          showToast(acceptedMessages[result.accepted] ?? '전송', 'success');
+          showToast(acceptedMessage(result.accepted), 'success');
           // Only text that actually went with the action leaves the composer.
           if (request.text) setText('');
           atBottom.current = true;
-          poll.refresh();
         } catch (error) {
           showToast(describeError(error), 'error');
         } finally {
+          guidedRunning.current = false;
           setGuidedAction(undefined);
+          // Either way: a 409 means the Mac changed the pane's style under us, so the
+          // stale panel has to go rather than stay for the next tap to fail again.
+          poll.refresh();
         }
       })();
     },
-    [client, panel, poll, sessionId, text],
+    [canStyle, client, panel, poll, sessionId, text],
   );
 
   const headerNode = detail ? (
@@ -714,6 +743,9 @@ export default function SessionScreen() {
             hasText={text.trim().length > 0}
             busyActionId={guidedAction}
             disabled={!client || sending}
+            running={running}
+            selectedGroupId={guidedGroup}
+            onSelectGroup={setGuidedGroup}
             onRun={runGuided}
           />
         ) : null}

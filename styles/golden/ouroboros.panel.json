@@ -164,6 +164,181 @@
       "tint" : "accent"
     }
   },
+  "capabilityOpen" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)",
+        "icon" : "questionmark.bubble",
+        "id" : "interview",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "인터뷰 시작"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "목표에서 시드 생성과 실행까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "auto",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "자동 진행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "인터뷰 결과를 불변 명세(시드)로 굳힙니다",
+        "icon" : "leaf",
+        "id" : "seed",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "시드 생성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "시드를 Double Diamond 흐름으로 실행합니다",
+        "icon" : "play.fill",
+        "id" : "run",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "기계 · 의미 · 합의 3단계로 결과를 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "evaluate",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "평가"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "평가를 반영해 다음 세대 시드로 수렴할 때까지 반복합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "evolve",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "진화"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "수렴할 때까지 진화 단계를 계속 돌립니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션 상태와 목표 이탈(drift)을 확인합니다",
+        "icon" : "gauge.with.dots.needle.33percent",
+        "id" : "status",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "상태"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다섯 가지 관점으로 막힌 지점을 다시 봅니다",
+        "icon" : "lightbulb",
+        "id" : "unstuck",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "막힘 풀기"
+      }
+    ],
+    "attachments" : [
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "DESIGN.local.md",
+        "readOnly" : true,
+        "title" : "DESIGN"
+      },
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "RETRO.local.md",
+        "readOnly" : true,
+        "title" : "RETRO"
+      }
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "interview",
+          "auto",
+          "seed",
+          "run",
+          "evaluate",
+          "evolve",
+          "ralph",
+          "status",
+          "unstuck"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 목표를 아래에 적으면 질문을 주고받으며 요구를 또렷하게 만듭니다.",
+    "next" : [
+      "interview",
+      "auto"
+    ],
+    "phase" : {
+      "count" : 6,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "Ouroboros · 목표",
+      "icon" : "point.3.connected.trianglepath.dotted",
+      "source" : "bundled",
+      "tint" : "accent"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add Q00/ouroboros && claude plugin install ouroboros@ouroboros",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "point.3.connected.trianglepath.dotted",
+      "id" : "ouroboros",
+      "name" : "Ouroboros",
+      "source" : "bundled",
+      "tint" : "accent"
+    }
+  },
   "empty" : {
     "actions" : [
       {
@@ -329,6 +504,170 @@
     }
   },
   "firstGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)",
+        "icon" : "questionmark.bubble",
+        "id" : "interview",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "인터뷰 시작"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "목표에서 시드 생성과 실행까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "auto",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "자동 진행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "인터뷰 결과를 불변 명세(시드)로 굳힙니다",
+        "icon" : "leaf",
+        "id" : "seed",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "시드 생성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "시드를 Double Diamond 흐름으로 실행합니다",
+        "icon" : "play.fill",
+        "id" : "run",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "기계 · 의미 · 합의 3단계로 결과를 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "evaluate",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "평가"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "평가를 반영해 다음 세대 시드로 수렴할 때까지 반복합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "evolve",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "진화"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "수렴할 때까지 진화 단계를 계속 돌립니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션 상태와 목표 이탈(drift)을 확인합니다",
+        "icon" : "gauge.with.dots.needle.33percent",
+        "id" : "status",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "상태"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다섯 가지 관점으로 막힌 지점을 다시 봅니다",
+        "icon" : "lightbulb",
+        "id" : "unstuck",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "막힘 풀기"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "interview",
+          "auto",
+          "seed",
+          "run",
+          "evaluate",
+          "evolve",
+          "ralph",
+          "status",
+          "unstuck"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 목표를 아래에 적으면 질문을 주고받으며 요구를 또렷하게 만듭니다.",
+    "next" : [
+      "interview",
+      "auto"
+    ],
+    "phase" : {
+      "count" : 6,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "Ouroboros · 목표",
+      "icon" : "point.3.connected.trianglepath.dotted",
+      "source" : "bundled",
+      "tint" : "accent"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add Q00/ouroboros && claude plugin install ouroboros@ouroboros",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "point.3.connected.trianglepath.dotted",
+      "id" : "ouroboros",
+      "name" : "Ouroboros",
+      "source" : "bundled",
+      "tint" : "accent"
+    }
+  },
+  "lastGroup" : {
     "actions" : [
       {
         "flags" : [

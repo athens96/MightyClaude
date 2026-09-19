@@ -71,9 +71,13 @@ struct StyleProjectionTests {
         #expect(flow.next.map(\.skill) == ["run", "evaluate", "status"])
         #expect(flow.all.count == 9 && flow.all.first?.skill == "interview" && flow.all.first?.title == "인터뷰 시작")
         #expect(flow.all.first?.help == "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)")
-        // A phase-less pane still reports the entry phase, as today.
+        // A phase-less pane still reports the entry phase, as today — and the
+        // old `next` field is the phase map alone, which is empty at `goal`,
+        // so an older phone falls back to `all` exactly as it used to (§7.4).
         let fresh = MobileLegacyStyleAdapter.payloads(style: ouroboros, panel: panel(ouroboros), casebook: nil).ouroboros
-        #expect(fresh?.phase == "goal" && fresh?.next.map(\.skill) == ["interview", "auto"])
+        #expect(fresh?.phase == "goal" && fresh?.next.isEmpty == true)
+        // The new panel still offers the start rule's buttons in the same state.
+        #expect(panel(ouroboros).next == ["interview", "auto"])
 
         let paperthin = StyleFixtures.bundled("paperthin")
         let casebook = StyleCasebook(name: "0.1.0-first", path: "/repo/.re0/iteration/0.1.0-first", files: ["DESIGN.local.md"], modifiedAt: Date())

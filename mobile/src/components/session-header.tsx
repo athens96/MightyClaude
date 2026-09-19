@@ -4,7 +4,7 @@ import { ProviderTag } from '@/components/provider-mark';
 import { StatusChip } from '@/components/status-chip';
 import { StatusLineView } from '@/components/status-line-view';
 import { Chip } from '@/components/ui';
-import { sourceBadge } from '@/lib/styles';
+import { styleOptions } from '@/lib/styles';
 import {
   AGENT_VIEW_MODES,
   kindLabel,
@@ -26,9 +26,6 @@ export type SettingField =
   /** The open style list a host with "style" sends, in place of `mightyStyle`. */
   | 'styleId';
 
-/** The wire word for a pane running no guided style at all. */
-const CLI_STYLE = 'cli';
-
 function formatElapsed(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
   const minutes = Math.floor(total / 60);
@@ -42,20 +39,7 @@ export function optionsFor(settings: MobileSettings | undefined, field: SettingF
   if (!settings) return [];
   if (field === 'agentViewMode') return AGENT_VIEW_MODES;
   const options = settings.options as Partial<MobileSettings['options']> | undefined;
-  if (field === 'styleId') {
-    const styles = options?.styles;
-    if (!Array.isArray(styles)) return [];
-    // A style whose name is not one the app shipped is named with its source wherever
-    // the name appears, the picker included (contract 1.10). `cli` is the one entry
-    // that is no style at all, so it arrives without a source and wears no badge.
-    return styles.map((style) => {
-      const option: SettingOption = { id: style.id, label: style.label || style.id };
-      if (style.id === CLI_STYLE && style.source === undefined) return option;
-      const badge = sourceBadge(style.source);
-      if (badge) option.badge = badge;
-      return option;
-    });
-  }
+  if (field === 'styleId') return styleOptions(options?.styles);
   const list =
     field === 'model'
       ? options?.models

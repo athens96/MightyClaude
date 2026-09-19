@@ -13,7 +13,17 @@ struct StyleSurfacesTests {
         #expect(StyleChrome.graphHeader(styleName: nil, phaseTitle: nil) == "마이티")
         #expect(StyleChrome.graphHeader(styleName: "Paperthin", phaseTitle: nil) == "마이티 \u{00B7} Paperthin")
         #expect(StyleChrome.graphHeader(styleName: "Ouroboros", phaseTitle: "시드") == "마이티 \u{00B7} Ouroboros \u{00B7} 시드")
-        #expect(StyleChrome.installPaneTitle("Ouroboros 설치", styleName: "Ouroboros") == "Ouroboros 설치 \u{00B7} Ouroboros")
+        #expect(StyleChrome.installPaneTitle("Ouroboros 설치", styleName: "Ouroboros", source: .bundled) == "Ouroboros 설치 \u{00B7} Ouroboros")
+        // The one surface that ends in a prefilled shell command carries the
+        // badge too, so a homoglyph name cannot pass for the app's own tab.
+        #expect(StyleChrome.installPaneTitle("플러그인 설치", styleName: "Ourobor\u{03BF}s", source: .workspace)
+                == "플러그인 설치 \u{00B7} Ourobor\u{03BF}s \u{00B7} 저장소에서 발견됨")
+        #expect(StyleChrome.installPaneTitle("설치", styleName: "Flow", source: .user) == "설치 \u{00B7} Flow \u{00B7} 사용자 등록")
+        // …and the author cannot write the separator into it either (§1.11).
+        #expect(StyleFixtures.code(StyleFixtures.data(StyleFixtures.flat, [:],
+                                                      extra: [("install", "{\"command\":\"echo hi\",\"paneTitle\":\"설치 \u{00B7} 승인됨\"}")])) == "E_RESERVED_SEPARATOR")
+        #expect(StyleFixtures.code(StyleFixtures.data(StyleFixtures.flat, [:],
+                                                      extra: [("install", "{\"command\":\"echo hi\",\"paneTitle\":\"설치\"}")])) == nil)
         #expect(StyleChrome.sourceBadge(.bundled) == nil)
         #expect(StyleChrome.sourceBadge(.user) == "사용자 등록" && StyleChrome.sourceBadge(.workspace) == "저장소에서 발견됨")
         #expect(StyleChrome.hashPrefix(String(repeating: "a", count: 64)) == String(repeating: "a", count: 12))
@@ -45,8 +55,13 @@ struct StyleSurfacesTests {
                                     capabilityStates: [StyleCapabilityID.casebook: "open"])
         #expect(group.actions.map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
         #expect(group.prominentId == nil && group.recommendedId == "re0-loop" && group.reset == .none)
-        #expect(StyleChips.make(paperthin.evaluator, phase: nil, group: paperthin.manifest.group("depth"), startingNew: false,
-                                capabilityStates: [StyleCapabilityID.casebook: "open"]).recommendedId == nil)
+        // The recommendation follows the feature, not the group being looked
+        // at; the chip is simply absent from a row that does not contain it.
+        let depth = StyleChips.make(paperthin.evaluator, phase: nil, group: paperthin.manifest.group("depth"), startingNew: false,
+                                    capabilityStates: [StyleCapabilityID.casebook: "open"])
+        #expect(depth.recommendedId == "re0-loop" && !depth.actions.contains { $0.id == "re0-loop" })
+        // A catalogue under a group map is a grid; a phase row is one line.
+        #expect(group.grid && depth.grid && !start.grid && !next.grid)
     }
 
     @Test func aChipsTooltipNamesItsScopeAndItsFlags() throws {

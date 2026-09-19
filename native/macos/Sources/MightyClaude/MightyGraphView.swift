@@ -14,8 +14,8 @@ struct MightyGraphView: View {
     var workspaceRoot: URL? = nil
     /// Request-block titles, icons and colours come from every style this pane
     /// may run, not only the one it is in: a pane keeps blocks it made under an
-    /// earlier style (§1.10).
-    var styleTitles: StyleTitleSource = StyleTitleSource()
+    /// earlier style (§1.10). Empty for a pane that runs no style at all.
+    var styleTitles: StyleRequestTitles = StyleRequestTitles()
     /// The pane's own style, for the header alone.
     var styleName: String? = nil
     var styleSource: StyleSource? = nil

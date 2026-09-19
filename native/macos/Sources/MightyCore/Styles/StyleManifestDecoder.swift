@@ -16,8 +16,13 @@ enum StyleManifestPreScan {
         var stack: [Frame] = []
         let bytes = [UInt8](data)
         var position = 0
+        // Once the root container has closed, nothing but whitespace may
+        // follow: a second value would make the file two documents, and the
+        // reader below would judge it against the first one's rules.
+        var closed = false
         while position < bytes.count {
             let byte = bytes[position]
+            if closed, !(byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D) { throw StyleErrors.notJSON }
             switch byte {
             case UInt8(ascii: "{"), UInt8(ascii: "["):
                 let label = stack.last?.lastKey ?? ""
@@ -26,15 +31,23 @@ enum StyleManifestPreScan {
                 position += 1
             case UInt8(ascii: "}"), UInt8(ascii: "]"):
                 if !stack.isEmpty { stack.removeLast() }
+                if stack.isEmpty { closed = true }
                 position += 1
             case UInt8(ascii: ","):
                 if !stack.isEmpty, stack[stack.count - 1].isObject { stack[stack.count - 1].awaitingKey = true }
                 position += 1
             case UInt8(ascii: "\""):
-                let (text, next) = try string(bytes, from: position)
+                let (text, escaped, next) = try string(bytes, from: position)
                 position = next
                 guard !stack.isEmpty, stack[stack.count - 1].isObject, stack[stack.count - 1].awaitingKey else { continue }
                 let depth = stack.count - 1
+                // §1.11 treats a key exactly like a value string, and this is
+                // the only place a key is ever seen as written. An escape would
+                // let `"autoAllow"` and `"autoAllow"` be one key to the
+                // parser and two different lines on the approval card.
+                if escaped { throw StyleErrors.keyEscape(path(stack, key: text)) }
+                if StyleText.containsBanned(text) { throw StyleErrors.controlChar(path(stack, key: text)) }
+                if text.count > StyleLimits.maximumKey { throw StyleErrors.stringLength(path(stack, key: text)) }
                 if stack[depth].keys.contains(text) { throw StyleErrors.duplicateKey(path(stack, key: text)) }
                 if depth == 0, stack[depth].keys.isEmpty, text != "schema" { throw StyleErrors.schemaNotFirst }
                 stack[depth].keys.insert(text)
@@ -47,18 +60,21 @@ enum StyleManifestPreScan {
     }
 
     /// Reads one JSON string literal, honouring `\"`, and returns its raw text
-    /// (escapes other than `\"` stay as written: key names never need them).
-    private static func string(_ bytes: [UInt8], from start: Int) throws -> (String, Int) {
+    /// plus whether any escape was in it. The text is deliberately left as
+    /// written: for a key the answer is a refusal, not an interpretation.
+    private static func string(_ bytes: [UInt8], from start: Int) throws -> (String, Bool, Int) {
         var position = start + 1
         var scalars: [UInt8] = []
+        var escaped = false
         while position < bytes.count {
             let byte = bytes[position]
             if byte == UInt8(ascii: "\\") {
+                escaped = true
                 if position + 1 < bytes.count { scalars.append(bytes[position]); scalars.append(bytes[position + 1]) }
                 position += 2
                 continue
             }
-            if byte == UInt8(ascii: "\"") { return (String(decoding: scalars, as: UTF8.self), position + 1) }
+            if byte == UInt8(ascii: "\"") { return (String(decoding: scalars, as: UTF8.self), escaped, position + 1) }
             scalars.append(byte)
             position += 1
         }
@@ -154,6 +170,15 @@ public enum StyleManifestDecoder {
         guard let raw = try optionalString(value, at: path, range: 1...StyleLimits.maximumString) else { return nil }
         guard let icon = StyleIcon(rawValue: raw) else { throw StyleErrors.unknownIcon(raw) }
         return icon
+    }
+
+    /// A glyph is judged by `isEmojiGlyph` alone. The zero-width ban of §1.11
+    /// exists to stop spoofed *names*; inside one grapheme cluster a ZWJ is
+    /// what makes 👩‍💻 a single emoji, which §1.10 permits.
+    private static func glyph(_ value: Any?, at path: String) throws -> String? {
+        guard let value else { return nil }
+        guard let text = value as? String, !isBoolean(value), StyleText.isEmojiGlyph(text) else { throw StyleErrors.type(path) }
+        return text
     }
 
     private static func tint(_ value: Any?, at path: String) throws -> StyleTint? {
@@ -270,7 +295,9 @@ public enum StyleManifestDecoder {
         guard let value else { return nil }
         var reader = try Reader(value, at: "install")
         let command = try string(reader.take("command"), at: "install.command", range: 1...400)
-        let paneTitle = try string(reader.take("paneTitle"), at: "install.paneTitle", range: 1...40)
+        // The pane title is assembled with `·` into a tab the user reads as the
+        // app's own, so the author may not write that separator either (§1.11).
+        let paneTitle = try string(reader.take("paneTitle"), at: "install.paneTitle", range: 1...40, separator: false)
         try reader.finish()
         return StyleInstall(command: command, paneTitle: paneTitle)
     }
@@ -333,11 +360,10 @@ public enum StyleManifestDecoder {
                 }
             }
             let icon = try self.icon(reader.take("icon"), at: path + ".icon")
-            let glyph = try optionalString(reader.take("glyph"), at: path + ".glyph", range: 1...8)
+            let glyph = try self.glyph(reader.take("glyph"), at: path + ".glyph")
             let tint = try self.tint(reader.take("tint"), at: path + ".tint")
             let requestTitle = try optionalString(reader.take("requestTitle"), at: path + ".requestTitle", range: 1...40, separator: false)
             try reader.finish()
-            if let glyph, !StyleText.isEmojiGlyph(glyph) { throw StyleErrors.type(path + ".glyph") }
             // The two folds treat a phone's line and a Mac's paragraph
             // differently, so neither may win by default (§1.3).
             var fold: StyleFold?
@@ -476,7 +502,8 @@ public enum StyleManifestDecoder {
         switch kind {
         case "byGroup": try reader.finish(); return .byGroup
         case "byPhase":
-            guard let raw = reader.take("map") as? [String: Any] else { throw StyleErrors.type("rules.next.map") }
+            guard let value = reader.take("map") else { throw StyleErrors.missingField("rules.next.map") }
+            guard let raw = value as? [String: Any] else { throw StyleErrors.type("rules.next.map") }
             try reader.finish()
             var map: [String: [String]] = [:]
             for (phase, value) in raw {
@@ -504,6 +531,7 @@ public enum StyleManifestDecoder {
     }
 
     private static func stateMap(_ value: Any?, at path: String) throws -> [String: String] {
+        guard let value else { throw StyleErrors.missingField(path) }
         guard let raw = value as? [String: Any] else { throw StyleErrors.type(path) }
         var map: [String: String] = [:]
         for (state, target) in raw { map[state] = try string(target, at: path + "." + state, range: 1...64) }

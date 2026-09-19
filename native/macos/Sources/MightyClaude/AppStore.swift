@@ -68,28 +68,34 @@ final class AppStore: ObservableObject {
     /// A trust store that could not be read answers no decision at all (§4.3).
     @Published var styleTrustLocked = false
     @Published var styleTrustPath = ""
-    /// Prerequisites per style id; built-in feature readings per workspace.
-    @Published var stylePrerequisites: [String: StylePrerequisiteResult] = [:]
-    @Published var styleCapabilityStates: [String: [String: String]] = [:]
-    @Published var styleAttachments: [String: [StyleAttachmentItem]] = [:]
+    /// Prerequisites per style and workspace path; built-in feature readings
+    /// per workspace and feature name.
+    @Published var stylePrerequisites: [StylePrerequisiteKey: StylePrerequisiteResult] = [:]
+    @Published var styleCapabilityStates: [StyleCapabilityKey: String] = [:]
+    @Published var styleAttachments: [StyleCapabilityKey: [StyleAttachmentItem]] = [:]
     @Published var styleCasebooks: [String: StyleCasebook] = [:]
-    /// Workspaces whose built-in features have been read at least once.
-    @Published var styleCapabilitiesLoaded: Set<String> = []
+    /// Features that have been read at least once, per workspace.
+    @Published var styleCapabilitiesLoaded: Set<StyleCapabilityKey> = []
     /// Composer-side progress through the agent's pending questions, per pane.
     @Published var guidedProgress: [String: QuestionnaireProgress] = [:]
     @Published var guidedAutoAllowing = Set<String>()
     lazy var styleTrust = StyleTrustStore(directory: styleTrustDirectory)
     /// The bytes each registered file was read from, kept so the approval card
-    /// and the copy it makes never re-read the disk (§4.4).
+    /// and the copy it makes never re-read the disk (§4.4). A rescan replaces
+    /// the whole list, so removing a workspace drops its bytes with it.
     var styleDiscovered: [DiscoveredStyleFile] = []
     var scannedStyleWorkspaces: Set<String> = []
-    var styleScanInFlight = false
-    var styleScanAgain = false
-    /// Reads already in flight. Both refreshes are asked for from a phone's
-    /// long poll, which repeats until the first answer lands — without these
-    /// a watched pane would spawn a process on every poll.
-    var stylePrerequisiteLoading: Set<String> = []
-    var styleCapabilityLoading: Set<String> = []
+    /// Scans are chained so their results publish in order, and so the caller
+    /// that must act on a fresh registry can wait for one.
+    var styleScanTask: Task<Void, Never>?
+    /// Reads already in flight, and the ones asked for again while they were.
+    /// Both refreshes are asked for from a phone's long poll, which repeats
+    /// until the first answer lands — without these a watched pane would spawn
+    /// a process on every poll, and a button pressed meanwhile would be lost.
+    var stylePrerequisiteLoading: Set<StylePrerequisiteKey> = []
+    var stylePrerequisiteAgain: Set<StylePrerequisiteKey> = []
+    var styleCapabilityLoading: Set<StyleCapabilityKey> = []
+    var styleCapabilityAgain: Set<StyleCapabilityKey> = []
     var questionnaireCache: [String: UserQuestionnaire] = [:]
     @Published var cliAccounts: [String: CLIAccountStatus] = [:]
     @Published var cliAccountBusy = Set<String>()
@@ -408,6 +414,7 @@ final class AppStore: ObservableObject {
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
             snapshot.workspaces.removeAll { $0.id == workspace.id }
+            forgetWorkspaceStyles(workspace)
             snapshot.paneLayouts?.removeValue(forKey: workspace.id)
             snapshot.paneLayoutModes?.removeValue(forKey: workspace.id)
             snapshot.paneLayoutActiveSessionIds?.removeValue(forKey: workspace.id)

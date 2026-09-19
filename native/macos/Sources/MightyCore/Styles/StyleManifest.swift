@@ -20,6 +20,9 @@ public enum StyleLimits {
     public static let maximumCasebookFiles = 24
     /// No manifest string is longer than this, whatever the field.
     public static let maximumString = 400
+    /// A JSON key name. Schema 1's own keys are short words and the only
+    /// author-chosen keys are ids, which stop at 40 (§1.11).
+    public static let maximumKey = 64
     /// A value quoted back inside an error message (§2).
     public static let maximumMessageValue = 64
     /// A capability string projected to a screen (§1.8).
@@ -65,8 +68,11 @@ public enum StyleText {
         return limit.map { truncated(cleaned, to: $0) } ?? cleaned
     }
 
+    /// The ellipsis is part of the budget: a value "cut to 64" is 64 characters
+    /// on screen, not 65 (§2, §1.8).
     static func truncated(_ value: String, to limit: Int) -> String {
-        value.count <= limit ? value : String(value.prefix(limit)) + "\u{2026}"
+        guard value.count > limit, limit > 0 else { return value }
+        return String(value.prefix(limit - 1)) + "\u{2026}"
     }
 
     /// §1.2's comparison: NFKC, case folding, then every space removed.
@@ -89,6 +95,9 @@ public enum StyleErrors {
     public static let tooDeep = code("E_TOO_DEEP", "JSON 중첩이 너무 깊습니다 (최대 8단계).")
     public static func duplicateKey(_ path: String) -> StyleManifestError { code("E_DUPLICATE_KEY", "같은 항목이 두 번 적혀 있습니다: \(StyleText.safe(path)).") }
     public static let schemaNotFirst = code("E_SCHEMA_NOT_FIRST", "schema는 파일의 첫 항목이어야 합니다.")
+    public static func keyEscape(_ path: String) -> StyleManifestError {
+        code("E_KEY_ESCAPE", "항목 이름에는 이스케이프를 쓸 수 없습니다: \(StyleText.safe(path)).")
+    }
     public static let notJSON = code("E_NOT_JSON", "JSON 형식이 아닙니다.")
     public static let schemaMissing = code("E_SCHEMA_MISSING", "schema 필드가 없습니다.")
     public static let schemaVersion = code("E_SCHEMA_VERSION", "이 앱은 schema 1만 읽습니다.")
@@ -149,6 +158,30 @@ public enum StyleErrors {
     public static func idCollision(_ id: String, _ winner: StyleSource) -> StyleManifestError {
         code("E_ID_COLLISION", "이미 같은 id의 스타일이 있습니다: \(StyleText.safe(id)) (\(winner.rawValue)).")
     }
+}
+
+/// The frozen code list of §2, read off the values `StyleErrors` actually
+/// produces rather than written out again: adding a refusal without adding it
+/// here does not compile, and a code that exists only in a test is not a code.
+public enum StyleErrorCodes {
+    static let produced: [StyleManifestError] = [
+        StyleErrors.tooLarge, StyleErrors.tooDeep, StyleErrors.duplicateKey(""), StyleErrors.schemaNotFirst,
+        StyleErrors.keyEscape(""), StyleErrors.notJSON, StyleErrors.schemaMissing, StyleErrors.schemaVersion,
+        StyleErrors.unknownField(""), StyleErrors.missingField(""), StyleErrors.type(""), StyleErrors.stringLength(""),
+        StyleErrors.controlChar(""), StyleErrors.reservedSeparator(""), StyleErrors.idShape(""), StyleErrors.reservedId(""),
+        StyleErrors.reservedName(""), StyleErrors.duplicateId("", ""), StyleErrors.limit("", 0),
+        StyleErrors.promptPlaceholder(""), StyleErrors.takesTextMismatch(""), StyleErrors.foldText(""),
+        StyleErrors.promptRecognition(""), StyleErrors.unknownFlag(""), StyleErrors.unknownReference("", ""),
+        StyleErrors.aliasCollision(""), StyleErrors.unknownRule("", ""), StyleErrors.ruleIncomplete(""),
+        StyleErrors.startPhase(""), StyleErrors.phaseRuleNone, StyleErrors.enterActionText(""),
+        StyleErrors.unknownCapability(""), StyleErrors.capabilityUndeclared(""), StyleErrors.capabilityMap(""),
+        StyleErrors.unknownTint(""), StyleErrors.unknownIcon(""), StyleErrors.unknownProbe(""),
+        StyleErrors.probeNameShape(""), StyleErrors.scopes(""), StyleErrors.autoAllowServer(""),
+        StyleErrors.autoAllowShape(""), StyleErrors.autoAllowForeignServer(""), StyleErrors.autoAllowToolSearchBundled,
+        StyleErrors.autoAllowQuestion, StyleErrors.autoAllowDuplicate(""), StyleErrors.placeholderInitial,
+        StyleErrors.idCollision("", .user),
+    ]
+    public static let all: Set<String> = Set(produced.map(\.code))
 }
 
 public enum StyleFold: String, Sendable, Equatable, CaseIterable { case trimOnly, oneLine }
@@ -298,10 +331,13 @@ public enum StyleProbe: Sendable, Equatable {
     public var install: Bool {
         switch self { case .plugin(_, _, _, let i), .executable(_, _, _, let i), .skill(_, _, _, _, let i): return i }
     }
-    /// The plugin name a `plugin` probe requires, `ouroboros@` → `ouroboros` (§1.9).
+    /// The plugin name a `plugin` probe requires, `ouroboros@` → `ouroboros`
+    /// (§1.9). Only a prefix that ends with `@` names a whole plugin: a bare
+    /// prefix matches installed keys by `hasPrefix`, so `a` would also claim
+    /// the plugin `a_b` and with it every `plugin_a_b_*` server.
     public var pluginName: String? {
-        guard case .plugin(let prefix, _, _, _) = self else { return nil }
-        return prefix.hasSuffix("@") ? String(prefix.dropLast()) : prefix
+        guard case .plugin(let prefix, _, _, _) = self, prefix.hasSuffix("@") else { return nil }
+        return String(prefix.dropLast())
     }
 }
 

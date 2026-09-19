@@ -126,6 +126,24 @@ public enum MobileRemoteSupport {
     /// One string for "not registered" and "not approved" alike (§4.5).
     public static let unknownStyleMessage = "알 수 없는 스타일입니다."
 
+    /// What `POST /guided` does with a request, decided from the registry
+    /// already in memory. Unregistered and unapproved answer alike and neither
+    /// reads the disk, so the two cannot be told apart by timing either (§4.5).
+    public enum GuidedDecision: Sendable, Equatable {
+        case unknownStyle
+        case otherPane(styleId: String)
+        case unknownAction
+        case send(prompt: String)
+    }
+
+    public static func guidedDecision(registry: StyleRegistry, workspace: StyleWorkspaceRef?, pane: RegisteredStyle?,
+                                      styleId: String, actionId: String, text: String) -> GuidedDecision {
+        guard registry.applicable(workspace: workspace).first(where: { $0.id == styleId })?.isRunnable == true else { return .unknownStyle }
+        guard let pane, pane.id == styleId else { return .otherPane(styleId: styleId) }
+        guard let prompt = MobileMightySupport.guidedPrompt(pane, actionId: actionId, text: text) else { return .unknownAction }
+        return .send(prompt: prompt)
+    }
+
     /// The Mac disables its composer pickers while a run is live or pending;
     /// the phone must grey out the same ones or it offers a guaranteed 409.
     public static func editable(status: String, pendingRun: Bool) -> Bool { status != "running" && !pendingRun }

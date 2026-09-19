@@ -49,8 +49,9 @@ public struct StyleCasebook: Sendable, Equatable {
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey, .linkCountKey, .isRegularFileKey]
         guard let listing = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return nil }
         // Real folders only, newest first, so the scan stays small however long
-        // the history is.
-        let folders = listing.prefix(StyleLimits.maximumDirectoryEntries).compactMap { url -> (URL, Date)? in
+        // the history is. The 24 are taken *after* the sort: directory order is
+        // arbitrary, so capping first would drop the newest cycles at random.
+        let folders = listing.compactMap { url -> (URL, Date)? in
             guard StylePathBoundary.isPlainDirectory(url) else { return nil }
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             return (url, modified)

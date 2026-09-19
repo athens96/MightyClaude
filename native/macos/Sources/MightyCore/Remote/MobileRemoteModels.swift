@@ -479,7 +479,9 @@ public struct MobileGuidedRequest: Codable, Sendable {
         self.styleId = styleId; self.actionId = actionId; self.style = style; self.skill = skill; self.text = text
     }
     public var resolvedStyle: String? { styleId ?? style }
-    public var resolvedAction: String? { styleId != nil ? actionId : skill }
+    /// A half-migrated phone can send the new style field with the old action
+    /// field; answering "no action" there would report the wrong problem.
+    public var resolvedAction: String? { styleId != nil ? (actionId ?? skill) : skill }
 }
 public struct MobileUploadRequest: Codable, Sendable {
     public var name: String
