@@ -484,12 +484,23 @@ struct SessionPaneView: View {
             }
             if let problem = store.inputMethodProblem, composerFocused {
                 HStack(alignment: .top, spacing: 7) {
-                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(.orange).padding(.top, 1)
+                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.fallbackEngaged ? Color.secondary : .orange).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("한글 조합이 끊긴 것 같습니다 (자모가 따로 입력됨)").fontWeight(.medium)
-                        Text(problem.recoveryAttempts == 0 ? "입력기 다시 연결을 눌러 보세요. 그래도 안 되면 앱을 종료(⌘Q)하고 다시 여세요." : "다시 연결을 시도했습니다. 여전히 그렇다면 앱을 종료(⌘Q)하고 다시 여세요.")
-                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
+                        // The app composes the same syllables the input method
+                        // would, so a covered break is a notice, not a warning.
+                        if problem.fallbackEngaged {
+                            Text("입력기 연결이 끊겨 앱이 직접 한글을 조합하고 있습니다")
+                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            if problem.recoveryAttempts > 0 {
+                                Text("다시 연결을 시도했습니다. 계속 이 안내가 보이면 앱을 종료(⌘Q)하고 다시 여세요.")
+                                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            Text("한글 조합이 끊긴 것 같습니다 (자모가 따로 입력됨)").fontWeight(.medium)
+                            Text(problem.recoveryAttempts == 0 ? "입력기 다시 연결을 눌러 보세요. 그래도 안 되면 앱을 종료(⌘Q)하고 다시 여세요." : "다시 연결을 시도했습니다. 여전히 그렇다면 앱을 종료(⌘Q)하고 다시 여세요.")
+                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
+                        }
                     }
                     Spacer(minLength: 4)
                     Button("입력기 다시 연결") { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)

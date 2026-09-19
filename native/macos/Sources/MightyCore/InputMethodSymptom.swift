@@ -30,6 +30,15 @@ public enum InputMethodSymptom {
         return ["korean", "hangul", "gureum", ".han2", ".han3", "2setkorean", "3setkorean"].contains { lowered.contains($0) }
     }
 
+    /// The in-app composer's own gate, narrower than the symptom detector's: it
+    /// implements Apple's 2-set rules, so a 3-set or custom Hangul source must
+    /// keep getting its own jamo through rather than 2-set syllables.
+    public static func isTwoSetKoreanInputSource(_ identifier: String?) -> Bool {
+        guard let identifier else { return false }
+        let lowered = identifier.lowercased()
+        return lowered.contains("2setkorean") || lowered.hasSuffix(".korean")
+    }
+
     /// Two uncombined syllables within `window` seconds confirm the symptom.
     public struct Detector: Sendable, Equatable {
         public var window: TimeInterval
