@@ -7,11 +7,11 @@ struct ToolPermissionBar: View {
     @EnvironmentObject private var store: AppStore
     let sessionId: String
 
-    /// In the Ouroboros style the composer itself shows the agent's questions,
-    /// and the style's own state tools are approved without a card.
+    /// In a guided style the composer itself shows the agent's questions,
+    /// and the style's own listed tools are approved without a card.
     private var visibleRequests: [ToolPermissionRequest] {
         guard let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), store.usesGuidedStyle(session) else { return store.toolPermissions[sessionId] ?? [] }
-        return store.ouroborosVisibleRequests(sessionId)
+        return store.guidedVisibleRequests(sessionId)
     }
 
     @ViewBuilder var body: some View {

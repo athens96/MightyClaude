@@ -12,8 +12,14 @@ struct MightyGraphView: View {
     var onSaveBlockSize: (String, MightyGraphBlockSize?) -> Void = { _, _ in }
     /// Local project folder for resolving file references; nil disables links.
     var workspaceRoot: URL? = nil
-    /// The pane's guided Mighty style; nil for the plain CLI style.
-    var style: String? = nil
+    /// Request-block titles, icons and colours come from every style this pane
+    /// may run, not only the one it is in: a pane keeps blocks it made under an
+    /// earlier style (§1.10).
+    var styleTitles: StyleTitleSource = StyleTitleSource()
+    /// The pane's own style, for the header alone.
+    var styleName: String? = nil
+    var styleSource: StyleSource? = nil
+    var stylePhase: String? = nil
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     @ViewState private var reference: MightyGraphReference?
@@ -72,8 +78,9 @@ struct MightyGraphView: View {
         let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false)
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Label("마이티", systemImage: "point.3.connected.trianglepath.dotted")
+                Label(StyleChrome.graphHeader(styleName: styleName, phaseTitle: stylePhase), systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 12, weight: .semibold))
+                if let styleSource, let badge = StyleChrome.sourceBadge(styleSource) { SourceBadge(text: badge) }
                 Text(Self.headerSummary(runs: runs.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens))
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
@@ -212,8 +219,13 @@ struct MightyGraphView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
             let run = runs[index]
-            transcriptCard(node, title: (MightyStyles.requestTitle(forInput: run.input, style: style).map { $0 + " · " } ?? "") + "요청 \(index + 1) · \(ProviderOptions.label(provider))", icon: "arrow.up.message", status: run.status,
-                           input: run.input, entries: run.rootEntries, tint: Palette.accent, usage: run.usage)
+            // Hoisted out of the call: the older type checker is slow on
+            // optional maps written inline in an argument list.
+            let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: index + 1,
+                                                 providerLabel: ProviderOptions.label(provider))
+            let icon = styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
+            transcriptCard(node, title: title, icon: icon, status: run.status,
+                           input: run.input, entries: run.rootEntries, tint: Palette.tint(styleTitles.tint(run.input)), usage: run.usage)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]
             let look = Self.agentPresentation(agent)

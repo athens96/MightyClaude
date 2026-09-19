@@ -94,8 +94,13 @@ public enum MobileRemoteSupport {
     /// The Mac stores nil or "default" for the plain transcript; the wire says "plain".
     public static func viewMode(_ raw: String?) -> String { raw == "mighty" ? "mighty" : MobileWire.plainViewMode }
 
-    /// The Mac stores nil for the plain CLI style; the wire says "cli".
-    public static func style(_ raw: String?) -> String { MightyStyles.normalized(raw) ?? MobileWire.cliStyle }
+    /// The wire word for the style a pane actually runs. Only the two bundled
+    /// ids have one of their own; every other registered style travels as
+    /// "cli" here and carries its truth in `styleId` (§7.2).
+    public static func style(_ raw: String?) -> String {
+        guard let raw, MobileWire.mightyStyles.contains(raw) else { return MobileWire.cliStyle }
+        return raw
+    }
 
     /// Whether a pane's detail carries a `mighty` payload at all. Only a pane
     /// the Mac itself is drawing as a graph has one; everywhere else the phone
@@ -110,11 +115,6 @@ public enum MobileRemoteSupport {
     /// style in one go is judged against the state it is switching to.
     public static func guidedStylesAvailable(kind: String, provider: String, localWorkspace: Bool, viewMode: String) -> Bool {
         kind == "claude" && provider == "claude" && localWorkspace && viewMode == "mighty"
-    }
-
-    /// The style choices for such a pane: outside Mighty view only "cli" exists.
-    public static func styleOptionIds(guided: Bool) -> [String] {
-        guided ? [MobileWire.cliStyle] + MightyStyles.all : [MobileWire.cliStyle]
     }
 
     /// `options.styles`: the CLI plus the styles this pane may really pick.
@@ -199,13 +199,16 @@ public enum MobileMightySupport {
         return result
     }
 
-    /// The pane's newest runs, oldest first, as the phone lists them.
-    public static func runs(_ values: [MightyGraphRun], style: String?) -> [MobileMightyRun] {
+    /// The pane's newest runs, oldest first, as the phone lists them. `title`
+    /// is the registry's prefix rule: a pane keeps blocks it made under an
+    /// earlier style, so every runnable style is asked, not just this one
+    /// (§1.10). The phone adds its own number and provider.
+    public static func runs(_ values: [MightyGraphRun], title: (String) -> String? = { _ in nil }) -> [MobileMightyRun] {
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
         return window.enumerated().map { index, run in
             MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
-                            title: MightyStyles.requestTitle(forInput: run.input, style: style),
+                            title: title(run.input),
                             status: status(run.status), blocks: blocks(run, ordinal: offset + index + 1))
         }
     }
@@ -260,48 +263,20 @@ public enum MobileMightySupport {
         return ids.enumerated().map { (id: $0.element, status: $0.offset == ids.count - 1 ? last : "completed") }
     }
 
-    /// The Ouroboros panel: where the flow stands and what may be sent next.
-    public static func ouroboros(phase: OuroborosPhase, ready: Bool) -> MobileOuroboros {
-        MobileOuroboros(phase: phase.rawValue, ready: ready,
-                        takesText: OuroborosFlow.allActions.map(\.skill).filter(OuroborosFlow.takesText),
-                        next: OuroborosFlow.nextActions(after: phase).map(skill),
-                        all: OuroborosFlow.allActions.map(skill))
-    }
-    private static func skill(_ action: OuroborosAction) -> MobileGuidedSkill {
-        MobileGuidedSkill(skill: action.skill, title: action.title, help: action.help)
-    }
-
-    /// The Paperthin map: the four domains with their skills, plus the newest
-    /// casebook the coil skills left in this workspace.
-    public static func paperthin(installed: Bool, casebook: PaperthinCasebook?) -> MobilePaperthin {
-        let domains = PaperthinDomain.allCases.map { domain in
-            MobilePaperthinDomain(id: domain.rawValue, title: domain.title, axis: domain.axis, question: domain.question,
-                                  skills: PaperthinCatalog.skills(in: domain).map { skill in
-                                      MobilePaperthinSkill(name: skill.name, emoji: skill.emoji, summary: skill.summary, scope: skill.scope,
-                                                           userInvoked: skill.userInvoked, readOnly: skill.readOnly)
-                                  })
-        }
-        return MobilePaperthin(installed: installed, recommended: PaperthinCatalog.recommendedCoilSkill(casebook: casebook), domains: domains,
-                               casebook: casebook.map { MobilePaperthinCasebook(name: $0.name, weight: $0.weight, files: $0.files) })
-    }
-
-    /// The prompt a guided request sends, built by the very functions the Mac's
-    /// own buttons use. Nil means the skill is not in that style's catalogue.
+    /// The prompt a guided request sends, built by the very evaluator the Mac's
+    /// own buttons use. Nil means the action is not in that style's catalogue.
     ///
-    /// The phone's text is folded to one line for both styles first. A skill
-    /// reads its argument up to the first line break, so a pasted paragraph
-    /// would otherwise reach one catalogue whole and the other cut in half —
-    /// the Mac's composer keeps its own behaviour, only this route normalises.
-    public static func guidedPrompt(style: String, skill: String, text: String) -> String? {
-        let oneLine = singleLine(text)
-        switch style {
-        case OuroborosFlow.style: return OuroborosFlow.prompt(skill: skill, text: OuroborosFlow.takesText(skill) ? oneLine : "")
-        case PaperthinCatalog.style: return PaperthinCatalog.prompt(skill: skill, text: oneLine)
-        default: return nil
-        }
+    /// The phone's text is folded to one line first, whatever the style's own
+    /// `foldText` says. An action reads its argument up to the first line
+    /// break, so a pasted paragraph would otherwise reach one catalogue whole
+    /// and the other cut in half — the Mac's composer keeps its own behaviour,
+    /// only this route normalises.
+    public static func guidedPrompt(_ style: RegisteredStyle, actionId: String, text: String) -> String? {
+        guard let action = style.manifest.action(actionId) else { return nil }
+        return style.evaluator.prompt(actionId: actionId, text: action.takesText ? singleLine(text) : "")
     }
 
-    static func singleLine(_ text: String) -> String {
+    public static func singleLine(_ text: String) -> String {
         text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
     }
 }

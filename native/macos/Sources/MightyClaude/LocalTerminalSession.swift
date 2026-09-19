@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import GhosttyTerminal
+import MightyCore
 
 /// Owns the actual AppKit view, not only its SwiftUI presentation. Detaching a
 /// pane keeps the PTY, shell state, and scrollback alive until explicit disposal.
@@ -23,9 +24,13 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     private let statusChanged: (String) -> Void
     private let focused: () -> Void
     private let closeRequested: () -> Void
-    /// Run in the shell once, after the surface attaches.
-    var initialInput: String?
+    /// Typed into the shell once, after the surface attaches. Whether Enter
+    /// follows is `TerminalInput.autoRun`, and that is the app's own decision:
+    /// a string that came from a manifest never runs itself (§1.5).
+    var initialInput: TerminalInput?
     var initialInputFailed: ((String) -> Void)?
+    /// Told when the policy refused the text outright (a line break in it).
+    var initialInputRefused: ((String) -> Void)?
 
     init(id: String, directory: String, controller: TerminalController, smoke: Bool, statusChanged: @escaping (String) -> Void, focused: @escaping () -> Void, closeRequested: @escaping () -> Void) {
         self.id = id
@@ -111,16 +116,24 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     func terminalDidAttachSurface(_ surface: TerminalSurface) {
         self.surface = surface
         publish { $0.ready = true; $0.failure = nil; $0.statusChanged("running") }
-        // A command the app wants run once the shell is up (CLI sign-in).
-        // Text goes in as a paste, so Enter is a separate key press.
+        // Text the app wants in the shell once it is up (a CLI sign-in, a
+        // style's install command). The retries and the delay stay here; the
+        // paste and the Enter live in the engine's policy (§5.7).
         if initialInput != nil { typeInitialInput(after: 0.9, attempt: 1) }
     }
     private func typeInitialInput(after delay: TimeInterval, attempt: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, !self.disposed, let input = self.initialInput else { return }
-            if self.view.paste(text: input), self.view.sendKey(.enter) { self.initialInput = nil }
-            else if attempt < 3 { self.typeInitialInput(after: 1, attempt: attempt + 1) }
-            else { self.initialInput = nil; self.initialInputFailed?(input) }
+            switch TerminalInputPolicy.apply(input, to: self) {
+            case .pasted, .pastedAndRan:
+                self.initialInput = nil
+            case .refused(let reason):
+                self.initialInput = nil
+                self.initialInputRefused?(reason)
+            case .failed:
+                if attempt < 3 { self.typeInitialInput(after: 1, attempt: attempt + 1) }
+                else { self.initialInput = nil; self.initialInputFailed?(input.text) }
+            }
         }
     }
     func terminalDidDetachSurface() { surface = nil }
@@ -144,4 +157,11 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         guard view.performBindingAction("select_all") else { return "" }
         return surface?.readSelection() ?? ""
     }
+}
+
+/// The thin adapter of §5.7: the policy owns the decision, this owns the view.
+/// Both calls already arrive on the main queue, from `typeInitialInput`.
+extension LocalTerminalSession: TerminalPasteSink {
+    nonisolated func paste(text: String) -> Bool { MainActor.assumeIsolated { view.paste(text: text) } }
+    nonisolated func sendEnter() -> Bool { MainActor.assumeIsolated { view.sendKey(.enter) } }
 }

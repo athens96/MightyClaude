@@ -11,8 +11,8 @@ struct SessionPaneView: View {
     @ViewState private var editorHeight: CGFloat = 22
     @ViewState private var attachmentDropTargeted = false
     @ViewState private var stopping = false
-    @ViewState private var ouroborosStartingNew = false
-    @ViewState private var paperthinDomain: PaperthinDomain?
+    @ViewState private var guidedSelection = GuidedSelection()
+    @ViewState private var styleCandidate: StyleApprovalCandidate?
     @ViewState private var paletteIndex = 0
     @ViewState private var paletteDismissedFor: String?
 
@@ -46,32 +46,49 @@ struct SessionPaneView: View {
     private var canSend: Bool {
         guard !stopping, !importingAttachments, blockedReason == nil else { return false }
         if !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (session.kind != "shell" && !attachments.isEmpty) { return true }
-        // Multi-select picks in the Ouroboros question panel are confirmed with Enter on an empty draft.
-        return guided && store.ouroborosCanConfirm(session.id)
+        // Multi-select picks in the question panel are confirmed with Enter on an empty draft.
+        return guided && store.guidedCanConfirm(session.id)
     }
     private var steers: Bool { store.canSteer(session) }
-    /// Mighty mode's Ouroboros style: the composer leads the interview loop.
-    private var ouroboros: Bool { store.usesOuroboros(session) }
-    private var paperthin: Bool { store.usesPaperthin(session) }
-    private var styleHint: String {
-        if ouroboros { return "인터뷰 → 시드 → 실행 → 평가 → 진화" }
-        if paperthin { return "더하지 말고 덜어내기 · depth · breadth · coil · mesh" }
-        return "자유 요청"
-    }
-    /// Either guided style: the composer answers the agent's questions itself.
-    private var guided: Bool { ouroboros || paperthin }
+    /// The registered style this pane actually runs, if any.
+    private var style: RegisteredStyle? { store.guidedStyle(session) }
+    /// A guided style: the composer answers the agent's questions itself.
+    private var guided: Bool { style != nil }
+    private var styleHint: String { style?.manifest.subtitle ?? "자유 요청" }
     private var offersMightyStyle: Bool {
         session.kind == "claude" && session.provider == "claude" && session.agentViewMode == "mighty"
             && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
     }
-    private var ouroborosPhase: OuroborosPhase { ouroborosStartingNew ? .goal : OuroborosFlow.currentPhase(session: session) }
+    private var guidedPhase: StylePhase? {
+        guard let style else { return nil }
+        if guidedSelection.startingNew, case .actions(let start, _, _) = style.manifest.rules.start { return style.manifest.phase(start) }
+        return style.evaluator.currentPhase(session: session)
+    }
+    /// The style the pane aimed at but has not been said yes to yet (§6.1).
+    private var pendingStyle: RegisteredStyle? {
+        guard let id = session.mightyStyle, let found = store.applicableStyles(session).first(where: { $0.id == id }) else { return nil }
+        return found.approval == .pending ? found : nil
+    }
+    /// The prefix the Enter rule would send, drawn as a non-editable chip while
+    /// the rule can actually fire (§1.6).
+    private var armedPrefix: String? {
+        guard let style, store.guidedQuestion(for: session.id) == nil, attachments.isEmpty else { return nil }
+        return style.evaluator.enterArmedPrefix(phase: guidedPhase, running: running, hasRequests: hasRequests)
+    }
+    /// Whether this pane has ever sent a request, read without rebuilding a
+    /// legacy pane's runs — the composer asks on every keystroke.
+    private var hasRequests: Bool {
+        if let runs = session.graphRuns { return !runs.isEmpty }
+        return session.logs.contains { $0.kind == "user" }
+    }
     private var composerPlaceholder: String {
-        if guided, store.ouroborosQuestion(for: session.id) != nil { return "직접 답하려면 여기에 적고 Enter…" }
-        if ouroboros {
-            if !running, ouroborosPhase == .goal { return "무엇을 만들까요? 목표를 적고 Enter로 인터뷰를 시작하세요…" }
-            if !running { return "이어서 요청하거나 위에서 다음 단계를 고르세요…" }
+        if let style {
+            let answering = store.guidedQuestion(for: session.id) != nil
+            let value = style.evaluator.placeholder(phase: guidedPhase, running: running, answering: answering)
+            // An empty string is the manifest saying "the app's own default",
+            // which lives here and not in the engine (§1.7).
+            if !value.isEmpty { return value }
         }
-        if paperthin, !running { return "대상(파일 경로·지시)을 적고 위에서 스킬을 고르세요 · Enter는 그대로 요청합니다…" }
         if running { return steers ? "Enter: 다음 요청으로 대기 · ⌘Enter: 실행 중인 작업에 바로 전달" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다" }
         return session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…"
     }
@@ -345,7 +362,8 @@ struct SessionPaneView: View {
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
-                    style: store.guidedStyle(session)) {
+                    styleTitles: StyleTitleSource(registry: store.styleRegistry, workspace: store.styleWorkspaceRef(session)),
+                    styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title) {
                     store.selectSession(session.id)
                 }
             } else if session.logs.isEmpty {
@@ -377,12 +395,23 @@ struct SessionPaneView: View {
         VStack(alignment: .leading, spacing: 9) {
             if offersMightyStyle {
                 HStack(spacing: 8) {
-                    MightyStylePicker(session: session)
-                    Text(styleHint).font(.system(size: 10)).foregroundStyle(.tertiary)
+                    MightyStylePicker(session: session, onApprove: { openApproval($0) })
+                    Text(verbatim: styleHint).font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, 12).padding(.top, 9)
-                if ouroboros { OuroborosPanel(session: session, running: running, startingNew: $ouroborosStartingNew, onPrepare: { composerInput.prepareForSubmission() }) }
-                if paperthin { PaperthinPanel(session: session, running: running, domain: $paperthinDomain, onPrepare: { composerInput.prepareForSubmission() }) }
+                if store.styleNeedsRechoosing(session) {
+                    Text("이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요")
+                        .font(.system(size: 10)).foregroundStyle(.orange).padding(.horizontal, 12)
+                        .accessibilityIdentifier("mighty-style-changed-\(session.id)")
+                }
+                if let pending = pendingStyle {
+                    GuidedApprovalStrip(name: pending.manifest.name, source: pending.source, sessionID: session.id) { openApproval(pending) }
+                        .padding(.horizontal, 12)
+                }
+                if let style {
+                    GuidedPanel(session: session, style: style, running: running, selection: $guidedSelection,
+                                onPrepare: { composerInput.prepareForSubmission() })
+                }
             }
             if !attachments.isEmpty {
                 ScrollView(.horizontal) {
@@ -406,13 +435,25 @@ struct SessionPaneView: View {
                                     onSelect: { applyCompletion($0) }, onHover: { paletteIndex = $0 })
                     .padding(.horizontal, 10).padding(.top, 10)
             }
-            NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocused = $0 }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput)
-                .onChange(of: paletteDraft) { _, text in
-                    paletteIndex = 0
-                    if text != nil { store.refreshSlashCommands(for: session) }
+            HStack(alignment: .top, spacing: 6) {
+                // The composer says which command Enter is about to send; the
+                // manifest's own placeholder cannot be trusted to (§1.6).
+                if let armedPrefix {
+                    Text(verbatim: armedPrefix)
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.accent).lineLimit(1)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                        .accessibilityLabel("Enter로 보낼 명령: " + armedPrefix)
+                        .accessibilityIdentifier("mighty-enter-armed-\(session.id)")
                 }
-                .frame(height: editorHeight)
-                .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: { submitComposer(command: $0) }, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: composerPlaceholder).allowsHitTesting(false))
+                NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocused = $0 }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput)
+                    .onChange(of: paletteDraft) { _, text in
+                        paletteIndex = 0
+                        if text != nil { store.refreshSlashCommands(for: session) }
+                    }
+                    .frame(height: editorHeight)
+                    .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: { submitComposer(command: $0) }, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: composerPlaceholder).allowsHitTesting(false))
+            }
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
                 .help(running ? (steers ? "Enter: 현재 작업이 끝난 뒤 실행 · ⌘Enter: 실행 중인 Claude에 바로 전달 · Shift+Enter: 줄바꿈" : "Enter: 현재 작업이 끝난 뒤 실행 · Shift+Enter: 줄바꿈") : "Enter 또는 ⌘Enter로 전송 · Shift+Enter로 줄바꿈")
             if importingAttachments {
@@ -488,11 +529,21 @@ struct SessionPaneView: View {
         .onChange(of: session.sessionUsage) { _, _ in store.refreshStatusLine(sessionID: session.id) }
         .onChange(of: session.resumeId) { _, _ in store.refreshStatusLine(sessionID: session.id) }
         .onChange(of: session.model) { _, _ in store.refreshStatusLine(sessionID: session.id) }
-        .task(id: session.mightyStyle) {
-            if ouroboros { store.refreshOuroborosPrerequisites() }
-            if paperthin { store.refreshPaperthin(for: session) }
+        // A workspace's own manifests are read when it first draws a pane.
+        .task(id: session.workspaceId) { store.scanWorkspaceStyles(for: session) }
+        .task(id: session.mightyStyle) { if let style { store.refreshStyle(style, for: session) } }
+        .onChange(of: running) { _, busy in if !busy, let style { store.refreshStyleCapabilities(style, for: session) } }
+        .sheet(item: $styleCandidate) { item in
+            StyleApprovalSheet(candidate: item, onApproved: { approved in
+                store.setMightyStyle(session.id, style: approved.id)
+            }, onClose: { styleCandidate = nil }).environmentObject(store)
         }
-        .onChange(of: running) { _, busy in if !busy, paperthin { store.refreshPaperthin(for: session) } }
+    }
+
+    /// A pending row in the picker opens the card; only saying yes there moves
+    /// the pane onto that style (§4.5).
+    private func openApproval(_ style: RegisteredStyle) {
+        styleCandidate = StyleApprovalCandidate(style: style, data: store.styleBytes(for: style))
     }
 
     private var composerToolbar: some View {
@@ -605,19 +656,22 @@ struct SessionPaneView: View {
     /// ⌘Enter hands the text to the running Claude turn instead.
     private func submitComposer(command: Bool = false) {
         guard canSend, !store.hasModal else { return }
-        if guided, attachments.isEmpty {
+        if let style {
             composerInput.prepareForSubmission()
             let text = draft.wrappedValue
-            // Enter answers the agent's waiting question…
-            if store.ouroborosQuestion(for: session.id) != nil {
-                if store.ouroborosAnswer(session.id, text: text) { composerInput.replaceDraft(""); store.drafts[session.id] = "" }
+            // A waiting question always wins: Enter answers it, never the rule.
+            if store.guidedQuestion(for: session.id) != nil {
+                if store.guidedAnswer(session.id, text: text) { composerInput.replaceDraft(""); store.drafts[session.id] = "" }
                 return
             }
-            // …or, before any interview, turns the goal into `/ouroboros:interview <goal>`.
-            if ouroboros, !running, ouroborosPhase == .goal, !text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/"), OuroborosFlow.skill(inPrompt: text) == nil {
-                ouroborosStartingNew = false
+            // …otherwise the style's own Enter rule decides, all six conditions
+            // of §1.6 together.
+            let behaviour = style.evaluator.enterBehaviour(draft: text, phase: guidedPhase, hasAttachments: !attachments.isEmpty,
+                                                           running: running, hasRequests: hasRequests)
+            if case .rewrite(let actionId) = behaviour {
+                guidedSelection.startingNew = false
                 composerInput.replaceDraft("")
-                store.sendOuroboros(session.id, skill: "interview", text: text)
+                store.sendStyleAction(session.id, actionId: actionId, text: text)
                 return
             }
         }

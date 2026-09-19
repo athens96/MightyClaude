@@ -74,7 +74,9 @@ extension AppStore {
             return
         }
         updateSession(id) { $0.title = "\(ProviderOptions.label(provider)) 로그인" }
-        pendingTerminalInput[id] = command
+        // The app wrote this command itself, so it is the one thing that still
+        // presses Enter for the user (§1.5).
+        pendingTerminalInput[id] = TerminalInput(text: command, autoRun: true)
         endCLILogin(provider)
         cliLoginPending.insert(provider); cliLoginSessions[provider] = id
         // The poll lives here, not in the Settings view, which is closed now.

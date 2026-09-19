@@ -61,20 +61,35 @@ final class AppStore: ObservableObject {
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
     @Published var statusLines: [String: StatusLineState] = [:]
     @Published var appUpdate = AppUpdateState()
+    /// Mighty styles (AppStore+Styles.swift): what was found, what was said
+    /// yes to, and the per-pane state the guided panel draws from.
+    @Published var styleRegistry = StyleRegistry()
+    @Published var styleRejections: [StyleRejection] = []
+    /// A trust store that could not be read answers no decision at all (§4.3).
+    @Published var styleTrustLocked = false
+    @Published var styleTrustPath = ""
+    /// Prerequisites per style id; built-in feature readings per workspace.
+    @Published var stylePrerequisites: [String: StylePrerequisiteResult] = [:]
+    @Published var styleCapabilityStates: [String: [String: String]] = [:]
+    @Published var styleAttachments: [String: [StyleAttachmentItem]] = [:]
+    @Published var styleCasebooks: [String: StyleCasebook] = [:]
+    /// Workspaces whose built-in features have been read at least once.
+    @Published var styleCapabilitiesLoaded: Set<String> = []
     /// Composer-side progress through the agent's pending questions, per pane.
-    @Published var ouroborosProgress: [String: QuestionnaireProgress] = [:]
-    @Published var ouroborosPrerequisites: OuroborosFlow.Prerequisites?
-    @Published var ouroborosAutoAllowing = Set<String>()
-    /// nil until checked.
-    @Published var paperthinInstalled: Bool?
-    @Published var paperthinCasebooks: [String: PaperthinCasebook] = [:]
-    /// Workspaces whose casebook has been read at least once.
-    @Published var paperthinLoaded: Set<String> = []
+    @Published var guidedProgress: [String: QuestionnaireProgress] = [:]
+    @Published var guidedAutoAllowing = Set<String>()
+    lazy var styleTrust = StyleTrustStore(directory: styleTrustDirectory)
+    /// The bytes each registered file was read from, kept so the approval card
+    /// and the copy it makes never re-read the disk (§4.4).
+    var styleDiscovered: [DiscoveredStyleFile] = []
+    var scannedStyleWorkspaces: Set<String> = []
+    var styleScanInFlight = false
+    var styleScanAgain = false
     /// Reads already in flight. Both refreshes are asked for from a phone's
     /// long poll, which repeats until the first answer lands — without these
     /// a watched pane would spawn a process on every poll.
-    var ouroborosPrerequisitesLoading = false
-    var paperthinLoading: Set<String> = []
+    var stylePrerequisiteLoading: Set<String> = []
+    var styleCapabilityLoading: Set<String> = []
     var questionnaireCache: [String: UserQuestionnaire] = [:]
     @Published var cliAccounts: [String: CLIAccountStatus] = [:]
     @Published var cliAccountBusy = Set<String>()
@@ -85,7 +100,7 @@ final class AppStore: ObservableObject {
     @Published var cliLoginPending = Set<String>()
     var cliLoginSessions: [String: String] = [:]
     var cliLoginTasks: [String: Task<Void, Never>] = [:]
-    var pendingTerminalInput: [String: String] = [:]
+    var pendingTerminalInput: [String: TerminalInput] = [:]
     let cliAccountService = CLIAccountService()
     /// Korean composition broke in a composer; shown until reconnected or dismissed.
     @Published var inputMethodProblem: InputMethodMonitor.Problem?
@@ -170,6 +185,9 @@ final class AppStore: ObservableObject {
         catch { self.error = "상태를 불러오지 못했습니다. 기존 파일을 보호하기 위해 저장을 중단했습니다. \(error.localizedDescription)" }
         guard !ending, !Task.isCancelled else { loading = false; return }
         isLoaded = true
+        // The bundled and user styles are read once at start; a workspace's
+        // own are read when it first draws a pane (§3.1).
+        rescanStyles()
         companion.configure(store: self)
         InputMethodMonitor.shared.dataDirectory = dataDirectory
         InputMethodMonitor.shared.onProblem = { [weak self] problem in self?.inputMethodProblem = problem }
@@ -362,7 +380,7 @@ final class AppStore: ObservableObject {
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
-            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); ouroborosProgress.removeValue(forKey: id)
+            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); guidedProgress.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
             draftRevisions.removeValue(forKey: id)
@@ -383,7 +401,7 @@ final class AppStore: ObservableObject {
                 await stop(session.id)
                 drafts.removeValue(forKey: session.id)
                 statusLines.removeValue(forKey: session.id)
-                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); ouroborosProgress.removeValue(forKey: session.id)
+                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); guidedProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.task.cancel()
                 draftRevisions.removeValue(forKey: session.id)
@@ -687,7 +705,7 @@ final class AppStore: ObservableObject {
         requests.removeAll { $0.id == permission.id && $0.runId == permission.runId }
         if permission.state == "pending", session.status == "running" { requests.append(permission) }
         toolPermissions[event.sessionId] = requests
-        autoAllowOuroborosTool(permission, session: session)
+        autoAllowGuidedTool(permission, session: session)
         if previousFirst != requests.first.map({ permissionResponseKey(sessionId: event.sessionId, request: $0) }) {
             permissionErrors.removeValue(forKey: event.sessionId)
         }
