@@ -23,6 +23,14 @@ public enum InputMethodSymptom {
         return scalars.count == 2 && isConsonantJamo(scalars[0]) && isVowelJamo(scalars[1])
     }
 
+    /// A live input method continues a syllable by replacing what it inserted
+    /// before. One precomposed syllable arriving with a replacement range, from
+    /// a Korean source, is therefore proof that composition works (again).
+    public static func provesComposition(_ text: String, hasReplacementRange: Bool, koreanSource: Bool) -> Bool {
+        guard hasReplacementRange, koreanSource, text.unicodeScalars.count == 1, let scalar = text.unicodeScalars.first else { return false }
+        return (0xAC00...0xD7A3).contains(scalar.value)
+    }
+
     public static func isKoreanInputSource(_ identifier: String?) -> Bool {
         guard let identifier else { return false }
         let lowered = identifier.lowercased()
