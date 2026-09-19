@@ -1,8 +1,10 @@
 # 마이티 스타일 엔진 후속 작업 (규칙 어휘 확장)
 
-docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이며, 이번 범위 밖이고 확장은 `schema: 2`로 간다. `mighty-style-engine-v1` 태그 이후에 고칠 수 있는 유일한 문서다(§8.3).
+docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이며, 이번 범위 밖이고 확장은 `schema: 2`로 간다. 고정 태그 이후에 고칠 수 있는 유일한 문서다(§8.3).
 
-고정 기준: 엔진의 마지막 커밋 `306d8be3f0c56d2466bb3aac025e085e40ecc7b3`, 태그 `mighty-style-engine-v1`이 가리키는 커밋 `b767328c5e47654fffbde224488e5865a139ed8f`(`styles/FREEZE`만 더한 커밋). `scripts/check-style-freeze.sh`는 FREEZE를 새로 쓰고 태그를 다시 거는 것까지는 막지 못하므로, 태그가 이 두 값과 다르면 고정이 깨진 것이다.
+고정 기준(현재, v2 — 2026-09-20): 고정 전 마지막 커밋 `19748917bc0e99ac6f45e6857d9c4a0cb08353e8`, 태그 `mighty-style-engine-v2`가 가리키는 커밋 `24a07e02559081d43fdb4337ebdc0162897aff44`(`styles/FREEZE`만 더한 커밋). v1 이후 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 바뀌지 않았다. v2를 건 이유는 검사가 저장소 전체를 보는데 main에 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)이 들어왔기 때문이다.
+
+고정 기준(이전, v1 — 2026-09-19): 엔진의 마지막 커밋 `306d8be3f0c56d2466bb3aac025e085e40ecc7b3`, 태그 `mighty-style-engine-v1`이 가리키는 커밋 `b767328c5e47654fffbde224488e5865a139ed8f`(`styles/FREEZE`만 더한 커밋). `scripts/check-style-freeze.sh`는 FREEZE를 새로 쓰고 태그를 다시 거는 것까지는 막지 못하므로, 태그가 이 두 값과 다르면 고정이 깨진 것이다.
 
 1. **진짜 2축 그리드.** `groups[].axis`는 문자열 한 줄이라 정렬만 돕는다. Paperthin의 2×2는 오늘처럼 버튼 4개 줄로 그린다. `axisX`/`axisY`가 필요하다.
 2. **중첩 그룹.** 그룹 안의 그룹이 없다. gstack처럼 행동이 30개를 넘는 카탈로그는 1단 그룹으로 평평해진다.
@@ -46,9 +48,9 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 28. **ZWJ로 묶인 이모지 `glyph`가 폰에서 두 자로 갈라진다.** §1.11은 `actions[].glyph`를 금지 문자 검사에서 **명시적으로 면제**하고(근거: U+200D가 여성 기술자 이모지를 한 grapheme으로 묶는다) 맥 디코더도 `StyleText.isEmojiGlyph` 하나로만 판정해 통과시킨다. 그런데 폰의 두 번째 겹인 `mobile/src/lib/styles.ts`의 `UNSAFE_INLINE`은 U+200B–U+200F를 통째로 지우고 `parseAction`이 `glyph`에도 그 함수를 쓴다. 재현: 스칼라 세 개(U+1F9D1, U+200D, U+1F4BB)로 된 glyph를 담아 골든을 기록하면 맥은 grapheme 1개로 그리고 폰의 `normalizeStylePanel`은 U+200D가 빠진 grapheme 2개를 돌려준다(`node -e`로 `UNSAFE_INLINE` 정규식에 직접 먹여 확인). 맥과 폰이 같은 칩을 다르게 그리는, 이번에 확인된 유일한 자리다. **엔진도 폰도 고치지 않았다**(둘 다 고정 범위). 이번에는 gstack의 `plan-devex-review` 글리프를 ZWJ 없는 톱니바퀴(U+2699 U+FE0F)로 내려 담았다. 고치려면 폰의 `parseAction`이 `glyph`만은 제어 문자 제거 대신 'grapheme 하나인가'로 판정해야 한다 — §1.10이 맥에서 하는 것과 같은 판정이다.
 29. **카탈로그를 잘라 담았고 그룹은 하나다**(항목 2·16). 설치본의 스킬은 oh-my-claudecode 39개·gstack 90개가 넘는데 각각 16개·27개만 담았다. `rules.next`가 `byPhase`라 그룹 지도는 그려지지 않으므로(§1.4), `axis` 없는 그룹을 여러 개 선언하면 맥에서도 폰에서도 안 그려지고 승인 카드에서만 진짜 구획인 척하는 죽은 JSON이 된다 — 그래서 둘 다 `flow` 그룹 하나로 평평하다. 나머지 스킬은 입력창에 직접 쳐서 쓴다(gstack은 bare `/name`이라 요청은 정상으로 나가고 단계만 반응하지 않는다).
 
-## 다음 고정(v2)에 한 번에 묶을 것
+## 다음 고정(v3)에 한 번에 묶을 것
 
-2026-09-19 결정: 화면 확인에서 나오는 문제와 아래 항목을 묶어 **한 번의** 새 고정(`mighty-style-engine-v2`)으로 처리한다. 그 전에는 고정된 엔진·폰 코드를 건드리지 않는다.
+2026-09-19 결정: 화면 확인에서 나오는 문제와 아래 항목을 묶어 **한 번의** 새 고정으로 처리한다. 그 전에는 고정된 엔진·폰 코드를 건드리지 않는다. 2026-09-20: 한글 자모 분리 수정을 먼저 main에 넣기로 하면서 `mighty-style-engine-v2`는 그 변경만 담아 따로 걸었다. 아래 묶음은 그대로 남아 다음 고정(`mighty-style-engine-v3`)으로 간다.
 
 - 항목 28의 폰 결함: `mobile/src/lib/styles.ts`의 `parseAction`이 `glyph`를 제어 문자 제거가 아니라 "이모지 한 글자인가"로 판정하도록 고친다(맥의 `StyleText.isEmojiGlyph`와 같은 기준).
 - 정식 평가(2026-09-19, 9/9 승인)가 지적한 테스트 빈틈: Ouroboros의 단계 6개를 한 줄로 단언하는 검사, 101번째 행동이 `E_LIMIT`으로 거부되는 픽스처.
