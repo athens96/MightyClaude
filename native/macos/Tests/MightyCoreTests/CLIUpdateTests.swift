@@ -61,9 +61,10 @@ final class CLIUpdateTests {
         try script("exec /bin/sh \"$@\"\n", at: root.appendingPathComponent("bin/node"))
         return prefix
     }
-    private func waitForFile(_ url: URL) async throws {
-        for _ in 0..<200 {
-            if FileManager.default.fileExists(atPath: url.path) { return }
+    /// The shell creates the file before `printf` fills it, so existence alone can read back empty.
+    private func waitForPID(_ url: URL) async throws -> Int32 {
+        for _ in 0..<1500 {
+            if let text = try? String(contentsOf: url, encoding: .utf8), let pid = Int32(text), pid > 0 { return pid }
             try await Task.sleep(for: .milliseconds(10))
         }
         throw MightyError("Fixture process did not start")
@@ -172,8 +173,7 @@ final class CLIUpdateTests {
         let service = CLIUpdateService(environment: environment(root), homeDirectory: root)
         let operation = Task { await service.update(provider: "claude") }
         defer { operation.cancel() }
-        try await waitForFile(root.appendingPathComponent("pid"))
-        let pid = try #require(Int32(String(contentsOf: root.appendingPathComponent("pid"), encoding: .utf8)))
+        let pid = try await waitForPID(root.appendingPathComponent("pid"))
         #expect(await service.update(provider: "gemini").status == "busy")
         await service.cancel()
         #expect(await operation.value.status == "cancelled")
@@ -185,10 +185,10 @@ final class CLIUpdateTests {
     @Test func updaterTimeoutIsBoundedAndLeavesNoRunningProcess() async throws {
         let root = try fixture()
         _ = try native(root, update: "printf '%s' \"$$\" > \"$FIXTURE_PID\"\n/bin/sleep 30\n")
-        let service = CLIUpdateService(environment: environment(root), homeDirectory: root, updateTimeout: 0.08)
+        let service = CLIUpdateService(environment: environment(root), homeDirectory: root, updateTimeout: 0.5)
         let began = Date(); let result = await service.update(provider: "claude")
         #expect(result.status == "failed"); #expect(Date().timeIntervalSince(began) < 3)
-        let pid = try #require(Int32(String(contentsOf: root.appendingPathComponent("pid"), encoding: .utf8)))
+        let pid = try await waitForPID(root.appendingPathComponent("pid"))
         #expect(Darwin.kill(pid, 0) != 0)
         await service.shutdown()
     }
@@ -211,8 +211,7 @@ final class CLIUpdateTests {
         let providers = ProviderService(binaryOverrides: ["claude": launcher], environment: environment(root))
         let pending = Task { await providers.command(provider: "claude") }
         defer { pending.cancel() }
-        try await waitForFile(root.appendingPathComponent("pid"))
-        let pid = try #require(Int32(String(contentsOf: root.appendingPathComponent("pid"), encoding: .utf8)))
+        let pid = try await waitForPID(root.appendingPathComponent("pid"))
         await providers.invalidateCaches()
         #expect(await pending.value == nil); #expect(Darwin.kill(pid, 0) != 0)
         try Data().write(to: root.appendingPathComponent("ready"))

@@ -268,6 +268,8 @@ final class MightyGraphInteractionProbe: NSView {
     private func finishResize(cancelled: Bool) {
         guard let drag = resizeDrag else { return }
         resizeDrag = nil; NSCursor.pop()
+        // A camera target published during the drag was held back; nothing else re-admits it when the size never changed.
+        scheduleInitialPosition()
         guard drag.changed else { return }
         let size = cancelled ? drag.initialFrame.size : drag.size
         finishingAnchor = ResizeAnchor(id: drag.id, point: drag.anchor, size: size)
@@ -296,6 +298,7 @@ final class MightyGraphInteractionProbe: NSView {
     private func finishOverlayResize(cancelled: Bool) {
         guard let drag = overlayResize else { return }
         overlayResize = nil; NSCursor.pop()
+        scheduleInitialPosition()
         guard drag.changed else { return }
         onOverlayResize(cancelled ? drag.initialSize : drag.size, true)
     }
