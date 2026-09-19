@@ -26,6 +26,10 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     @Binding var selection: String?
     @Binding var panOffset: CGPoint
     var onResize: (String, CGSize, Bool) -> Void = { _, _, _ in }
+    /// A layout pass left no card on screen without the camera having moved.
+    var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
+    /// A new newest request aims the camera by its own rule, not the stranded net's.
+    var newestRunID: String?
     /// Chrome docked over the diagram, such as the reference bubble. It lives
     /// in its own native view so AppKit, not SwiftUI layering, decides hits,
     /// and the probe resizes it exactly the way it resizes graph blocks.
@@ -57,6 +61,8 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.onSelect = { selection = $0 }
         view.onPan = { panOffset = $0 }
         view.onResize = onResize
+        view.onStranded = onStranded
+        view.newestRunID = newestRunID
         view.overlayLayout = overlayLayout
         view.onOverlayResize = onOverlayResize
         view.updateLayoutFrames(nodes.map { ($0.id, $0.frame) }, zoom: zoom, panOffset: panOffset)
@@ -117,6 +123,9 @@ final class MightyGraphInteractionProbe: NSView {
     var onSelect: (String?) -> Void = { _ in }
     var onPan: (CGPoint) -> Void = { _ in }
     var onResize: (String, CGSize, Bool) -> Void = { _, _, _ in }
+    var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
+    /// A new newest request aims the camera by its own rule, not the stranded net's.
+    var newestRunID: String?
     var targetToken: String?
     var targetFrame: CGRect?
     var alignTop = false
@@ -159,6 +168,14 @@ final class MightyGraphInteractionProbe: NSView {
     private var resizeDrag: ResizeDrag?
     private var finishingAnchor: ResizeAnchor?
     private var pendingPanNotification = false
+    private var pendingStrandedNotification = false
+    private var strandedWatch = MightyGraphCamera.StrandedWatch()
+    private var strandedRetryScheduled = false
+    private static let strandedRetries = 6
+    private var strandedRetriesLeft = 0
+    /// Wheel momentum and the tail of a drag still belong to the user.
+    private static let userMoveGrace: TimeInterval = 0.5
+    private var lastUserMoveAt: TimeInterval = 0
     private var dragLocation: CGPoint?
     private var monitor: Any?
     private var resignObserver: NSObjectProtocol?
@@ -214,11 +231,13 @@ final class MightyGraphInteractionProbe: NSView {
         gestureRoute = nil; gestureTarget = nil; discardedMomentum = false
     }
     func dispose() {
-        disposed = true; removeMonitoring(); onSelect = { _ in }; onPan = { _ in }; onResize = { _, _, _ in }; layoutFrames = []; finishingAnchor = nil
+        disposed = true; removeMonitoring(); onSelect = { _ in }; onPan = { _ in }; onResize = { _, _, _ in }; onStranded = { _ in }; layoutFrames = []; finishingAnchor = nil
     }
     /// Layout may recenter a parent when its child's width changes. Keep the
     /// dragged card's original top-left viewport point pinned across that reflow.
     func updateLayoutFrames(_ frames: [(String, CGRect)], zoom newZoom: CGFloat, panOffset incomingPan: CGPoint) {
+        strandedRetriesLeft = Self.strandedRetries
+        notifyIfStranded(frames, incomingZoom: newZoom, incomingPan: incomingPan)
         layoutFrames = frames; zoom = newZoom; panOffset = incomingPan
         let anchor = resizeDrag.map { ResizeAnchor(id: $0.id, point: $0.anchor, size: $0.size) } ?? finishingAnchor
         guard let anchor else { return }
@@ -242,6 +261,44 @@ final class MightyGraphInteractionProbe: NSView {
         }
         if resizeDrag == nil, adjusted == incomingPan,
            abs(frame.width - anchor.size.width) < 0.5, abs(frame.height - anchor.size.height) < 0.5 { finishingAnchor = nil }
+    }
+    /// Only a settled pass is judged: a drag, a resize, a move the user just
+    /// made and a camera target still waiting for admission all decide where
+    /// the camera goes themselves. An unsettled pass is judged later.
+    private func notifyIfStranded(_ frames: [(String, CGRect)], incomingZoom: CGFloat, incomingPan: CGPoint) {
+        guard !disposed else { return }
+        let idle = ProcessInfo.processInfo.systemUptime - lastUserMoveAt > Self.userMoveGrace
+        let targetSettled = targetToken == nil || targetToken == consumedTargetToken
+        let settled = !pendingStrandedNotification && !isResizing && finishingAnchor == nil && !isPanning && idle
+            && targetSettled && incomingPan == panOffset && admissibleViewport && window != nil && !isHiddenOrHasHiddenAncestor
+        guard let loss = strandedWatch.observe(nodes: frames, camera: incomingPan, zoom: incomingZoom, viewport: bounds.size,
+                                               newestRunID: newestRunID, settled: settled) else {
+            retryWithheldVerdict(); return
+        }
+        // Publishing SwiftUI state during updateNSView is undefined, and one
+        // layout pass may only ask for one re-aim.
+        pendingStrandedNotification = true
+        let detectedToken = targetToken
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingStrandedNotification = false
+            // A target published in the same turn — a new request — wins.
+            guard !self.disposed, !self.isPanning, self.targetToken == detectedToken else { return }
+            self.onStranded(loss)
+        }
+    }
+    /// The withheld pass may have been the last one of a burst — a run's final
+    /// event — and then no later pass would ever come to judge it.
+    private func retryWithheldVerdict() {
+        // Bounded: a hidden pane or a target that never lands stays unsettled.
+        guard strandedWatch.isWithholding, !strandedRetryScheduled, strandedRetriesLeft > 0 else { return }
+        strandedRetryScheduled = true; strandedRetriesLeft -= 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.userMoveGrace + 0.05) { [weak self] in
+            guard let self else { return }
+            self.strandedRetryScheduled = false
+            guard !self.disposed else { return }
+            self.notifyIfStranded(self.layoutFrames, incomingZoom: self.zoom, incomingPan: self.panOffset)
+        }
     }
     func resizeHandleRect(for frame: CGRect) -> CGRect {
         let side = max(16, 22 * zoom)
@@ -326,6 +383,7 @@ final class MightyGraphInteractionProbe: NSView {
             scheduleInitialPosition(); return
         }
         consumedTargetToken = targetToken
+        lastUserMoveAt = ProcessInfo.processInfo.systemUptime
         if pendingInitialPosition && committed == panOffset { onPan(committed) }
         else { applyPan(committed) }
     }

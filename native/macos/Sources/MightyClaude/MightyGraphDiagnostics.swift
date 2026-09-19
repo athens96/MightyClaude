@@ -256,6 +256,24 @@ enum MightyGraphDiagnostics {
                 return cards.contains(newID) && viewport.insetBy(dx: -2, dy: -2).contains(request)
             }
             report["historyTrimReAimsAtTheAnchoredBlock"] = true
+            // The same run ids with shorter trees: nothing the run-id rule can
+            // see, yet every later card moves up under a camera nobody touched.
+            // The cause-independent net is what brings the anchor back.
+            guard let strandedBefore = camera(in: longContent)?.panOffset else { throw MightyError("짧아진 레이아웃 검증용 캔버스가 없습니다.") }
+            // One assignment, one layout pass: the net must see the whole loss at once.
+            var shortened = fixture.runs
+            for index in shortened.indices where shortened[index].id != newRun.id { shortened[index].agents = [] }
+            fixture.runs = shortened
+            try await store.waitForSmoke(timeout: 3) {
+                guard let strandedCamera = camera(in: longContent),
+                      let request = frame(node(window, identifier: "mighty-request-\(newID)")) else { return false }
+                let viewport = window.convertToScreen(strandedCamera.convert(strandedCamera.bounds, to: nil))
+                report["strandedLayoutCameraGeometry"] = ["before": NSStringFromPoint(strandedBefore), "after": NSStringFromPoint(strandedCamera.panOffset),
+                                                          "request": NSStringFromRect(request), "viewport": NSStringFromRect(viewport)]
+                // Already true before the change: only a camera that moved proves the net.
+                return strandedCamera.panOffset != strandedBefore && mountedCards(window).contains(newID) && viewport.insetBy(dx: -2, dy: -2).contains(request)
+            }
+            report["shorterLayoutReAimsWithoutARunIDChange"] = true
             report["nodeCount"] = settled.nodes.count
             report["edgeCount"] = settled.edges.count
             let interaction = await MightyGraphInteractionDiagnostics.run(store: store)
