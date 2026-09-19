@@ -16,6 +16,17 @@ struct InputMethodSymptomTests {
         #expect(!InputMethodSymptom.endsWithUncombinedSyllable("커ㅅ") && !InputMethodSymptom.endsWithUncombinedSyllable("ㅋ") && !InputMethodSymptom.endsWithUncombinedSyllable(""))
     }
 
+    @Test func onlyAReplacedSyllableFromAKoreanSourceProvesComposition() {
+        #expect(InputMethodSymptom.provesComposition("하", hasReplacementRange: true, koreanSource: true))
+        // The first jamo of a syllable arrives raw even when all is well, and a
+        // dead session sends nothing else: neither says the fault is over.
+        #expect(!InputMethodSymptom.provesComposition("ㅎ", hasReplacementRange: true, koreanSource: true))
+        #expect(!InputMethodSymptom.provesComposition("하", hasReplacementRange: false, koreanSource: true))
+        #expect(!InputMethodSymptom.provesComposition("하", hasReplacementRange: true, koreanSource: false))
+        #expect(!InputMethodSymptom.provesComposition("하다", hasReplacementRange: true, koreanSource: true))
+        #expect(!InputMethodSymptom.provesComposition("a", hasReplacementRange: true, koreanSource: true))
+    }
+
     @Test func detectorIgnoresNormalReplacementTypingAndFiresOnUncombinedSyllables() {
         var detector = InputMethodSymptom.Detector(window: 10, threshold: 2)
         // Healthy 2-set typing: ㅋ → 커 → 컷 → 커서, each insert replacing the previous one.

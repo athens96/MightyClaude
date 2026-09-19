@@ -1,4 +1,5 @@
 import AppKit
+import MightyCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -105,6 +106,7 @@ struct NativeComposerEditor: NSViewRepresentable {
 
         private func applyModelText(_ value: String) {
             guard let editor, editor.string != value else { return }
+            editor.resetHangulFallback()
             applyingModel = true
             defer { applyingModel = false }
             let selection = editor.selectedRange()
@@ -129,12 +131,22 @@ final class ComposerTextView: NSTextView {
     var onInputFinished: (() -> Void)?
     var onPasteAttachments: ((NSPasteboard) -> Void)?
     private var inputMutationDepth = 0
+    // Composes Hangul in the app when the input method stops composing. It
+    // stays silent while the input method replaces syllables itself.
+    private var fallback = HangulFallback()
+    private var isApplyingOwnEdit = false
+    private var compositionBreakObservers: [NSObjectProtocol] = []
     var isUpdatingInput: Bool { inputMutationDepth > 0 }
+
+    /// Drops the syllable being composed in the app: the text or the caret is
+    /// about to change for a reason the fallback cannot follow.
+    func resetHangulFallback() { fallback.reset() }
 
     /// A button click need not resign the text view. Commit its current visible
     /// syllable before AppStore captures and clears the draft, without sending
     /// an Enter key to the input method or changing keyboard focus.
     func prepareForSubmission() {
+        fallback.reset()
         performInputTransaction {
             if hasMarkedText() {
                 unmarkText()
@@ -144,6 +156,7 @@ final class ComposerTextView: NSTextView {
     }
 
     func replaceDraft(_ text: String) {
+        fallback.reset()
         performInputTransaction {
             if hasMarkedText() { unmarkText(); inputContext?.discardMarkedText() }
             string = text
@@ -178,18 +191,147 @@ final class ComposerTextView: NSTextView {
 
     override func resignFirstResponder() -> Bool {
         let accepted = super.resignFirstResponder()
-        if accepted { onFocusChange?(false) }
+        if accepted { fallback.reset(); onFocusChange?(false) }
         return accepted
     }
+
+    override func mouseDown(with event: NSEvent) {
+        fallback.reset()
+        super.mouseDown(with: event)
+    }
+
+    // Every caret move funnels through here. One we did not make (click, arrow
+    // keys, a programmatic selection) parts the composing syllable from the
+    // caret, so the app must forget it; our own edits move the caret too.
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        if !isApplyingOwnEdit { fallback.reset() }
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+    }
+
+    // `insertText:` never arrives here and `deleteBackward:` is the one command
+    // the fallback handles itself; every other command rewrites or moves text
+    // the composing syllable can no longer be attached to.
+    override func doCommand(by selector: Selector) {
+        if selector != #selector(NSStandardKeyBindingResponding.deleteBackward(_:)) { fallback.reset() }
+        super.doCommand(by: selector)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        observeCompositionBreaks(in: newWindow)
+    }
+
+    deinit { removeCompositionBreakObservers() }
+
+    /// The input method can end its composition without the editor hearing of
+    /// it: the app deactivates, the window stops being key, the input source
+    /// changes. Whatever is still held here would be glued to the next jamo.
+    private func observeCompositionBreaks(in window: NSWindow?) {
+        removeCompositionBreakObservers()
+        let center = NotificationCenter.default
+        let ended: (Notification) -> Void = { [weak self] _ in self?.fallback.reset() }
+        compositionBreakObservers = [
+            center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main, using: ended),
+            center.addObserver(forName: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil, queue: .main, using: ended),
+        ]
+        if let window {
+            compositionBreakObservers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main, using: ended))
+        }
+    }
+
+    /// Tokens, not `removeObserver(self, name:)`: AppKit keeps its own
+    /// registrations on the text view and those must survive.
+    private func removeCompositionBreakObservers() {
+        compositionBreakObservers.forEach(NotificationCenter.default.removeObserver)
+        compositionBreakObservers = []
+    }
+
+    /// Both recorded failures had the app inactive and the text input system
+    /// pointed at another context at the failing key. Composing here without
+    /// one of those signals would fight an input method that is merely quiet.
+    private var sessionSuspect: Bool { !NSApp.isActive || NSTextInputContext.current !== inputContext }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         InputMethodMonitor.shared.noteMarkedText(string, selectedRange: selectedRange, in: self)
         performInputTransaction { super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange) }
     }
 
+    // Apple's 2-set Korean input composes by replacing the syllable it already
+    // inserted; a dead input session sends the bare jamo instead. The fallback
+    // rebuilds the syllable from those, and returns `passThrough` for
+    // everything a live input method or another language sends.
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        performInputTransaction { super.insertText(string, replacementRange: replacementRange) }
-        InputMethodMonitor.shared.noteInsert(string, replacementRange: replacementRange, in: self)
+        let source = InputMethodMonitor.currentInputSourceID()
+        let suspect = sessionSuspect
+        let replacement = fallbackReplacement(for: string, replacementRange: replacementRange, source: source, suspect: suspect)
+        applyingOwnEdit {
+            if let replacement { super.insertText(replacement.edit.insert, replacementRange: replacement.range) }
+            else { super.insertText(string, replacementRange: replacementRange) }
+        }
+        if InputMethodMonitor.shared.noteInsert(string, replacementRange: replacementRange, source: source, in: self) {
+            // Uncombined jamo twice over: the session is dead in a way app state
+            // does not show, so compose here from now on without waiting for it.
+            fallback.confirmBroken()
+        }
+        if let replacement { InputMethodMonitor.shared.noteFallback(replacement.edit, engaged: fallback.hasEngaged, suspect: suspect, in: self) }
+    }
+
+    /// Backspace during in-app composition takes the syllable apart jamo by
+    /// jamo (값 → 갑 → 가 → ㄱ); otherwise the editor deletes as usual.
+    override func deleteBackward(_ sender: Any?) {
+        let before = fallback
+        guard selectedRange().length == 0, !hasMarkedText(), let edit = fallback.backspace(),
+              let range = rangeBeforeCaret(edit.deleteBackward), documentHolds(edit.previous, at: range) else {
+            fallback = before
+            fallback.reset()
+            super.deleteBackward(sender)
+            return
+        }
+        applyingOwnEdit { super.insertText(edit.insert, replacementRange: range) }
+        InputMethodMonitor.shared.noteFallback(edit, engaged: fallback.hasEngaged, suspect: sessionSuspect, in: self)
+    }
+
+    /// The edit to apply instead of the incoming call, with the range in front
+    /// of the caret it replaces. A selection to overwrite, or a range whose text
+    /// is not what the composer put there, ends the composition and lets the
+    /// call through — the fallback is restored first, so nothing counts as
+    /// engaged when nothing was applied.
+    private func fallbackReplacement(for string: Any, replacementRange: NSRange, source: String?, suspect: Bool) -> (edit: HangulComposer.Edit, range: NSRange)? {
+        guard selectedRange().length == 0 else { fallback.reset(); return nil }
+        let text = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+        let before = fallback
+        let decision = fallback.insert(text, hasReplacementRange: replacementRange.location != NSNotFound,
+                                       hasMarkedText: hasMarkedText(),
+                                       koreanSource: InputMethodSymptom.isTwoSetKoreanInputSource(source),
+                                       sessionSuspect: suspect)
+        guard case .apply(let edit) = decision else { return nil }
+        guard let range = rangeBeforeCaret(edit.deleteBackward), documentHolds(edit.previous, at: range) else {
+            fallback = before
+            fallback.reset()
+            return nil
+        }
+        return (edit, range)
+    }
+
+    private func rangeBeforeCaret(_ length: Int) -> NSRange? {
+        let caret = selectedRange().location
+        guard length >= 0, caret >= length, caret <= (string as NSString).length else { return nil }
+        return NSRange(location: caret - length, length: length)
+    }
+
+    /// The units about to be replaced are the ones the composer put there. A
+    /// mismatch means an edit the fallback does not follow (a word delete, a
+    /// service, a drag) moved the text, so it must not delete anything.
+    private func documentHolds(_ previous: String, at range: NSRange) -> Bool {
+        (string as NSString).substring(with: range) == previous
+    }
+
+    /// One input transaction whose caret move is ours, so it does not read as a
+    /// reason to stop composing.
+    private func applyingOwnEdit(_ body: () -> Void) {
+        isApplyingOwnEdit = true
+        defer { isApplyingOwnEdit = false }
+        performInputTransaction(body)
     }
 
     override func unmarkText() {
@@ -216,6 +358,7 @@ final class ComposerTextView: NSTextView {
     }
 
     override func paste(_ sender: Any?) {
+        fallback.reset()
         let board = NSPasteboard.general
         if let onPasteAttachments, board.types?.contains(where: Self.isAttachmentType) == true { onPasteAttachments(board) }
         else { super.paste(sender) }

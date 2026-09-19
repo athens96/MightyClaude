@@ -23,11 +23,28 @@ public enum InputMethodSymptom {
         return scalars.count == 2 && isConsonantJamo(scalars[0]) && isVowelJamo(scalars[1])
     }
 
+    /// A live input method continues a syllable by replacing what it inserted
+    /// before. One precomposed syllable arriving with a replacement range, from
+    /// a Korean source, is therefore proof that composition works (again).
+    public static func provesComposition(_ text: String, hasReplacementRange: Bool, koreanSource: Bool) -> Bool {
+        guard hasReplacementRange, koreanSource, text.unicodeScalars.count == 1, let scalar = text.unicodeScalars.first else { return false }
+        return (0xAC00...0xD7A3).contains(scalar.value)
+    }
+
     public static func isKoreanInputSource(_ identifier: String?) -> Bool {
         guard let identifier else { return false }
         let lowered = identifier.lowercased()
         // Apple's Korean modes, Gureum (han2/han3 modes), and other Hangul IMEs.
         return ["korean", "hangul", "gureum", ".han2", ".han3", "2setkorean", "3setkorean"].contains { lowered.contains($0) }
+    }
+
+    /// The in-app composer's own gate, narrower than the symptom detector's: it
+    /// implements Apple's 2-set rules, so a 3-set or custom Hangul source must
+    /// keep getting its own jamo through rather than 2-set syllables.
+    public static func isTwoSetKoreanInputSource(_ identifier: String?) -> Bool {
+        guard let identifier else { return false }
+        let lowered = identifier.lowercased()
+        return lowered.contains("2setkorean") || lowered.hasSuffix(".korean")
     }
 
     /// Two uncombined syllables within `window` seconds confirm the symptom.
