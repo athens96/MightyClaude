@@ -1,0 +1,1561 @@
+{
+  "afterFirstAction" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다",
+        "icon" : "map",
+        "id" : "plan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다",
+        "icon" : "arrow.triangle.branch",
+        "id" : "ralplan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "합의 계획"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다",
+        "icon" : "questionmark.bubble",
+        "id" : "deep-interview",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "심층 인터뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다",
+        "icon" : "hammer",
+        "id" : "execute",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "autopilot",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "오토파일럿"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다",
+        "icon" : "puzzlepiece",
+        "id" : "team",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "팀 실행"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다",
+        "icon" : "magnifyingglass",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "리뷰"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다",
+        "icon" : "book",
+        "id" : "research",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "리서치"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다",
+        "icon" : "tray",
+        "id" : "external-context",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "외부 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다",
+        "icon" : "point.3.connected.trianglepath.dotted",
+        "id" : "trace",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "추적"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다",
+        "icon" : "bolt",
+        "id" : "debug",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "진단"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다",
+        "icon" : "bookmark",
+        "id" : "wiki",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "위키"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다",
+        "icon" : "doc.text",
+        "id" : "remember",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "기억"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다",
+        "icon" : "flag",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "모드 취소"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "plan",
+          "ralplan",
+          "deep-interview",
+          "execute",
+          "autopilot",
+          "ralph",
+          "team",
+          "review",
+          "verify",
+          "research",
+          "external-context",
+          "trace",
+          "debug",
+          "wiki",
+          "remember",
+          "cancel"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "계획 단계입니다. 다음 단계를 고르거나, 아래에 적어 같은 대화를 이어가세요.",
+    "next" : [
+      "execute",
+      "ralplan",
+      "review",
+      "research"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "plan",
+      "index" : 1,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "oh-my-claudecode · 계획",
+      "icon" : "arrow.triangle.branch",
+      "source" : "user",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "arrow.triangle.branch",
+      "id" : "oh-my-claudecode",
+      "name" : "oh-my-claudecode",
+      "source" : "user",
+      "tint" : "indigo"
+    }
+  },
+  "capabilityOpen" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다",
+        "icon" : "map",
+        "id" : "plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다",
+        "icon" : "arrow.triangle.branch",
+        "id" : "ralplan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "합의 계획"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다",
+        "icon" : "questionmark.bubble",
+        "id" : "deep-interview",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "심층 인터뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다",
+        "icon" : "hammer",
+        "id" : "execute",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "autopilot",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "오토파일럿"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다",
+        "icon" : "puzzlepiece",
+        "id" : "team",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "팀 실행"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다",
+        "icon" : "magnifyingglass",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "리뷰"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다",
+        "icon" : "book",
+        "id" : "research",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "리서치"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다",
+        "icon" : "tray",
+        "id" : "external-context",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "외부 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다",
+        "icon" : "point.3.connected.trianglepath.dotted",
+        "id" : "trace",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "추적"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다",
+        "icon" : "bolt",
+        "id" : "debug",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "진단"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다",
+        "icon" : "bookmark",
+        "id" : "wiki",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "위키"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다",
+        "icon" : "doc.text",
+        "id" : "remember",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "기억"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다",
+        "icon" : "flag",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "모드 취소"
+      }
+    ],
+    "attachments" : [
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "DESIGN.local.md",
+        "readOnly" : true,
+        "title" : "DESIGN"
+      },
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "RETRO.local.md",
+        "readOnly" : true,
+        "title" : "RETRO"
+      }
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "plan",
+          "ralplan",
+          "deep-interview",
+          "execute",
+          "autopilot",
+          "ralph",
+          "team",
+          "review",
+          "verify",
+          "research",
+          "external-context",
+          "trace",
+          "debug",
+          "wiki",
+          "remember",
+          "cancel"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 할까요? 목표를 아래에 적으면 계획부터 세우고 실행 · 리뷰 · 검증까지 이어갑니다.",
+    "next" : [
+      "plan",
+      "ralplan",
+      "deep-interview",
+      "autopilot",
+      "research"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "oh-my-claudecode · 목표",
+      "icon" : "arrow.triangle.branch",
+      "source" : "user",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "arrow.triangle.branch",
+      "id" : "oh-my-claudecode",
+      "name" : "oh-my-claudecode",
+      "source" : "user",
+      "tint" : "indigo"
+    }
+  },
+  "empty" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다",
+        "icon" : "map",
+        "id" : "plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다",
+        "icon" : "arrow.triangle.branch",
+        "id" : "ralplan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "합의 계획"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다",
+        "icon" : "questionmark.bubble",
+        "id" : "deep-interview",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "심층 인터뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다",
+        "icon" : "hammer",
+        "id" : "execute",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "autopilot",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "오토파일럿"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다",
+        "icon" : "puzzlepiece",
+        "id" : "team",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "팀 실행"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다",
+        "icon" : "magnifyingglass",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "리뷰"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다",
+        "icon" : "book",
+        "id" : "research",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "리서치"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다",
+        "icon" : "tray",
+        "id" : "external-context",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "외부 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다",
+        "icon" : "point.3.connected.trianglepath.dotted",
+        "id" : "trace",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "추적"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다",
+        "icon" : "bolt",
+        "id" : "debug",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "진단"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다",
+        "icon" : "bookmark",
+        "id" : "wiki",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "위키"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다",
+        "icon" : "doc.text",
+        "id" : "remember",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "기억"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다",
+        "icon" : "flag",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "모드 취소"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "plan",
+          "ralplan",
+          "deep-interview",
+          "execute",
+          "autopilot",
+          "ralph",
+          "team",
+          "review",
+          "verify",
+          "research",
+          "external-context",
+          "trace",
+          "debug",
+          "wiki",
+          "remember",
+          "cancel"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 할까요? 목표를 아래에 적으면 계획부터 세우고 실행 · 리뷰 · 검증까지 이어갑니다.",
+    "next" : [
+      "plan",
+      "ralplan",
+      "deep-interview",
+      "autopilot",
+      "research"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "oh-my-claudecode · 목표",
+      "icon" : "arrow.triangle.branch",
+      "source" : "user",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "arrow.triangle.branch",
+      "id" : "oh-my-claudecode",
+      "name" : "oh-my-claudecode",
+      "source" : "user",
+      "tint" : "indigo"
+    }
+  },
+  "firstGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다",
+        "icon" : "map",
+        "id" : "plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다",
+        "icon" : "arrow.triangle.branch",
+        "id" : "ralplan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "합의 계획"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다",
+        "icon" : "questionmark.bubble",
+        "id" : "deep-interview",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "심층 인터뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다",
+        "icon" : "hammer",
+        "id" : "execute",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "autopilot",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "오토파일럿"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다",
+        "icon" : "puzzlepiece",
+        "id" : "team",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "팀 실행"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다",
+        "icon" : "magnifyingglass",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "리뷰"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다",
+        "icon" : "book",
+        "id" : "research",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "리서치"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다",
+        "icon" : "tray",
+        "id" : "external-context",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "외부 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다",
+        "icon" : "point.3.connected.trianglepath.dotted",
+        "id" : "trace",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "추적"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다",
+        "icon" : "bolt",
+        "id" : "debug",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "진단"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다",
+        "icon" : "bookmark",
+        "id" : "wiki",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "위키"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다",
+        "icon" : "doc.text",
+        "id" : "remember",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "기억"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다",
+        "icon" : "flag",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "모드 취소"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "plan",
+          "ralplan",
+          "deep-interview",
+          "execute",
+          "autopilot",
+          "ralph",
+          "team",
+          "review",
+          "verify",
+          "research",
+          "external-context",
+          "trace",
+          "debug",
+          "wiki",
+          "remember",
+          "cancel"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 할까요? 목표를 아래에 적으면 계획부터 세우고 실행 · 리뷰 · 검증까지 이어갑니다.",
+    "next" : [
+      "plan",
+      "ralplan",
+      "deep-interview",
+      "autopilot",
+      "research"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "oh-my-claudecode · 목표",
+      "icon" : "arrow.triangle.branch",
+      "source" : "user",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "arrow.triangle.branch",
+      "id" : "oh-my-claudecode",
+      "name" : "oh-my-claudecode",
+      "source" : "user",
+      "tint" : "indigo"
+    }
+  },
+  "lastGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다",
+        "icon" : "map",
+        "id" : "plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다",
+        "icon" : "arrow.triangle.branch",
+        "id" : "ralplan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "합의 계획"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다",
+        "icon" : "questionmark.bubble",
+        "id" : "deep-interview",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "심층 인터뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다",
+        "icon" : "hammer",
+        "id" : "execute",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "autopilot",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "오토파일럿"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다",
+        "icon" : "puzzlepiece",
+        "id" : "team",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "팀 실행"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다",
+        "icon" : "magnifyingglass",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "리뷰"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다",
+        "icon" : "book",
+        "id" : "research",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "리서치"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다",
+        "icon" : "tray",
+        "id" : "external-context",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "외부 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다",
+        "icon" : "point.3.connected.trianglepath.dotted",
+        "id" : "trace",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "추적"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다",
+        "icon" : "bolt",
+        "id" : "debug",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "진단"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다",
+        "icon" : "bookmark",
+        "id" : "wiki",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "위키"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다",
+        "icon" : "doc.text",
+        "id" : "remember",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "기억"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다",
+        "icon" : "flag",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "모드 취소"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "plan",
+          "ralplan",
+          "deep-interview",
+          "execute",
+          "autopilot",
+          "ralph",
+          "team",
+          "review",
+          "verify",
+          "research",
+          "external-context",
+          "trace",
+          "debug",
+          "wiki",
+          "remember",
+          "cancel"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 할까요? 목표를 아래에 적으면 계획부터 세우고 실행 · 리뷰 · 검증까지 이어갑니다.",
+    "next" : [
+      "plan",
+      "ralplan",
+      "deep-interview",
+      "autopilot",
+      "research"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "oh-my-claudecode · 목표",
+      "icon" : "arrow.triangle.branch",
+      "source" : "user",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "arrow.triangle.branch",
+      "id" : "oh-my-claudecode",
+      "name" : "oh-my-claudecode",
+      "source" : "user",
+      "tint" : "indigo"
+    }
+  },
+  "notReady" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "요청을 읽고 인터뷰할지 바로 계획할지 정해, 실행 가능한 작업 계획으로 만듭니다",
+        "icon" : "map",
+        "id" : "plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "플래너 · 아키텍트 · 크리틱이 합의할 때까지 계획을 다듬습니다",
+        "icon" : "arrow.triangle.branch",
+        "id" : "ralplan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "합의 계획"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "모호도가 기준 아래로 내려갈 때까지 소크라테스식 질문으로 명세를 깎습니다",
+        "icon" : "questionmark.bubble",
+        "id" : "deep-interview",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "심층 인터뷰"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "승인된 작업을 동작하고 검증된 코드까지 끌고 갑니다",
+        "icon" : "hammer",
+        "id" : "execute",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "실행"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "두세 줄 아이디어에서 요구 분석 · 설계 · 구현 · QA까지 한 번에 진행합니다",
+        "icon" : "wand.and.stars",
+        "id" : "autopilot",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "오토파일럿"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "완료 약속이 나올 때까지 같은 작업을 스스로 반복합니다",
+        "icon" : "infinity",
+        "id" : "ralph",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "랄프 루프"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "공유 작업 목록 위에서 여러 에이전트를 함께 돌립니다",
+        "icon" : "puzzlepiece",
+        "id" : "team",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "팀 실행"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "끝난 작업의 결함 · 위험 · 단순화 지점을 찾습니다. 리뷰는 자기가 판단한 변경을 직접 쓰지 않습니다",
+        "icon" : "magnifyingglass",
+        "id" : "review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "리뷰"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "막연한 '될 것 같다'를 증거로 바꿉니다. 완료를 주장하기 전에 실제로 도는지 확인합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "다음 단계가 모르는 것에 걸려 있을 때, 근거와 출처가 붙은 답을 만듭니다",
+        "icon" : "book",
+        "id" : "research",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "리서치"
+      },
+      {
+        "flags" : [
+          "readOnly"
+        ],
+        "help" : "질문을 여러 갈래로 쪼개 문서 전문 에이전트를 병렬로 돌려 외부 문서를 모읍니다",
+        "icon" : "tray",
+        "id" : "external-context",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "외부 문서"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "경쟁 가설을 세우고 증거를 모아 왜 그 결과가 났는지 설명합니다",
+        "icon" : "point.3.connected.trianglepath.dotted",
+        "id" : "trace",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "추적"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "로그 · 트레이스 · 상태를 읽어 지금 세션이나 워크플로가 깨진 지점을 찾습니다",
+        "icon" : "bolt",
+        "id" : "debug",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "진단"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "세션을 넘어 쌓이는 마크다운 지식 베이스를 읽고 씁니다",
+        "icon" : "bookmark",
+        "id" : "wiki",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "위키"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "이번 세션에서 나온 재사용 가능한 지식을 프로젝트 메모리 · 노트패드 · 문서 중 맞는 자리로 옮깁니다",
+        "icon" : "doc.text",
+        "id" : "remember",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "기억"
+      },
+      {
+        "flags" : [
+          "userInvoked"
+        ],
+        "help" : "돌고 있는 OMC 모드(오토파일럿 · 랄프 · 울트라골 · 팀)를 감지해 멈춥니다",
+        "icon" : "flag",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "모드 취소"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "plan",
+          "ralplan",
+          "deep-interview",
+          "execute",
+          "autopilot",
+          "ralph",
+          "team",
+          "review",
+          "verify",
+          "research",
+          "external-context",
+          "trace",
+          "debug",
+          "wiki",
+          "remember",
+          "cancel"
+        ],
+        "id" : "flow",
+        "selected" : true,
+        "title" : "흐름"
+      }
+    ],
+    "guidance" : "무엇을 할까요? 목표를 아래에 적으면 계획부터 세우고 실행 · 리뷰 · 검증까지 이어갑니다.",
+    "next" : [
+      "plan",
+      "ralplan",
+      "deep-interview",
+      "autopilot",
+      "research"
+    ],
+    "phase" : {
+      "count" : 5,
+      "id" : "goal",
+      "index" : 0,
+      "title" : "목표"
+    },
+    "presentation" : {
+      "headerTitle" : "oh-my-claudecode · 목표",
+      "icon" : "arrow.triangle.branch",
+      "source" : "user",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "hint" : "설치는 Claude CLI의 플러그인 명령으로 진행합니다. 터미널 실행 창이 열리고 명령이 채워집니다. Enter는 직접 누르세요.",
+      "installCommand" : "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode && claude plugin install oh-my-claudecode@omc",
+      "missing" : [
+        "oh-my-claudecode 플러그인이 설치되어 있지 않습니다"
+      ],
+      "ready" : false
+    },
+    "style" : {
+      "icon" : "arrow.triangle.branch",
+      "id" : "oh-my-claudecode",
+      "name" : "oh-my-claudecode",
+      "source" : "user",
+      "tint" : "indigo"
+    }
+  }
+}
