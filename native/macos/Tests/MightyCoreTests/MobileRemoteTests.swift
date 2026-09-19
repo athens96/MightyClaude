@@ -18,7 +18,7 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     /// The pane's view mode; guided styles exist only inside Mighty view.
     var viewMode = MobileWire.plainViewMode
     /// The guided style this pane is in; a `guided` request for another one 409s.
-    var paneStyle = OuroborosFlow.style
+    var paneStyle = MightyStyleIDs.ouroboros
     /// Non-nil when the pane cannot run at all (CLI updating, no connection).
     var blockedReason: String?
     /// Twelve saved entries, so paging has something to walk back through.
@@ -28,7 +28,8 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
             models: [MobileOption(id: "default", label: "CLI 기본값"), MobileOption(id: "opus", label: "opus")],
             permissionModes: [MobileOption(id: "manual", label: "Always ask"), MobileOption(id: "plan", label: "Plan mode")],
             efforts: [MobileOption(id: "default", label: "Auto"), MobileOption(id: "high", label: "High")],
-            mightyStyles: MobileRemoteSupport.styleOptionIds(guided: guidedStyles).map { MobileOption(id: $0, label: $0) })
+            mightyStyles: (guidedStyles ? MobileWire.mightyStyles : [MobileWire.cliStyle]).map { MobileOption(id: $0, label: $0) },
+            styles: MobileRemoteSupport.styleOptions(guidedStyles ? BundledStyles.shared.styles() : []))
     }
     private func summary() -> MobileSessionSummary {
         MobileSessionSummary(id: "session-1", workspaceId: "workspace-1", title: "Claude", kind: "claude", provider: "claude", model: "default",
@@ -74,8 +75,11 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String {
         lock.lock(); defer { lock.unlock() }
         try known(sessionId)
+        // The registry the host would consult; the two bundled styles are the
+        // only ones this scripted app knows.
+        guard let registered = BundledStyles.shared.style(style) else { throw MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage) }
         guard style == paneStyle else { throw MobileHostError.conflict("이 실행 창은 \(style) 스타일이 아닙니다.") }
-        guard let prompt = MobileMightySupport.guidedPrompt(style: style, skill: skill, text: text) else {
+        guard let prompt = MobileMightySupport.guidedPrompt(registered, actionId: skill, text: text) else {
             throw MobileHostError.badRequest("이 스타일에 없는 스킬입니다.")
         }
         commands.append("guided:\(prompt)")
@@ -253,7 +257,7 @@ struct MobileRemoteTests {
         // The pane is in the other style: nothing is sent.
         #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "re0"]).0 == 409)
         #expect(try await call(service, "POST", "/m1/sessions/missing/guided", body: ["style": "ouroboros", "skill": "seed"]).0 == 404)
-        host.paneStyle = PaperthinCatalog.style
+        host.paneStyle = MightyStyleIDs.paperthin
         #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "re0", "text": "docs/spec.md"]).0 == 202)
         #expect(try await call(service, "POST", "/m1/sessions/session-1/guided", body: ["style": "paperthin", "skill": "interview"]).0 == 400)
         #expect(host.recorded() == ["guided:/ouroboros:interview 결제 흐름 정리", "guided:/ouroboros:seed", "guided:/re0 docs/spec.md"])

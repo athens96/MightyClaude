@@ -185,6 +185,7 @@ struct AppSettingsView: View {
                     Text("다른 컴퓨터의 워크스페이스에 연결하거나 이 Mac의 워크스페이스를 공유합니다.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                StyleSettingsSection().environmentObject(store)
                 ComponentsSettingsSection().environmentObject(store)
                 MobileRemoteSettingsSection().environmentObject(store)
                 CLIUpdateSettingsSection().environmentObject(store)
@@ -227,7 +228,10 @@ struct AppSettingsView: View {
             }.formStyle(.grouped)
             Divider()
             HStack { Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction) }.padding(18)
-        }.frame(width: 570, height: 700)
+        }
+        .frame(width: 570, height: 700)
+        // Opening Settings is one of the four moments the sources are re-read.
+        .task { store.rescanStyles() }
     }
 }
 

@@ -271,11 +271,17 @@ extension AppStore {
             // A command pane has no agent view and no style; sending "plain"
             // and "cli" would invite the phone to offer pickers it cannot use.
             agentViewMode: session.kind == "shell" ? nil : mobileViewMode(session),
-            mightyStyle: session.kind == "shell" ? nil : mobileStyle(session))
+            mightyStyle: session.kind == "shell" ? nil : mobileStyle(session),
+            styleId: session.kind == "shell" ? nil : mobileStyleId(session))
     }
 
     func mobileViewMode(_ session: RunSession) -> String { MobileRemoteSupport.viewMode(session.agentViewMode) }
-    func mobileStyle(_ session: RunSession) -> String { MobileRemoteSupport.style(session.mightyStyle) }
+    /// The truth: the style this pane is actually running. Unapproved,
+    /// revoked, unregistered, hash-mismatched or remote all answer "cli", so
+    /// nothing §4.5 hid leaks through a session summary (§7.2).
+    func mobileStyleId(_ session: RunSession) -> String { guidedStyle(session)?.id ?? MobileWire.cliStyle }
+    /// The old three-word field, which only the two bundled ids can fill.
+    func mobileStyle(_ session: RunSession) -> String { MobileRemoteSupport.style(mobileStyleId(session)) }
 
     /// A cheap hash of the ids the phone's settings pickers would offer, built
     /// from the same call the detail sends so the two cannot drift.
@@ -283,6 +289,7 @@ extension AppStore {
         guard session.kind != "shell" else { return 0 }
         let options = mobileSettingsOptions(session)
         var ids = options.models.map(\.id) + options.permissionModes.map(\.id) + options.mightyStyles.map(\.id)
+        ids += options.styles.map { $0.id + "|" + ($0.source?.rawValue ?? "") }
         ids += (options.efforts ?? []).map(\.id)
         return ids.joined(separator: "|").hashValue
     }
@@ -326,21 +333,30 @@ extension AppStore {
         // copies every entry of every run to stamp the provider on it, which a
         // phone's payload never reads and a poll must not pay for.
         let saved = session.graphRuns ?? MightyGraphSupport.legacyRuns(session)
-        let runs = MobileMightySupport.runs(saved, style: session.mightyStyle)
-        switch guidedStyle(session) {
-        case OuroborosFlow.style:
-            // The Mac reads the prerequisites when the style is chosen; a pane
-            // only ever watched from a phone has never triggered that read.
-            if ouroborosPrerequisites == nil { refreshOuroborosPrerequisites() }
-            let panel = MobileMightySupport.ouroboros(phase: OuroborosFlow.currentPhase(session: session), ready: ouroborosPrerequisites?.ready ?? false)
-            return MobileMighty(style: style, runs: runs, ouroboros: panel)
-        case PaperthinCatalog.style:
-            if !paperthinLoaded.contains(session.workspaceId) { refreshPaperthin(for: session) }
-            let panel = MobileMightySupport.paperthin(installed: paperthinInstalled ?? false, casebook: paperthinCasebooks[session.workspaceId])
-            return MobileMighty(style: style, runs: runs, paperthin: panel)
-        default:
-            return MobileMighty(style: style, runs: runs)
+        let titles = StyleTitleSource(registry: styleRegistry, workspace: styleWorkspaceRef(session))
+        let runs = MobileMightySupport.runs(saved) { titles.prefix($0) }
+        // Only a pane that really runs an approved style carries a panel (§7.3).
+        guard let registered = guidedStyle(session) else { return MobileMighty(style: style, runs: runs) }
+        // The Mac reads these when the style is chosen; a pane only ever
+        // watched from a phone has never triggered that read.
+        if stylePrerequisites[registered.id] == nil { refreshStylePrerequisites(registered, for: session) }
+        if !registered.manifest.capabilities.isEmpty, !styleCapabilitiesLoaded.contains(session.workspaceId) {
+            refreshStyleCapabilities(registered, for: session)
         }
+        let panel = mobileStylePanel(registered, for: session)
+        let legacy = MobileLegacyStyleAdapter.payloads(style: registered, panel: panel, casebook: styleCasebooks[session.workspaceId])
+        return MobileMighty(style: style, styleId: registered.id, runs: runs, panel: panel,
+                            ouroboros: legacy.ouroboros, paperthin: legacy.paperthin)
+    }
+
+    /// The very projection the Mac panel is drawn from. The phone has no
+    /// group of its own yet, so the style's initial-group rule decides.
+    func mobileStylePanel(_ style: RegisteredStyle, for session: RunSession) -> StylePanel {
+        let prompts = (session.graphRuns ?? MightyGraphSupport.legacyRuns(session)).map(\.input)
+        return StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: nil,
+                                         capabilityStates: styleCapabilityStates[session.workspaceId] ?? [:],
+                                         attachments: styleAttachments[session.workspaceId] ?? [],
+                                         prerequisites: stylePrerequisites[style.id] ?? StylePrerequisiteResult(ready: true))
     }
 
     /// What a phone watching the Mighty view would notice change: the run and
@@ -354,22 +370,20 @@ extension AppStore {
         // by identity alone rather than rebuilding them: this runs on every
         // snapshot publish — during a stream, every token.
         hasher.combine(MobileMightySupport.digest(session: session))
-        switch guidedStyle(session) {
-        case OuroborosFlow.style:
-            // The requests `currentPhase(session:)` would read, without
-            // rebuilding a legacy pane's runs: their inputs are its user
-            // entries, and that is the fallback the phase itself uses.
-            var prompts: [String] = []
-            if let saved = session.graphRuns { prompts = saved.map(\.input) }
-            else { prompts = session.logs.filter { $0.kind == "user" }.map(\.text) }
-            hasher.combine(OuroborosFlow.currentPhase(prompts: prompts).rawValue)
-            hasher.combine(ouroborosPrerequisites?.ready)
-        case PaperthinCatalog.style:
-            hasher.combine(paperthinInstalled)
-            let casebook = paperthinCasebooks[session.workspaceId]
-            hasher.combine(casebook?.name); hasher.combine(casebook?.files)
-        default: break
-        }
+        guard let style = guidedStyle(session) else { return hasher.finalize() }
+        // The style itself, so a revocation or a changed manifest wakes the poll.
+        hasher.combine(style.id); hasher.combine(style.hash)
+        // The requests `currentPhase(session:)` would read, without rebuilding
+        // a legacy pane's runs: their inputs are its user entries, and that is
+        // the fallback the phase itself uses.
+        var prompts: [String] = []
+        if let saved = session.graphRuns { prompts = saved.map(\.input) }
+        else { prompts = session.logs.filter { $0.kind == "user" }.map(\.text) }
+        hasher.combine(style.evaluator.currentPhase(prompts: prompts)?.id)
+        let setup = stylePrerequisites[style.id]
+        hasher.combine(setup?.ready); hasher.combine(setup?.missing)
+        hasher.combine(styleCapabilityStates[session.workspaceId])
+        hasher.combine(styleAttachments[session.workspaceId]?.map(\.id))
         return hasher.finalize()
     }
 
@@ -400,8 +414,21 @@ extension AppStore {
             efforts = [MobileOption(id: "default", label: effortLabel("default"))] + levels.map { MobileOption(id: $0, label: effortLabel($0)) }
         }
         let guided = mobileSupportsGuidedStyles(session, viewMode: agentViewMode ?? mobileViewMode(session))
-        let styles = MobileRemoteSupport.styleOptionIds(guided: guided).map { MobileOption(id: $0, label: Self.mobileStyleLabel($0)) }
-        return MobileSettingsOptions(models: models, permissionModes: permissions, efforts: efforts, mightyStyles: styles)
+        // The old field keeps its three fixed words; the open list beside it
+        // carries every style this pane may really pick (§7.2).
+        let legacyIds = guided ? MobileWire.mightyStyles : [MobileWire.cliStyle]
+        let legacy = legacyIds.map { MobileOption(id: $0, label: Self.mobileStyleLabel($0)) }
+        let runnable = guided ? applicableStyles(session, viewMode: agentViewMode).filter(\.isRunnable) : []
+        return MobileSettingsOptions(models: models, permissionModes: permissions, efforts: efforts,
+                                     mightyStyles: legacy, styles: MobileRemoteSupport.styleOptions(runnable))
+    }
+
+    /// The pane's own applicable list, judged against the view mode this
+    /// request is switching to, so one POST can turn Mighty on and pick a style.
+    private func applicableStyles(_ session: RunSession, viewMode: String?) -> [RegisteredStyle] {
+        guard session.kind == "claude", session.provider == "claude" else { return [] }
+        guard (viewMode ?? mobileViewMode(session)) == "mighty" else { return [] }
+        return styleRegistry.applicable(workspace: styleWorkspaceRef(session))
     }
 
     /// Guided styles exist only for local Claude panes in Mighty view — the
@@ -410,12 +437,9 @@ extension AppStore {
         let local = snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
         return MobileRemoteSupport.guidedStylesAvailable(kind: session.kind, provider: session.provider, localWorkspace: local, viewMode: viewMode)
     }
+    /// The bundled two keep the labels the old field always carried.
     private static func mobileStyleLabel(_ style: String) -> String {
-        switch style {
-        case OuroborosFlow.style: return "Ouroboros"
-        case PaperthinCatalog.style: return "Paperthin"
-        default: return "CLI"
-        }
+        BundledStyles.shared.manifest(style)?.name ?? StyleMenu.cliLabel
     }
 
     func mobileSettings(_ session: RunSession) -> MobileSettings? {
@@ -424,7 +448,8 @@ extension AppStore {
         let editable = MobileRemoteSupport.editable(status: session.status, pendingRun: pendingRuns.contains(session.id))
         return MobileSettings(editable: editable, model: session.model, permissionMode: session.settings.permissionMode,
                               effort: options.efforts == nil ? nil : session.settings.effort,
-                              agentViewMode: mobileViewMode(session), mightyStyle: mobileStyle(session), options: options)
+                              agentViewMode: mobileViewMode(session), mightyStyle: mobileStyle(session),
+                              styleId: mobileStyleId(session), options: options)
     }
 
     // MARK: Commands
@@ -460,8 +485,16 @@ extension AppStore {
     /// the draft the Mac user is typing is left alone.
     func mobileGuided(_ id: String, style: String, skill: String, text: String) throws -> MobileSubmitOutcome {
         let session = try mobileAISession(id)
-        guard guidedStyle(session) == style else { throw MobileHostError.conflict("이 실행 창은 \(style) 스타일이 아닙니다.") }
-        guard let prompt = MobileMightySupport.guidedPrompt(style: style, skill: skill, text: text) else {
+        // Unregistered and unapproved answer alike, from the registry already
+        // in memory: neither reads the disk, so the two cannot be told apart
+        // by timing either (§4.5).
+        guard styleRegistry.applicable(workspace: styleWorkspaceRef(session)).first(where: { $0.id == style })?.isRunnable == true else {
+            throw MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage)
+        }
+        guard let pane = guidedStyle(session), pane.id == style else {
+            throw MobileHostError.conflict("이 실행 창은 \(style) 스타일이 아닙니다.")
+        }
+        guard let prompt = MobileMightySupport.guidedPrompt(pane, actionId: skill, text: text) else {
             throw MobileHostError.badRequest("이 스타일에 없는 스킬입니다.")
         }
         return try mobileSubmit(id, text: prompt)
@@ -544,7 +577,10 @@ extension AppStore {
             guard snapshot.sessions.first(where: { $0.id == id })?.model == model else { throw MobileHostError.conflict("모델을 바꾸지 못했습니다.") }
         }
         if let mode = request.agentViewMode { try mobileApplyViewMode(id, mode: mode) }
-        if let style = request.mightyStyle { try mobileApplyStyle(id, style: style) }
+        // `styleId` is the open field and wins outright; `mightyStyle` is then
+        // ignored rather than refused, so the host's own pair round-trips (§7.2).
+        if let styleId = request.styleId { try mobileApplyStyleId(id, styleId: styleId) }
+        else if let style = request.mightyStyle { try mobileApplyStyleId(id, styleId: style) }
         try mobileApplyRunSettings(id, effort: request.effort, permissionMode: request.permissionMode)
     }
 
@@ -556,7 +592,8 @@ extension AppStore {
            !(session.kind == "claude" && MightyGraphSupport.providers.contains(session.provider)) {
             throw MobileHostError.conflict("이 실행 창은 Mighty 보기를 지원하지 않습니다.")
         }
-        if let style = request.mightyStyle, mobileStyle(session) != style,
+        let wanted = request.styleId ?? request.mightyStyle
+        if let wanted, mobileStyleId(session) != wanted,
            !(session.kind == "claude" && session.provider == "claude") {
             throw MobileHostError.conflict("이 실행 창에서는 이 스타일을 쓸 수 없습니다.")
         }
@@ -575,11 +612,11 @@ extension AppStore {
         }
     }
 
-    private func mobileApplyStyle(_ id: String, style: String) throws {
+    private func mobileApplyStyleId(_ id: String, styleId: String) throws {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
-        guard mobileStyle(session) != style else { return }
-        setMightyStyle(id, style: style == MobileWire.cliStyle ? nil : style)
-        guard let updated = snapshot.sessions.first(where: { $0.id == id }), mobileStyle(updated) == style else {
+        guard mobileStyleId(session) != styleId else { return }
+        setMightyStyle(id, style: styleId == MobileWire.cliStyle ? nil : styleId)
+        guard let updated = snapshot.sessions.first(where: { $0.id == id }), mobileStyleId(updated) == styleId else {
             throw MobileHostError.conflict("이 실행 창에서는 이 스타일을 쓸 수 없습니다.")
         }
     }
