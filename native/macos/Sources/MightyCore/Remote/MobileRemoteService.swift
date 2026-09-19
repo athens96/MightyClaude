@@ -578,12 +578,17 @@ public actor MobileRemoteService {
                     }
                 case "guided":
                     let request = try decode(body, as: MobileGuidedRequest.self)
-                    guard MightyStyles.all.contains(request.style) else { throw Failure(400, "style은 ouroboros 또는 paperthin이어야 합니다.") }
-                    guard request.skill.utf8.count <= 64, request.skill.range(of: "^[a-z0-9][a-z0-9_-]*$", options: .regularExpression) != nil else {
+                    // An unregistered id and an unapproved one answer alike, so
+                    // an unapproved style never shows through timing (§4.5).
+                    guard let style = request.resolvedStyle, style != MobileWire.cliStyle, MightyStyleIDs.isValidShape(style) else {
+                        throw Failure(400, MobileRemoteSupport.unknownStyleMessage)
+                    }
+                    guard let action = request.resolvedAction, action.utf8.count <= 64,
+                          action.range(of: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$", options: .regularExpression) != nil else {
                         throw Failure(400, "skill 이름이 올바르지 않습니다.")
                     }
                     let text = try Self.requestText(request.text ?? "", allowEmpty: true)
-                    let done = try await perform { try await delegate.mobileGuided(sessionId: id, style: request.style, skill: request.skill, text: text) }
+                    let done = try await perform { try await delegate.mobileGuided(sessionId: id, style: style, skill: action, text: text) }
                     return reply(202, MobileSubmitResult(accepted: done))
                 case "uploads":
                     let request = try decode(body, as: MobileUploadRequest.self)

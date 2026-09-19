@@ -39,10 +39,12 @@ export type LogEntryKind = 'user' | 'assistant' | 'system' | 'output' | 'error';
 export type SubmitAccepted = 'started' | 'steered' | 'queued';
 export type SubmitMode = 'steer' | 'queue';
 export type AgentViewMode = 'plain' | 'mighty';
+/**
+ * The fixed `mightyStyle` vocabulary (contract 7.2). A pane running any other style
+ * carries `cli` here and the truth in `styleId`, so an older phone sees a plain CLI pane.
+ */
 export type MightyStyle = 'cli' | 'ouroboros' | 'paperthin';
 export type CommandSource = 'app' | 'builtin' | 'project' | 'user' | 'plugin';
-/** The two Mighty styles that drive the pane through `/guided`; `cli` has no panel. */
-export type GuidedStyle = 'ouroboros' | 'paperthin';
 export type MightyBlockKind = 'main' | 'agent' | 'task' | 'steer' | 'compact' | 'question';
 export type MightyBlockStatus = 'running' | 'waiting' | 'completed' | 'error' | 'stopped';
 export type CommandAction = 'model' | 'permission' | 'clear' | 'usage' | 'help' | 'rename';
@@ -59,7 +61,8 @@ export type Capability =
   | 'commands'
   | 'mighty'
   | 'status'
-  | 'attachments';
+  | 'attachments'
+  | 'style';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -71,6 +74,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'mighty',
   'status',
   'attachments',
+  'style',
 ] as const;
 
 export interface HostInfo {
@@ -114,6 +118,11 @@ export interface MobileSessionSummary {
   terminal: boolean;
   agentViewMode?: AgentViewMode;
   mightyStyle?: MightyStyle;
+  /**
+   * The style actually driving the pane ("style"). Open string: the host owns the set,
+   * and `styleId` wins over `mightyStyle` whenever both arrive (contract 7.2).
+   */
+  styleId?: string;
 }
 
 export interface MobileState {
@@ -195,6 +204,19 @@ export interface MobileUsage {
 export interface SettingOption {
   id: string;
   label: string;
+  /** Drawn next to the label; a style that is not bundled carries its source here. */
+  badge?: string;
+}
+
+/**
+ * One choosable style ("style"). `source` stays a plain string so a word this app does
+ * not know can never read as `bundled`, which is the one value that goes unbadged, and
+ * it is absent on `cli` alone — the word for running no style at all.
+ */
+export interface StyleOption {
+  id: string;
+  label: string;
+  source?: string;
 }
 
 export interface MobileSettingsOptions {
@@ -202,6 +224,8 @@ export interface MobileSettingsOptions {
   permissionModes: SettingOption[];
   efforts: SettingOption[];
   mightyStyles: SettingOption[];
+  /** Approved and bundled styles this pane may run; absent on a host without "style". */
+  styles?: StyleOption[];
 }
 
 export interface MobileSettings {
@@ -212,6 +236,8 @@ export interface MobileSettings {
   effort?: string;
   agentViewMode: string;
   mightyStyle: string;
+  /** Absent on a host without "style". */
+  styleId?: string;
   options: MobileSettingsOptions;
 }
 
@@ -310,18 +336,113 @@ export interface MobilePaperthin {
   casebook?: PaperthinCasebook;
 }
 
+/**
+ * The style behind a guided pane (contract 7.3). `source` and `tint` stay plain strings:
+ * the phone maps the words it knows and falls back for the rest, so only the exact word
+ * `bundled` goes without a source badge and an unknown palette draws in the accent.
+ */
+export interface StylePanelStyle {
+  id: string;
+  name: string;
+  source: string;
+  tint?: string;
+}
+
+export interface StylePhase {
+  id: string;
+  title: string;
+  /** Counted from zero; `count` is 0 when the host sends no ordering. */
+  index: number;
+  count: number;
+}
+
+export interface StyleGroup {
+  id: string;
+  title: string;
+  /** Where the group sits on the map; a group list without one is a plain list. */
+  axis?: string;
+  question?: string;
+  selected: boolean;
+  /** Action ids, in the order the manifest wrote them. */
+  actions: string[];
+}
+
+/**
+ * One action of the style's catalogue. `flags` keeps the host's words: a mark this app
+ * does not draw is carried rather than guessed at.
+ */
+export interface StyleAction {
+  id: string;
+  title: string;
+  /** Exactly one grapheme; this app has no SF Symbol renderer, so `icon` is dropped. */
+  glyph?: string;
+  help: string;
+  scope?: string;
+  takesText: boolean;
+  /** A UI hint only: the chip is disabled while the composer is empty. */
+  requiresText: boolean;
+  flags: string[];
+  /** True on the first entry of `next`. */
+  prominent: boolean;
+}
+
+/** Read-only information a built-in capability produced; the phone cannot open files. */
+export interface StyleAttachment {
+  id: string;
+  title: string;
+  detail?: string;
+  readOnly: boolean;
+}
+
+export interface StyleSetup {
+  ready: boolean;
+  missing: string[];
+  hint?: string;
+  /** Shown as text. There is no route that runs it from the phone (contract 4.6). */
+  installCommand?: string;
+}
+
+export interface StylePresentation {
+  headerTitle: string;
+  source: string;
+  tint?: string;
+}
+
+/**
+ * `MobileMighty.panel` — everything one guided pane draws. Present only when the pane is
+ * actually running an approved or bundled style, so its absence means a plain CLI pane.
+ */
+export interface StylePanel {
+  style: StylePanelStyle;
+  phase?: StylePhase;
+  groups: StyleGroup[];
+  /** The whole catalogue; `groups` and `next` decide what reaches the screen. */
+  actions: StyleAction[];
+  /** Action ids in order; the first is the prominent one. */
+  next: string[];
+  recommended?: string;
+  attachments: StyleAttachment[];
+  setup: StyleSetup;
+  /** The panel's bottom line, with `{phase}` already substituted. */
+  guidance?: string;
+  presentation: StylePresentation;
+}
+
 export interface MobileMighty {
   style: string;
   /** The last 20 requests, oldest first. */
   runs: MobileMightyRun[];
+  /** The style actually running, or absent on a host without "style". */
+  styleId?: string;
+  panel?: StylePanel;
   ouroboros?: MobileOuroboros;
   paperthin?: MobilePaperthin;
 }
 
-/** Body of `POST /guided`; `text` is left out when the skill takes none. */
+/** Body of `POST /guided`; `text` is left out when the action takes none. */
 export interface GuidedRequest {
-  style: GuidedStyle;
-  skill: string;
+  styleId: string;
+  actionId: string;
   text?: string;
 }
 
@@ -405,6 +526,8 @@ export interface SettingsPatch {
   effort?: string;
   agentViewMode?: string;
   mightyStyle?: string;
+  /** When present the host ignores `mightyStyle` (contract 7.5). */
+  styleId?: string;
 }
 
 export interface SubmitOptions {

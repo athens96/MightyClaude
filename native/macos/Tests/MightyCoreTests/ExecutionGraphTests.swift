@@ -432,4 +432,21 @@ struct SteeringGraphTests {
         #expect((object["message"] as? [String: Any])?["content"] as? String == "Also add tests")
         #expect(object["parent_tool_use_id"] is NSNull)
     }
+
+    @Test func askUserQuestionBecomesAQuestionBlockSettledByTheAnswer() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-question", graph: { nodes.append($0) }, graphInput: "/ouroboros:interview 목표")
+        func send(_ value: [String: Any]) throws { var data = try JSONSerialization.data(withJSONObject: value); data.append(10); parser.push(data) }
+        let option: [[String: Any]] = [["label": "CLI", "description": ""], ["label": "라이브러리", "description": ""]]
+        let input: [String: Any] = ["questions": [["header": "형태", "question": "어떤 형태로 제공할까요?", "multiSelect": false, "options": option]]]
+        let use: [String: Any] = ["type": "tool_use", "id": "ask-1", "name": "AskUserQuestion", "input": input]
+        try send(["type": "assistant", "uuid": "m1", "session_id": "s", "message": ["id": "m1", "content": [use]] as [String: Any]])
+        let asked = try #require(nodes.last(where: { $0.kind == "question" }))
+        #expect(asked.state == "waiting" && asked.title == "질문 · 형태" && asked.parentId == ExecutionGraphSupport.mainNodeID(runId: "run-question"))
+        #expect(asked.input?.contains("어떤 형태로 제공할까요?") == true && asked.input?.contains("○ 라이브러리") == true)
+        let result: [String: Any] = ["type": "tool_result", "tool_use_id": "ask-1", "content": "User has answered: \"어떤 형태로 제공할까요?\"=\"CLI\""]
+        try send(["type": "user", "message": ["content": [result]] as [String: Any]])
+        let answered = try #require(nodes.last(where: { $0.id == asked.id }))
+        #expect(answered.state == "completed" && answered.output?.contains("CLI") == true)
+    }
 }

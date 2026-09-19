@@ -236,6 +236,34 @@ export function blockColor(palette: Palette, kind: string): string {
   }
 }
 
+/**
+ * A style manifest's palette name (contract 1.10), mapped onto this app's colours. The
+ * list is closed on the Mac; a name that arrives anyway draws in the accent, which is
+ * also the manifest default, rather than crashing the panel.
+ */
+export function tintColor(palette: Palette, tint: string | undefined): string {
+  switch (tint) {
+    case 'purple':
+      return palette.blockAgent;
+    case 'teal':
+      return palette.blockTask;
+    case 'indigo':
+      return palette.blockQuestion;
+    case 'mint':
+      return palette.blockCompact;
+    case 'orange':
+      return palette.blockSteer;
+    case 'green':
+      return palette.success;
+    case 'red':
+      return palette.danger;
+    case 'secondary':
+      return palette.textMuted;
+    default:
+      return palette.accent;
+  }
+}
+
 /** Brand colours for a provider, or a neutral single colour for an unknown one. */
 export function providerColorsFor(palette: Palette, provider: string): string[] {
   return providerColors[provider as Provider] ?? [palette.textMuted];

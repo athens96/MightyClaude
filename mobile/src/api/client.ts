@@ -201,7 +201,7 @@ export interface MobileClient {
     action: MessageCommandAction,
     signal?: AbortSignal,
   ): Promise<CommandResponse>;
-  /** Sends a guided Ouroboros/Paperthin skill ("mighty"); the host builds the prompt. */
+  /** Sends one guided style action ("mighty"); the host builds the prompt. */
   guided(sessionId: string, input: GuidedRequest, signal?: AbortSignal): Promise<SubmitResponse>;
   /** Opens an upload and learns the host's chunk size ("attachments"). */
   createUpload(
@@ -398,16 +398,17 @@ export function createClient(channel: RelayChannel): MobileClient {
       ),
 
     guided: (sessionId, input, signal) => {
-      const skill = input.skill.trim();
-      if (skill.length === 0) {
+      const actionId = input.actionId.trim();
+      const styleId = input.styleId.trim();
+      if (actionId.length === 0 || styleId.length === 0) {
         return Promise.reject(new ApiError(400, '실행할 스킬이 없습니다.'));
       }
       const text = input.text?.trim();
       if (text !== undefined && byteLength(text) > MAX_TEXT_BYTES) {
         return Promise.reject(new ApiError(413, '메시지가 너무 깁니다 (최대 32KiB).'));
       }
-      // An empty `text` is the same as none: the host then sends the bare skill.
-      const body: Record<string, unknown> = { style: input.style, skill };
+      // An empty `text` is the same as none: the host then sends the bare action.
+      const body: Record<string, unknown> = { styleId, actionId };
       if (text) body.text = text;
       return request<SubmitResponse>(
         'POST',

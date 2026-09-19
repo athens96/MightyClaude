@@ -1,5 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { MAX_TITLE_LENGTH, type SettingOption } from '@/api/types';
 import { Button } from '@/components/ui';
 import { monoText, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
@@ -83,6 +92,7 @@ export function PickerSheet({
                 <Text style={[styles.optionLabel, selected && { color: palette.accent }]}>
                   {option.label || option.id}
                 </Text>
+                {option.badge ? <Text style={styles.optionBadge}>{option.badge}</Text> : null}
                 {selected ? <Text style={styles.optionMark}>선택됨</Text> : null}
               </Pressable>
             );
@@ -204,7 +214,7 @@ export interface SheetAction {
   description?: string;
 }
 
-/** Labelled actions with their help; used by "더 보기" on the Ouroboros panel. */
+/** Labelled actions with their help; used by "더 보기" on the guided panel. */
 export function ActionListSheet({
   visible,
   title,
@@ -230,14 +240,17 @@ export function ActionListSheet({
       {actions.length === 0 ? (
         <Text style={styles.note}>지금 실행할 수 있는 것이 없습니다.</Text>
       ) : (
-        <ScrollView style={styles.optionList}>
-          {actions.map((action) => (
+        // A style catalogue carries up to a hundred actions, so the rows are recycled.
+        <FlatList
+          data={actions}
+          keyExtractor={(action) => action.id}
+          style={styles.optionList}
+          renderItem={({ item }) => (
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ disabled: busy }}
               disabled={busy}
-              key={action.id}
-              onPress={() => onSelect(action.id)}
+              onPress={() => onSelect(item.id)}
               style={({ pressed }) => [
                 styles.option,
                 styles.optionStacked,
@@ -245,13 +258,13 @@ export function ActionListSheet({
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.optionLabel}>{action.label}</Text>
-              {action.description ? (
-                <Text style={styles.optionDescription}>{action.description}</Text>
+              <Text style={styles.optionLabel}>{item.label}</Text>
+              {item.description ? (
+                <Text style={styles.optionDescription}>{item.description}</Text>
               ) : null}
             </Pressable>
-          ))}
-        </ScrollView>
+          )}
+        />
       )}
       <Button label="닫기" tone="ghost" onPress={onClose} />
     </Sheet>
@@ -349,6 +362,15 @@ const makeStyles = (palette: Palette) =>
     optionLocked: { opacity: 0.45 },
     optionLabel: { color: palette.text, flex: 1, fontSize: 15 },
     optionMark: { color: palette.accent, fontSize: 12, fontWeight: '700' },
+    optionBadge: {
+      borderColor: palette.warning,
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: palette.warning,
+      fontSize: 10,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: 1,
+    },
     pressed: { opacity: 0.7 },
     input: {
       backgroundColor: palette.surfaceRaised,

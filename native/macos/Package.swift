@@ -12,7 +12,7 @@ let package = Package(
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.5.20260906"),
     ],
     targets: [
-        .target(name: "MightyCore"),
+        .target(name: "MightyCore", resources: [.copy("Resources/Styles")]),
         .executableTarget(name: "MightyClaude", dependencies: [
             "MightyCore",
             .product(name: "GhosttyTerminal", package: "libghostty-spm"),

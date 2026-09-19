@@ -42,7 +42,7 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// The m1 extensions this host implements. A phone shows a feature only when
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
-    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments"]
+    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style"]
 }
 
 /// The fixed string vocabularies of the extension (docs/mobile-remote.md,
@@ -148,13 +148,16 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     public var terminal: Bool
     public var agentViewMode: String?
     public var mightyStyle: String?
+    /// The registered style this pane actually runs, or absent. `mightyStyle`
+    /// keeps its three fixed words and carries `cli` for everything else (§7.2).
+    public var styleId: String?
     public init(id: String, workspaceId: String, title: String, kind: String, provider: String, model: String, status: String, revision: Int, updatedAt: String,
                 preview: MobilePreview? = nil, pendingPermissions: Int = 0, pendingQuestions: Int = 0, queued: Int = 0, resumeId: String? = nil, terminal: Bool = false,
-                agentViewMode: String? = nil, mightyStyle: String? = nil) {
+                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.status = status
         self.revision = revision; self.updatedAt = updatedAt; self.preview = preview; self.pendingPermissions = pendingPermissions
         self.pendingQuestions = pendingQuestions; self.queued = queued; self.resumeId = resumeId; self.terminal = terminal
-        self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle
+        self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId
     }
 }
 
@@ -255,9 +258,21 @@ public struct MobileSettingsOptions: Codable, Sendable, Equatable {
     /// the phone shows no picker rather than one with a single dead choice.
     public var efforts: [MobileOption]?
     public var mightyStyles: [MobileOption]
-    public init(models: [MobileOption] = [], permissionModes: [MobileOption] = [], efforts: [MobileOption]? = nil, mightyStyles: [MobileOption] = []) {
-        self.models = models; self.permissionModes = permissionModes; self.efforts = efforts; self.mightyStyles = mightyStyles
+    /// Every style this pane may actually choose, approved or bundled (§7.2).
+    public var styles: [MobileStyleOption]
+    public init(models: [MobileOption] = [], permissionModes: [MobileOption] = [], efforts: [MobileOption]? = nil,
+                mightyStyles: [MobileOption] = [], styles: [MobileStyleOption] = []) {
+        self.models = models; self.permissionModes = permissionModes; self.efforts = efforts
+        self.mightyStyles = mightyStyles; self.styles = styles
     }
+}
+
+public struct MobileStyleOption: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var label: String
+    /// Absent for `cli`, which belongs to no source.
+    public var source: StyleSource?
+    public init(id: String, label: String, source: StyleSource? = nil) { self.id = id; self.label = label; self.source = source }
 }
 
 public struct MobileSettings: Codable, Sendable, Equatable {
@@ -271,10 +286,12 @@ public struct MobileSettings: Codable, Sendable, Equatable {
     public var effort: String?
     public var agentViewMode: String
     public var mightyStyle: String
+    public var styleId: String
     public var options: MobileSettingsOptions
-    public init(editable: Bool, model: String, permissionMode: String, effort: String? = nil, agentViewMode: String, mightyStyle: String, options: MobileSettingsOptions) {
+    public init(editable: Bool, model: String, permissionMode: String, effort: String? = nil, agentViewMode: String, mightyStyle: String,
+                styleId: String = MobileWire.cliStyle, options: MobileSettingsOptions) {
         self.editable = editable; self.model = model; self.permissionMode = permissionMode; self.effort = effort
-        self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.options = options
+        self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId; self.options = options
     }
 }
 
@@ -376,11 +393,16 @@ public struct MobilePaperthin: Codable, Sendable, Equatable {
 /// guided panel of whichever style it is in (never both).
 public struct MobileMighty: Codable, Sendable, Equatable {
     public var style: String
+    /// The open value; `panel` rides with it and is absent for a plain pane (§7.3).
+    public var styleId: String
     public var runs: [MobileMightyRun]
+    public var panel: StylePanel?
     public var ouroboros: MobileOuroboros?
     public var paperthin: MobilePaperthin?
-    public init(style: String, runs: [MobileMightyRun], ouroboros: MobileOuroboros? = nil, paperthin: MobilePaperthin? = nil) {
-        self.style = style; self.runs = runs; self.ouroboros = ouroboros; self.paperthin = paperthin
+    public init(style: String, styleId: String = MobileWire.cliStyle, runs: [MobileMightyRun], panel: StylePanel? = nil,
+                ouroboros: MobileOuroboros? = nil, paperthin: MobilePaperthin? = nil) {
+        self.style = style; self.styleId = styleId; self.runs = runs; self.panel = panel
+        self.ouroboros = ouroboros; self.paperthin = paperthin
     }
 }
 
@@ -445,11 +467,19 @@ public struct MobileSubmitRequest: Codable, Sendable {
     public var attachments: [String]?
     public init(text: String, mode: String? = nil, attachments: [String]? = nil) { self.text = text; self.mode = mode; self.attachments = attachments }
 }
+/// `styleId`+`actionId` is the new shape, `style`+`skill` the legacy one for
+/// the two bundled styles. The new shape wins when both arrive (§7.5).
 public struct MobileGuidedRequest: Codable, Sendable {
-    public var style: String
-    public var skill: String
+    public var styleId: String?
+    public var actionId: String?
+    public var style: String?
+    public var skill: String?
     public var text: String?
-    public init(style: String, skill: String, text: String? = nil) { self.style = style; self.skill = skill; self.text = text }
+    public init(styleId: String? = nil, actionId: String? = nil, style: String? = nil, skill: String? = nil, text: String? = nil) {
+        self.styleId = styleId; self.actionId = actionId; self.style = style; self.skill = skill; self.text = text
+    }
+    public var resolvedStyle: String? { styleId ?? style }
+    public var resolvedAction: String? { styleId != nil ? actionId : skill }
 }
 public struct MobileUploadRequest: Codable, Sendable {
     public var name: String
@@ -490,8 +520,12 @@ public struct MobileSettingsRequest: Codable, Sendable, Equatable {
     public var effort: String?
     public var agentViewMode: String?
     public var mightyStyle: String?
-    public init(model: String? = nil, permissionMode: String? = nil, effort: String? = nil, agentViewMode: String? = nil, mightyStyle: String? = nil) {
-        self.model = model; self.permissionMode = permissionMode; self.effort = effort; self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle
+    /// When present, `mightyStyle` is ignored rather than refused (§7.2).
+    public var styleId: String?
+    public init(model: String? = nil, permissionMode: String? = nil, effort: String? = nil, agentViewMode: String? = nil,
+                mightyStyle: String? = nil, styleId: String? = nil) {
+        self.model = model; self.permissionMode = permissionMode; self.effort = effort; self.agentViewMode = agentViewMode
+        self.mightyStyle = mightyStyle; self.styleId = styleId
     }
 }
 public struct MobileSubmitResult: Codable, Sendable, Equatable {

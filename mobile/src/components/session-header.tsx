@@ -4,6 +4,7 @@ import { ProviderTag } from '@/components/provider-mark';
 import { StatusChip } from '@/components/status-chip';
 import { StatusLineView } from '@/components/status-line-view';
 import { Chip } from '@/components/ui';
+import { sourceBadge } from '@/lib/styles';
 import {
   AGENT_VIEW_MODES,
   kindLabel,
@@ -21,7 +22,12 @@ export type SettingField =
   | 'permissionMode'
   | 'effort'
   | 'agentViewMode'
-  | 'mightyStyle';
+  | 'mightyStyle'
+  /** The open style list a host with "style" sends, in place of `mightyStyle`. */
+  | 'styleId';
+
+/** The wire word for a pane running no guided style at all. */
+const CLI_STYLE = 'cli';
 
 function formatElapsed(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -36,6 +42,20 @@ export function optionsFor(settings: MobileSettings | undefined, field: SettingF
   if (!settings) return [];
   if (field === 'agentViewMode') return AGENT_VIEW_MODES;
   const options = settings.options as Partial<MobileSettings['options']> | undefined;
+  if (field === 'styleId') {
+    const styles = options?.styles;
+    if (!Array.isArray(styles)) return [];
+    // A style whose name is not one the app shipped is named with its source wherever
+    // the name appears, the picker included (contract 1.10). `cli` is the one entry
+    // that is no style at all, so it arrives without a source and wears no badge.
+    return styles.map((style) => {
+      const option: SettingOption = { id: style.id, label: style.label || style.id };
+      if (style.id === CLI_STYLE && style.source === undefined) return option;
+      const badge = sourceBadge(style.source);
+      if (badge) option.badge = badge;
+      return option;
+    });
+  }
   const list =
     field === 'model'
       ? options?.models
@@ -60,6 +80,8 @@ export function valueFor(settings: MobileSettings, field: SettingField): string 
       return settings.agentViewMode ?? '';
     case 'mightyStyle':
       return settings.mightyStyle ?? '';
+    case 'styleId':
+      return settings.styleId ?? '';
   }
 }
 
@@ -69,12 +91,20 @@ export const settingTitles: Record<SettingField, string> = {
   effort: '사고 강도',
   agentViewMode: '보기 방식',
   mightyStyle: 'Mighty 스타일',
+  styleId: 'Mighty 스타일',
 };
+
+/** `Mighty 스타일: gstack · 저장소에서 발견됨` — the badge follows the name everywhere. */
+function chipLabel(field: SettingField, options: SettingOption[], value: string): string {
+  const badge = options.find((option) => option.id === value)?.badge;
+  return `${settingTitles[field]}: ${optionLabel(options, value)}${badge ? ` · ${badge}` : ''}`;
+}
 
 export function SessionHeader({
   detail,
   settings,
   showStatus,
+  styleAware,
   onEditSetting,
 }: {
   detail: MobileSessionDetail;
@@ -82,6 +112,8 @@ export function SessionHeader({
   settings?: MobileSettings;
   /** "status": the host sends a status line and rate limits. */
   showStatus: boolean;
+  /** "style": pick from the host's open style list instead of the fixed three. */
+  styleAware: boolean;
   onEditSetting: (field: SettingField) => void;
 }) {
   const palette = usePalette();
@@ -94,7 +126,15 @@ export function SessionHeader({
       : undefined);
 
   const fields: SettingField[] = settings
-    ? (['model', 'permissionMode', 'effort', 'agentViewMode', 'mightyStyle'] as const).filter(
+    ? (
+        [
+          'model',
+          'permissionMode',
+          'effort',
+          'agentViewMode',
+          styleAware ? 'styleId' : 'mightyStyle',
+        ] as const
+      ).filter(
         (field) => optionsFor(settings, field).length > 0 && valueFor(settings, field).length > 0,
       )
     : [];
@@ -138,10 +178,7 @@ export function SessionHeader({
             {fields.map((field) => (
               <Chip
                 key={field}
-                label={`${settingTitles[field]}: ${optionLabel(
-                  optionsFor(settings, field),
-                  valueFor(settings, field),
-                )}`}
+                label={chipLabel(field, optionsFor(settings, field), valueFor(settings, field))}
                 color={palette.textMuted}
                 disabled={!settings.editable}
                 onPress={() => onEditSetting(field)}

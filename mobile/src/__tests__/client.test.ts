@@ -195,32 +195,43 @@ describe('the m1 capability extension routes', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('posts a guided skill with and without the composer text', async () => {
+  it('posts a guided action with and without the composer text', async () => {
     const fake = fakeChannel({ status: 202, body: { protocol: 1, accepted: 'started' } });
     const client = createClient(fake.channel);
-    await client.guided('s1', { style: 'ouroboros', skill: 'interview', text: '  로그인  ' });
-    await client.guided('s1', { style: 'ouroboros', skill: 'seed' });
-    await client.guided('s1', { style: 'paperthin', skill: ' re0 ', text: '' });
+    await client.guided('s1', { styleId: 'ouroboros', actionId: 'interview', text: '  로그인  ' });
+    await client.guided('s1', { styleId: 'ouroboros', actionId: 'seed' });
+    await client.guided('s1', { styleId: 'paperthin', actionId: ' re0 ', text: '' });
+    // The phone holds no closed set of styles: an id it has never seen goes out as sent.
+    await client.guided('s1', { styleId: 'gstack', actionId: 'ship' });
     expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'POST /m1/sessions/s1/guided',
       'POST /m1/sessions/s1/guided',
       'POST /m1/sessions/s1/guided',
       'POST /m1/sessions/s1/guided',
     ]);
     expect(fake.calls.map((call) => call.body)).toEqual([
-      { style: 'ouroboros', skill: 'interview', text: '로그인' },
-      { style: 'ouroboros', skill: 'seed' },
-      { style: 'paperthin', skill: 're0' },
+      { styleId: 'ouroboros', actionId: 'interview', text: '로그인' },
+      { styleId: 'ouroboros', actionId: 'seed' },
+      { styleId: 'paperthin', actionId: 're0' },
+      { styleId: 'gstack', actionId: 'ship' },
     ]);
   });
 
-  it('refuses an empty skill and oversized guided text before touching the tunnel', async () => {
+  it('refuses an empty action and oversized guided text before touching the tunnel', async () => {
     const fake = fakeChannel(ok);
     const client = createClient(fake.channel);
-    await expect(client.guided('s1', { style: 'paperthin', skill: '  ' })).rejects.toMatchObject({
+    await expect(
+      client.guided('s1', { styleId: 'paperthin', actionId: '  ' }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(client.guided('s1', { styleId: ' ', actionId: 're0' })).rejects.toMatchObject({
       status: 400,
     });
     await expect(
-      client.guided('s1', { style: 'paperthin', skill: 're0', text: 'x'.repeat(32 * 1024 + 1) }),
+      client.guided('s1', {
+        styleId: 'paperthin',
+        actionId: 're0',
+        text: 'x'.repeat(32 * 1024 + 1),
+      }),
     ).rejects.toMatchObject({ status: 413 });
     expect(fake.calls).toHaveLength(0);
   });
@@ -256,8 +267,16 @@ describe('the m1 capability extension routes', () => {
       [503, '지금은 쓸 수 없습니다', (client) => client.commands('s1')],
       [400, '모르는 명령입니다', (client) => client.runCommand('s1', 'help')],
       [413, '첨부가 너무 큽니다', (client) => client.submit('s1', 'hi', { attachments: ['u1'] })],
-      [400, '모르는 스킬입니다', (client) => client.guided('s1', { style: 'ouroboros', skill: 'x' })],
-      [409, '이 스타일의 창이 아닙니다', (client) => client.guided('s1', { style: 'paperthin', skill: 're0' })],
+      [
+        400,
+        '모르는 스킬입니다',
+        (client) => client.guided('s1', { styleId: 'ouroboros', actionId: 'x' }),
+      ],
+      [
+        409,
+        '이 스타일의 창이 아닙니다',
+        (client) => client.guided('s1', { styleId: 'paperthin', actionId: 're0' }),
+      ],
       [413, '한도를 넘었습니다', (client) => client.createUpload('s1', { name: 'a', size: 9 })],
       [400, '크기가 다릅니다', (client) => client.completeUpload('u1')],
       [404, '없는 업로드입니다', (client) => client.uploadChunk('u1', 0, 'AA==')],

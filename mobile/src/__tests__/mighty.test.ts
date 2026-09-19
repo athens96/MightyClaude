@@ -5,13 +5,11 @@ import {
   blockKindLabel,
   blockKindMark,
   blockTitle,
-  guidedRequestFor,
-  guidedStyleOf,
   normalizeMighty,
-  ouroborosPhaseLabel,
   runHeading,
   runPreview,
 } from '@/lib/mighty';
+import { panelOf } from '@/lib/styles';
 
 function block(overrides: Partial<MobileBlock> = {}): MobileBlock {
   return { id: 'b1', kind: 'agent', title: '', status: 'running', ...overrides };
@@ -57,45 +55,6 @@ describe('run headings and previews', () => {
     const long = 'ㄱ'.repeat(MAX_INPUT_PREVIEW + 10);
     expect(runPreview(long)).toHaveLength(MAX_INPUT_PREVIEW + 1);
     expect(runPreview(long).endsWith('…')).toBe(true);
-  });
-});
-
-describe('ouroborosPhaseLabel', () => {
-  it('uses the Mac wording and passes an unknown phase through', () => {
-    expect(ouroborosPhaseLabel('interview')).toBe('인터뷰');
-    expect(ouroborosPhaseLabel('evolve')).toBe('진화');
-    expect(ouroborosPhaseLabel('transcend')).toBe('transcend');
-    expect(ouroborosPhaseLabel('')).toBe('단계');
-  });
-});
-
-describe('guidedRequestFor', () => {
-  it('carries the composer text only for the skills the host listed', () => {
-    expect(guidedRequestFor('ouroboros', 'interview', '  로그인 화면  ', ['interview'])).toEqual({
-      style: 'ouroboros',
-      skill: 'interview',
-      text: '로그인 화면',
-    });
-    expect(guidedRequestFor('ouroboros', 'seed', '로그인 화면', ['interview'])).toEqual({
-      style: 'ouroboros',
-      skill: 'seed',
-    });
-    expect(guidedRequestFor('ouroboros', 'interview', '   ', ['interview'])).toEqual({
-      style: 'ouroboros',
-      skill: 'interview',
-    });
-  });
-
-  it('always offers the text to Paperthin, whose skills take a target', () => {
-    expect(guidedRequestFor('paperthin', 're0', 'docs/spec.md', [])).toEqual({
-      style: 'paperthin',
-      skill: 're0',
-      text: 'docs/spec.md',
-    });
-    expect(guidedRequestFor('paperthin', 'nba', '', [])).toEqual({
-      style: 'paperthin',
-      skill: 'nba',
-    });
   });
 });
 
@@ -268,11 +227,63 @@ describe('normalizeMighty', () => {
   });
 });
 
-describe('guidedStyleOf', () => {
-  it('only knows the two guided styles', () => {
-    expect(guidedStyleOf({ style: 'ouroboros', runs: [] })).toBe('ouroboros');
-    expect(guidedStyleOf({ style: 'paperthin', runs: [] })).toBe('paperthin');
-    expect(guidedStyleOf({ style: 'cli', runs: [] })).toBeUndefined();
-    expect(guidedStyleOf(undefined)).toBeUndefined();
+describe('which panes draw a guided panel', () => {
+  it('reads the style id and panel a host with "style" sends', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      styleId: 'gstack',
+      runs: [],
+      panel: {
+        style: { id: 'gstack', name: 'gstack', source: 'workspace' },
+        groups: [],
+        actions: [{ id: 'ship', title: '출시', help: '', takesText: false, requiresText: false }],
+        next: ['ship'],
+        attachments: [],
+        setup: { ready: true, missing: [] },
+        presentation: { headerTitle: 'gstack', source: 'workspace' },
+      },
+    });
+    expect(mighty?.styleId).toBe('gstack');
+    // `style` stays the fixed wire word; the truth rides in `styleId` (contract 7.2).
+    expect(mighty?.style).toBe('cli');
+    expect(mighty?.panel?.style.id).toBe('gstack');
+  });
+
+  it('draws any style the host sends a panel for, not a set of ids it knows', () => {
+    const drawn = (raw: unknown) => panelOf(normalizeMighty(raw))?.style.id;
+    const panel = (id: string) => ({
+      style: { id, name: id, source: 'user' },
+      groups: [],
+      actions: [],
+      next: [],
+      attachments: [],
+      setup: { ready: true, missing: [] },
+      presentation: { headerTitle: id, source: 'user' },
+    });
+    expect(drawn({ style: 'cli', runs: [], panel: panel('oh-my-claudecode') })).toBe(
+      'oh-my-claudecode',
+    );
+    expect(drawn({ style: 'cli', runs: [], panel: panel('style-nobody-has-seen') })).toBe(
+      'style-nobody-has-seen',
+    );
+  });
+
+  it('falls back to the built-in payloads, and to blocks alone without either', () => {
+    const legacy = {
+      style: 'ouroboros',
+      runs: [],
+      ouroboros: {
+        phase: 'seed',
+        ready: true,
+        takesText: [],
+        next: [{ skill: 'seed', title: '시드', help: '' }],
+        all: [{ skill: 'seed', title: '시드', help: '' }],
+      },
+    };
+    // A host that never learned "style" sends no panel; the adapter makes one.
+    expect(panelOf(normalizeMighty(legacy), false)?.style.id).toBe('ouroboros');
+    expect(panelOf(normalizeMighty({ style: 'cli', runs: [] }))).toBeUndefined();
+    expect(panelOf(normalizeMighty({ style: 'gstack', runs: [] }))).toBeUndefined();
+    expect(panelOf(undefined)).toBeUndefined();
   });
 });
