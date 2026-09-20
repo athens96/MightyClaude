@@ -235,7 +235,9 @@ public sealed partial class MainWindow
 
         // Show the fixture results in the CLI update section and read the rows back.
         var cliPanel = BuildCliUpdateSection(SettingsSectionsSmoke.FixtureResults);
+        // The rows sit inside the nested results panel, so look one level down as well.
         var renderedStatuses = cliPanel.Children.OfType<StackPanel>()
+            .SelectMany(child => child.Children.OfType<StackPanel>().Prepend(child))
             .Select(row => AutomationProperties.GetAutomationId(row))
             .Where(id => id.StartsWith(ResultRowIdPrefix, StringComparison.Ordinal))
             .Select(id => id[(id.LastIndexOf('-') + 1)..])
