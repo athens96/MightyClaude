@@ -122,8 +122,8 @@ public sealed partial class MainWindow
         // 업데이트 하기 button — reflects coordinator state live.
         var updateButton = new Button
         {
-            Content = coordinator.IsUpdating ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton,
-            IsEnabled = !coordinator.IsUpdating,
+            Content = coordinator.ButtonLabel,
+            IsEnabled = coordinator.CanStart,
         };
         AutomationProperties.SetAutomationId(updateButton, "cli-update-start");
         updateButton.Click += (_, _) => coordinator.Start();
@@ -158,8 +158,8 @@ public sealed partial class MainWindow
 
         coordinator.StateChanged += () => DispatcherQueue.TryEnqueue(() =>
         {
-            updateButton.Content = coordinator.IsUpdating ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton;
-            updateButton.IsEnabled = !coordinator.IsUpdating;
+            updateButton.Content = coordinator.ButtonLabel;
+            updateButton.IsEnabled = coordinator.CanStart;
             var live = coordinator.Results;
             if (live.Count > 0)
             {

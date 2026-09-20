@@ -398,4 +398,97 @@ internal static class CliUpdateVerification
         Check(!afterShutdown, "Start after ShutdownAsync must return false");
         blocked.TrySetResult();
     }
+
+    /// Each provider's result appears as soon as that provider is done, while
+    /// the button still reads 업데이트 중… and refuses a second start.
+    internal static async Task CoordinatorShowsEachResultWhileTheButtonReadsUpdating()
+    {
+        var gates = Wire.Providers.ToDictionary(p => p, _ => new TaskCompletionSource());
+        var coordinator = new CliUpdateCoordinator(async (provider, token) =>
+        {
+            await gates[provider].Task.WaitAsync(token);
+            return new CliUpdateResult(provider, "updated", "1.0", "2.0", "native", CliUpdateStrings.DetailUpdated);
+        });
+
+        Check(coordinator.ButtonLabel == CliUpdateStrings.UpdateButton, "an idle button must read 업데이트 하기");
+        Check(coordinator.CanStart, "an idle button must be enabled");
+
+        coordinator.Start();
+        Check(coordinator.ButtonLabel == CliUpdateStrings.UpdatingButton, "a running button must read 업데이트 중…");
+        Check(!coordinator.CanStart, "a running button must be disabled");
+
+        gates[Wire.Providers[0]].SetResult();
+        await Verification.Until(() => coordinator.Results.Count == 1);
+        Check(coordinator.IsUpdating, "the run must continue after the first result appears");
+        Check(coordinator.Results[0].Provider == Wire.Providers[0], "the first result must be the first provider");
+        Check(CliUpdateService.ResultRow(coordinator.Results[0]) == "Claude · " + CliUpdateStrings.StatusUpdated, "the row must read {provider} · {status}");
+        Check(coordinator.ButtonLabel == CliUpdateStrings.UpdatingButton, "the button must still read 업데이트 중… between providers");
+
+        gates[Wire.Providers[1]].SetResult();
+        await Verification.Until(() => coordinator.Results.Count == 2);
+        Check(coordinator.IsUpdating, "two of three results must not end the run");
+
+        gates[Wire.Providers[2]].SetResult();
+        await Verification.Until(() => !coordinator.IsUpdating);
+        Check(coordinator.Results.Count == Wire.Providers.Length, "every provider must leave a result");
+        Check(coordinator.ButtonLabel == CliUpdateStrings.UpdateButton, "the finished button must read 업데이트 하기 again");
+        Check(coordinator.CanStart, "the finished button must be enabled again");
+    }
+
+    /// A provider that fails is reported with the macOS failure label and the
+    /// remaining providers are still updated.
+    internal static async Task CoordinatorReportsAFailedProviderAndStillUpdatesTheRest()
+    {
+        var failing = Wire.Providers[1];
+        var coordinator = new CliUpdateCoordinator((provider, _) => Task.FromResult(provider == failing
+            ? new CliUpdateResult(provider, "failed", "1.0", null, "npm", CliUpdateStrings.DetailFailedExitTemplate.Replace("{code}", "3"))
+            : new CliUpdateResult(provider, "updated", "1.0", "2.0", "native", CliUpdateStrings.DetailUpdated)));
+
+        coordinator.Start();
+        await Verification.Until(() => !coordinator.IsUpdating);
+
+        Check(coordinator.Results.Select(r => r.Provider).SequenceEqual(Wire.Providers), "a failure must not cut the run short");
+        Check(coordinator.Results.Select(r => r.Status).SequenceEqual(["updated", "failed", "updated"]), "the failure must be kept next to the successes");
+        var failed = coordinator.Results.Single(r => r.Status == "failed");
+        Check(CliUpdateService.ResultRow(failed) == "Codex · " + CliUpdateStrings.StatusFailed, "the failed row must read 업데이트 실패: " + CliUpdateService.ResultRow(failed));
+        Check(CliUpdateService.VersionChange(failed) is null, "a failed provider shows no version line");
+        Check(failed.Detail == CliUpdateStrings.DetailFailedExitTemplate.Replace("{code}", "3"), "the failure sentence must reach the section");
+        Check(coordinator.FinishedAt is not null, "a run with a failure still finishes");
+    }
+
+    /// The section keeps the last run's results and finish time; a new run
+    /// clears them while it works and replaces them when it is done.
+    internal static async Task CoordinatorKeepsTheLastRunResultsAndFinishTime()
+    {
+        var status = "updated";
+        var gate = new TaskCompletionSource();
+        var hold = false;
+        var coordinator = new CliUpdateCoordinator(async (provider, token) =>
+        {
+            if (hold) await gate.Task.WaitAsync(token);
+            return new CliUpdateResult(provider, status, "1.0", "2.0", "native", CliUpdateStrings.DetailUpdated);
+        });
+
+        coordinator.Start();
+        await Verification.Until(() => !coordinator.IsUpdating);
+        var firstFinished = coordinator.FinishedAt;
+        Check(firstFinished is not null, "the first run must record a finish time");
+        Check(coordinator.Results.All(r => r.Status == "updated"), "the first run's results must be kept");
+
+        // The results stay on screen until the next run starts.
+        await Task.Delay(20);
+        Check(coordinator.FinishedAt == firstFinished, "an idle coordinator must not move the finish time");
+        Check(coordinator.Results.Count == Wire.Providers.Length, "an idle coordinator must keep showing the last run");
+
+        status = "current";
+        hold = true;
+        coordinator.Start();
+        Check(coordinator.Results.Count == 0, "a new run must clear the previous results");
+        Check(coordinator.FinishedAt is null, "a new run must clear the previous finish time");
+
+        gate.SetResult();
+        await Verification.Until(() => !coordinator.IsUpdating);
+        Check(coordinator.Results.All(r => r.Status == "current"), "the second run's results must replace the first");
+        Check(coordinator.FinishedAt >= firstFinished, "the second finish time must not go backwards");
+    }
 }
