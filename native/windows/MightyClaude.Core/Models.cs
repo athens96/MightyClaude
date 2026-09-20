@@ -107,6 +107,23 @@ public sealed record RunSession
         return value;
     }
 }
+// Reads true/false only; any other JSON token (number, string, array, object, null) returns null.
+// This lets old saved files load cleanly even if the field was never written.
+internal sealed class LenientNullableBoolConverter : JsonConverter<bool?>
+{
+    public override bool? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.True) return true;
+        if (reader.TokenType == JsonTokenType.False) return false;
+        reader.Skip();
+        return null;
+    }
+    public override void Write(Utf8JsonWriter writer, bool? value, JsonSerializerOptions options)
+    {
+        if (value is bool b) writer.WriteBooleanValue(b);
+        else writer.WriteNullValue();
+    }
+}
 public sealed record AppSnapshot
 {
     public int Version { get; init; } = 1;
@@ -122,6 +139,8 @@ public sealed record AppSnapshot
     public double SidebarWidth { get; init; } = 252;
     public Dictionary<string, string>? TrustedStatusLines { get; init; }
     public bool CompletionNotificationsEnabled { get; init; } = true;
+    [JsonConverter(typeof(LenientNullableBoolConverter))]
+    public bool? AutoUpdateCLIs { get; init; }
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)
