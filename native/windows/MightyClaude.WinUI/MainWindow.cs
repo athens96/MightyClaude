@@ -82,8 +82,13 @@ public sealed partial class MainWindow : Window
         search.TextChanged += (_, _) => RenderSidebar();
         workspaces.SelectionChanged += async (_, _) => { if (!rendering && workspaces.SelectedItem is ListViewItem { Tag: string id }) await SelectWorkspace(id); };
         Grid.SetRow(sideHost, 1); root.Children.Add(sideHost); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
-        var footer = new StackPanel { Spacing = 3 }; footer.Children.Add(error); footer.Children.Add(status); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
+        var footer = new StackPanel { Spacing = 3 }; footer.Children.Add(error);
+        // The bottom status bar: the account usage chips, then the status text.
+        var statusRow = new Grid { ColumnSpacing = 10 };
+        statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        statusRow.Children.Add(BuildAccountUsage()); Grid.SetColumn(status, 1); statusRow.Children.Add(status);
+        footer.Children.Add(statusRow); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAccountUsageAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         _ = Initialize();
     }
@@ -150,6 +155,7 @@ public sealed partial class MainWindow : Window
         root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark;
         root.Background = WindowBackground(state.Theme == "light"); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar();
+        RenderAccountUsage();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
         // A closed session runs nothing more: end its refresher before dropping the pane.
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { views[stale].Refresher?.Close(); views.Remove(stale); }
