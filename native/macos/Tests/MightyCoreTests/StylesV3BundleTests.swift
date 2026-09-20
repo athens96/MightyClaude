@@ -25,10 +25,17 @@ struct StylesV3BundleTests {
         #expect(StyleLaunchWiring.shouldCopyOnApproval(source: .bundled) == false)
     }
 
-    @Test func styleLaunchWiringBlocksTitlePrefixForOrdinaryRunWindows() {
-        let prefix = StyleLaunchWiring.requestTitlePrefix(guidedStyle: nil)
-        let title = StyleChrome.requestTitle(prefix: prefix, ordinal: 1, providerLabel: "Claude")
-        #expect(prefix == nil)
-        #expect(title == "요청 1 " + StyleChrome.separator + " Claude")
+    @Test func styleLaunchWiringBlocksTitlePrefixForOrdinaryRunWindows() throws {
+        // Ordinary run window: no guided style → prefix is nil, title has no manifest string.
+        let nonePrefix = StyleLaunchWiring.requestTitlePrefix(guidedStyle: nil)
+        #expect(nonePrefix == nil)
+        #expect(StyleChrome.requestTitle(prefix: nonePrefix, ordinal: 1, providerLabel: "Claude")
+                == "요청 1 " + StyleChrome.separator + " Claude")
+
+        // Guided run window: approved style → prefix is the style name (non-nil).
+        let guided = try StyleFixtures.registered(StyleFixtures.data(), approval: .approved)
+        let guidedPrefix = StyleLaunchWiring.requestTitlePrefix(guidedStyle: guided)
+        #expect(guidedPrefix == guided.manifest.name)
+        #expect(guidedPrefix != nil)
     }
 }
