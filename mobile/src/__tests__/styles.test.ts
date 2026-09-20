@@ -2,6 +2,7 @@ import {
   blockText,
   guidedRequestFor,
   inlineText,
+  isEmojiGlyph,
   legacyStylePanel,
   normalizeStylePanel,
   ouroborosPhaseLabel,
@@ -648,6 +649,49 @@ describe('which chip is drawn filled', () => {
         prominent: false,
       });
     }
+  });
+});
+
+describe('emoji glyph rule', () => {
+  it('accepts a single emoji grapheme as a valid emoji glyph', () => {
+    expect(isEmojiGlyph('📐')).toBe(true);
+    expect(isEmojiGlyph('🎯')).toBe(true);
+    expect(isEmojiGlyph('🧭')).toBe(true);
+    expect(isEmojiGlyph('✅')).toBe(true);
+    // Keycap sequence: digit + FE0F + combining enclosing keycap — one grapheme cluster
+    expect(isEmojiGlyph('1️⃣')).toBe(true);
+  });
+
+  it('rejects non-emoji text and multi-grapheme strings as an emoji glyph', () => {
+    expect(isEmojiGlyph('')).toBe(false);
+    // Plain ASCII letter — not an emoji
+    expect(isEmojiGlyph('A')).toBe(false);
+    // Digit without emoji variation selector — Emoji property but not Emoji_Presentation
+    expect(isEmojiGlyph('1')).toBe(false);
+    // Two separate emoji — two grapheme clusters
+    expect(isEmojiGlyph('📐📐')).toBe(false);
+  });
+
+  it('parseAction keeps a valid emoji glyph and drops a non-emoji one', () => {
+    const withValid = normalizeStylePanel(
+      panelPayload({
+        actions: [{ id: 'spec', title: '명세', takesText: false, requiresText: false, glyph: '🎯' }],
+        next: ['spec'],
+        groups: [],
+        recommended: undefined,
+      }),
+    );
+    expect(withValid?.actions[0]?.glyph).toBe('🎯');
+
+    const withInvalid = normalizeStylePanel(
+      panelPayload({
+        actions: [{ id: 'spec', title: '명세', takesText: false, requiresText: false, glyph: 'X' }],
+        next: ['spec'],
+        groups: [],
+        recommended: undefined,
+      }),
+    );
+    expect(withInvalid?.actions[0]?.glyph).toBeUndefined();
   });
 });
 

@@ -140,6 +140,33 @@ public enum StyleComposer {
     }
 }
 
+/// The three wiring rules the approval sheet enforces when connecting a
+/// run-window to a style (§4.4, §4.5, §1.10). Pure decisions so the test
+/// suite can assert them without the app module's side effects.
+public enum StyleLaunchWiring {
+    /// A run-window is bound to a style only after approval: the `then`
+    /// callback of `approveStyle` fires after the registry has been updated,
+    /// ensuring only runnable styles ever reach the run-window (§4.5).
+    public static func canBindRunWindow(to style: RegisteredStyle) -> Bool {
+        style.isRunnable
+    }
+
+    /// Only a file the user picked is copied into the app's data directory
+    /// on approval. A workspace manifest already lives in the repository;
+    /// copying it would create a second, higher-precedence copy that refuses
+    /// the original (§3.3, §4.4).
+    public static func shouldCopyOnApproval(source: StyleSource) -> Bool {
+        source == .user
+    }
+
+    /// Ordinary run-windows — panes without an active guided style — supply
+    /// `nil` for the prefix; `StyleChrome.requestTitle` then omits the
+    /// prefix block entirely so no manifest string appears in the title (§1.10).
+    public static func requestTitlePrefix(guidedStyle: RegisteredStyle?) -> String? {
+        nil
+    }
+}
+
 /// One row of the style menu: `cli` first, then every style this pane may see.
 public struct StyleMenuRow: Sendable, Equatable, Identifiable {
     public var id: String

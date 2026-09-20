@@ -67,6 +67,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * A glyph is exactly one grapheme cluster with an emoji presentation (§1.10),
+ * matching the Mac's StyleText.isEmojiGlyph rule.
+ */
+export function isEmojiGlyph(value: string): boolean {
+  if (value.length === 0) return false;
+  if ([...new Intl.Segmenter().segment(value)].length !== 1) return false;
+  const firstCodePoint = value.codePointAt(0);
+  if (firstCodePoint === undefined) return false;
+  const first = String.fromCodePoint(firstCodePoint);
+  if (!/^\p{Emoji}$/u.test(first)) return false;
+  return /^\p{Emoji_Presentation}$/u.test(first) || value.includes('️');
+}
+
 function arrayOf(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -177,10 +191,8 @@ function parseAction(raw: unknown): StyleAction | undefined {
     flags: ACTION_FLAGS.filter((flag) => arrayOf(raw.flags).includes(flag)),
     prominent: raw.prominent === true,
   };
-  // One grapheme by contract, but a family emoji is several code units, so the cut
-  // matches what the Paperthin payload already carries.
   const glyph = inlineText(raw.glyph, 8);
-  if (glyph.length > 0) action.glyph = glyph;
+  if (isEmojiGlyph(glyph)) action.glyph = glyph;
   const scope = inlineText(raw.scope, 120);
   if (scope.length > 0) action.scope = scope;
   return action;
