@@ -75,6 +75,40 @@ if [[ -f "$TESTING_PLUGIN" ]]; then
 
 ---
 
+## 로컬 검증 실행 기록
+
+### 기준선 (v3 번들 변경 전, 커밋 0ea530d)
+
+`chore/style-freeze-v3-and-windows-parity` 브랜치의 v3 번들 변경(`01b16d1`) 이전 커밋에서
+임시 git worktree를 만들어 실행했다. 콜드 빌드.
+
+```
+✔ Test run with 459 tests in 69 suites passed after 12.949 seconds.
+EXIT_STATUS:0
+```
+
+### 변경 후 (현재 HEAD, 커밋 3c01371)
+
+v3 번들 변경이 포함된 현재 HEAD에서 실행. `StylesV3BundleTests` 5개가 추가되어 464개 검사.
+
+```
+✔ Suite StylesV3BundleTests passed after 0.771 seconds.
+✔ Test run with 464 tests in 70 suites passed after 8.310 seconds.
+EXIT_STATUS:0
+```
+
+`StylesV3BundleTests` 상세:
+
+```
+✔ Test ouroborosDeclaresSixPhasesInOrder() passed after 0.761 seconds.
+✔ Test styleLaunchWiringBindsRunWindowAfterApproval() passed after 0.761 seconds.
+✔ Test hundredAndFirstActionIsRejectedWithELimit() passed after 0.761 seconds.
+✔ Test styleLaunchWiringDoesNotCopyWorkspaceManifests() passed after 0.762 seconds.
+✔ Test styleLaunchWiringBlocksTitlePrefixForOrdinaryRunWindows() passed after 0.762 seconds.
+```
+
+두 실행 모두 600초 타임아웃 이내에 완료되었고, 어느 실행도 hung 처리하지 않았다.
+
 ## 재현
 
 로컬(현재 통과, 대조군):
