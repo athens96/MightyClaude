@@ -82,18 +82,4 @@ public sealed partial class MainWindow
     }
     private Task RenameWorkspace(string id) => Act(async () => { if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id) is not { } workspace) return; if (await AskName("워크스페이스 이름", workspace.Name) is { } name) { await service.UpdateAsync(s => s with { Workspaces = s.Workspaces.Select(w => w.Id == id ? w with { Name = name } : w).ToList() }); Render(); } });
     private Task RenameSession(string id) => Act(async () => { if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } session) return; if (await AskName("실행 창 이름", session.Title) is { } name) { await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Title = name } : p).ToList() }); Render(); } });
-    private Task OpenSettings() => Act(async () =>
-    {
-        var content = new StackPanel { Spacing = 14, MinWidth = 420, MaxWidth = 540 };
-        var theme = new ComboBox { Header = "테마", HorizontalAlignment = HorizontalAlignment.Stretch };
-        theme.Items.Add(new ComboBoxItem { Content = "어둡게", Tag = "dark" }); theme.Items.Add(new ComboBoxItem { Content = "밝게", Tag = "light" }); theme.SelectedIndex = service.Snapshot.Theme == "light" ? 1 : 0;
-        theme.SelectionChanged += async (_, _) => { if (theme.SelectedItem is ComboBoxItem item) await Act(async () => { await service.UpdateAsync(s => s with { Theme = (string)item.Tag }); Render(); }); };
-        content.Children.Add(theme);
-        content.Children.Add(BuildNotificationSettingsSection());
-        content.Children.Add(new TextBlock { Text = "로컬 Claude Code · Codex CLI · Gemini CLI를 그대로 사용합니다. 로그인과 설치는 각 CLI에서 진행하세요.", TextWrapping = TextWrapping.Wrap });
-        content.Children.Add(Button("설치된 실행기 새로고침", RefreshRuntime));
-        foreach (var item in runtime?.Providers ?? []) content.Children.Add(new TextBlock { Text = item.Name + " · " + (item.Available ? item.Version : item.Detail), TextWrapping = TextWrapping.Wrap, FontSize = 12 });
-        content.Children.Add(new TextBlock { Text = "Enter로 전송 · Shift+Enter로 줄바꿈\n탭을 드래그해 합치거나 가장자리로 옮겨 분할합니다.\n명령 실행 창은 명령별 실행이며 대화형 터미널이 아닙니다.", TextWrapping = TextWrapping.Wrap, Opacity = .7, FontSize = 12 });
-        await new ContentDialog { Title = "설정", Content = content, CloseButtonText = "닫기", XamlRoot = root.XamlRoot }.ShowAsync();
-    });
 }
