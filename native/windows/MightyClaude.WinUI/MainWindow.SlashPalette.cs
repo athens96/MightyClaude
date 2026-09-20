@@ -201,9 +201,12 @@ public sealed partial class MainWindow
                 slashDismissedFor = null;
             }
             else slashDismissedFor = choice.Effect == SlashChoiceEffect.ArgumentCompletion ? null : choice.Draft;
+            // Refresh before the async draft save so the palette closes (or
+            // reopens for argument completion) synchronously on this dispatcher
+            // frame, before WaitUI in the smoke check can observe the draft.
+            RefreshPalette(choice.Draft);
             if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
             await SetDraft(choice.Draft);
-            RefreshPalette(input.Text);
             input.Focus(FocusState.Programmatic);
         });
 
