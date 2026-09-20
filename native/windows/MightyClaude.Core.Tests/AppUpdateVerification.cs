@@ -646,9 +646,12 @@ internal static class AppUpdateVerification
         Check(statuses[2] == "42% 받는 중…", "the download sentence must carry the percentage");
         Check(statuses[3] == AppUpdateStrings.StagingProgress, "the staging sentence must be the macOS one");
         Check(statuses[5] == AppUpdateStrings.Installing, "the installing sentence must be the macOS one");
+        Check(statuses[6] == AppUpdateStrings.UpToDate, "the up-to-date sentence must be the macOS one");
+        Check(statuses[7] == "업데이트 확인 중 오류가 발생했습니다.", "the failed state shows the error message");
         Check(buttons.SequenceEqual([
             AppUpdateStrings.InProgressButton, AppUpdateStrings.DownloadButton, AppUpdateStrings.CancelButton,
-            AppUpdateStrings.InProgressButton, AppUpdateStrings.InstallButton, AppUpdateStrings.InProgressButton]),
+            AppUpdateStrings.InProgressButton, AppUpdateStrings.InstallButton, AppUpdateStrings.InProgressButton,
+            AppUpdateStrings.CheckButton, AppUpdateStrings.CheckButton]),
             "the buttons must follow the macOS order: " + string.Join(", ", buttons));
 
         var idle = AppUpdatePresentation.Describe(new(), true, null, _ => "00:00");
