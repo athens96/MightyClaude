@@ -4,7 +4,7 @@
 
 읽는 순서: 스키마(1) → 검증(2) → 출처·신뢰(3·4) → 엔진 API(5) → 앱(6) → 폰(7) → 고정(8) → 테스트(9) → 후속(10) → 부록 A → 구현 순서(11). 부록 A는 네 스타일이 이 스키마로 표현되는지 확인하는 스케치이고, 11장은 이 계약을 서로 부딪히지 않는 세 갈래 작업으로 나눈다.
 
-**범위 밖**: 그래프 레이아웃 엔진·블록 배치·블록 종류(`MightyGraph*`), Windows 클라이언트, 질문 패널(`AgentQuestionPanel`·`QuestionnaireProgress`)의 동작 자체, 원격 워크스페이스, Claude 이외의 프로바이더.
+**범위 밖**: 그래프 레이아웃 엔진·블록 배치·블록 종류(`MightyGraph*`), 질문 패널(`AgentQuestionPanel`·`QuestionnaireProgress`)의 동작 자체, 원격 워크스페이스, Claude 이외의 프로바이더.
 
 **적격성은 매니페스트가 정하지 않는다.** 가이드 스타일은 언제나 *로컬 워크스페이스의 Claude 실행 창 + 마이티 보기*에서만 쓸 수 있다(`AppStore+Ouroboros.swift:9-13`, `MobileRemoteSupport.swift:104-107`). 스키마에 적격성 필드는 없다.
 

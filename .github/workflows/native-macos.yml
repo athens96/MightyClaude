@@ -1,4 +1,4 @@
-name: Native clients
+name: Native clients — macOS
 on:
   push:
   pull_request:
@@ -16,10 +16,10 @@ jobs:
       - name: Check the manifest-only freeze after the tag
         run: |
           set -euo pipefail
-          if git rev-parse -q --verify refs/tags/mighty-style-engine-v2 >/dev/null; then
+          if git rev-parse -q --verify refs/tags/mighty-style-engine-v3 >/dev/null; then
             bash scripts/check-style-freeze.sh
           else
-            echo "mighty-style-engine-v2 태그가 아직 없어 고정 검사를 건너뜁니다."
+            echo "mighty-style-engine-v3 태그가 아직 없어 고정 검사를 건너뜁니다."
           fi
       - name: Report the selected Apple toolchain
         run: |
@@ -81,42 +81,3 @@ jobs:
             release/latest.json
             release/latest.unsigned.json
           if-no-files-found: error
-  windows:
-    name: Windows ${{ matrix.architecture }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - architecture: x64
-            runner: windows-2025
-          - architecture: arm64
-            runner: windows-11-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - name: Test core and publish self-contained WinUI folder and ZIP
-        shell: pwsh
-        run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release
-      - name: Launch native WinUI with an isolated profile and capture GUI evidence
-        shell: pwsh
-        timeout-minutes: 4
-        run: ./scripts/test-native-windows.ps1 -Executable ./release/native-windows-${{ matrix.architecture }}/MightyClaude.exe -ProfileDirectory "$env:RUNNER_TEMP/mighty-windows-smoke-${{ matrix.architecture }}"
-      - name: Upload distributable
-        uses: actions/upload-artifact@v4
-        with:
-          name: MightyClaude-native-windows-${{ matrix.architecture }}
-          path: |
-            release/MightyClaude-windows-${{ matrix.architecture }}.zip
-            release/MightyClaude-windows-${{ matrix.architecture }}.zip.sha256
-          if-no-files-found: error
-      - name: Upload isolated GUI result and screenshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: MightyClaude-windows-${{ matrix.architecture }}-smoke
-          path: ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/
-          if-no-files-found: warn

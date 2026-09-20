@@ -4,7 +4,7 @@
 
 **Claude Code · Codex CLI · Gemini CLI를 하나의 워크스페이스에서 사용하는 네이티브 데스크톱 ADE입니다.**
 
-[네이티브 빌드](https://github.com/athens96/MightyClaude/actions/workflows/native.yml) · [검증 기록](docs/native-verification.md) · [원격 연결](docs/remote-workspaces.md)
+[macOS 빌드](https://github.com/athens96/MightyClaude/actions/workflows/native-macos.yml) · [Windows 빌드](https://github.com/athens96/MightyClaude/actions/workflows/native-windows.yml) · [검증 기록](docs/native-verification.md) · [원격 연결](docs/remote-workspaces.md)
 
 - **macOS:** Swift + SwiftUI/AppKit
 - **Windows:** C# + .NET 10 + WinUI 3, x64·ARM64
@@ -15,7 +15,7 @@
 
 ## 다운로드와 실행
 
-[Native clients 빌드 목록](https://github.com/athens96/MightyClaude/actions/workflows/native.yml)에서 해당 운영체제·아키텍처 작업이 성공한 실행을 열고 **Artifacts**의 파일을 내려받습니다. 각 배포 파일은 해당 플랫폼의 빌드·실행 검사를 통과한 경우에만 올라갑니다. GitHub 로그인이 필요할 수 있습니다.
+[Native clients — macOS](https://github.com/athens96/MightyClaude/actions/workflows/native-macos.yml)·[Native clients — Windows](https://github.com/athens96/MightyClaude/actions/workflows/native-windows.yml) 빌드 목록에서 해당 운영체제·아키텍처 작업이 성공한 실행을 열고 **Artifacts**의 파일을 내려받습니다. 각 배포 파일은 해당 플랫폼의 빌드·실행 검사를 통과한 경우에만 올라갑니다. GitHub 로그인이 필요할 수 있습니다.
 
 Windows 기본판: [x64 다운로드](https://github.com/athens96/MightyClaude/actions/runs/35166591891/artifacts/10474998648) · [ARM64 다운로드](https://github.com/athens96/MightyClaude/actions/runs/35166591891/artifacts/10474839262) — `d5dd549` 빌드, 두 아키텍처 모두 실행 검사 통과.
 
