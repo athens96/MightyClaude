@@ -35,6 +35,7 @@ public sealed partial class MainWindow
         SettingsSections.Display => BuildDisplaySection,
         SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
         SettingsSections.Providers => BuildProvidersSection,
+        SettingsSections.CliAccounts => BuildCliAccountsSectionFromState,
         SettingsSections.AppInfo => BuildAppInfoSection,
         _ => throw new InvalidOperationException("no Settings builder registered for slot " + slotId),
     };
@@ -44,6 +45,22 @@ public sealed partial class MainWindow
         var content = new StackPanel { Spacing = 0, MinWidth = 420, MaxWidth = 540 };
         foreach (var section in GetSettingsSections())
             content.Children.Add(BuildSectionContainer(section.Title, section.Build()));
+
+        // The CLI account statuses are read when the section opens, and its rows
+        // are replaced as soon as the answers arrive — Settings never waits on a
+        // CLI. The smoke run injects fixtures instead and starts no CLI at all.
+        if (!options.SmokeTest)
+        {
+            var accountsSlot = content.Children.OfType<StackPanel>().FirstOrDefault(wrapper =>
+                wrapper.Children.OfType<TextBlock>().FirstOrDefault()?.Text == CliAccountStrings.SectionTitle);
+            if (accountsSlot is not null)
+                _ = RefreshCliAccounts().ContinueWith(_ => DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (accountsSlot.Children.Count > 1)
+                        accountsSlot.Children[1] = BuildCliAccountsSectionFromState();
+                }), TaskScheduler.Default);
+        }
+
         var scroll = new ScrollViewer
         {
             Content = content,
@@ -196,6 +213,119 @@ public sealed partial class MainWindow
             });
         return panel;
     }
+
+    // CLI 계정 — who each CLI is signed in as, and the sign-in / change / sign-out
+    // buttons. Every decision (what the row says, whether sign-out may be offered,
+    // which command a button runs, how the terminal is started) comes from Core;
+    // this method only renders state and forwards the click. No Korean literal is
+    // typed here — the copy is CliAccountStrings.
+    private StackPanel BuildCliAccountsSectionFromState() =>
+        BuildCliAccountsSection(CliAccountProviders.Select(p =>
+            accountsCoordinator.Statuses.TryGetValue(p, out var status)
+                ? status
+                : new CliAccountStatus { Provider = p, Detail = CliAccountStrings.StatusChecking }).ToArray());
+
+    internal static readonly string[] CliAccountProviders = ["claude", "codex", "gemini"];
+    internal const string AccountRowIdPrefix = "cli-account-row-";
+
+    // Called by OpenSettings (via BuildCliAccountsSectionFromState) and by the smoke
+    // check, which hands it fixture statuses instead of live ones.
+    internal StackPanel BuildCliAccountsSection(IReadOnlyList<CliAccountStatus> statuses)
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = CliAccountStrings.SectionDescription,
+            FontSize = 12,
+            Opacity = .7,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        foreach (var status in statuses)
+        {
+            var row = new StackPanel { Spacing = 4 };
+            AutomationProperties.SetAutomationId(row, AccountRowIdPrefix + status.Provider);
+            row.Children.Add(new TextBlock
+            {
+                Text = CliUpdateService.ProviderLabel(status.Provider),
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            // Not installed shows 미설치; otherwise the summary, which already reads
+            // "account · plan · method", 로그인되지 않음, or the unknown sentence.
+            row.Children.Add(new TextBlock
+            {
+                Text = status.Installed ? status.Summary : CliAccountStrings.StatusNotInstalled,
+                FontSize = 12,
+                Opacity = .8,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            if (status.Installed)
+            {
+                var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                if (status.LoggedIn == true)
+                {
+                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonChange,
+                        () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
+                    // Sign-out is offered only where the app can undo the sign-in.
+                    if (status.CanSignOut)
+                        buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLogout,
+                            () => ConfirmCliSignOut(status.Provider)));
+                }
+                else if (status.Provider == "claude")
+                {
+                    // Claude signs in two ways: the subscription or the API-billed console.
+                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLoginClaude,
+                        () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
+                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLoginConsole,
+                        () => StartCliSignIn(status.Provider, CliLoginOption.Console)));
+                }
+                else
+                {
+                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLogin,
+                        () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
+                }
+                if (buttons.Children.Count > 0) row.Children.Add(buttons);
+            }
+            panel.Children.Add(row);
+        }
+        return panel;
+    }
+
+    // Opens the external sign-in terminal and refreshes the status when it closes.
+    // The app never types or receives credentials; it only starts the CLI's own
+    // login command. The terminal rule lives in Core (CliAccountTerminal).
+    private async Task StartCliSignIn(string provider, CliLoginOption option)
+    {
+        if (CliAccountSupport.LoginArguments(provider, option) is not { } argv) return;
+        await accountsCoordinator.StartSignInAsync(argv);
+        await RefreshCliAccounts();
+    }
+
+    // The macOS confirmation: the stored sign-in of that CLI is removed, and this
+    // also applies to the CLI used directly in a terminal.
+    private async Task ConfirmCliSignOut(string provider)
+    {
+        var label = CliUpdateService.ProviderLabel(provider);
+        var dialog = new ContentDialog
+        {
+            Title = CliAccountStrings.ConfirmLogoutTitleTemplate.Replace("{provider}", label),
+            Content = new TextBlock
+            {
+                Text = CliAccountStrings.ConfirmMessageTemplate.Replace("{provider}", label),
+                TextWrapping = TextWrapping.Wrap,
+            },
+            PrimaryButtonText = CliAccountStrings.ButtonLogout,
+            CloseButtonText = CliAccountStrings.ButtonCancel,
+            XamlRoot = root.XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        await accountsCoordinator.LogoutAsync(provider);
+    }
+
+    // Read the statuses when the section opens and after a sign-in terminal closes.
+    internal Task RefreshCliAccounts() => accountsCoordinator.RefreshAsync(CliAccountProviders);
 
     // 앱 정보 — usage notes; behaviour unchanged.
     private StackPanel BuildAppInfoSection()

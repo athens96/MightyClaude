@@ -33,13 +33,15 @@ API 키(환경 변수) 또는 Vertex AI로 로그인된 경우 `canSignOut = fal
 
 로그인과 계정 변경은 외부 Windows 터미널 창을 열어 CLI 자체의 로그인 명령을 실행한다.
 
-**사용 규칙**: `ProcessStartInfo(FileName = command[0], Arguments = ..., UseShellExecute = true)`로
-실행하고, `FileName`에는 고정된 CLI 이름(claude·codex·gemini)만 넣는다. 신뢰할 수 없는
-문자열로 명령줄을 조립하지 않는다.
+**사용 규칙** (`CliAccountTerminal.LaunchPlan`): PATH에 `wt`(Windows Terminal)가 있으면
+`wt.exe new-tab -- <로그인 argv>`, 없으면 `conhost.exe <로그인 argv>`로 연다. argv는 언제나
+`ProcessStartInfo.ArgumentList`에 **원소별로** 넣고, 신뢰할 수 없는 문자열로 명령줄을
+조립하지 않는다.
 
 **이유**: macOS는 앱 내 터미널 실행 패널을 쓰지만 Windows의 인터랙티브 PTY 터미널은
-이후 단계(인터랙티브 터미널 기능) 항목이므로, 현 단계에서는 셸이 이미 열려 있는 외부
-터미널 창에 CLI를 실행하는 것이 가장 간결하고 안전하다.
+이후 단계(인터랙티브 터미널 기능) 항목이므로, 현 단계에서는 사용자가 실제로 쓰는
+콘솔(Windows Terminal, 없으면 기본 호스트 `conhost`)에 CLI를 띄우는 것이 가장 간결하고
+안전하다. 명령줄 문자열을 거치지 않으므로 인용 규칙을 통한 인자 주입이 생길 수 없다.
 
 로그인 명령:
 - `claude auth login` / `claude auth login --console`
@@ -73,3 +75,15 @@ WinUI는 한국어 문자를 직접 쓰지 않는다.
 - 실제 `claude auth login` 브라우저 흐름이 외부 터미널 창에서 완료되는지
 - 실제 Gemini OAuth 로그아웃이 앱의 파일 변경과 일치하는지
 - Windows 터미널 선택 및 시작 동작 (인터랙티브 터미널 기능이 구현된 후 재검토)
+
+## 화면 등록
+
+`SettingsSections`(Core)의 `cliAccounts` 슬롯에 제목을 주는 한 줄로 등록되어, macOS와
+같이 **CLI 업데이트 섹션 다음**에 놓인다. 기존 섹션의 제목과 순서는 바뀌지 않는다
+(`settings sections …` 검사).
+
+화면은 `native/windows/MightyClaude.WinUI/MainWindow.Settings.cs`의
+`BuildCliAccountsSection`이 그린다. 실행 중인 앱은 Core의 `CliAccountsCoordinator`를
+들고 있으며, 섹션이 열릴 때와 로그인 터미널이 닫힌 뒤 상태를 다시 읽고, 섹션의 버튼이
+이 코디네이터를 호출한다. 설치되지 않은 CLI는 `미설치`로, 나머지는 요약
+(`계정 · 플랜 · 방식`)으로 보여준다. 로그아웃 버튼은 `canSignOut`이 true일 때만 나온다.

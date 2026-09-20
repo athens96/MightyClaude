@@ -393,6 +393,20 @@ public sealed class CliAccountsCoordinator
         return CliAccountSupport.ParseCodexStatus(text, authJson);
     }
 
+    /// Opens the external sign-in terminal on the CLI's own login command and
+    /// returns when the user closes that window. The app never types or receives
+    /// credentials; it only starts the command. The argv is handed over as a
+    /// separate argument list, so no command line is built from text.
+    public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default)
+    {
+        var plan = CliAccountTerminal.LaunchPlan(loginArgv, FindBinary("wt") is not null);
+        var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
+        foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
+        using var process = System.Diagnostics.Process.Start(info);
+        if (process is null) return;
+        await process.WaitForExitAsync(cancellation);
+    }
+
     public async Task<CliAccountStatus> LogoutAsync(string provider, CancellationToken cancellation = default)
     {
         if (provider == "gemini")

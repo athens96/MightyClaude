@@ -165,6 +165,23 @@ internal static class CliAccountVerification
         Check(CliAccountSupport.LogoutArguments("codex")!.SequenceEqual(["codex", "logout"]), "codex: logout argv");
         Check(CliAccountSupport.LogoutArguments("gemini") == null, "gemini: no logout argv");
 
+        // The external sign-in terminal carries the CLI's own argv as a separate
+        // argument list — never a command line composed from text.
+        var login = CliAccountSupport.LoginArguments("claude", CliLoginOption.Console)!;
+        var wt = CliAccountTerminal.LaunchPlan(login, windowsTerminalAvailable: true);
+        Check(wt.Executable == "wt.exe", "terminal: Windows Terminal preferred when available");
+        Check(wt.Arguments.SequenceEqual(["new-tab", "--", "claude", "auth", "login", "--console"]),
+            "terminal: wt passes the login argv after --");
+        var fallback = CliAccountTerminal.LaunchPlan(login, windowsTerminalAvailable: false);
+        Check(fallback.Executable == "conhost.exe", "terminal: console host is the fallback");
+        Check(fallback.Arguments.SequenceEqual(login), "terminal: fallback passes the login argv unchanged");
+        // Every element stays its own argument, so no argument can be smuggled in.
+        Check(wt.Arguments.Concat(fallback.Arguments).All(a => !a.Contains(' ')), "terminal: arguments are not joined");
+        var rejected = false;
+        try { CliAccountTerminal.LaunchPlan([], windowsTerminalAvailable: false); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "terminal: an empty login command is refused");
+
         return Task.CompletedTask;
     }
 
