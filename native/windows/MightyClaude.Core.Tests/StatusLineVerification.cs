@@ -127,8 +127,66 @@ internal static class StatusLineVerification
         return Task.CompletedTask;
     }
 
-    // Payload uses the CLI's own field names and nesting — same keys, same types, same omission rules as macOS.
+    // The context the macOS check builds, shared by every "status line payload" check so
+    // they all assert the macOS shape against the same input.
     // Mirrors macOS payloadUsesTheCLIsFieldNamesAndTranscriptLayout literally.
+    private static StatusLineContext MacOSShapeContext(string reset) => new(
+        SessionId: "sess",
+        Cwd: "/repo",
+        ProjectDir: "/repo",
+        ModelId: "claude-fable-5-1",
+        ModelName: "Fable 5.1",
+        Version: "2.1.274",
+        CostUSD: 1.5,
+        DurationMs: 4000,
+        ApiDurationMs: 0,
+        InputTokens: 120_000,
+        OutputTokens: 3000,
+        CacheReadTokens: 100_000,
+        CacheWriteTokens: 5000,
+        ContextUsedTokens: 150_000,
+        ContextWindowTokens: 1_000_000,
+        Effort: "high",
+        FastMode: true,
+        RateLimits:
+        [
+            new SessionRateLimit("five_hour", 42.5, reset),
+            new SessionRateLimit("seven_day", 12.0, "2000-01-01T00:00:00Z"),
+            new SessionRateLimit("other", 1.0),
+        ],
+        OutputStyle: null,
+        ThinkingEnabled: null,
+        TranscriptPath: StatusLineSupport.TranscriptPath("/Users/me/.claude", "/repo", "sess")
+    );
+
+    // Nothing measured yet — the shape the pane sends before the first turn.
+    private static StatusLineContext EmptyContext() => new(
+        SessionId: "s", Cwd: "/r", ProjectDir: "/r",
+        ModelId: "default", ModelName: "CLI 기본값", Version: "",
+        CostUSD: null, DurationMs: null, ApiDurationMs: null,
+        InputTokens: null, OutputTokens: null, CacheReadTokens: null,
+        CacheWriteTokens: null, ContextUsedTokens: null, ContextWindowTokens: null,
+        Effort: null, FastMode: false, RateLimits: null,
+        OutputStyle: null, ThinkingEnabled: null,
+        TranscriptPath: StatusLineSupport.TranscriptPath("/Users/me/.claude", "/r", "s"));
+
+    private static JsonElement Payload(StatusLineContext ctx) =>
+        JsonDocument.Parse(StatusLineSupport.BuildPayload(ctx)).RootElement.Clone();
+
+    private static string ResetInAnHour() => DateTimeOffset.UtcNow.AddHours(1).ToString("o");
+
+    private static string[] Keys(JsonElement element) =>
+        element.EnumerateObject().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+
+    private static void CheckKeys(JsonElement element, string[] expected, string what)
+    {
+        var actual = Keys(element);
+        var wanted = expected.OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        Check(actual.SequenceEqual(wanted), $"{what} keys are [{string.Join(", ", wanted)}] but were [{string.Join(", ", actual)}]");
+    }
+
+    // Identity block: hook_event_name/session_id/transcript_path/cwd/model/workspace/version,
+    // with the CLI's transcript layout (<config>/projects/<slug>/<session>.jsonl).
     internal static Task StatusLinePayloadUsesTheCLIsFieldNamesAndTranscriptLayout()
     {
         // Transcript path: every non-alphanumeric → '-', leading dash kept (no trimming), first 200 chars.
@@ -137,70 +195,64 @@ internal static class StatusLineVerification
         Check(StatusLineSupport.TranscriptPath("/cfg", "/x", "s")
             == "/cfg/projects/-x/s.jsonl", "transcript path with env config dir");
 
-        var reset = DateTimeOffset.UtcNow.AddHours(1).ToString("o");
-        var ctx = new StatusLineContext(
-            SessionId: "sess",
-            Cwd: "/repo",
-            ProjectDir: "/repo",
-            ModelId: "claude-fable-5-1",
-            ModelName: "Fable 5.1",
-            Version: "2.1.274",
-            CostUSD: 1.5,
-            DurationMs: 4000,
-            ApiDurationMs: 0,
-            InputTokens: 120_000,
-            OutputTokens: 3000,
-            CacheReadTokens: 100_000,
-            CacheWriteTokens: 5000,
-            ContextUsedTokens: 150_000,
-            ContextWindowTokens: 1_000_000,
-            Effort: "high",
-            FastMode: true,
-            RateLimits:
-            [
-                new SessionRateLimit("five_hour", 42.5, reset),
-                new SessionRateLimit("seven_day", 12.0, "2000-01-01T00:00:00Z"),
-                new SessionRateLimit("other", 1.0),
-            ],
-            OutputStyle: null,
-            ThinkingEnabled: null,
-            TranscriptPath: StatusLineSupport.TranscriptPath("/Users/me/.claude", "/repo", "sess")
-        );
+        var r = Payload(MacOSShapeContext(ResetInAnHour()));
 
-        var json = StatusLineSupport.BuildPayload(ctx);
-        var r = JsonDocument.Parse(json).RootElement;
-
-        // Top-level hook and identity
         Check(r.GetProperty("hook_event_name").GetString() == "Status", "hook_event_name must be Status");
         Check(r.GetProperty("session_id").GetString() == "sess", "session_id");
         Check(r.GetProperty("version").GetString() == "2.1.274", "version");
+        Check(r.GetProperty("cwd").GetString() == "/repo", "cwd");
+        Check(r.GetProperty("transcript_path").GetString()
+            == "/Users/me/.claude/projects/-repo/sess.jsonl", "transcript_path");
 
-        // model is an object {id, display_name}
+        // model is an object {id, display_name} — never a bare string.
         var model = r.GetProperty("model");
+        Check(model.ValueKind == JsonValueKind.Object, "model is an object not a string");
+        CheckKeys(model, ["id", "display_name"], "model");
         Check(model.GetProperty("id").GetString() == "claude-fable-5-1", "model.id");
         Check(model.GetProperty("display_name").GetString() == "Fable 5.1", "model.display_name");
 
         // workspace is an object {current_dir, project_dir}
         var ws = r.GetProperty("workspace");
+        CheckKeys(ws, ["current_dir", "project_dir"], "workspace");
         Check(ws.GetProperty("current_dir").GetString() == "/repo", "workspace.current_dir");
         Check(ws.GetProperty("project_dir").GetString() == "/repo", "workspace.project_dir");
+        return Task.CompletedTask;
+    }
 
-        // cost object with five fields
+    // cost is the CLI's five-field object (never a flat cost_usd), and fast_mode is a top-level bool.
+    internal static Task StatusLinePayloadNestsCostAndFastModeLikeTheCLI()
+    {
+        var r = Payload(MacOSShapeContext(ResetInAnHour()));
+
+        Check(!r.TryGetProperty("cost_usd", out _), "no flat cost_usd key");
         var cost = r.GetProperty("cost");
+        Check(cost.ValueKind == JsonValueKind.Object, "cost is an object");
+        CheckKeys(cost, ["total_cost_usd", "total_duration_ms", "total_api_duration_ms", "total_lines_added", "total_lines_removed"], "cost");
         Check(cost.GetProperty("total_cost_usd").GetDouble() == 1.5, "cost.total_cost_usd");
         Check(cost.GetProperty("total_duration_ms").GetInt64() == 4000, "cost.total_duration_ms");
+        Check(cost.GetProperty("total_api_duration_ms").GetInt64() == 0, "cost.total_api_duration_ms");
         Check(cost.GetProperty("total_lines_added").GetInt32() == 0, "cost.total_lines_added");
         Check(cost.GetProperty("total_lines_removed").GetInt32() == 0, "cost.total_lines_removed");
 
-        // fast_mode and exceeds_200k_tokens
-        Check(r.GetProperty("fast_mode").GetBoolean() == true, "fast_mode");
-        Check(r.GetProperty("exceeds_200k_tokens").GetBoolean() == false, "exceeds_200k_tokens for 150k/1M");
+        Check(r.GetProperty("fast_mode").ValueKind == JsonValueKind.True, "fast_mode is a bool true");
 
-        // effort as object {level}
-        Check(r.GetProperty("effort").GetProperty("level").GetString() == "high", "effort.level");
+        // Unmeasured cost is zero, not null and not missing (macOS: costUSD ?? 0).
+        var ec = Payload(EmptyContext()).GetProperty("cost");
+        Check(ec.GetProperty("total_cost_usd").GetDouble() == 0, "empty: cost.total_cost_usd is 0");
+        Check(ec.GetProperty("total_duration_ms").GetInt64() == 0, "empty: cost.total_duration_ms is 0");
+        Check(Payload(EmptyContext()).GetProperty("fast_mode").ValueKind == JsonValueKind.False, "empty: fast_mode false");
+        return Task.CompletedTask;
+    }
 
-        // context_window always present with total_input_tokens, total_output_tokens, context_window_size
+    // context_window is always present; current_usage/used_percentage/remaining_percentage are
+    // JSON null (not missing) when nothing is measured, and exceeds_200k_tokens follows the used tokens.
+    internal static Task StatusLinePayloadNestsTheContextWindowLikeTheCLI()
+    {
+        var ctx = MacOSShapeContext(ResetInAnHour());
+        var r = Payload(ctx);
+
         var cw = r.GetProperty("context_window");
+        CheckKeys(cw, ["total_input_tokens", "total_output_tokens", "context_window_size", "current_usage", "used_percentage", "remaining_percentage"], "context_window");
         Check(cw.GetProperty("context_window_size").GetInt64() == 1_000_000, "context_window_size");
         Check(cw.GetProperty("total_input_tokens").GetInt64() == 120_000, "total_input_tokens");
         Check(cw.GetProperty("total_output_tokens").GetInt64() == 3000, "total_output_tokens");
@@ -208,55 +260,103 @@ internal static class StatusLineVerification
         Check(Math.Abs(cw.GetProperty("used_percentage").GetDouble() - 15.0) < 0.01, "used_percentage 15%");
         Check(Math.Abs(cw.GetProperty("remaining_percentage").GetDouble() - 85.0) < 0.01, "remaining_percentage 85%");
 
-        // current_usage describes the context window (input_tokens = contextUsedTokens, others 0)
+        // current_usage describes the context itself (input_tokens = contextUsedTokens, others 0).
         var usage = cw.GetProperty("current_usage");
+        CheckKeys(usage, ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"], "current_usage");
         Check(usage.GetProperty("input_tokens").GetInt64() == 150_000, "current_usage.input_tokens");
         Check(usage.GetProperty("output_tokens").GetInt64() == 0, "current_usage.output_tokens");
         Check(usage.GetProperty("cache_read_input_tokens").GetInt64() == 0, "current_usage.cache_read_input_tokens");
         Check(usage.GetProperty("cache_creation_input_tokens").GetInt64() == 0, "current_usage.cache_creation_input_tokens");
 
+        // Nothing measured yet: the section stays, its optional numbers are JSON null.
+        var ew = Payload(EmptyContext()).GetProperty("context_window");
+        Check(ew.GetProperty("context_window_size").GetInt64() == 200_000, "empty: default context_window_size 200k");
+        Check(ew.GetProperty("used_percentage").ValueKind == JsonValueKind.Null, "empty: used_percentage is null not missing");
+        Check(ew.GetProperty("remaining_percentage").ValueKind == JsonValueKind.Null, "empty: remaining_percentage is null not missing");
+        Check(ew.GetProperty("current_usage").ValueKind == JsonValueKind.Null, "empty: current_usage is null not missing");
+
+        Check(r.GetProperty("exceeds_200k_tokens").GetBoolean() == false, "exceeds_200k_tokens for 150k/1M");
+        Check(Payload(ctx with { ContextUsedTokens = 250_000 }).GetProperty("exceeds_200k_tokens").GetBoolean(),
+            "exceeds_200k_tokens when used>200k");
+        Check(Payload(EmptyContext()).GetProperty("exceeds_200k_tokens").GetBoolean() == false, "empty: exceeds_200k_tokens false");
+        return Task.CompletedTask;
+    }
+
+    // Optional sections are omitted rather than guessed, and carry the CLI's nesting when set.
+    internal static Task StatusLinePayloadOmitsUnknownSectionsLikeTheCLI()
+    {
+        var ctx = MacOSShapeContext(ResetInAnHour());
+        var r = Payload(ctx);
+
         // output_style and thinking omitted when null
         Check(!r.TryGetProperty("output_style", out _), "output_style omitted when null");
         Check(!r.TryGetProperty("thinking", out _), "thinking omitted when null");
 
-        // output_style and thinking present when set
-        var styled = ctx with { OutputStyle = "Explanatory", ThinkingEnabled = false };
-        var sr = JsonDocument.Parse(StatusLineSupport.BuildPayload(styled)).RootElement;
+        // output_style {name} and thinking {enabled} when set
+        var sr = Payload(ctx with { OutputStyle = "Explanatory", ThinkingEnabled = false });
+        CheckKeys(sr.GetProperty("output_style"), ["name"], "output_style");
         Check(sr.GetProperty("output_style").GetProperty("name").GetString() == "Explanatory", "output_style.name");
+        CheckKeys(sr.GetProperty("thinking"), ["enabled"], "thinking");
         Check(sr.GetProperty("thinking").GetProperty("enabled").GetBoolean() == false, "thinking.enabled=false");
-        var styledOn = ctx with { OutputStyle = "Explanatory", ThinkingEnabled = true };
-        var son = JsonDocument.Parse(StatusLineSupport.BuildPayload(styledOn)).RootElement;
-        Check(son.GetProperty("thinking").GetProperty("enabled").GetBoolean() == true, "thinking.enabled=true");
+        Check(Payload(ctx with { ThinkingEnabled = true }).GetProperty("thinking").GetProperty("enabled").GetBoolean(), "thinking.enabled=true");
 
-        // rate_limits is an object keyed by canonical kind (first match, past resetsAt skipped, unknown skipped)
+        // effort is an object {level}, only for the levels the CLI knows
+        CheckKeys(r.GetProperty("effort"), ["level"], "effort");
+        Check(r.GetProperty("effort").GetProperty("level").GetString() == "high", "effort.level");
+        Check(!Payload(ctx with { Effort = "turbo" }).TryGetProperty("effort", out _), "unknown effort level omitted");
+
+        // Nothing measured yet: effort and rate_limits absent entirely
+        var er = Payload(EmptyContext());
+        Check(!er.TryGetProperty("effort", out _), "empty: effort absent");
+        Check(!er.TryGetProperty("rate_limits", out _), "empty: rate_limits absent");
+        return Task.CompletedTask;
+    }
+
+    // rate_limits is an object keyed by canonical kind (first match wins, a past resetsAt and an
+    // unknown kind are skipped, resets_at is a unix timestamp integer).
+    internal static Task StatusLinePayloadKeysRateLimitsByCanonicalKind()
+    {
+        var r = Payload(MacOSShapeContext(ResetInAnHour()));
         var rl = r.GetProperty("rate_limits");
         Check(rl.ValueKind == JsonValueKind.Object, "rate_limits is an object not an array");
+        CheckKeys(rl, ["five_hour"], "rate_limits");
         Check(rl.GetProperty("five_hour").GetProperty("used_percentage").GetDouble() == 42.5, "five_hour.used_percentage");
         Check(rl.GetProperty("five_hour").TryGetProperty("resets_at", out var resetsAt) && resetsAt.ValueKind == JsonValueKind.Number, "five_hour.resets_at is a unix timestamp integer");
         Check(!rl.TryGetProperty("seven_day", out _), "seven_day absent (resetsAt in the past)");
         Check(!rl.TryGetProperty("other", out _), "unknown kind omitted");
 
-        // Nothing measured yet: context_window always present, current_usage/used_percentage are JSON null
-        var empty = new StatusLineContext(
-            SessionId: "s", Cwd: "/r", ProjectDir: "/r",
-            ModelId: "default", ModelName: "CLI 기본값", Version: "",
-            CostUSD: null, DurationMs: null, ApiDurationMs: null,
-            InputTokens: null, OutputTokens: null, CacheReadTokens: null,
-            CacheWriteTokens: null, ContextUsedTokens: null, ContextWindowTokens: null,
-            Effort: null, FastMode: false, RateLimits: null,
-            OutputStyle: null, ThinkingEnabled: null, TranscriptPath: null);
-        var er = JsonDocument.Parse(StatusLineSupport.BuildPayload(empty)).RootElement;
-        var ew = er.GetProperty("context_window");
-        Check(ew.GetProperty("used_percentage").ValueKind == JsonValueKind.Null, "empty: used_percentage is null not missing");
-        Check(ew.GetProperty("current_usage").ValueKind == JsonValueKind.Null, "empty: current_usage is null not missing");
-        Check(!er.TryGetProperty("rate_limits", out _), "empty: rate_limits absent");
-        Check(!er.TryGetProperty("effort", out _), "empty: effort absent");
+        // The CLI's aliases collapse onto the same two keys.
+        var reset = ResetInAnHour();
+        var aliased = Payload(MacOSShapeContext(reset) with
+        {
+            RateLimits = [new SessionRateLimit("session", 10.0, reset), new SessionRateLimit("weekly", 20.0, reset)],
+        }).GetProperty("rate_limits");
+        CheckKeys(aliased, ["five_hour", "seven_day"], "aliased rate_limits");
+        Check(aliased.GetProperty("five_hour").GetProperty("used_percentage").GetDouble() == 10.0, "session → five_hour");
+        Check(aliased.GetProperty("seven_day").GetProperty("used_percentage").GetDouble() == 20.0, "weekly → seven_day");
 
-        // exceeds_200k_tokens true when contextUsedTokens > 200k
-        var over = ctx with { ContextUsedTokens = 250_000, ContextWindowTokens = 1_000_000 };
-        Check(JsonDocument.Parse(StatusLineSupport.BuildPayload(over)).RootElement
-            .GetProperty("exceeds_200k_tokens").GetBoolean() == true, "exceeds_200k_tokens when used>200k");
+        // A limit with no reset time still reports its percentage, with no resets_at.
+        var noReset = Payload(MacOSShapeContext(reset) with { RateLimits = [new SessionRateLimit("5h", 7.5)] }).GetProperty("rate_limits");
+        CheckKeys(noReset.GetProperty("five_hour"), ["used_percentage"], "rate limit without a reset time");
+        return Task.CompletedTask;
+    }
 
+    // The whole top-level key set, literally, in both the measured and the unmeasured shape.
+    internal static Task StatusLinePayloadHasExactlyTheMacOSTopLevelKeys()
+    {
+        var ctx = MacOSShapeContext(ResetInAnHour()) with { OutputStyle = "Explanatory", ThinkingEnabled = true };
+        CheckKeys(Payload(ctx),
+        [
+            "hook_event_name", "session_id", "transcript_path", "cwd", "model", "workspace", "version",
+            "cost", "fast_mode", "output_style", "thinking", "exceeds_200k_tokens", "context_window",
+            "effort", "rate_limits",
+        ], "payload with everything known");
+
+        CheckKeys(Payload(EmptyContext()),
+        [
+            "hook_event_name", "session_id", "transcript_path", "cwd", "model", "workspace", "version",
+            "cost", "fast_mode", "exceeds_200k_tokens", "context_window",
+        ], "payload with nothing measured");
         return Task.CompletedTask;
     }
 

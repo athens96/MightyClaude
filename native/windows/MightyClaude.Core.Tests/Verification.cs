@@ -381,6 +381,11 @@ internal static class Verification
         await Test("status line config follows Claude settings precedence and command-only entries", StatusLineVerification.ConfigFollowsPrecedenceAndOnlyCommandEntries);
         await Test("status line fingerprint matches macOS formula", StatusLineVerification.FingerprintMatchesMacOS);
         await Test("status line payload uses the CLI field names and transcript layout", StatusLineVerification.StatusLinePayloadUsesTheCLIsFieldNamesAndTranscriptLayout);
+        await Test("status line payload nests cost and fast mode like the CLI", StatusLineVerification.StatusLinePayloadNestsCostAndFastModeLikeTheCLI);
+        await Test("status line payload nests the context window like the CLI", StatusLineVerification.StatusLinePayloadNestsTheContextWindowLikeTheCLI);
+        await Test("status line payload omits unknown sections like the CLI", StatusLineVerification.StatusLinePayloadOmitsUnknownSectionsLikeTheCLI);
+        await Test("status line payload keys rate limits by canonical kind", StatusLineVerification.StatusLinePayloadKeysRateLimitsByCanonicalKind);
+        await Test("status line payload has exactly the macOS top-level keys", StatusLineVerification.StatusLinePayloadHasExactlyTheMacOSTopLevelKeys);
         await Test("status line ANSI parsing keeps colours weight and strips other escapes", StatusLineVerification.AnsiParsingKeepsColoursWeightAndStripsEscapes);
         await Test("status line parses 256-colour and RGB like macOS", StatusLineVerification.AnsiParsingSupports256ColourAndRgbLikeMacOS);
         await Test("status line palette index maps to the xterm colours", StatusLineVerification.PaletteIndexMapsToXtermColours);
