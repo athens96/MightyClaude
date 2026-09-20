@@ -414,6 +414,9 @@ internal static class Verification
         await Test("completion notification smoke records skipped with a reason", CompletionNotificationVerification.SmokeRecordsSkippedWithAReason);
         await Test("completion notification smoke failure after support is a failure", CompletionNotificationVerification.SmokeFailureAfterSupportIsAFailure);
         await Test("completion notification smoke keeps the saved state version at 1", CompletionNotificationVerification.SmokeKeepsTheSavedStateVersion);
+        await Test("settings preferences missing key keeps default off and version stays 1", SettingsPreferencesVerification.MissingKeyKeepsDefaultOff);
+        await Test("settings preferences explicit on and off persist across state store reloads", SettingsPreferencesVerification.ExplicitOnAndOffPersistAcrossReloads);
+        await Test("settings preferences only JSON booleans enable the setting and malformed values keep sessions", SettingsPreferencesVerification.OnlyJsonBooleansEnableSettingAndMalformedValuesKeepSessions);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
