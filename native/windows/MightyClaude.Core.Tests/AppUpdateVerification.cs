@@ -533,7 +533,7 @@ internal static class AppUpdateVerification
 
             Check(result.Replaced && !result.RolledBack, "the replacement must succeed: " + result.Error);
             Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "new", "the new app must be installed");
-            Check(!Directory.Exists(staged), "the staged folder must have been moved, not copied");
+            Check(Directory.Exists(staged), "the staged folder must remain: the helper runs from it");
             Check(started.SequenceEqual([Path.Combine(install, "MightyClaude.exe")]), "the new app must be started once");
             Check(backupPresentWhenStarted, "the backup must still exist when the new app starts");
             Check(!Directory.Exists(plan.BackupDirectory), "the backup must be removed once the new app has started");
@@ -676,6 +676,105 @@ internal static class AppUpdateVerification
         await Refused(() => AppUpdateSmoke.RunAsync(AppUpdateSmoke.ExpectedStatuses, AppUpdateSmoke.ExpectedButtons, false,
             () => current, value => { current = value; return Task.CompletedTask; }),
             "a key-less build that still checked must fail the smoke run");
+    }
+
+    // — Helper location and copy-based replacement —
+
+    /// StagedHelperExecutable points inside the staged folder, so the running
+    /// app can start the helper from the new version before touching the install.
+    internal static Task AppUpdateHelperExecutableIsInsideTheStagedFolder()
+    {
+        var root = Temp();
+        try
+        {
+            var staged = Path.Combine(root, "staged");
+            var install = Path.Combine(root, "install");
+            var package = Path.Combine(root, "pkg.zip");
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, new string('a', 64), 1, 1);
+            var stagedRoot = Path.GetFullPath(staged.TrimEnd(Path.DirectorySeparatorChar))
+                + Path.DirectorySeparatorChar;
+            Check(Path.GetFullPath(plan.StagedHelperExecutable).StartsWith(stagedRoot, StringComparison.Ordinal),
+                "StagedHelperExecutable must be inside the staged directory");
+            Check(Path.GetFileName(plan.StagedHelperExecutable) == AppUpdateService.ExecutableName,
+                "StagedHelperExecutable must name the application executable");
+            return Task.CompletedTask;
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The helper copies the staged folder to the install path. The staged
+    /// folder remains because the helper is running from it.
+    internal static async Task AppUpdateHelperCopiesTheStagedFolderToTheInstallPath()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+            File.WriteAllText(Path.Combine(staged, "extra.dll"), "extra");
+            Directory.CreateDirectory(Path.Combine(staged, "Assets"));
+            File.WriteAllText(Path.Combine(staged, "Assets", "icon.png"), "icon");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+
+            Check(result.Replaced && !result.RolledBack, "the copy-based replacement must succeed: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "new",
+                "the install must hold the new version");
+            Check(File.Exists(Path.Combine(install, "extra.dll")),
+                "every file in the staged folder must be copied to the install");
+            Check(File.Exists(Path.Combine(install, "Assets", "icon.png")),
+                "nested files must be copied to the install");
+            Check(Directory.Exists(staged),
+                "the staged folder must remain after the replacement: the helper runs from it");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// When a copy fails halfway, the partial install is removed and the backup
+    /// is renamed back so the user keeps the version they had.
+    internal static async Task AppUpdateHelperRollsBackAfterACopyThatFailsHalfWay()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            void HalfWayCopier(string source, string destination)
+            {
+                Directory.CreateDirectory(destination);
+                var exe = Path.Combine(source, AppUpdateService.ExecutableName);
+                if (File.Exists(exe)) File.Copy(exe, Path.Combine(destination, AppUpdateService.ExecutableName));
+                throw new IOException("디스크 공간이 부족해 복사를 중단합니다.");
+            }
+
+            var result = await AppUpdateReplacement.RunAsync(
+                plan, _ => Task.FromResult(true), _ => Task.CompletedTask, HalfWayCopier);
+
+            Check(!result.Replaced && result.RolledBack,
+                "a half-way copy must roll back: " + result.Error);
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "old",
+                "the old install must be restored after the rollback");
+            Check(!Directory.Exists(plan.BackupDirectory),
+                "the backup must be gone after it was renamed back to install");
+            Check(result.Error!.Contains("디스크"),
+                "the error must name the copy failure: " + result.Error);
+        }
+        finally { Directory.Delete(root, true); }
     }
 
     /// The whole pipeline, end to end, against a fixture-signed manifest: check,

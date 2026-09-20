@@ -487,6 +487,9 @@ internal static class Verification
         await Test("app update staging refuses an escaping entry or the wrong package", AppUpdateVerification.StagingRefusesAnEscapingEntryOrTheWrongPackage);
         await Test("app update replacement verifies again and replaces the install", AppUpdateVerification.ReplacementVerifiesAgainAndReplacesTheInstall);
         await Test("app update replacement leaves the install untouched when it cannot proceed", AppUpdateVerification.ReplacementLeavesTheInstallUntouchedWhenItCannotProceed);
+        await Test("app update helper executable is inside the staged folder", AppUpdateVerification.AppUpdateHelperExecutableIsInsideTheStagedFolder);
+        await Test("app update helper copies the staged folder to the install path", AppUpdateVerification.AppUpdateHelperCopiesTheStagedFolderToTheInstallPath);
+        await Test("app update helper rolls back after a copy that fails half way", AppUpdateVerification.AppUpdateHelperRollsBackAfterACopyThatFailsHalfWay);
         await Test("app update automatic check happens at most once a day", AppUpdateVerification.AutomaticCheckHappensAtMostOnceADay);
         await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
         await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);

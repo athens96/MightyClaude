@@ -82,6 +82,11 @@ public sealed record AppUpdateInstallPlan(
         return plan.IsValid ? plan : null;
     }
 
+    /// The executable inside the staged folder that the running app starts as
+    /// the detached helper. The helper runs from here — not from the install
+    /// folder — so the install folder can be renamed aside freely.
+    public string StagedHelperExecutable => Path.Combine(StagedDirectory, AppUpdateService.ExecutableName);
+
     public bool IsValid =>
         !string.IsNullOrEmpty(StagedDirectory) &&
         !string.IsNullOrEmpty(InstallDirectory) &&
@@ -130,11 +135,25 @@ public static class AppUpdateReplacement
     /// which is the only state that needs the backup put back.
     public static bool ShouldRollback(bool backupTaken, bool installed) => backupTaken && !installed;
 
-    /// Removes install-folder backups a previous replacement could not delete.
-    ///
-    /// OS-bound: on Windows the helper runs from the folder it renames to the
-    /// backup, so it cannot delete its own running image. The next start of the
-    /// new app clears what is left. Returns how many backups were removed.
+    /// Copies a directory tree recursively. The helper uses this to put the
+    /// staged folder into the install path: it cannot move the staged folder
+    /// because it is running from it.
+    public static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.GetFiles(source))
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
+        foreach (var dir in Directory.GetDirectories(source))
+            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
+    }
+
+    /// True when the installed tree contains the expected executable.
+    public static bool VerifyInstallTree(string installDirectory) =>
+        File.Exists(Path.Combine(installDirectory, AppUpdateService.ExecutableName));
+
+    /// Removes install-folder backups a crashed or killed helper could not
+    /// delete. The new app clears them on its next start. Returns how many
+    /// backups were removed.
     public static int PruneBackups(string installDirectory)
     {
         var install = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar));
@@ -186,15 +205,18 @@ public static class AppUpdateReplacement
         catch (InvalidOperationException) { return false; }
     }
 
-    /// The whole sequence. `waitForExit` and `startApp` are injected so the
-    /// Mac-side check can run it end to end against temporary folders without
-    /// a real process; on Windows the helper passes the real implementations.
+    /// The whole sequence. `waitForExit`, `startApp` and `copier` are injected
+    /// so the Mac-side check can run it end to end against temporary folders
+    /// without a real process; on Windows the helper passes the real
+    /// implementations. `copier` is null in production (uses CopyDirectory).
     public static async Task<AppUpdateReplacementResult> RunAsync(
         AppUpdateInstallPlan plan,
         Func<CancellationToken, Task<bool>> waitForExit,
         Func<string, Task> startApp,
+        Action<string, string>? copier = null,
         CancellationToken cancellation = default)
     {
+        var doCopy = copier ?? CopyDirectory;
         var moves = new List<AppUpdateMove>();
         if (!plan.IsValid)
             return new(false, false, "설치 계획이 올바르지 않아 설치하지 않습니다.", moves, false, false);
@@ -219,7 +241,11 @@ public static class AppUpdateReplacement
                 moves.Add(Plan(plan)[0]);
                 backupTaken = true;
             }
-            Directory.Move(plan.StagedDirectory, plan.InstallDirectory);
+            // Copy (not move): the helper runs from the staged folder and
+            // cannot move the directory it is running from.
+            doCopy(plan.StagedDirectory, plan.InstallDirectory);
+            if (!VerifyInstallTree(plan.InstallDirectory))
+                throw new InvalidOperationException("교체된 설치 폴더에 실행 파일이 없습니다.");
             moves.Add(Plan(plan)[1]);
             installed = true;
 
