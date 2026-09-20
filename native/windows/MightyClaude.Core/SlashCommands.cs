@@ -396,17 +396,15 @@ public static class SlashPalette
     // macOS shows at most 60 rows (SessionPaneView.paletteCommands prefix(60)).
     public const int MaximumRows = 60;
 
-    // No action is universally unavailable. UnavailableActions is empty because
-    // Claude now has a plugin window. Codex /plugins stays out until its feature.
-    // See docs/windows-slash-commands.md.
+    // No action is universally unavailable. Both Claude and Codex have a plugin
+    // window. See docs/windows-slash-commands.md.
     public static readonly SlashCommandAction[] UnavailableActions = [];
 
-    // The built-ins the Windows palette offers. Codex /plugins is filtered here
-    // until the Codex plugin screen is built; Claude /plugin is available now.
+    // The built-ins the Windows palette offers. Claude /plugin and Codex /plugins
+    // are both available.
     public static SlashCommand[] Builtins(string provider) =>
         [.. SlashCommandCatalog.Builtins(provider)
-            .Where(c => c.Action is not { } action || !UnavailableActions.Contains(action))
-            .Where(c => provider != "codex" || c.Action != SlashCommandAction.OpenPlugins)];
+            .Where(c => c.Action is not { } action || !UnavailableActions.Contains(action))];
 
     // The draft while it is a "/name" being typed or a built-in's "/name arg",
     // or null when the palette should be closed (SessionPaneView.paletteDraft).

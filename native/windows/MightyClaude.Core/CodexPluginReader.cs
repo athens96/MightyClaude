@@ -1,22 +1,42 @@
+using System.Text;
+
 namespace MightyClaude.Core;
 
-// Reads the workspace's Claude plugins through the installed Claude CLI's own
-// plugin subcommands and nothing else:
-//   claude --version
-//   claude plugin list --json --available
-//   claude plugin marketplace list --json
-// All three run in the workspace folder through the shared one-shot runner
+// Reads the workspace's Codex plugins through the installed Codex CLI's own
+// plugin subcommands and its user-level registry, and nothing else:
+//   codex --version
+//   codex plugin list --help / plugin add --help
+//   codex plugin marketplace list --help / plugin marketplace upgrade --help
+//   codex plugin list --json --available
+//   codex plugin marketplace list --json
+// Every call runs in the workspace folder through the shared one-shot runner
 // (docs/windows-settings-groundwork.md). None of them changes anything: no
-// install, no remove, no enable, no disable, no marketplace add or update.
+// install, no remove, no enable, no disable, no marketplace add or upgrade.
 //
-// A missing CLI, a CLI too old for the subcommand, a timeout and malformed or
-// oversized output each become a status with its macOS sentence, never an
-// exception the screen has to catch.
-public sealed class ClaudePluginReader : IPluginReader
+// The version number is never used as a gate. This CLI feature is still moving,
+// so — exactly as CodexPluginService.command does — the help output of each
+// plugin subcommand is read first and the flags this build actually offers are
+// confirmed before any of them is used. A build that is missing one becomes the
+// macOS "unsupported" sentence instead of a confusing parse failure.
+//
+// A missing CLI, a CLI without the JSON plugin commands, a timeout and
+// malformed or oversized output each become a status with its macOS sentence,
+// never an exception the screen has to catch.
+public sealed class CodexPluginReader : IPluginReader
 {
-    /// macOS ClaudePluginService: readTimeout 20s, version probe min(4, read).
+    /// macOS CodexPluginService: readTimeout 20s, probes at min(4, read).
     public static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);
-    public static readonly TimeSpan VersionTimeout = TimeSpan.FromSeconds(4);
+    public static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(4);
+
+    /// The four help probes and the flags each answer must name, in the order
+    /// CodexPluginService.command runs them.
+    public static readonly (string[] Arguments, string[] Flags)[] Capabilities =
+    [
+        (["plugin", "list", "--help"], ["--json", "--available"]),
+        (["plugin", "add", "--help"], ["--json"]),
+        (["plugin", "marketplace", "list", "--help"], ["--json"]),
+        (["plugin", "marketplace", "upgrade", "--help"], ["--json"]),
+    ];
 
     private readonly ICliRunner runner;
     private readonly IReadOnlyDictionary<string, string> environment;
@@ -28,8 +48,8 @@ public sealed class ClaudePluginReader : IPluginReader
 
     /// The runner must be built with an output cap of at least
     /// ClaudePluginSupport.MaximumListingBytes; anything larger than the cap is
-    /// refused by ParseSnapshot rather than silently truncated into a short list.
-    public ClaudePluginReader(
+    /// refused by ParseCodexSnapshot rather than truncated into a short list.
+    public CodexPluginReader(
         ICliRunner runner,
         IReadOnlyDictionary<string, string>? environment = null,
         Func<string, bool>? isExecutable = null,
@@ -75,10 +95,15 @@ public sealed class ClaudePluginReader : IPluginReader
             var cwd = LocalDirectory(workspace);
             var (executable, version) = await CommandAsync(cwd, cancellation);
             var listing = await RunAsync(executable, ["plugin", "list", "--json", "--available"], cwd,
-                PluginStrings.DetailListingFailed, cancellation);
+                CodexPluginStrings.DetailListingFailed, cancellation);
             var marketplaces = await RunAsync(executable, ["plugin", "marketplace", "list", "--json"], cwd,
                 PluginStrings.DetailMarketplacesFailed, cancellation);
-            return ClaudePluginSupport.ParseSnapshot(listing.Output, marketplaces.Output, cwd, version);
+            var snapshot = ClaudePluginSupport.ParseCodexSnapshot(listing.Output, marketplaces.Output, cwd, version);
+            // A CLI that still answered but warned on stderr: keep the warning
+            // and say the list may be stale, as macOS readSnapshot does.
+            var warnings = ClaudePluginSupport.Display((listing.ErrorOutput + "\n" + marketplaces.ErrorOutput).Trim(), ClaudePluginSupport.OutputCap);
+            if (warnings.Length == 0 || snapshot.Status != ClaudePluginStatus.Ready) return snapshot;
+            return snapshot with { DiagnosticOutput = warnings, Detail = snapshot.Detail + CodexPluginStrings.DetailWarningSuffix };
         }
         catch (OperationCanceledException)
         {
@@ -109,7 +134,7 @@ public sealed class ClaudePluginReader : IPluginReader
     private string LocalDirectory(Workspace workspace)
     {
         var path = workspace.Path;
-        if (path.Length == 0 || path.Contains('\0') || System.Text.Encoding.UTF8.GetByteCount(path) > ClaudePluginSupport.PathCap || !Path.IsPathRooted(path))
+        if (path.Length == 0 || path.Contains('\0') || Encoding.UTF8.GetByteCount(path) > ClaudePluginSupport.PathCap || !Path.IsPathRooted(path))
             throw new PluginFailure(ClaudePluginStatus.Failed, PluginStrings.DetailInvalidWorkspace);
         string full;
         try { full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)); }
@@ -118,29 +143,46 @@ public sealed class ClaudePluginReader : IPluginReader
         return full;
     }
 
-    /// The first claude on PATH that answers --version, gated on the minimum
-    /// version the JSON plugin subcommands need.
+    /// The first codex on PATH that answers --version, then the capability
+    /// probe. The version is shown in the header only; it never gates anything,
+    /// because this CLI feature is still moving and the help output is the
+    /// honest answer to "does this build support it".
     private async Task<(string Executable, string Version)> CommandAsync(string cwd, CancellationToken cancellation)
     {
         var present = false;
-        foreach (var candidate in Candidates("claude"))
+        foreach (var candidate in Candidates("codex"))
         {
             if (!isExecutable(candidate)) continue;
             present = true;
             CliRunResult result;
-            try { result = await runner.RunAsync(candidate, ["--version"], VersionTimeout, cancellation, environment, cwd); }
+            try { result = await runner.RunAsync(candidate, ["--version"], ProbeTimeout, cancellation, environment, cwd); }
             catch (OperationCanceledException) { throw; }
             catch { continue; }
             if (result.TimedOut || result.ExitCode != 0) continue;
             var version = ClaudePluginSupport.Display(result.Output, ClaudePluginSupport.VersionCap).Trim();
             if (version.Length == 0) continue;
-            if (!ClaudePluginSupport.SupportedVersion(version))
-                throw new PluginFailure(ClaudePluginStatus.Unsupported, PluginStrings.DetailUnsupported);
+            await ProbeAsync(candidate, cwd, cancellation);
             return (candidate, version);
         }
         throw present
-            ? new PluginFailure(ClaudePluginStatus.Failed, PluginStrings.DetailUnknownVersion)
-            : new PluginFailure(ClaudePluginStatus.Missing, PluginStrings.DetailMissingCli);
+            ? new PluginFailure(ClaudePluginStatus.Failed, CodexPluginStrings.DetailUnknownVersion)
+            : new PluginFailure(ClaudePluginStatus.Missing, CodexPluginStrings.DetailMissingCli);
+    }
+
+    /// Asks the CLI itself which plugin subcommands and flags it has. Reading
+    /// --help changes nothing. A probe that fails, times out or does not name
+    /// every flag this screen would use is the macOS "unsupported" sentence.
+    private async Task ProbeAsync(string executable, string cwd, CancellationToken cancellation)
+    {
+        foreach (var (arguments, flags) in Capabilities)
+        {
+            CliRunResult probe;
+            try { probe = await runner.RunAsync(executable, arguments, ProbeTimeout, cancellation, environment, cwd); }
+            catch (OperationCanceledException) { throw; }
+            catch { throw new PluginFailure(ClaudePluginStatus.Unsupported, CodexPluginStrings.DetailUnsupported); }
+            if (probe.TimedOut || probe.ExitCode != 0 || !flags.All(flag => probe.Output.Contains(flag, StringComparison.Ordinal)))
+                throw new PluginFailure(ClaudePluginStatus.Unsupported, CodexPluginStrings.DetailUnsupported, ClaudePluginSupport.Output(probe));
+        }
     }
 
     // PATH entries, at most 64, joined with the Windows executable extensions.
@@ -165,23 +207,9 @@ public sealed class ClaudePluginReader : IPluginReader
         return values;
     }
 
-    // The same switches macOS sets: no auto-update, no telemetry, no background
-    // work, no implicit marketplace install and no git credential prompt. A
-    // caller-supplied FORCE_AUTOUPDATE_PLUGINS is dropped, so reading the list
-    // can never update a plugin behind the user's back.
-    internal static IReadOnlyDictionary<string, string> Environment(IReadOnlyDictionary<string, string> supplied)
-    {
-        var values = new Dictionary<string, string>(supplied, StringComparer.OrdinalIgnoreCase)
-        {
-            ["DISABLE_AUTOUPDATER"] = "1",
-            ["DISABLE_TELEMETRY"] = "1",
-            ["DISABLE_ERROR_REPORTING"] = "1",
-            ["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] = "1",
-            ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1",
-            ["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1",
-            ["GIT_TERMINAL_PROMPT"] = "0",
-        };
-        values.Remove("FORCE_AUTOUPDATE_PLUGINS");
-        return values;
-    }
+    // The one switch macOS CodexPluginService sets: git must never stop and ask
+    // for a password while a read is running. Nothing else is forced, so the
+    // user's own CODEX_HOME still decides which user-level registry is read.
+    internal static IReadOnlyDictionary<string, string> Environment(IReadOnlyDictionary<string, string> supplied) =>
+        new Dictionary<string, string>(supplied, StringComparer.OrdinalIgnoreCase) { ["GIT_TERMINAL_PROMPT"] = "0" };
 }
