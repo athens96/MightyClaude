@@ -16,7 +16,7 @@ internal static class StatusLineVerification
     }
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
-    // Settings precedence: workspace-local > workspace > user.
+    // Settings precedence: workspace-local > workspace > user. Mirrors macOS configFollowsClaudePrecedenceAndOnlyCommandEntries.
     internal static Task ConfigFollowsPrecedenceAndOnlyCommandEntries()
     {
         var root = Temp();
@@ -25,9 +25,9 @@ internal static class StatusLineVerification
             var home = Path.Combine(root, "home");
             var workspace = Path.Combine(root, "repo");
 
-            // User-level only — discovered when no workspace settings exist
+            // User-level only — type:command required
             Write(Path.Combine(home, ".claude", "settings.json"),
-                """{"statusLine":{"command":"echo user","padding":2}}""");
+                """{"statusLine":{"type":"command","command":"echo user","padding":2}}""");
             var user = StatusLineSupport.Discover(null, home).Preferred;
             Check(user?.Command == "echo user", "user command");
             Check(user?.Padding == 2, "user padding");
@@ -36,7 +36,7 @@ internal static class StatusLineVerification
 
             // Workspace settings.json takes precedence over user
             Write(Path.Combine(workspace, ".claude", "settings.json"),
-                """{"statusLine":{"command":"echo proj"}}""");
+                """{"statusLine":{"type":"command","command":"echo proj"}}""");
             var proj = StatusLineSupport.Discover(workspace, home).Preferred;
             Check(proj?.Command == "echo proj", "workspace command");
             Check(proj?.FromWorkspace == true, "workspace from-workspace flag");
@@ -44,30 +44,69 @@ internal static class StatusLineVerification
 
             // Workspace-local takes precedence over workspace
             Write(Path.Combine(workspace, ".claude", "settings.local.json"),
-                """{"statusLine":{"command":"echo local"}}""");
+                """{"statusLine":{"type":"command","command":"echo local"}}""");
             var local = StatusLineSupport.Discover(workspace, home).Preferred;
             Check(local?.Command == "echo local", "local command");
             Check(local?.Source == StatusLineStrings.SourceWorkspaceLocal, "local source label");
 
-            // A settings.json without statusLine returns null from that source
+            // A settings.json without statusLine returns null — not disabled, falls through
             Write(Path.Combine(home, ".claude", "settings.json"), """{"theme":"dark"}""");
             var noCmd = StatusLineSupport.Discover(null, home).Preferred;
             Check(noCmd is null, "no statusLine key returns null");
 
+            // A non-command entry at the workspace level disables the level (does not fall through to user)
+            Write(Path.Combine(home, ".claude", "settings.json"),
+                """{"statusLine":{"type":"command","command":"echo user2"}}""");
+            Write(Path.Combine(workspace, ".claude", "settings.local.json"),
+                """{"statusLine":{"type":"other"}}""");
+            var disabled = StatusLineSupport.Discover(workspace, home);
+            Check(disabled.WorkspaceDisabled, "non-command entry sets workspaceDisabled");
+            Check(disabled.Workspace == null, "disabled workspace level has no config");
+            Check(disabled.User?.Command == "echo user2", "user level still visible on disabled discovery");
+            Check(disabled.Preferred == null, "preferred is null when workspace is disabled");
+
             // CLAUDE_CONFIG_DIR env var overrides home
+            Write(Path.Combine(workspace, ".claude", "settings.local.json"),
+                """{"statusLine":{"type":"command","command":"echo local"}}""");
             var altConfig = Path.Combine(root, "altconfig");
             Write(Path.Combine(altConfig, "settings.json"),
-                """{"statusLine":{"command":"echo alt"}}""");
+                """{"statusLine":{"type":"command","command":"echo alt"}}""");
             var envOverride = StatusLineSupport.Discover(null, home,
                 new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = altConfig }).Preferred;
             Check(envOverride?.Command == "echo alt", "CLAUDE_CONFIG_DIR override");
 
-            // Discovery keeps both levels apart (unlike Preferred, which only ever exposes the winner).
-            Write(Path.Combine(home, ".claude", "settings.json"), """{"statusLine":{"command":"echo user2"}}""");
-            var discovery = StatusLineSupport.Discover(workspace, home);
-            Check(discovery.Workspace?.Command == "echo local" && discovery.Workspace?.FromWorkspace == true, "discovery keeps the workspace level");
-            Check(discovery.User?.Command == "echo user2" && discovery.User?.FromWorkspace == false, "discovery keeps the user level");
-            Check(discovery.Preferred == discovery.Workspace, "preferred is the winning level");
+            // Blank command is refused (disabled)
+            Write(Path.Combine(workspace, ".claude", "settings.local.json"),
+                """{"statusLine":{"type":"command","command":"   "}}""");
+            var blank = StatusLineSupport.Discover(workspace, home);
+            Check(blank.WorkspaceDisabled, "blank command disables the level");
+
+            // padding is clamped to 0-8
+            Write(Path.Combine(workspace, ".claude", "settings.local.json"),
+                """{"statusLine":{"type":"command","command":"echo x","padding":20}}""");
+            var clamped = StatusLineSupport.Discover(workspace, home).Workspace;
+            Check(clamped?.Padding == 8, "padding clamped to max 8");
+            Write(Path.Combine(workspace, ".claude", "settings.local.json"),
+                """{"statusLine":{"type":"command","command":"echo x","padding":-5}}""");
+            var clampedMin = StatusLineSupport.Discover(workspace, home).Workspace;
+            Check(clampedMin?.Padding == 0, "padding clamped to min 0");
+
+            // outputStyle and alwaysThinkingEnabled carried from the same settings file
+            Write(Path.Combine(workspace, ".claude", "settings.local.json"),
+                """{"statusLine":{"type":"command","command":"echo local"},"outputStyle":"Explanatory","alwaysThinkingEnabled":true}""");
+            Write(Path.Combine(home, ".claude", "settings.json"),
+                """{"statusLine":{"type":"command","command":"echo user2"},"outputStyle":"Explanatory","alwaysThinkingEnabled":true}""");
+            var richDiscovery = StatusLineSupport.Discover(workspace, home);
+            Check(richDiscovery.Workspace?.OutputStyle == "Explanatory", "workspace outputStyle carried");
+            Check(richDiscovery.Workspace?.ThinkingEnabled == true, "workspace alwaysThinkingEnabled carried");
+            Check(richDiscovery.User?.OutputStyle == "Explanatory", "user outputStyle carried");
+            Check(richDiscovery.User?.ThinkingEnabled == true, "user alwaysThinkingEnabled carried");
+
+            // Discovery keeps both levels apart
+            var discovery2 = StatusLineSupport.Discover(workspace, home);
+            Check(discovery2.Workspace?.Command == "echo local" && discovery2.Workspace?.FromWorkspace == true, "discovery keeps the workspace level");
+            Check(discovery2.User?.Command == "echo user2" && discovery2.User?.FromWorkspace == false, "discovery keeps the user level");
+            Check(discovery2.Preferred == discovery2.Workspace, "preferred is the winning level");
         }
         finally { try { Directory.Delete(root, true); } catch { } }
         return Task.CompletedTask;
@@ -88,65 +127,136 @@ internal static class StatusLineVerification
         return Task.CompletedTask;
     }
 
-    // Payload must use the CLI field names macOS sends.
-    internal static Task PayloadUsesCliFieldNamesAndTranscriptLayout()
+    // Payload uses the CLI's own field names and nesting — same keys, same types, same omission rules as macOS.
+    // Mirrors macOS payloadUsesTheCLIsFieldNamesAndTranscriptLayout literally.
+    internal static Task StatusLinePayloadUsesTheCLIsFieldNamesAndTranscriptLayout()
     {
-        var root = Temp();
-        try
-        {
-            var configDir = Path.Combine(root, "config");
-            var ctx = new StatusLineContext(
-                SessionId: "sess01",
-                Cwd: "/work",
-                ProjectDir: "/work/my-repo",
-                ModelId: "claude-sonnet-5",
-                ModelName: "Claude Sonnet 5",
-                Version: "1.2.3",
-                CostUSD: 0.0042,
-                DurationMs: 1234,
-                ApiDurationMs: 999,
-                InputTokens: 100,
-                OutputTokens: 50,
-                CacheReadTokens: 10,
-                CacheWriteTokens: 5,
-                ContextUsedTokens: 1000,
-                ContextWindowTokens: 200000,
-                Effort: null,
-                FastMode: true,
-                RateLimits: [new SessionRateLimit("requests", 42.5, "2026-09-21T00:00:00Z")],
-                OutputStyle: "auto",
-                ThinkingEnabled: false,
-                TranscriptPath: StatusLineSupport.TranscriptPath(configDir, "/work/my-repo", "sess01")
-            );
+        // Transcript path: every non-alphanumeric → '-', leading dash kept (no trimming), first 200 chars.
+        Check(StatusLineSupport.TranscriptPath("/Users/me/.claude", "/Users/me/Work/My.App", "abc")
+            == "/Users/me/.claude/projects/-Users-me-Work-My-App/abc.jsonl", "transcript path keeps leading dash");
+        Check(StatusLineSupport.TranscriptPath("/cfg", "/x", "s")
+            == "/cfg/projects/-x/s.jsonl", "transcript path with env config dir");
 
-            var json = StatusLineSupport.BuildPayload(ctx);
-            var doc = System.Text.Json.JsonDocument.Parse(json);
-            var root2 = doc.RootElement;
+        var reset = DateTimeOffset.UtcNow.AddHours(1).ToString("o");
+        var ctx = new StatusLineContext(
+            SessionId: "sess",
+            Cwd: "/repo",
+            ProjectDir: "/repo",
+            ModelId: "claude-fable-5-1",
+            ModelName: "Fable 5.1",
+            Version: "2.1.274",
+            CostUSD: 1.5,
+            DurationMs: 4000,
+            ApiDurationMs: 0,
+            InputTokens: 120_000,
+            OutputTokens: 3000,
+            CacheReadTokens: 100_000,
+            CacheWriteTokens: 5000,
+            ContextUsedTokens: 150_000,
+            ContextWindowTokens: 1_000_000,
+            Effort: "high",
+            FastMode: true,
+            RateLimits:
+            [
+                new SessionRateLimit("five_hour", 42.5, reset),
+                new SessionRateLimit("seven_day", 12.0, "2000-01-01T00:00:00Z"),
+                new SessionRateLimit("other", 1.0),
+            ],
+            OutputStyle: null,
+            ThinkingEnabled: null,
+            TranscriptPath: StatusLineSupport.TranscriptPath("/Users/me/.claude", "/repo", "sess")
+        );
 
-            Check(root2.GetProperty("hook_event_name").GetString() == "StatusLineUpdate", "hook_event_name");
-            Check(root2.GetProperty("session_id").GetString() == "sess01", "session_id");
-            Check(root2.GetProperty("model").GetString() == "claude-sonnet-5", "model");
-            Check(root2.GetProperty("fast_mode").GetBoolean() == true, "fast_mode");
-            Check(root2.GetProperty("thinking_enabled").GetBoolean() == false, "thinking_enabled");
-            var cw = root2.GetProperty("context_window");
-            Check(cw.GetProperty("input_tokens").GetInt64() == 100, "input_tokens");
-            Check(cw.GetProperty("context_window_size").GetInt64() == 200000, "context_window_size");
-            var rl = root2.GetProperty("rate_limits")[0];
-            Check(rl.GetProperty("kind").GetString() == "requests", "rate_limits kind");
-            Check(rl.GetProperty("percent_used").GetDouble() == 42.5, "rate_limits percent_used");
+        var json = StatusLineSupport.BuildPayload(ctx);
+        var r = JsonDocument.Parse(json).RootElement;
 
-            // Transcript path: slug uses non-alphanum → '-', first 200 chars
-            var tp = StatusLineSupport.TranscriptPath(configDir, "/work/my-repo", "sess01");
-            Check(tp.Contains("work-my-repo"), "transcript slug replaces / with -");
-            Check(tp.EndsWith("sess01.jsonl"), "transcript ends with sessionId.jsonl");
+        // Top-level hook and identity
+        Check(r.GetProperty("hook_event_name").GetString() == "Status", "hook_event_name must be Status");
+        Check(r.GetProperty("session_id").GetString() == "sess", "session_id");
+        Check(r.GetProperty("version").GetString() == "2.1.274", "version");
 
-            // Null context_window when no token fields
-            var ctxNoTokens = ctx with { InputTokens = null, OutputTokens = null, ContextUsedTokens = null, CacheReadTokens = null, CacheWriteTokens = null, ContextWindowTokens = null };
-            var json2 = StatusLineSupport.BuildPayload(ctxNoTokens);
-            var doc2 = System.Text.Json.JsonDocument.Parse(json2);
-            Check(doc2.RootElement.GetProperty("context_window").ValueKind == System.Text.Json.JsonValueKind.Null, "context_window null when no tokens");
-        }
-        finally { try { Directory.Delete(root, true); } catch { } }
+        // model is an object {id, display_name}
+        var model = r.GetProperty("model");
+        Check(model.GetProperty("id").GetString() == "claude-fable-5-1", "model.id");
+        Check(model.GetProperty("display_name").GetString() == "Fable 5.1", "model.display_name");
+
+        // workspace is an object {current_dir, project_dir}
+        var ws = r.GetProperty("workspace");
+        Check(ws.GetProperty("current_dir").GetString() == "/repo", "workspace.current_dir");
+        Check(ws.GetProperty("project_dir").GetString() == "/repo", "workspace.project_dir");
+
+        // cost object with five fields
+        var cost = r.GetProperty("cost");
+        Check(cost.GetProperty("total_cost_usd").GetDouble() == 1.5, "cost.total_cost_usd");
+        Check(cost.GetProperty("total_duration_ms").GetInt64() == 4000, "cost.total_duration_ms");
+        Check(cost.GetProperty("total_lines_added").GetInt32() == 0, "cost.total_lines_added");
+        Check(cost.GetProperty("total_lines_removed").GetInt32() == 0, "cost.total_lines_removed");
+
+        // fast_mode and exceeds_200k_tokens
+        Check(r.GetProperty("fast_mode").GetBoolean() == true, "fast_mode");
+        Check(r.GetProperty("exceeds_200k_tokens").GetBoolean() == false, "exceeds_200k_tokens for 150k/1M");
+
+        // effort as object {level}
+        Check(r.GetProperty("effort").GetProperty("level").GetString() == "high", "effort.level");
+
+        // context_window always present with total_input_tokens, total_output_tokens, context_window_size
+        var cw = r.GetProperty("context_window");
+        Check(cw.GetProperty("context_window_size").GetInt64() == 1_000_000, "context_window_size");
+        Check(cw.GetProperty("total_input_tokens").GetInt64() == 120_000, "total_input_tokens");
+        Check(cw.GetProperty("total_output_tokens").GetInt64() == 3000, "total_output_tokens");
+        // used_percentage = round(150000/1000000*100*10)/10 = 15.0
+        Check(Math.Abs(cw.GetProperty("used_percentage").GetDouble() - 15.0) < 0.01, "used_percentage 15%");
+        Check(Math.Abs(cw.GetProperty("remaining_percentage").GetDouble() - 85.0) < 0.01, "remaining_percentage 85%");
+
+        // current_usage describes the context window (input_tokens = contextUsedTokens, others 0)
+        var usage = cw.GetProperty("current_usage");
+        Check(usage.GetProperty("input_tokens").GetInt64() == 150_000, "current_usage.input_tokens");
+        Check(usage.GetProperty("output_tokens").GetInt64() == 0, "current_usage.output_tokens");
+        Check(usage.GetProperty("cache_read_input_tokens").GetInt64() == 0, "current_usage.cache_read_input_tokens");
+        Check(usage.GetProperty("cache_creation_input_tokens").GetInt64() == 0, "current_usage.cache_creation_input_tokens");
+
+        // output_style and thinking omitted when null
+        Check(!r.TryGetProperty("output_style", out _), "output_style omitted when null");
+        Check(!r.TryGetProperty("thinking", out _), "thinking omitted when null");
+
+        // output_style and thinking present when set
+        var styled = ctx with { OutputStyle = "Explanatory", ThinkingEnabled = false };
+        var sr = JsonDocument.Parse(StatusLineSupport.BuildPayload(styled)).RootElement;
+        Check(sr.GetProperty("output_style").GetProperty("name").GetString() == "Explanatory", "output_style.name");
+        Check(sr.GetProperty("thinking").GetProperty("enabled").GetBoolean() == false, "thinking.enabled=false");
+        var styledOn = ctx with { OutputStyle = "Explanatory", ThinkingEnabled = true };
+        var son = JsonDocument.Parse(StatusLineSupport.BuildPayload(styledOn)).RootElement;
+        Check(son.GetProperty("thinking").GetProperty("enabled").GetBoolean() == true, "thinking.enabled=true");
+
+        // rate_limits is an object keyed by canonical kind (first match, past resetsAt skipped, unknown skipped)
+        var rl = r.GetProperty("rate_limits");
+        Check(rl.ValueKind == JsonValueKind.Object, "rate_limits is an object not an array");
+        Check(rl.GetProperty("five_hour").GetProperty("used_percentage").GetDouble() == 42.5, "five_hour.used_percentage");
+        Check(rl.GetProperty("five_hour").TryGetProperty("resets_at", out var resetsAt) && resetsAt.ValueKind == JsonValueKind.Number, "five_hour.resets_at is a unix timestamp integer");
+        Check(!rl.TryGetProperty("seven_day", out _), "seven_day absent (resetsAt in the past)");
+        Check(!rl.TryGetProperty("other", out _), "unknown kind omitted");
+
+        // Nothing measured yet: context_window always present, current_usage/used_percentage are JSON null
+        var empty = new StatusLineContext(
+            SessionId: "s", Cwd: "/r", ProjectDir: "/r",
+            ModelId: "default", ModelName: "CLI 기본값", Version: "",
+            CostUSD: null, DurationMs: null, ApiDurationMs: null,
+            InputTokens: null, OutputTokens: null, CacheReadTokens: null,
+            CacheWriteTokens: null, ContextUsedTokens: null, ContextWindowTokens: null,
+            Effort: null, FastMode: false, RateLimits: null,
+            OutputStyle: null, ThinkingEnabled: null, TranscriptPath: null);
+        var er = JsonDocument.Parse(StatusLineSupport.BuildPayload(empty)).RootElement;
+        var ew = er.GetProperty("context_window");
+        Check(ew.GetProperty("used_percentage").ValueKind == JsonValueKind.Null, "empty: used_percentage is null not missing");
+        Check(ew.GetProperty("current_usage").ValueKind == JsonValueKind.Null, "empty: current_usage is null not missing");
+        Check(!er.TryGetProperty("rate_limits", out _), "empty: rate_limits absent");
+        Check(!er.TryGetProperty("effort", out _), "empty: effort absent");
+
+        // exceeds_200k_tokens true when contextUsedTokens > 200k
+        var over = ctx with { ContextUsedTokens = 250_000, ContextWindowTokens = 1_000_000 };
+        Check(JsonDocument.Parse(StatusLineSupport.BuildPayload(over)).RootElement
+            .GetProperty("exceeds_200k_tokens").GetBoolean() == true, "exceeds_200k_tokens when used>200k");
+
         return Task.CompletedTask;
     }
 
@@ -318,7 +428,7 @@ internal static class StatusLineVerification
             command = "read line; printf '\\033[36m%s\\033[0m' \"$line\"";
 
         var cfg = new StatusLineConfig(command, 0, "사용자 설정", false);
-        var ctx = new StatusLineContext("sid", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, null, null, false, null);
+        var ctx = new StatusLineContext("sid", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, null, null, (bool?)false, null);
         var result = await StatusLineSupport.RunAsync(cfg, ctx, timeout: 8);
         // On Windows the findstr-based command may not work cleanly; just verify it returned without exception.
         Check(!result.TimedOut, "short command must not time out");
@@ -333,7 +443,7 @@ internal static class StatusLineVerification
         }
         string command = OperatingSystem.IsWindows() ? "ping -n 10 127.0.0.1 > nul" : "sleep 5";
         var cfg = new StatusLineConfig(command, 0, "사용자 설정", false);
-        var ctx = new StatusLineContext("sid2", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, null, null, false, null);
+        var ctx = new StatusLineContext("sid2", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, null, null, (bool?)false, null);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var result = await StatusLineSupport.RunAsync(cfg, ctx, timeout: 0.4);
         sw.Stop();

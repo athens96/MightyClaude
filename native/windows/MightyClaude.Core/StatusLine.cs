@@ -165,7 +165,7 @@ public static class AnsiText
 }
 
 // A discovered status line config from Claude settings.
-public sealed record StatusLineConfig(string Command, int Padding, string Source, bool FromWorkspace)
+public sealed record StatusLineConfig(string Command, int Padding, string Source, bool FromWorkspace, string? OutputStyle = null, bool? ThinkingEnabled = null)
 {
     // SHA-256(source + newline + command) as 64-char lowercase hex — matches macOS fingerprint.
     public string Fingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Source + "\n" + Command))).ToLowerInvariant();
@@ -174,10 +174,9 @@ public sealed record StatusLineConfig(string Command, int Padding, string Source
 // Both levels Claude consults (macOS StatusLineConfig.Discovery): Workspace is the winning
 // .claude/settings.local.json / settings.json entry, User is ~/.claude/settings.json (or
 // CLAUDE_CONFIG_DIR). Kept apart so a gated workspace command can still fall back to the user one.
-public sealed record StatusLineDiscovery(StatusLineConfig? Workspace, StatusLineConfig? User)
+public sealed record StatusLineDiscovery(StatusLineConfig? Workspace, StatusLineConfig? User, bool WorkspaceDisabled = false)
 {
-    // Claude's own precedence for callers that already trust the workspace level.
-    public StatusLineConfig? Preferred => Workspace ?? User;
+    public StatusLineConfig? Preferred => WorkspaceDisabled ? null : (Workspace ?? User);
 }
 
 // Session context passed as JSON payload on stdin.
@@ -201,7 +200,7 @@ public sealed record StatusLineContext(
     bool FastMode,
     IReadOnlyList<SessionRateLimit>? RateLimits,
     string? OutputStyle,
-    bool ThinkingEnabled,
+    bool? ThinkingEnabled,
     string? TranscriptPath);
 
 // Result of running the status line command.
@@ -216,65 +215,114 @@ public static class StatusLineSupport
     public const int MaximumLines = 6;
     private const int MaximumOutputBytes = 16 * 1024;
 
-    // Compute the transcript path following the macOS slug rule.
-    public static string TranscriptPath(string configDir, string? projectDir, string sessionId)
+    // Compute the transcript path following the macOS slug rule (every non-alphanumeric → '-', first 200 chars).
+    public static string TranscriptPath(string configDir, string? cwd, string sessionId)
     {
-        var raw = projectDir ?? "";
+        var raw = cwd ?? "";
         var slug = new StringBuilder();
         foreach (var c in raw) slug.Append(char.IsLetterOrDigit(c) ? c : '-');
-        var s = slug.ToString().TrimStart('-');
+        var s = slug.ToString();
         if (s.Length > 200) s = s[..200];
-        if (s.Length == 0) s = "default";
         return Path.Combine(configDir, "projects", s, sessionId + ".jsonl");
     }
 
-    // Build the JSON payload matching the macOS CLI field names.
+    // Build the JSON payload matching the macOS CLI field names and shape (StatusLineSupport.payload).
     public static string BuildPayload(StatusLineContext ctx)
     {
         var obj = new JsonObject
         {
-            ["hook_event_name"] = "StatusLineUpdate",
+            ["hook_event_name"] = "Status",
             ["session_id"] = ctx.SessionId,
             ["transcript_path"] = ctx.TranscriptPath,
             ["cwd"] = ctx.Cwd,
-            ["model"] = ctx.ModelId,
-            ["model_name"] = ctx.ModelName,
+            ["model"] = new JsonObject { ["id"] = ctx.ModelId ?? "", ["display_name"] = ctx.ModelName ?? "" },
+            ["workspace"] = new JsonObject { ["current_dir"] = ctx.Cwd ?? "", ["project_dir"] = ctx.ProjectDir ?? "" },
             ["version"] = ctx.Version,
-            ["cost_usd"] = ctx.CostUSD,
-            ["duration_ms"] = ctx.DurationMs,
-            ["api_duration_ms"] = ctx.ApiDurationMs,
-            ["output_style"] = ctx.OutputStyle,
-            ["thinking_enabled"] = ctx.ThinkingEnabled,
-            ["fast_mode"] = ctx.FastMode,
-            ["workspace"] = ctx.ProjectDir,
-        };
-        if (ctx.InputTokens.HasValue || ctx.OutputTokens.HasValue || ctx.ContextUsedTokens.HasValue)
-        {
-            obj["context_window"] = new JsonObject
+            ["cost"] = new JsonObject
             {
-                ["input_tokens"] = ctx.InputTokens,
-                ["output_tokens"] = ctx.OutputTokens,
-                ["cache_read_tokens"] = ctx.CacheReadTokens,
-                ["cache_write_tokens"] = ctx.CacheWriteTokens,
-                ["context_tokens_used"] = ctx.ContextUsedTokens,
-                ["context_window_size"] = ctx.ContextWindowTokens,
+                ["total_cost_usd"] = ctx.CostUSD ?? 0.0,
+                ["total_duration_ms"] = ctx.DurationMs ?? 0L,
+                ["total_api_duration_ms"] = ctx.ApiDurationMs ?? 0L,
+                ["total_lines_added"] = 0,
+                ["total_lines_removed"] = 0,
+            },
+            ["fast_mode"] = ctx.FastMode,
+        };
+
+        if (ctx.OutputStyle is not null)
+            obj["output_style"] = new JsonObject { ["name"] = ctx.OutputStyle };
+
+        if (ctx.ThinkingEnabled.HasValue)
+            obj["thinking"] = new JsonObject { ["enabled"] = ctx.ThinkingEnabled.Value };
+
+        var window = new JsonObject
+        {
+            ["total_input_tokens"] = ctx.InputTokens ?? 0L,
+            ["total_output_tokens"] = ctx.OutputTokens ?? 0L,
+            ["context_window_size"] = ctx.ContextWindowTokens ?? 200_000L,
+        };
+
+        if (ctx.ContextUsedTokens is { } used)
+        {
+            var size = Math.Max(1L, ctx.ContextWindowTokens ?? 200_000L);
+            var percent = Math.Min(100.0, Math.Max(0.0, (double)used / size * 100.0));
+            window["current_usage"] = new JsonObject
+            {
+                ["input_tokens"] = used,
+                ["output_tokens"] = 0L,
+                ["cache_creation_input_tokens"] = 0L,
+                ["cache_read_input_tokens"] = 0L,
             };
+            window["used_percentage"] = Math.Round(percent * 10.0) / 10.0;
+            window["remaining_percentage"] = Math.Round((100.0 - percent) * 10.0) / 10.0;
+            obj["exceeds_200k_tokens"] = used > 200_000;
         }
-        else { obj["context_window"] = null; }
+        else
+        {
+            window["current_usage"] = (JsonNode?)null;
+            window["used_percentage"] = (JsonNode?)null;
+            window["remaining_percentage"] = (JsonNode?)null;
+            obj["exceeds_200k_tokens"] = false;
+        }
+        obj["context_window"] = window;
+
+        if (ctx.Effort is { } effort && s_validEfforts.Contains(effort))
+            obj["effort"] = new JsonObject { ["level"] = effort };
+
         if (ctx.RateLimits is { Count: > 0 })
         {
-            var arr = new JsonArray();
+            var limits = new JsonObject();
             foreach (var r in ctx.RateLimits)
             {
-                var item = new JsonObject { ["kind"] = r.Kind };
-                if (r.PercentUsed.HasValue) item["percent_used"] = r.PercentUsed.Value;
-                if (r.ResetsAt is not null) item["resets_at"] = r.ResetsAt;
-                arr.Add(item);
+                var key = r.Kind switch
+                {
+                    "five_hour" or "session" or "5h" or "primary" => "five_hour",
+                    "seven_day" or "weekly" or "7d" or "secondary" => "seven_day",
+                    _ => null,
+                };
+                if (key is null) continue;
+                if (limits[key] is not null) continue;
+                if (r.PercentUsed is not { } pct || !double.IsFinite(pct)) continue;
+                var entry = new JsonObject { ["used_percentage"] = Math.Min(100.0, Math.Max(0.0, pct)) };
+                if (r.ResetsAt is { } resetsAtStr)
+                {
+                    if (TryParseIso8601(resetsAtStr) is not { } resetsAt || resetsAt <= DateTimeOffset.UtcNow) continue;
+                    entry["resets_at"] = resetsAt.ToUnixTimeSeconds();
+                }
+                limits[key] = entry;
             }
-            obj["rate_limits"] = arr;
+            if (limits.Count > 0) obj["rate_limits"] = limits;
         }
-        else { obj["rate_limits"] = null; }
+
         return obj.ToJsonString();
+    }
+
+    private static readonly HashSet<string> s_validEfforts = ["low", "medium", "high", "xhigh", "max"];
+
+    private static DateTimeOffset? TryParseIso8601(string s)
+    {
+        if (DateTimeOffset.TryParse(s, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d)) return d;
+        return null;
     }
 
     // Discover both levels Claude consults (macOS StatusLineConfig.discover): workspace-local
@@ -284,12 +332,24 @@ public static class StatusLineSupport
     public static StatusLineDiscovery Discover(string? workspacePath, string? homeDir, IDictionary<string, string>? env = null)
     {
         StatusLineConfig? workspace = null;
+        var workspaceDisabled = false;
         if (workspacePath is not null)
-            workspace = TryReadCommand(Path.Combine(workspacePath, ".claude", "settings.local.json"), fromWorkspace: true, StatusLineStrings.SourceWorkspaceLocal)
-                     ?? TryReadCommand(Path.Combine(workspacePath, ".claude", "settings.json"), fromWorkspace: true, StatusLineStrings.SourceWorkspace);
+        {
+            foreach (var (path, source) in new[]
+            {
+                (Path.Combine(workspacePath, ".claude", "settings.local.json"), StatusLineStrings.SourceWorkspaceLocal),
+                (Path.Combine(workspacePath, ".claude", "settings.json"), StatusLineStrings.SourceWorkspace),
+            })
+            {
+                var (disabled, config) = ReadEntry(path, fromWorkspace: true, source);
+                if (!disabled && config is null) continue;
+                if (disabled) workspaceDisabled = true; else workspace = config;
+                break;
+            }
+        }
         var configDir = ConfigDir(homeDir, env);
-        var user = configDir is null ? null : TryReadCommand(Path.Combine(configDir, "settings.json"), fromWorkspace: false, StatusLineStrings.SourceUser);
-        return new StatusLineDiscovery(workspace, user);
+        var user = configDir is null ? null : ReadEntry(Path.Combine(configDir, "settings.json"), fromWorkspace: false, StatusLineStrings.SourceUser).Config;
+        return new StatusLineDiscovery(workspace, user, workspaceDisabled);
     }
 
     public static string? ConfigDir(string? homeDir, IDictionary<string, string>? env = null)
@@ -299,22 +359,35 @@ public static class StatusLineSupport
         return Path.Combine(homeDir, ".claude");
     }
 
-    private static StatusLineConfig? TryReadCommand(string settingsPath, bool fromWorkspace, string source)
+    // Returns (disabled: true, null) when statusLine key exists but is not a valid command entry —
+    // this disables the level (macOS: .some(nil)). Returns (false, null) when the key is absent.
+    private static (bool Disabled, StatusLineConfig? Config) ReadEntry(string settingsPath, bool fromWorkspace, string source)
     {
         try
         {
-            var text = File.ReadAllText(settingsPath);
-            var doc = JsonDocument.Parse(text);
-            if (doc.RootElement.TryGetProperty("statusLine", out var sl) &&
-                sl.TryGetProperty("command", out var cmdEl) &&
-                cmdEl.GetString() is { Length: > 0 } command)
+            var bytes = File.ReadAllBytes(settingsPath);
+            if (bytes.Length > 4 * 1024 * 1024) return (false, null);
+            using var doc = JsonDocument.Parse(bytes);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("statusLine", out var sl)) return (false, null);
+            if (!sl.TryGetProperty("type", out var typeEl) || typeEl.GetString() != "command") return (true, null);
+            if (!sl.TryGetProperty("command", out var cmdEl)) return (true, null);
+            var command = cmdEl.GetString();
+            if (string.IsNullOrWhiteSpace(command) || Encoding.UTF8.GetByteCount(command) > 4096) return (true, null);
+            var padding = 0;
+            if (sl.TryGetProperty("padding", out var padEl) && padEl.TryGetInt32(out var p)) padding = Math.Clamp(p, 0, 8);
+            string? outputStyle = null;
+            if (root.TryGetProperty("outputStyle", out var styleEl) && styleEl.GetString() is { Length: > 0 } styleStr && Encoding.UTF8.GetByteCount(styleStr) <= 80)
+                outputStyle = styleStr;
+            bool? thinkingEnabled = null;
+            if (root.TryGetProperty("alwaysThinkingEnabled", out var thinkEl))
             {
-                var padding = sl.TryGetProperty("padding", out var padEl) && padEl.TryGetInt32(out var p) ? p : 0;
-                return new StatusLineConfig(command, padding, source, fromWorkspace);
+                if (thinkEl.ValueKind == JsonValueKind.True) thinkingEnabled = true;
+                else if (thinkEl.ValueKind == JsonValueKind.False) thinkingEnabled = false;
             }
+            return (false, new StatusLineConfig(command, padding, source, fromWorkspace, outputStyle, thinkingEnabled));
         }
-        catch { }
-        return null;
+        catch { return (false, null); }
     }
 
     // The shell Claude Code itself uses for a statusLine command, so a command
