@@ -12,7 +12,8 @@ macOS 코드베이스에서 발견한 모든 기능 영역과 Windows 구현 현
 | 상태 줄 레벨 분리 폴백 | `AppStore+StatusLine.swift` `gated ? discovery.user : discovery.preferred` | 보류 — Windows `Discover()`는 우선순위 1개만 반환하므로, 워크스페이스 명령이 거절되면 사용자 설정 명령으로 되돌아가지 않고 상태 줄이 비어 있음 | 1단계 | 보류 (v4 묶음 전 사용자 판단) | 보류 |
 | CLI 계정 전환 | `CLIAccounts.swift`, `CLIAccountsSettingsView.swift`, `AppStore+CLIAccounts.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
 | 계정 사용량 표시 | `AccountUsageService.swift`, `AccountUsageSnapshot.swift`; docs/session-usage.md | `ActivityUsageVerification.cs` (테스트만); 서비스 미구현 | 1단계 | P1 합의 — "usage display, off by default" | |
-| CLI 업데이트 | `CLIUpdateService.swift`, `CLIUpdateSettingsView.swift`, `AppStore+CLIUpdates.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
+| CLI 업데이트 | `CLIUpdateService.swift`, `CLIUpdateSettingsView.swift`, `AppStore+CLIUpdates.swift` | `CliUpdateService.cs`, `CliUpdateStrings.cs` — 설치된 CLI만 그 설치 방식(native·winget·npm)으로 업데이트, 상태 `updated`/`current`/`skipped`/`failed`/`cancelled`/`busy`, 동시 1건·취소·종료, 시작 시 자동 업데이트 게이트; 가짜 러너로 `cli update …` 검사 10개 Mac 통과(`CliUpdateVerification.cs`). 규칙은 `docs/windows-cli-update.md` | 1단계 | P1 합의 (interview_20260919_235018) | Core 완료 — `45ce518`(구현)·`8c7d1e1`(검사). 설정 섹션 표시는 섹션형 설정 화면 작업에서 붙는다. 기기 미확인 |
+| CLI 업데이트 winget 문구 | `CLIUpdateService.swift`의 Homebrew 문장 2개 | 보류 — Windows에는 Homebrew가 없어 `설치된 winget의 해당 패키지만 업데이트합니다.` · `winget 설치이지만 winget 실행 파일을 찾지 못했습니다.` 두 문장이 macOS 원문 없이 들어간다 | 1단계 | 보류 (v4 묶음 전 사용자 판단) | 보류 |
 | 앱 자체 업데이트 | `AppUpdate.swift`, `AppUpdateSettingsView.swift`, `AppStore+AppUpdate.swift` | `latest.json`에 windows.x64/arm64 블록 예약됨; 클라이언트 미구현 | 1단계 | P1 합의 (interview_20260919_235018) | |
 | 세션·창 이름 변경 | `AppStore+Rename.swift`, `RenameViews.swift`, `RenameDiagnostics.swift` | 없음 (사이드바 목록은 있음) | 1단계 | macOS 동일 화면 원칙; P1 기본 UX | 확인 필요 |
 | Claude 플러그인 목록 | `ClaudePluginService.swift`, `ClaudePluginModels.swift`, `AppStore+Plugins.swift` | 없음 | 1단계 | 슬래시 명령 완성의 전제 조건 | 확인 필요 |
