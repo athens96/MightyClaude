@@ -344,6 +344,16 @@ internal static class Verification
         await Test("slash frontmatter", SlashCommandVerification.Frontmatter);
         await Test("slash discovery from temp home and workspace", SlashCommandVerification.Discovery);
         await Test("slash 400 cap", SlashCommandVerification.CapAt400);
+        await Test("slash palette opens on a query with matches", SlashPaletteVerification.Opens);
+        await Test("slash palette closes with no match or no query", SlashPaletteVerification.Closes);
+        await Test("slash palette highlight wraps and clamps", SlashPaletteVerification.HighlightMoves);
+        await Test("slash palette chooses a plain command", SlashPaletteVerification.ChoosesPlainCommand);
+        await Test("slash palette chooses an app action", SlashPaletteVerification.ChoosesAppAction);
+        await Test("slash palette chooses an argument command", SlashPaletteVerification.ChoosesArgumentCommand);
+        await Test("slash palette Esc closes without changing the draft", SlashPaletteVerification.EscapeClosesWithoutChangingTheDraft);
+        await Test("slash palette rows and footer use the macOS copy", SlashPaletteVerification.RowsAndFooterUseMacCopy);
+        await Test("slash palette leaves out app actions Windows cannot do", SlashPaletteVerification.LeavesOutActionsWindowsCannotDo);
+        await Test("slash palette caps the list at 60 rows", SlashPaletteVerification.CapsRowsAt60);
         await Test("status line config follows Claude settings precedence and command-only entries", StatusLineVerification.ConfigFollowsPrecedenceAndOnlyCommandEntries);
         await Test("status line fingerprint matches macOS formula", StatusLineVerification.FingerprintMatchesMacOS);
         await Test("status line payload uses the CLI field names and transcript layout", StatusLineVerification.PayloadUsesCliFieldNamesAndTranscriptLayout);
