@@ -1,10 +1,29 @@
 # Windows plugin list: model shapes and decided differences
 
-Read-only view of a workspace's installed and available plugins, shown in one
-window that serves both providers: Claude, opened from the run-pane menu and
-from `/plugin`, and Codex, opened from the run-pane menu and from `/plugins`.
-Nothing here installs, removes, enables, disables or updates a plugin, and
-nothing adds or refreshes a marketplace.
+Plugin window for a workspace's installed and available plugins, shared by both
+providers: Claude (run-pane menu · `/plugin`) and Codex (run-pane menu ·
+`/plugins`). The only two mutations available are the two macOS has: install one
+plugin from the catalog, and refresh the registered marketplaces.
+
+**Install**: Claude offers a three-scope picker (local · project · user, macOS
+labels) and an install button per catalog row. Codex installs at user level only
+and offers no scope choice. Arguments are passed as a list through the shared
+runner; the plugin id and scope are validated against the values the browser just
+returned before they are used. A remote workspace never runs any operation.
+
+**Marketplace refresh**: refreshes all registered Git-backed marketplaces (Codex:
+Git-only; Claude: all registered sources) that the current filter selects, one at
+a time. The button is disabled when nothing refreshable is registered.
+
+**While an operation runs**: the dialog shows a progress label and a cancel
+button, and the close button is disabled — exactly as macOS disables it. At most
+one operation runs at a time. After the operation the list is reloaded.
+
+**No uninstall, enable, disable or marketplace-add**: those mutations are not in
+the macOS app, so they are not added here either.
+
+OS-bound difference: the scope picker is a WinUI ComboBox instead of a Picker.
+No difference in copy, visible behaviour or scope — macOS words used as-is.
 
 ---
 

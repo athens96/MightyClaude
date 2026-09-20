@@ -324,6 +324,9 @@ public sealed partial class MainWindow
         };
         AutomationProperties.SetAutomationId(dialog, PluginAutomationId(provider, "browser"));
         dialog.Opened += (_, _) => { if (!browser.IsRemote) _ = LoadPluginsAsync(); };
+        // macOS keeps 닫기 disabled while an operation runs; a ContentDialog's
+        // close button cannot be disabled, so the close itself is refused.
+        dialog.Closing += (_, args) => { if (!browser.CanClose) args.Cancel = true; };
 
         dialogOpen = true;
         try
@@ -707,7 +710,7 @@ public sealed partial class MainWindow
         var workspace = service.Snapshot.Workspaces.First(w => w.Id == service.Snapshot.ActiveWorkspaceId);
 
         int claudeScopes = 0, codexScopes = 0;
-        string installResult = "", refreshResult = "";
+        string installResult = "", refreshResult = "", cancelResult = "";
         try
         {
             // --- Claude: verify scope options, install and marketplace refresh ---
@@ -737,6 +740,27 @@ public sealed partial class MainWindow
             };
             await ShowPluginBrowser("claude", workspace);
 
+            // --- Claude: the real cancel button stops a running install ---
+            smokeReaderFactory = _ => new FakeMarketplaceReader(PluginSmokeSnapshot, holdUntilCancelled: true);
+            smokePluginDialog = async surface =>
+            {
+                await surface.Load();
+                await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
+                var pending = surface.Install("docs@sample");
+                Require(surface.Browser.IsMutating, "설치가 시작되었는데 진행 상태가 아닙니다.");
+                Require(surface.Browser.ProgressLabel == PluginStrings.ProgressInstalling,
+                    "설치 진행 문장이 macOS와 다릅니다: " + surface.Browser.ProgressLabel);
+                Require(!surface.Browser.CanClose, "작업이 진행 중인데 닫기가 막히지 않았습니다.");
+                Require(surface.Browser.CanCancel, "작업이 진행 중인데 취소할 수 없습니다.");
+                surface.RequestCancel();
+                cancelResult = (await pending).Detail;
+                Require(cancelResult == PluginStrings.OperationCancelledByUser,
+                    "취소 문장이 macOS와 다릅니다: " + cancelResult);
+                Require(surface.Browser.CanClose && !surface.Browser.IsMutating,
+                    "취소한 뒤에도 창이 작업 중으로 남아 있습니다.");
+            };
+            await ShowPluginBrowser("claude", workspace);
+
             // --- Codex: verify single user-level scope option ---
             smokeReaderFactory = _ => new FakeMarketplaceReader(CodexPluginSmokeSnapshot);
             smokeCodexPluginDialog = async surface =>
@@ -754,6 +778,7 @@ public sealed partial class MainWindow
                 ClaudeScopeOptions = claudeScopes,
                 CodexScopeOptions = codexScopes,
                 InstallResult = installResult,
+                CancelResult = cancelResult,
                 RefreshResult = refreshResult,
                 Restored = true,
             };
@@ -772,13 +797,18 @@ public sealed partial class MainWindow
     // A fake IPluginReader for the marketplace smoke: never starts a real CLI.
     // SnapshotAsync returns the fixture immediately; install and refresh return
     // success so the smoke can verify the result text without a real CLI.
-    private sealed class FakeMarketplaceReader(ClaudePluginSnapshot fixture) : IPluginReader
+    private sealed class FakeMarketplaceReader(ClaudePluginSnapshot fixture, bool holdUntilCancelled = false) : IPluginReader
     {
         public Task<ClaudePluginSnapshot> SnapshotAsync(Workspace workspace, CancellationToken cancellation = default)
             => Task.FromResult(fixture);
         public void Shutdown() { }
-        public Task<ClaudePluginOperationResult> InstallAsync(string pluginId, string scope, Workspace workspace, CancellationToken cancellation = default)
-            => Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, PluginStrings.InstallSucceeded));
+        public async Task<ClaudePluginOperationResult> InstallAsync(string pluginId, string scope, Workspace workspace, CancellationToken cancellation = default)
+        {
+            // The cancel leg waits for the window's own cancel button instead of
+            // for a real CLI, so the smoke never depends on timing.
+            if (holdUntilCancelled) await Task.Delay(Timeout.Infinite, cancellation);
+            return new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, PluginStrings.InstallSucceeded);
+        }
         public Task<ClaudePluginOperationResult> RefreshMarketplaceAsync(string marketplace, Workspace workspace, CancellationToken cancellation = default)
             => Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded,
                 PluginStrings.MarketplacesRefreshedTemplate.Replace("{count}", "1")));
