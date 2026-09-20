@@ -77,8 +77,12 @@ public sealed record SettingsSectionsSmokeOutcome
 {
     public const string ResultKey = "settingsSections";
 
+    // The key the CLI update section records under, so a run that shows the
+    // sections but not the update results is still visible in the smoke result.
+    public const string CliUpdateSectionKey = "cliUpdateSection";
+
     [JsonPropertyName("sections")] public IReadOnlyList<string> Sections { get; init; } = [];
-    [JsonPropertyName("cliUpdateStatuses")] public IReadOnlyList<string> CliUpdateStatuses { get; init; } = [];
+    [JsonPropertyName(CliUpdateSectionKey)] public IReadOnlyList<string> CliUpdateStatuses { get; init; } = [];
     [JsonPropertyName("toggledTo")] public bool ToggledTo { get; init; }
     [JsonPropertyName("restored")] public bool Restored { get; init; }
 }
