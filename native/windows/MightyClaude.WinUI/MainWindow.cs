@@ -248,7 +248,7 @@ public sealed partial class MainWindow : Window
             this.owner = owner; this.id = id;
             InitSlashPalette(); InitPermissionBar();
             var grid = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
-            foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
+            foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
             var header = new Grid { ColumnSpacing = 8 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
             var copy = Button("복사", () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
