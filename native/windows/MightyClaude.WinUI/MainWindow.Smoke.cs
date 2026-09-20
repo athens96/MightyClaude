@@ -96,9 +96,8 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
-    // Drives the real CLI update section with a fake updater: presses 업데이트 하기,
-    // waits for results to appear in the coordinator, and records the outcome.
-    // The fake updater and the smokeCliUpdater field are both restored on exit.
+    // Drives both the real CLI update section and the real status line refresher with fake
+    // runners: records both under key liveWiring and restores everything it changed.
     private async Task<Dictionary<string, object?>> RunLiveWiringSmoke()
     {
         var checks = new Dictionary<string, object?>();
@@ -129,13 +128,41 @@ public sealed partial class MainWindow
                 "all fake results must be updated");
             Require(coordinator.FinishedAt is not null, "finishedAt must be set after the run");
             checks["resultsAppearAfterRun"] = true;
-            checks["passed"] = true;
         }
         finally
         {
             smokeCliUpdater = null;
             lastCliUpdateResults = previousResults;
         }
+
+        // Status line refresher live wiring: drive the real pane's refresher with a fake
+        // discovery and runner, wait until the result appears in the rendered status line,
+        // then restore the status line to its pre-smoke state.
+        var sessions = service.Snapshot.Sessions;
+        var statusPane = views[sessions[0].Id];
+        var fakeConfig = new MightyClaude.Core.StatusLineConfig("echo smoke", 0, "사용자 설정", false);
+        smokeStatusLineDiscovery = () => new MightyClaude.Core.StatusLineDiscovery(null, fakeConfig);
+        smokeStatusLineRunner = (_, _, _) => Task.FromResult(
+            new MightyClaude.Core.StatusLineResult(
+                [MightyClaude.Core.AnsiText.Parse("\u001b[36msmoke\u001b[0m ok")], null, 0, false));
+        try
+        {
+            // Trigger through the real refresher that the real pane owns.
+            statusPane.RequestStatusLineRefresh(force: true);
+            await WaitUI(() => statusPane.Refresher?.Result is not null);
+            Require(statusPane.Refresher!.Result!.Lines.Count > 0,
+                "status line refresher ran and produced output in the real pane");
+            checks["statusLineRefresherFiredAndRendered"] = true;
+        }
+        finally
+        {
+            smokeStatusLineDiscovery = null;
+            smokeStatusLineRunner = null;
+            // Restore the status line to the empty/hidden state it had before.
+            statusPane.Refresher?.Close();
+            statusPane.RenderStatusLine(null, null, null);
+        }
+        checks["passed"] = true;
         return checks;
     }
 
