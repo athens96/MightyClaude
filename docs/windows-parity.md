@@ -2,12 +2,14 @@
 
 macOS 코드베이스에서 발견한 모든 기능 영역과 Windows 구현 현황.
 단계 셀은 `1단계 | 터미널 | 2단계 | 3단계 | 이미 있음 | Windows에 해당 없음 | 배포 인프라` 중 하나.
-'확인 필요' 표시는 단계가 판단으로 결정된 행.
+'확인 필요' 표시는 단계가 판단으로 결정된 행. '보류'는 macOS와의 차이를 사용자가 정해야 하는 행 ('확인 필요'와 다른 표시).
 
 | 기능 영역 | macOS 근거 | Windows 현황 | 단계 | 근거 | 확인 |
 |---|---|---|---|---|---|
 | 슬래시 명령 완성 | `SlashCommands.swift`, `SlashCommandPalette.swift`, `AppStore+SlashCommands.swift` | `SlashCommands.cs`, `SlashCommandStrings.cs` — Core 구현 완료; `SlashCommandVerification.cs` 8개 테스트 통과 (Mac); WinUI 팔레트 렌더링 대기 | 1단계 | P1 합의 (interview_20260919_235018) | 구현됨 · CI 확인 대기 |
-| 상태 표시줄 | `StatusLine.swift`, `StatusLineView.swift`, `AppStore+StatusLine.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
+| 상태 표시줄 | `StatusLine.swift`, `StatusLineView.swift`, `AppStore+StatusLine.swift` | `StatusLine.cs`, `StatusLineTrust.cs`, `StatusLineStrings.cs` — Core 구현 완료; `StatusLineVerification.cs` 8개 테스트 통과 (Mac); WinUI `MainWindow.StatusLine.cs` — 입력창 아래 렌더링·신뢰 질문·스모크 키 `statusLine` | 1단계 | P1 합의 (interview_20260919_235018) | 구현됨 · CI 확인 대기 |
+| 상태 줄 256색·RGB | `StatusLine.swift` `ANSISegment.Color.palette/.rgb` | 보류 — Windows `AnsiColor`는 macOS의 16색 이름만 지원. `38;5;n` / `38;2;r;g;b`는 기본색으로 표시됨 | 1단계 | 보류 (v4 묶음 전 사용자 판단) | 보류 |
+| 상태 줄 레벨 분리 폴백 | `AppStore+StatusLine.swift` `gated ? discovery.user : discovery.preferred` | 보류 — Windows `Discover()`는 우선순위 1개만 반환하므로, 워크스페이스 명령이 거절되면 사용자 설정 명령으로 되돌아가지 않고 상태 줄이 비어 있음 | 1단계 | 보류 (v4 묶음 전 사용자 판단) | 보류 |
 | CLI 계정 전환 | `CLIAccounts.swift`, `CLIAccountsSettingsView.swift`, `AppStore+CLIAccounts.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
 | 계정 사용량 표시 | `AccountUsageService.swift`, `AccountUsageSnapshot.swift`; docs/session-usage.md | `ActivityUsageVerification.cs` (테스트만); 서비스 미구현 | 1단계 | P1 합의 — "usage display, off by default" | |
 | CLI 업데이트 | `CLIUpdateService.swift`, `CLIUpdateSettingsView.swift`, `AppStore+CLIUpdates.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
