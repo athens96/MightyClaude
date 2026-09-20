@@ -152,7 +152,7 @@ extension AppStore {
     func setMightyStyle(_ id: String, style: String?) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
         // An unapproved style is never entered from here: the sheet does it.
-        let chosen = style.flatMap { value in applicableStyles(session).first { $0.id == value && $0.isRunnable } }
+        let chosen = style.flatMap { value in applicableStyles(session).first { $0.id == value && StyleLaunchWiring.canBindRunWindow(to: $0) } }
         // Only choosing CLI clears a pane; a style that cannot be entered leaves it as it was.
         if style != nil, chosen == nil { return }
         updateSession(id) { session in
@@ -418,7 +418,7 @@ extension AppStore {
             // already where it would be written: approving a manifest found in
             // a repository must not drop a second copy into the app's own data
             // directory, where it would win precedence and refuse the original.
-            if let data, style.source == .user, !FileManager.default.fileExists(atPath: style.path) {
+            if let data, StyleLaunchWiring.shouldCopyOnApproval(source: style.source), !FileManager.default.fileExists(atPath: style.path) {
                 failure = await MainActor.run { self?.writeUserStyle(data, id: style.id) }
             }
             if failure == nil {
@@ -433,7 +433,7 @@ extension AppStore {
             }
             await self.rescanStyles().value
             // The registry now holds the approved bytes; the pane may move.
-            guard let approved = self.styleRegistry.resolve(style.id), approved.hash == style.hash, approved.isRunnable else {
+            guard let approved = self.styleRegistry.resolve(style.id), approved.hash == style.hash, StyleLaunchWiring.canBindRunWindow(to: approved) else {
                 self.error = self.error ?? "스타일을 허용하지 못했습니다: " + style.manifest.name
                 return
             }
