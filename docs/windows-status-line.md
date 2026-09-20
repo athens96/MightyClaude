@@ -2,9 +2,13 @@
 
 ## Shell choice
 
-On Windows the status line command is run via **`cmd.exe /d /s /c <command>`** instead of `/bin/sh -c <command>` (macOS/Linux).
+On Windows the status line command runs in **the shell Claude Code itself uses**: Git Bash when it is installed, PowerShell when it is not (`StatusLineSupport.Shell`). macOS and Linux keep `/bin/sh -c <command>`.
 
-Reason: `cmd.exe` is the OS-native command interpreter; it is the shell in which Windows users write `.bat` scripts, and it matches the environment that a user-supplied `statusLine` command is expected to target. Using a POSIX shell (WSL bash, Git bash) would silently break commands written for the Windows shell and require an additional dependency. This is an OS-bound difference, not a behaviour difference.
+- Git Bash is looked up in `CLAUDE_CODE_GIT_BASH_PATH`, then `%ProgramFiles%\Git\bin\bash.exe`, `%ProgramFiles(x86)%\Git\bin\bash.exe`, `%LocalAppData%\Programs\Git\bin\bash.exe`, and is started as `bash.exe -c <command>`.
+- Without Git Bash the command runs as `powershell.exe -NoProfile -NonInteractive -Command <command>`.
+- The working directory is the pane's folder (`cwd` of the payload), as in the CLI.
+
+Reason: the feature's promise is that a `statusLine` which works in the CLI works in the app. The official page ([Customize your status line → Windows configuration](https://code.claude.com/docs/en/statusline)) says the CLI routes the command through Git Bash when present and PowerShell otherwise, with forward-slash paths and `~` expanding to the Windows home folder. The first version used `cmd.exe /d /s /c`, which broke exactly the documented examples (`~/.claude/statusline.sh`, `powershell -NoProfile -File C:/Users/…/statusline.ps1` under Git Bash quoting). Shell selection is an OS-bound mechanism; screens, copy, trust rule and limits are unchanged.
 
 ## Security decisions
 
