@@ -54,7 +54,7 @@ public sealed partial class MainWindow
             var modelName = option?.DisplayName ?? usage?.Model ?? pane.Model;
             var elapsedMs = pane.RunTiming is { } timing ? (long)Math.Max(0, timing.Elapsed() * 1000) : (long?)null;
             var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var configDir = StatusLineSupport.ConfigDir(homeDir);
+            var configDir = StatusLineSupport.ConfigDir(homeDir) ?? Path.Combine(homeDir, ".claude");
             var sessionId = pane.ResumeId ?? pane.Id;
             return new StatusLineContext(
                 SessionId: sessionId,
