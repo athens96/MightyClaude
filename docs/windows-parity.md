@@ -6,7 +6,7 @@ macOS 코드베이스에서 발견한 모든 기능 영역과 Windows 구현 현
 
 | 기능 영역 | macOS 근거 | Windows 현황 | 단계 | 근거 | 확인 |
 |---|---|---|---|---|---|
-| 슬래시 명령 완성 | `SlashCommands.swift`, `SlashCommandPalette.swift`, `AppStore+SlashCommands.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
+| 슬래시 명령 완성 | `SlashCommands.swift`, `SlashCommandPalette.swift`, `AppStore+SlashCommands.swift` | `SlashCommands.cs`, `SlashCommandStrings.cs` — Core 구현 완료; `SlashCommandVerification.cs` 8개 테스트 통과 (Mac); WinUI 팔레트 렌더링 대기 | 1단계 | P1 합의 (interview_20260919_235018) | 구현됨 · CI 확인 대기 |
 | 상태 표시줄 | `StatusLine.swift`, `StatusLineView.swift`, `AppStore+StatusLine.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
 | CLI 계정 전환 | `CLIAccounts.swift`, `CLIAccountsSettingsView.swift`, `AppStore+CLIAccounts.swift` | 없음 | 1단계 | P1 합의 (interview_20260919_235018) | |
 | 계정 사용량 표시 | `AccountUsageService.swift`, `AccountUsageSnapshot.swift`; docs/session-usage.md | `ActivityUsageVerification.cs` (테스트만); 서비스 미구현 | 1단계 | P1 합의 — "usage display, off by default" | |

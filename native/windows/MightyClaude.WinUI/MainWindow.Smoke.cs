@@ -44,6 +44,7 @@ public sealed partial class MainWindow
             await WaitUI(() => root.XamlRoot is not null && root.ActualWidth > 0 && views.TryGetValue(sessions[0].Id, out var p) && p.Container.ActualWidth > 0);
             var pane = views[sessions[0].Id];
             result["composerAndTranscript"] = await pane.RunComposerSmoke();
+            result["slashCommandPalette"] = await pane.RunSlashCommandPaletteSmoke();
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -150,6 +151,51 @@ public sealed partial class MainWindow
             gate.SetResult(); await sending;
             Require(submitted?.Input == "전송할 요청" && submitted.Attachments?.Single().Id == oldFile.Id && input.Text == "다음 요청 초안" && pendingAttachments.Count == 1 && pendingAttachments[0].Id == newFile.Id, "전송 완료가 새 초안이나 첨부를 지웠습니다.");
             checks["singleActionBusyDedupAndNewDraftPreserved"] = true; checks["passed"] = true; owner.smokeStart = null; return checks;
+        }
+
+        internal async Task<bool> RunSlashCommandPaletteSmoke()
+        {
+            // Fixture commands standing in for a real disk scan.
+            var fixture = new SlashCommand[]
+            {
+                new("review", "코드 검토", SlashCommandStrings.ProjectSkillSource, SlashCommandOrigin.Project),
+                new("deploy", "프로젝트 배포", SlashCommandStrings.UserCommandSource, SlashCommandOrigin.User),
+                new("model", "모델 바꾸기 · 이름을 이어서 고르세요", SlashCommandStrings.AppSource, SlashCommandOrigin.App, SlashCommandAction.SetModel, SlashArgument.Model),
+            };
+
+            // Query parsing: "/" opens palette (empty string), "/re" filters, "/re " is null (space = arg mode).
+            Require(SlashCommandCatalog.Query("/") == "", "슬래시 입력 시 빈 쿼리가 반환되어야 합니다.");
+            Require(SlashCommandCatalog.Query("/re") == "re", "슬래시 명령 쿼리 파싱이 잘못됐습니다.");
+            Require(SlashCommandCatalog.Query("/re ") is null, "공백 뒤에는 쿼리가 null이어야 합니다.");
+            Require(SlashCommandCatalog.Query("hello") is null, "슬래시로 시작하지 않으면 쿼리가 null이어야 합니다.");
+
+            // Filter "re" matches "review" by prefix.
+            var filtered = SlashCommandCatalog.Filter(fixture, "re");
+            Require(filtered.Length == 1 && filtered[0].Invocation == "review", "슬래시 명령 필터 결과가 올바르지 않습니다.");
+
+            // Count display string uses the {count}개 template.
+            var countText = SlashCommandStrings.PaletteCountTemplate.Replace("{count}", fixture.Length.ToString());
+            Require(countText == "3개", "팔레트 개수 표시가 올바르지 않습니다.");
+
+            // Keyboard hints match macOS copy.
+            Require(SlashCommandStrings.PaletteMove == "↑↓ 이동" && SlashCommandStrings.PaletteSelect == "Enter · Tab 선택" && SlashCommandStrings.PaletteDismiss == "Esc 닫기", "팔레트 키보드 힌트가 macOS와 다릅니다.");
+
+            // Choosing "review": insert "/review " into the composer draft, closing the palette.
+            updating = true; input.Text = "/review "; updating = false;
+            await Change(p => p with { Draft = input.Text });
+            Require(SlashCommandCatalog.Query(input.Text) is null, "명령 선택 후 슬래시 팔레트가 닫혀야 합니다.");
+            var argQ = SlashCommandCatalog.ArgumentQuery(input.Text);
+            Require(argQ == ("review", ""), "명령 인수 쿼리 파싱이 잘못됐습니다.");
+
+            // Action / argument commands carry the right metadata.
+            Require(fixture[2].Argument == SlashArgument.Model, "모델 명령의 인수 유형이 올바르지 않습니다.");
+            Require(SlashCommandStrings.PaletteArgumentTooltip == "이어서 선택합니다", "인수 명령 툴팁이 macOS와 다릅니다.");
+            Require(SlashCommandStrings.PaletteActionTooltip == "앱에서 바로 실행됩니다", "앱 명령 툴팁이 macOS와 다릅니다.");
+
+            // Cleanup.
+            updating = true; input.Text = ""; updating = false;
+            await Change(p => p with { Draft = "" });
+            return true;
         }
     }
 }

@@ -337,6 +337,13 @@ internal static class Verification
             }
             finally { Directory.Delete(legacy, true); Directory.Delete(native, true); }
         });
+        await Test("slash query parsing", SlashCommandVerification.QueryParsing);
+        await Test("slash argument query", SlashCommandVerification.ArgumentQuery);
+        await Test("slash builtins per provider", SlashCommandVerification.BuiltinsPerProvider);
+        await Test("slash filter", SlashCommandVerification.Filter);
+        await Test("slash frontmatter", SlashCommandVerification.Frontmatter);
+        await Test("slash discovery from temp home and workspace", SlashCommandVerification.Discovery);
+        await Test("slash 400 cap", SlashCommandVerification.CapAt400);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
