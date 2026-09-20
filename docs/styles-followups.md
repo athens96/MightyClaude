@@ -68,3 +68,6 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 - 다국어 지원(`locales/ko.json`·`en.json`, 세 클라이언트 공용). 엔진 파일 안의 문구를 옮길지는 그때 정한다.
 - 보안 점검(2026-09-20)에서 나온 수정: 릴레이 버퍼·소켓 상한, 페어링 키 재생성 시 기기 목록 정리, 업데이트 서명·해시 필수화, CI 서명 작업 분리 등.
 - macOS CI 실패의 수정(`docs/ci-macos-failure.md`의 후보 F)과 그 결과 기록.
+- 안내 패널이 백그라운드 작업을 모른다(2026-09-20 실사용에서 확인). `rules.phase`는 마지막으로 누른 버튼만 보고(`lastRecognisedAction`), '진행 중'은 CLI 한 차례가 도는 동안만 참이다(`StyleEvaluator.guidanceLine`). Ouroboros의 실행은 작업을 백그라운드로 넘기고 차례를 끝내므로, 실행이 40분째 도는 동안 패널은 "실행 단계가 끝났습니다"를 띄우고 평가 → 진화 → 랄프를 권했다. 랄프를 누른 뒤에는 `rules.next.map.evolve`에 `run`이 없어 실행 버튼이 사라졌다. 고칠 것 두 가지:
+  - 매니페스트(`Resources/Styles/ouroboros.json`): `evolve`의 다음 동작에 `run`을 넣고, `run`의 다음 동작 맨 앞에 `status`를 두고, `guidance.next`가 "끝났습니다"라고 단정하지 않게 한다.
+  - 엔진: 스킬이 답변 끝에 남기는 `◆ … → next: ooo <동작>` 줄을 읽어 그 동작을 추천 버튼으로 세우는 `recommend` 규칙을 더한다(`StyleRecommendRule`은 지금 `none`과 `capability`뿐이다). 같은 줄로 '진행 중' 문구를 유지할 수 있다. 폰 렌더러도 같은 매니페스트를 그리므로 함께 바뀐다.
