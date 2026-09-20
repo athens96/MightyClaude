@@ -49,6 +49,7 @@ public sealed partial class MainWindow
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
+            result["liveWiring"] = await RunLiveWiringSmoke();
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -95,6 +96,49 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
+    // Drives the real CLI update section with a fake updater: presses 업데이트 하기,
+    // waits for results to appear in the coordinator, and records the outcome.
+    // The fake updater and the smokeCliUpdater field are both restored on exit.
+    private async Task<Dictionary<string, object?>> RunLiveWiringSmoke()
+    {
+        var checks = new Dictionary<string, object?>();
+        var previousResults = lastCliUpdateResults;
+        smokeCliUpdater = (provider, _) => Task.FromResult(
+            new CliUpdateResult(provider, "updated", "1.0.0", "2.0.0", "native", CliUpdateStrings.DetailUpdated));
+        try
+        {
+            // The section must expose the button before we press it.
+            var section = BuildCliUpdateSection([]);
+            var button = section.Children.OfType<Button>()
+                .FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == "cli-update-start");
+            Require(button is not null, "업데이트 하기 button must be present in the CLI update section");
+            Require((string?)button!.Content == CliUpdateStrings.UpdateButton, "button must read 업데이트 하기 when idle");
+            Require(button.IsEnabled, "button must be enabled when idle");
+            checks["buttonPresentAndEnabled"] = true;
+
+            // Press the button (starts the coordinator with the fake updater).
+            coordinator.Start();
+            Require(coordinator.IsUpdating, "coordinator must report isUpdating after Start");
+            checks["isUpdatingAfterStart"] = true;
+
+            // Wait for the run to complete and check results.
+            await WaitUI(() => !coordinator.IsUpdating);
+            Require(coordinator.Results.Count == Wire.Providers.Length,
+                "coordinator must have one result per provider after the run");
+            Require(coordinator.Results.All(r => r.Status == "updated"),
+                "all fake results must be updated");
+            Require(coordinator.FinishedAt is not null, "finishedAt must be set after the run");
+            checks["resultsAppearAfterRun"] = true;
+            checks["passed"] = true;
+        }
+        finally
+        {
+            smokeCliUpdater = null;
+            lastCliUpdateResults = previousResults;
+        }
+        return checks;
+    }
+
     private async Task FinishSmoke(bool passed)
     {
         smokeStart = null; clock.Stop();

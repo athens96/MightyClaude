@@ -118,7 +118,20 @@ public sealed partial class MainWindow
             Opacity = .7,
             TextWrapping = TextWrapping.Wrap,
         });
-        foreach (var result in results)
+
+        // 업데이트 하기 button — reflects coordinator state live.
+        var updateButton = new Button
+        {
+            Content = coordinator.IsUpdating ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton,
+            IsEnabled = !coordinator.IsUpdating,
+        };
+        AutomationProperties.SetAutomationId(updateButton, "cli-update-start");
+        updateButton.Click += (_, _) => coordinator.Start();
+        panel.Children.Add(updateButton);
+
+        // Dynamic results area: rebuilt on each StateChanged while the section is visible.
+        var resultsPanel = new StackPanel { Spacing = 6 };
+        void AddResultRow(CliUpdateResult result)
         {
             var row = new StackPanel { Spacing = 2 };
             row.Children.Add(new TextBlock
@@ -138,8 +151,23 @@ public sealed partial class MainWindow
                     TextWrapping = TextWrapping.Wrap,
                 });
             AutomationProperties.SetAutomationId(row, ResultRowAutomationId(result));
-            panel.Children.Add(row);
+            resultsPanel.Children.Add(row);
         }
+        foreach (var result in results) AddResultRow(result);
+        panel.Children.Add(resultsPanel);
+
+        coordinator.StateChanged += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            updateButton.Content = coordinator.IsUpdating ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton;
+            updateButton.IsEnabled = !coordinator.IsUpdating;
+            var live = coordinator.Results;
+            if (live.Count > 0)
+            {
+                resultsPanel.Children.Clear();
+                foreach (var r in live) AddResultRow(r);
+            }
+        });
+
         return panel;
     }
 
