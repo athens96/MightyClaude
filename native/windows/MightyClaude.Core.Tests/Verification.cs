@@ -363,6 +363,17 @@ internal static class Verification
         await Test("status line runner enforces timeout", StatusLineVerification.RunnerEnforcesTimeout);
         await Test("status line shell follows Claude Code on Windows", StatusLineVerification.ShellFollowsClaudeCodeOnWindows);
         await Test("strings match macOS", StringsVerification.MatchMacOS);
+        await Test("tool permission handshake sends initialize before the prompt", ToolPermissionVerification.HandshakeRunsBeforeThePrompt);
+        await Test("tool permission handshake failure and timeout fail closed", ToolPermissionVerification.HandshakeFailureAndTimeoutFailClosed);
+        await Test("tool permission 이번만 허용 returns the original input once", ToolPermissionVerification.AllowOnceReturnsTheOriginalInput);
+        await Test("tool permission 거부 never returns allow rules or settings", ToolPermissionVerification.DenyNeverReturnsAllow);
+        await Test("tool permission channel accepts only can_use_tool and validates identifiers", ToolPermissionVerification.OnlyCanUseToolIsAcceptedAndIdentifiersAreValidated);
+        await Test("tool permission channel caps waiting requests at 16", ToolPermissionVerification.PendingRequestsAreCappedAtSixteen);
+        await Test("tool permission input too large to show completely is denied", ToolPermissionVerification.InputTooLargeToShowIsDenied);
+        await Test("tool permission questionnaires and extra screens can only be denied", ToolPermissionVerification.QuestionnairesAndExtraScreensCanOnlyBeDenied);
+        await Test("tool permission stopping the run settles every waiting request", ToolPermissionVerification.StoppingTheRunSettlesEveryWaitingRequest);
+        await Test("tool permission bar shows the title summary reason path and count", ToolPermissionVerification.BarShowsTheTitleSummaryReasonPathAndCount);
+        await Test("tool permission strings match macOS", StringsVerification.ToolPermissionsMatchMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
