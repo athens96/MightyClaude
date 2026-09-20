@@ -54,7 +54,7 @@ public static class SettingsSections
         new(CliUpdate, CliUpdateStrings.SectionTitle),
         new(Companion, null),
         new(Providers, ProvidersTitle),
-        new(CliAccounts, null),
+        new(CliAccounts, CliAccountStrings.SectionTitle),
         new(ClaudeMods, null),
         new(AppUpdate, null),
         new(AppInfo, AppInfoTitle),

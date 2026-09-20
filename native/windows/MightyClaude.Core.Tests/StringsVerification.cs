@@ -302,4 +302,69 @@ internal static class StringsVerification
         if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
         return Task.CompletedTask;
     }
+
+    // CLIAccountsSettingsView.swift (section, buttons, confirmation, notes),
+    // CLIAccountStatus.summary (summary labels), CLIAccountService (detail sentences).
+    // SectionDescription carries the one recorded OS-bound substitution
+    // ("외부 터미널 창에서" for "터미널 실행 창에서"), documented in docs/windows-cli-accounts.md.
+    private static readonly Dictionary<string, string> CliAccountMacOS = new()
+    {
+        // CLIAccountsSettingsView.swift
+        ["SectionTitle"] = "CLI 계정",
+        // OS-bound substitution: "외부 터미널 창에서" replaces "터미널 실행 창에서".
+        ["SectionDescription"] = "로그인은 외부 터미널 창에서 진행됩니다. 앱이 명령을 실행해 두면 CLI가 브라우저를 엽니다. 다른 계정으로 바꿀 때는 브라우저에서 원하는 계정을 고르세요. 바꾼 계정은 다음 요청부터 적용됩니다.",
+        ["StatusChecking"] = "확인 중…",
+        ["StatusPending"] = "로그인 터미널을 열었습니다. 브라우저에서 로그인을 마치면 여기에 반영됩니다.",
+        ["StatusNotInstalled"] = "미설치",
+        ["ButtonCancelWait"] = "대기 취소",
+        ["ButtonChange"] = "계정 변경",
+        ["ButtonLogout"] = "로그아웃",
+        ["ButtonLogin"] = "로그인",
+        ["ButtonLoginClaude"] = "Claude 구독으로 로그인",
+        ["ButtonLoginConsole"] = "Anthropic Console(API 과금)로 로그인",
+        ["ButtonCancel"] = "취소",
+        ["RefreshTooltip"] = "상태 다시 확인",
+        ["ConfirmLogoutTitleTemplate"] = "{provider} 에서 로그아웃할까요?",
+        ["ConfirmChangeTitleTemplate"] = "{provider} 계정을 바꿀까요?",
+        ["ConfirmMessageTemplate"] = "{provider} CLI에 저장된 로그인 정보를 지웁니다. 터미널에서 직접 실행하는 {provider}에도 같이 적용됩니다.",
+        // CLIAccountStatus.summary
+        ["SummarySignedOut"] = "로그인되지 않음",
+        ["SummaryUnknown"] = "상태를 확인하지 못했습니다.",
+        ["SummarySignedIn"] = "로그인됨",
+        // CLIAccountService detail sentences
+        ["DetailClaudeParseError"] = "Claude 로그인 상태를 읽지 못했습니다.",
+        ["DetailCodexParseError"] = "Codex 로그인 상태를 읽지 못했습니다.",
+        ["DetailGeminiNotInstalled"] = "Gemini CLI가 설치되어 있지 않습니다.",
+        ["DetailNotInstalledTemplate"] = "{provider} CLI가 설치되어 있지 않습니다.",
+        ["DetailUnsupportedProvider"] = "지원하지 않는 실행기입니다.",
+        ["DetailGeminiApiKeyPresent"] = "GEMINI_API_KEY 환경 변수로 인증합니다. 바꾸려면 그 값을 바꾸거나 Gemini의 /auth에서 방식을 바꾸세요.",
+        ["DetailGeminiApiKeyAbsent"] = "GEMINI_API_KEY 환경 변수를 확인하세요.",
+        ["DetailVertexPresent"] = "Google Cloud 자격 증명으로 인증합니다. gcloud에서 계정을 바꾸세요.",
+        ["DetailVertexAbsent"] = "Vertex AI 자격 증명을 확인하지 못했습니다.",
+        ["DetailClaudeTimeout"] = "Claude 상태 확인이 제한 시간 안에 끝나지 않았습니다.",
+        ["DetailClaudeUnknown"] = "이 Claude CLI에서 로그인 상태를 읽지 못했습니다. CLI를 업데이트해 보세요.",
+        ["DetailRunFailed"] = "상태 명령을 실행하지 못했습니다.",
+        ["DetailGeminiLogoutFailedTemplate"] = "Gemini 로그아웃에 실패했습니다: {reason}",
+    };
+
+    /// The CLI accounts copy is the macOS copy apart from the one recorded
+    /// OS-bound substitution in SectionDescription.
+    internal static Task CliAccountStringsMatchMacOS()
+    {
+        var actual = Constants(typeof(CliAccountStrings));
+        var reason = Validate(nameof(CliAccountStrings), actual, CliAccountMacOS);
+        if (reason is not null) throw new InvalidOperationException(reason);
+
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CliAccountStrings), copy, CliAccountMacOS);
+        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+        // The macOS description must fail — "터미널 실행 창" is not the Windows copy.
+        if (Bad(Broken("SectionDescription", "로그인은 터미널 실행 창에서 진행됩니다. 앱이 명령을 실행해 두면 CLI가 브라우저를 엽니다. 다른 계정으로 바꿀 때는 브라우저에서 원하는 계정을 고르세요. 바꾼 계정은 다음 요청부터 적용됩니다.")) is null)
+            throw new InvalidOperationException("the macOS description must fail; only the Windows wording is accepted");
+        if (Bad(Broken("SectionTitle", "")) is null) throw new InvalidOperationException("an empty value must fail");
+        if (Bad(Broken("ButtonLogin", CliAccountStrings.ButtonLogout)) is null) throw new InvalidOperationException("a duplicate value must fail");
+        if (Bad(Broken("ConfirmMessageTemplate", "{ provider }...")) is null) throw new InvalidOperationException("a placeholder that is not {name} must fail");
+        var missing = new Dictionary<string, string>(actual); missing.Remove("SummarySignedOut");
+        if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
+        return Task.CompletedTask;
+    }
 }
