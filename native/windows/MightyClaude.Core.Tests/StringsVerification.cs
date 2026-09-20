@@ -418,6 +418,57 @@ internal static class StringsVerification
         ["DetailGeminiLogoutFailedTemplate"] = "Gemini 로그아웃에 실패했습니다: {reason}",
     };
 
+    // AppUpdateSettingsView.swift (section, labels, toggle, status, buttons).
+    // NoPublicKeyNotice has no macOS literal (Windows rule 1 behavior has no
+    // macOS equivalent) — the Windows value is listed here as a 보류 entry so
+    // Validate can confirm the constant is present.
+    private static readonly Dictionary<string, string> AppUpdateMacOS = new()
+    {
+        ["SectionTitle"] = "앱 업데이트",
+        ["CurrentVersionLabel"] = "현재 버전",
+        ["ManifestUrlPlaceholder"] = "업데이트 정보 주소 (https://…/latest.json)",
+        ["BuiltInAddressTemplate"] = "빌드에 포함된 주소를 사용합니다: {address}",
+        ["ManifestUrlHint"] = "Cloudflare에 올린 latest.json의 https 주소를 입력하세요. 비워 두면 빌드에 포함된 주소를 씁니다.",
+        ["AutoCheckToggle"] = "앱 시작 시 하루 한 번 새 버전 확인",
+        ["SignatureVerified"] = "서명 검증: 이 빌드에 포함된 공개 키로 서명된 업데이트 정보만 받습니다.",
+        ["NotCheckedYet"] = "아직 확인하지 않았습니다.",
+        ["LastCheckedTemplate"] = "마지막 확인 {time}",
+        ["Checking"] = "새 버전 확인 중…",
+        ["UpToDate"] = "최신 버전입니다.",
+        ["AvailableTemplate"] = "새 버전 {version} 이 있습니다.",
+        ["DownloadingTemplate"] = "{percent}% 받는 중…",
+        ["StagingProgress"] = "패키지를 풀고 확인하는 중…",
+        ["ReadyTemplate"] = "{version} 설치 준비 완료 · 설치하면 앱이 종료된 뒤 교체되고 다시 실행됩니다.",
+        ["Installing"] = "앱을 종료하고 교체하는 중…",
+        ["CheckButton"] = "업데이트 확인",
+        ["DownloadButton"] = "다운로드",
+        ["CancelButton"] = "취소",
+        ["InstallButton"] = "설치하고 다시 실행",
+        ["InProgressButton"] = "진행 중…",
+        // 보류: no macOS literal — Windows rule 1 disables the entire section
+        // when no public key is compiled in; macOS shows an orange warning but
+        // still allows the check. Recorded in docs/windows-parity.md.
+        ["NoPublicKeyNotice"] = "이 빌드에는 업데이트 공개 키가 없어 업데이트 확인을 지원하지 않습니다.",
+    };
+
+    /// The app update copy matches the macOS literals plus one Windows-only notice.
+    internal static Task AppUpdateStringsMatchMacOS()
+    {
+        var actual = Constants(typeof(AppUpdateStrings));
+        var reason = Validate(nameof(AppUpdateStrings), actual, AppUpdateMacOS);
+        if (reason is not null) throw new InvalidOperationException(reason);
+
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(AppUpdateStrings), copy, AppUpdateMacOS);
+        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+        if (Bad(Broken("SectionTitle", "")) is null) throw new InvalidOperationException("an empty value must fail");
+        if (Bad(Broken("SectionTitle", AppUpdateStrings.UpToDate)) is null) throw new InvalidOperationException("a duplicate value must fail");
+        if (Bad(Broken("AvailableTemplate", "새 버전 { version } 이 있습니다.")) is null) throw new InvalidOperationException("a placeholder that is not {name} must fail");
+        if (Bad(Broken("CheckButton", "Check for Updates")) is null) throw new InvalidOperationException("English copy must fail");
+        var missing = new Dictionary<string, string>(actual); missing.Remove("Installing");
+        if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
+        return Task.CompletedTask;
+    }
+
     /// The CLI accounts copy is the macOS copy apart from the one recorded
     /// OS-bound substitution in SectionDescription.
     internal static Task CliAccountStringsMatchMacOS()

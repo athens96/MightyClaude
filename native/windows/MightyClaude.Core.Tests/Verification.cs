@@ -475,6 +475,21 @@ internal static class Verification
         await Test("account usage failure keeps the last known value and backs off", AccountUsageVerification.FailureKeepsTheLastKnownValueAndBacksOff);
         await Test("account usage codex is asked through its own app-server", AccountUsageVerification.CodexIsAskedThroughItsOwnAppServer);
         await Test("account usage closing the app cancels pending reads", AccountUsageVerification.ClosingTheAppCancelsPendingReads);
+        await Test("app update ed25519 matches the RFC 8032 vectors", AppUpdateVerification.Ed25519MatchesTheRfc8032Vectors);
+        await Test("app update strings match macOS", StringsVerification.AppUpdateStringsMatchMacOS);
+        await Test("app update manifest accepts a fixture signature and refuses everything else", AppUpdateVerification.ManifestAcceptsAFixtureSignatureAndRefusesEverythingElse);
+        await Test("app update manifest refuses an asset without sha256 or size", AppUpdateVerification.ManifestRefusesAnAssetWithoutSha256OrSize);
+        await Test("app update version comparison orders releases and pre-releases", AppUpdateVerification.VersionComparisonOrdersReleasesAndPreReleases);
+        await Test("app update without a public key there is no check at all", AppUpdateVerification.NoPublicKeyMeansNoCheckAtAll);
+        await Test("app update a built-in address ignores a user address", AppUpdateVerification.ABuiltInAddressIgnoresAUserAddress);
+        await Test("app update transport refuses a non-https hop", AppUpdateVerification.TransportRefusesANonHttpsHop);
+        await Test("app update download verifies the bytes on disk and cleans up", AppUpdateVerification.DownloadVerifiesTheBytesOnDiskAndCleansUp);
+        await Test("app update staging refuses an escaping entry or the wrong package", AppUpdateVerification.StagingRefusesAnEscapingEntryOrTheWrongPackage);
+        await Test("app update replacement verifies again and replaces the install", AppUpdateVerification.ReplacementVerifiesAgainAndReplacesTheInstall);
+        await Test("app update replacement leaves the install untouched when it cannot proceed", AppUpdateVerification.ReplacementLeavesTheInstallUntouchedWhenItCannotProceed);
+        await Test("app update automatic check happens at most once a day", AppUpdateVerification.AutomaticCheckHappensAtMostOnceADay);
+        await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
+        await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();

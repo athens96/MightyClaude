@@ -5,7 +5,8 @@ internal static class SettingsSectionsVerification
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
     // The Windows sections must appear in the same relative order as the macOS
-    // Form body in SettingsViews.swift: 화면 → CLI 업데이트 → providers → 앱 정보.
+    // Form body in SettingsViews.swift: 화면 → CLI 업데이트 → providers →
+    // CLI 계정 → 앱 업데이트 → 앱 정보.
     internal static Task SectionsAppearInMacOrderWithTheirTitles()
     {
         var titles = SettingsSections.WindowsTitles;
@@ -15,6 +16,7 @@ internal static class SettingsSectionsVerification
             CliUpdateStrings.SectionTitle,
             "이 PC의 CLI",
             CliAccountStrings.SectionTitle,
+            AppUpdateStrings.SectionTitle,
             "앱 정보",
         }), "Windows section titles are not the macOS order: " + string.Join(", ", titles));
 
@@ -44,7 +46,6 @@ internal static class SettingsSectionsVerification
             SettingsSections.MobileRemote,
             SettingsSections.Companion,
             SettingsSections.ClaudeMods,
-            SettingsSections.AppUpdate,
         };
         foreach (var id in absent)
         {
