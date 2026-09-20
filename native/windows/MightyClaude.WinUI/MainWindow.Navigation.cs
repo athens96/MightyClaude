@@ -89,6 +89,7 @@ public sealed partial class MainWindow
         theme.Items.Add(new ComboBoxItem { Content = "어둡게", Tag = "dark" }); theme.Items.Add(new ComboBoxItem { Content = "밝게", Tag = "light" }); theme.SelectedIndex = service.Snapshot.Theme == "light" ? 1 : 0;
         theme.SelectionChanged += async (_, _) => { if (theme.SelectedItem is ComboBoxItem item) await Act(async () => { await service.UpdateAsync(s => s with { Theme = (string)item.Tag }); Render(); }); };
         content.Children.Add(theme);
+        content.Children.Add(BuildNotificationSettingsSection());
         content.Children.Add(new TextBlock { Text = "로컬 Claude Code · Codex CLI · Gemini CLI를 그대로 사용합니다. 로그인과 설치는 각 CLI에서 진행하세요.", TextWrapping = TextWrapping.Wrap });
         content.Children.Add(Button("설치된 실행기 새로고침", RefreshRuntime));
         foreach (var item in runtime?.Providers ?? []) content.Children.Add(new TextBlock { Text = item.Name + " · " + (item.Available ? item.Version : item.Detail), TextWrapping = TextWrapping.Wrap, FontSize = 12 });

@@ -121,6 +121,7 @@ public sealed record AppSnapshot
     public string Theme { get; init; } = "dark";
     public double SidebarWidth { get; init; } = 252;
     public Dictionary<string, string>? TrustedStatusLines { get; init; }
+    public bool CompletionNotificationsEnabled { get; init; } = true;
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)

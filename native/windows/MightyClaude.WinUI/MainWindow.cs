@@ -40,7 +40,7 @@ public sealed partial class MainWindow : Window
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
         service = new(options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative"), options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
-        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); });
+        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot, not a remote peer.
@@ -70,7 +70,7 @@ public sealed partial class MainWindow : Window
     }
     private async Task Initialize()
     {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await RefreshRuntime(); await RefreshRemoteState(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); }); return; }
         try { await service.InitializeAsync(); Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
     }
