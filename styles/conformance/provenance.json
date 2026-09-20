@@ -1,0 +1,9 @@
+{
+  "engineTag": "mighty-style-engine-v1",
+  "engineCommit": "b767328c5e47654fffbde224488e5865a139ed8f",
+  "harnessShaBin256": "cb374c195a02700b5635d867b2566e92355443fea9313e8551ac9c710d6f30ad",
+  "harnessPath": "/Users/young/Work/mighty-styles/.build/release/mighty-style",
+  "executedAt": "2026-09-20T00:04:05Z",
+  "executedArgvTemplate": "[\"/Users/young/Work/mighty-styles/.build/release/mighty-style\", \"validate\", \"<corpus-vector-path>\"]",
+  "note": "코퍼스 기대 오류 코드를 만든 실행의 증거입니다. check-engine-pin.sh 는 engineCommit 을 두 저장소에서 교차 확인합니다."
+}
