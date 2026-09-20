@@ -351,6 +351,129 @@ public static class SlashCommandCatalog
     };
 }
 
+// The effect choosing the highlighted entry has on the draft.
+// Insert leaves "/invocation " in the composer, AppAction runs in the app and
+// clears it, ArgumentCompletion leaves "/name " so the palette stays open on
+// that built-in's choices (AppStore+SlashCommands.swift applyCompletion).
+public enum SlashChoiceEffect { Insert, AppAction, ArgumentCompletion }
+
+// What choosing a palette entry does: the draft it leaves behind, and the app
+// action to run when there is one. ActionArg carries SetModel / SetPermission.
+public sealed record SlashChoice(string Draft, SlashChoiceEffect Effect, SlashCommandAction? Action = null, string? ActionArg = null);
+
+// Pure open/closed state for the completion list above the composer.
+// Open when Commands is non-empty; the highlight wraps on MoveUp / MoveDown
+// and is clamped when read, exactly as SessionPaneView.swift does.
+public sealed record SlashPaletteState(SlashCommand[] Commands, int HighlightedIndex)
+{
+    public static readonly SlashPaletteState Closed = new([], 0);
+    public bool IsOpen => Commands.Length > 0;
+    // macOS reads the highlight as min(paletteIndex, count - 1).
+    public int SafeIndex => Commands.Length == 0 ? 0 : Math.Min(Math.Max(HighlightedIndex, 0), Commands.Length - 1);
+    public SlashCommand? Highlighted => Commands.Length == 0 ? null : Commands[SafeIndex];
+    // Up/Down wrap: (index -/+ 1 + count) % count, matching macOS handlePaletteKey.
+    public SlashPaletteState MoveUp() => Commands.Length == 0 ? this
+        : this with { HighlightedIndex = (SafeIndex - 1 + Commands.Length) % Commands.Length };
+    public SlashPaletteState MoveDown() => Commands.Length == 0 ? this
+        : this with { HighlightedIndex = (SafeIndex + 1) % Commands.Length };
+    // Choosing the highlighted entry. An app action clears the draft; a built-in
+    // that takes an argument leaves "/name " and keeps the list open on it.
+    public SlashChoice Choose() => Choose(Highlighted);
+    public static SlashChoice Choose(SlashCommand? command)
+    {
+        if (command is null) return new("", SlashChoiceEffect.Insert);
+        if (command.Action is { } action) return new("", SlashChoiceEffect.AppAction, action, command.ActionArg);
+        return new("/" + command.Invocation + " ",
+            command.Argument is null ? SlashChoiceEffect.Insert : SlashChoiceEffect.ArgumentCompletion);
+    }
+    public static SlashPaletteState Open(SlashCommand[] commands) => new(commands, 0);
+}
+
+// Builds the palette state the composer renders. Everything here is pure, so
+// Core.Tests proves the screen's behaviour on the Mac without a window.
+public static class SlashPalette
+{
+    // macOS shows at most 60 rows (SessionPaneView.paletteCommands prefix(60)).
+    public const int MaximumRows = 60;
+
+    // App actions this client has no screen for yet. Their built-ins are left
+    // out of the palette instead of appearing as a row that does nothing.
+    // See docs/windows-slash-commands.md.
+    public static readonly SlashCommandAction[] UnavailableActions = [SlashCommandAction.OpenPlugins];
+
+    // The built-ins the Windows palette offers: macOS's list minus the entries
+    // whose action this client cannot perform.
+    public static SlashCommand[] Builtins(string provider) =>
+        [.. SlashCommandCatalog.Builtins(provider)
+            .Where(c => c.Action is not { } action || !UnavailableActions.Contains(action))];
+
+    // The draft while it is a "/name" being typed or a built-in's "/name arg",
+    // or null when the palette should be closed (SessionPaneView.paletteDraft).
+    // dismissedFor is the draft Esc closed the list for.
+    public static string? Draft(string kind, string draft, string? dismissedFor)
+    {
+        if (kind == "shell" || dismissedFor == draft) return null;
+        return SlashCommandCatalog.Query(draft) is not null || SlashCommandCatalog.ArgumentQuery(draft) is not null
+            ? draft : null;
+    }
+
+    // What the list shows for draft: built-ins and scanned commands while a name
+    // is typed, or a built-in's choices after "/name " (AppStore.slashPalette).
+    // A scanned command that shares a built-in's name loses to the built-in.
+    public static SlashCommand[] Rows(string provider, string kind, string draft,
+        IReadOnlyList<SlashCommand> scanned, Func<SlashArgument, string, SlashCommand[]>? argumentChoices = null)
+    {
+        if (kind == "shell") return [];
+        var builtins = Builtins(provider);
+        if (SlashCommandCatalog.Query(draft) is { } query)
+        {
+            var names = builtins.Select(c => c.Invocation).ToHashSet(StringComparer.Ordinal);
+            return SlashCommandCatalog.Filter([.. builtins, .. scanned.Where(c => !names.Contains(c.Invocation))], query);
+        }
+        if (SlashCommandCatalog.ArgumentQuery(draft) is not { } parsed) return [];
+        var argument = builtins.FirstOrDefault(c => c.Invocation == parsed.Command)?.Argument;
+        if (argument is not { } kindOfArgument || argumentChoices is null) return [];
+        // Choices are invoked as "name value", so the query keeps the name.
+        return SlashCommandCatalog.Filter(argumentChoices(kindOfArgument, parsed.Command), parsed.Command + " " + parsed.Query);
+    }
+
+    // The whole state for a draft, with the highlight reset to the first row.
+    public static SlashPaletteState State(string provider, string kind, string draft, string? dismissedFor,
+        IReadOnlyList<SlashCommand> scanned, Func<SlashArgument, string, SlashCommand[]>? argumentChoices = null)
+    {
+        if (Draft(kind, draft, dismissedFor) is not { } text) return SlashPaletteState.Closed;
+        var rows = Rows(provider, kind, text, scanned, argumentChoices);
+        if (rows.Length == 0) return SlashPaletteState.Closed;
+        return SlashPaletteState.Open(rows.Length > MaximumRows ? rows[..MaximumRows] : rows);
+    }
+
+    // The model rows "/model " lists, invoked as "model <value>" so the
+    // palette can filter them with the command name still attached.
+    public static SlashCommand[] ModelChoices(string command, IEnumerable<(string Value, string DisplayName)> options, string current) =>
+        [.. options.Select(option => new SlashCommand(
+            command + " " + option.Value,
+            option.DisplayName + (option.Value == current ? SlashCommandStrings.PaletteCurrentSuffix : ""),
+            SlashCommandStrings.ModelSource, SlashCommandOrigin.App,
+            SlashCommandAction.SetModel, null, option.Value))];
+
+    // The permission-mode rows "/permissions " lists. label turns a mode into
+    // the same Korean word the composer's permission button shows.
+    public static SlashCommand[] PermissionChoices(string command, IEnumerable<string> modes, string current, Func<string, string> label) =>
+        [.. modes.Select(mode => new SlashCommand(
+            command + " " + mode,
+            label(mode) + (mode == current ? SlashCommandStrings.PaletteCurrentSuffix : ""),
+            SlashCommandStrings.PermissionSource, SlashCommandOrigin.App,
+            SlashCommandAction.SetPermission, null, mode))];
+
+    // A row's description, falling back to macOS's "설명 없음".
+    public static string Description(SlashCommand command) =>
+        command.Description.Length == 0 ? SlashCommandStrings.PaletteNoDescription : command.Description;
+
+    // The footer's "{count}개".
+    public static string CountLabel(int count) =>
+        SlashCommandStrings.PaletteCountTemplate.Replace("{count}", count.ToString());
+}
+
 // In-memory freshness cache for slash catalogs. The WinUI layer calls IsStale
 // to decide when to rescan off the UI thread, mirroring AppStore+SlashCommands.swift
 // which rescans when the cache is missing or older than 30 seconds.
