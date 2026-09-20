@@ -107,18 +107,13 @@ public sealed partial class MainWindow
         });
     }
 
-    // Returns "sent", or an anonymous {skipped, reason} object when unsupported.
-    // Throws if IsSupported was true at registration but the API call failed.
-    private async Task<object?> RunCompletionNotificationSmoke()
+    // One real notifier call; the recorded outcome and the fixture copy live in
+    // Core so the shape is verified on the Mac. Throws if IsSupported was true
+    // at registration but the API call failed.
+    private Task<CompletionNotificationSmokeOutcome> RunCompletionNotificationSmoke()
     {
         var impl = new WindowsAppNotifier();
-        if (!impl.IsSupported)
-            return new { skipped = true, reason = "IsSupported false" };
-        var error = await impl.TryRegisterAsync(_ => { });
-        if (error is not null)
-            return new { skipped = true, reason = error };
-        await impl.SendAsync("Smoke fixture", "smoke-fixture-session");
-        return "sent";
+        return CompletionNotificationSmoke.RunAsync(impl.IsSupported, () => impl.TryRegisterAsync(_ => { }), impl.SendAsync);
     }
 
     // Settings section built from Core strings — portable to the future sectioned screen.
