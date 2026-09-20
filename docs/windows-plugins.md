@@ -321,3 +321,63 @@ reload, reads back the sentence a missing CLI produces and the two sentences a
 remote workspace shows, and puts back the two hooks it set.
 
 New saved-state fields: none. The snapshot `Version` stays 1.
+
+---
+
+## Where this stands
+
+### Claude list
+
+Done and on `main`. Unchanged by the Codex work apart from two shared pieces it
+gained: `IPluginReader`, which `ClaudePluginReader` now implements so the window
+can hold either reader, and `ClaudePluginSupport.NamesAChange`, which gained the
+word `upgrade`. Its own Core checks still pass, so the list behaves as before.
+
+### Codex list
+
+Done and on `main` (`ae5625a` read path, `0cea2a3` window, `9ad3c73` tab count).
+
+Present: the shared window under the title `Codex 플러그인`, the two tabs, the
+search box, the marketplace filter, `목록 새로고침`, the diagnostics fold, the
+`codex --version` line, the user-only scope, `CodexPluginStrings.FooterNote`,
+`CodexPluginStrings.MarketplaceHelp`, and the status sentence that stays visible
+even when the read succeeded. Reached from the run pane's `···` menu and from
+`/plugins`, on the real events, not only under `--smoke-test`.
+
+Absent, and deliberately so — this screen is read-only: no install, remove,
+enable or disable button, no install-scope picker, and no
+`codex plugin marketplace add` or `upgrade`. Those belong to the marketplace
+feature and have rows 23 and 24 in `docs/windows-parity.md` as `보류`.
+
+### What has been verified, and where
+
+| Claim | How it was checked |
+|-------|--------------------|
+| The read changes nothing | `CodexPluginVerification.cs` asserts that no call without `--help` ever names `add`, `upgrade`, `install`, `remove`, `enable`, `disable` or `update` |
+| A CLI without the flags is explained, not used | the capability-probe check drives a fake `--help` that omits `--json` |
+| Malformed, oversized, failed and timed-out answers become statuses | four separate checks; none of them yields a ready-but-empty list |
+| The Korean copy is the macOS copy | `CodexPluginVerification.StringsMatchMacOS`, with the one recorded `이 PC의` substitution |
+| The window is wired into the running app, not just the smoke check | `codex plugin window is a real WinUI surface wired into the app` reads `MainWindow.cs` and `MainWindow.SlashPalette.cs` |
+| No app action is left out of the palette | `SlashPalette.UnavailableActions` is asserted empty |
+
+13 `codex plugin …` checks, inside a Core suite of 205 that passes on this Mac
+with `dotnet run --project native/windows/MightyClaude.Core.Tests
+--artifacts-path /tmp/mc-artifacts`. No real `claude`, `codex`, `gemini`, `npm`
+or `winget` process starts, no network is touched, and the real user profile is
+never read: every check uses the fake `ICliRunner` over a temporary folder.
+
+### Saved state and the freeze
+
+New saved-state fields: none. The snapshot `Version` stays 1, so `StateStore`
+never resets a user's state over this feature.
+
+Every file this feature touched is inside `native/windows/**` or
+`docs/windows-*.md`, and `scripts/check-style-freeze.sh` passes.
+
+### Still open
+
+The on-device pass. Every screen item is marked `기기 미확인` in
+`docs/windows-screen-checklist.md`, because no Windows machine has run this
+build; the Core checks and the GUI smoke run are what stands behind it so far.
+The `완료` mark on the `Codex 플러그인` parity row is set by the main session
+once it has read both Windows CI jobs.
