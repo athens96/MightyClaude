@@ -62,24 +62,60 @@ public sealed partial class MainWindow
     }
     private MenuFlyout WorkspaceMenu(string id)
     {
-        var menu = new MenuFlyout(); menu.Items.Add(MenuItem("이름 변경…", () => RenameWorkspace(id)));
+        var menu = new MenuFlyout(); menu.Items.Add(MenuItem(RenameStrings.MenuEntry, () => RenameWorkspace(id)));
         menu.Items.Add(MenuItem("목록에서 제거", () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); }))); return menu;
     }
     private MenuFlyout SessionMenu(string id)
     {
-        var menu = new MenuFlyout(); menu.Items.Add(MenuItem("이름 변경…", () => RenameSession(id)));
+        var menu = new MenuFlyout(); menu.Items.Add(MenuItem(RenameStrings.MenuEntry, () => RenameSession(id)));
         menu.Items.Add(MenuItem("집중 보기 / 돌아가기", () => Act(async () => { await SelectLayoutSession(id); await ApplyLayoutPreset(LayoutMode(service.Snapshot, service.Snapshot.ActiveWorkspaceId) == "focus" ? "custom" : "focus"); })));
         menu.Items.Add(MenuItem("닫기", () => CloseSession(id))); return menu;
     }
     private Task CloseSession(string id) => Act(async () => { await service.StopAsync(id); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() }); Render(); });
-    private async Task<string?> AskName(string title, string current)
+    /// <summary>
+    /// The rename dialog of RenameViews.swift: the current name selected, the macOS captions under
+    /// the field and 저장 disabled while the name is invalid. Every literal comes from RenameStrings
+    /// and every rule from RenameSupport, so Windows and macOS accept and refuse the same names.
+    /// </summary>
+    private async Task<string?> AskName(string heading, string hint, string current)
     {
-        var field = new TextBox { Text = current, MaxLength = 120, MinWidth = 280 };
-        var dialog = new ContentDialog { Title = title, Content = field, PrimaryButtonText = "저장", CloseButtonText = "취소", DefaultButton = ContentDialogButton.Primary, XamlRoot = root.XamlRoot };
+        var field = new TextBox { Header = RenameStrings.FieldLabel, Text = current, MinWidth = 300 };
+        var hintText = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
+        var errors = new StackPanel { Spacing = 2 };
+        var content = new StackPanel { Spacing = 8, Children = { field, hintText, errors } };
+        var dialog = new ContentDialog
+        {
+            Title = heading,
+            Content = content,
+            PrimaryButtonText = RenameStrings.ButtonSave,
+            CloseButtonText = RenameStrings.ButtonCancel,
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root.XamlRoot,
+        };
+        void Validate()
+        {
+            errors.Children.Clear();
+            foreach (var message in RenameSupport.Messages(field.Text))
+                errors.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Red) });
+            dialog.IsPrimaryButtonEnabled = RenameSupport.IsValid(field.Text);
+        }
+        field.TextChanged += (_, _) => Validate();
+        Validate();
         dialog.Opened += (_, _) => { field.Focus(FocusState.Programmatic); field.SelectAll(); };
-        dialog.PrimaryButtonClick += (_, args) => args.Cancel = string.IsNullOrWhiteSpace(field.Text);
-        return await dialog.ShowAsync() == ContentDialogResult.Primary ? field.Text.Trim() : null;
+        return await dialog.ShowAsync() == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null;
     }
-    private Task RenameWorkspace(string id) => Act(async () => { if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id) is not { } workspace) return; if (await AskName("워크스페이스 이름", workspace.Name) is { } name) { await service.UpdateAsync(s => s with { Workspaces = s.Workspaces.Select(w => w.Id == id ? w with { Name = name } : w).ToList() }); Render(); } });
-    private Task RenameSession(string id) => Act(async () => { if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } session) return; if (await AskName("실행 창 이름", session.Title) is { } name) { await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? p with { Title = name } : p).ToList() }); Render(); } });
+    private Task RenameWorkspace(string id) => Act(async () =>
+    {
+        if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id) is not { } workspace) return;
+        if (await AskName(RenameStrings.HeadingWorkspace, RenameStrings.HintWorkspace, workspace.Name) is not { } name) return;
+        await service.RenameWorkspaceAsync(id, name);
+        Render();
+    });
+    private Task RenameSession(string id) => Act(async () =>
+    {
+        if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } session) return;
+        if (await AskName(RenameStrings.HeadingSession, RenameStrings.HintSession, session.Title) is not { } name) return;
+        await service.RenameSessionAsync(id, name);
+        Render();
+    });
 }
