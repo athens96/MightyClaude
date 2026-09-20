@@ -456,8 +456,19 @@ internal static class AppUpdateVerification
                 AddEntry(zip, "tools/MightyClaude.exe", exe);
             }, "x64", "a package with two executables");
 
-            Refuse("nested.zip", zip => AddEntry(zip, "app/MightyClaude.exe", exe), "x64",
-                "an executable that is not at the root");
+            Refuse("deep.zip", zip => AddEntry(zip, "app/bin/MightyClaude.exe", exe), "x64",
+                "an executable buried below the expected place");
+
+            // The real Windows zip packs the publish folder, so the app sits one
+            // folder down; staging then returns that folder, not the extraction root.
+            var nested = MakeZip(directory, "nested.zip", zip =>
+            {
+                AddEntry(zip, "native-windows-x64/MightyClaude.exe", exe);
+                AddEntry(zip, "native-windows-x64/Assets/mightyclaude.png", "png"u8.ToArray());
+            });
+            var nestedFolder = AppUpdateService.Stage(nested, "x64");
+            Check(Path.GetFileName(nestedFolder) == "native-windows-x64", "staging must return the app folder");
+            Check(File.Exists(Path.Combine(nestedFolder, "MightyClaude.exe")), "the app folder must hold the executable");
 
             Refuse("arm.zip", zip => AddEntry(zip, "MightyClaude.exe", FakeExecutable("arm64")), "x64",
                 "a package for another architecture");
@@ -527,6 +538,14 @@ internal static class AppUpdateVerification
             Check(backupPresentWhenStarted, "the backup must still exist when the new app starts");
             Check(!Directory.Exists(plan.BackupDirectory), "the backup must be removed once the new app has started");
             Check(result.Moves.Select(move => move.Kind).SequenceEqual(["backup", "install"]), "the moves must be the plan");
+
+            // A backup the helper could not delete is cleared by the next start.
+            var leftover = plan.BackupDirectory;
+            MakeInstall(leftover, "old");
+            Check(AppUpdateReplacement.PruneBackups(install) == 1, "a leftover backup must be pruned");
+            Check(!Directory.Exists(leftover), "the leftover backup must be gone");
+            Check(Directory.Exists(install), "pruning must not touch the install");
+            Check(AppUpdateReplacement.PruneBackups(install) == 0, "pruning again must find nothing");
         }
         finally { Directory.Delete(root, true); }
     }

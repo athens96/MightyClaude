@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text.Json;
+using MightyClaude.Core;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
@@ -71,6 +73,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // The update helper is this same executable in a second mode: it is
+        // started detached with a minimal environment just before the app quits,
+        // waits for the app to exit, verifies the package again and replaces the
+        // install. It opens no window and reads no saved state.
+        if (AppUpdateInstallPlan.TryParse(args) is { } plan) return RunUpdateHelper(plan);
+
         StartupOptions? options = null;
         try
         {
@@ -97,6 +105,33 @@ internal static class Program
             Console.Error.WriteLine(error.Message);
             return 1;
         }
+    }
+
+    /// The helper half. Never elevated, never interactive: the outcome goes to
+    /// install.log beside the package so a failed swap can be read afterwards.
+    private static int RunUpdateHelper(AppUpdateInstallPlan plan)
+    {
+        var result = AppUpdateReplacement.RunAsync(
+            plan,
+            token => AppUpdateReplacement.WaitForExitAsync(plan.AppProcessId, AppUpdateReplacement.DefaultExitTimeout, token),
+            executable =>
+            {
+                using (Process.Start(new ProcessStartInfo(executable)
+                {
+                    UseShellExecute = false,
+                    WorkingDirectory = Path.GetDirectoryName(executable)!,
+                })) { }
+                return Task.CompletedTask;
+            }).GetAwaiter().GetResult();
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(Path.GetDirectoryName(plan.PackagePath) ?? Path.GetTempPath(), "install.log"),
+                $"{DateTimeOffset.UtcNow:O} replaced={result.Replaced} rolledBack={result.RolledBack} " +
+                $"started={result.Started} backupRemoved={result.BackupRemoved} {result.Error}\n");
+        }
+        catch (IOException) { /* The outcome must not depend on the log. */ }
+        return result.Replaced ? 0 : 1;
     }
 }
 

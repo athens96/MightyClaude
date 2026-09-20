@@ -119,11 +119,16 @@ public sealed class AppUpdateService : IDisposable
 
     public void CancelDownload() => downloading?.Cancel();
 
-    /// Unpacks the zip into a fresh folder beside it and refuses:
-    /// an entry with an absolute path, a `..` segment or any other path that
-    /// escapes the folder; an entry stored as a link; a package that does not
-    /// carry exactly one MightyClaude.exe at its root; and a package built for
-    /// another architecture.
+    /// Unpacks the zip into a fresh folder beside it and returns the folder
+    /// that will replace the install. It refuses: an entry with an absolute
+    /// path, a `..` segment or any other path that escapes the folder; an entry
+    /// stored as a link; a package that does not carry exactly one
+    /// MightyClaude.exe at the expected place; and a package for another
+    /// architecture.
+    ///
+    /// The expected place is the root of the zip or a single folder below it,
+    /// because `scripts/build-windows.ps1` packs the publish folder itself —
+    /// the Windows counterpart of the macOS zip holding one `.app`.
     public static string Stage(string packagePath, string expectedArchitecture)
     {
         var staged = Path.Combine(Path.GetDirectoryName(packagePath)!, "staged");
@@ -146,14 +151,17 @@ public sealed class AppUpdateService : IDisposable
             }
         }
 
-        // The package shape: exactly one MightyClaude.exe, at the root of the zip.
+        // The package shape: exactly one MightyClaude.exe, at the expected place.
         var executables = Directory.GetFiles(root, ExecutableName, SearchOption.AllDirectories);
-        var atRoot = executables.Where(path => Path.GetDirectoryName(path) == root).ToArray();
-        if (executables.Length != 1 || atRoot.Length != 1)
+        if (executables.Length != 1)
             throw new InvalidOperationException($"패키지 안에 {ExecutableName}가 하나 있어야 합니다 ({executables.Length}개).");
 
-        RefuseAnotherArchitecture(atRoot[0], expectedArchitecture);
-        return staged;
+        var appFolder = Path.GetDirectoryName(executables[0])!;
+        if (appFolder != root && Path.GetDirectoryName(appFolder) != root)
+            throw new InvalidOperationException($"{ExecutableName}가 패키지의 예상 위치에 없습니다.");
+
+        RefuseAnotherArchitecture(executables[0], expectedArchitecture);
+        return appFolder;
     }
 
     private static void RefuseUnsafeEntry(ZipArchiveEntry entry, string root)

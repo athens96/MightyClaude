@@ -262,6 +262,11 @@ public sealed class AppUpdateCoordinator
         return Task.CompletedTask;
     }
 
+    /// Puts a fixture phase on the real control for the smoke run. It reaches
+    /// no network and no disk — it only makes the section render that phase,
+    /// and the smoke run puts the previous state back.
+    public void ShowForSmoke(AppUpdateState state) => Mutate(_ => state);
+
     public AppUpdateSectionView Describe(Func<DateTimeOffset, string> formatTime) =>
         AppUpdatePresentation.Describe(State, HasPublicKey, BuiltInManifestUrl, formatTime);
 

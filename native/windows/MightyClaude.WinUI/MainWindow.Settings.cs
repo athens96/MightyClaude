@@ -36,6 +36,7 @@ public sealed partial class MainWindow
         SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
         SettingsSections.Providers => BuildProvidersSection,
         SettingsSections.CliAccounts => BuildCliAccountsSectionFromState,
+        SettingsSections.AppUpdate => BuildAppUpdateSectionFromState,
         SettingsSections.AppInfo => BuildAppInfoSection,
         _ => throw new InvalidOperationException("no Settings builder registered for slot " + slotId),
     };
