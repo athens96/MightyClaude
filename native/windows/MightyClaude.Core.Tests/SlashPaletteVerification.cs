@@ -170,19 +170,27 @@ internal static class SlashPaletteVerification
 
     internal static Task LeavesOutActionsWindowsCannotDo()
     {
-        // Claude has the plugin window now. No action is universally blocked.
+        // Both Claude and Codex have the plugin window now, so no app action is
+        // left out of the Windows palette at all.
         Check(SlashPalette.UnavailableActions.SequenceEqual([]),
-            "no action is universally missing; Claude has /plugin, Codex waits for its feature");
-        // Claude has /plugin restored.
-        Check(SlashPalette.Builtins("claude").Any(c => c.Action == SlashCommandAction.OpenPlugins),
-            "claude must offer /plugin now that the plugin window is built");
-        // Codex /plugins and Gemini stay out until their features land.
-        foreach (var provider in new[] { "codex", "gemini" })
-            Check(!SlashPalette.Builtins(provider).Any(c => c.Action == SlashCommandAction.OpenPlugins),
-                provider + " must not offer a plugin row that does nothing yet");
+            "no action is universally missing; Claude has /plugin and Codex has /plugins");
+        foreach (var provider in new[] { "claude", "codex" })
+            Check(SlashPalette.Builtins(provider).Any(c => c.Action == SlashCommandAction.OpenPlugins),
+                provider + " must offer its plugin row now that the plugin window is built");
+        // Gemini has no plugin browser on macOS either.
+        Check(!SlashPalette.Builtins("gemini").Any(c => c.Action == SlashCommandAction.OpenPlugins),
+            "gemini must not offer a plugin row macOS does not have");
+        // Nothing the macOS catalog offers is dropped on the way to the palette.
+        foreach (var provider in new[] { "claude", "codex", "gemini" })
+            Check(SlashPalette.Builtins(provider).Select(c => c.Invocation)
+                    .SequenceEqual(SlashCommandCatalog.Builtins(provider).Select(c => c.Invocation)),
+                "the Windows palette leaves no macOS app action out for " + provider);
         Check(SlashCommandCatalog.Builtins("claude").Any(c => c.Action == SlashCommandAction.OpenPlugins),
             "the macOS built-in list itself is left untouched");
         Check(State("/plugin").IsOpen, "/plugin now opens the Claude plugin window");
+        Check(SlashPalette.Builtins("codex").Select(c => c.Invocation).SequenceEqual(
+                ["plugins", "model", "approvals", "new", "status", "settings", "rename", "help"]),
+            "Codex built-ins include /plugins in the macOS order");
         // All Claude built-ins are present; /plugin is back in the macOS order.
         Check(SlashPalette.Builtins("claude").Select(c => c.Invocation).SequenceEqual(
                 ["plugin", "model", "permissions", "clear", "cost", "usage", "config", "rename", "help"]),

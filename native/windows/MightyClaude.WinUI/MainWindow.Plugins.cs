@@ -7,9 +7,11 @@ using Microsoft.UI.Xaml.Media;
 
 namespace MightyClaude.WinUI;
 
-// The Claude plugin window: the installed and available plugins of the active
-// workspace, with their marketplace, scope, version and source. It is opened
-// from the run pane menu and from the /plugin slash command.
+// The plugin window: the installed and available plugins of the active
+// workspace, with their marketplace, scope, version and source. One window
+// serves both providers — Claude through ClaudePluginReader and Codex through
+// CodexPluginReader — and it is opened from the run pane menu and from the
+// /plugin (Claude) and /plugins (Codex) slash commands.
 //
 // Looking changes nothing, so this file draws no install button, no scope
 // picker and no marketplace refresh. Every decision — which rows, what each row
@@ -21,6 +23,8 @@ public sealed partial class MainWindow
     // shown to the user.
     private Func<Workspace, Task<ClaudePluginSnapshot>>? smokePluginRead;
     private Func<PluginSmokeSurface, Task>? smokePluginDialog;
+    private Func<Workspace, Task<ClaudePluginSnapshot>>? smokeCodexPluginRead;
+    private Func<PluginSmokeSurface, Task>? smokeCodexPluginDialog;
 
     /// What the smoke driver is handed instead of a shown dialog: the real
     /// dialog it would see, the Core state it renders, and the two actions the
@@ -39,8 +43,12 @@ public sealed partial class MainWindow
     {
         var browser = new ClaudePluginBrowser(provider, workspace);
         // 8 MiB of listing output, the macOS cap. Anything past it is refused by
-        // the parser rather than truncated into a short list.
-        var reader = new ClaudePluginReader(new CliRunner(outputCapBytes: ClaudePluginSupport.MaximumListingBytes));
+        // the parser rather than truncated into a short list. The provider picks
+        // the reader; both answer with the same ClaudePluginSnapshot.
+        var runner = new CliRunner(outputCapBytes: ClaudePluginSupport.MaximumListingBytes);
+        IPluginReader reader = provider == ClaudePluginBrowser.CodexProvider
+            ? new CodexPluginReader(runner)
+            : new ClaudePluginReader(runner);
 
         var rows = new StackPanel { Spacing = 8 };
         var status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Orange), Visibility = Visibility.Collapsed };
@@ -123,8 +131,14 @@ public sealed partial class MainWindow
             if (rows.Children.Count == 0)
             {
                 rows.Children.Add(new TextBlock { Text = browser.EmptyMessage, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 28, 0, 28) });
-                if (browser.ShowsMarketplaceHelp)
+                if (browser.ShowsMarketplaceHelpLink)
                     rows.Children.Add(new HyperlinkButton { Content = PluginStrings.MarketplaceHelpLink, NavigateUri = new Uri("https://code.claude.com/docs/en/discover-plugins#add-marketplaces"), HorizontalAlignment = HorizontalAlignment.Center });
+                if (browser.MarketplaceHelpText is { Length: > 0 } help)
+                {
+                    var sentence = new TextBlock { Text = help, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center };
+                    AutomationProperties.SetAutomationId(sentence, PluginAutomationId(provider, "marketplace-help"));
+                    rows.Children.Add(sentence);
+                }
             }
         }
 
@@ -136,7 +150,8 @@ public sealed partial class MainWindow
             ClaudePluginSnapshot snapshot;
             try
             {
-                snapshot = smokePluginRead is { } fixture
+                var smokeRead = provider == ClaudePluginBrowser.CodexProvider ? smokeCodexPluginRead : smokePluginRead;
+                snapshot = smokeRead is { } fixture
                     ? await fixture(workspace)
                     // The read never runs on the UI thread; the window only comes back to redraw.
                     : await Task.Run(() => reader.SnapshotAsync(workspace));
@@ -194,7 +209,7 @@ public sealed partial class MainWindow
             body.Children.Add(status);
             body.Children.Add(diagnosticsToggle);
             body.Children.Add(diagnostics);
-            body.Children.Add(new TextBlock { Text = PluginStrings.FooterNote, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+            body.Children.Add(new TextBlock { Text = browser.FooterNote, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
             body.Children.Add(new ScrollViewer { Content = rows, Height = 380, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
             RenderPlugins();
         }
@@ -212,7 +227,8 @@ public sealed partial class MainWindow
         dialogOpen = true;
         try
         {
-            if (smokePluginDialog is { } driver) await driver(new PluginSmokeSurface(dialog, browser, LoadPluginsAsync, SelectPluginTab));
+            var smokeDialog = provider == ClaudePluginBrowser.CodexProvider ? smokeCodexPluginDialog : smokePluginDialog;
+            if (smokeDialog is { } driver) await driver(new PluginSmokeSurface(dialog, browser, LoadPluginsAsync, SelectPluginTab));
             else await dialog.ShowAsync();
         }
         finally
@@ -405,6 +421,142 @@ public sealed partial class MainWindow
         {
             smokePluginRead = beforeRead;
             smokePluginDialog = beforeDialog;
+            Render();
+        }
+    }
+
+
+    private static readonly ClaudePluginSnapshot CodexPluginSmokeSnapshot = new()
+    {
+        Status = ClaudePluginStatus.Ready,
+        Detail = CodexPluginStrings.DetailReady,
+        CliVersion = "codex-cli 0.153.4 (smoke fixture)",
+        Installed =
+        [
+            new ClaudeInstalledPlugin { PluginId = "format@sample", Name = "format", Marketplace = "sample", Scope = "user", Version = "1.0.0", Enabled = true, Description = "Formats source files" },
+            // Codex has no project scope. The window must not draw this row.
+            new ClaudeInstalledPlugin { PluginId = "stray@sample", Name = "stray", Marketplace = "sample", Scope = "project", ProjectPath = "C:\\fixture\\project", Description = "Never listed under Codex" },
+        ],
+        Available =
+        [
+            new ClaudeCatalogPlugin { Id = "format@sample", Name = "format", Marketplace = "sample", Version = "1.0.0", SourceKind = "local", Description = "Formats source files" },
+            new ClaudeCatalogPlugin { Id = "remote@openai-curated-remote", Name = "remote", Marketplace = "openai-curated-remote", SourceKind = "remote", Description = "Curated remote catalog entry" },
+        ],
+        Marketplaces = [new ClaudePluginMarketplace("sample", "git")],
+        UpdatedAt = Wire.Now(),
+    };
+
+    // Drives the same real plugin window under the Codex title with a Codex
+    // fixture: the two tabs with their counts, the user-level row, the Codex
+    // footer, the Codex ready sentence, the sentence an empty marketplace list
+    // shows, and the sentence a CLI without the JSON plugin commands produces.
+    // No codex process starts and no workspace changes. Puts back the two hooks.
+    internal async Task<CodexPluginSmokeOutcome> RunCodexPluginSmoke()
+    {
+        var beforeRead = smokeCodexPluginRead;
+        var beforeDialog = smokeCodexPluginDialog;
+        var workspace = service.Snapshot.Workspaces.First(w => w.Id == service.Snapshot.ActiveWorkspaceId);
+        var reads = 0;
+        try
+        {
+            smokeCodexPluginRead = _ =>
+            {
+                reads++;
+                return Task.FromResult(reads switch
+                {
+                    1 => CodexPluginSmokeSnapshot,
+                    // A CLI with nothing registered: ready, but the Codex
+                    // sentence tells the user to register a marketplace.
+                    2 => new ClaudePluginSnapshot { Status = ClaudePluginStatus.Ready, Detail = CodexPluginStrings.DetailNoMarketplaces, CliVersion = "codex-cli 0.153.4 (smoke fixture)" },
+                    // A CLI whose plugin subcommands lack the JSON flags.
+                    _ => new ClaudePluginSnapshot { Status = ClaudePluginStatus.Unsupported, Detail = CodexPluginStrings.DetailUnsupported },
+                });
+            };
+
+            string title = "", installedTab = "", marketplaceTab = "", installedSubtitle = "", footer = "";
+            string readyStatus = "", noMarketplaceHelp = "", unsupportedStatus = "";
+            int installedRows = 0, availableRows = 0, filteredRows = 0, searchedRows = 0, mutating = 0;
+
+            smokeCodexPluginDialog = async surface =>
+            {
+                var dialog = surface.Dialog;
+                title = (string)dialog.Title;
+                await surface.Load();
+                Require(surface.Browser.IsReady, "Codex 플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                installedTab = (string)PluginControl<Button>(dialog, "codex", "tab-installed").Content!;
+                marketplaceTab = (string)PluginControl<Button>(dialog, "codex", "tab-marketplace").Content!;
+                installedRows = PluginRowCount(dialog, "codex");
+                installedSubtitle = surface.Browser.InstalledRows()[0].Subtitle;
+                footer = PluginDescendants(dialog.Content).OfType<TextBlock>().Select(t => t.Text).First(t => t == surface.Browser.FooterNote);
+                readyStatus = PluginControl<TextBlock>(dialog, "codex", "load-status").Text;
+
+                await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
+                availableRows = PluginRowCount(dialog, "codex");
+
+                var filter = PluginControl<ComboBox>(dialog, "codex", "marketplace-filter");
+                filter.SelectedIndex = filter.Items.OfType<ComboBoxItem>().ToList().FindIndex(i => (string)i.Tag == "sample");
+                filteredRows = PluginRowCount(dialog, "codex");
+                var search = PluginControl<TextBox>(dialog, "codex", "search");
+                search.Text = "없는이름";
+                searchedRows = PluginRowCount(dialog, "codex");
+                search.Text = "";
+                filter.SelectedIndex = 0;
+
+                // Looking must offer nothing that would change anything.
+                mutating = PluginDescendants(dialog.Content).OfType<FrameworkElement>()
+                    .Count(e => AutomationProperties.GetAutomationId(e) is { Length: > 0 } id
+                        && ClaudePluginSupport.NamesAChange(id, "codex"));
+                Require(dialog.PrimaryButtonText is null or "" && dialog.SecondaryButtonText is null or "",
+                    "Codex 플러그인 창에는 목록을 바꾸는 단추가 없어야 합니다.");
+
+                // The reload button's own action, answered by an empty registry.
+                await surface.Load();
+                noMarketplaceHelp = PluginControl<TextBlock>(dialog, "codex", "marketplace-help").Text;
+
+                // And again, answered by a CLI without the JSON plugin commands.
+                await surface.Load();
+                var status = PluginControl<TextBlock>(dialog, "codex", "load-status");
+                unsupportedStatus = status.Text;
+                Require(status.Visibility == Visibility.Visible, "Codex CLI가 지원하지 않는 이유가 화면에 보이지 않습니다.");
+            };
+            await ShowPluginBrowser("codex", workspace);
+
+            var outcome = new CodexPluginSmokeOutcome
+            {
+                Title = title,
+                InstalledTab = installedTab,
+                MarketplaceTab = marketplaceTab,
+                InstalledRows = installedRows,
+                AvailableRows = availableRows,
+                FilteredRows = filteredRows,
+                SearchedRows = searchedRows,
+                InstalledSubtitle = installedSubtitle,
+                FooterNote = footer,
+                ReadyStatus = readyStatus,
+                NoMarketplaceHelp = noMarketplaceHelp,
+                UnsupportedStatus = unsupportedStatus,
+                Reads = reads,
+                MutatingControls = mutating,
+                Restored = true,
+            };
+            Require(outcome.Title == "Codex 플러그인" && outcome.InstalledTab == "설치됨 1" && outcome.MarketplaceTab == "마켓플레이스 2",
+                "Codex 플러그인 창의 제목 또는 탭 개수가 macOS와 다릅니다.");
+            Require(outcome.InstalledRows == 1 && outcome.InstalledSubtitle == PluginStrings.SubtitleTemplate.Replace("{left}", "sample").Replace("{right}", PluginStrings.ScopeUser),
+                "Codex 설치 목록은 사용자 범위 한 줄이어야 합니다: " + outcome.InstalledRows + " / " + outcome.InstalledSubtitle);
+            Require(outcome.AvailableRows == 2 && outcome.FilteredRows == 1 && outcome.SearchedRows == 0,
+                "탭·필터·검색이 Codex 목록을 macOS처럼 좁히지 않았습니다.");
+            Require(outcome.MutatingControls == 0, "Codex 플러그인 창에 설치·범위·새로고침 컨트롤이 있습니다.");
+            Require(outcome.FooterNote == CodexPluginStrings.FooterNote, "Codex 창의 안내 문장이 다릅니다.");
+            Require(outcome.ReadyStatus == CodexPluginStrings.DetailReady, "Codex는 목록을 읽은 뒤에도 안내 문장을 보여야 합니다.");
+            Require(outcome.NoMarketplaceHelp == CodexPluginStrings.MarketplaceHelp, "마켓플레이스가 없을 때의 문장이 macOS와 다릅니다.");
+            Require(outcome.UnsupportedStatus == CodexPluginStrings.DetailUnsupported, "CLI가 지원하지 않을 때의 문장이 macOS와 다릅니다.");
+            Require(outcome.Reads == 3, "Codex 목록 읽기 횟수가 잘못됐습니다: " + outcome.Reads);
+            return outcome;
+        }
+        finally
+        {
+            smokeCodexPluginRead = beforeRead;
+            smokeCodexPluginDialog = beforeDialog;
             Render();
         }
     }

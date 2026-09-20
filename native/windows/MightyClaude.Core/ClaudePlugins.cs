@@ -118,8 +118,10 @@ public static partial class ClaudePluginSupport
     /// read one dash-separated word at a time, so the tab that lists installed
     /// plugins ("tab-installed") is not mistaken for an install button and the
     /// list reread ("reload") is not mistaken for a marketplace refresh.
+    // "upgrade" is the word the Codex marketplace feature will use
+    // (codex plugin marketplace upgrade), so it names a change here too.
     private static readonly string[] ChangingWords =
-        ["install", "uninstall", "enable", "disable", "update", "scope", "refresh", "remove", "add"];
+        ["install", "uninstall", "enable", "disable", "update", "upgrade", "scope", "refresh", "remove", "add"];
 
     public static bool NamesAChange(string automationId, string provider)
     {

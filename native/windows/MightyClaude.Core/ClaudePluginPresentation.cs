@@ -148,6 +148,8 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
             if (Loading) return PluginStrings.EmptyLoading;
             if (!IsReady) return PluginStrings.EmptyFailed;
             if (Search.Trim().Length > 0 || MarketplaceFilter.Length > 0) return PluginStrings.EmptyFiltered;
+            // macOS keeps this copy for both providers and puts the Claude link
+            // or the Codex sentence underneath it, rather than replacing it.
             return Tab == MarketplaceTab ? PluginStrings.EmptyAvailable : PluginStrings.EmptyInstalled;
         }
     }

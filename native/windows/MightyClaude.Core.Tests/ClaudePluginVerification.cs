@@ -320,13 +320,13 @@ internal static class ClaudePluginVerification
         Check(!runner.Mutated, "a reload changes nothing either");
     }
 
-    // The palette offers /plugin for Claude again and still hides Codex /plugins.
-    internal static Task PaletteOffersPluginForClaudeOnly()
+    // The palette offers /plugin for Claude and /plugins for Codex.
+    internal static Task PaletteOffersPluginForBothProviders()
     {
         Check(SlashPalette.Builtins("claude").Any(c => c.Action == SlashCommandAction.OpenPlugins && c.Invocation == "plugin"),
-            "the Claude palette offers /plugin again");
-        Check(!SlashPalette.Builtins("codex").Any(c => c.Action == SlashCommandAction.OpenPlugins),
-            "Codex /plugins stays out until the Codex plugin feature");
+            "the Claude palette offers /plugin");
+        Check(SlashPalette.Builtins("codex").Any(c => c.Action == SlashCommandAction.OpenPlugins && c.Invocation == "plugins"),
+            "the Codex palette now offers /plugins");
         Check(!SlashPalette.Builtins("gemini").Any(c => c.Action == SlashCommandAction.OpenPlugins),
             "Gemini has no plugin browser on macOS either");
         Check(SlashCommandCatalog.Builtins("codex").Any(c => c.Action == SlashCommandAction.OpenPlugins),
@@ -417,6 +417,16 @@ internal static class ClaudePluginVerification
     private static string WinUIFolder([CallerFilePath] string here = "") =>
         Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(here)!)!, "MightyClaude.WinUI");
 
+    /// The same folder, for the codex plugin checks.
+    internal static string WinUISource() => WinUIFolder();
+
+    /// Every automation id part the window's source builds, so a control added
+    /// later is judged by the same rule.
+    internal static IReadOnlyList<string> WindowAutomationParts(string source) =>
+        [.. Regex.Matches(source, PluginIdPattern).Select(m => m.Groups[1].Value)];
+
+    internal const string PluginIdPattern = "PluginAutomationId\\(provider, \"([^\"]+)\"";
+
     // The plugin window is a real WinUI surface, it reaches the user from the
     // running app rather than from the smoke check, it types none of its own
     // Korean, and the smoke run drives that same window under claudePluginList.
@@ -438,9 +448,11 @@ internal static class ClaudePluginVerification
         foreach (var name in new[]
                  {
                      "ButtonClose", "ButtonReload", "SearchPlaceholder", "FilterAll", "RemoteTitle",
-                     "RemoteNote", "ProgressLoading", "FooterNote", "DiagnosticsDisclosure", "MarketplaceHelpLink",
+                     "RemoteNote", "ProgressLoading", "DiagnosticsDisclosure", "MarketplaceHelpLink",
                  })
             Check(source.Contains("PluginStrings." + name), "the window must read PluginStrings." + name);
+        Check(source.Contains("browser.FooterNote"),
+            "the footer sentence is the provider's, so the window must read it from ClaudePluginBrowser");
 
         // ...and no copy is typed into WinUI as a literal of its own.
         foreach (var field in typeof(PluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -494,7 +506,7 @@ internal static class ClaudePluginVerification
         // a status the window can show when the CLI is missing. No CLI starts.
         Check(source.Contains("PluginSmokeSnapshot") && source.Contains("ClaudePluginStatus.Missing"),
             "the smoke run must show a fixture snapshot and an error status");
-        Check(source.Contains("smokePluginRead is { } fixture"),
+        Check(source.Contains("smokePluginRead") && source.Contains("is { } fixture"),
             "the fixture must replace the CLI read so no claude process starts");
         return Task.CompletedTask;
     }
