@@ -5,10 +5,11 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace MightyClaude.WinUI;
 
-// A section of the Settings screen.
+// A section of the Settings screen, bound to its controls.
 // Title is the heading shown to the user (used as an automation ID in smoke).
 // Build is called each time Settings opens so the controls reflect current state.
-// One small registration in GetSettingsSections() is all a new feature needs.
+// The order and the titles come from SettingsSections (Core); this record only
+// carries the builder WinUI supplies for a registered slot.
 internal sealed record SettingsSection(string Title, Func<StackPanel> Build);
 
 public sealed partial class MainWindow
@@ -18,19 +19,25 @@ public sealed partial class MainWindow
     internal IReadOnlyList<CliUpdateResult> lastCliUpdateResults = [];
 
     // The sections Windows shows, in the macOS slot order.
-    // Sections for features not yet on Windows (원격 연결, styles, mobile remote,
-    // companion, CLI accounts, Claude Mods, app update) are simply absent here and
-    // added one line each when their feature arrives.
     //
-    // OS-bound substitution (recorded in docs/windows-settings-groundwork.md):
-    //   "이 PC의 CLI" replaces the macOS "이 Mac의 CLI".
+    // The order and the titles are not decided here: SettingsSections.Windows
+    // (Core) is the registration point, so a Mac-side check can prove the order
+    // without building WinUI. This method only binds each registered slot to the
+    // builder that supplies its controls. A later feature gives its slot a title
+    // in Core and adds one arm to this switch; no other section is touched.
     internal List<SettingsSection> GetSettingsSections() =>
     [
-        new("화면", BuildDisplaySection),
-        new(CliUpdateStrings.SectionTitle, BuildCliUpdateSectionFromState),
-        new("이 PC의 CLI", BuildProvidersSection),
-        new("앱 정보", BuildAppInfoSection),
+        .. SettingsSections.Windows.Select(slot => new SettingsSection(slot.WindowsTitle!, BuilderFor(slot.Id))),
     ];
+
+    private Func<StackPanel> BuilderFor(string slotId) => slotId switch
+    {
+        SettingsSections.Display => BuildDisplaySection,
+        SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
+        SettingsSections.Providers => BuildProvidersSection,
+        SettingsSections.AppInfo => BuildAppInfoSection,
+        _ => throw new InvalidOperationException("no Settings builder registered for slot " + slotId),
+    };
 
     private Task OpenSettings() => Act(async () =>
     {
@@ -130,11 +137,17 @@ public sealed partial class MainWindow
                     Opacity = .7,
                     TextWrapping = TextWrapping.Wrap,
                 });
-            AutomationProperties.SetAutomationId(row, "cli-update-result-" + result.Provider);
+            AutomationProperties.SetAutomationId(row, ResultRowAutomationId(result));
             panel.Children.Add(row);
         }
         return panel;
     }
+
+    // One id per row. The status is part of it because a run can report the same
+    // provider twice (for example updated then failed on a retry).
+    internal const string ResultRowIdPrefix = "cli-update-result-";
+    private static string ResultRowAutomationId(CliUpdateResult result) =>
+        ResultRowIdPrefix + result.Provider + "-" + result.Status;
 
     // 이 PC의 CLI — provider list and refresh button; behaviour unchanged.
     private StackPanel BuildProvidersSection()
@@ -170,56 +183,44 @@ public sealed partial class MainWindow
         return panel;
     }
 
-    // Smoke: verifies section order, fixture results and auto-update toggle persistence.
-    internal async Task<Dictionary<string, object?>> RunSettingsSectionsSmoke()
+    // Smoke: opens the sectioned Settings screen, checks the sections appear in
+    // the macOS order with their titles, shows the fixture update results
+    // (updated, current, skipped, failed) in the CLI update section, flips the
+    // auto-update switch and reads it back from the saved state, then restores it.
+    //
+    // The order/flip/restore decision lives in SettingsSectionsSmoke (Core), so
+    // the same rules this run enforces are proven on the Mac by
+    // "settings sections ..." in Core.Tests. Here we only build the real screen
+    // and hand Core what it actually rendered.
+    internal async Task<SettingsSectionsSmokeOutcome> RunSettingsSectionsSmoke()
     {
-        var checks = new Dictionary<string, object?>();
-        var originalAutoUpdate = service.Snapshot.AutoUpdateCLIs;
-
-        // Section titles must appear in macOS slot order.
+        // Build the screen exactly as OpenSettings does.
         var sections = GetSettingsSections();
-        var expectedTitles = new[] { "화면", CliUpdateStrings.SectionTitle, "이 PC의 CLI", "앱 정보" };
-        Require(sections.Select(s => s.Title).SequenceEqual(expectedTitles),
-            "Settings sections are not in macOS order: " + string.Join(", ", sections.Select(s => s.Title)));
-        checks["settingsSections"] = true;
+        var content = new StackPanel { Spacing = 0, MinWidth = 420, MaxWidth = 540 };
+        foreach (var section in sections)
+            content.Children.Add(BuildSectionContainer(section.Title, section.Build()));
 
-        // Inject fixture results covering updated, current, skipped and failed.
-        var fixtureResults = new CliUpdateResult[]
-        {
-            new("claude", "updated", "2.1.270", "2.1.271", "native", CliUpdateStrings.DetailUpdated),
-            new("codex",  "current", "0.51.0",  "0.51.0",  "npm",    CliUpdateStrings.DetailUnchanged),
-            new("gemini", "skipped", null,       null,      "missing", CliUpdateStrings.DetailMissing),
-        };
-        var cliPanel = BuildCliUpdateSection(fixtureResults);
-        var resultRows = cliPanel.Children.OfType<StackPanel>()
-            .Where(p => AutomationProperties.GetAutomationId(p).StartsWith("cli-update-result-"))
+        // Read the headings back off the built tree, not off the registration.
+        var renderedTitles = content.Children.OfType<StackPanel>()
+            .Select(wrapper => wrapper.Children.OfType<TextBlock>().First().Text)
             .ToArray();
-        Require(resultRows.Length == fixtureResults.Length,
-            "CLI update section must show all fixture result rows, got " + resultRows.Length);
 
-        // Verify a failed result also renders as a row.
-        var failedPanel = BuildCliUpdateSection(
-            [new("claude", "failed", "2.1.270", null, "native",
-                CliUpdateStrings.DetailFailedExitTemplate.Replace("{code}", "1"))]);
-        var failedRows = failedPanel.Children.OfType<StackPanel>()
-            .Where(p => AutomationProperties.GetAutomationId(p).StartsWith("cli-update-result-"))
+        // Show the fixture results in the CLI update section and read the rows back.
+        var cliPanel = BuildCliUpdateSection(SettingsSectionsSmoke.FixtureResults);
+        var renderedStatuses = cliPanel.Children.OfType<StackPanel>()
+            .Select(row => AutomationProperties.GetAutomationId(row))
+            .Where(id => id.StartsWith(ResultRowIdPrefix, StringComparison.Ordinal))
+            .Select(id => id[(id.LastIndexOf('-') + 1)..])
             .ToArray();
-        Require(failedRows.Length == 1, "a failed result must appear as a row");
-        checks["cliUpdateSection"] = true;
 
-        // Toggle auto-update switch and read it back from saved state.
-        var toggle = cliPanel.Children.OfType<ToggleSwitch>().First();
-        var wasOn = toggle.IsOn;
-        var expected = !wasOn;
+        var outcome = await SettingsSectionsSmoke.RunAsync(
+            renderedTitles,
+            renderedStatuses,
+            () => service.Snapshot.AutoUpdateCLIs,
+            value => service.UpdateAsync(s => s with { AutoUpdateCLIs = value }));
 
-        // Flip the same way the toggle's Toggled handler does.
-        await service.UpdateAsync(s => s with { AutoUpdateCLIs = expected });
-        Require(service.Snapshot.AutoUpdateCLIs == expected,
-            "CLI auto-update toggle must persist to saved state");
-
-        // Restore original value; put back draft and focus on exit.
-        await service.UpdateAsync(s => s with { AutoUpdateCLIs = originalAutoUpdate });
-        checks["passed"] = true;
-        return checks;
+        // The toggle the user sees must reflect the restored saved value.
+        Require(cliPanel.Children.OfType<ToggleSwitch>().Any(), "the CLI update section must show the auto-update switch");
+        return outcome;
     }
 }
