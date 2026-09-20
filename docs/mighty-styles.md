@@ -1492,7 +1492,7 @@ MobileStylePanel {
 ### 8.3 `scripts/check-style-freeze.sh`
 
 ```
-용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v2
+용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v3
 ```
 **태그 커밋의 모양.** 태그 `T`는 **`styles/FREEZE` 하나만 더하는 커밋**이고, 그 내용은 **`T`의 부모 `P`의 SHA 40자 한 줄**이다. `P`가 마지막 엔진 커밋이다. 자기 자신의 SHA를 담을 수는 없으므로(자기 참조) 부모를 담는다.
 
@@ -1507,7 +1507,8 @@ MobileStylePanel {
 3. 각 경로를 **먼저 금지 목록**, 그다음 허용 목록에 대어 본다.
    - 금지(먼저 본다): `styles/FREEZE`
    - 허용: `styles/**` · `native/macos/Tests/MightyCoreTests/StylesThirdParty*Tests.swift` · `mobile/src/__tests__/styles-thirdparty-*.test.ts` · `docs/styles-followups.md`
-   - 테스트 두 글롭의 `*`는 **경로 조각 하나**이므로 `/`를 넘지 않는다. `StylesThirdPartyEvil/DeepTests.swift`는 바깥이다.
+   - 허용(v3부터, Windows 전용 경로): `native/windows/**` · `scripts/build-windows.ps1` · `scripts/test-native-windows.ps1` · `.github/workflows/native-windows.yml` · `docs/windows-*.md`
+   - 테스트 두 글롭과 `docs/windows-*.md`의 `*`는 **경로 조각 하나**이므로 `/`를 넘지 않는다. `StylesThirdPartyEvil/DeepTests.swift`도 `docs/windows-x/y.md`도 바깥이다.
 4. 금지 목록에 걸리거나 허용 목록 밖의 경로가 하나라도 있으면 그 목록을 한 줄씩 찍고 `종료 코드 1`.
 5. 전부 안쪽이면 `OK: <N> files, all inside the manifest-only allow-list`와 `종료 코드 0`.
 
@@ -1521,6 +1522,8 @@ MobileStylePanel {
 - `docs/**`를 뺐다. 이 계약·고정된 스키마·고정된 규칙 어휘가 전부 `docs/` 안에 있어서, 태그 이후에 문서를 고쳐 이미 한 일을 합법화할 수 있었다. 남는 것은 `docs/styles-followups.md`(10장의 기록) 하나뿐이고, 다른 문서 수정은 태그 **이전**의 별도 커밋으로 간다.
 - 테스트 글롭 `Styles*Tests.swift`를 `StylesThirdParty*Tests.swift`로 좁혔다. 앞의 글롭은 `StylesOuroborosTests`·`StylesPaperthinTests`·`StylesBundledTests`, 즉 **동등성 오라클 전체**를 태그 이후에 고칠 수 있게 한다. 태그 이후에 생기는 두 파일의 이름은 `StylesThirdPartyOhMyClaudecodeTests.swift` / `StylesThirdPartyGstackTests.swift`다.
 - jest 쪽도 같은 이유로 `styles-*.test.ts` → `styles-thirdparty-*.test.ts`다.
+
+**v3에서 넓힌 것과 넓히지 않은 것.** Windows 클라이언트 작업은 엔진을 건드리지 않으므로 위의 Windows 전용 경로를 허용한다. 검사는 경로 단위라서 파일의 일부만 허용할 수 없다. 그래서 CI 설정을 `native-macos.yml`과 `native-windows.yml`로 나눴고, 이 고정 검사를 돌리는 단계가 든 `native-macos.yml`과 이 계약(`docs/mighty-styles.md`)은 계속 허용 목록 **밖**이다 — 태그 이후에 검사 단계나 계약 문구를 고쳐 이미 한 일을 합법화할 수 없어야 한다. Windows 기능의 설명은 공용 문서가 아니라 `docs/windows-*.md`에 적는다.
 
 삭제·이름 변경도 `--name-only`에 잡히므로 엔진 파일을 지우는 것도 실패한다. 스크립트는 `DEVELOPER_DIR` 설정을 요구하지 않는다(`git`만 쓴다).
 

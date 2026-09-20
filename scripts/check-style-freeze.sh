@@ -65,8 +65,9 @@ allowed() {
     native/windows/*) return 0 ;;
     scripts/build-windows.ps1) return 0 ;;
     scripts/test-native-windows.ps1) return 0 ;;
-    docs/windows-*.md) return 0 ;;
+    .github/workflows/native-windows.yml) return 0 ;;
   esac
+  segment_match "$1" "docs/windows-" ".md" && return 0
   segment_match "$1" "native/macos/Tests/MightyCoreTests/StylesThirdParty" "Tests.swift" && return 0
   segment_match "$1" "mobile/src/__tests__/styles-thirdparty-" ".test.ts" && return 0
   return 1
