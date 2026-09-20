@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using MightyClaude.Core;
 
 // Behaviour checks for the Claude plugin list. Every name registered in
@@ -467,6 +468,27 @@ internal static class ClaudePluginVerification
             "the smoke run must drive the same window the app opens");
         Check(source.Contains("smokePluginRead = beforeRead") && source.Contains("smokePluginDialog = beforeDialog"),
             "the smoke run must put back the two hooks it set");
+
+        // Reading changes nothing, and the window proves it with Core's rule
+        // rather than a substring. Every id this file builds is read straight
+        // out of the source, so a control added later is judged too.
+        Check(source.Contains("ClaudePluginSupport.NamesAChange("),
+            "the read-only guard must ask Core what an id names");
+        var parts = Regex.Matches(source, @"PluginAutomationId\(provider, ""([^""]+)""")
+            .Select(m => m.Groups[1].Value).ToList();
+        Check(parts.Count >= 9, "the window should carry an automation id on each of its controls, found " + parts.Count);
+        Check(parts.Contains("tab-installed") && parts.Contains("marketplace-filter") && parts.Contains("reload"),
+            "the installed tab, the marketplace filter and the reload button must each carry an id");
+        foreach (var part in parts)
+            Check(!ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("claude", part), "claude"),
+                "the read-only window must draw no control that names a change: " + part);
+
+        // The rule still catches the controls the marketplace feature will add.
+        foreach (var change in new[] { "install-fmt", "uninstall", "scope-picker", "marketplace-refresh", "add-marketplace", "enable-fmt" })
+            Check(ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("claude", change), "claude"),
+                "a changing control must be caught: " + change);
+        Check(!ClaudePluginSupport.NamesAChange("codex-plugin-install", "claude"),
+            "one provider's window never judges another's ids");
 
         // The fixture the smoke run shows: installed and available plugins, and
         // a status the window can show when the CLI is missing. No CLI starts.
