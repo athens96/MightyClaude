@@ -141,6 +141,12 @@ public sealed record AppSnapshot
     public bool CompletionNotificationsEnabled { get; init; } = true;
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? AutoUpdateCLIs { get; init; }
+    // Additive with a default, so Version stays 1: StateStore resets every
+    // field when Version is not 1. Off out of the box — nothing is looked up
+    // directly until the user switches it on in the usage popover.
+    public bool ClaudeDirectUsageLookupEnabled { get; init; }
+    [JsonConverter(typeof(LenientNullableBoolConverter))]
+    public bool? DirectClaudeLookup { get; init; }
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)

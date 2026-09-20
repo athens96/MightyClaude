@@ -208,6 +208,77 @@ internal static class StringsVerification
         return Task.CompletedTask;
     }
 
+    // StatusBarUsage.swift (chips, popover, toggle, footnote), SessionUsage.swift
+    // RateLimitWindowLabel (the window names) and AccountUsageService.swift
+    // (the detail sentences).
+    // ToggleLabel, ToggleDescription and SharedLimitsNote carry the Windows
+    // values here because the OS-bound substitution (no Keychain on Windows)
+    // is documented in docs/windows-account-usage.md.
+    private static readonly Dictionary<string, string> AccountUsageMacOS = new()
+    {
+        ["Title"] = "계정 사용 한도",
+        ["ChipsTooltip"] = "계정 사용 한도 · 클릭해 상세 보기",
+        ["RefreshTooltip"] = "계정 한도 다시 확인",
+        ["RefreshAccessibilityLabel"] = "계정 한도 새로고침",
+        ["ChipBeforeFirstRun"] = "실행 후 표시",
+        ["ChipChecking"] = "확인 중",
+        ["ChipEmpty"] = "—",
+        // OS-bound substitutions: Windows has no Keychain.
+        ["ToggleLabel"] = "Claude 한도를 직접 조회",
+        ["ToggleDescription"] = "끄면 앱이 Anthropic에 직접 조회하지 않습니다. Claude 실행 때 CLI가 보고하는 한도만 표시합니다.",
+        ["SharedLimitsNote"] = "계정 한도는 같은 계정을 사용하는 앱·세션에서 공유됩니다. 자동 조회는 직접 조회를 켜기 전에는 일어나지 않습니다.",
+        ["UsedPercentTemplate"] = "{percent}% 사용",
+        ["ResetTemplate"] = "초기화 {date}",
+        ["CheckedAtTemplate"] = "{time} 확인",
+        ["LastKnownPrefix"] = "마지막 확인값 · ",
+        ["WindowFiveHourSuffix"] = " (5시간)",
+        ["WindowSevenDaySuffix"] = " (7일)",
+        ["ClaudeBeforeFirstRunNote"] = "Claude를 한 번 실행하면 CLI가 보고한 세션·주간 한도가 여기에 표시됩니다.",
+        ["CardChecking"] = "계정 사용 한도를 확인하고 있습니다…",
+        ["CardNotCheckedYet"] = "아직 확인하지 않았습니다.",
+        ["WindowSession"] = "세션",
+        ["WindowWeekly"] = "주간",
+        ["WindowDaily"] = "일간",
+        ["WindowMonthly"] = "월간",
+        ["WindowSpendLimit"] = "지출 한도",
+        ["DetailNotCheckedYet"] = "계정 사용량을 아직 확인하지 않았습니다.",
+        ["DetailShutdown"] = "계정 조회를 종료했습니다.",
+        ["DetailCancelled"] = "계정 조회를 취소했습니다.",
+        ["DetailRefreshFailed"] = "계정 사용량을 갱신하지 못했습니다. 잠시 후 다시 확인하세요.",
+        ["DetailAuthentication"] = "CLI 로그인을 다시 확인하세요. 계정 한도 조회 권한이 없거나 로그인이 만료되었습니다.",
+        ["DetailRateLimited"] = "조회가 제한되었습니다. 잠시 후 자동으로 다시 확인합니다.",
+        ["DetailLastKnownSuffix"] = " 마지막으로 확인한 값입니다.",
+        ["DetailGeminiUnavailable"] = "Gemini CLI는 이 연결 방식에서 계정 한도를 제공하지 않습니다. CLI의 /stats에서 확인하세요.",
+        ["DetailUnsupportedProvider"] = "지원하지 않는 계정입니다.",
+        ["DetailCodexNotInstalled"] = "Codex CLI를 설치하고 로그인하세요.",
+        ["DetailCodexNeedsChatGPT"] = "ChatGPT로 Codex CLI에 로그인하면 계정 한도를 확인할 수 있습니다.",
+        ["DetailCustomAuthentication"] = "사용자 지정 인증의 계정 한도는 CLI에서 확인하세요.",
+        ["DetailCodexNoWindows"] = "이 계정에서 사용량 한도 창을 제공하지 않습니다.",
+        ["DetailCodex"] = "Codex 계정 한도",
+        ["DetailClaudeNoWindows"] = "이 Claude 계정에서 구독 한도를 제공하지 않습니다.",
+        ["DetailClaude"] = "Claude 계정 한도",
+        ["DetailSessionReportedStale"] = "세션에서 마지막으로 받은 계정 한도입니다.",
+        ["DetailSessionReported"] = "실행 중인 세션에서 받은 계정 한도입니다.",
+    };
+
+    /// The account usage copy is the macOS copy apart from the recorded
+    /// Keychain substitutions, and the rules reject their own failures.
+    internal static Task AccountUsageStringsMatchMacOS()
+    {
+        var actual = Constants(typeof(AccountUsageStrings));
+        var reason = Validate(nameof(AccountUsageStrings), actual, AccountUsageMacOS);
+        if (reason is not null) throw new InvalidOperationException(reason);
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(AccountUsageStrings), copy, AccountUsageMacOS);
+        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+        if (Bad(Broken("Title", "")) is null) throw new InvalidOperationException("an empty value must fail");
+        if (Bad(Broken("UsedPercentTemplate", "{ percent }% 사용")) is null) throw new InvalidOperationException("a malformed placeholder must fail");
+        if (Bad(Broken("ChipChecking", AccountUsageStrings.ChipBeforeFirstRun)) is null) throw new InvalidOperationException("a duplicate value must fail");
+        if (Bad(Broken("WindowWeekly", "Weekly")) is null) throw new InvalidOperationException("a value that differs from macOS must fail");
+        var missing = new Dictionary<string, string>(actual); missing.Remove("DetailClaude");
+        if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
+        return Task.CompletedTask;
+    }
+
     // CLIUpdateSettingsView.swift (section, toggle, button, status labels) and
     // CLIUpdateService.swift (every detail sentence).
     // SectionDescription carries the one recorded OS-bound substitution

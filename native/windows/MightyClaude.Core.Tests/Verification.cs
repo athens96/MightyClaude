@@ -467,6 +467,14 @@ internal static class Verification
         await Test("cli account commands are the CLIs own", CliAccountVerification.CommandsAreTheCLIsOwn);
         await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
         await Test("cli account smoke shows fixture statuses and confirmation flow works", CliAccountVerification.SmokeShowsFixtureStatusesAndConfirmationFlowWorks);
+        await Test("account usage strings match macOS", StringsVerification.AccountUsageStringsMatchMacOS);
+        await Test("account usage secret never reaches a snapshot, a log line or an error", AccountUsageVerification.Secret);
+        await Test("account usage refuses another host or a redirect", AccountUsageVerification.RefusesAnotherHostOrARedirect);
+        await Test("account usage direct claude lookup is off by default", AccountUsageVerification.DirectLookupIsOffByDefault);
+        await Test("account usage claude reads quota and profile from the credentials file", AccountUsageVerification.ClaudeReadsQuotaAndProfileFromTheCredentialsFile);
+        await Test("account usage failure keeps the last known value and backs off", AccountUsageVerification.FailureKeepsTheLastKnownValueAndBacksOff);
+        await Test("account usage codex is asked through its own app-server", AccountUsageVerification.CodexIsAskedThroughItsOwnAppServer);
+        await Test("account usage closing the app cancels pending reads", AccountUsageVerification.ClosingTheAppCancelsPendingReads);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
