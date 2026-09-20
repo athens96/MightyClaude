@@ -37,8 +37,21 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
     public bool Loading { get; private set; }
 
     public bool IsRemote => Workspace.Remote is not null;
+    /// ClaudePluginView.providerLabel: the same header for both providers.
     public string Title => PluginStrings.TitleTemplate.Replace("{provider}", CliUpdateService.ProviderLabel(Provider));
     public bool IsReady => Snapshot?.Status == ClaudePluginStatus.Ready;
+
+    public const string CodexProvider = "codex";
+    private bool IsCodex => Provider == CodexProvider;
+
+    /// Which installed scopes this provider's window lists. Claude shows every
+    /// scope its CLI reports; Codex plugins are user level only
+    /// (ClaudePluginView.supportedScopes is ["user"] for Codex), so a row
+    /// claiming another scope is never drawn under the Codex title.
+    public IReadOnlyList<string> SupportedScopes => IsCodex ? ["user"] : ["local", "project", "user", "managed", "session"];
+
+    /// The sentence under the list (ClaudePluginView's footer text).
+    public string FooterNote => IsCodex ? CodexPluginStrings.FooterNote : PluginStrings.FooterNote;
 
     public void BeginLoad() => Loading = true;
 
@@ -95,6 +108,7 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
     public IReadOnlyList<ClaudePluginRow> InstalledRows() =>
     [
         .. (Snapshot?.Installed ?? [])
+            .Where(p => SupportedScopes.Contains(p.Scope))
             .Where(p => Matches(p.Name, p.Description, p.Marketplace))
             .OrderBy(p => p.Name, StringComparer.Ordinal).ThenBy(p => p.Scope, StringComparer.Ordinal).ThenBy(p => p.Id, StringComparer.Ordinal)
             .Select(p => new ClaudePluginRow
@@ -140,11 +154,18 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
 
     /// The sentence under the filters: the snapshot detail whenever the read did
     /// not end ready, and nothing while the list is good.
-    public string? StatusText => Snapshot is { } snapshot && snapshot.Status != ClaudePluginStatus.Ready ? snapshot.Detail : null;
+    public string? StatusText => Snapshot is { } snapshot
+        && (snapshot.Status != ClaudePluginStatus.Ready || (IsCodex && snapshot.Detail.Length > 0))
+        ? snapshot.Detail : null;
 
-    /// Shown only when the marketplace tab is empty because nothing is registered.
+    /// Shown when the marketplace tab is empty because nothing is registered.
+    /// macOS puts the 마켓플레이스 추가 방법 link there for Claude and a sentence
+    /// telling the user to register one in the CLI for Codex.
     public bool ShowsMarketplaceHelp =>
         IsReady && Tab == MarketplaceTab && Snapshot!.Marketplaces.Count == 0;
+
+    public bool ShowsMarketplaceHelpLink => ShowsMarketplaceHelp && !IsCodex;
+    public string? MarketplaceHelpText => ShowsMarketplaceHelp && IsCodex ? CodexPluginStrings.MarketplaceHelp : null;
 }
 
 /// What the GUI smoke run records under the key "claudePluginList" after it has
@@ -164,6 +185,29 @@ public sealed record ClaudePluginSmokeOutcome
     [JsonPropertyName("availableSubtitle")] public string AvailableSubtitle { get; init; } = "";
     [JsonPropertyName("reloadedFromStatus")] public string ReloadedFromStatus { get; init; } = "";
     [JsonPropertyName("remoteSentences")] public IReadOnlyList<string> RemoteSentences { get; init; } = [];
+    [JsonPropertyName("reads")] public int Reads { get; init; }
+    [JsonPropertyName("mutatingControls")] public int MutatingControls { get; init; }
+    [JsonPropertyName("restored")] public bool Restored { get; init; }
+}
+
+/// What the GUI smoke run records under the key "codexPluginList" after it has
+/// driven that same plugin window with a Codex fixture snapshot. No CLI starts.
+public sealed record CodexPluginSmokeOutcome
+{
+    public const string ResultKey = "codexPluginList";
+
+    [JsonPropertyName("title")] public string Title { get; init; } = "";
+    [JsonPropertyName("installedTab")] public string InstalledTab { get; init; } = "";
+    [JsonPropertyName("marketplaceTab")] public string MarketplaceTab { get; init; } = "";
+    [JsonPropertyName("installedRows")] public int InstalledRows { get; init; }
+    [JsonPropertyName("availableRows")] public int AvailableRows { get; init; }
+    [JsonPropertyName("filteredRows")] public int FilteredRows { get; init; }
+    [JsonPropertyName("searchedRows")] public int SearchedRows { get; init; }
+    [JsonPropertyName("installedSubtitle")] public string InstalledSubtitle { get; init; } = "";
+    [JsonPropertyName("footerNote")] public string FooterNote { get; init; } = "";
+    [JsonPropertyName("readyStatus")] public string ReadyStatus { get; init; } = "";
+    [JsonPropertyName("noMarketplaceHelp")] public string NoMarketplaceHelp { get; init; } = "";
+    [JsonPropertyName("unsupportedStatus")] public string UnsupportedStatus { get; init; } = "";
     [JsonPropertyName("reads")] public int Reads { get; init; }
     [JsonPropertyName("mutatingControls")] public int MutatingControls { get; init; }
     [JsonPropertyName("restored")] public bool Restored { get; init; }

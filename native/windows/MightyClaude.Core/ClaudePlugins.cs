@@ -14,6 +14,14 @@ namespace MightyClaude.Core;
 // the marketplace feature reuse them unchanged. Their shape is written down in
 // docs/windows-plugins.md.
 
+/// Common interface for the Claude and Codex plugin readers. Both read a
+/// snapshot of the workspace's installed and available plugins and nothing else.
+public interface IPluginReader
+{
+    Task<ClaudePluginSnapshot> SnapshotAsync(Workspace workspace, CancellationToken cancellation = default);
+    void Shutdown();
+}
+
 /// CLI settings state for this working directory, not proof that an already
 /// running CLI process has loaded the plugin successfully.
 public sealed record ClaudeInstalledPlugin
@@ -302,6 +310,147 @@ public static partial class ClaudePluginSupport
 
     private static JsonElement Property(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) ? value : default;
+
+    /// Codex marketplace JSON has {"marketplaces":[...]} wrapper and uses
+    /// marketplaceSource.sourceType for source kind. Available rows are
+    /// filtered by installPolicy; installed rows must have "installed":true and
+    /// are always user-scope. Mirrors CodexPluginService.parseSnapshot.
+    public static ClaudePluginSnapshot ParseCodexSnapshot(string listing, string marketplacesJson, string workingDirectory, string? cliVersion)
+    {
+        ClaudePluginSnapshot Malformed() => new()
+        {
+            Status = ClaudePluginStatus.Failed,
+            Detail = PluginStrings.DetailMalformed,
+            CliVersion = cliVersion,
+        };
+
+        if (Encoding.UTF8.GetByteCount(listing) > MaximumListingBytes) return Malformed();
+        if (Encoding.UTF8.GetByteCount(marketplacesJson) > MaximumMarketplaceBytes) return Malformed();
+
+        JsonDocument listingDocument, marketDocument;
+        try { listingDocument = JsonDocument.Parse(listing); } catch { return Malformed(); }
+        using (listingDocument)
+        {
+            try { marketDocument = JsonDocument.Parse(marketplacesJson); } catch { return Malformed(); }
+            using (marketDocument)
+            {
+                var root = listingDocument.RootElement;
+                var marketsRoot = marketDocument.RootElement;
+                if (root.ValueKind != JsonValueKind.Object || marketsRoot.ValueKind != JsonValueKind.Object) return Malformed();
+                if (!marketsRoot.TryGetProperty("marketplaces", out var marketRows) || marketRows.ValueKind != JsonValueKind.Array) return Malformed();
+                if (!root.TryGetProperty("installed", out var installedRows) || installedRows.ValueKind != JsonValueKind.Array) return Malformed();
+                if (!root.TryGetProperty("available", out var availableRows) || availableRows.ValueKind != JsonValueKind.Array) return Malformed();
+                if (installedRows.GetArrayLength() > MaximumRows || availableRows.GetArrayLength() > MaximumRows) return Malformed();
+                if (marketRows.GetArrayLength() > MaximumMarketplaceRows) return Malformed();
+
+                var marketNames = new HashSet<string>(StringComparer.Ordinal);
+                var marketplaceList = new List<ClaudePluginMarketplace>();
+                foreach (var row in marketRows.EnumerateArray())
+                {
+                    var name = row.Text("name");
+                    if (!Identifier(name) || !marketNames.Add(name!)) return Malformed();
+                    marketplaceList.Add(new ClaudePluginMarketplace(name!, CodexSourceKind(Property(row, "marketplaceSource"), Property(row, "source"))));
+                }
+                marketplaceList.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
+
+                // Available rows: must have valid identity (pluginId/name/marketplaceName/installed/enabled);
+                // policy != AVAILABLE/INSTALLED_BY_DEFAULT counts as restricted and is excluded.
+                var catalogIds = new HashSet<string>(StringComparer.Ordinal);
+                var available = new List<ClaudeCatalogPlugin>();
+                var restricted = 0;
+                foreach (var row in availableRows.EnumerateArray())
+                {
+                    var id = row.Text("pluginId");
+                    if (PluginParts(id) is not { } parts) return Malformed();
+                    if (row.Text("name") != parts.Name || row.Text("marketplaceName") != parts.Marketplace) return Malformed();
+                    if (row.ValueKind != JsonValueKind.Object ||
+                        !row.TryGetProperty("installed", out var instBool) || instBool.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
+                        !row.TryGetProperty("enabled", out var enaBool) || enaBool.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                        return Malformed();
+                    if (!catalogIds.Add(id!)) return Malformed();
+                    var policy = row.Text("installPolicy");
+                    if (policy is not ("AVAILABLE" or "INSTALLED_BY_DEFAULT")) { restricted++; continue; }
+                    available.Add(new ClaudeCatalogPlugin
+                    {
+                        Id = id!,
+                        Name = parts.Name,
+                        Description = Display(row.Text("description"), DescriptionCap),
+                        Marketplace = parts.Marketplace,
+                        Version = row.Text("version") is { Length: > 0 } v ? Display(v, VersionCap) : null,
+                        SourceKind = CodexSourceKind(Property(row, "source")),
+                    });
+                }
+                available.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+                var catalog = available.ToDictionary(p => p.Id, StringComparer.Ordinal);
+
+                // Installed rows: must have "installed":true. Scope is always user.
+                var installedIds = new HashSet<string>(StringComparer.Ordinal);
+                var installed = new List<ClaudeInstalledPlugin>();
+                foreach (var row in installedRows.EnumerateArray())
+                {
+                    var id = row.Text("pluginId");
+                    if (PluginParts(id) is not { } parts) return Malformed();
+                    if (row.Text("name") != parts.Name || row.Text("marketplaceName") != parts.Marketplace) return Malformed();
+                    if (row.ValueKind != JsonValueKind.Object ||
+                        !row.TryGetProperty("installed", out var instBool) || instBool.ValueKind != JsonValueKind.True)
+                        return Malformed();
+                    if (!installedIds.Add(id!)) return Malformed();
+                    var description = Display(row.Text("description"), DescriptionCap);
+                    if (description.Length == 0 && catalog.TryGetValue(id!, out var known)) description = known.Description;
+                    installed.Add(new ClaudeInstalledPlugin
+                    {
+                        PluginId = id!,
+                        Name = parts.Name,
+                        Marketplace = parts.Marketplace,
+                        Version = row.Text("version") is { Length: > 0 } v ? Display(v, VersionCap) : null,
+                        Scope = "user",
+                        Enabled = row.TryGetProperty("enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False ? enabled.GetBoolean() : null,
+                        Description = description,
+                        Errors = Messages(row, "errors"),
+                        Notes = Messages(row, "notes"),
+                    });
+                }
+                installed.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+
+                var detail = marketplaceList.Count == 0
+                    ? CodexPluginStrings.DetailNoMarketplaces
+                    : CodexPluginStrings.DetailReady;
+                if (restricted > 0)
+                    detail += CodexPluginStrings.DetailRestrictedSuffix.Replace("{count}", restricted.ToString());
+
+                return new ClaudePluginSnapshot
+                {
+                    Status = ClaudePluginStatus.Ready,
+                    Detail = detail,
+                    CliVersion = cliVersion,
+                    Installed = installed,
+                    Available = available,
+                    Marketplaces = marketplaceList,
+                    UpdatedAt = Wire.Now(),
+                };
+            }
+        }
+    }
+
+    // Codex source kinds. CodexPluginService.sourceKind reads "sourceType"
+    // first, then "source", and accepts its own shorter whitelist: a Codex
+    // marketplace registered from a folder reports "local", the curated remote
+    // catalog reports "remote". A path becomes "directory"; anything else is
+    // "unknown". The Claude whitelist is left alone.
+    private static readonly string[] CodexSourceKinds = ["local", "remote", "github", "git", "directory"];
+
+    private static string CodexSourceKind(JsonElement value, JsonElement fallback = default)
+    {
+        var element = value.ValueKind == JsonValueKind.Object ? value : fallback;
+        if (element.ValueKind != JsonValueKind.Object) return "unknown";
+        var kind = element.TryGetProperty("sourceType", out var sourceType) && sourceType.ValueKind == JsonValueKind.String
+            ? sourceType.GetString() ?? "unknown"
+            : element.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.String
+                ? source.GetString() ?? "unknown"
+                : "unknown";
+        if (CodexSourceKinds.Contains(kind)) return kind;
+        return kind.StartsWith("./", StringComparison.Ordinal) || kind.StartsWith('/') ? "directory" : "unknown";
+    }
 
     /// The bounded stdout+stderr kept for the diagnostics disclosure.
     public static string Output(CliRunResult result) =>
