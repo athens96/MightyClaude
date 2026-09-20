@@ -2,7 +2,9 @@
 
 docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이며, 이번 범위 밖이고 확장은 `schema: 2`로 간다. 고정 태그 이후에도 고칠 수 있는 문서다(§8.3).
 
-고정 기준(현재, v2 — 2026-09-20): 고정 전 마지막 커밋 `b5082f50af6942817d1010811eaeaffb49630036`, 태그 `mighty-style-engine-v2`가 가리키는 커밋 `24a07e02559081d43fdb4337ebdc0162897aff44`(`styles/FREEZE`만 더한 커밋). v1 이후 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 바뀌지 않았다. v2를 건 이유는 검사가 저장소 전체를 보는데 main에 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)이 들어왔기 때문이다.
+고정 기준(현재, v3 — 2026-09-20): 고정 전 마지막 커밋 `d21b748b9a2b7e8c7dd7c006abc122805f4cfd96`, 태그 `mighty-style-engine-v3`가 가리키는 커밋 `f226e31cc146ba0c7dadd3ba8baaeae3ced05802`(`styles/FREEZE`만 더한 커밋). v2 이후 바뀐 엔진 쪽 파일은 아래 'v3에 묶어 처리한 것'에 적었다. 허용 목록에 Windows 전용 경로가 더해졌다(§8.3).
+
+고정 기준(이전, v2 — 2026-09-20): 고정 전 마지막 커밋 `b5082f50af6942817d1010811eaeaffb49630036`, 태그 `mighty-style-engine-v2`가 가리키는 커밋 `24a07e02559081d43fdb4337ebdc0162897aff44`(`styles/FREEZE`만 더한 커밋). v1 이후 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 바뀌지 않았다. v2를 건 이유는 검사가 저장소 전체를 보는데 main에 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)이 들어왔기 때문이다.
 
 고정 기준(이전, v1 — 2026-09-19): 엔진의 마지막 커밋 `7c39cf62fd0c4944d7fd7c50434d5189204ede29`, 태그 `mighty-style-engine-v1`이 가리키는 커밋 `b767328c5e47654fffbde224488e5865a139ed8f`(`styles/FREEZE`만 더한 커밋). `scripts/check-style-freeze.sh`는 FREEZE를 새로 쓰고 태그를 다시 거는 것까지는 막지 못하므로, 태그가 이 두 값과 다르면 고정이 깨진 것이다.
 
