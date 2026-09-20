@@ -462,6 +462,7 @@ internal static class Verification
         await Test("settings sections smoke shows every fixture status and rejects a wrong screen", SettingsSectionsVerification.SmokeShowsEveryFixtureStatusAndRejectsAWrongScreen);
         await Test("cli account strings match macOS", StringsVerification.CliAccountStringsMatchMacOS);
         await Test("cli account claude and codex statuses expose account labels only", CliAccountVerification.ClaudeAndCodexStatusesExposeAccountLabelsOnly);
+        await Test("cli account token never survives the read", CliAccountVerification.TokenNeverSurvivesTheRead);
         await Test("cli account gemini status and logout work on its account files", CliAccountVerification.GeminiStatusAndLogoutWorkOnItsAccountFiles);
         await Test("cli account commands are the CLIs own", CliAccountVerification.CommandsAreTheCLIsOwn);
         await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
