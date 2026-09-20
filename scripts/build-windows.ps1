@@ -24,8 +24,18 @@ $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
 $platform = if ($Architecture -eq 'arm64') { 'ARM64' } else { 'x64' }
 Push-Location $projectRoot
 try {
-    dotnet run --project native/windows/MightyClaude.Core.Tests/MightyClaude.Core.Tests.csproj --configuration $Configuration
-    if ($LASTEXITCODE -ne 0) { throw 'Core 검증 실패' }
+    # A failed check only says "exit code 1" in the job summary and its log needs a
+    # signed-in reader, so the tail of the output is also published as an annotation.
+    $coreLines = [Collections.Generic.List[string]]::new()
+    dotnet run --project native/windows/MightyClaude.Core.Tests/MightyClaude.Core.Tests.csproj --configuration $Configuration 2>&1 | ForEach-Object { $coreLines.Add("$_"); Write-Output $_ }
+    if ($LASTEXITCODE -ne 0) {
+        if ($env:GITHUB_ACTIONS) {
+            $tail = @($coreLines | Where-Object { $_ -notmatch '^PASS |^SKIP ' } | Select-Object -Last 12) -join "`n"
+            if ($tail.Length -gt 1500) { $tail = $tail.Substring($tail.Length - 1500) }
+            Write-Output "::error title=Windows Core verification::$($tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))"
+        }
+        throw 'Core 검증 실패'
+    }
     dotnet publish native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj --configuration $Configuration --runtime "win-$Architecture" --self-contained true -p:WindowsAppSDKSelfContained=true "-p:Platform=$platform" --output $OutputDirectory
     if ($LASTEXITCODE -ne 0) { throw 'WinUI 빌드 실패' }
     foreach ($required in @('LICENSE.txt', 'MightyClaude.exe', 'MightyClaude.dll', 'MightyClaude.runtimeconfig.json', 'resources.pri', 'coreclr.dll', 'hostfxr.dll', 'Microsoft.UI.Xaml.dll', 'Assets/MightyClaude.ico', 'Assets/mightyclaude.png', 'claude-mods/.claude-plugin/plugin.json')) {
