@@ -159,12 +159,12 @@ public enum StyleLaunchWiring {
         source == .user
     }
 
-    /// Ordinary run-windows — panes without an active guided style — supply
-    /// `nil` for the prefix; `StyleChrome.requestTitle` then omits the
-    /// prefix block entirely so no manifest string appears in the title (§1.10).
-    /// A guided run-window supplies the style's name so every block carries it.
-    public static func requestTitlePrefix(guidedStyle: RegisteredStyle?) -> String? {
-        guidedStyle?.manifest.name
+    /// A pane that runs no style has no prefixes at all (§1.10): an ordinary
+    /// run-window never shows a manifest string in a block title, even while
+    /// runnable styles exist whose rules would recognise the input. A guided
+    /// pane gets the precedence sweep over the runnable styles.
+    public static func requestTitles(guidedStyle: RegisteredStyle?, runnable: @autoclosure () -> [RegisteredStyle]) -> StyleRequestTitles {
+        guidedStyle == nil ? StyleRequestTitles() : StyleRequestTitles(styles: runnable())
     }
 }
 

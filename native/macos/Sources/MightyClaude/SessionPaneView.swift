@@ -68,8 +68,7 @@ struct SessionPaneView: View {
     /// times per visible request block — and only for a pane that really runs
     /// a style, because a plain CLI pane has no prefixes at all.
     private var styleTitles: StyleRequestTitles {
-        guard style != nil else { return StyleRequestTitles() }
-        return StyleRequestTitles(styles: store.styleRegistry.runnableInPrecedence(workspace: store.styleWorkspaceRef(session)))
+        StyleLaunchWiring.requestTitles(guidedStyle: style, runnable: store.styleRegistry.runnableInPrecedence(workspace: store.styleWorkspaceRef(session)))
     }
     /// The style the pane aimed at but has not been said yes to yet (§6.1).
     private var pendingStyle: RegisteredStyle? {

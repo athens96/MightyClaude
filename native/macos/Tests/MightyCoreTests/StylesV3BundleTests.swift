@@ -26,16 +26,18 @@ struct StylesV3BundleTests {
     }
 
     @Test func styleLaunchWiringBlocksTitlePrefixForOrdinaryRunWindows() throws {
-        // Ordinary run window: no guided style → prefix is nil, title has no manifest string.
-        let nonePrefix = StyleLaunchWiring.requestTitlePrefix(guidedStyle: nil)
-        #expect(nonePrefix == nil)
-        #expect(StyleChrome.requestTitle(prefix: nonePrefix, ordinal: 1, providerLabel: "Claude")
+        let ouroboros = StyleFixtures.bundled("ouroboros")
+        let input = try #require(ouroboros.manifest.actions.first?.prompt)
+        let title = try #require(ouroboros.evaluator.requestTitle(forInput: input))
+
+        // Ordinary run window: the style is runnable and recognises the input, yet no prefix appears.
+        let ordinary = StyleLaunchWiring.requestTitles(guidedStyle: nil, runnable: [ouroboros])
+        #expect(ordinary.prefix(input) == nil)
+        #expect(StyleChrome.requestTitle(prefix: ordinary.prefix(input), ordinal: 1, providerLabel: "Claude")
                 == "요청 1 " + StyleChrome.separator + " Claude")
 
-        // Guided run window: approved style → prefix is the style name (non-nil).
-        let guided = try StyleFixtures.registered(StyleFixtures.data(), approval: .approved)
-        let guidedPrefix = StyleLaunchWiring.requestTitlePrefix(guidedStyle: guided)
-        #expect(guidedPrefix == guided.manifest.name)
-        #expect(guidedPrefix != nil)
+        // Guided run window: the same input carries the style's own title.
+        let guided = StyleLaunchWiring.requestTitles(guidedStyle: ouroboros, runnable: [ouroboros])
+        #expect(guided.prefix(input) == title)
     }
 }

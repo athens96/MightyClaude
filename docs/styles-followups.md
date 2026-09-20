@@ -54,5 +54,5 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 
 - 항목 28의 폰 결함: `mobile/src/lib/styles.ts`의 `parseAction`이 `glyph`를 제어 문자 제거가 아니라 "이모지 한 글자인가"로 판정하도록 고친다(맥의 `StyleText.isEmojiGlyph`와 같은 기준).
 - 정식 평가(2026-09-19, 9/9 승인)가 지적한 테스트 빈틈: Ouroboros의 단계 6개를 한 줄로 단언하는 검사, 101번째 행동이 `E_LIMIT`으로 거부되는 픽스처.
-- 앱 모듈에 테스트 타깃이 없어 `AppStore+Styles`의 연결(승인 뒤 실행 창 결속, 저장소 매니페스트 미복사, 일반 실행 창의 제목 앞머리 차단)은 읽어서만 검증됐다. 타깃을 더하거나 그 규칙을 MightyCore로 더 옮긴다.
+- (v3 준비에서 처리) `AppStore+Styles`의 연결 규칙 셋 — 승인 뒤 실행 창 결속, 저장소 매니페스트 미복사, 일반 실행 창의 제목 앞머리 차단 — 을 `MightyCore`의 `StyleLaunchWiring`으로 옮겼고 앱(`AppStore+Styles.swift`, `SessionPaneView.swift`)이 그 함수를 직접 부른다. `StylesV3BundleTests`가 규칙마다 하나씩 검사한다. 앱 모듈 자체에는 여전히 테스트 타깃이 없으므로, 규칙을 부르는 자리(승인 시트의 흐름, 패널 렌더링)는 화면 확인 대상이다.
 - 화면 확인에서 나온 문제: (확인 뒤 여기에 적는다)
