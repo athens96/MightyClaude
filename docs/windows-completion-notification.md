@@ -24,6 +24,22 @@ Windows App SDK의 `AppNotificationManager`(토스트 알림)를 사용한다.
 - 세션 ID는 `launch` 파라미터로 전달되며, 알림 클릭 시 해당 실행 창을 선택한다
 - 프롬프트, 도구 인자, 출력, 프로젝트 경로는 포함되지 않는다
 
+## CI 스모크의 실제 호출 1회
+
+GUI 스모크 실행은 실제 알림기를 픽스처 제목(`Smoke fixture`)으로 한 번 호출하고,
+결과 JSON의 `completionNotification` 키에 결과를 기록한다.
+
+- 보냄: `{"status":"sent"}`
+- 건너뜀: `{"status":"skipped","reason":"..."}` — `IsSupported`가 `false`이거나
+  러너에서 등록이 불가능한 경우. 건너뜀은 실패가 아니다.
+- `IsSupported`가 `true`인 뒤에 발생한 예외는 스모크 실패로 전파된다.
+
+기록 형태와 호출 횟수는 Core의 `CompletionNotificationSmoke`·
+`CompletionNotificationSmokeOutcome`에 있어 Mac에서 검사한다
+(`completion notification smoke …` 4개 검사). 스모크는 CLI를 실행하지 않고
+저장 상태를 바꾸지 않으며, 저장 상태 버전은 계속 1이다.
+토스트가 실제로 보였는지는 주장하지 않는다 — 아래 기기 미확인 항목으로 남는다.
+
 ## 기기 미확인 항목
 
 - 실제 토스트 알림이 화면에 표시되는지 (기기에서 직접 확인 필요)
