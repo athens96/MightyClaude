@@ -523,6 +523,7 @@ internal static class Verification
         await Test("claude plugin reload reads again and replaces the list", ClaudePluginVerification.ReloadReadsAgainAndReplacesTheList);
         await Test("claude plugin palette offers /plugin for Claude only", ClaudePluginVerification.PaletteOffersPluginForClaudeOnly);
         await Test("claude plugin strings match macOS", ClaudePluginVerification.StringsMatchMacOS);
+        await Test("claude plugin window is a real WinUI surface wired into the app", ClaudePluginVerification.WindowIsARealWinUISurfaceWiredIntoTheApp);
         await Test("claude plugin models stay reusable for the Codex and marketplace features", ClaudePluginVerification.ModelsStayReusable);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
