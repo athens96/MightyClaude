@@ -65,8 +65,6 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         if (value.Kind != "turn") emit(new(run.Request.SessionId, "log", new(value.Id, "system", value.Summary, Wire.Now(), value.Provider, value)));
         emit(new(run.Request.SessionId, "activity", Activity: value));
     }
-    private static bool IsControlLine(string line) =>
-        line.AsSpan().TrimStart(' ').StartsWith("{\"type\":\"control", StringComparison.Ordinal);
     private async Task ExecuteAsync(Run run)
     {
         var request = run.Request; var token = run.Cancel.Token; ModBridge.Connection? mod = null; StagedAttachments? attachments = null; var input = request.Input; Exception? startFailure = null;
