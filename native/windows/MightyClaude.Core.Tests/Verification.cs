@@ -11,12 +11,12 @@ using MightyClaude.Core;
 internal static class Verification
 {
     private static int passed, skipped;
-    private static string Temp() { var path = Path.Combine(Path.GetTempPath(), "mighty-core-test-" + Wire.Id()); Directory.CreateDirectory(path); return path; }
+    internal static string Temp() { var path = Path.Combine(Path.GetTempPath(), "mighty-core-test-" + Wire.Id()); Directory.CreateDirectory(path); return path; }
     private static void Check(bool value, string message = "Assertion failed") { if (!value) throw new InvalidOperationException(message); }
     private static async Task Reject(Func<Task> action) { try { await action(); } catch (Exception) { return; } throw new InvalidOperationException("Expected rejection"); }
-    private static async Task Until(Func<bool> condition, int milliseconds = 7000) { var end = DateTimeOffset.UtcNow.AddMilliseconds(milliseconds); while (!condition()) { if (DateTimeOffset.UtcNow >= end) throw new TimeoutException("Expected condition was not reached"); await Task.Delay(20); } }
+    internal static async Task Until(Func<bool> condition, int milliseconds = 7000) { var end = DateTimeOffset.UtcNow.AddMilliseconds(milliseconds); while (!condition()) { if (DateTimeOffset.UtcNow >= end) throw new TimeoutException("Expected condition was not reached"); await Task.Delay(20); } }
     private static async Task Test(string name, Func<Task> action) { await action(); passed++; Console.WriteLine("PASS " + name); }
-    private static CliCommand Self(params string[] args)
+    internal static CliCommand Self(params string[] args)
     {
         var binary = Environment.ProcessPath ?? throw new InvalidOperationException("Executable unavailable"); return new(binary, Path.GetFileNameWithoutExtension(binary).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? new[] { Assembly.GetExecutingAssembly().Location }.Concat(args).ToArray() : args, "2.1.271");
     }
@@ -48,6 +48,30 @@ internal static class Verification
     {
         await File.WriteAllTextAsync(record + ".args", JsonSerializer.Serialize(args, Wire.Json));
         if (args.Contains("--version")) { Console.WriteLine("2.1.271"); return; }
+        // A Claude launched with host permission prompts: answer the handshake,
+        // ask to use one tool once the prompt frame arrives, record the answer.
+        if (args.Contains("--permission-prompt-tool"))
+        {
+            while (await Console.In.ReadLineAsync() is { } line)
+            {
+                await File.AppendAllTextAsync(record + ".input", line + "\n");
+                using var json = JsonDocument.Parse(line); var root = json.RootElement;
+                switch (root.Text("type"))
+                {
+                    case "control_request":
+                        Console.WriteLine(JsonSerializer.Serialize(new { type = "control_response", response = new { subtype = "success", request_id = root.Text("request_id"), response = new { } } }, Wire.Json));
+                        break;
+                    case "user":
+                        Console.WriteLine("{\"type\":\"control_request\",\"request_id\":\"ask-1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Read\",\"tool_use_id\":\"tool-ask-1\",\"input\":{\"file_path\":\"~/.claude/CLAUDE.md\"},\"blocked_path\":\"~/.claude/CLAUDE.md\"}}");
+                        break;
+                    case "control_response":
+                        await File.WriteAllTextAsync(record + ".decision", line);
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"fixture\",\"session_id\":\"fixture\"}");
+                        return;
+                }
+            }
+            return;
+        }
         if (args.Contains("app-server") || args.Contains("--safe-mode"))
         {
             while (await Console.In.ReadLineAsync() is { } line)
@@ -373,6 +397,8 @@ internal static class Verification
         await Test("tool permission questionnaires and extra screens can only be denied", ToolPermissionVerification.QuestionnairesAndExtraScreensCanOnlyBeDenied);
         await Test("tool permission stopping the run settles every waiting request", ToolPermissionVerification.StoppingTheRunSettlesEveryWaitingRequest);
         await Test("tool permission bar shows the title summary reason path and count", ToolPermissionVerification.BarShowsTheTitleSummaryReasonPathAndCount);
+        await Test("tool permission host prompts are added only for a Claude launch that can show the bar", ToolPermissionVerification.HostPromptsOnlyWhereTheBarExists);
+        await Test("tool permission run launches with host prompts over stdio and answers one request", ToolPermissionVerification.RunLaunchesWithHostPromptsAndAnswersOneRequest);
         await Test("tool permission strings match macOS", StringsVerification.ToolPermissionsMatchMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {

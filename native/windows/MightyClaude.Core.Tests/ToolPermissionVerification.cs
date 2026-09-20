@@ -247,4 +247,86 @@ internal static class ToolPermissionVerification
         Check(Result(hidden.Last).GetProperty("updatedInput").GetProperty("query").GetString() == "‮visible", "allow still sends the original input");
         return Task.CompletedTask;
     }
+
+    private static StartRunRequest Claude(string id) => new(id, "workspace-fixture", "claude", "fixture prompt");
+
+    /// <summary>
+    /// launch_arguments: the bar's own path gets host prompts over stdio; every
+    /// other path — remote workspaces, headless hosts, other CLIs — keeps
+    /// --permission-prompts none exactly as before.
+    /// </summary>
+    internal static Task HostPromptsOnlyWhereTheBarExists()
+    {
+        var quiet = ProviderInput.Prepare(Claude("quiet"), "/fixture-plugin", allowPermissionPrompts: false).Arguments;
+        Check(quiet[quiet.IndexOf("--permission-prompts") + 1] == "none", "a host that cannot show the bar keeps prompts off");
+        Check(!quiet.Contains("--permission-prompt-tool") && !quiet.Contains("--input-format"), "no stdio prompt tool is offered without the bar");
+
+        var hosted = ProviderInput.Prepare(Claude("hosted"), "/fixture-plugin", allowPermissionPrompts: true).Arguments;
+        Check(hosted[hosted.IndexOf("--permission-prompts") + 1] == "host", "the bar's path asks this host for prompts");
+        Check(hosted[hosted.IndexOf("--permission-prompt-tool") + 1] == "stdio", "the prompts arrive over stdio");
+        Check(hosted[hosted.IndexOf("--input-format") + 1] == "stream-json", "stdin carries stream-json so replies are possible");
+
+        var codex = ProviderInput.Prepare(Claude("codex-run") with { Provider = "codex" }, "/fixture-plugin", allowPermissionPrompts: true).Arguments;
+        Check(!codex.Contains("--permission-prompt-tool"), "only Claude speaks this protocol");
+
+        var frame = ProviderInput.PromptFrame("안녕");
+        Check(frame.EndsWith("\n", StringComparison.Ordinal), "the prompt frame is newline framed");
+        Check(JsonDocument.Parse(frame).RootElement.GetProperty("message").GetProperty("content").GetString() == "안녕", "the prompt frame carries the input");
+
+        Check(ClaudeStream.IsTurnResult("{\"type\":\"result\",\"subtype\":\"success\"}"), "the CLI's own result ends the turn");
+        Check(!ClaudeStream.IsTurnResult("{\"type\":\"result\",\"origin\":{\"kind\":\"task-notification\"}}"), "a task notification does not end the turn");
+        Check(!ClaudeStream.IsTurnResult("{\"type\":\"result\",\"parent_tool_use_id\":\"tool-1\"}"), "a sub-agent result does not end the turn");
+        Check(!ClaudeStream.IsTurnResult("not json"), "an unreadable line does not end the turn");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// End to end over a real child process: the handshake precedes the prompt,
+    /// the request reaches the host that can show the bar, 거부 answers that one
+    /// request, and no rule or settings update is ever returned.
+    /// </summary>
+    internal static async Task RunLaunchesWithHostPromptsAndAnswersOneRequest()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin"));
+            await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+            var record = Path.Combine(directory, "hosted");
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "claude", record)));
+            var seen = new List<ToolPermissionRequest>();
+            RunManager? manager = null;
+            manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, _ => { }, value =>
+            {
+                seen.Add(value);
+                // Answered on the run's own context, as the bar's 거부 button does.
+                if (value.State == "pending") manager!.RespondToToolPermission("hosted", value.Id, allow: false);
+            });
+            await using (manager)
+            {
+                await manager.StartAsync(new("hosted", workspace.Id, "claude", "fixture prompt"));
+                await Verification.Until(() => !manager.IsRunning("hosted"), 20000);
+            }
+
+            var launched = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+            Check(launched[Array.IndexOf(launched, "--permission-prompts") + 1] == "host", "the run launched with host prompts");
+            Check(launched[Array.IndexOf(launched, "--permission-prompt-tool") + 1] == "stdio", "the run launched with the stdio prompt tool");
+
+            var written = (await File.ReadAllLinesAsync(record + ".input")).Where(l => l.Length > 0).ToArray();
+            Check(JsonDocument.Parse(written[0]).RootElement.GetProperty("request").GetProperty("subtype").GetString() == "initialize", "the handshake is written first");
+            Check(JsonDocument.Parse(written[1]).RootElement.GetProperty("type").GetString() == "user", "the prompt only follows the handshake");
+
+            Check(seen.Count >= 2 && seen[0].State == "pending" && seen[0].ToolName == "Read", "the waiting request reached the host that can show the bar");
+            Check(seen[0].BlockedPath == "~/.claude/CLAUDE.md", "the bar is given the path");
+            Check(seen[^1].State == "denied", "the request settles as denied");
+
+            var decision = JsonDocument.Parse(await File.ReadAllTextAsync(record + ".decision")).RootElement.GetProperty("response");
+            Check(decision.GetProperty("subtype").GetString() == "success", "the CLI receives an answer");
+            var payload = decision.GetProperty("response");
+            Check(payload.GetProperty("behavior").GetString() == "deny" && payload.GetProperty("toolUseID").GetString() == "tool-ask-1", "거부 denies that one tool call");
+            Check(!payload.TryGetProperty("updatedPermissions", out _) && !payload.TryGetProperty("updatedInput", out _), "no rule or settings update is ever returned");
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
+    }
 }

@@ -241,19 +241,28 @@ public sealed record ProviderInput(List<string> Arguments, byte[] StandardInput)
     {
         var request = value.Validate();
         var args = ProviderCatalog.Arguments(request, pluginDirectory);
-        if (allowPermissionPrompts && request.Provider == "claude")
-        {
-            var noneIdx = args.IndexOf("none");
-            if (noneIdx > 0 && args[noneIdx - 1] == "--permission-prompts")
-            {
-                args[noneIdx] = "host";
-                args.AddRange(["--permission-prompt-tool", "stdio"]);
-            }
-            if (!args.Contains("--input-format"))
-                args.AddRange(["--input-format", "stream-json"]);
-        }
-        var stdin = JsonSerializer.SerializeToUtf8Bytes(
-            new { type = "user", message = new { content = request.Input } }, Wire.Json);
-        return new(args, stdin);
+        if (allowPermissionPrompts && request.Provider == "claude") HostPrompts(args);
+        return new(args, System.Text.Encoding.UTF8.GetBytes(PromptFrame(request.Input)));
     }
+
+    /// <summary>
+    /// Rewrites a Claude argument list in place so permission prompts come to
+    /// this host over stdio. Only a launch path that can show the approval bar
+    /// calls this; every other path keeps --permission-prompts none as today.
+    /// </summary>
+    public static List<string> HostPrompts(List<string> arguments)
+    {
+        var noneIdx = arguments.IndexOf("none");
+        if (noneIdx > 0 && arguments[noneIdx - 1] == "--permission-prompts")
+        {
+            arguments[noneIdx] = "host";
+            arguments.AddRange(["--permission-prompt-tool", "stdio"]);
+        }
+        if (!arguments.Contains("--input-format")) arguments.AddRange(["--input-format", "stream-json"]);
+        return arguments;
+    }
+
+    /// <summary>The single stream-json user frame the channel sends once the handshake succeeds.</summary>
+    public static string PromptFrame(string input)
+        => JsonSerializer.Serialize(new { type = "user", message = new { content = input } }, Wire.Json) + "\n";
 }

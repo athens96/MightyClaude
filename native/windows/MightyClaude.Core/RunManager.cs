@@ -7,7 +7,14 @@ public interface IRunManager : IAsyncDisposable
     Task StartAsync(StartRunRequest request);
     Task StopAsync(string sessionId);
 }
-public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit) : IRunManager
+/// <param name="permissionRequested">
+/// Set only by a host that can show the approval bar for this run. When it is
+/// null — remote workspaces and every headless path — Claude keeps launching
+/// with --permission-prompts none exactly as before. A request is handed to
+/// this callback alone: it is never an event, so it never reaches a snapshot
+/// or a remote peer.
+/// </param>
+public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null) : IRunManager
 {
     private sealed class Run(StartRunRequest request)
     {
@@ -15,6 +22,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal readonly CancellationTokenSource Cancel = new();
         internal readonly TaskCompletionSource? Accepted = request.Attachments is { Count: > 0 } ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
         internal ChildProcess? Child;
+        internal ClaudePermissionChannel? Permissions;
         internal Task Task = Task.CompletedTask;
         internal int Bytes;
         internal bool Truncated;
@@ -57,6 +65,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         if (value.Kind != "turn") emit(new(run.Request.SessionId, "log", new(value.Id, "system", value.Summary, Wire.Now(), value.Provider, value)));
         emit(new(run.Request.SessionId, "activity", Activity: value));
     }
+    private static bool IsControlLine(string line) =>
+        line.AsSpan().TrimStart(' ').StartsWith("{\"type\":\"control", StringComparison.Ordinal);
     private async Task ExecuteAsync(Run run)
     {
         var request = run.Request; var token = run.Cancel.Token; ModBridge.Connection? mod = null; StagedAttachments? attachments = null; var input = request.Input; Exception? startFailure = null;
@@ -71,7 +81,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         try
         {
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
-            var environment = ProviderCatalog.QuietEnvironment(); string binary; IEnumerable<string> arguments;
+            var environment = ProviderCatalog.QuietEnvironment(); string binary; IEnumerable<string> arguments; var interactive = false;
             if (request.Kind == "shell") { binary = OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("ComSpec") ?? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh"; arguments = OperatingSystem.IsWindows() ? ["/d", "/s", "/c", request.Input] : ["-c", request.Input]; }
             else
             {
@@ -88,22 +98,56 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 }
                 if (request.Settings!.Effort != "default") { var runtime = await providers.GetRuntimeAsync(); token.ThrowIfCancellationRequested(); if (!ProviderCatalog.Efforts(request.Provider, request.Model, runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog).Contains(request.Settings.Effort)) throw new ArgumentException("선택한 모델의 지원 강도를 확인할 수 없습니다. Auto를 선택하세요."); }
                 if (request.Attachments is { Count: > 0 } files) { attachments = await StagedAttachments.CreateAsync(files, token); token.ThrowIfCancellationRequested(); input = attachments.InputFor(request); }
-                binary = command.Binary; arguments = command.Prefix.Concat(attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory));
+                binary = command.Binary;
+                var providerArguments = attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory);
+                // Host prompts over stdio only where the approval bar exists.
+                interactive = permissionRequested is not null && request.Provider == "claude";
+                if (interactive) ProviderInput.HostPrompts(providerArguments);
+                arguments = command.Prefix.Concat(providerArguments);
             }
             token.ThrowIfCancellationRequested();
             await using var child = ChildProcess.Start(ChildProcess.StartInfo(binary, arguments, workspace.Path, environment), OperatingSystem.IsWindows() && request.Kind == "shell" ? request.Input : null);
             run.Child = child; token.ThrowIfCancellationRequested();
             using var stop = token.Register(child.Kill);
+            if (interactive)
+            {
+                // Fail closed: the prompt itself is only written after a
+                // successful handshake, and a failure stops the run.
+                run.Permissions = new ClaudePermissionChannel(request.SessionId, ProviderInput.PromptFrame(input),
+                    text => { if (run.Finished) return; try { child.Input.Write(text); child.Input.Flush(); } catch (IOException) { } catch (ObjectDisposedException) { } },
+                    value => { if (!run.Finished) permissionRequested!(value); },
+                    (value, state) => parser.PermissionActivity(value, state),
+                    message => Log(run, "system", message),
+                    message => { Log(run, "error", message); run.Cancel.Cancel(); });
+            }
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", ProviderCatalog.Name(request.Provider) + " 실행 중"));
-            var output = PumpAsync(child.Output, line => { if (run.Finalizing) return; if (request.Kind == "shell") Log(run, "output", line); else parser.Parse(line); }, token);
+            var output = PumpAsync(child.Output, line =>
+            {
+                if (run.Finalizing) return;
+                if (request.Kind == "shell") { Log(run, "output", line); return; }
+                run.Permissions?.Receive(line);
+                parser.Parse(line);
+                // One-shot shutdown: EOF only after the CLI's own turn result,
+                // so an approval reply is still possible while the turn runs.
+                if (run.Permissions is not null && ClaudeStream.IsTurnResult(line)) CloseChannel(run, child);
+            }, token);
             var error = PumpAsync(child.Error, line => Log(run, "output", line), token);
-            if (request.Kind != "shell") await child.Input.WriteAsync(input.AsMemory(), token);
-            child.Input.Close();
+            if (interactive)
+            {
+                run.Permissions!.Start();
+                _ = Task.Delay(TimeSpan.FromSeconds(15), token).ContinueWith(_ => run.Permissions?.InitializationTimedOut(), TaskScheduler.Default);
+            }
+            else
+            {
+                if (request.Kind != "shell") await child.Input.WriteAsync(input.AsMemory(), token);
+                child.Input.Close();
+            }
             run.Accepted?.TrySetResult();
             var code = await child.Completion.WaitAsync(token);
             child.Kill(); // Close descendants that inherited stdout after their parent exited.
             await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(3), token); parser.Flush();
+            CloseChannel(run, child);
             if (mod is { Received: 0 }) Log(run, "system", "Mod 연결 이벤트가 없습니다. 표시된 응답은 CLI 출력입니다.");
             Finish(code == 0 && !parser.Failed ? "completed" : "error");
         }
@@ -111,12 +155,27 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         catch (Exception ex) { startFailure = ex; Log(run, "error", ex.Message); Finish(run.Cancel.IsCancellationRequested ? "stopped" : "error"); }
         finally
         {
+            run.Permissions?.CancelAll(); run.Permissions = null;
             mod?.Dispose(); run.Child = null;
             try { if (attachments is not null) await attachments.DisposeAsync(); }
             catch (IOException) { Log(run, "error", "실행은 종료했지만 첨부 임시 사본을 삭제하지 못했습니다."); }
             catch (UnauthorizedAccessException) { Log(run, "error", "실행은 종료했지만 첨부 임시 사본을 삭제할 권한이 없습니다."); }
             finally { runs.TryRemove(new KeyValuePair<string, Run>(request.SessionId, run)); if (startFailure is not null) run.Accepted?.TrySetException(startFailure); }
         }
+    }
+    /// <summary>Settles every waiting request and sends the CLI end-of-input.</summary>
+    private static void CloseChannel(Run run, ChildProcess child)
+    {
+        if (run.Permissions is null) return;
+        run.Permissions.CancelAll(); run.Permissions = null;
+        try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { }
+    }
+    /// <summary>이번만 허용 / 거부 for one waiting request of one run. Nothing else is ever returned.</summary>
+    public void RespondToToolPermission(string sessionId, string requestId, bool allow)
+    {
+        if (!runs.TryGetValue(sessionId, out var run) || run.Permissions is not { } channel)
+            throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+        channel.Respond(requestId, allow);
     }
     private static async Task PumpAsync(StreamReader reader, Action<string> consume, CancellationToken token) { await foreach (var line in OutputParser.LinesAsync(reader, token)) consume(line); }
     public async Task StopAsync(string sessionId)

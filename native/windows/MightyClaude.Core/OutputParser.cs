@@ -71,6 +71,14 @@ public sealed class OutputParser
         if (previous is null) { activityOrder.Enqueue(id); if (activityOrder.Count > 512) { var expired = activityOrder.Dequeue(); activities.Remove(expired); starts.Remove(expired); sequences.Remove(expired); } }
         activities[id] = value; activity?.Invoke(value);
     }
+    /// <summary>
+    /// Once the stdio approval is observed it owns the waiting state of that
+    /// tool call in the activity list (macOS CLIStreamParser.permissionActivity).
+    /// </summary>
+    public void PermissionActivity(ToolPermissionRequest request, string state)
+    {
+        lock (sync) Tool(request.ToolUseId, state, request.ToolName, summary: request.Summary);
+    }
     public void ReceiveMod(JsonElement root)
     {
         lock (sync)
@@ -180,4 +188,15 @@ public static class ClaudeStream
     // before it even reads the new request. It is not the request's result: OutputParser and
     // SessionUsageTracker must not treat it as the turn ending.
     public static bool IsNotificationResult(JsonElement value) => value.Text("type") == "result" && MetadataJson.Property(value, "origin").Text("kind") == "task-notification";
+    /// <summary>The CLI's own end-of-turn result — not a background task notification, not a sub-agent.</summary>
+    public static bool IsTurnResult(string line)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(line); var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object && root.Text("type") == "result" && !IsNotificationResult(root)
+                && MetadataJson.Property(root, "parent_tool_use_id").ValueKind is JsonValueKind.Undefined or JsonValueKind.Null;
+        }
+        catch (JsonException) { return false; }
+    }
 }
