@@ -208,6 +208,83 @@ internal static class StringsVerification
         return Task.CompletedTask;
     }
 
+    // CLIUpdateSettingsView.swift (section, toggle, button, status labels) and
+    // CLIUpdateService.swift (every detail sentence).
+    // SectionDescription carries the one recorded OS-bound substitution
+    // (이 PC에 for 이 Mac에), documented in docs/windows-cli-update.md.
+    // DetailWingetPlan and DetailWingetRuntimeMissing have no macOS literal —
+    // Windows has no Homebrew — and are 보류 rows in docs/windows-parity.md.
+    private static readonly Dictionary<string, string> CliUpdateMacOS = new()
+    {
+        ["SectionTitle"] = "CLI 업데이트",
+        ["AutoUpdateToggle"] = "앱 시작 시 CLI 자동 업데이트",
+        ["SectionDescription"] = "이 PC에 설치된 Claude Code·Codex·Gemini CLI를 기존 설치 방식으로 업데이트합니다.",
+        ["ProgressInspecting"] = "설치 정보 확인 중…",
+        ["ProgressProviderTemplate"] = "{provider} 업데이트 중…",
+        ["LastRunTemplate"] = "마지막 실행 {time}",
+        ["UpdateButton"] = "업데이트 하기",
+        ["UpdatingButton"] = "업데이트 중…",
+        ["ResultRowTemplate"] = "{provider} · {status}",
+        ["VersionChangeTemplate"] = "{before} → {after}",
+        ["StatusUpdated"] = "업데이트 완료",
+        ["StatusCurrent"] = "변경 없음",
+        ["StatusFailed"] = "업데이트 실패",
+        ["StatusCancelled"] = "취소됨",
+        ["StatusBusy"] = "다른 업데이트 진행 중",
+        ["StatusSkipped"] = "건너뜀",
+        ["DetailClosing"] = "앱이 종료 중입니다.",
+        ["DetailInspectCancelled"] = "설치 확인을 취소했습니다.",
+        ["DetailInspectFailed"] = "CLI 설치 정보를 확인하지 못했습니다.",
+        ["DetailBusy"] = "다른 CLI를 업데이트하고 있습니다.",
+        ["DetailCancelled"] = "업데이트를 취소했습니다.",
+        ["DetailUnsupportedProvider"] = "지원하지 않는 CLI입니다.",
+        ["DetailVersionUnknown"] = "CLI 버전을 확인하지 못해 업데이트하지 않았습니다.",
+        ["DetailMissing"] = "설치된 CLI가 없어 건너뜁니다. 새로 설치하지 않습니다.",
+        ["DetailUnknownMethod"] = "수동 설치 또는 확인할 수 없는 설치 방식입니다. 기존 설치 방법으로 직접 업데이트하세요.",
+        ["DetailNativeClaude"] = "Claude Code의 기본 업데이트 명령을 사용합니다.",
+        ["DetailNpmPrerelease"] = "시험판 또는 확인할 수 없는 npm 채널은 자동 변경하지 않습니다. 기존 채널에서 직접 업데이트하세요.",
+        ["DetailNpmRuntimeMissing"] = "npm 설치는 확인했지만 해당 설치를 업데이트할 Node.js/npm을 찾지 못했습니다.",
+        ["DetailNpmPlan"] = "기존 npm 설치 위치에서 공식 패키지만 업데이트합니다.",
+        ["DetailFailedExitTemplate"] = "업데이트 명령이 종료 코드 {code}로 실패했습니다. 설치 권한이나 네트워크 상태를 확인하세요.",
+        ["DetailVersionRecheckFailed"] = "업데이트 명령은 끝났지만 CLI 버전을 다시 확인하지 못했습니다.",
+        ["DetailUpdated"] = "CLI를 업데이트했습니다.",
+        ["DetailUnchanged"] = "업데이트 명령을 완료했습니다. 설치된 버전은 동일합니다.",
+        // 보류: no macOS literal, recorded in docs/windows-parity.md.
+        ["DetailWingetPlan"] = "설치된 winget의 해당 패키지만 업데이트합니다.",
+        ["DetailWingetRuntimeMissing"] = "winget 설치이지만 winget 실행 파일을 찾지 못했습니다.",
+    };
+
+    /// The CLI update copy is the macOS copy apart from the recorded
+    /// substitution, and the status labels come from the same table.
+    internal static Task CliUpdateStringsMatchMacOS()
+    {
+        var actual = Constants(typeof(CliUpdateStrings));
+        var reason = Validate(nameof(CliUpdateStrings), actual, CliUpdateMacOS);
+        if (reason is not null) throw new InvalidOperationException(reason);
+
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CliUpdateStrings), copy, CliUpdateMacOS);
+        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+        if (Bad(Broken("SectionDescription", "이 Mac에 설치된 Claude Code·Codex·Gemini CLI를 기존 설치 방식으로 업데이트합니다.")) is null)
+            throw new InvalidOperationException("an unrecorded OS name must fail");
+        if (Bad(Broken("StatusUpdated", "Updated")) is null) throw new InvalidOperationException("English copy must fail");
+        if (Bad(Broken("VersionChangeTemplate", "{ before } → {after}")) is null) throw new InvalidOperationException("a placeholder that is not {name} must fail");
+        if (Bad(Broken("StatusCurrent", CliUpdateStrings.StatusSkipped)) is null) throw new InvalidOperationException("a duplicate value must fail");
+        var missing = new Dictionary<string, string>(actual); missing.Remove("DetailMissing");
+        if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
+
+        // Every status the service can report has its own macOS label.
+        foreach (var (status, label) in new[]
+        {
+            ("updated", CliUpdateStrings.StatusUpdated), ("current", CliUpdateStrings.StatusCurrent),
+            ("skipped", CliUpdateStrings.StatusSkipped), ("failed", CliUpdateStrings.StatusFailed),
+            ("cancelled", CliUpdateStrings.StatusCancelled), ("busy", CliUpdateStrings.StatusBusy),
+        })
+            if (CliUpdateStrings.StatusLabel(status) != label) throw new InvalidOperationException("status label for " + status + " changed");
+        if (CliUpdateStrings.StatusLabel("something-else") != CliUpdateStrings.StatusSkipped)
+            throw new InvalidOperationException("an unknown status must read 건너뜀, as it does on macOS");
+        return Task.CompletedTask;
+    }
+
     /// The approval bar copy is the macOS copy, and nothing else is typed anywhere.
     internal static Task ToolPermissionsMatchMacOS()
     {
