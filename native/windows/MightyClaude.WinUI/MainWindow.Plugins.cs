@@ -30,6 +30,12 @@ public sealed partial class MainWindow
     // Overrides the reader for the marketplace smoke so no real CLI starts.
     private Func<string, IPluginReader>? smokeReaderFactory;
 
+    // The running app owns this from its first moment — a field of the window,
+    // built with the real shared runner, never by the smoke harness. Every
+    // plugin read is made through its runner and both mutations are started
+    // through it, so install and marketplace refresh really run in the app.
+    private readonly PluginOperations pluginOperations = new();
+
     /// What the smoke driver is handed instead of a shown dialog: the real
     /// dialog it would see, the Core state it renders, and the actions the
     /// Opened event, the reload/tab/install/refresh buttons and cancel invoke.
@@ -50,10 +56,12 @@ public sealed partial class MainWindow
     private async Task<ClaudePluginBrowser> ShowPluginBrowser(string provider, Workspace workspace)
     {
         var browser = new ClaudePluginBrowser(provider, workspace);
-        // 8 MiB of listing output, the macOS cap. Anything past it is refused by
-        // the parser rather than truncated into a short list. The provider picks
+        // The app's own operations object carries the shared runner: 8 MiB of
+        // listing output, the macOS cap. Anything past it is refused by the
+        // parser rather than truncated into a short list. The provider picks
         // the reader; both answer with the same ClaudePluginSnapshot.
-        var runner = new CliRunner(outputCapBytes: ClaudePluginSupport.MaximumListingBytes);
+        var operations = pluginOperations;
+        var runner = operations.Runner;
         IPluginReader reader = smokeReaderFactory is { } factory
             ? factory(provider)
             : provider == ClaudePluginBrowser.CodexProvider
@@ -204,7 +212,7 @@ public sealed partial class MainWindow
                     var installBtn = new Button { Content = btnLabel, IsEnabled = browser.CanInstall(row.Id) };
                     AutomationProperties.SetAutomationId(installBtn, PluginAutomationId(provider, "install-" + row.Id));
                     var capturedId = row.Id;
-                    installBtn.Click += async (_, _) => await OperateAsync(() => browser.InstallAsync(reader, capturedId));
+                    installBtn.Click += async (_, _) => await OperateAsync(() => operations.InstallAsync(browser, reader, capturedId));
                     panel.Children.Add(installBtn);
                     rows.Children.Add(panel);
                 }
@@ -259,7 +267,7 @@ public sealed partial class MainWindow
             pickerNote.Text = browser.ScopeNote;
             RenderPlugins();
         };
-        refreshBtn.Click += async (_, _) => await OperateAsync(() => browser.RefreshMarketplacesAsync(reader));
+        refreshBtn.Click += async (_, _) => await OperateAsync(() => operations.RefreshMarketplacesAsync(browser, reader));
         search.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => { browser.Search = search.Text; RenderPlugins(); });
         filter.SelectionChanged += (_, _) =>
         {
@@ -334,8 +342,8 @@ public sealed partial class MainWindow
             var smokeDialog = provider == ClaudePluginBrowser.CodexProvider ? smokeCodexPluginDialog : smokePluginDialog;
             if (smokeDialog is { } driver)
                 await driver(new PluginSmokeSurface(dialog, browser, LoadPluginsAsync, SelectPluginTab,
-                    id => OperateAsync(() => browser.InstallAsync(reader, id)),
-                    () => OperateAsync(() => browser.RefreshMarketplacesAsync(reader)),
+                    id => OperateAsync(() => operations.InstallAsync(browser, reader, id)),
+                    () => OperateAsync(() => operations.RefreshMarketplacesAsync(browser, reader)),
                     browser.RequestCancel));
             else await dialog.ShowAsync();
         }

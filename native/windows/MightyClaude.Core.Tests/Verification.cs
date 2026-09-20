@@ -559,6 +559,7 @@ internal static class Verification
         await Test("plugin marketplace window refuses a change it cannot start", PluginMarketplaceVerification.WindowRefusesAChangeItCannotStart);
         await Test("plugin marketplace copy matches macOS", PluginMarketplaceVerification.CopyMatchesMacOS);
         await Test("plugin marketplace window is wired into the running app and the smoke run", PluginMarketplaceVerification.WindowIsWiredIntoTheRunningAppAndTheSmokeRun);
+        await Test("plugin marketplace the running app owns the operations object", PluginMarketplaceVerification.TheRunningAppOwnsTheOperationsObject);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();

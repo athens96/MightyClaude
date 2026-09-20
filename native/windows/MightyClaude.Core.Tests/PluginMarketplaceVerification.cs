@@ -655,7 +655,7 @@ internal static class PluginMarketplaceVerification
         // Every one of them is wired to Core rather than to a local decision.
         foreach (var call in new[]
                  {
-                     "browser.InstallAsync(reader,", "browser.RefreshMarketplacesAsync(reader)", "browser.RequestCancel",
+                     "operations.InstallAsync(browser, reader,", "operations.RefreshMarketplacesAsync(browser, reader)", "browser.RequestCancel",
                      "browser.CanInstall(", "browser.InstallButtonLabel(", "browser.CanRefreshMarketplaces",
                      "browser.ScopeOptions", "browser.Scope =", "browser.ScopeNote", "browser.ProgressLabel",
                      "browser.CancelLabel", "browser.CanCancel", "browser.IsMutating", "browser.ResultText",
@@ -703,5 +703,93 @@ internal static class PluginMarketplaceVerification
                  })
             Check(source.Contains(restore), "the smoke run must put back what it changed: " + restore);
         return Task.CompletedTask;
+    }
+
+    /// The running app owns PluginOperations: the object that carries the one
+    /// shared runner and starts both mutations really exists in the app outside
+    /// the smoke harness, and the window's own buttons call it.
+    internal static async Task TheRunningAppOwnsTheOperationsObject()
+    {
+        // The instance the app makes for itself speaks to the installed CLI
+        // through the shared one-shot runner. Making it starts no process.
+        var real = new PluginOperations();
+        Check(real.UsesInstalledCli, "the app's own operations object speaks to the installed CLI");
+        Check(real.Runner is CliRunner, "it carries the real shared runner");
+        Check(real.Reader("claude") is ClaudePluginReader && real.Reader(ClaudePluginBrowser.CodexProvider) is CodexPluginReader,
+            "the provider picks the reader, both built on that one runner");
+        Check(!real.IsRunning, "a fresh operations object has nothing running");
+
+        // A check's instance takes a fake runner instead, so nothing installed
+        // is ever started here.
+        var gate = new TaskCompletionSource();
+        var workspace = Verification.Temp();
+        var runner = ClaudeRunner(_ => Ok(InstallOk));
+        runner.Async = async (_, args, token) =>
+        {
+            if (args is ["plugin", "install", ..]) { await gate.Task.WaitAsync(token); return Ok(InstallOk); }
+            return args switch
+            {
+                ["--version"] => Ok("2.1.271 (Claude Code)"),
+                ["plugin", "marketplace", "list", ..] => Ok(ClaudeMarkets),
+                _ => Ok(ClaudeListing()),
+            };
+        };
+        var bin = Verification.Temp();
+        var reader = new ClaudePluginReader(runner, new Dictionary<string, string> { ["PATH"] = bin },
+            isExecutable: path => path == Path.Combine(bin, "claude"), directoryExists: Directory.Exists);
+
+        var operations = new PluginOperations(runner);
+        Check(!operations.UsesInstalledCli && ReferenceEquals(operations.Runner, runner),
+            "a check's operations object carries the fake runner and says so");
+
+        var browser = new ClaudePluginBrowser("claude", new Workspace { Path = workspace });
+        browser.Apply(await reader.SnapshotAsync(new Workspace { Path = workspace }));
+        Check(browser.CanInstall("fmt@sample"), "the catalog row offers 설치");
+
+        // The install the window's button starts: assembled, run and read back
+        // through the operations object, with the macOS result sentence.
+        var running = operations.InstallAsync(browser, reader, "fmt@sample");
+        while (runner.Mutations == 0) await Task.Delay(5);
+        Check(operations.IsRunning, "the operations object knows its operation is running");
+
+        // One at a time for the whole app: the second window's refresh is
+        // refused with the macOS sentence while the first install runs, and it
+        // never becomes a second CLI run.
+        var second = new ClaudePluginBrowser("claude", new Workspace { Path = workspace });
+        second.Apply(await reader.SnapshotAsync(new Workspace { Path = workspace }));
+        var refused = await operations.RefreshMarketplacesAsync(second, reader);
+        Check(refused.Status == ClaudePluginStatus.Busy && refused.Detail == PluginStrings.OperationBusy,
+            "a second operation is refused with the macOS sentence: " + refused.Detail);
+        Check(runner.Mutations == 1, "the refused operation never became a second CLI run");
+
+        gate.SetResult();
+        var result = await running;
+        Check(result.Status == ClaudePluginStatus.Succeeded && result.Detail == PluginStrings.InstallSucceeded,
+            "the install run through the operations object succeeded: " + result.Detail);
+        Check(!operations.IsRunning, "the gate is open again once the operation ends");
+        Check(runner.Mutation is ["plugin", "install", "fmt@sample", "--scope", "local", "--json"],
+            "the arguments the CLI received are the macOS list: " + string.Join(" ", runner.Mutation ?? []));
+
+        // The running app really owns it: a window field, made with the real
+        // shared runner, never replaced by the smoke run — and the buttons the
+        // user presses call it.
+        var winui = ClaudePluginVerification.WinUISource();
+        var source = File.ReadAllText(Path.Combine(winui, "MainWindow.Plugins.cs"));
+        Check(source.Contains("private readonly PluginOperations pluginOperations = new();"),
+            "the running app must own one PluginOperations as a window field built with the real shared runner");
+        var declaration = source.IndexOf("private readonly PluginOperations pluginOperations = new();", StringComparison.Ordinal);
+        Check(declaration >= 0 && declaration < source.IndexOf("internal Task OpenPluginBrowser(", StringComparison.Ordinal),
+            "it is a field of the window, created at app start, not inside a method");
+        Check(source.Split("pluginOperations").Length - 1 == 2,
+            "the app's operations object is declared once and read once: the smoke run never replaces it");
+        Check(source.Contains("var operations = pluginOperations;") && source.Contains("var runner = operations.Runner;"),
+            "the window must read and mutate through the runner that object owns");
+        Check(!source.Contains("new CliRunner("), "the window must not build a plugin runner of its own");
+        Check(!source.Contains("new PluginOperations("),
+            "nothing but the window field may make a PluginOperations, so the smoke run cannot make its own");
+        Check(source.Contains("installBtn.Click += async (_, _) => await OperateAsync(() => operations.InstallAsync(browser, reader, capturedId));"),
+            "the install button of a catalog row must call the app's operations object");
+        Check(source.Contains("refreshBtn.Click += async (_, _) => await OperateAsync(() => operations.RefreshMarketplacesAsync(browser, reader));"),
+            "마켓플레이스 새로고침 must call the app's operations object");
     }
 }
