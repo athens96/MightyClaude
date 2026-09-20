@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using MightyClaude.Core;
 
 // Behaviour checks for the Claude plugin list. Every name registered in
@@ -405,6 +406,74 @@ internal static class ClaudePluginVerification
         // The two sentences a remote workspace shows, and the one OS-bound word.
         Check(PluginStrings.DetailRemote.Contains("이 PC의") && !PluginStrings.DetailRemote.Contains("Mac"),
             "the remote sentence names the Windows PC, not a Mac");
+        return Task.CompletedTask;
+    }
+
+    // Where this source file sits, so the WinUI surface can be read from the
+    // checkout. Core.Tests never builds WinUI — WinUI builds only on Windows —
+    // so the window is proven here the way a Mac can prove it: by what the file
+    // that draws it says.
+    private static string WinUIFolder([CallerFilePath] string here = "") =>
+        Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(here)!)!, "MightyClaude.WinUI");
+
+    // The plugin window is a real WinUI surface, it reaches the user from the
+    // running app rather than from the smoke check, it types none of its own
+    // Korean, and the smoke run drives that same window under claudePluginList.
+    internal static Task WindowIsARealWinUISurfaceWiredIntoTheApp()
+    {
+        var winui = WinUIFolder();
+        Check(Directory.Exists(winui), "the WinUI project folder is missing: " + winui);
+
+        var file = Path.Combine(winui, "MainWindow.Plugins.cs");
+        Check(File.Exists(file), "MainWindow.Plugins.cs draws the plugin window and must exist");
+        var source = File.ReadAllText(file);
+
+        // A real surface built from real controls, not a placeholder.
+        Check(source.Contains("new ContentDialog"), "the plugin window must be a ContentDialog");
+        foreach (var control in new[] { "new Button", "new TextBox", "new ComboBox", "new ScrollViewer", "new StackPanel" })
+            Check(source.Contains(control), "the plugin window must draw a " + control);
+
+        // Every visible word is read from PluginStrings...
+        foreach (var name in new[]
+                 {
+                     "ButtonClose", "ButtonReload", "SearchPlaceholder", "FilterAll", "RemoteTitle",
+                     "RemoteNote", "ProgressLoading", "FooterNote", "DiagnosticsDisclosure", "MarketplaceHelpLink",
+                 })
+            Check(source.Contains("PluginStrings." + name), "the window must read PluginStrings." + name);
+
+        // ...and no copy is typed into WinUI as a literal of its own.
+        foreach (var field in typeof(PluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
+                     .Where(f => f.IsLiteral && f.FieldType == typeof(string)))
+            Check(!source.Contains("\"" + (string)field.GetRawConstantValue()! + "\""),
+                "PluginStrings." + field.Name + " is typed into WinUI instead of read from Core");
+
+        // The title and the tab counts are Core's decision, not the window's.
+        Check(source.Contains("browser.Title") && source.Contains("browser.TabLabel("),
+            "the window must take its title and tab labels from ClaudePluginBrowser");
+
+        // The feature is reached from real app events. A window only the smoke
+        // check opens is an unfinished feature.
+        var palette = File.ReadAllText(Path.Combine(winui, "MainWindow.SlashPalette.cs"));
+        Check(palette.Contains("SlashCommandAction.OpenPlugins") && palette.Contains("OpenPluginBrowser("),
+            "/plugin must open the plugin window from the palette");
+        Check(File.ReadAllText(Path.Combine(winui, "MainWindow.cs")).Contains("OpenPluginBrowser("),
+            "the run pane menu must open the plugin window");
+
+        // The smoke run records claudePluginList and drives that same window.
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
+        Check(smoke.Contains("ClaudePluginSmokeOutcome.ResultKey") && smoke.Contains("RunClaudePluginSmoke()"),
+            "the smoke run must record the plugin result under claudePluginList");
+        Check(source.Contains("await ShowPluginBrowser(\"claude\", workspace"),
+            "the smoke run must drive the same window the app opens");
+        Check(source.Contains("smokePluginRead = beforeRead") && source.Contains("smokePluginDialog = beforeDialog"),
+            "the smoke run must put back the two hooks it set");
+
+        // The fixture the smoke run shows: installed and available plugins, and
+        // a status the window can show when the CLI is missing. No CLI starts.
+        Check(source.Contains("PluginSmokeSnapshot") && source.Contains("ClaudePluginStatus.Missing"),
+            "the smoke run must show a fixture snapshot and an error status");
+        Check(source.Contains("smokePluginRead is { } fixture"),
+            "the fixture must replace the CLI read so no claude process starts");
         return Task.CompletedTask;
     }
 
