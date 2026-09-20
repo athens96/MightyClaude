@@ -12,8 +12,10 @@ macOS (`SlashCommandPalette.swift`) draws the two row marks with SF Symbols — 
 
 ## App actions left out of the Windows palette
 
-`SlashPalette.UnavailableActions` lists the app actions this client has no screen for at all. It is empty today: every macOS app action has a Windows counterpart the palette calls — `OpenPlugins`, `NewConversation`, `ShowUsage`, `OpenSettings`, `Rename`, `Help`, `SetModel` and `SetPermission`. `SlashCommandCatalog.Builtins` itself keeps the macOS list untouched.
+None. `SlashPalette.UnavailableActions` lists the app actions this client has no screen for at all, and it is empty: every macOS app action has a Windows counterpart the palette calls — `OpenPlugins`, `NewConversation`, `ShowUsage`, `OpenSettings`, `Rename`, `Help`, `SetModel` and `SetPermission`.
 
-One action is left out per provider rather than for everyone:
+`SlashPalette.Builtins` no longer filters any provider's rows either, so for every provider the Windows palette offers exactly the built-ins `SlashCommandCatalog.Builtins` — the macOS list, left untouched — offers:
 
-- `OpenPlugins` — `/plugin` opens the Claude plugin window and `/plugins` opens the Codex plugin window (`docs/windows-plugins.md`, `MainWindow.Plugins.cs`). Both palettes include the action; `SlashPalette.UnavailableActions` is therefore empty today. Gemini has no plugin browser on macOS either, so its palette still omits the action.
+- `OpenPlugins` — `/plugin` opens the Claude plugin window and `/plugins` opens the Codex plugin window; both go to `OpenPluginBrowser(pane.Provider)` (`docs/windows-plugins.md`, `MainWindow.Plugins.cs`). Gemini has no plugin browser on macOS, so the macOS catalog gives it no row and the palette invents none.
+
+The `codex plugin palette …` and `slash palette leaves out actions Windows cannot do` Core checks assert both facts: `UnavailableActions` is empty, and each provider's palette rows equal its catalog rows one for one.
