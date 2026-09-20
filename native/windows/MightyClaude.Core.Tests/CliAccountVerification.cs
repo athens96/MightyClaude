@@ -306,4 +306,34 @@ internal static class CliAccountVerification
             CancellationToken cancellation = default, IReadOnlyDictionary<string, string>? environment = null, string? workingDirectory = null)
             => Task.FromResult(respond((executable, arguments)));
     }
+    // The app reads the account label out of an id token and must keep nothing else:
+    // no part of any token may survive in the status, its text form, its JSON or a message.
+    internal static Task TokenNeverSurvivesTheRead()
+    {
+        var idToken = Jwt(new Dictionary<string, object>
+        {
+            ["email"] = "dev@example.com",
+            ["https://api.openai.com/auth"] = new { chatgpt_plan_type = "plus" },
+        }).Replace(".sig", ".FIXTURE-SIGNATURE-VALUE");
+        var secrets = new[] { idToken, idToken.Split('.')[1], "FIXTURE-SIGNATURE-VALUE", "FIXTURE-ACCESS-VALUE", "FIXTURE-REFRESH-VALUE", "sk-FIXTURE-API-KEY" };
+        var authJson = JsonSerializer.Serialize(new { OPENAI_API_KEY = "sk-FIXTURE-API-KEY", tokens = new { id_token = idToken, access_token = "FIXTURE-ACCESS-VALUE", refresh_token = "FIXTURE-REFRESH-VALUE" } });
+        var broken = JsonSerializer.Serialize(new { tokens = new { id_token = "aaa.%%%not-base64%%%.FIXTURE-SIGNATURE-VALUE", access_token = "FIXTURE-ACCESS-VALUE" } });
+        foreach (var status in new[]
+        {
+            CliAccountSupport.ParseCodexStatus("Logged in using ChatGPT\n", authJson),
+            CliAccountSupport.ParseCodexStatus("Logged in using ChatGPT\n", broken),
+            CliAccountSupport.ParseCodexStatus("Not logged in", authJson),
+            CliAccountSupport.ParseCodexStatus("error: boom", authJson),
+            CliAccountSupport.ParseCodexStatus("Logged in using ChatGPT\n", "{ not json FIXTURE-ACCESS-VALUE"),
+        })
+        {
+            var visible = string.Join("\n", status.ToString(), JsonSerializer.Serialize(status), status.Summary, status.Detail, status.Account, status.Plan, status.Method);
+            foreach (var secret in secrets) Check(!visible.Contains(secret, StringComparison.Ordinal), "a token value survived the read: " + secret[..Math.Min(12, secret.Length)]);
+        }
+        var good = CliAccountSupport.ParseCodexStatus("Logged in using ChatGPT\n", authJson);
+        Check(good.Account == "dev@example.com" && good.Plan == "Plus", "the label and the plan are still read");
+        var bad = CliAccountSupport.ParseCodexStatus("Logged in using ChatGPT\n", broken);
+        Check(bad.LoggedIn == true && bad.Account is null, "a broken id token gives no label and no error");
+        return Task.CompletedTask;
+    }
 }
