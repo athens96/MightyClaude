@@ -508,6 +508,10 @@ internal static class Verification
         await Test("rename rejects unknown target", RenameVerification.renameRejectsUnknownTarget);
         await Test("rename via DesktopService persists name", RenameVerification.renameViaDesktopServicePersistsName);
         await Test("rename strings match macOS", RenameVerification.renameStringsMatchMacOS);
+        await Test("rename messages mirror the macOS captions", RenameVerification.renameMessagesMirrorTheMacOSCaptions);
+        await Test("rename save button is disabled exactly when macOS disables it", RenameVerification.renameSaveButtonIsDisabledExactlyWhenMacOSDisablesIt);
+        await Test("rename keeps a long emoji name whole across a restart", RenameVerification.renameKeepsALongEmojiNameWholeAcrossARestart);
+        await Test("rename clamp title still bounds an overlong stored title", RenameVerification.renameClampTitleStillBoundsAnOverlongStoredTitle);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
