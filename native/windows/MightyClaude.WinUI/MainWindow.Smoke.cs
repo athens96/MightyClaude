@@ -154,51 +154,78 @@ public sealed partial class MainWindow
             checks["singleActionBusyDedupAndNewDraftPreserved"] = true; checks["passed"] = true; owner.smokeStart = null; return checks;
         }
 
-        internal async Task<bool> RunSlashCommandPaletteSmoke()
+        /// <summary>
+        /// Drives the real palette: types a slash, waits for the list, counts its
+        /// rows against a fixture injected for smoke mode, moves the highlight,
+        /// chooses an entry and reads the draft back. No CLI is ever started, and
+        /// the draft and focus this check found are put back before it returns.
+        /// </summary>
+        internal async Task<Dictionary<string, object?>> RunSlashCommandPaletteSmoke()
         {
+            var checks = new Dictionary<string, object?>();
             // Fixture commands standing in for a real disk scan.
             var fixture = new SlashCommand[]
             {
                 new("review", "코드 검토", SlashCommandStrings.ProjectSkillSource, SlashCommandOrigin.Project),
-                new("deploy", "프로젝트 배포", SlashCommandStrings.UserCommandSource, SlashCommandOrigin.User),
-                new("model", "모델 바꾸기 · 이름을 이어서 고르세요", SlashCommandStrings.AppSource, SlashCommandOrigin.App, SlashCommandAction.SetModel, SlashArgument.Model),
+                new("deploy", "", SlashCommandStrings.UserCommandSource, SlashCommandOrigin.User),
             };
-
-            // Query parsing: "/" opens palette (empty string), "/re" filters, "/re " is null (space = arg mode).
-            Require(SlashCommandCatalog.Query("/") == "", "슬래시 입력 시 빈 쿼리가 반환되어야 합니다.");
-            Require(SlashCommandCatalog.Query("/re") == "re", "슬래시 명령 쿼리 파싱이 잘못됐습니다.");
-            Require(SlashCommandCatalog.Query("/re ") is null, "공백 뒤에는 쿼리가 null이어야 합니다.");
-            Require(SlashCommandCatalog.Query("hello") is null, "슬래시로 시작하지 않으면 쿼리가 null이어야 합니다.");
-
-            // Filter "re" matches "review" by prefix.
-            var filtered = SlashCommandCatalog.Filter(fixture, "re");
-            Require(filtered.Length == 1 && filtered[0].Invocation == "review", "슬래시 명령 필터 결과가 올바르지 않습니다.");
-
-            // Count display string uses the {count}개 template.
-            var countText = SlashCommandStrings.PaletteCountTemplate.Replace("{count}", fixture.Length.ToString());
-            Require(countText == "3개", "팔레트 개수 표시가 올바르지 않습니다.");
-
-            // Keyboard hints match macOS copy.
-            Require(SlashCommandStrings.PaletteMove == "↑↓ 이동" && SlashCommandStrings.PaletteSelect == "Enter · Tab 선택" && SlashCommandStrings.PaletteDismiss == "Esc 닫기", "팔레트 키보드 힌트가 macOS와 다릅니다.");
-
-            // Choosing "review": insert "/review " into the composer draft, closing the palette.
-            // The composer smoke leaves a draft that the later split check reads back.
             var previousDraft = input.Text;
-            updating = true; input.Text = "/review "; updating = false;
-            await Change(p => p with { Draft = input.Text });
-            Require(SlashCommandCatalog.Query(input.Text) is null, "명령 선택 후 슬래시 팔레트가 닫혀야 합니다.");
-            var argQ = SlashCommandCatalog.ArgumentQuery(input.Text);
-            Require(argQ == ("review", ""), "명령 인수 쿼리 파싱이 잘못됐습니다.");
+            var previousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(owner.root.XamlRoot) as Control;
+            owner.smokeSlashCommands = fixture;
+            try
+            {
+                var expected = SlashPalette.Builtins(Session.Provider).Length + fixture.Length;
+                input.Text = "/";
+                await WaitUI(() => paletteState.IsOpen && slashPaletteHost.Visibility == Visibility.Visible);
+                Require(paletteState.Commands.Length == expected && slashRows.Children.Count == expected,
+                    "슬래시 팔레트의 줄 수가 주입한 목록과 다릅니다.");
+                Require(slashCount.Text == SlashPalette.CountLabel(expected), "슬래시 팔레트의 개수 표시가 잘못됐습니다.");
+                Require(!paletteState.Commands.Any(c => c.Action == SlashCommandAction.OpenPlugins),
+                    "Windows에 화면이 없는 앱 명령이 팔레트에 나왔습니다.");
+                checks["opensAboveComposerWithFixtureRows"] = true;
 
-            // Action / argument commands carry the right metadata.
-            Require(fixture[2].Argument == SlashArgument.Model, "모델 명령의 인수 유형이 올바르지 않습니다.");
-            Require(SlashCommandStrings.PaletteArgumentTooltip == "이어서 선택합니다", "인수 명령 툴팁이 macOS와 다릅니다.");
-            Require(SlashCommandStrings.PaletteActionTooltip == "앱에서 바로 실행됩니다", "앱 명령 툴팁이 macOS와 다릅니다.");
+                input.Text = "/rev";
+                await WaitUI(() => paletteState.Commands.Length == 1);
+                Require(paletteState.Commands[0].Invocation == "review", "입력에 따른 슬래시 팔레트 필터가 잘못됐습니다.");
+                checks["typingFilters"] = true;
 
-            // Put back the draft this check found.
-            updating = true; input.Text = previousDraft; updating = false;
-            await Change(p => p with { Draft = previousDraft });
-            return true;
+                input.Text = "/";
+                await WaitUI(() => paletteState.Commands.Length == expected);
+                Require(HandlePaletteKey(Windows.System.VirtualKey.Down) && paletteState.SafeIndex == 1, "↓ 키가 다음 줄로 이동하지 않았습니다.");
+                Require(HandlePaletteKey(Windows.System.VirtualKey.Up) && paletteState.SafeIndex == 0, "↑ 키가 이전 줄로 이동하지 않았습니다.");
+                Require(HandlePaletteKey(Windows.System.VirtualKey.Up) && paletteState.SafeIndex == expected - 1, "↑ 키가 마지막 줄로 넘어가지 않았습니다.");
+                checks["arrowsMoveHighlight"] = true;
+
+                input.Text = "/rev";
+                await WaitUI(() => paletteState.Commands.Length == 1);
+                Require(HandlePaletteKey(Windows.System.VirtualKey.Enter), "Enter가 팔레트 대신 입력창으로 갔습니다.");
+                await WaitUI(() => input.Text == "/review " && Session.Draft == "/review ");
+                Require(!paletteState.IsOpen && slashPaletteHost.Visibility == Visibility.Collapsed, "명령 선택 후 슬래시 팔레트가 닫히지 않았습니다.");
+                checks["choosingInsertsInvocationAndSpace"] = true;
+
+                input.Text = "/model ";
+                await WaitUI(() => paletteState.IsOpen);
+                Require(paletteState.Commands.All(c => c.Action == SlashCommandAction.SetModel),
+                    "/model 뒤에서 모델 선택이 이어지지 않았습니다.");
+                checks["argumentCompletionContinues"] = true;
+
+                Require(HandlePaletteKey(Windows.System.VirtualKey.Escape) && !paletteState.IsOpen && input.Text == "/model ",
+                    "Esc가 팔레트를 닫지 못했거나 초안을 바꿨습니다.");
+                Require(!HandlePaletteKey(Windows.System.VirtualKey.Down), "닫힌 팔레트가 방향키를 가로챘습니다.");
+                checks["escapeClosesWithoutChangingDraft"] = true;
+                checks["passed"] = true;
+            }
+            finally
+            {
+                // Smoke checks share one pane: put back the draft and the focus
+                // this check found, and forget that Esc ever closed the list.
+                owner.smokeSlashCommands = null; slashDismissedFor = null;
+                updating = true; input.Text = previousDraft; updating = false;
+                await Change(p => p with { Draft = previousDraft });
+                RefreshPalette(previousDraft); RefreshComposerState();
+                previousFocus?.Focus(FocusState.Programmatic);
+            }
+            return checks;
         }
     }
 }
