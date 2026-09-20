@@ -277,6 +277,16 @@ internal static class CodexPluginVerification
             // OS-bound substitution, recorded in docs/windows-plugins.md:
             // macOS reads "이 Mac의 Codex 설치 목록과 마켓플레이스 목록입니다."
             ["FooterNote"] = "이 PC의 Codex 설치 목록과 마켓플레이스 목록입니다. 설치 후 새 Codex 세션을 시작하세요.",
+            // The install and the marketplace upgrade (CodexPluginService.swift).
+            ["InstallSkipped"] = "이미 사용자 범위에 설치되어 있습니다. 비활성 상태라면 Codex에서 활성화하세요.",
+            ["InstallNotFound"] = "현재 설치 가능한 마켓플레이스 목록에서 이 플러그인을 찾지 못했습니다. 목록과 설치 정책을 다시 확인하세요.",
+            ["InstallSucceeded"] = "플러그인을 사용자 범위에 설치했습니다. 새 Codex 세션부터 적용됩니다. 연결이 필요한 앱은 Codex에서 인증하세요.",
+            ["InstallVerifyFailed"] = "CLI가 설치 결과를 반환했지만 설치 목록에서 확인하지 못했습니다. 목록을 다시 읽으세요.",
+            ["OperationFailed"] = "플러그인 작업에 실패했거나 결과 형식이 올바르지 않습니다. 네트워크·권한·조직 정책을 확인하세요.",
+            ["MarketplaceNotGit"] = "이 마켓플레이스는 Git 소스가 아니어서 Codex CLI로 갱신할 수 없습니다. 목록을 다시 읽으면 현재 상태를 확인할 수 있습니다.",
+            ["MarketplaceRefreshUnconfirmed"] = "마켓플레이스 새로고침을 확인하지 못했습니다. CLI 진단 출력을 확인하세요.",
+            ["NoGitMarketplaces"] = "갱신할 Git 마켓플레이스가 없습니다. 로컬·기본 제공 마켓플레이스는 목록 새로고침으로 확인하세요.",
+            ["RefreshGitOnly"] = "마켓플레이스 갱신은 등록된 Git 소스만 지원합니다. 다른 소스는 목록 새로고침으로 확인하세요.",
         };
 
         var actual = typeof(CodexPluginStrings)

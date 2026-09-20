@@ -25,6 +25,7 @@ public sealed class ClaudePluginReader : IPluginReader
     private readonly Lock gate = new();
     private Task<ClaudePluginSnapshot>? running;
     private bool closed;
+    private bool operating;
 
     /// The runner must be built with an output cap of at least
     /// ClaudePluginSupport.MaximumListingBytes; anything larger than the cap is
@@ -61,6 +62,148 @@ public sealed class ClaudePluginReader : IPluginReader
     /// because nothing was changed.
     public void Shutdown() { lock (gate) closed = true; }
 
+    /// macOS ClaudePluginService: the operation timeout is 180 seconds.
+    public static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(180);
+
+    private static readonly string[] InstallScopes = ["local", "project", "user"];
+
+    /// claude plugin install <id> --scope <scope> --json, for one plugin the
+    /// catalog just offered, in one of the three macOS scopes.
+    public Task<ClaudePluginOperationResult> InstallAsync(string pluginId, string scope, Workspace workspace, CancellationToken cancellation = default)
+    {
+        if (ClaudePluginSupport.PluginParts(pluginId) is null || !InstallScopes.Contains(scope))
+            return Refused(workspace, PluginStrings.InstallBadIdOrScope);
+        return OperateAsync(pluginId, scope, null, workspace, cancellation);
+    }
+
+    /// claude plugin marketplace update <name>, for one registered marketplace.
+    public Task<ClaudePluginOperationResult> RefreshMarketplaceAsync(string marketplace, Workspace workspace, CancellationToken cancellation = default)
+    {
+        if (!ClaudePluginSupport.Identifier(marketplace))
+            return Refused(workspace, PluginStrings.MarketplaceBadName);
+        return OperateAsync(null, null, marketplace, workspace, cancellation);
+    }
+
+    // A remote workspace is answered before anything else is looked at, exactly
+    // as macOS does, so a bad argument on a remote workspace still runs nothing.
+    private Task<ClaudePluginOperationResult> Refused(Workspace workspace, string detail) =>
+        Task.FromResult(workspace.Remote is not null
+            ? new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.DetailRemote)
+            : new ClaudePluginOperationResult(ClaudePluginStatus.Failed, detail));
+
+    private Task<ClaudePluginOperationResult> OperateAsync(
+        string? pluginId, string? scope, string? marketplace, Workspace workspace, CancellationToken cancellation)
+    {
+        if (workspace.Remote is not null)
+            return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.DetailRemote));
+        lock (gate)
+        {
+            if (closed)
+                return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Cancelled, PluginStrings.OperationCancelled));
+            // One operation at a time. macOS refuses a second one with this
+            // sentence instead of queueing it.
+            if (operating)
+                return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Busy, PluginStrings.OperationBusy));
+            operating = true;
+        }
+        return RunOperationAsync(pluginId, scope, marketplace, workspace, cancellation);
+    }
+
+    private async Task<ClaudePluginOperationResult> RunOperationAsync(
+        string? pluginId, string? scope, string? marketplace, Workspace workspace, CancellationToken cancellation)
+    {
+        try
+        {
+            var cwd = LocalDirectory(workspace);
+            var (executable, version) = await CommandAsync(cwd, cancellation);
+            // Re-read the registry and the cached catalog immediately before the
+            // mutation. Only a value this snapshot carries becomes an argument.
+            var snapshot = await ListAsync(executable, cwd, version, cancellation);
+            if (snapshot.Status != ClaudePluginStatus.Ready)
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, snapshot.Detail, snapshot.DiagnosticOutput);
+            cancellation.ThrowIfCancellationRequested();
+
+            string[] arguments;
+            if (pluginId is not null && scope is not null)
+            {
+                if (ClaudePluginSupport.PluginParts(pluginId) is not { } parts
+                    || !snapshot.Available.Any(p => p.Id == pluginId)
+                    || !snapshot.Marketplaces.Any(m => m.Name == parts.Marketplace))
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.InstallNotFound);
+                if (snapshot.Installed.Any(p => p.PluginId == pluginId && p.Scope == scope
+                        && (scope == "user" || p.ProjectPath is null || ClaudePluginSupport.Applies(p.ProjectPath, cwd))))
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Skipped, PluginStrings.InstallSkipped);
+                // No --yes and no --accept-command: a marketplace-declared
+                // command keeps needing the CLI's own explicit consent.
+                arguments = ["plugin", "install", pluginId, "--scope", scope, "--json"];
+            }
+            else
+            {
+                if (!snapshot.Marketplaces.Any(m => m.Name == marketplace))
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.MarketplaceNotRegistered);
+                arguments = ["plugin", "marketplace", "update", marketplace!];
+            }
+
+            CliRunResult result;
+            try { result = await runner.RunAsync(executable, arguments, OperationTimeout, cancellation, environment, cwd); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error)
+            {
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.DetailIncomplete,
+                    ClaudePluginSupport.Display(error.Message, ClaudePluginSupport.MessageCap));
+            }
+            cancellation.ThrowIfCancellationRequested();
+            var output = ClaudePluginSupport.Output(result);
+            if (result.TimedOut)
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.DetailIncomplete, output);
+            if (pluginId is not null && scope is not null) return Installed(result, pluginId, scope, output);
+            return result.ExitCode == 0
+                ? new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, PluginStrings.MarketplaceRefreshSucceeded, output)
+                : new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.MarketplaceRefreshFailed, output);
+        }
+        catch (OperationCanceledException)
+        {
+            return new ClaudePluginOperationResult(ClaudePluginStatus.Cancelled, PluginStrings.OperationCancelled);
+        }
+        catch (PluginFailure failure)
+        {
+            return new ClaudePluginOperationResult(
+                failure.Status == ClaudePluginStatus.Cancelled ? ClaudePluginStatus.Cancelled : ClaudePluginStatus.Failed,
+                failure.Detail, failure.Output);
+        }
+        catch
+        {
+            return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.DetailIncomplete);
+        }
+        finally { lock (gate) operating = false; }
+    }
+
+    // The CLI may print a marketplace-declared command before its own result,
+    // so only the last nonempty stdout line is read as JSON.
+    private static ClaudePluginOperationResult Installed(CliRunResult result, string pluginId, string scope, string output)
+    {
+        var line = result.Output.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Length > 0);
+        System.Text.Json.JsonElement root;
+        System.Text.Json.JsonDocument document;
+        try { document = System.Text.Json.JsonDocument.Parse(line ?? ""); }
+        catch { return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.InstallUnconfirmed, output); }
+        using (document)
+        {
+            root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+                || root.Text("command") != "install"
+                || root.Text("outcome") is not ("ok" or "failed"))
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.InstallUnconfirmed, output);
+            if (root.TryGetProperty("shownCommand", out _))
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.InstallCommandRequired, output);
+            var claimedId = root.TryGetProperty("pluginId", out _) ? root.Text("pluginId") : pluginId;
+            var claimedScope = root.TryGetProperty("scope", out _) ? root.Text("scope") : scope;
+            if (result.ExitCode != 0 || root.Text("outcome") != "ok" || claimedId != pluginId || claimedScope != scope)
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.InstallFailed, output);
+            return new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, PluginStrings.InstallSucceeded, output);
+        }
+    }
+
     private sealed class PluginFailure(string status, string detail, string output = "") : Exception(detail)
     {
         internal string Status { get; } = status;
@@ -74,11 +217,7 @@ public sealed class ClaudePluginReader : IPluginReader
         {
             var cwd = LocalDirectory(workspace);
             var (executable, version) = await CommandAsync(cwd, cancellation);
-            var listing = await RunAsync(executable, ["plugin", "list", "--json", "--available"], cwd,
-                PluginStrings.DetailListingFailed, cancellation);
-            var marketplaces = await RunAsync(executable, ["plugin", "marketplace", "list", "--json"], cwd,
-                PluginStrings.DetailMarketplacesFailed, cancellation);
-            return ClaudePluginSupport.ParseSnapshot(listing.Output, marketplaces.Output, cwd, version);
+            return await ListAsync(executable, cwd, version, cancellation);
         }
         catch (OperationCanceledException)
         {
@@ -92,6 +231,18 @@ public sealed class ClaudePluginReader : IPluginReader
         {
             return new ClaudePluginSnapshot { Status = ClaudePluginStatus.Failed, Detail = PluginStrings.DetailIncomplete };
         }
+    }
+
+    /// The two read subcommands and the parse, shared by the list and by the
+    /// re-read an install or a refresh does immediately before it assembles
+    /// its arguments.
+    private async Task<ClaudePluginSnapshot> ListAsync(string executable, string cwd, string? version, CancellationToken cancellation)
+    {
+        var listing = await RunAsync(executable, ["plugin", "list", "--json", "--available"], cwd,
+            PluginStrings.DetailListingFailed, cancellation);
+        var marketplaces = await RunAsync(executable, ["plugin", "marketplace", "list", "--json"], cwd,
+            PluginStrings.DetailMarketplacesFailed, cancellation);
+        return ClaudePluginSupport.ParseSnapshot(listing.Output, marketplaces.Output, cwd, version);
     }
 
     private async Task<CliRunResult> RunAsync(string executable, string[] arguments, string cwd, string failureDetail, CancellationToken cancellation)

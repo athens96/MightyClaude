@@ -538,6 +538,26 @@ internal static class Verification
         await Test("codex plugin failed runs and timeouts keep the screen intact", CodexPluginVerification.FailedRunsAndTimeoutsKeepTheScreenIntact);
         await Test("codex plugin strings match macOS", CodexPluginVerification.StringsMatchMacOS);
         await Test("codex plugin window is a real WinUI surface wired into the app", CodexPluginVerification.WindowIsARealWinUISurfaceWiredIntoTheApp);
+        await Test("plugin marketplace claude install runs the CLI command and reports success", PluginMarketplaceVerification.ClaudeInstallRunsTheCliCommandAndReportsSuccess);
+        await Test("plugin marketplace claude install reports failure and unconfirmed results", PluginMarketplaceVerification.ClaudeInstallReportsFailureAndUnconfirmedResults);
+        await Test("plugin marketplace claude install needing a command is never approved here", PluginMarketplaceVerification.ClaudeInstallNeedingACommandIsNeverApprovedHere);
+        await Test("plugin marketplace claude install is skipped when the scope already has it", PluginMarketplaceVerification.ClaudeInstallIsSkippedWhenTheScopeAlreadyHasIt);
+        await Test("plugin marketplace claude refuses values that did not come from the list", PluginMarketplaceVerification.ClaudeInstallRefusesValuesThatDidNotComeFromTheList);
+        await Test("plugin marketplace claude mutations never run for a remote workspace", PluginMarketplaceVerification.ClaudeMutationsNeverRunForARemoteWorkspace);
+        await Test("plugin marketplace claude install reports an unsupported CLI version", PluginMarketplaceVerification.ClaudeInstallReportsAnUnsupportedCliVersion);
+        await Test("plugin marketplace claude install is cancellable", PluginMarketplaceVerification.ClaudeInstallIsCancellable);
+        await Test("plugin marketplace claude runs one operation at a time", PluginMarketplaceVerification.ClaudeRunsOneOperationAtATime);
+        await Test("plugin marketplace claude refresh runs the CLI command", PluginMarketplaceVerification.ClaudeMarketplaceRefreshRunsTheCliCommand);
+        await Test("plugin marketplace codex install runs add at user level and verifies the result", PluginMarketplaceVerification.CodexInstallRunsAddAtUserLevelAndVerifiesTheResult);
+        await Test("plugin marketplace codex install refuses another scope and an id not from the list", PluginMarketplaceVerification.CodexInstallRefusesAnotherScopeAndAnIdNotFromTheList);
+        await Test("plugin marketplace codex install reports an unverifiable result", PluginMarketplaceVerification.CodexInstallReportsAnUnverifiableResult);
+        await Test("plugin marketplace codex upgrade runs only for a registered git source", PluginMarketplaceVerification.CodexMarketplaceUpgradeRunsOnlyForARegisteredGitSource);
+        await Test("plugin marketplace codex mutations never run for a remote workspace", PluginMarketplaceVerification.CodexMutationsNeverRunForARemoteWorkspace);
+        await Test("plugin marketplace window offers the macOS scope choice and controls", PluginMarketplaceVerification.WindowOffersTheMacOSScopeChoiceAndControls);
+        await Test("plugin marketplace window install shows progress, cancel, result and reloads", PluginMarketplaceVerification.WindowInstallShowsProgressCancelResultAndReloads);
+        await Test("plugin marketplace window cancel stops the operation and says so", PluginMarketplaceVerification.WindowCancelStopsTheOperationAndSaysSo);
+        await Test("plugin marketplace window refuses a change it cannot start", PluginMarketplaceVerification.WindowRefusesAChangeItCannotStart);
+        await Test("plugin marketplace copy matches macOS", PluginMarketplaceVerification.CopyMatchesMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
