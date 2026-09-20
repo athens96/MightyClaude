@@ -521,10 +521,23 @@ internal static class Verification
         await Test("claude plugin second request joins the running read", ClaudePluginVerification.SecondRequestJoinsTheRunningRead);
         await Test("claude plugin window tabs, filter, search and rows match macOS", ClaudePluginVerification.BrowserTabsFilterSearchAndRowsMatchMacOS);
         await Test("claude plugin reload reads again and replaces the list", ClaudePluginVerification.ReloadReadsAgainAndReplacesTheList);
-        await Test("claude plugin palette offers /plugin for Claude only", ClaudePluginVerification.PaletteOffersPluginForClaudeOnly);
+        await Test("claude plugin palette offers /plugin and Codex /plugins", ClaudePluginVerification.PaletteOffersPluginForBothProviders);
         await Test("claude plugin strings match macOS", ClaudePluginVerification.StringsMatchMacOS);
         await Test("claude plugin window is a real WinUI surface wired into the app", ClaudePluginVerification.WindowIsARealWinUISurfaceWiredIntoTheApp);
         await Test("claude plugin models stay reusable for the Codex and marketplace features", ClaudePluginVerification.ModelsStayReusable);
+        await Test("codex plugin list reads the user-level registry and catalog without mutation", CodexPluginVerification.ReadsParsesListing);
+        await Test("codex plugin capability probe blocks a CLI without the JSON flags", CodexPluginVerification.CapabilityProbeBlocksUnsupportedCli);
+        await Test("codex plugin missing CLI is explained without installing", CodexPluginVerification.MissingCodexBecomesMissing);
+        await Test("codex plugin malformed or oversized answer never becomes an empty list", CodexPluginVerification.MalformedOrOversizedNeverBecomesEmptyList);
+        await Test("codex plugin restricted install policies are left out and counted", CodexPluginVerification.RestrictedPolicyExcludesRows);
+        await Test("codex plugin installed rows are always user scope", CodexPluginVerification.InstalledRowsAreAlwaysUserScope);
+        await Test("codex plugin remote workspace runs nothing", CodexPluginVerification.RemoteWorkspaceRunsNothing);
+        await Test("codex plugin second request joins the running read", CodexPluginVerification.SecondRequestJoinsTheRunningRead);
+        await Test("codex plugin window shows the Codex footer, scopes and empty sentence", CodexPluginVerification.BrowserShowsCodexFooterAndScopes);
+        await Test("codex plugin palette offers /plugins and leaves no app action out", CodexPluginVerification.PaletteOffersCodexPlugins);
+        await Test("codex plugin failed runs and timeouts keep the screen intact", CodexPluginVerification.FailedRunsAndTimeoutsKeepTheScreenIntact);
+        await Test("codex plugin strings match macOS", CodexPluginVerification.StringsMatchMacOS);
+        await Test("codex plugin window is a real WinUI surface wired into the app", CodexPluginVerification.WindowIsARealWinUISurfaceWiredIntoTheApp);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();

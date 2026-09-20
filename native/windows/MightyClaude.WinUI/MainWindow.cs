@@ -469,10 +469,10 @@ public sealed partial class MainWindow : Window
             var menu = new MenuFlyout();
             var rename = Item(RenameStrings.MenuEntry, () => owner.RenameSession(id));
             menu.Items.Add(rename);
-            // The plugin window, the same one /plugin opens. Claude only until
-            // the Codex plugin feature lands.
+            // The plugin window, the same one /plugin and /plugins open.
+            // Claude and Codex both have one; Gemini has none on macOS either.
             MenuFlyoutItem? plugins = null;
-            if (pane.Kind == "claude" && pane.Provider == "claude")
+            if (pane.Kind == "claude" && pane.Provider is "claude" or "codex")
             {
                 plugins = Item(PluginStrings.TitleTemplate.Replace("{provider}", CliUpdateService.ProviderLabel(pane.Provider)),
                     () => owner.OpenPluginBrowser(pane.Provider));
