@@ -485,9 +485,14 @@ describe('legacyStylePanel', () => {
   });
 });
 
-/** Contract 1.11's banned set, one scalar per entry, as code points. */
+/**
+ * Contract 1.11's banned set, one scalar per entry, as code points.
+ * U+200D (ZWJ, 0x200d) is intentionally absent from the shared list:
+ * inlineText keeps it so that ZWJ emoji glyphs (e.g. 👩‍💻) survive the
+ * pre-sanitisation path; blockText still strips it (see the ZWJ test below).
+ */
 const BANNED_SCALARS = [
-  0x0000, 0x0007, 0x001f, 0x007f, 0x009f, 0x00ad, 0x061c, 0x200b, 0x200c, 0x200d, 0x200e,
+  0x0000, 0x0007, 0x001f, 0x007f, 0x009f, 0x00ad, 0x061c, 0x200b, 0x200c, 0x200e,
   0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2060, 0x2066, 0x2067,
   0x2068, 0x2069, 0xfeff,
 ];
@@ -510,6 +515,15 @@ describe('the §1.11 sanitisers', () => {
     expect(blockText(`a${kept}b`, 80)).toBe(`a${kept}b`);
     // …and they are gone from a line that has to stay one line.
     expect(inlineText(`a${kept}b`, 80)).toBe('ab');
+  });
+
+  it('inlineText preserves U+200D (ZWJ) while blockText strips it', () => {
+    // ZWJ must survive inlineText so that emoji sequences like 👩‍💻 reach
+    // isEmojiGlyph as one grapheme cluster (§1.10, M19). blockText strips
+    // ZWJ because install commands have no valid use for a joiner.
+    const zwj = '‍';
+    expect(inlineText(`Ouro${zwj}boros`, 40)).toBe(`Ouro${zwj}boros`);
+    expect(blockText(`npx${zwj} install`, 80)).toBe('npx install');
   });
 });
 
@@ -653,7 +667,12 @@ describe('which chip is drawn filled', () => {
 });
 
 describe('emoji glyph rule', () => {
+  // Shared corpus: matches StyleText.isEmojiGlyph M19 test in StyleManifestTests.swift.
+  // Accept: ZWJ sequence (👩‍💻 = U+1F469 + U+200D + U+1F4BB), keycap (1️⃣).
+  // Reject: bare digit (1), plain letter (A), two-emoji string (📐📐).
   it('accepts a single emoji grapheme as a valid emoji glyph', () => {
+    // ZWJ sequence — one grapheme cluster joined by U+200D
+    expect(isEmojiGlyph('\u{1F469}\u{200D}\u{1F4BB}')).toBe(true); // 👩‍💻
     expect(isEmojiGlyph('📐')).toBe(true);
     expect(isEmojiGlyph('🎯')).toBe(true);
     expect(isEmojiGlyph('🧭')).toBe(true);
@@ -692,6 +711,21 @@ describe('emoji glyph rule', () => {
       }),
     );
     expect(withInvalid?.actions[0]?.glyph).toBeUndefined();
+  });
+
+  it('parseAction preserves a ZWJ emoji glyph through the inlineText pre-sanitisation path', () => {
+    // U+200D must survive UNSAFE_INLINE so that 👩‍💻 (5 code units, ≤8 slice limit)
+    // arrives at isEmojiGlyph as one grapheme cluster rather than two separate emoji.
+    const zwjGlyph = '\u{1F469}\u{200D}\u{1F4BB}'; // 👩‍💻
+    const panel = normalizeStylePanel(
+      panelPayload({
+        actions: [{ id: 'dev', title: '개발', takesText: false, requiresText: false, glyph: zwjGlyph }],
+        next: ['dev'],
+        groups: [],
+        recommended: undefined,
+      }),
+    );
+    expect(panel?.actions[0]?.glyph).toBe(zwjGlyph);
   });
 });
 
