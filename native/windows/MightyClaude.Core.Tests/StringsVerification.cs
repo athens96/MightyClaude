@@ -177,6 +177,37 @@ internal static class StringsVerification
         ["BooleanNo"] = "아니요",
     };
 
+    // AgentCompanion.swift CompletionNotifications.send / AgentCompanionViews.swift.
+    // ToggleLabel uses the Windows value here because the OS-bound substitution
+    // (Windows instead of Mac) is documented in docs/windows-completion-notification.md.
+    private static readonly Dictionary<string, string> CompletionNotificationMacOS = new()
+    {
+        ["NotificationTitle"] = "MightyClaude · 작업 완료",
+        ["NotificationBodyTemplate"] = "{title}의 작업이 완료되었습니다.",
+        ["ToggleLabel"] = "작업 완료 시 Windows 알림",
+        ["StatusAllowed"] = "허용됨",
+        ["StatusDenied"] = "시스템 설정에서 알림을 허용하세요",
+        ["StatusNeedPermission"] = "권한 필요",
+        ["StatusVerificationMode"] = "검증 모드",
+        ["SettingsButton"] = "알림 설정",
+    };
+
+    internal static Task CompletionNotificationStringsMatchMacOS()
+    {
+        var actual = Constants(typeof(CompletionNotificationStrings));
+        var reason = Validate(nameof(CompletionNotificationStrings), actual, CompletionNotificationMacOS);
+        if (reason is not null) throw new InvalidOperationException(reason);
+
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CompletionNotificationStrings), copy, CompletionNotificationMacOS);
+        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+        if (Bad(Broken("NotificationTitle", "")) is null) throw new InvalidOperationException("empty title must fail");
+        if (Bad(Broken("NotificationBodyTemplate", "{ title }의 작업이 완료되었습니다.")) is null) throw new InvalidOperationException("malformed placeholder must fail");
+        if (Bad(Broken("StatusAllowed", CompletionNotificationStrings.StatusDenied)) is null) throw new InvalidOperationException("duplicate value must fail");
+        var missing = new Dictionary<string, string>(actual); missing.Remove("SettingsButton");
+        if (Bad(missing) is null) throw new InvalidOperationException("missing literal must fail");
+        return Task.CompletedTask;
+    }
+
     /// The approval bar copy is the macOS copy, and nothing else is typed anywhere.
     internal static Task ToolPermissionsMatchMacOS()
     {

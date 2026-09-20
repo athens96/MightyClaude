@@ -400,6 +400,14 @@ internal static class Verification
         await Test("tool permission host prompts are added only for a Claude launch that can show the bar", ToolPermissionVerification.HostPromptsOnlyWhereTheBarExists);
         await Test("tool permission run launches with host prompts over stdio and answers one request", ToolPermissionVerification.RunLaunchesWithHostPromptsAndAnswersOneRequest);
         await Test("tool permission strings match macOS", StringsVerification.ToolPermissionsMatchMacOS);
+        await Test("completion notification fires once for running then completed", CompletionNotificationVerification.FiresOnceAfterRunning);
+        await Test("completion notification title includes workspace name", CompletionNotificationVerification.TitleIncludesWorkspaceName);
+        await Test("completion notification title is session alone without workspace", CompletionNotificationVerification.TitleIsSessionAloneWithoutWorkspace);
+        await Test("completion notification does not fire for error or stopped", CompletionNotificationVerification.DoesNotFireForErrorOrStopped);
+        await Test("completion notification does not fire for completed without running", CompletionNotificationVerification.DoesNotFireForCompletedWithoutRunning);
+        await Test("completion notification does not fire twice for the same run", CompletionNotificationVerification.DoesNotFireTwiceForSameRun);
+        await Test("completion notification does not fire when preference is off", CompletionNotificationVerification.DoesNotFireWhenPreferenceOff);
+        await Test("completion notification strings match macOS", StringsVerification.CompletionNotificationStringsMatchMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
