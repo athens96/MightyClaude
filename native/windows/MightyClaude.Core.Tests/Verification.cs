@@ -382,7 +382,10 @@ internal static class Verification
         await Test("status line fingerprint matches macOS formula", StatusLineVerification.FingerprintMatchesMacOS);
         await Test("status line payload uses the CLI field names and transcript layout", StatusLineVerification.PayloadUsesCliFieldNamesAndTranscriptLayout);
         await Test("status line ANSI parsing keeps colours weight and strips other escapes", StatusLineVerification.AnsiParsingKeepsColoursWeightAndStripsEscapes);
+        await Test("status line parses 256-colour and RGB like macOS", StatusLineVerification.AnsiParsingSupports256ColourAndRgbLikeMacOS);
+        await Test("status line palette index maps to the xterm colours", StatusLineVerification.PaletteIndexMapsToXtermColours);
         await Test("status line trust rule requires fingerprint for workspace commands", StatusLineVerification.TrustRuleRequiresFingerprintForWorkspaceCommands);
+        await Test("status line falls back to the user command while the workspace command is gated", StatusLineVerification.FallsBackToUserCommandWhileWorkspaceCommandIsGated);
         await Test("status line runner feeds stdin captures output and colour", StatusLineVerification.RunnerFeedsStdinCapturesOutputAndColour);
         await Test("status line runner enforces timeout", StatusLineVerification.RunnerEnforcesTimeout);
         await Test("status line shell follows Claude Code on Windows", StatusLineVerification.ShellFollowsClaudeCodeOnWindows);
