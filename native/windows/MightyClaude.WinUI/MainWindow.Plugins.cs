@@ -13,10 +13,12 @@ namespace MightyClaude.WinUI;
 // CodexPluginReader — and it is opened from the run pane menu and from the
 // /plugin (Claude) and /plugins (Codex) slash commands.
 //
-// Looking changes nothing, so this file draws no install button, no scope
-// picker and no marketplace refresh. Every decision — which rows, what each row
-// says, what an empty or failed list says — is made by ClaudePluginBrowser in
-// Core and proven on the Mac. No Korean is typed here.
+// The only two mutations available are the two macOS has: install one plugin
+// from the catalog (Claude: scope picker with the macOS three scopes; Codex:
+// user level only) and refresh the registered marketplaces. Progress, cancel
+// and result copy are taken from PluginStrings without any Korean typed here.
+// Every decision — which rows, what each says, what buttons are enabled — is
+// made by ClaudePluginBrowser in Core and proven on the Mac.
 public sealed partial class MainWindow
 {
     // Smoke hooks. Off in the real app: the window reads through the CLI and is
@@ -25,12 +27,18 @@ public sealed partial class MainWindow
     private Func<PluginSmokeSurface, Task>? smokePluginDialog;
     private Func<Workspace, Task<ClaudePluginSnapshot>>? smokeCodexPluginRead;
     private Func<PluginSmokeSurface, Task>? smokeCodexPluginDialog;
+    // Overrides the reader for the marketplace smoke so no real CLI starts.
+    private Func<string, IPluginReader>? smokeReaderFactory;
 
     /// What the smoke driver is handed instead of a shown dialog: the real
-    /// dialog it would see, the Core state it renders, and the two actions the
-    /// Opened event, the reload button and the tab buttons invoke.
+    /// dialog it would see, the Core state it renders, and the actions the
+    /// Opened event, the reload/tab/install/refresh buttons and cancel invoke.
     internal sealed record PluginSmokeSurface(
-        ContentDialog Dialog, ClaudePluginBrowser Browser, Func<Task> Load, Func<string, Task> SelectTab);
+        ContentDialog Dialog, ClaudePluginBrowser Browser,
+        Func<Task> Load, Func<string, Task> SelectTab,
+        Func<string, Task<ClaudePluginOperationResult>> Install,
+        Func<Task<ClaudePluginOperationResult>> Refresh,
+        Action RequestCancel);
 
     /// The /plugin slash action and the run pane menu both land here.
     internal Task OpenPluginBrowser(string provider) => Act(async () =>
@@ -46,9 +54,11 @@ public sealed partial class MainWindow
         // the parser rather than truncated into a short list. The provider picks
         // the reader; both answer with the same ClaudePluginSnapshot.
         var runner = new CliRunner(outputCapBytes: ClaudePluginSupport.MaximumListingBytes);
-        IPluginReader reader = provider == ClaudePluginBrowser.CodexProvider
-            ? new CodexPluginReader(runner)
-            : new ClaudePluginReader(runner);
+        IPluginReader reader = smokeReaderFactory is { } factory
+            ? factory(provider)
+            : provider == ClaudePluginBrowser.CodexProvider
+                ? new CodexPluginReader(runner)
+                : (IPluginReader)new ClaudePluginReader(runner);
 
         var rows = new StackPanel { Spacing = 8 };
         var status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Orange), Visibility = Visibility.Collapsed };
@@ -109,6 +119,43 @@ public sealed partial class MainWindow
             finally { rebuildingFilter = false; }
         }
 
+        // Scope picker (Claude: 3 options, Codex: 1 option) and install controls.
+        var scopePicker = new ComboBox { MinWidth = 230 };
+        AutomationProperties.SetAutomationId(scopePicker, PluginAutomationId(provider, "scope-picker"));
+        foreach (var opt in browser.ScopeOptions)
+            scopePicker.Items.Add(new ComboBoxItem { Content = opt.Label, Tag = opt.Value });
+        var pickerNote = new TextBlock { FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap };
+        AutomationProperties.SetAutomationId(pickerNote, PluginAutomationId(provider, "picker-note"));
+
+        // 마켓플레이스 새로고침 button and the Codex Git-only note.
+        var refreshBtn = new Button { Content = PluginStrings.ButtonMarketplaceRefresh };
+        AutomationProperties.SetAutomationId(refreshBtn, PluginAutomationId(provider, "refresh-marketplaces"));
+        var marketplaceUnavailable = new TextBlock { FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        AutomationProperties.SetAutomationId(marketplaceUnavailable, PluginAutomationId(provider, "marketplace-unavailable"));
+
+        // Progress label, cancel button and result text for running operations.
+        var operationProgress = new TextBlock { FontSize = 11, Opacity = .7 };
+        AutomationProperties.SetAutomationId(operationProgress, PluginAutomationId(provider, "operation-progress"));
+        var cancelBtn = new Button();
+        AutomationProperties.SetAutomationId(cancelBtn, PluginAutomationId(provider, "cancel-operation"));
+        cancelBtn.Click += (_, _) => browser.RequestCancel();
+        var progressRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Visibility = Visibility.Collapsed };
+        progressRow.Children.Add(operationProgress);
+        progressRow.Children.Add(cancelBtn);
+        var operationResult = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        AutomationProperties.SetAutomationId(operationResult, PluginAutomationId(provider, "operation-result"));
+
+        // Wraps an install or refresh call: starts the operation (Phase set
+        // synchronously), redraws to show progress, awaits, redraws the result.
+        async Task<ClaudePluginOperationResult> OperateAsync(Func<Task<ClaudePluginOperationResult>> op)
+        {
+            var task = op();
+            RenderPlugins();
+            var result = await task;
+            if (!closing) RenderPlugins();
+            return result;
+        }
+
         void RenderPlugins()
         {
             installedTab.Content = browser.TabLabel(ClaudePluginBrowser.InstalledTab);
@@ -126,8 +173,46 @@ public sealed partial class MainWindow
             if (output.Length == 0) diagnostics.Visibility = Visibility.Collapsed;
             RenderFilter();
 
+            // Scope picker: keep the selection stable across redraws.
+            var scopeIdx = browser.ScopeOptions.ToList().FindIndex(o => o.Value == browser.Scope);
+            scopePicker.SelectedIndex = Math.Max(0, scopeIdx);
+            pickerNote.Text = browser.ScopeNote;
+
+            // Refresh button: enabled when there is at least one refreshable marketplace.
+            refreshBtn.IsEnabled = browser.CanRefreshMarketplaces;
+            marketplaceUnavailable.Text = browser.RefreshUnavailableNote ?? "";
+            marketplaceUnavailable.Visibility = browser.RefreshUnavailableNote is { Length: > 0 }
+                ? Visibility.Visible : Visibility.Collapsed;
+
+            // Progress / cancel / result.
+            operationProgress.Text = browser.ProgressLabel ?? "";
+            cancelBtn.Content = browser.CancelLabel;
+            cancelBtn.IsEnabled = browser.CanCancel;
+            progressRow.Visibility = browser.IsMutating ? Visibility.Visible : Visibility.Collapsed;
+            operationResult.Text = browser.ResultText ?? "";
+            operationResult.Visibility = browser.ResultText is { Length: > 0 }
+                ? Visibility.Visible : Visibility.Collapsed;
+
+            // Rows: catalog tab gets an install button per row.
             rows.Children.Clear();
-            foreach (var row in browser.Rows()) rows.Children.Add(PluginRow(provider, row));
+            if (browser.Tab == ClaudePluginBrowser.MarketplaceTab)
+            {
+                foreach (var row in browser.Rows())
+                {
+                    var panel = PluginRowPanel(provider, row);
+                    var btnLabel = browser.InstallButtonLabel(row.Id);
+                    var installBtn = new Button { Content = btnLabel, IsEnabled = browser.CanInstall(row.Id) };
+                    AutomationProperties.SetAutomationId(installBtn, PluginAutomationId(provider, "install-" + row.Id));
+                    var capturedId = row.Id;
+                    installBtn.Click += async (_, _) => await OperateAsync(() => browser.InstallAsync(reader, capturedId));
+                    panel.Children.Add(installBtn);
+                    rows.Children.Add(panel);
+                }
+            }
+            else
+            {
+                foreach (var row in browser.Rows()) rows.Children.Add(PluginRow(provider, row));
+            }
             if (rows.Children.Count == 0)
             {
                 rows.Children.Add(new TextBlock { Text = browser.EmptyMessage, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 28, 0, 28) });
@@ -168,6 +253,13 @@ public sealed partial class MainWindow
         installedTab.Click += async (_, _) => await SelectPluginTab(ClaudePluginBrowser.InstalledTab);
         marketplaceTab.Click += async (_, _) => await SelectPluginTab(ClaudePluginBrowser.MarketplaceTab);
         reload.Click += async (_, _) => await LoadPluginsAsync();
+        scopePicker.SelectionChanged += (_, _) =>
+        {
+            if (scopePicker.SelectedItem is ComboBoxItem { Tag: string tag }) browser.Scope = tag;
+            pickerNote.Text = browser.ScopeNote;
+            RenderPlugins();
+        };
+        refreshBtn.Click += async (_, _) => await OperateAsync(() => browser.RefreshMarketplacesAsync(reader));
         search.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => { browser.Search = search.Text; RenderPlugins(); });
         filter.SelectionChanged += (_, _) =>
         {
@@ -209,8 +301,17 @@ public sealed partial class MainWindow
             body.Children.Add(status);
             body.Children.Add(diagnosticsToggle);
             body.Children.Add(diagnostics);
+            // Scope picker and explanation (always shown for non-remote workspaces).
+            var pickerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            pickerRow.Children.Add(scopePicker);
+            pickerRow.Children.Add(refreshBtn);
+            body.Children.Add(pickerRow);
+            body.Children.Add(pickerNote);
+            body.Children.Add(marketplaceUnavailable);
+            body.Children.Add(progressRow);
+            body.Children.Add(operationResult);
             body.Children.Add(new TextBlock { Text = browser.FooterNote, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
-            body.Children.Add(new ScrollViewer { Content = rows, Height = 380, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
+            body.Children.Add(new ScrollViewer { Content = rows, Height = 340, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
             RenderPlugins();
         }
 
@@ -228,7 +329,11 @@ public sealed partial class MainWindow
         try
         {
             var smokeDialog = provider == ClaudePluginBrowser.CodexProvider ? smokeCodexPluginDialog : smokePluginDialog;
-            if (smokeDialog is { } driver) await driver(new PluginSmokeSurface(dialog, browser, LoadPluginsAsync, SelectPluginTab));
+            if (smokeDialog is { } driver)
+                await driver(new PluginSmokeSurface(dialog, browser, LoadPluginsAsync, SelectPluginTab,
+                    id => OperateAsync(() => browser.InstallAsync(reader, id)),
+                    () => OperateAsync(() => browser.RefreshMarketplacesAsync(reader)),
+                    browser.RequestCancel));
             else await dialog.ShowAsync();
         }
         finally
@@ -412,7 +517,8 @@ public sealed partial class MainWindow
                 "플러그인 창의 제목 또는 탭 개수가 macOS와 다릅니다.");
             Require(outcome.InstalledRows == 2 && outcome.AvailableRows == 3 && outcome.FilteredRows == 1 && outcome.SearchedRows == 0,
                 "탭·필터·검색이 목록을 macOS처럼 좁히지 않았습니다.");
-            Require(outcome.MutatingControls == 0, "플러그인 창에 설치·범위·새로고침 컨트롤이 있습니다.");
+            // scope-picker + refresh-marketplaces + 3 install-* buttons = 5
+            Require(outcome.MutatingControls == 5, "Claude 마켓플레이스 탭의 변경 컨트롤 수가 예상과 다릅니다: " + outcome.MutatingControls);
             Require(outcome.ReloadedFromStatus == PluginStrings.DetailMissingCli, "CLI가 없을 때의 문장이 macOS와 다릅니다.");
             Require(outcome.Reads == 2, "목록 읽기 횟수가 잘못됐습니다: " + outcome.Reads);
             return outcome;
@@ -545,7 +651,8 @@ public sealed partial class MainWindow
                 "Codex 설치 목록은 사용자 범위 한 줄이어야 합니다: " + outcome.InstalledRows + " / " + outcome.InstalledSubtitle);
             Require(outcome.AvailableRows == 2 && outcome.FilteredRows == 1 && outcome.SearchedRows == 0,
                 "탭·필터·검색이 Codex 목록을 macOS처럼 좁히지 않았습니다.");
-            Require(outcome.MutatingControls == 0, "Codex 플러그인 창에 설치·범위·새로고침 컨트롤이 있습니다.");
+            // scope-picker + refresh-marketplaces + 2 install-* buttons = 4
+            Require(outcome.MutatingControls == 4, "Codex 마켓플레이스 탭의 변경 컨트롤 수가 예상과 다릅니다: " + outcome.MutatingControls);
             Require(outcome.FooterNote == CodexPluginStrings.FooterNote, "Codex 창의 안내 문장이 다릅니다.");
             Require(outcome.ReadyStatus == CodexPluginStrings.DetailReady, "Codex는 목록을 읽은 뒤에도 안내 문장을 보여야 합니다.");
             Require(outcome.NoMarketplaceHelp == CodexPluginStrings.MarketplaceHelp, "마켓플레이스가 없을 때의 문장이 macOS와 다릅니다.");
@@ -561,7 +668,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private static FrameworkElement PluginRow(string provider, ClaudePluginRow row)
+    private static StackPanel PluginRowPanel(string provider, ClaudePluginRow row)
     {
         var panel = new StackPanel { Spacing = 5, Padding = new Thickness(11), CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 128, 128, 128)) };
         AutomationProperties.SetAutomationId(panel, PluginAutomationId(provider, "row-" + row.Id));
@@ -582,5 +689,98 @@ public sealed partial class MainWindow
         foreach (var note in row.Notes)
             panel.Children.Add(new TextBlock { Text = note, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
         return panel;
+    }
+
+    private static FrameworkElement PluginRow(string provider, ClaudePluginRow row) => PluginRowPanel(provider, row);
+
+    // Drives the real plugin window with a fake reader that returns success
+    // immediately for install and refresh. Verifies the scope picker options,
+    // the install result and the refresh result against the macOS sentences.
+    // No claude or codex process starts. Puts back every hook it sets.
+    internal async Task<PluginMarketplaceSmokeOutcome> RunPluginMarketplaceSmoke()
+    {
+        var beforeRead = smokePluginRead;
+        var beforeCodexRead = smokeCodexPluginRead;
+        var beforeDialog = smokePluginDialog;
+        var beforeCodexDialog = smokeCodexPluginDialog;
+        var beforeReaderFactory = smokeReaderFactory;
+        var workspace = service.Snapshot.Workspaces.First(w => w.Id == service.Snapshot.ActiveWorkspaceId);
+
+        int claudeScopes = 0, codexScopes = 0;
+        string installResult = "", refreshResult = "";
+        try
+        {
+            // --- Claude: verify scope options, install and marketplace refresh ---
+            smokeReaderFactory = _ => new FakeMarketplaceReader(PluginSmokeSnapshot);
+            smokePluginDialog = async surface =>
+            {
+                await surface.Load();
+                Require(surface.Browser.IsReady, "플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                claudeScopes = surface.Browser.ScopeOptions.Count;
+                Require(claudeScopes == 3, "Claude 설치 범위가 3개가 아닙니다: " + claudeScopes);
+                Require(surface.Browser.ScopeOptions[0].Value == "local" && surface.Browser.ScopeOptions[1].Value == "project" && surface.Browser.ScopeOptions[2].Value == "user",
+                    "Claude 범위 목록이 local·project·user가 아닙니다.");
+
+                await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
+                // docs@sample is in the catalog and not installed: can be installed.
+                Require(surface.Browser.CanInstall("docs@sample"), "docs@sample 설치 단추가 활성화되지 않았습니다.");
+
+                var install = await surface.Install("docs@sample");
+                installResult = install.Detail;
+                Require(installResult == PluginStrings.InstallSucceeded,
+                    "설치 완료 문장이 macOS와 다릅니다: " + installResult);
+
+                var refresh = await surface.Refresh();
+                refreshResult = refresh.Detail;
+                Require(refresh.Status == ClaudePluginStatus.Succeeded,
+                    "마켓플레이스 새로고침이 실패했습니다: " + refreshResult);
+            };
+            await ShowPluginBrowser("claude", workspace);
+
+            // --- Codex: verify single user-level scope option ---
+            smokeReaderFactory = _ => new FakeMarketplaceReader(CodexPluginSmokeSnapshot);
+            smokeCodexPluginDialog = async surface =>
+            {
+                await surface.Load();
+                Require(surface.Browser.IsReady, "Codex 플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                codexScopes = surface.Browser.ScopeOptions.Count;
+                Require(codexScopes == 1 && surface.Browser.ScopeOptions[0].Value == "user",
+                    "Codex 설치 범위가 user 하나가 아닙니다.");
+            };
+            await ShowPluginBrowser("codex", workspace);
+
+            return new PluginMarketplaceSmokeOutcome
+            {
+                ClaudeScopeOptions = claudeScopes,
+                CodexScopeOptions = codexScopes,
+                InstallResult = installResult,
+                RefreshResult = refreshResult,
+                Restored = true,
+            };
+        }
+        finally
+        {
+            smokePluginRead = beforeRead;
+            smokeCodexPluginRead = beforeCodexRead;
+            smokePluginDialog = beforeDialog;
+            smokeCodexPluginDialog = beforeCodexDialog;
+            smokeReaderFactory = beforeReaderFactory;
+            Render();
+        }
+    }
+
+    // A fake IPluginReader for the marketplace smoke: never starts a real CLI.
+    // SnapshotAsync returns the fixture immediately; install and refresh return
+    // success so the smoke can verify the result text without a real CLI.
+    private sealed class FakeMarketplaceReader(ClaudePluginSnapshot fixture) : IPluginReader
+    {
+        public Task<ClaudePluginSnapshot> SnapshotAsync(Workspace workspace, CancellationToken cancellation = default)
+            => Task.FromResult(fixture);
+        public void Shutdown() { }
+        public Task<ClaudePluginOperationResult> InstallAsync(string pluginId, string scope, Workspace workspace, CancellationToken cancellation = default)
+            => Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, PluginStrings.InstallSucceeded));
+        public Task<ClaudePluginOperationResult> RefreshMarketplaceAsync(string marketplace, Workspace workspace, CancellationToken cancellation = default)
+            => Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded,
+                PluginStrings.MarketplacesRefreshedTemplate.Replace("{count}", "1")));
     }
 }
