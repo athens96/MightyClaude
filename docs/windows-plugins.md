@@ -372,7 +372,14 @@ New saved-state fields: none. The snapshot `Version` stays 1, so `StateStore`
 never resets a user's state over this feature.
 
 Every file this feature touched is inside `native/windows/**` or
-`docs/windows-*.md`, and `scripts/check-style-freeze.sh` passes.
+`docs/windows-*.md`, and `scripts/check-style-freeze.sh` passes. The CI job's
+own freeze step (`Check the manifest-only freeze after the tag`) passes too.
+
+One CI note, so nobody reads it as this feature's doing: the `macos` job is red
+at the `Test Swift core and loopback remote execution` step. It is red the same
+way at `ecbfb86`, the commit before any Codex plugin work, and at a commit that
+changed nothing but `.md` files. The cause is in `native/macos/**`, which this
+Seed's allow-list does not let this work touch.
 
 ### Still open
 
