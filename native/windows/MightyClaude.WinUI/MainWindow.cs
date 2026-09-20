@@ -40,8 +40,13 @@ public sealed partial class MainWindow : Window
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
         service = new(options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative"), options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
-        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.SessionId, out var pane)) pane.Refresh(); RefreshRunningIndicators(); });
+        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); });
+        // Claude's extra tool-permission requests never travel as a RunEvent:
+        // they are ephemeral, so they reach the pane that can show the bar and
+        // nowhere else — not the snapshot, not a remote peer.
+        service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = "저장 실패: " + ex.Message);
+        service.ToolPermissionChanged += req => DispatcherQueue.TryEnqueue(() => { if (!closing && views.TryGetValue(req.RunId, out var pane)) pane.OnPermissionEmit(req); });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(252) }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -242,9 +247,9 @@ public sealed partial class MainWindow : Window
         internal PaneView(MainWindow owner, string id)
         {
             this.owner = owner; this.id = id;
-            InitSlashPalette();
+            InitSlashPalette(); InitPermissionBar();
             var grid = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
-            foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
+            foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
             var header = new Grid { ColumnSpacing = 8 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
             var copy = Button("복사", () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
@@ -259,7 +264,7 @@ public sealed partial class MainWindow : Window
             var bottom = new Grid { ColumnSpacing = 5, Height = 32 }; bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.Children.Add(selectors);
             context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; context.Background = new SolidColorBrush(Colors.Transparent); AutomationProperties.SetName(context, "이 세션의 컨텍스트 사용량"); Grid.SetColumn(context, 1); bottom.Children.Add(context);
             send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 20; send.Background = new SolidColorBrush(Colors.CornflowerBlue); send.Foreground = new SolidColorBrush(Colors.Black); AutomationProperties.SetName(send, "보내기"); Grid.SetColumn(send, 2); bottom.Children.Add(send);
-            var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
+            var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
             var card = new Border { Child = composer, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(12, 135, 135, 135)), Padding = new Thickness(10, 2, 10, 10) };
             var composerScroll = new ScrollViewer { Content = card, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
             Grid.SetRow(composerScroll, 2); grid.Children.Add(composerScroll);
