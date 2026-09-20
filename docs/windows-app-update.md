@@ -71,20 +71,29 @@ macOS zip이 `.app` 하나를 담는 것과 같은 모양이다.
 
 실행 중인 자체 포함 앱의 폴더는 자기 자신이 바꿀 수 없다. 그래서 도우미가 한다.
 
-1. 앱이 도우미를 **분리 실행**한다. 도우미는 같은 실행 파일의 두 번째 모드
-   (`--update-helper …`)이고, **최소 환경**(`SystemRoot`만)으로 시작한다.
-   토큰·자격 증명·사용자를 알려 주는 값은 하나도 넘기지 않는다. 승격하지 않는다.
+1. 앱이 도우미를 **새 버전의 스테이지된 폴더에서 분리 실행**한다. 도우미는 같은
+   실행 파일의 두 번째 모드(`--update-helper …`)이고, **최소 환경**(`SystemRoot`만)으로
+   시작한다. 토큰·자격 증명·사용자를 알려 주는 값은 하나도 넘기지 않는다. 승격하지 않는다.
+   앱은 Core가 제공하는 `StagedHelperExecutable`(스테이지된 폴더 안의 경로)만 실행하고,
+   그 경로가 스테이지된 폴더 밖이면 시작하지 않는다.
 2. 앱이 종료한다. 도우미는 **앱 프로세스가 끝날 때까지 기다린다(최대 5분)**.
    시간 안에 끝나지 않으면 설치 폴더를 건드리지 않고 멈춘다.
 3. 도우미가 **패키지 `sha256`을 다시 확인한다**(규칙 4). 다르면 여기서 멈춘다.
-4. 현재 설치 폴더를 `<설치 폴더>.backup-<시각>`으로 **옮긴다**(백업).
-5. 새 폴더를 설치 위치로 **옮긴다**.
+4. 현재 설치 폴더를 `<설치 폴더>.backup-<시각>`으로 **이름을 바꾼다**(백업).
+   도우미가 설치 폴더가 아닌 스테이지된 폴더에서 실행 중이므로 이름 변경이 허용된다.
+5. 스테이지된 폴더를 설치 위치로 **복사한다**. 도우미가 스테이지된 폴더에서
+   실행 중이므로 그 폴더를 이동할 수 없어 복사를 쓴다. 복사 뒤 설치 폴더에
+   실행 파일이 있는지 확인한다.
 6. 새 앱을 **시작한다**.
 7. **새 앱이 시작된 뒤에야** 백업을 지운다.
-4–6 중 어디서든 실패하면 백업을 되돌리고 이전 앱을 시작한다.
+4–6 중 어디서든 실패하면 부분 복사를 삭제하고 백업을 되돌리고 이전 앱을 시작한다.
+스테이지된 폴더는 도우미가 삭제하지 않고 다음 버전을 내려받을 때 정리된다.
 
-순수한 부분(이동 계획, 되돌리기 판단, 인자 목록, 재검증)은 Core에 있고
+순수한 부분(복사, 트리 확인, 되돌리기 판단, 인자 목록, 재검증)은 Core에 있고
 macOS에서 임시 폴더로 그대로 실행해 증명한다 —
+`app update helper executable is inside the staged folder`,
+`app update helper copies the staged folder to the install path`,
+`app update helper rolls back after a copy that fails half way`,
 `app update replacement verifies again and replaces the install`,
 `app update replacement leaves the install untouched when it cannot proceed`.
 
@@ -93,10 +102,19 @@ macOS에서 임시 폴더로 그대로 실행해 증명한다 —
 | 차이 | 이유 |
 |---|---|
 | 도우미가 셸 스크립트가 아니라 같은 실행 파일의 두 번째 모드다 | Windows에는 `sh`가 없고, 같은 코드를 Mac에서 검사로 돌릴 수 있다 |
-| 도우미는 자기가 백업으로 이름을 바꾼 폴더 안에서 돌기 때문에 자기 이미지를 지우지 못한다. 남은 백업은 **새 앱이 다음에 켜질 때** 지운다(`AppUpdateReplacement.PruneBackups`) | 실행 중인 exe는 지울 수 없고, 폴더 이름 변경은 NTFS에서 허용된다 |
+| 도우미가 **스테이지된 폴더**에서 돌기 때문에 스테이지된 폴더를 이동하지 못한다. **복사**로 설치하고, 스테이지된 폴더는 다음 버전 다운로드 시 정리된다 | Windows는 실행 중인 exe 아래 열린 파일이 있는 폴더의 이름 변경을 허용하지 않는다. 도우미가 설치 폴더가 아닌 곳에서 실행되어야 이름 변경이 가능하다 |
 | macOS의 LaunchServices 재등록·2초 대기가 없다 | Windows에는 번들 ID 재등록도 입력기 세션 문제도 없다 |
 | 상태·패키지·백업이 같은 볼륨이 아니면 폴더 이동이 실패한다. 그때는 되돌리고 이전 앱을 시작한다 | Windows의 폴더 이동은 볼륨을 넘지 못한다 |
 | 검사는 `file://`를 쓰지 않고 메모리에서 답하는 `HttpMessageHandler`를 주입한다. 제품 코드에는 https 외의 경로가 없다 | macOS의 `allowsFileURLs` 같은 시험용 예외를 남기지 않기 위해서다 |
+
+---
+
+## 기기 점검 (실제 업데이트)
+
+| 항목 | 상태 |
+|---|---|
+| x64 기기에서 한 버전에서 다음 버전으로 실제 업데이트: 도우미가 스테이지된 폴더에서 시작되고 새 버전이 설치 폴더에 복사되어 열린다 | **기기 미확인** |
+| arm64 기기에서 한 버전에서 다음 버전으로 실제 업데이트: 같은 순서, arm64 패키지 | **기기 미확인** |
 
 ---
 
@@ -177,8 +195,11 @@ manifest를 받지도, 패키지를 내려받지도, 프로세스를 시작하�
 | `app update transport refuses a non-https hop` | 리디렉션 구간 |
 | `app update download verifies the bytes on disk and cleans up` | 크기·sha256·상한·취소·다른 버전 폴더 정리 |
 | `app update staging refuses an escaping entry or the wrong package` | 탈출·링크·실행 파일 개수와 위치·아키텍처 |
-| `app update replacement verifies again and replaces the install` | 규칙 4, 이동 순서, 새 앱 시작 뒤 백업 삭제, 남은 백업 정리 |
+| `app update replacement verifies again and replaces the install` | 규칙 4, 복사 후 스테이지 폴더 보존, 새 앱 시작 뒤 백업 삭제, 남은 백업 정리 |
 | `app update replacement leaves the install untouched when it cannot proceed` | 변조·미종료·되돌리기 |
+| `app update helper executable is inside the staged folder` | `StagedHelperExecutable`이 스테이지된 폴더 안에 있다 |
+| `app update helper copies the staged folder to the install path` | 복사 기반 교체, 스테이지 폴더 보존 |
+| `app update helper rolls back after a copy that fails half way` | 중간 실패 → 부분 복사 삭제 → 백업 복원 → 이전 앱 시작 |
 | `app update automatic check happens at most once a day` | 저장 설정·기본값·하루 한 번 |
 | `app update section shows the macOS copy for every phase` | 단계별 문장과 버튼, 스모크 판정 |
 | `app update pipeline runs from a fixture-signed manifest to a ready install plan` | 확인 → 다운로드 → 풀기 → 계획 → 교체 전체 |

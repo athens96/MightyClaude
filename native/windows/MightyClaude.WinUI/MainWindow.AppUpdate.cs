@@ -45,11 +45,16 @@ public sealed partial class MainWindow
     }
 
     /// Starts the helper detached with a minimal environment and quits the app.
-    /// The helper waits for this process, verifies the package again and only
-    /// then touches the install. It never runs elevated.
+    /// The helper runs from the staged folder of the new version so the install
+    /// folder can be renamed aside freely. It never runs elevated.
     private Task LaunchUpdateHelperAsync(AppUpdateInstallPlan plan)
     {
-        var info = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, AppUpdateService.ExecutableName))
+        var helperPath = plan.StagedHelperExecutable;
+        var stagedRoot = Path.GetFullPath(plan.StagedDirectory.TrimEnd(Path.DirectorySeparatorChar))
+            + Path.DirectorySeparatorChar;
+        if (!Path.GetFullPath(helperPath).StartsWith(stagedRoot, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("도우미가 스테이지된 폴더 안에 있지 않아 실행하지 않습니다.");
+        var info = new ProcessStartInfo(helperPath)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
