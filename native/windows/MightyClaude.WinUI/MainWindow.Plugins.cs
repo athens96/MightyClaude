@@ -58,10 +58,14 @@ public sealed partial class MainWindow
         var progress = new TextBlock { FontSize = 11, Opacity = .7, Text = PluginStrings.ProgressLoading, Visibility = Visibility.Collapsed };
         AutomationProperties.SetAutomationId(progress, PluginAutomationId(provider, "progress"));
 
-        var installedTab = Button(browser.TabLabel(ClaudePluginBrowser.InstalledTab), () => SelectPluginTab(ClaudePluginBrowser.InstalledTab));
-        var marketplaceTab = Button(browser.TabLabel(ClaudePluginBrowser.MarketplaceTab), () => SelectPluginTab(ClaudePluginBrowser.MarketplaceTab));
+        // The controls are built first and their handlers attached below, after
+        // every local the handlers read has been assigned.
+        var installedTab = new Button { Content = browser.TabLabel(ClaudePluginBrowser.InstalledTab) };
+        var marketplaceTab = new Button { Content = browser.TabLabel(ClaudePluginBrowser.MarketplaceTab) };
         AutomationProperties.SetAutomationId(installedTab, PluginAutomationId(provider, "tab-installed"));
         AutomationProperties.SetAutomationId(marketplaceTab, PluginAutomationId(provider, "tab-marketplace"));
+        AutomationProperties.SetName(installedTab, PluginStrings.TabInstalled);
+        AutomationProperties.SetName(marketplaceTab, PluginStrings.TabMarketplace);
 
         var search = new TextBox { PlaceholderText = PluginStrings.SearchPlaceholder, MinWidth = 260 };
         AutomationProperties.SetAutomationId(search, PluginAutomationId(provider, "search"));
@@ -69,8 +73,9 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(filter, PluginAutomationId(provider, "marketplace-filter"));
         AutomationProperties.SetName(filter, PluginStrings.TabMarketplace);
 
-        var reload = Button(PluginStrings.ButtonReload, () => LoadPluginsAsync());
+        var reload = new Button { Content = PluginStrings.ButtonReload };
         AutomationProperties.SetAutomationId(reload, PluginAutomationId(provider, "reload"));
+        AutomationProperties.SetName(reload, PluginStrings.ButtonReload);
 
         Task SelectPluginTab(string tab) { browser.Tab = tab; RenderPlugins(); return Task.CompletedTask; }
 
@@ -145,6 +150,9 @@ public sealed partial class MainWindow
             RenderPlugins();
         }
 
+        installedTab.Click += async (_, _) => await SelectPluginTab(ClaudePluginBrowser.InstalledTab);
+        marketplaceTab.Click += async (_, _) => await SelectPluginTab(ClaudePluginBrowser.MarketplaceTab);
+        reload.Click += async (_, _) => await LoadPluginsAsync();
         search.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => { browser.Search = search.Text; RenderPlugins(); });
         filter.SelectionChanged += (_, _) =>
         {
