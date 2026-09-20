@@ -1,3 +1,4 @@
+using System.Reflection;
 using MightyClaude.Core;
 
 // Behaviour checks for the two plugin mutations macOS has: install a plugin and
@@ -632,6 +633,75 @@ internal static class PluginMarketplaceVerification
         var methods = typeof(IPluginReader).GetMethods().Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
         Check(methods.SetEquals(["SnapshotAsync", "Shutdown", "InstallAsync", "RefreshMarketplaceAsync"]),
             "the plugin gateway offers exactly the macOS reads and mutations: " + string.Join(", ", methods));
+        return Task.CompletedTask;
+    }
+
+    // The window the running app opens is the window that installs and
+    // refreshes: the controls are drawn from ClaudePluginBrowser, their Click
+    // handlers call the Core methods, and the smoke run drives those same
+    // controls with a fake reader under the key pluginMarketplace.
+    internal static Task WindowIsWiredIntoTheRunningAppAndTheSmokeRun()
+    {
+        var winui = ClaudePluginVerification.WinUISource();
+        var source = File.ReadAllText(Path.Combine(winui, "MainWindow.Plugins.cs"));
+
+        // The controls exist and carry the ids the read-only guard now allows.
+        var parts = ClaudePluginVerification.WindowAutomationParts(source);
+        foreach (var part in new[] { "scope-picker", "refresh-marketplaces", "cancel-operation", "operation-progress", "operation-result" })
+            Check(parts.Contains(part), "the window must draw the control " + part);
+        Check(source.Contains("PluginAutomationId(provider, \"install-\" + row.Id)"),
+            "each available plugin row must carry its own install button id");
+
+        // Every one of them is wired to Core rather than to a local decision.
+        foreach (var call in new[]
+                 {
+                     "browser.InstallAsync(reader,", "browser.RefreshMarketplacesAsync(reader)", "browser.RequestCancel",
+                     "browser.CanInstall(", "browser.InstallButtonLabel(", "browser.CanRefreshMarketplaces",
+                     "browser.ScopeOptions", "browser.Scope =", "browser.ScopeNote", "browser.ProgressLabel",
+                     "browser.CancelLabel", "browser.CanCancel", "browser.IsMutating", "browser.ResultText",
+                     "browser.CanClose",
+                 })
+            Check(source.Contains(call), "the window must ask Core: " + call);
+
+        // The user reaches them from real events, not from the smoke check.
+        Check(source.Contains("installBtn.Click +=") && source.Contains("refreshBtn.Click +=")
+            && source.Contains("cancelBtn.Click +=") && source.Contains("scopePicker.SelectionChanged +="),
+            "install, refresh, cancel and the scope choice must run on the user's own click");
+
+        // 닫기 stays disabled while an operation runs, as on macOS.
+        Check(source.Contains("dialog.Closing +=") && source.Contains("args.Cancel = true"),
+            "the window must refuse to close while an operation runs");
+
+        // No Korean of its own: every visible word is a Core constant.
+        foreach (var field in typeof(PluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
+                     .Concat(typeof(CodexPluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static))
+                     .Where(f => f.IsLiteral && f.FieldType == typeof(string)))
+            Check(!source.Contains("\"" + (string)field.GetRawConstantValue()! + "\""),
+                "a plugin sentence is typed into WinUI instead of read from Core: " + field.Name);
+
+        // The smoke run records pluginMarketplace, drives the same window and
+        // never starts a real CLI: a fake reader replaces both readers.
+        Check(PluginMarketplaceSmokeOutcome.ResultKey == "pluginMarketplace", "the smoke key is pluginMarketplace");
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
+        Check(smoke.Contains("PluginMarketplaceSmokeOutcome.ResultKey") && smoke.Contains("RunPluginMarketplaceSmoke()"),
+            "the smoke run must record its result under pluginMarketplace");
+        Check(source.Contains("internal async Task<PluginMarketplaceSmokeOutcome> RunPluginMarketplaceSmoke()"),
+            "the marketplace smoke must live beside the window it drives");
+        Check(source.Contains("class FakeMarketplaceReader") && source.Contains("smokeReaderFactory = _ => new FakeMarketplaceReader("),
+            "the smoke run must install through a fake reader so no claude or codex process starts");
+        Check(!source.Contains("new ClaudePluginReader(runner)\n            : new CodexPluginReader"),
+            "the smoke run must not fall back to the real readers");
+        Check(source.Contains("surface.Install(") && source.Contains("surface.Refresh()") && source.Contains("surface.RequestCancel()"),
+            "the smoke run must drive the real install, refresh and cancel actions");
+
+        // Everything it changed is put back.
+        foreach (var restore in new[]
+                 {
+                     "smokePluginRead = beforeRead", "smokeCodexPluginRead = beforeCodexRead",
+                     "smokePluginDialog = beforeDialog", "smokeCodexPluginDialog = beforeCodexDialog",
+                     "smokeReaderFactory = beforeReaderFactory",
+                 })
+            Check(source.Contains(restore), "the smoke run must put back what it changed: " + restore);
         return Task.CompletedTask;
     }
 }
