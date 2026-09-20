@@ -70,6 +70,12 @@ public sealed partial class MainWindow
     private Button? appUpdateButton;
     private TextBox? appUpdateAddress;
 
+    // The smoke run walks the section through the download phases, which a build
+    // without a public key never reaches (Windows rule 1). CI builds carry no
+    // key, so the run renders the phases as a signed build would while proving
+    // the refusal on the real, key-less control first.
+    private bool appUpdateSmokeSignedBuild;
+
     private StackPanel BuildAppUpdateSectionFromState() => BuildAppUpdateSection();
 
     internal StackPanel BuildAppUpdateSection()
@@ -141,7 +147,11 @@ public sealed partial class MainWindow
     internal void RenderAppUpdateSection()
     {
         if (closing || appUpdateStatus is null || appUpdateButton is null) return;
-        var view = AppUpdate.Describe(at => at.ToLocalTime().ToString("HH:mm"));
+        var view = AppUpdatePresentation.Describe(
+            AppUpdate.State,
+            appUpdateSmokeSignedBuild || AppUpdate.HasPublicKey,
+            AppUpdate.BuiltInManifestUrl,
+            at => at.ToLocalTime().ToString("HH:mm"));
         appUpdateStatus.Text = view.StatusText;
         appUpdateButton.Content = view.ButtonLabel;
         appUpdateButton.IsEnabled = view.ButtonEnabled;
@@ -196,11 +206,23 @@ public sealed partial class MainWindow
         var toggle = AppUpdateDescendants(panel).OfType<ToggleSwitch>()
             .First(control => AutomationProperties.GetAutomationId(control) == AppUpdateToggleId);
 
+        // Windows rule 1 first, on the real control. A build with no public key —
+        // which is what CI builds are until the key is configured — must show the
+        // one sentence with the button disabled before anything else is tried.
+        var refused = AppUpdatePresentation.Describe(new AppUpdateState(), false, null, _ => "00:00");
+        if (!AppUpdate.HasPublicKey)
+        {
+            RenderAppUpdateSection();
+            Require(status.Text == AppUpdateStrings.NoPublicKeyNotice && !button.IsEnabled,
+                "공개 키가 없는 빌드는 업데이트 확인을 제공하지 않아야 합니다.");
+        }
+
         var statuses = new List<string>();
         var buttons = new List<string>();
         var before = AppUpdate.State;
         try
         {
+            appUpdateSmokeSignedBuild = true;
             foreach (var fixture in AppUpdateSmoke.FixtureStates)
             {
                 AppUpdate.ShowForSmoke(fixture);
@@ -211,15 +233,10 @@ public sealed partial class MainWindow
         }
         finally
         {
+            appUpdateSmokeSignedBuild = false;
             AppUpdate.ShowForSmoke(before);
             RenderAppUpdateSection();
         }
-
-        // Windows rule 1, on the real control: a build with no public key shows
-        // the one sentence and the button cannot be pressed.
-        using var keyless = new AppUpdateService(Path.GetTempPath(), publicKey: null);
-        var refused = AppUpdatePresentation.Describe(
-            new AppUpdateState(), keyless.VerifiesSignatures, null, _ => "00:00");
 
         var outcome = await AppUpdateSmoke.RunAsync(
             statuses, buttons,
