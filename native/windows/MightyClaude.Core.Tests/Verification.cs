@@ -351,6 +351,7 @@ internal static class Verification
         await Test("status line trust rule requires fingerprint for workspace commands", StatusLineVerification.TrustRuleRequiresFingerprintForWorkspaceCommands);
         await Test("status line runner feeds stdin captures output and colour", StatusLineVerification.RunnerFeedsStdinCapturesOutputAndColour);
         await Test("status line runner enforces timeout", StatusLineVerification.RunnerEnforcesTimeout);
+        await Test("status line shell follows Claude Code on Windows", StatusLineVerification.ShellFollowsClaudeCodeOnWindows);
         await Test("strings match macOS", StringsVerification.MatchMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {

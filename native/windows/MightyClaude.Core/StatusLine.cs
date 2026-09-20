@@ -235,28 +235,38 @@ public static class StatusLineSupport
         return null;
     }
 
+    // The shell Claude Code itself uses for a statusLine command, so a command
+    // that works in the CLI works here: /bin/sh elsewhere; on Windows Git Bash
+    // when it is installed, PowerShell when it is not. CLAUDE_CODE_GIT_BASH_PATH
+    // names a Git Bash outside the usual folders, as it does for the CLI.
+    public static (string Binary, string[] Arguments) Shell(string command, bool windows, Func<string, bool>? exists = null, Func<string, string?>? environment = null)
+    {
+        if (!windows) return ("/bin/sh", ["-c", command]);
+        exists ??= File.Exists;
+        environment ??= Environment.GetEnvironmentVariable;
+        var candidates = new List<string>();
+        if (environment("CLAUDE_CODE_GIT_BASH_PATH") is { Length: > 0 } named) candidates.Add(named);
+        foreach (var root in new[] { environment("ProgramFiles"), environment("ProgramFiles(x86)"), environment("LocalAppData") is { Length: > 0 } local ? local + "\\Programs" : null })
+            if (root is { Length: > 0 }) candidates.Add(root + "\\Git\\bin\\bash.exe");
+        foreach (var bash in candidates) if (exists(bash)) return (bash, ["-c", command]);
+        var system = environment("SystemRoot") is { Length: > 0 } windowsRoot ? windowsRoot : "C:\\Windows";
+        return (system + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]);
+    }
+
     // Run the status line command. timeout is in seconds (default 8).
     public static async Task<StatusLineResult> RunAsync(StatusLineConfig config, StatusLineContext ctx, double timeout = 8)
     {
         var payload = BuildPayload(ctx);
         var env = new Dictionary<string, string> { ["CLAUDE_CODE_STATUSLINE_HOST"] = "mightyclaude" };
 
-        string binary; string[] args;
-        if (OperatingSystem.IsWindows())
-        {
-            binary = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-            args = ["/d", "/s", "/c", config.Command];
-        }
-        else
-        {
-            binary = "/bin/sh";
-            args = ["-c", config.Command];
-        }
+        var (binary, args) = Shell(config.Command, OperatingSystem.IsWindows());
+        // The command runs where the CLI would run it: the pane's folder.
+        var cwd = ctx.Cwd is { Length: > 0 } folder && Directory.Exists(folder) ? folder : Environment.CurrentDirectory;
 
         ChildProcess? process = null;
         try
         {
-            var info = ChildProcess.StartInfo(binary, args, Environment.CurrentDirectory, env);
+            var info = ChildProcess.StartInfo(binary, args, cwd, env);
             process = ChildProcess.Start(info);
             await process.Input.WriteAsync(payload);
             await process.Input.FlushAsync();

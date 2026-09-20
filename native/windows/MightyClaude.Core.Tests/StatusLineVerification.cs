@@ -254,4 +254,19 @@ internal static class StatusLineVerification
         Check(result.ErrorText == StatusLineStrings.ErrorTimeout, "error text must match macOS literal");
         Check(sw.Elapsed.TotalSeconds < 4, $"must finish well before sleep duration, took {sw.Elapsed.TotalSeconds:F1}s");
     }
+    // The shell is the one Claude Code uses, so a command that works in the CLI works in the app.
+    public static Task ShellFollowsClaudeCodeOnWindows()
+    {
+        Func<string, string?> env = name => name switch { "ProgramFiles" => "C:\\Program Files", "LocalAppData" => "C:\\Users\\me\\AppData\\Local", "SystemRoot" => "C:\\Windows", _ => null };
+        var gitBash = "C:\\Program Files\\Git\\bin\\bash.exe";
+        var withGit = StatusLineSupport.Shell("~/.claude/statusline.sh", windows: true, exists: path => path == gitBash, environment: env);
+        Check(withGit.Binary == gitBash && withGit.Arguments.SequenceEqual(new[] { "-c", "~/.claude/statusline.sh" }), "Git Bash가 있으면 Git Bash로 실행해야 합니다.");
+        var withoutGit = StatusLineSupport.Shell("node status.mjs", windows: true, exists: _ => false, environment: env);
+        Check(withoutGit.Binary == "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" && withoutGit.Arguments.SequenceEqual(new[] { "-NoProfile", "-NonInteractive", "-Command", "node status.mjs" }), "Git Bash가 없으면 PowerShell로 실행해야 합니다.");
+        var named = StatusLineSupport.Shell("x", windows: true, exists: path => path == "D:\\tools\\bash.exe", environment: name => name == "CLAUDE_CODE_GIT_BASH_PATH" ? "D:\\tools\\bash.exe" : env(name));
+        Check(named.Binary == "D:\\tools\\bash.exe", "CLAUDE_CODE_GIT_BASH_PATH로 지정한 Git Bash를 먼저 써야 합니다.");
+        var posix = StatusLineSupport.Shell("x", windows: false);
+        Check(posix.Binary == "/bin/sh" && posix.Arguments.SequenceEqual(new[] { "-c", "x" }), "Windows가 아니면 /bin/sh로 실행해야 합니다.");
+        return Task.CompletedTask;
+    }
 }
