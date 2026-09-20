@@ -2,7 +2,7 @@
 
 상태: 진단 — 수정은 CI에서 아직 검증되지 않음(v3 이후 첫 푸시에서 확인)
 
-실패 단계: `.github/workflows/native.yml` `macos` 작업의 **Test Swift core and loopback remote execution**
+실패 단계: `macos` 작업(분리 전 `.github/workflows/native.yml`, 이 브랜치부터 `.github/workflows/native-macos.yml`)의 **Test Swift core and loopback remote execution**
 (`bash scripts/test-native-macos.sh`, 약 42초 뒤 exit 1, 40회 이상 연속 실패). 로컬에서는 같은 스크립트가 459개 검사를 모두 통과한다.
 CI 로그 본문은 아직 확보되지 않았으므로 아래 내용은 전부 코드 증거에 기반한 후보이며, 확정된 원인이 아니다.
 
@@ -12,7 +12,8 @@ CI 로그 본문은 아직 확보되지 않았으므로 아래 내용은 전부 
 
 | # | 후보 | 가능성 | 판정 |
 | --- | --- | --- | --- |
-| A | `CLIUpdateTests`의 셸 픽스처가 CI 러너의 낮은 CPU·IO에서 `metadataTimeout`을 넘겨 실패 | 높음 | 로그 필요 |
+| F | `StyleCapabilityTests.swift:86`의 `#expect((옵셔널 체인 ?? "").contains(…))`를 CI의 더 오래된 swift-testing 매크로가 컴파일하지 못함 | 높음 | 로그 필요 |
+| A | `CLIUpdateTests`의 셸 픽스처가 CI 러너의 낮은 CPU·IO에서 `metadataTimeout`을 넘겨 실패 | 낮음(아래 '측정된 이력'의 시간과 맞지 않음) | 로그 필요 |
 | B | 러너의 Xcode/Swift 버전과 Swift Testing 매크로 플러그인 경로 불일치로 빌드 단계에서 exit 1 | 중간 | 로그 필요 |
 | C | `libghostty-spm` 등 SwiftPM 원격 의존성 해결 실패 | 낮음 | 로그 필요 |
 | D | 교차 언어 검사(`MIGHTY_NATIVE_PEER_MANIFEST`) | — | 배제 |
@@ -21,6 +22,28 @@ CI 로그 본문은 아직 확보되지 않았으므로 아래 내용은 전부 
 ---
 
 ## 증거
+
+### 측정된 이력 (공개 REST API, 자격 증명 없음, 2026-09-20)
+
+- 워크플로 `Native clients`는 기록된 54회 실행이 전부 실패다. `macos` 작업이 초록이었던 적은 없다.
+- `macos` 작업의 실패 단계는 시기에 따라 다르다: 첫 실행 `eda0e25`(2026-09-16)는 이 Swift 테스트 단계(83초), 그 뒤 `b9fc86f`(2026-09-19 09:29)까지는 GUI 단계 **Check smoke result**, 그리고 `306d8be`를 올린 푸시(2026-09-19 12:25, `f158bbb`+`48bd76a`+`306d8be` = 스타일 매니페스트 엔진)부터 다시 이 Swift 테스트 단계다.
+- 이 단계는 `b9fc86f`에서 **199초 걸려 통과**했다. `306d8be`부터는 42~59초 만에 exit 1이다. 전체 검사를 다 돌고 실패했다면 통과 때와 비슷한 시간이 걸려야 하므로, 검사가 끝까지 돌기 전에 — 빌드 단계이거나 아주 이른 크래시로 — 죽는 것으로 보인다. 그래서 검사 하나의 타임아웃(A)은 시간과 맞지 않는다.
+- 그 푸시에서 `Package.swift`의 변경은 `MightyCore` 타깃에 `resources: [.copy("Resources/Styles")]` 한 줄뿐이다.
+- 공개 저장소를 새로 복제해 `306d8be`에서 빌드 캐시 없이 `bash scripts/test-native-macos.sh`를 돌리면 **로컬(Apple Swift 6.4)에서는 통과**한다(418개 검사, 빌드 65초, 전체 86초). 따라서 저장소 상태가 아니라 CI 환경(러너의 더 오래된 컴파일러·매크로)에 달린 실패다. 러너의 정확한 Xcode/Swift 버전은 이 조사에서 직접 확인하지 못했다.
+
+### F. `#expect` 매크로가 풀지 못하는 식 — 가장 유력
+
+`native/macos/Tests/MightyCoreTests/StyleCapabilityTests.swift:86`
+
+```swift
+#expect((legacy.paperthin?.casebook?.name ?? "").contains("\u{FFFD}"))
+```
+
+- 이 파일은 실패가 시작된 바로 그 푸시(`f158bbb`)에서 처음 추가됐다.
+- 테스트 타깃 전체에서 이 모양(괄호 안 옵셔널 체인 + `??` 뒤에 멤버 호출)의 `#expect`는 이 한 줄뿐이다.
+- 로컬 컴파일러도 이 줄의 매크로 전개에서 서로 모순되는 경고 둘을 낸다: `result of call to 'contains' is unused`, `left side of nil coalescing operator '??' has non-optional type 'String?'`. 매크로가 이 식을 잘못 풀어 쓴다는 뜻이고, 더 오래된 매크로는 이를 오류로 처리할 수 있다 → 테스트 타깃 컴파일 실패 → 코어 빌드 직후 exit 1(시간과 맞는다).
+- 확인되지 않았다. 이 브랜치에서는 고치지 않았다.
+
 
 ### A. CLIUpdateTests 병렬 부하 타임아웃
 
@@ -54,7 +77,7 @@ if [[ -f "$TESTING_PLUGIN" ]]; then
 ```
 
 로컬은 Command Line Tools의 Swift 6.4를 쓰고, CI는 `macos-latest`가 선택한 Xcode를 그대로 따른다
-(`.github/workflows/native.yml:24` **Report the selected Apple toolchain**). 러너 이미지가 갱신되어
+(분리 전 `native.yml:24`, 지금은 `native-macos.yml`의 **Report the selected Apple toolchain**). 러너 이미지가 갱신되어
 플러그인 경로가 달라지거나 매크로 버전이 어긋나면 개별 검사 실패 없이 빌드 단계에서 exit 1이 난다.
 42초라는 짧은 실행 시간은 "검사가 하나씩 실패"보다 "빌드/로딩 단계에서 조기 종료"에 가깝다.
 
@@ -150,6 +173,15 @@ CI 수준의 CPU·IO 부하와 러너 이미지 조합은 로컬에서 재현되
 ---
 
 ## 수정안
+
+0. (F가 맞다면) 식을 먼저 값으로 받는다 — 동작은 같고 로컬 경고 둘도 사라진다. **아직 적용하지 않았다.**
+
+   ```swift
+   let name = legacy.paperthin?.casebook?.name ?? ""
+   #expect(name.contains("\u{FFFD}"))
+   ```
+
+   F를 고쳐도 `macos` 작업은 그 뒤의 GUI 단계 **Check smoke result**(실행/중지 버튼의 접근성 탐색)에서 계속 실패할 가능성이 높다 — `306d8be` 이전의 모든 실행이 거기서 실패했다. 별개의 문제다.
 
 세 후보 모두 로그 없이는 확정할 수 없으므로 **아직 어떤 수정도 적용하지 않았다.** 로그가 확보된 뒤
 아래 순서로 진행한다.
