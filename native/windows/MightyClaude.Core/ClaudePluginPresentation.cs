@@ -64,7 +64,10 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
         if (MarketplaceFilter.Length > 0 && !Marketplaces.Contains(MarketplaceFilter)) MarketplaceFilter = "";
     }
 
-    public int InstalledCount => Snapshot?.Installed.Count ?? 0;
+    /// The tab count is what the tab lists, so a row this provider does not
+    /// show is not counted either. Claude lists every scope its CLI reports, so
+    /// its count is unchanged; Codex never counts a non-user row.
+    public int InstalledCount => Snapshot?.Installed.Count(p => SupportedScopes.Contains(p.Scope)) ?? 0;
     public int AvailableCount => Snapshot?.Available.Count ?? 0;
 
     public string TabLabel(string tab) => PluginStrings.TabCountTemplate

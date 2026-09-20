@@ -171,6 +171,23 @@ internal static class CodexPluginVerification
         Check(browser.Snapshot!.Installed[0].Scope == "user", "scope: " + browser.Snapshot.Installed[0].Scope);
         // SupportedScopes for Codex is user-only; other scopes would be hidden.
         Check(browser.SupportedScopes.SequenceEqual(["user"]), "scopes: " + string.Join(",", browser.SupportedScopes));
+
+        // A row claiming a scope Codex does not have is neither drawn nor
+        // counted, so the tab count always equals the rows the tab lists.
+        browser.Apply(browser.Snapshot with
+        {
+            Installed = [.. browser.Snapshot.Installed,
+                new ClaudeInstalledPlugin { PluginId = "stray@sample", Name = "stray", Marketplace = "sample", Scope = "project", ProjectPath = "/elsewhere" }],
+        });
+        Check(browser.InstalledRows().Count == 1, "a project-scope row is not listed under the Codex title");
+        Check(browser.InstalledCount == 1 && browser.TabLabel(ClaudePluginBrowser.InstalledTab) == "설치됨 1",
+            "the tab count matches the rows the tab lists: " + browser.TabLabel(ClaudePluginBrowser.InstalledTab));
+
+        // The Claude window counts every scope its CLI reports, as before.
+        var claude = new ClaudePluginBrowser("claude", browser.Workspace);
+        claude.Apply(browser.Snapshot!);
+        Check(claude.InstalledCount == 2 && claude.InstalledRows().Count == 2,
+            "the Claude window still counts and lists every scope: " + claude.InstalledCount);
     }
 
     // Remote workspace returns the remote status without running any commands.
