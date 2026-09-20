@@ -47,7 +47,7 @@ public sealed partial class MainWindow
             result["slashCommandPalette"] = await pane.RunSlashCommandPaletteSmoke();
             result["statusLine"] = await pane.RunStatusLineSmoke();
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
-            result["completionNotification"] = await RunCompletionNotificationSmoke();
+            result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");

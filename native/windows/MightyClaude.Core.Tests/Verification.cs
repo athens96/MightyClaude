@@ -408,6 +408,10 @@ internal static class Verification
         await Test("completion notification does not fire twice for the same run", CompletionNotificationVerification.DoesNotFireTwiceForSameRun);
         await Test("completion notification does not fire when preference is off", CompletionNotificationVerification.DoesNotFireWhenPreferenceOff);
         await Test("completion notification strings match macOS", StringsVerification.CompletionNotificationStringsMatchMacOS);
+        await Test("completion notification smoke sends one fixture call and records sent", CompletionNotificationVerification.SmokeSendsOneFixtureCallAndRecordsSent);
+        await Test("completion notification smoke records skipped with a reason", CompletionNotificationVerification.SmokeRecordsSkippedWithAReason);
+        await Test("completion notification smoke failure after support is a failure", CompletionNotificationVerification.SmokeFailureAfterSupportIsAFailure);
+        await Test("completion notification smoke keeps the saved state version at 1", CompletionNotificationVerification.SmokeKeepsTheSavedStateVersion);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
