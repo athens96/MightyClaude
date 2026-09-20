@@ -512,6 +512,18 @@ internal static class Verification
         await Test("rename save button is disabled exactly when macOS disables it", RenameVerification.renameSaveButtonIsDisabledExactlyWhenMacOSDisablesIt);
         await Test("rename keeps a long emoji name whole across a restart", RenameVerification.renameKeepsALongEmojiNameWholeAcrossARestart);
         await Test("rename clamp title still bounds an overlong stored title", RenameVerification.renameClampTitleStillBoundsAnOverlongStoredTitle);
+        await Test("claude plugin list reads this workspace's scopes and cached catalog without mutation", ClaudePluginVerification.ListsWorkspaceScopesAndCachedCatalogWithoutMutation);
+        await Test("claude plugin list shows an ancestor's record for a nested workspace", ClaudePluginVerification.NestedWorkspaceSeesItsAncestorsRecord);
+        await Test("claude plugin missing, old and empty sources are explained without installing", ClaudePluginVerification.MissingOldAndEmptyAreExplainedWithoutInstalling);
+        await Test("claude plugin malformed or oversized answer never becomes an empty list", ClaudePluginVerification.MalformedOrOversizedAnswerNeverBecomesAnEmptyList);
+        await Test("claude plugin failed runs and timeouts keep the screen intact", ClaudePluginVerification.FailedRunsAndTimeoutsKeepTheScreenIntact);
+        await Test("claude plugin remote workspace runs nothing", ClaudePluginVerification.RemoteWorkspaceRunsNothing);
+        await Test("claude plugin second request joins the running read", ClaudePluginVerification.SecondRequestJoinsTheRunningRead);
+        await Test("claude plugin window tabs, filter, search and rows match macOS", ClaudePluginVerification.BrowserTabsFilterSearchAndRowsMatchMacOS);
+        await Test("claude plugin reload reads again and replaces the list", ClaudePluginVerification.ReloadReadsAgainAndReplacesTheList);
+        await Test("claude plugin palette offers /plugin for Claude only", ClaudePluginVerification.PaletteOffersPluginForClaudeOnly);
+        await Test("claude plugin strings match macOS", ClaudePluginVerification.StringsMatchMacOS);
+        await Test("claude plugin models stay reusable for the Codex and marketplace features", ClaudePluginVerification.ModelsStayReusable);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
