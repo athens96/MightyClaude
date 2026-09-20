@@ -145,6 +145,12 @@ public sealed record AppSnapshot
     // field when Version is not 1. Off out of the box — nothing is looked up
     // directly until the user switches it on in the usage popover.
     public bool ClaudeDirectUsageLookupEnabled { get; init; }
+    // Additive with a default (true = macOS default). Automatic once-a-day check.
+    public bool AppUpdateAutoCheck { get; init; } = true;
+    // When set, the last automatic check timestamp (ISO 8601).
+    public string? AppUpdateLastCheckedAt { get; init; }
+    // User-entered manifest URL override (ignored when the build has a built-in URL).
+    public string? AppUpdateManifestUrlOverride { get; init; }
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)
