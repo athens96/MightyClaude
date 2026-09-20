@@ -5,6 +5,15 @@ param(
     [ValidateRange(15, 600)][int]$TimeoutSeconds = 180
 )
 $ErrorActionPreference = 'Stop'
+# CI logs need a signed-in reader, check-run annotations do not. A failed run
+# says why in one annotation: the app's own smoke error and the checks that
+# passed before it. Nothing else from the profile is copied.
+function Write-SmokeAnnotation([string]$Message) {
+    if (-not $env:GITHUB_ACTIONS) { return }
+    $text = if ($Message.Length -gt 1500) { $Message.Substring(0, 1500) } else { $Message }
+    $text = $text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+    Write-Output "::error title=Windows GUI smoke::$text"
+}
 if (-not $IsWindows) { throw 'WinUI GUI 검증에는 Windows와 PowerShell 7이 필요합니다.' }
 $Executable = [IO.Path]::GetFullPath($Executable)
 $ProfileDirectory = [IO.Path]::GetFullPath($ProfileDirectory)
@@ -39,11 +48,16 @@ try {
     [IO.Directory]::CreateDirectory($ProfileDirectory) | Out-Null
     [IO.File]::WriteAllText((Join-Path $ProfileDirectory 'stdout.log'), $stdout.GetAwaiter().GetResult())
     [IO.File]::WriteAllText((Join-Path $ProfileDirectory 'stderr.log'), $stderr.GetAwaiter().GetResult())
-    if (-not $finished) { throw "GUI 검증 제한 시간 초과 (${TimeoutSeconds}초)" }
+    if (-not $finished) { Write-SmokeAnnotation "GUI 검증 제한 시간 초과 (${TimeoutSeconds}초)"; throw "GUI 검증 제한 시간 초과 (${TimeoutSeconds}초)" }
     $resultPath = Join-Path $ProfileDirectory 'smoke-result.json'
-    if (-not (Test-Path $resultPath -PathType Leaf)) { throw "GUI 결과가 없습니다. ExitCode=$($process.ExitCode)" }
+    if (-not (Test-Path $resultPath -PathType Leaf)) { Write-SmokeAnnotation "GUI 결과가 없습니다. ExitCode=$($process.ExitCode)"; throw "GUI 결과가 없습니다. ExitCode=$($process.ExitCode)" }
     $result = Get-Content -Raw $resultPath | ConvertFrom-Json
-    if ($process.ExitCode -ne 0 -or $result.passed -ne $true) { throw "GUI 검증 실패: ExitCode=$($process.ExitCode), 결과: $resultPath" }
+    if ($process.ExitCode -ne 0 -or $result.passed -ne $true) {
+        $reached = @($result.PSObject.Properties | Where-Object { $_.Value -is [bool] -and $_.Value -and $_.Name -ne 'passed' } | ForEach-Object Name) -join ', '
+        $trace = @("$($result.exception)" -split "`n" | Select-Object -First 8) -join "`n"
+        Write-SmokeAnnotation "ExitCode=$($process.ExitCode)`nerror: $($result.error)`ntype: $($result.exceptionType)`npassed before it: $reached`n$trace"
+        throw "GUI 검증 실패: ExitCode=$($process.ExitCode), 결과: $resultPath"
+    }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
     Write-Output "Windows GUI PASS: $resultPath"
