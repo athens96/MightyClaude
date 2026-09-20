@@ -182,6 +182,8 @@ public sealed partial class MainWindow
             Require(SlashCommandStrings.PaletteMove == "↑↓ 이동" && SlashCommandStrings.PaletteSelect == "Enter · Tab 선택" && SlashCommandStrings.PaletteDismiss == "Esc 닫기", "팔레트 키보드 힌트가 macOS와 다릅니다.");
 
             // Choosing "review": insert "/review " into the composer draft, closing the palette.
+            // The composer smoke leaves a draft that the later split check reads back.
+            var previousDraft = input.Text;
             updating = true; input.Text = "/review "; updating = false;
             await Change(p => p with { Draft = input.Text });
             Require(SlashCommandCatalog.Query(input.Text) is null, "명령 선택 후 슬래시 팔레트가 닫혀야 합니다.");
@@ -193,9 +195,9 @@ public sealed partial class MainWindow
             Require(SlashCommandStrings.PaletteArgumentTooltip == "이어서 선택합니다", "인수 명령 툴팁이 macOS와 다릅니다.");
             Require(SlashCommandStrings.PaletteActionTooltip == "앱에서 바로 실행됩니다", "앱 명령 툴팁이 macOS와 다릅니다.");
 
-            // Cleanup.
-            updating = true; input.Text = ""; updating = false;
-            await Change(p => p with { Draft = "" });
+            // Put back the draft this check found.
+            updating = true; input.Text = previousDraft; updating = false;
+            await Change(p => p with { Draft = previousDraft });
             return true;
         }
     }
