@@ -26,11 +26,16 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 | Windows 상수 | macOS 원문 |
 |---|---|
 | `RenameStrings.MenuEntry` | `"이름 변경…"` (WorkspaceView.swift:155·187, SessionPaneView.swift:198, PaneDockDrag.swift:198) |
+| `RenameStrings.FieldLabel` | `"이름"` (RenameViews.swift `TextField("이름", …)` 레이블) |
 | `RenameStrings.HeadingWorkspace` | `"워크스페이스 이름 변경"` (RenameViews.swift) |
 | `RenameStrings.HeadingSession` | `"실행 창 이름 변경"` (RenameViews.swift) |
 | `RenameStrings.ErrorTooLong` | `"이름은 120자 이내로 입력하세요."` (RenameViews.swift) |
 | `RenameStrings.ErrorControlCharacter` | `"이름은 줄바꿈 없이 입력하세요."` (RenameViews.swift) |
 | `RenameStrings.ErrorNotFound` | `"대상을 찾을 수 없습니다. 창을 닫고 다시 시도하세요."` (RenameViews.swift) |
+| `RenameStrings.ButtonSave` | `"저장"` (RenameViews.swift `Button("저장")`) |
+| `RenameStrings.ButtonCancel` | `"취소"` (RenameViews.swift `Button("취소")`) |
+| `RenameStrings.HintWorkspace` | Windows 전용 — macOS 원문 없음 (`"앱에 표시되는 이름만 바뀌며 폴더 이름과 경로는 유지됩니다."`) |
+| `RenameStrings.HintSession` | Windows 전용 — macOS 원문 없음 (`"사이드바와 탭에 같은 이름이 표시됩니다."`) |
 
 ## 저장된 제목 클램프
 
