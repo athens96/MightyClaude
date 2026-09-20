@@ -777,6 +777,136 @@ internal static class AppUpdateVerification
         finally { Directory.Delete(root, true); }
     }
 
+
+    /// Nothing is moved until the app process has quit. A helper that gives up
+    /// waiting leaves the install exactly as it found it.
+    internal static async Task AppUpdateHelperWaitsForTheAppToQuitBeforeItMovesAnything()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var started = 0;
+            var result = await AppUpdateReplacement.RunAsync(
+                plan, _ => Task.FromResult(false), _ => { started++; return Task.CompletedTask; });
+
+            Check(!result.Replaced && !result.RolledBack, "a still-running app must stop the replacement");
+            Check(result.Moves.Count == 0, "nothing may be moved while the app is still running");
+            Check(started == 0, "no app may be started while the old one still runs");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "old",
+                "the install must be untouched while the app is still running");
+            Check(!Directory.Exists(plan.BackupDirectory), "no backup may be taken while the app is still running");
+            Check(result.Error!.Contains("종료"), "the refusal must name the app that did not quit: " + result.Error);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The package is hashed again after the app has quit and before the install
+    /// folder is renamed aside, so a package changed on disk meanwhile is caught
+    /// while the install is still whole.
+    internal static async Task AppUpdateHelperVerifiesThePackageAgainBeforeTheInstallIsMovedAside()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            // The package is tampered with after the plan was built.
+            await File.WriteAllBytesAsync(package, "tampered"u8.ToArray());
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+
+            Check(!result.Replaced && !result.RolledBack, "a changed package must stop the replacement");
+            Check(result.Moves.Count == 0, "a changed package must be caught before the first move");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "old",
+                "the install must be untouched when the re-verification fails");
+            Check(!Directory.Exists(plan.BackupDirectory), "no backup may be taken when the re-verification fails");
+            Check(result.Error!.Contains("SHA-256"), "the refusal must name the failed re-verification: " + result.Error);
+
+            // A package that vanished between the download and the swap is refused too.
+            File.Delete(package);
+            var gone = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), _ => Task.CompletedTask);
+            Check(!gone.Replaced && gone.Moves.Count == 0, "a missing package must stop the replacement");
+            Check(await File.ReadAllTextAsync(Path.Combine(install, "MightyClaude.exe")) == "old",
+                "the install must be untouched when the package is gone");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    /// The backup survives until the new app is running. When the new app
+    /// refuses to start, the backup is renamed back and the old app is started.
+    internal static async Task AppUpdateHelperKeepsTheBackupUntilTheNewAppHasStarted()
+    {
+        var root = Temp();
+        try
+        {
+            var install = Path.Combine(root, "MightyClaude");
+            var staged = Path.Combine(root, "staged");
+            MakeInstall(install, "old");
+            MakeInstall(staged, "new");
+
+            var packageBytes = "package"u8.ToArray();
+            var package = Path.Combine(root, "package.zip");
+            await File.WriteAllBytesAsync(package, packageBytes);
+            var plan = AppUpdateInstallPlan.Create(staged, install, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var backupAtStart = false;
+            var newVersionAtStart = false;
+            var result = await AppUpdateReplacement.RunAsync(plan, _ => Task.FromResult(true), async path =>
+            {
+                backupAtStart = Directory.Exists(plan.BackupDirectory);
+                newVersionAtStart = await File.ReadAllTextAsync(path) == "new";
+            });
+
+            Check(result.Replaced, "the replacement must succeed: " + result.Error);
+            Check(backupAtStart, "the backup must still exist when the new app is started");
+            Check(newVersionAtStart, "the new app must already be in the install path when it is started");
+            Check(result.Started && result.BackupRemoved, "the backup is removed only after the new app started");
+            Check(!Directory.Exists(plan.BackupDirectory), "the backup is cleared once the new app runs");
+
+            // Now the new app refuses to start: the old one must come back.
+            var second = Path.Combine(root, "second");
+            var secondInstall = Path.Combine(second, "MightyClaude");
+            var secondStaged = Path.Combine(second, "staged");
+            MakeInstall(secondInstall, "old");
+            MakeInstall(secondStaged, "new");
+            var secondPlan = AppUpdateInstallPlan.Create(
+                secondStaged, secondInstall, package, Sha256Of(packageBytes), packageBytes.Length, 4242);
+
+            var attempts = 0;
+            var restart = await AppUpdateReplacement.RunAsync(secondPlan, _ => Task.FromResult(true), _ =>
+            {
+                attempts++;
+                if (attempts == 1) throw new InvalidOperationException("새 앱을 시작하지 못했습니다.");
+                return Task.CompletedTask;
+            });
+
+            Check(!restart.Replaced && restart.RolledBack, "a new app that will not start must roll back: " + restart.Error);
+            Check(restart.Started, "the old app must be started again after the rollback");
+            Check(await File.ReadAllTextAsync(Path.Combine(secondInstall, "MightyClaude.exe")) == "old",
+                "the old install must be back in place");
+            Check(!Directory.Exists(secondPlan.BackupDirectory), "the backup is renamed back, not left behind");
+            Check(Directory.Exists(secondStaged), "the staged folder the helper runs from must survive the rollback");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     /// The whole pipeline, end to end, against a fixture-signed manifest: check,
     /// download for this machine's architecture, stage, and hand a plan to the
     /// helper that re-verifies before it replaces.
