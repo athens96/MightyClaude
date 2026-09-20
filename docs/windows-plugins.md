@@ -303,6 +303,21 @@ belong to the marketplace feature.
 | the run pane's `···` menu entry `Codex 플러그인` | `MainWindow.cs` `MoreMenu` → `OpenPluginBrowser` (the entry is built for `claude` and `codex`) |
 | the `/plugins` slash command | `MainWindow.SlashPalette.cs` `PerformSlashAction` → `OpenPluginBrowser(pane.Provider)` |
 
+The two mutations are not wired through the smoke harness. `MainWindow` owns one
+`PluginOperations` (Core, `PluginOperations.cs`) as a field, built at app start
+by its parameterless constructor — the one that carries the real shared
+`CliRunner` with the macOS 8 MiB listing cap. `ShowPluginBrowser` takes both the
+runner it builds the provider's reader from and the two mutation calls from that
+field, so `설치` and `마켓플레이스 새로고침` really start the installed CLI's own
+plugin command in the running app. That object also keeps the app-wide
+one-at-a-time gate: with the Claude and the Codex window both open, a second
+operation is refused with `다른 플러그인 작업이 진행 중입니다.` instead of starting a
+second CLI run, the way one macOS service serialises them.
+
+The smoke run does not replace it — it swaps only the *reader*
+(`smokeReaderFactory`) for `FakeMarketplaceReader`, so the fake never reaches a
+process and the object the real app owns is left exactly as it is.
+
 ## Checks
 
 `ClaudePluginVerification.cs` holds the `claude plugin …` checks. They drive a
