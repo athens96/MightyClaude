@@ -46,7 +46,6 @@ public sealed partial class MainWindow : Window
         // nowhere else — not the snapshot, not a remote peer.
         service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = "저장 실패: " + ex.Message);
-        service.ToolPermissionChanged += req => DispatcherQueue.TryEnqueue(() => { if (!closing && views.TryGetValue(req.RunId, out var pane)) pane.OnPermissionEmit(req); });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(252) }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
