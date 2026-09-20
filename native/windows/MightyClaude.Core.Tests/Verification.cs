@@ -394,6 +394,14 @@ internal static class Verification
         await Test("status line runner feeds stdin captures output and colour", StatusLineVerification.RunnerFeedsStdinCapturesOutputAndColour);
         await Test("status line runner enforces timeout", StatusLineVerification.RunnerEnforcesTimeout);
         await Test("status line shell follows Claude Code on Windows", StatusLineVerification.ShellFollowsClaudeCodeOnWindows);
+        await Test("status line refresher debounces single run from rapid triggers", StatusLineVerification.StatusLineRefresherDebouncesSingleRunFromRapidTriggers);
+        await Test("status line refresher generation counter discards stale results", StatusLineVerification.StatusLineRefresherGenerationCounterDiscardsStaleResult);
+        await Test("status line refresher reruns when pending during a run", StatusLineVerification.StatusLineRefresherRerunsWhenPendingDuringARun);
+        await Test("status line refresher ignores requests after close", StatusLineVerification.StatusLineRefresherIgnoresRequestsAfterClose);
+        await Test("status line refresher never starts two commands at once", StatusLineVerification.StatusLineRefresherNeverStartsTwoCommandsAtOnce);
+        await Test("status line refresher falls back to user command while workspace command is gated", StatusLineVerification.StatusLineRefresherFallsBackToUserCommandWhileWorkspaceIsGated);
+        await Test("status line refresher trust unblocks the workspace command", StatusLineVerification.StatusLineRefresherTrustUnblocksWorkspaceCommand);
+        await Test("status line refresher shows nothing for a disabled or missing entry", StatusLineVerification.StatusLineRefresherShowsNothingForDisabledOrMissingEntry);
         await Test("cli runner runs a real short command", CliRunnerVerification.RealShortCommand);
         await Test("cli runner kills a process that exceeds the timeout", CliRunnerVerification.KillsCommandThatExceedsTimeout);
         await Test("cli runner reports the exit code and error output of a failing command", CliRunnerVerification.ReportsExitCodeAndErrorOutput);

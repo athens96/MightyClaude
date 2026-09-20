@@ -35,6 +35,8 @@ public sealed partial class MainWindow : Window
     private readonly CliUpdateService cliUpdateService;
     internal readonly CliUpdateCoordinator coordinator;
     internal Func<string, CancellationToken, Task<CliUpdateResult>>? smokeCliUpdater;
+    internal Func<StatusLineDiscovery>? smokeStatusLineDiscovery;
+    internal Func<StatusLineConfig, StatusLineContext, CancellationToken, Task<StatusLineResult>>? smokeStatusLineRunner;
     public MainWindow(StartupOptions options)
     {
         this.options = options;
@@ -146,7 +148,8 @@ public sealed partial class MainWindow : Window
         root.Background = WindowBackground(state.Theme == "light"); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
-        foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) views.Remove(stale);
+        // A closed session runs nothing more: end its refresher before dropping the pane.
+        foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { views[stale].Refresher?.Close(); views.Remove(stale); }
         RenderPaneLayout(state);
         var workspace = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
         status.Text = workspace?.Remote is { } link ? $"원격 · {link.HostName} · {workspace.Path} · {remote?.Connections.FirstOrDefault(c => c.Id == link.ConnectionId)?.Detail ?? "원격 연결에서 새로고침하세요."}" : runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
@@ -487,7 +490,9 @@ public sealed partial class MainWindow : Window
             RefreshMenus(pane, catalog);
             var workspace = Workspace;
             detail.Text = (workspace.Remote is null ? "이 컴퓨터" : "원격 · " + workspace.Remote.HostName) + (pane.Kind == "shell" ? " · shell 명령 실행" : $" · {(catalog.Source == "cli" ? "CLI에서 확인" : "기본 모델 목록")}" + (pane.ResumeId is null ? "" : " · 기존 대화 재개"));
-            RefreshComposerState(); ArrangeComposer(); updating = false;
+            RefreshComposerState(); ArrangeComposer();
+            RequestStatusLineRefresh();
+            updating = false;
         }
         private Task CustomModel() => owner.Act(async () =>
         {

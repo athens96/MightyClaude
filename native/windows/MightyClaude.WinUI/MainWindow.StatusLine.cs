@@ -15,6 +15,70 @@ public sealed partial class MainWindow
         // to the trust question; discovery, trust and execution live in Core.
         private readonly StackPanel statusLineHost = new() { Spacing = 2, Visibility = Visibility.Collapsed };
         private StatusLineConfig? statusLineUntrusted;
+        private StatusLineRefresher? _refresher;
+
+        internal StatusLineRefresher? Refresher => _refresher;
+
+        internal void InitRefresher()
+        {
+            var workspaceId = Session.WorkspaceId;
+            var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            _refresher = new StatusLineRefresher(
+                () => owner.smokeStatusLineDiscovery?.Invoke()
+                    ?? StatusLineSupport.Discover(Workspace.Path, homeDir),
+                () => owner.service.Snapshot,
+                workspaceId,
+                (cfg, ctx, ct) => owner.smokeStatusLineRunner?.Invoke(cfg, ctx, ct)
+                    ?? StatusLineSupport.RunAsync(cfg, ctx));
+            _refresher.StateChanged += () => owner.DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
+                var r = _refresher;
+                if (r is null) return;
+                RenderStatusLine(r.Config, r.Untrusted, r.Result, r.Config?.Padding ?? 0);
+            });
+        }
+
+        internal void RequestStatusLineRefresh(bool force = false)
+            => _refresher?.RequestRefresh(BuildStatusLineContext(), force);
+
+        private StatusLineContext BuildStatusLineContext()
+        {
+            var pane = Session;
+            var workspace = Workspace;
+            var runtime = owner.Runtime(pane.Provider, pane.WorkspaceId);
+            var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var usage = pane.SessionUsage;
+            var option = catalog.Models.FirstOrDefault(m => m.Value == (usage?.Model ?? pane.Model));
+            var modelId = usage?.Model ?? (pane.Model == "default" ? "default" : pane.Model);
+            var modelName = option?.DisplayName ?? usage?.Model ?? pane.Model;
+            var elapsedMs = pane.RunTiming is { } timing ? (long)Math.Max(0, timing.Elapsed() * 1000) : (long?)null;
+            var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var configDir = StatusLineSupport.ConfigDir(homeDir);
+            var sessionId = pane.ResumeId ?? pane.Id;
+            return new StatusLineContext(
+                SessionId: sessionId,
+                Cwd: workspace.Path,
+                ProjectDir: workspace.Path,
+                ModelId: modelId,
+                ModelName: modelName,
+                Version: runtime?.Version ?? "",
+                CostUSD: usage?.CostUSD,
+                DurationMs: elapsedMs,
+                ApiDurationMs: 0,
+                InputTokens: usage?.InputTokens,
+                OutputTokens: usage?.OutputTokens,
+                CacheReadTokens: usage?.CacheReadTokens,
+                CacheWriteTokens: usage?.CacheWriteTokens,
+                ContextUsedTokens: usage?.ContextUsedTokens,
+                ContextWindowTokens: usage?.ContextWindowTokens,
+                Effort: pane.Settings.Effort == "default" ? null : pane.Settings.Effort,
+                FastMode: pane.Settings.FastMode,
+                RateLimits: usage?.RateLimits,
+                OutputStyle: null,
+                ThinkingEnabled: null,
+                TranscriptPath: StatusLineSupport.TranscriptPath(configDir, workspace.Path, sessionId));
+        }
 
         /// <summary>The slot the composer reserves under the input for the status line.</summary>
         internal StackPanel StatusLineHost => statusLineHost;
@@ -45,7 +109,7 @@ public sealed partial class MainWindow
                 var allow = Button(StatusLineStrings.TrustAllow, () => owner.Act(() => TrustStatusLine(untrusted)));
                 allow.Height = 28; allow.MinHeight = 0; allow.Padding = new Thickness(10, 0, 10, 0); allow.FontSize = 11;
                 AutomationProperties.SetAutomationId(allow, "status-line-trust-" + id);
-                var deny = Button(StatusLineStrings.TrustDeny, () => { RenderStatusLine(config, null, result, padding); return Task.CompletedTask; });
+                var deny = Button(StatusLineStrings.TrustDeny, () => { DismissStatusLine(); RenderStatusLine(config, null, result, padding); return Task.CompletedTask; });
                 deny.Height = 28; deny.MinHeight = 0; deny.Padding = new Thickness(10, 0, 10, 0); deny.FontSize = 11;
                 answers.Children.Add(allow); answers.Children.Add(deny);
                 answers.Children.Add(new TextBlock { Text = StatusLineStrings.TrustNote, FontSize = 10, Opacity = .55, VerticalAlignment = VerticalAlignment.Center });
@@ -112,8 +176,13 @@ public sealed partial class MainWindow
         {
             var workspaceId = Session.WorkspaceId;
             await owner.service.UpdateAsync(s => StatusLineTrust.Trust(s, config, workspaceId));
+            // Render immediately so the trust prompt disappears; the refresher
+            // will follow up with actual command output once it runs.
             RenderStatusLine(config, null, null);
+            _refresher?.RequestRefresh(BuildStatusLineContext(), force: true);
         }
+
+        internal void DismissStatusLine() => _refresher?.Dismiss();
 
         private static TextBlock Row(IReadOnlyList<AnsiSegment> segments)
         {

@@ -551,6 +551,274 @@ internal static class StatusLineVerification
         Check(result.ErrorText == StatusLineStrings.ErrorTimeout, "error text must match macOS literal");
         Check(sw.Elapsed.TotalSeconds < 4, $"must finish well before sleep duration, took {sw.Elapsed.TotalSeconds:F1}s");
     }
+    // ── StatusLineRefresher tests ─────────────────────────────────────────────────────────────
+
+    private static StatusLineContext FreshContext() => new(
+        SessionId: "test", Cwd: "/test", ProjectDir: "/test",
+        ModelId: "claude", ModelName: "Claude", Version: "",
+        CostUSD: null, DurationMs: null, ApiDurationMs: null,
+        InputTokens: null, OutputTokens: null, CacheReadTokens: null, CacheWriteTokens: null,
+        ContextUsedTokens: null, ContextWindowTokens: null,
+        Effort: null, FastMode: false, RateLimits: null,
+        OutputStyle: null, ThinkingEnabled: null, TranscriptPath: null);
+
+    private sealed class FakeClock : IStatusLineClock
+    {
+        private readonly object _lock = new();
+        private DateTimeOffset _now = DateTimeOffset.UtcNow;
+        private readonly List<TaskCompletionSource> _delays = [];
+        public DateTimeOffset UtcNow { get { lock (_lock) return _now; } }
+        public void Advance(TimeSpan amount) { lock (_lock) _now += amount; }
+        public void CompleteAll()
+        {
+            TaskCompletionSource[] all;
+            lock (_lock) { all = [.. _delays]; _delays.Clear(); }
+            foreach (var tcs in all) tcs.TrySetResult();
+        }
+        public Task DelayAsync(TimeSpan delay, CancellationToken ct = default)
+        {
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_lock) _delays.Add(tcs);
+            ct.Register(() => tcs.TrySetCanceled());
+            return tcs.Task;
+        }
+    }
+
+    private static async Task WaitFor(Func<bool> condition, string message = "condition not met")
+    {
+        var end = DateTimeOffset.UtcNow.AddMilliseconds(5000);
+        while (!condition())
+        {
+            if (DateTimeOffset.UtcNow >= end) throw new TimeoutException("StatusLineRefresher test timeout: " + message);
+            await Task.Delay(20);
+        }
+    }
+
+    // Rapid calls within MinimumInterval collapse to one run via debounce.
+    internal static async Task StatusLineRefresherDebouncesSingleRunFromRapidTriggers()
+    {
+        var clock = new FakeClock();
+        var count = 0;
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", false);
+        var discovery = new StatusLineDiscovery(null, user);
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => new AppSnapshot(),
+            Wire.Id(),
+            (_, _, _) => { Interlocked.Increment(ref count); return Task.FromResult(new StatusLineResult([], null, 0, false)); },
+            clock);
+
+        // First request: no _updatedAt, runs immediately.
+        refresher.RequestRefresh(FreshContext());
+        Check(count == 1, "first run executed immediately");
+
+        // Second request within 2 s: debounced — sets pending and schedules a delay.
+        refresher.RequestRefresh(FreshContext());
+        Check(count == 1, "second request within interval is debounced");
+
+        // Third rapid request: pending already set → ignored by the debouncer.
+        refresher.RequestRefresh(FreshContext());
+        Check(count == 1, "third rapid request is collapsed onto the pending flag");
+
+        // Advance past the interval and fire the delay → pending run executes.
+        clock.Advance(StatusLineRefresher.MinimumInterval);
+        clock.CompleteAll();
+        await WaitFor(() => count == 2, "debounce fires second run");
+        Check(count == 2, "exactly two runs despite three rapid requests");
+    }
+
+    // A run whose generation no longer matches is discarded without emitting StateChanged.
+    internal static async Task StatusLineRefresherGenerationCounterDiscardsStaleResult()
+    {
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", false);
+        var discovery = new StatusLineDiscovery(null, user);
+        var runGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var changes = 0;
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => new AppSnapshot(),
+            Wire.Id(),
+            async (_, _, _) => { await runGate.Task; return new StatusLineResult([], null, 0, false); });
+        refresher.StateChanged += () => Interlocked.Increment(ref changes);
+
+        refresher.RequestRefresh(FreshContext()); // starts run, blocked on gate
+        await Task.Delay(40); // let the async run start
+        refresher.Close(); // increments generation — in-flight result is stale
+
+        runGate.SetResult(); // unblock the runner
+        await Task.Delay(100); // give it time to try to complete
+        Check(changes == 0, "stale run after Close must not fire StateChanged");
+        Check(refresher.Result is null, "result stays null after generation mismatch");
+    }
+
+    // When a refresh is requested while a run is in progress, the refresher re-runs once after.
+    internal static async Task StatusLineRefresherRerunsWhenPendingDuringARun()
+    {
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", false);
+        var discovery = new StatusLineDiscovery(null, user);
+        var runCount = 0;
+        var firstGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => new AppSnapshot(),
+            Wire.Id(),
+            async (_, _, _) =>
+            {
+                var n = Interlocked.Increment(ref runCount);
+                if (n == 1) await firstGate.Task; else await secondGate.Task;
+                return new StatusLineResult([], null, 0, false);
+            });
+
+        refresher.RequestRefresh(FreshContext()); // first run starts
+        await WaitFor(() => runCount == 1, "first run started");
+
+        refresher.RequestRefresh(FreshContext()); // sets _pending while first run runs
+
+        firstGate.SetResult(); // complete first run → should trigger re-run
+        await WaitFor(() => runCount == 2, "re-run started because pending was set");
+
+        secondGate.SetResult();
+        await WaitFor(() => refresher.Result is not null, "second run completed");
+        Check(runCount == 2, "exactly two runs: original + one re-run for the pending request");
+    }
+
+    // Requests after Close are ignored — the session is gone.
+    internal static Task StatusLineRefresherIgnoresRequestsAfterClose()
+    {
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", false);
+        var discovery = new StatusLineDiscovery(null, user);
+        var runCount = 0;
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => new AppSnapshot(),
+            Wire.Id(),
+            (_, _, _) => { runCount++; return Task.FromResult(new StatusLineResult([], null, 0, false)); });
+
+        refresher.Close();
+        refresher.RequestRefresh(FreshContext());
+        Check(runCount == 0, "no run started after Close");
+        return Task.CompletedTask;
+    }
+
+    // Only one command can run per session at a time.
+    internal static async Task StatusLineRefresherNeverStartsTwoCommandsAtOnce()
+    {
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", false);
+        var discovery = new StatusLineDiscovery(null, user);
+        var concurrent = 0;
+        var everTwo = false;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => new AppSnapshot(),
+            Wire.Id(),
+            async (_, _, _) =>
+            {
+                if (Interlocked.Increment(ref concurrent) > 1) everTwo = true;
+                await gate.Task;
+                Interlocked.Decrement(ref concurrent);
+                return new StatusLineResult([], null, 0, false);
+            });
+
+        var ctx = FreshContext();
+        refresher.RequestRefresh(ctx);
+        refresher.RequestRefresh(ctx); // must not start a second runner
+        refresher.RequestRefresh(ctx);
+
+        gate.SetResult();
+        await WaitFor(() => refresher.Result is not null, "run completed");
+        Check(!everTwo, "never more than one concurrent run per session");
+    }
+
+    // While the workspace command is gated, the user command runs and untrusted is populated.
+    internal static async Task StatusLineRefresherFallsBackToUserCommandWhileWorkspaceIsGated()
+    {
+        var ws = new StatusLineConfig("echo ws", 0, "프로젝트 설정", FromWorkspace: true);
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", FromWorkspace: false);
+        var discovery = new StatusLineDiscovery(ws, user);
+        var workspaceId = Wire.Id();
+        var snapshot = new AppSnapshot();
+
+        StatusLineConfig? ranWith = null;
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => snapshot,
+            workspaceId,
+            (cfg, _, _) => { ranWith = cfg; return Task.FromResult(new StatusLineResult([], null, 0, false)); });
+
+        refresher.RequestRefresh(FreshContext());
+        await WaitFor(() => refresher.Result is not null, "run completed");
+
+        Check(ranWith?.Command == "echo user", "user command ran while workspace was gated");
+        Check(refresher.Untrusted?.Command == "echo ws", "workspace command shown as untrusted question");
+        Check(refresher.Config?.Command == "echo user", "Config reflects the user command that actually ran");
+    }
+
+    // Trusting the workspace fingerprint unlocks the workspace command on the next refresh.
+    internal static async Task StatusLineRefresherTrustUnblocksWorkspaceCommand()
+    {
+        var ws = new StatusLineConfig("echo ws", 0, "프로젝트 설정", FromWorkspace: true);
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", FromWorkspace: false);
+        var discovery = new StatusLineDiscovery(ws, user);
+        var workspaceId = Wire.Id();
+        var snapshot = new AppSnapshot();
+
+        StatusLineConfig? lastRan = null;
+        var runCount = 0;
+        var refresher = new StatusLineRefresher(
+            () => discovery,
+            () => snapshot,
+            workspaceId,
+            (cfg, _, _) => { lastRan = cfg; Interlocked.Increment(ref runCount); return Task.FromResult(new StatusLineResult([], null, 0, false)); });
+
+        // First run: gated — user command runs.
+        refresher.RequestRefresh(FreshContext());
+        await WaitFor(() => runCount == 1, "first run completed");
+        Check(lastRan?.Command == "echo user", "user command ran before trust");
+
+        // Trust the workspace command then force a refresh.
+        snapshot = StatusLineTrust.Trust(snapshot, ws, workspaceId);
+        refresher.RequestRefresh(FreshContext(), force: true);
+        await WaitFor(() => runCount == 2, "second run after trust");
+        Check(lastRan?.Command == "echo ws", "workspace command ran after trust");
+        Check(refresher.Untrusted is null, "untrusted question cleared after trust");
+    }
+
+    // A level whose entry is not a command is disabled, and a disabled or absent entry
+    // runs nothing and shows nothing — macOS Discovery.workspaceDisabled / Preferred.
+    internal static async Task StatusLineRefresherShowsNothingForDisabledOrMissingEntry()
+    {
+        var user = new StatusLineConfig("echo user", 0, "사용자 설정", false);
+
+        // A workspace entry that is not a command disables the level outright — it must not
+        // fall through to the user command.
+        var runCount = 0;
+        var disabled = new StatusLineRefresher(
+            () => new StatusLineDiscovery(null, user, WorkspaceDisabled: true),
+            () => new AppSnapshot(),
+            Wire.Id(),
+            (_, _, _) => { Interlocked.Increment(ref runCount); return Task.FromResult(new StatusLineResult([], null, 0, false)); });
+        disabled.RequestRefresh(FreshContext());
+        await Task.Delay(60);
+        Check(runCount == 0, "a disabled level must not run any command");
+        Check(disabled.Config is null, "disabled level shows no config");
+        Check(disabled.Untrusted is null, "disabled level asks no trust question");
+        Check(disabled.Result is null, "disabled level shows nothing");
+
+        // No entry at either level: nothing to run, nothing to draw.
+        var missingRuns = 0;
+        var missing = new StatusLineRefresher(
+            () => new StatusLineDiscovery(null, null),
+            () => new AppSnapshot(),
+            Wire.Id(),
+            (_, _, _) => { Interlocked.Increment(ref missingRuns); return Task.FromResult(new StatusLineResult([], null, 0, false)); });
+        missing.RequestRefresh(FreshContext());
+        await Task.Delay(60);
+        Check(missingRuns == 0, "no config means no command runs");
+        Check(missing.Config is null && missing.Result is null, "no config shows nothing");
+    }
+
     // The shell is the one Claude Code uses, so a command that works in the CLI works in the app.
     public static Task ShellFollowsClaudeCodeOnWindows()
     {
