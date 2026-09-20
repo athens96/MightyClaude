@@ -40,6 +40,8 @@ public sealed partial class MainWindow : Window
     internal Func<string, CancellationToken, Task<CliUpdateResult>>? smokeCliUpdater;
     internal Func<StatusLineDiscovery>? smokeStatusLineDiscovery;
     internal Func<StatusLineConfig, StatusLineContext, CancellationToken, Task<StatusLineResult>>? smokeStatusLineRunner;
+    private bool dialogOpen;
+    private Func<ContentDialog, TextBox, StackPanel, Task<ContentDialogResult>>? smokeAskName;
     public MainWindow(StartupOptions options)
     {
         this.options = options;

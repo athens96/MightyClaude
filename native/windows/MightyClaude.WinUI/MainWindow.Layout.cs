@@ -196,7 +196,7 @@ public sealed partial class MainWindow
         if (!views.TryGetValue(selected, out var pane)) { pane = new(this, selected); pane.InitRefresher(); views[selected] = pane; }
         if (paneHosts.ContainsKey(selected)) throw new InvalidOperationException("같은 실행 창이 두 레이아웃 그룹에 연결되어 있습니다.");
         var paneHost = new Border(); paneHosts.Add(selected, paneHost);
-        paneHost.Child = pane.Container; Grid.SetRow(paneHost, 1); group.Children.Add(paneHost); pane.Refresh();
+        paneHost.Child = pane.Container; paneHost.ContextFlyout = SessionMenu(selected); Grid.SetRow(paneHost, 1); group.Children.Add(paneHost); pane.Refresh();
         var hint = new Border { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 100, 149, 237)), BorderBrush = new SolidColorBrush(Colors.CornflowerBlue), BorderThickness = new(2), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = new TextBlock { Text = "탭으로 합치기", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         Grid.SetRowSpan(hint, 2); group.Children.Add(hint);
         group.DragOver += (_, args) =>
