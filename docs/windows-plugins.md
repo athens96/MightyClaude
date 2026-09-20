@@ -95,12 +95,19 @@ The two sentences a remote workspace shows are the macOS originals, unchanged:
 
 ---
 
-## Codex `/plugins`
+## Codex plugins
 
 The same plugin window serves both Claude and Codex. The provider string
 `"codex"` selects a `CodexPluginReader` in `ShowPluginBrowser`; the reader
 implements `IPluginReader` the same way `ClaudePluginReader` does and returns
-the same `ClaudePluginSnapshot` type.
+the same `ClaudePluginSnapshot` type. `CodexPluginStrings` holds only what Codex
+says differently; everything both providers say stays in `PluginStrings` and is
+reused unchanged, so the Claude list behaves exactly as before.
+
+`/plugins` reaches this window from the Codex palette and the run pane menu.
+`SlashPalette.Builtins` no longer filters anything and
+`SlashPalette.UnavailableActions` stays empty, so no app action is left out of
+the Windows palette (`docs/windows-slash-commands.md`).
 
 ### How the Codex list is read
 
