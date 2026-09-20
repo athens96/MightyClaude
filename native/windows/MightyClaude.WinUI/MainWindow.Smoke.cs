@@ -53,6 +53,7 @@ public sealed partial class MainWindow
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
+            result["rename"] = await RunRenameSmoke();
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -99,6 +100,80 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
+    private async Task<Dictionary<string, object?>> RunRenameSmoke()
+    {
+        var checks = new Dictionary<string, object?>();
+        var fixtureSession = service.Snapshot.Sessions[0];
+        var originalTitle = fixtureSession.Title;
+        try
+        {
+            var currentPrefilled = false;
+            var emptyDisablesSave = false;
+            var tooLongDisablesSave = false;
+            var tooLongShowsCaption = false;
+            var lineBreakDisablesSave = false;
+            var lineBreakShowsCaption = false;
+
+            smokeAskName = async (dialog, field, errors) =>
+            {
+                currentPrefilled = field.Text == originalTitle;
+                // Empty name: save must be disabled, no caption (macOS behaviour)
+                field.Text = "";
+                await Task.Delay(20);
+                emptyDisablesSave = !dialog.IsPrimaryButtonEnabled;
+                // 121-char name: save disabled, length caption shown
+                field.Text = new string('가', 121);
+                await Task.Delay(20);
+                tooLongDisablesSave = !dialog.IsPrimaryButtonEnabled;
+                tooLongShowsCaption = errors.Children.OfType<TextBlock>().Any(t => t.Text == RenameStrings.ErrorTooLong);
+                // Line break: save disabled, control-character caption shown
+                field.Text = "hello\rworld";
+                await Task.Delay(20);
+                lineBreakDisablesSave = !dialog.IsPrimaryButtonEnabled;
+                lineBreakShowsCaption = errors.Children.OfType<TextBlock>().Any(t => t.Text == RenameStrings.ErrorControlCharacter);
+                // Save a valid Korean name
+                field.Text = "변경된 이름";
+                await Task.Delay(20);
+                return ContentDialogResult.Primary;
+            };
+            await RenameSession(fixtureSession.Id);
+
+            Require(currentPrefilled, "이름 변경 대화창에 현재 이름이 미리 채워지지 않았습니다.");
+            Require(emptyDisablesSave, "빈 이름에서 저장 버튼이 비활성화되지 않았습니다.");
+            Require(tooLongDisablesSave, "121자 이름에서 저장 버튼이 비활성화되지 않았습니다.");
+            Require(tooLongShowsCaption, "121자 이름에서 길이 초과 메시지가 표시되지 않았습니다.");
+            Require(lineBreakDisablesSave, "줄바꿈 이름에서 저장 버튼이 비활성화되지 않았습니다.");
+            Require(lineBreakShowsCaption, "줄바꿈 이름에서 줄바꿈 메시지가 표시되지 않았습니다.");
+            checks["validationRulesMatchMacOS"] = true;
+
+            // Verify the new name appears in the snapshot, tab indicator and sidebar
+            await WaitUI(() => service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).Title == "변경된 이름");
+            Require(tabIndicators.ContainsKey(fixtureSession.Id), "이름 저장 후 탭 지시자가 없습니다.");
+            var sidebarTitleFound = sessionLinks.Children.OfType<Button>()
+                .Select(b => b.Content).OfType<Grid>()
+                .Where(g => g.Children.Count > 1)
+                .Select(g => g.Children[1]).OfType<TextBlock>()
+                .Any(t => t.Text == "변경된 이름");
+            Require(sidebarTitleFound, "사이드바에 변경된 이름이 표시되지 않았습니다.");
+            checks["nameInTabAndSidebar"] = true;
+
+            // Cancel a second rename — name must not change
+            smokeAskName = (_, _, _) => Task.FromResult(ContentDialogResult.None);
+            await RenameSession(fixtureSession.Id);
+            Require(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).Title == "변경된 이름", "취소 후 이름이 바뀌었습니다.");
+            checks["cancelPreservesName"] = true;
+
+            checks["passed"] = true;
+        }
+        finally
+        {
+            smokeAskName = null;
+            await service.RenameSessionAsync(fixtureSession.Id, originalTitle);
+            Render();
+        }
+        return checks;
+    }
+
     // Drives both the real CLI update section and the real status line refresher with fake
     // runners: records both under key liveWiring and restores everything it changed.
     private async Task<Dictionary<string, object?>> RunLiveWiringSmoke()

@@ -62,14 +62,24 @@ public sealed partial class MainWindow
     }
     private MenuFlyout WorkspaceMenu(string id)
     {
-        var menu = new MenuFlyout(); menu.Items.Add(MenuItem(RenameStrings.MenuEntry, () => RenameWorkspace(id)));
-        menu.Items.Add(MenuItem("목록에서 제거", () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); }))); return menu;
+        var rename = new MenuFlyoutItem { Text = RenameStrings.MenuEntry };
+        rename.Click += async (_, _) => await RenameWorkspace(id);
+        var menu = new MenuFlyout();
+        menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
+        menu.Items.Add(rename);
+        menu.Items.Add(MenuItem("목록에서 제거", () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); })));
+        return menu;
     }
     private MenuFlyout SessionMenu(string id)
     {
-        var menu = new MenuFlyout(); menu.Items.Add(MenuItem(RenameStrings.MenuEntry, () => RenameSession(id)));
+        var rename = new MenuFlyoutItem { Text = RenameStrings.MenuEntry };
+        rename.Click += async (_, _) => await RenameSession(id);
+        var menu = new MenuFlyout();
+        menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
+        menu.Items.Add(rename);
         menu.Items.Add(MenuItem("집중 보기 / 돌아가기", () => Act(async () => { await SelectLayoutSession(id); await ApplyLayoutPreset(LayoutMode(service.Snapshot, service.Snapshot.ActiveWorkspaceId) == "focus" ? "custom" : "focus"); })));
-        menu.Items.Add(MenuItem("닫기", () => CloseSession(id))); return menu;
+        menu.Items.Add(MenuItem("닫기", () => CloseSession(id)));
+        return menu;
     }
     private Task CloseSession(string id) => Act(async () => { await service.StopAsync(id); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() }); Render(); });
     /// <summary>
@@ -102,7 +112,15 @@ public sealed partial class MainWindow
         field.TextChanged += (_, _) => Validate();
         Validate();
         dialog.Opened += (_, _) => { field.Focus(FocusState.Programmatic); field.SelectAll(); };
-        return await dialog.ShowAsync() == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null;
+        dialogOpen = true;
+        try
+        {
+            var result = smokeAskName is { } driver
+                ? await driver(dialog, field, errors)
+                : await dialog.ShowAsync();
+            return result == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null;
+        }
+        finally { dialogOpen = false; }
     }
     private Task RenameWorkspace(string id) => Act(async () =>
     {
