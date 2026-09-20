@@ -328,6 +328,8 @@ public static class AppUpdateSmoke
         new() { Phase = AppUpdatePhase.Staging, Availability = FixtureAvailability },
         new() { Phase = AppUpdatePhase.Ready, Availability = FixtureAvailability },
         new() { Phase = AppUpdatePhase.Installing, Availability = FixtureAvailability },
+        new() { Phase = AppUpdatePhase.UpToDate },
+        new() { Phase = AppUpdatePhase.Failed, ErrorMessage = "업데이트 확인 중 오류가 발생했습니다." },
     ];
 
     /// The status sentences and button labels the section must show for the
