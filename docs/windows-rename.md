@@ -55,5 +55,18 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 
 `MainWindow.Navigation.cs` — `WorkspaceMenu`·`SessionMenu`가 `RenameStrings.MenuEntry`를 띄우고
 `RenameDialog`가 `RenameSupport.Messages`·`IsValid`·`DisplayName`만 사용한다.
+
+macOS의 네 자리에 같은 항목이 붙는다.
+
+| macOS | Windows |
+|---|---|
+| `WorkspaceView.swift:155` 워크스페이스 컨텍스트 메뉴 | `MainWindow.cs`의 워크스페이스 목록 항목 `ContextFlyout` = `WorkspaceMenu` |
+| `WorkspaceView.swift:187` 사이드바 실행 창 컨텍스트 메뉴 | `MainWindow.cs`의 사이드바 실행 창 단추 `ContextFlyout` = `SessionMenu` |
+| `SessionPaneView.swift:198` 실행 창 메뉴 | `MainWindow.cs`의 `MoreMenu`(실행 창 `···`)와 `MainWindow.Layout.cs`의 실행 창 본문 `ContextFlyout` |
+| `PaneDockDrag.swift:198` 탭 메뉴 | `MainWindow.Layout.cs`의 탭 `ContextFlyout`과 탭 더블 탭 |
+
+네 자리 모두 다른 대화상자가 열려 있으면 꺼진다 — `menu.Opening`에서 `IsEnabled = !dialogOpen`.
+원격 워크스페이스에도 조건 없이 보인다. macOS가 `이름 변경…`에는 경비를 걸지 않고
+`workspace.remote == nil`을 `Finder에서 보기`에만 걸기 때문이다.
 저장은 `DesktopService.RenameWorkspaceAsync`·`RenameSessionAsync`를 거치므로
 사이드바·탭·창이 같은 스냅샷에서 다시 그려진다. WinUI에는 새 문구 리터럴이 없다.
