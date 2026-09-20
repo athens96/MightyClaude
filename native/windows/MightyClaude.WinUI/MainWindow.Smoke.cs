@@ -50,6 +50,7 @@ public sealed partial class MainWindow
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
+            result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
