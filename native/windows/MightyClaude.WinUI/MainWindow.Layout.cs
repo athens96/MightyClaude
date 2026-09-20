@@ -193,7 +193,7 @@ public sealed partial class MainWindow
             var tabCell = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 }; tabCell.Children.Add(tab);
             var close = Button("×", () => CloseSession(id)); close.MinWidth = 0; close.Width = 22; close.Height = 30; close.Padding = new(0); close.Background = new SolidColorBrush(Colors.Transparent); close.BorderThickness = new(0); AutomationProperties.SetName(close, session.Title + " 닫기"); tabCell.Children.Add(close); tabs.Children.Add(tabCell);
         }
-        if (!views.TryGetValue(selected, out var pane)) { pane = new(this, selected); views[selected] = pane; }
+        if (!views.TryGetValue(selected, out var pane)) { pane = new(this, selected); pane.InitRefresher(); views[selected] = pane; }
         if (paneHosts.ContainsKey(selected)) throw new InvalidOperationException("같은 실행 창이 두 레이아웃 그룹에 연결되어 있습니다.");
         var paneHost = new Border(); paneHosts.Add(selected, paneHost);
         paneHost.Child = pane.Container; Grid.SetRow(paneHost, 1); group.Children.Add(paneHost); pane.Refresh();
