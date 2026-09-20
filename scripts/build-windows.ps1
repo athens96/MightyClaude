@@ -36,7 +36,21 @@ try {
         }
         throw 'Core 검증 실패'
     }
-    dotnet publish native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj --configuration $Configuration --runtime "win-$Architecture" --self-contained true -p:WindowsAppSDKSelfContained=true "-p:Platform=$platform" --output $OutputDirectory
+    # The update public key and the default manifest address go into the build
+    # the way scripts/build-macos.sh stamps Info.plist. Without MIGHTY_UPDATE_PUBLIC_KEY
+    # the app carries no key and refuses to check for updates at all.
+    $updateKey = $env:MIGHTY_UPDATE_PUBLIC_KEY
+    $updateUrl = $env:MIGHTY_UPDATE_URL
+    if ($updateKey) {
+        try { $keyBytes = [Convert]::FromBase64String($updateKey.Trim()) } catch { throw 'MIGHTY_UPDATE_PUBLIC_KEY가 base64가 아닙니다.' }
+        if ($keyBytes.Length -ne 32) { throw "MIGHTY_UPDATE_PUBLIC_KEY는 raw Ed25519 공개 키 32바이트여야 합니다 ($($keyBytes.Length)바이트)." }
+    }
+    if ($updateUrl -and -not $updateUrl.StartsWith('https://')) { throw 'MIGHTY_UPDATE_URL은 https 주소여야 합니다.' }
+    $updateProperties = @()
+    if ($updateKey) { $updateProperties += "-p:MightyUpdatePublicKey=$($updateKey.Trim())" }
+    if ($updateUrl) { $updateProperties += "-p:MightyUpdateManifestUrl=$($updateUrl.Trim())" }
+
+    dotnet publish native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj --configuration $Configuration --runtime "win-$Architecture" --self-contained true -p:WindowsAppSDKSelfContained=true "-p:Platform=$platform" @updateProperties --output $OutputDirectory
     if ($LASTEXITCODE -ne 0) { throw 'WinUI 빌드 실패' }
     foreach ($required in @('LICENSE.txt', 'MightyClaude.exe', 'MightyClaude.dll', 'MightyClaude.runtimeconfig.json', 'resources.pri', 'coreclr.dll', 'hostfxr.dll', 'Microsoft.UI.Xaml.dll', 'Assets/MightyClaude.ico', 'Assets/mightyclaude.png', 'claude-mods/.claude-plugin/plugin.json')) {
         if (-not (Test-Path (Join-Path $OutputDirectory $required) -PathType Leaf)) { throw "배포 파일 누락: $required" }
@@ -48,6 +62,8 @@ try {
         architecture = $Architecture; configuration = $Configuration; dotnetSdk = $sdkVersion
         windowsAppSdk = $appSdk; sourceCommit = $env:GITHUB_SHA
         deployment = 'unpackaged-self-contained-folder'; signed = $false
+        # Whether this build can check for updates at all (Windows rule 1).
+        updateChecks = [bool]$updateKey; updateManifestUrl = $updateUrl
     } | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'build-info.json') -Encoding utf8
     # ZipFile includes dot directories such as the required Claude plugin manifest.
     $archive = Join-Path (Split-Path -Parent $OutputDirectory) "MightyClaude-windows-$Architecture.zip"

@@ -26,6 +26,13 @@
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The update public key and the default manifest address, the way
+         scripts/build-macos.sh stamps Info.plist on macOS. A build without
+         MightyUpdatePublicKey carries no key and never checks for updates. -->
+    <AssemblyMetadata Include="MightyUpdatePublicKey" Value="$(MightyUpdatePublicKey)" Condition="'$(MightyUpdatePublicKey)' != ''" />
+    <AssemblyMetadata Include="MightyUpdateManifestURL" Value="$(MightyUpdateManifestUrl)" Condition="'$(MightyUpdateManifestUrl)' != ''" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Stable 2026-08-13: https://learn.microsoft.com/windows/apps/windows-app-sdk/release-channels -->
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <ProjectReference Include="../MightyClaude.Core/MightyClaude.Core.csproj" />

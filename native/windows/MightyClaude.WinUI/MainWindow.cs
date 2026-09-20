@@ -88,13 +88,13 @@ public sealed partial class MainWindow : Window
         statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         statusRow.Children.Add(BuildAccountUsage()); Grid.SetColumn(status, 1); statusRow.Children.Add(status);
         footer.Children.Add(statusRow); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAccountUsageAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         _ = Initialize();
     }
     private async Task Initialize()
     {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
         try { await service.InitializeAsync(); Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
     }

@@ -130,6 +130,27 @@ public static class AppUpdateReplacement
     /// which is the only state that needs the backup put back.
     public static bool ShouldRollback(bool backupTaken, bool installed) => backupTaken && !installed;
 
+    /// Removes install-folder backups a previous replacement could not delete.
+    ///
+    /// OS-bound: on Windows the helper runs from the folder it renames to the
+    /// backup, so it cannot delete its own running image. The next start of the
+    /// new app clears what is left. Returns how many backups were removed.
+    public static int PruneBackups(string installDirectory)
+    {
+        var install = Path.GetFullPath(installDirectory.TrimEnd(Path.DirectorySeparatorChar));
+        var parent = Path.GetDirectoryName(install);
+        if (parent is null || !Directory.Exists(parent)) return 0;
+        var prefix = Path.GetFileName(install) + ".backup-";
+        var removed = 0;
+        foreach (var folder in Directory.GetDirectories(parent))
+        {
+            if (!Path.GetFileName(folder).StartsWith(prefix, StringComparison.Ordinal)) continue;
+            try { Directory.Delete(folder, true); removed++; }
+            catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        return removed;
+    }
+
     /// Verifies the package SHA-256 again immediately before the swap.
     /// Returns null when it matches, the refusal sentence otherwise.
     public static async Task<string?> VerifyBeforeSwapAsync(
