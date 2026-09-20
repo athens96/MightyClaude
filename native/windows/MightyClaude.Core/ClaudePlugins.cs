@@ -103,6 +103,23 @@ public static partial class ClaudePluginSupport
     public static bool Identifier(string? value) =>
         value is { Length: > 0 } && Encoding.UTF8.GetByteCount(value) <= 128 && IdentifierPattern().IsMatch(value);
 
+    /// The automation id of one control in the plugin window.
+    public static string AutomationId(string provider, string part) => provider + "-plugin-" + part;
+
+    /// A change this read-only window must never offer. The id's action part is
+    /// read one dash-separated word at a time, so the tab that lists installed
+    /// plugins ("tab-installed") is not mistaken for an install button and the
+    /// list reread ("reload") is not mistaken for a marketplace refresh.
+    private static readonly string[] ChangingWords =
+        ["install", "uninstall", "enable", "disable", "update", "scope", "refresh", "remove", "add"];
+
+    public static bool NamesAChange(string automationId, string provider)
+    {
+        var prefix = AutomationId(provider, "");
+        if (!automationId.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        return automationId[prefix.Length..].Split('-').Any(ChangingWords.Contains);
+    }
+
     /// "name@marketplace" split, both halves validated as identifiers.
     public static (string Name, string Marketplace)? PluginParts(string? value)
     {

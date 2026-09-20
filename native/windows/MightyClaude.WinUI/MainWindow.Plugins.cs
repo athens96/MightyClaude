@@ -224,7 +224,7 @@ public sealed partial class MainWindow
         return browser;
     }
 
-    private static string PluginAutomationId(string provider, string part) => provider + "-plugin-" + part;
+    private static string PluginAutomationId(string provider, string part) => ClaudePluginSupport.AutomationId(provider, part);
 
     // Every element the built dialog holds, so the smoke run finds its controls
     // by automation id the way a user finds them on screen.
@@ -342,9 +342,11 @@ public sealed partial class MainWindow
                 filter.SelectedIndex = 0;
 
                 // No control that would change anything may exist in this window.
+                // Core decides what an id names, so the installed tab's own id
+                // (tab-installed) is not counted as an install button.
                 mutating = PluginDescendants(dialog.Content).OfType<FrameworkElement>()
                     .Count(e => AutomationProperties.GetAutomationId(e) is { Length: > 0 } id
-                        && (id.Contains("install") || id.Contains("scope") || id.Contains("refresh") || id.Contains("uninstall")));
+                        && ClaudePluginSupport.NamesAChange(id, "claude"));
                 Require(dialog.PrimaryButtonText is null or "" && dialog.SecondaryButtonText is null or "",
                     "플러그인 창에는 목록을 바꾸는 단추가 없어야 합니다.");
                 Require(dialog.CloseButtonText == PluginStrings.ButtonClose, "닫기 단추의 문구가 다릅니다.");
