@@ -388,6 +388,11 @@ internal static class Verification
         await Test("status line shell follows Claude Code on Windows", StatusLineVerification.ShellFollowsClaudeCodeOnWindows);
         await Test("cli runner runs a real short command", CliRunnerVerification.RealShortCommand);
         await Test("cli runner kills a process that exceeds the timeout", CliRunnerVerification.KillsCommandThatExceedsTimeout);
+        await Test("cli runner reports the exit code and error output of a failing command", CliRunnerVerification.ReportsExitCodeAndErrorOutput);
+        await Test("cli runner caps the output it captures", CliRunnerVerification.CapsTheCapturedOutput);
+        await Test("cli runner keeps arguments and output out of the log unredacted", CliRunnerVerification.KeepsSecretsOutOfTheLog);
+        await Test("cli runner kills the whole process group when a command times out", CliRunnerVerification.TimeoutKillsTheWholeProcessGroup);
+        await Test("cli runner cancellation stops the command and its children", CliRunnerVerification.CancellationStopsTheCommandAndItsChildren);
         await Test("strings match macOS", StringsVerification.MatchMacOS);
         await Test("tool permission handshake sends initialize before the prompt", ToolPermissionVerification.HandshakeRunsBeforeThePrompt);
         await Test("tool permission handshake failure and timeout fail closed", ToolPermissionVerification.HandshakeFailureAndTimeoutFailClosed);
