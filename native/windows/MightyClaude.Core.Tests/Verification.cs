@@ -460,6 +460,12 @@ internal static class Verification
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
         await Test("settings sections smoke flips the CLI auto-update switch and restores it", SettingsSectionsVerification.SmokeFlipsTheAutoUpdateSwitchAndRestoresIt);
         await Test("settings sections smoke shows every fixture status and rejects a wrong screen", SettingsSectionsVerification.SmokeShowsEveryFixtureStatusAndRejectsAWrongScreen);
+        await Test("cli account strings match macOS", StringsVerification.CliAccountStringsMatchMacOS);
+        await Test("cli account claude and codex statuses expose account labels only", CliAccountVerification.ClaudeAndCodexStatusesExposeAccountLabelsOnly);
+        await Test("cli account gemini status and logout work on its account files", CliAccountVerification.GeminiStatusAndLogoutWorkOnItsAccountFiles);
+        await Test("cli account commands are the CLIs own", CliAccountVerification.CommandsAreTheCLIsOwn);
+        await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
+        await Test("cli account smoke shows fixture statuses and confirmation flow works", CliAccountVerification.SmokeShowsFixtureStatusesAndConfirmationFlowWorks);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();

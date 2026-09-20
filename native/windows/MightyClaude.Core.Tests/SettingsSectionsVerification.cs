@@ -14,6 +14,7 @@ internal static class SettingsSectionsVerification
             "화면",
             CliUpdateStrings.SectionTitle,
             "이 PC의 CLI",
+            CliAccountStrings.SectionTitle,
             "앱 정보",
         }), "Windows section titles are not the macOS order: " + string.Join(", ", titles));
 
@@ -42,7 +43,6 @@ internal static class SettingsSectionsVerification
             SettingsSections.Components,
             SettingsSections.MobileRemote,
             SettingsSections.Companion,
-            SettingsSections.CliAccounts,
             SettingsSections.ClaudeMods,
             SettingsSections.AppUpdate,
         };
@@ -66,18 +66,18 @@ internal static class SettingsSectionsVerification
         // Simulate the one-line registration a later feature makes: give an
         // absent slot a title, then filter and order exactly as SettingsSections does.
         var registered = SettingsSections.MacOrder
-            .Select(slot => slot.Id == SettingsSections.CliAccounts ? slot with { WindowsTitle = "CLI 계정" } : slot)
+            .Select(slot => slot.Id == SettingsSections.ClaudeMods ? slot with { WindowsTitle = "Claude Mods" } : slot)
             .Where(slot => slot.OnWindows)
             .Select(slot => slot.WindowsTitle!)
             .ToArray();
 
         Check(registered.Length == before.Count + 1, "registration must add exactly one section");
-        Check(registered.Contains("CLI 계정"), "the registered section must appear");
+        Check(registered.Contains("Claude Mods"), "the registered section must appear");
         // Every previously shown section keeps its title and relative order.
-        Check(registered.Where(title => title != "CLI 계정").SequenceEqual(before),
+        Check(registered.Where(title => title != "Claude Mods").SequenceEqual(before),
             "registering a section must not reorder or rename the existing sections");
-        // It lands in the macOS slot, between the provider list and 앱 정보.
-        Check(Array.IndexOf(registered, "CLI 계정") == Array.IndexOf(registered, "이 PC의 CLI") + 1,
+        // It lands in the macOS slot, after CLI 계정.
+        Check(Array.IndexOf(registered, "Claude Mods") == Array.IndexOf(registered, CliAccountStrings.SectionTitle) + 1,
             "the registered section must land in its macOS slot");
         // The real catalog is untouched by the simulation.
         Check(SettingsSections.WindowsTitles.SequenceEqual(before), "the catalog must not be mutated");
