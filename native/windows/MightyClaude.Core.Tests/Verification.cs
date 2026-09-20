@@ -432,6 +432,11 @@ internal static class Verification
         await Test("settings preferences missing key keeps default off and version stays 1", SettingsPreferencesVerification.MissingKeyKeepsDefaultOff);
         await Test("settings preferences explicit on and off persist across state store reloads", SettingsPreferencesVerification.ExplicitOnAndOffPersistAcrossReloads);
         await Test("settings preferences only JSON booleans enable the setting and malformed values keep sessions", SettingsPreferencesVerification.OnlyJsonBooleansEnableSettingAndMalformedValuesKeepSessions);
+        await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
+        await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
+        await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
+        await Test("settings sections smoke flips the CLI auto-update switch and restores it", SettingsSectionsVerification.SmokeFlipsTheAutoUpdateSwitchAndRestoresIt);
+        await Test("settings sections smoke shows every fixture status and rejects a wrong screen", SettingsSectionsVerification.SmokeShowsEveryFixtureStatusAndRejectsAWrongScreen);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
