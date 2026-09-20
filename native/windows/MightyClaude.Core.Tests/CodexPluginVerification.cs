@@ -438,13 +438,20 @@ internal static class CodexPluginVerification
             "the smoke run must put back the two hooks it set");
         Check(CodexPluginSmokeOutcome.ResultKey == "codexPluginList", "the smoke key is codexPluginList");
 
-        // Looking changes nothing: no control in this window names a change.
+        // The Codex window offers only the two changes macOS has: install a
+        // plugin (user level) and refresh a marketplace.
         foreach (var part in ClaudePluginVerification.WindowAutomationParts(source))
-            Check(!ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("codex", part), "codex"),
-                "the read-only window must draw no control that names a change: " + part);
+        {
+            var id = ClaudePluginSupport.AutomationId("codex", part);
+            Check(!ClaudePluginSupport.NamesAChange(id, "codex") || ClaudePluginSupport.NamesAllowedChange(id, "codex"),
+                "the window must offer no change beyond install, scope and marketplace refresh: " + part);
+        }
         foreach (var change in new[] { "install-fmt", "marketplace-upgrade", "add-marketplace", "scope-picker" })
             Check(ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("codex", change), "codex"),
                 "a changing control must be caught: " + change);
+        foreach (var invented in new[] { "uninstall", "enable-fmt", "add-marketplace", "marketplace-upgrade" })
+            Check(!ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("codex", invented), "codex"),
+                "a change macOS does not have must stay refused: " + invented);
 
         // No Codex Korean typed directly in WinUI.
         var plugins = File.ReadAllText(Path.Combine(winui, "MainWindow.Plugins.cs"));

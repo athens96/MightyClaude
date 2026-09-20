@@ -372,6 +372,26 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
     public string? MarketplaceHelpText => ShowsMarketplaceHelp && IsCodex ? CodexPluginStrings.MarketplaceHelp : null;
 }
 
+/// What the GUI smoke run records under the key "pluginMarketplace" after it has
+/// driven the real plugin window with a fake reader through the install and
+/// marketplace refresh controls. No real claude or codex process starts.
+public sealed record PluginMarketplaceSmokeOutcome
+{
+    public const string ResultKey = "pluginMarketplace";
+
+    /// Number of scope options the Claude picker offered (3: local/project/user).
+    [JsonPropertyName("claudeScopeOptions")] public int ClaudeScopeOptions { get; init; }
+    /// Number of scope options the Codex picker offered (1: user only).
+    [JsonPropertyName("codexScopeOptions")] public int CodexScopeOptions { get; init; }
+    /// The result sentence after a successful install.
+    [JsonPropertyName("installResult")] public string InstallResult { get; init; } = "";
+    /// The result sentence after a cancelled operation.
+    [JsonPropertyName("cancelResult")] public string CancelResult { get; init; } = "";
+    /// The result sentence after a successful marketplace refresh.
+    [JsonPropertyName("refreshResult")] public string RefreshResult { get; init; } = "";
+    [JsonPropertyName("restored")] public bool Restored { get; init; }
+}
+
 /// What the GUI smoke run records under the key "claudePluginList" after it has
 /// driven the real plugin window with a fixture snapshot. No CLI is started.
 public sealed record ClaudePluginSmokeOutcome

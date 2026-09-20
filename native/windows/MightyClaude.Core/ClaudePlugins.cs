@@ -141,6 +141,22 @@ public static partial class ClaudePluginSupport
         return automationId[prefix.Length..].Split('-').Any(ChangingWords.Contains);
     }
 
+    /// The only changes the macOS app offers: install a plugin, choose the
+    /// scope it is installed into and refresh a registered marketplace. A
+    /// control whose id names any other change (uninstall, enable, disable, add
+    /// a marketplace) is a change Windows must not invent, so it is refused
+    /// even though NamesAChange also catches it.
+    private static readonly string[] AllowedChangeWords = ["install", "scope", "refresh"];
+
+    public static bool NamesAllowedChange(string automationId, string provider)
+    {
+        var prefix = AutomationId(provider, "");
+        if (!automationId.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        var words = automationId[prefix.Length..].Split('-');
+        return words.Any(ChangingWords.Contains)
+            && words.All(word => !ChangingWords.Contains(word) || AllowedChangeWords.Contains(word));
+    }
+
     /// "name@marketplace" split, both halves validated as identifiers.
     public static (string Name, string Marketplace)? PluginParts(string? value)
     {

@@ -518,9 +518,9 @@ internal static class ClaudePluginVerification
         Check(source.Contains("smokePluginRead = beforeRead") && source.Contains("smokePluginDialog = beforeDialog"),
             "the smoke run must put back the two hooks it set");
 
-        // Reading changes nothing, and the window proves it with Core's rule
-        // rather than a substring. Every id this file builds is read straight
-        // out of the source, so a control added later is judged too.
+        // The window offers only the two changes macOS has, and it proves it
+        // with Core's rule rather than a substring. Every id this file builds is
+        // read straight out of the source, so a control added later is judged too.
         Check(source.Contains("ClaudePluginSupport.NamesAChange("),
             "the read-only guard must ask Core what an id names");
         var parts = Regex.Matches(source, @"PluginAutomationId\(provider, ""([^""]+)""")
@@ -529,13 +529,26 @@ internal static class ClaudePluginVerification
         Check(parts.Contains("tab-installed") && parts.Contains("marketplace-filter") && parts.Contains("reload"),
             "the installed tab, the marketplace filter and the reload button must each carry an id");
         foreach (var part in parts)
-            Check(!ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("claude", part), "claude"),
-                "the read-only window must draw no control that names a change: " + part);
+        {
+            var id = ClaudePluginSupport.AutomationId("claude", part);
+            Check(!ClaudePluginSupport.NamesAChange(id, "claude") || ClaudePluginSupport.NamesAllowedChange(id, "claude"),
+                "the window must offer no change beyond install, scope and marketplace refresh: " + part);
+        }
 
-        // The rule still catches the controls the marketplace feature will add.
+        // The rule still catches every changing control...
         foreach (var change in new[] { "install-fmt", "uninstall", "scope-picker", "marketplace-refresh", "add-marketplace", "enable-fmt" })
             Check(ClaudePluginSupport.NamesAChange(ClaudePluginSupport.AutomationId("claude", change), "claude"),
                 "a changing control must be caught: " + change);
+
+        // ...and only the two macOS mutations are allowed through.
+        foreach (var allowed in new[] { "install-fmt", "scope-picker", "refresh-marketplaces" })
+            Check(ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("claude", allowed), "claude"),
+                "the macOS change must be allowed: " + allowed);
+        foreach (var invented in new[] { "uninstall", "enable-fmt", "disable-fmt", "add-marketplace", "remove-marketplace" })
+            Check(!ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("claude", invented), "claude"),
+                "a change macOS does not have must stay refused: " + invented);
+        Check(!ClaudePluginSupport.NamesAllowedChange(ClaudePluginSupport.AutomationId("claude", "reload"), "claude"),
+            "a control that changes nothing never counts as an allowed change");
         Check(!ClaudePluginSupport.NamesAChange("codex-plugin-install", "claude"),
             "one provider's window never judges another's ids");
 
