@@ -16,4 +16,4 @@ macOS (`SlashCommandPalette.swift`) draws the two row marks with SF Symbols — 
 
 One action is left out per provider rather than for everyone:
 
-- `OpenPlugins` — `/plugin` is back in the Claude palette; it opens the Claude plugin window (`docs/windows-plugins.md`, `MainWindow.Plugins.cs`). Codex's `/plugins` stays out of `SlashPalette.Builtins("codex")` until the Codex plugin feature is built, so the palette never shows a row that would do nothing. Gemini has no plugin browser on macOS either.
+- `OpenPlugins` — `/plugin` opens the Claude plugin window and `/plugins` opens the Codex plugin window (`docs/windows-plugins.md`, `MainWindow.Plugins.cs`). Both palettes include the action; `SlashPalette.UnavailableActions` is therefore empty today. Gemini has no plugin browser on macOS either, so its palette still omits the action.

@@ -1,7 +1,8 @@
-# Windows Claude plugin list: model shapes and decided differences
+# Windows plugin list: model shapes and decided differences
 
-Read-only view of a workspace's installed and available Claude plugins, shown
-in a window opened from the run-pane menu and from the `/plugin` slash command.
+Read-only view of a workspace's installed and available plugins, shown in one
+window that serves both providers: Claude, opened from the run-pane menu and
+from `/plugin`, and Codex, opened from the run-pane menu and from `/plugins`.
 Nothing here installs, removes, enables, disables or updates a plugin, and
 nothing adds or refreshes a marketplace.
 
@@ -79,6 +80,7 @@ reshaping the shared models.
 | Windows | macOS | Reason |
 |---------|-------|--------|
 | `"이 PC의 설치는 변경하지 않습니다."` | `"이 Mac의 설치는 변경하지 않습니다."` | Windows devices are not Macs. |
+| `"이 PC의 Codex 설치 목록과 마켓플레이스 목록입니다."` | `"이 Mac의 Codex 설치 목록과 마켓플레이스 목록입니다."` | The same word, the same reason, in `CodexPluginStrings.FooterNote`. |
 
 The full sentence (`PluginStrings.DetailRemote`) reads:
 > 원격 워크스페이스의 플러그인은 해당 호스트에서 관리하세요. **이 PC의** 설치는 변경하지 않습니다.
@@ -95,12 +97,106 @@ The two sentences a remote workspace shows are the macOS originals, unchanged:
 
 ## Codex `/plugins`
 
-Codex `/plugins` (`SlashCommandAction.OpenPlugins` for the Codex provider) is
-filtered out of the Windows slash palette by `SlashPalette.Builtins` until the
-Codex plugin screen is built. `SlashCommandCatalog.Builtins` keeps the macOS
-entry; only the Windows palette hides it. The `claude plugin palette …` Core
-check verifies both conditions.
+The same plugin window serves both Claude and Codex. The provider string
+`"codex"` selects a `CodexPluginReader` in `ShowPluginBrowser`; the reader
+implements `IPluginReader` the same way `ClaudePluginReader` does and returns
+the same `ClaudePluginSnapshot` type.
 
+### How the Codex list is read
+
+| # | Command | Timeout | Output cap |
+|---|---------|---------|------------|
+| 1 | `codex --version` | 4s | 160 displayed characters |
+| 2 | `codex plugin list --help` | 4s | probe: must name `--json` and `--available` |
+| 3 | `codex plugin add --help` | 4s | probe: must name `--json` |
+| 4 | `codex plugin marketplace list --help` | 4s | probe: must name `--json` |
+| 5 | `codex plugin marketplace upgrade --help` | 4s | probe: must name `--json` |
+| 6 | `codex plugin list --json --available` | 20s | 8 MiB |
+| 7 | `codex plugin marketplace list --json` | 20s | 512 KiB |
+
+Reading `--help` changes nothing, and the read path itself only ever runs
+commands 6 and 7. The Codex CLI does not export the many disable variables
+Claude does; only `GIT_TERMINAL_PROMPT=0` is set, exactly as macOS does, so the
+user's own `CODEX_HOME` still decides which user-level registry is read.
+
+Codex plugins are user level only. The parser records every installed row as
+`user`, and `ClaudePluginBrowser.SupportedScopes` keeps a row claiming another
+scope off the Codex window.
+
+### Codex answer shapes
+
+`ClaudePluginSupport.ParseCodexSnapshot` mirrors `CodexPluginService.parseSnapshot`
+and differs from the Claude parser in four ways, all of them the CLI's own shape:
+
+- the marketplace answer is `{"marketplaces": [...]}`, not a bare array;
+- a marketplace's kind comes from `marketplaceSource.sourceType`, and the Codex
+  whitelist is `local` / `remote` / `github` / `git` / `directory`;
+- an available row is identified by `pluginId` + `name` + `marketplaceName` +
+  `installed` + `enabled`, and a row whose `installPolicy` is neither
+  `AVAILABLE` nor `INSTALLED_BY_DEFAULT` is left out and counted in
+  `DetailRestrictedSuffix`;
+- an installed row must carry `"installed": true`.
+
+Unlike the Claude parser, a row the Codex CLI cannot describe is a `failed`
+status rather than a skipped row, because macOS throws there. A malformed or
+oversized answer is never a ready-but-empty list. A CLI that still answered but
+warned on stderr keeps its warning and gains `DetailWarningSuffix`.
+
+### Capability probe
+
+Before running either list command, the reader probes the `--help` output of all
+four plugin subcommands for the flags this screen and the later marketplace
+feature would use, in the order `CodexPluginService.command` probes them. A
+probe that fails, times out or does not name a flag becomes
+`ClaudePluginStatus.Unsupported` with `CodexPluginStrings.DetailUnsupported`,
+and the list commands are never run against that build.
+
+The version number itself never gates the screen: this CLI feature is still
+moving, so the help output is the honest answer to "does this build support
+it". Probing all four — including the two the marketplace feature will use —
+keeps a Windows verdict identical to the macOS one. (The Claude reader is
+different: Claude's plugin JSON has a known first release, so it gates on
+`>= 2.1.268` exactly as `ClaudePluginService` does.)
+
+### Codex status to sentence
+
+| Status | When | `CodexPluginStrings` |
+|--------|------|----------------------|
+| `ready` | both commands answered | `DetailReady` (always shown, even when ready) |
+| `ready` | marketplace list empty | `DetailNoMarketplaces` |
+| `missing` | no `codex` found on PATH | `DetailMissingCli` |
+| `unsupported` | a probe flag is absent | `DetailUnsupported` |
+| `failed` | the list command failed | `DetailListingFailed` |
+| `failed` | version could not be read | `DetailUnknownVersion` |
+| `failed` | the marketplace command failed | `PluginStrings.DetailMarketplacesFailed` |
+| `failed` | a run timed out, or the runner threw | `PluginStrings.DetailIncomplete` |
+| `failed` | malformed JSON or past a cap | `PluginStrings.DetailMalformed` |
+| `failed` | workspace path invalid / gone | `PluginStrings.DetailInvalidWorkspace` / `DetailMissingWorkspace` |
+| `cancelled` | a read requested after the window closed | `PluginStrings.DetailCancelled` |
+| `remote` | remote workspace | `PluginStrings.DetailRemote` |
+
+Install, `plugin marketplace add` and `plugin marketplace upgrade` belong to the
+marketplace feature and have no copy and no control here.
+
+### OS-bound string substitution
+
+`CodexPluginStrings.FooterNote` reads `이 PC의` where the macOS string reads
+`이 Mac의`. This substitution is noted in `docs/windows-parity.md` and is the
+only word changed from the macOS copy (`ClaudePluginView.swift`). Every other
+`CodexPluginStrings` constant is the macOS literal, verified by
+`CodexPluginVerification.StringsMatchMacOS`.
+
+### What changes between Claude and Codex in the shared window
+
+| Item | Claude | Codex |
+|------|--------|-------|
+| Title | `Claude 플러그인` | `Codex 플러그인` |
+| Scopes shown | local, project, user, managed, session | user only |
+| Footer sentence | `PluginStrings.FooterNote` | `CodexPluginStrings.FooterNote` |
+| Marketplace help | docs link | `CodexPluginStrings.MarketplaceHelp` sentence |
+| Status line when ready | hidden | `CodexPluginStrings.DetailReady` always shown |
+| CLI environment | 8 disable vars + `GIT_TERMINAL_PROMPT=0` | `GIT_TERMINAL_PROMPT=0` only |
+| CLI version gate | `>= 2.1.268` | capability probe (help-output flags) |
 
 ---
 
@@ -153,6 +249,8 @@ Each was decided without asking; the reason is the last column.
 | Window kind | separate 760×620 sheet | `ContentDialog`, body 700 wide, list 380 tall | WinUI has no sheet; this matches the rename dialog. |
 | Diagnostics output | SwiftUI `DisclosureGroup` | a button with the same copy that folds the text away | WinUI has no `DisclosureGroup`. |
 | Monospaced text | `.monospaced` | `FontFamily("Consolas")` | The same choice the other Windows screens make. |
+| Finding the Codex CLI | PATH entry + `codex` | PATH entry (max 64) + `codex.cmd`, `codex.exe`, `codex.bat`, no extension | An npm install on Windows is `codex.cmd`. |
+| The Codex empty-marketplace sentence | a SwiftUI `Text` under the empty copy | a `TextBlock` with the automation id `codex-plugin-marketplace-help` | WinUI needs an id for the smoke run to read it the way a user reads the screen. |
 
 ## What the window shows
 
@@ -176,6 +274,8 @@ belong to the marketplace feature.
 |-------------|------|
 | the run pane's `···` menu entry `Claude 플러그인` | `MainWindow.cs` `MoreMenu` → `OpenPluginBrowser` |
 | the `/plugin` slash command | `MainWindow.SlashPalette.cs` `PerformSlashAction` → `OpenPluginBrowser` |
+| the run pane's `···` menu entry `Codex 플러그인` | `MainWindow.cs` `MoreMenu` → `OpenPluginBrowser` (the entry is built for `claude` and `codex`) |
+| the `/plugins` slash command | `MainWindow.SlashPalette.cs` `PerformSlashAction` → `OpenPluginBrowser(pane.Provider)` |
 
 ## Checks
 
@@ -192,6 +292,21 @@ calling it a change when a word is `install`, `uninstall`, `enable`, `disable`,
 keeps the installed tab (`tab-installed`) from being mistaken for an install
 button. A Core check runs every id in the window's source through that rule, so
 a control added later is judged too.
+
+`CodexPluginVerification.cs` holds the `codex plugin …` checks, driven by a fake
+`ICliRunner` that answers `--version`, the four `--help` probes and the two
+`--json` list commands. It asserts that no call without `--help` ever names
+`add`, `upgrade`, `install`, `remove`, `enable`, `disable` or `update`: reading
+the help of `plugin add` is still only reading.
+
+`ClaudePluginSupport.NamesAChange` gained `upgrade`, the word the Codex
+marketplace feature will use (`codex plugin marketplace upgrade`).
+
+The GUI smoke run also records `codexPluginList`: it drives the same real dialog
+under the Codex title with a Codex fixture through the tabs, the marketplace
+filter, the search box and two reloads, reads back the sentence an empty
+registry shows and the sentence a CLI without the JSON plugin commands produces,
+and puts back the two hooks it set.
 
 The GUI smoke run records `claudePluginList`: it drives the real dialog with a
 fixture snapshot through the tabs, the marketplace filter, the search box and a
