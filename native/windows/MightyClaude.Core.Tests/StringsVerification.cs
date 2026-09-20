@@ -24,6 +24,16 @@ internal static class StringsVerification
         ["PaletteNoDescription"] = "설명 없음",
         ["PaletteActionTooltip"] = "앱에서 바로 실행됩니다",
         ["PaletteArgumentTooltip"] = "이어서 선택합니다",
+        ["PaletteCurrentSuffix"] = " · 현재",
+        // AppStore+SlashCommands.swift performSlashAction
+        ["NoteNewConversationRunning"] = "실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.",
+        ["NoteNewConversationNothingToResume"] = "이어갈 이전 대화가 없습니다. 다음 입력은 이미 새 대화로 시작합니다.",
+        ["NoteModelRunning"] = "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요.",
+        ["NoteModelAlreadyTemplate"] = "이미 {name} 모델입니다.",
+        ["NoteModelChangedTemplate"] = "모델을 {name}{particle} 바꿨습니다. 다음 요청부터 적용됩니다.",
+        ["NotePermissionRunning"] = "실행 중에는 작업 권한을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요.",
+        ["NotePermissionAlreadyTemplate"] = "이미 {label} 권한입니다.",
+        ["NotePermissionChangedTemplate"] = "작업 권한을 {label}{particle} 바꿨습니다. 다음 요청부터 적용됩니다.",
     };
 
     // StatusLineView.swift / StatusLine.swift
