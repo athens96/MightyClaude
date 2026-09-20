@@ -29,11 +29,15 @@ Reason: the feature's promise is that a `statusLine` which works in the CLI work
 - 접근성 이름은 `StatusLineStrings.AccessibilityLabel`("상태 줄").
 - `--smoke-test`의 `statusLine` 키가 질문 문구·두 버튼·허용 후 재질문·6줄 제한·색과 굵기를 확인한다. 실제 CLI는 실행하지 않는다.
 
-## macOS와 아직 다른 점 (보류 — docs/windows-parity.md)
+## macOS와 맞춘 점
 
-1. **256색·24비트 색**: Core의 `AnsiColor`는 macOS의 16색 이름만 가진다. `38;5;n` / `38;2;r;g;b`를 쓰는
-   명령은 기본색으로 보인다. macOS는 팔레트와 RGB를 모두 그린다.
-2. **레벨 분리 폴백**: macOS는 워크스페이스 명령이 아직 허용되지 않으면 사용자 설정 명령을 대신 실행한다.
-   Windows `Discover()`는 우선순위에서 이긴 하나만 돌려주므로, 거절된 동안에는 상태 줄이 비어 있다.
-
-둘 다 화면에 보이는 차이라 임의로 정하지 않고 보류 행으로 남긴다.
+1. **256색·24비트 색**: `AnsiColor`가 macOS `ANSISegment.Color`처럼 `Standard`(16색)·`Palette`(0-255)·`Rgb`
+   세 종류를 모두 표현한다. `ApplySgr`는 macOS `ANSIText.apply`를 그대로 옮겨 `38;5;n` / `38;2;r;g;b`와
+   콜론 형식(`38:5:n`, `38:2::r:g:b`)을 전경·배경 모두에서 파싱하고, 망가지거나 잘린 확장 색은 macOS처럼
+   색을 지운다. `AnsiPalette.ToRgb`가 표준 xterm 256색 표(0-15 고정색, 16-231 6×6×6 큐브, 232-255 회색조)를
+   순수 함수로 제공하고, WinUI `Terminal()`이 팔레트·RGB 구간을 이 값으로 그린다.
+2. **레벨 분리 폴백**: `StatusLineSupport.Discover()`가 이제 `StatusLineDiscovery(Workspace, User)`로 두
+   수준을 각각 돌려준다. `StatusLineTrust.Resolve()`가 macOS `AppStore+StatusLine.swift`의
+   `gated ? discovery.user : discovery.preferred`를 그대로 옮겨, 워크스페이스 명령이 아직 허용되지
+   않은 동안에도 사용자 설정 명령이 있으면 그 명령을 대신 실행한다. 워크스페이스 명령 자체는 허용되기
+   전에는 절대 실행되지 않는다.

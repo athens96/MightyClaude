@@ -136,17 +136,25 @@ public sealed partial class MainWindow
         private static Windows.UI.Color? Terminal(AnsiColor value)
         {
             static Windows.UI.Color Rgb(double red, double green, double blue) => Windows.UI.Color.FromArgb(255, (byte)Math.Round(red * 255), (byte)Math.Round(green * 255), (byte)Math.Round(blue * 255));
-            return value switch
+            switch (value.Kind)
             {
-                AnsiColor.Red or AnsiColor.BrightRed => Rgb(.86, .30, .30),
-                AnsiColor.Green or AnsiColor.BrightGreen => Rgb(.30, .66, .40),
-                AnsiColor.Yellow or AnsiColor.BrightYellow => Rgb(.80, .62, .20),
-                AnsiColor.Blue or AnsiColor.BrightBlue => Rgb(.36, .55, .90),
-                AnsiColor.Magenta or AnsiColor.BrightMagenta => Rgb(.70, .45, .85),
-                AnsiColor.Cyan or AnsiColor.BrightCyan => Rgb(.25, .65, .70),
-                AnsiColor.BrightBlack => Windows.UI.Color.FromArgb(170, 135, 135, 135),
-                _ => null,
-            };
+                case AnsiColorKind.Rgb: return Windows.UI.Color.FromArgb(255, (byte)value.A, (byte)value.B, (byte)value.C);
+                case AnsiColorKind.Palette:
+                    var (r, g, b) = AnsiPalette.ToRgb(value.A);
+                    return Windows.UI.Color.FromArgb(255, r, g, b);
+                case AnsiColorKind.Standard:
+                    return (value.A % 8) switch
+                    {
+                        1 => Rgb(.86, .30, .30),
+                        2 => Rgb(.30, .66, .40),
+                        3 => Rgb(.80, .62, .20),
+                        4 => Rgb(.36, .55, .90),
+                        5 => Rgb(.70, .45, .85),
+                        6 => Rgb(.25, .65, .70),
+                        _ => value.A == 8 ? Windows.UI.Color.FromArgb(170, 135, 135, 135) : null,
+                    };
+                default: return null;
+            }
         }
     }
 }

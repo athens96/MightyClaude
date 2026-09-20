@@ -25,11 +25,15 @@ public static class StatusLineTrust
 
     /// <summary>
     /// What a pane shows: the command it may run now, and the workspace command still
-    /// waiting for an answer. An untrusted workspace command is never run.
+    /// waiting for an answer. An untrusted workspace command is never run — but while it
+    /// waits, the user-level command still runs if there is one (macOS AppStore+StatusLine.swift:
+    /// <c>gated ? discovery.user : discovery.preferred</c>).
     /// </summary>
-    public static (StatusLineConfig? Config, StatusLineConfig? Untrusted) Resolve(StatusLineConfig? discovered, AppSnapshot snapshot, string workspaceId)
+    public static (StatusLineConfig? Config, StatusLineConfig? Untrusted) Resolve(StatusLineDiscovery discovery, AppSnapshot snapshot, string workspaceId)
     {
-        if (discovered is null) return (null, null);
-        return IsTrusted(snapshot, discovered, workspaceId) ? (discovered, null) : (null, discovered);
+        var preferred = discovery.Preferred;
+        if (preferred is null) return (null, null);
+        var gated = preferred.FromWorkspace && !IsTrusted(snapshot, preferred, workspaceId);
+        return gated ? (discovery.User, preferred) : (preferred, null);
     }
 }

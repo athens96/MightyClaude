@@ -5,10 +5,62 @@ using System.Text.Json.Nodes;
 
 namespace MightyClaude.Core;
 
-// ANSI colour/weight values from SGR codes.
-public enum AnsiColor { Default, Black, Red, Green, Yellow, Blue, Magenta, Cyan, White, BrightBlack, BrightRed, BrightGreen, BrightYellow, BrightBlue, BrightMagenta, BrightCyan, BrightWhite }
+// ANSI colour from an SGR code: unset (None), one of the 16 named colours
+// (Standard, matching macOS ANSISegment.Color.standard(0-15)), a 256-colour
+// palette index (macOS .palette), or 24-bit RGB (macOS .rgb).
+public enum AnsiColorKind { None, Standard, Palette, Rgb }
 
-public sealed record AnsiSegment(string Text, AnsiColor Foreground = AnsiColor.Default, AnsiColor Background = AnsiColor.Default, bool Bold = false, bool Dim = false, bool Italic = false, bool Underline = false);
+public readonly record struct AnsiColor(AnsiColorKind Kind, int A = 0, int B = 0, int C = 0)
+{
+    public static readonly AnsiColor Default = default;
+    public static readonly AnsiColor Black = new(AnsiColorKind.Standard, 0);
+    public static readonly AnsiColor Red = new(AnsiColorKind.Standard, 1);
+    public static readonly AnsiColor Green = new(AnsiColorKind.Standard, 2);
+    public static readonly AnsiColor Yellow = new(AnsiColorKind.Standard, 3);
+    public static readonly AnsiColor Blue = new(AnsiColorKind.Standard, 4);
+    public static readonly AnsiColor Magenta = new(AnsiColorKind.Standard, 5);
+    public static readonly AnsiColor Cyan = new(AnsiColorKind.Standard, 6);
+    public static readonly AnsiColor White = new(AnsiColorKind.Standard, 7);
+    public static readonly AnsiColor BrightBlack = new(AnsiColorKind.Standard, 8);
+    public static readonly AnsiColor BrightRed = new(AnsiColorKind.Standard, 9);
+    public static readonly AnsiColor BrightGreen = new(AnsiColorKind.Standard, 10);
+    public static readonly AnsiColor BrightYellow = new(AnsiColorKind.Standard, 11);
+    public static readonly AnsiColor BrightBlue = new(AnsiColorKind.Standard, 12);
+    public static readonly AnsiColor BrightMagenta = new(AnsiColorKind.Standard, 13);
+    public static readonly AnsiColor BrightCyan = new(AnsiColorKind.Standard, 14);
+    public static readonly AnsiColor BrightWhite = new(AnsiColorKind.Standard, 15);
+    public static AnsiColor Standard(int index) => new(AnsiColorKind.Standard, index);
+    // 38;5;n / 48;5;n — index clamped like macOS ANSIText.apply (min(255,max(0,index))).
+    public static AnsiColor Palette(int index) => new(AnsiColorKind.Palette, Math.Clamp(index, 0, 255));
+    // 38;2;r;g;b / 48;2;r;g;b — each component clamped like macOS ANSIText.clamp.
+    public static AnsiColor Rgb(int r, int g, int b) => new(AnsiColorKind.Rgb, Math.Clamp(r, 0, 255), Math.Clamp(g, 0, 255), Math.Clamp(b, 0, 255));
+}
+
+// Pure xterm 256-colour index → RGB conversion (0-15 named, 16-231 the 6x6x6 cube, 232-255 greys).
+public static class AnsiPalette
+{
+    private static readonly (byte R, byte G, byte B)[] Named16 =
+    [
+        (0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192),
+        (128, 128, 128), (255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255),
+    ];
+    private static readonly byte[] CubeLevels = [0, 95, 135, 175, 215, 255];
+
+    public static (byte R, byte G, byte B) ToRgb(int index)
+    {
+        index = Math.Clamp(index, 0, 255);
+        if (index < 16) return Named16[index];
+        if (index < 232)
+        {
+            var i = index - 16;
+            return (CubeLevels[i / 36], CubeLevels[i / 6 % 6], CubeLevels[i % 6]);
+        }
+        var grey = (byte)(8 + (index - 232) * 10);
+        return (grey, grey, grey);
+    }
+}
+
+public sealed record AnsiSegment(string Text, AnsiColor Foreground = default, AnsiColor Background = default, bool Bold = false, bool Dim = false, bool Italic = false, bool Underline = false);
 
 public static class AnsiText
 {
@@ -58,16 +110,33 @@ public static class AnsiText
         return segments;
     }
 
+    // Mirrors macOS ANSIText.apply: semicolon params build a flat code list, a colon group
+    // (`38:2::r:g:b`, `38:5:n`) collapses to one extended-colour entry in that same list, and
+    // 38/48 then consume the following one or three codes for palette/RGB — a malformed or
+    // truncated extended colour clears the colour (matches macOS: color stays nil, still assigned).
     private static void ApplySgr(string seq, ref AnsiColor fg, ref AnsiColor bg, ref bool bold, ref bool dim, ref bool italic, ref bool underline)
     {
-        var parts = seq.Split(';');
-        var j = 0;
-        while (j < parts.Length)
+        var codes = new List<int>();
+        foreach (var token in seq.Split(';'))
         {
-            if (!int.TryParse(parts[j].Split(':')[0], out var n)) { j++; continue; }
-            switch (n)
+            if (token.Contains(':'))
             {
-                case 0: fg = AnsiColor.Default; bg = AnsiColor.Default; bold = false; dim = false; italic = false; underline = false; break;
+                var subs = token.Split(':').Select(s => s.Length == 0 ? (int?)null : int.TryParse(s, out var v) ? v : null).ToArray();
+                if (subs.Length < 3 || subs[0] is not { } kind || (kind != 38 && kind != 48) || subs[1] is not { } mode) continue;
+                var numbers = subs.Skip(2).Where(n => n.HasValue).Select(n => n!.Value).ToArray();
+                if (mode == 2 && numbers.Length >= 3) codes.AddRange(new[] { kind, 2 }.Concat(numbers.Skip(numbers.Length - 3)));
+                else if (mode == 5 && numbers.Length > 0) codes.AddRange([kind, 5, numbers[0]]);
+            }
+            else codes.Add(token.Length == 0 ? 0 : (int.TryParse(token, out var n) ? n : -1));
+        }
+        if (codes.Count == 0) { Reset(ref fg, ref bg, ref bold, ref dim, ref italic, ref underline); return; }
+        var position = 0;
+        while (position < codes.Count)
+        {
+            var code = codes[position]; position++;
+            switch (code)
+            {
+                case 0: Reset(ref fg, ref bg, ref bold, ref dim, ref italic, ref underline); break;
                 case 1: bold = true; break;
                 case 2: dim = true; break;
                 case 3: italic = true; break;
@@ -75,16 +144,24 @@ public static class AnsiText
                 case 22: bold = false; dim = false; break;
                 case 23: italic = false; break;
                 case 24: underline = false; break;
-                case >= 30 and <= 37: fg = (AnsiColor)(n - 29); break;
+                case >= 30 and <= 37: fg = AnsiColor.Standard(code - 30); break;
+                case >= 90 and <= 97: fg = AnsiColor.Standard(code - 90 + 8); break;
                 case 39: fg = AnsiColor.Default; break;
-                case >= 40 and <= 47: bg = (AnsiColor)(n - 39); break;
+                case >= 40 and <= 47: bg = AnsiColor.Standard(code - 40); break;
+                case >= 100 and <= 107: bg = AnsiColor.Standard(code - 100 + 8); break;
                 case 49: bg = AnsiColor.Default; break;
-                case >= 90 and <= 97: fg = (AnsiColor)(n - 81); break;
-                case >= 100 and <= 107: bg = (AnsiColor)(n - 91); break;
+                case 38 or 48:
+                    var color = AnsiColor.Default;
+                    if (position < codes.Count && codes[position] == 5 && position + 1 < codes.Count) { color = AnsiColor.Palette(codes[position + 1]); position += 2; }
+                    else if (position < codes.Count && codes[position] == 2 && position + 3 < codes.Count) { color = AnsiColor.Rgb(codes[position + 1], codes[position + 2], codes[position + 3]); position += 4; }
+                    else position = codes.Count;
+                    if (code == 38) fg = color; else bg = color;
+                    break;
             }
-            j++;
         }
     }
+    private static void Reset(ref AnsiColor fg, ref AnsiColor bg, ref bool bold, ref bool dim, ref bool italic, ref bool underline)
+    { fg = AnsiColor.Default; bg = AnsiColor.Default; bold = false; dim = false; italic = false; underline = false; }
 }
 
 // A discovered status line config from Claude settings.
@@ -92,6 +169,15 @@ public sealed record StatusLineConfig(string Command, int Padding, string Source
 {
     // SHA-256(source + newline + command) as 64-char lowercase hex — matches macOS fingerprint.
     public string Fingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Source + "\n" + Command))).ToLowerInvariant();
+}
+
+// Both levels Claude consults (macOS StatusLineConfig.Discovery): Workspace is the winning
+// .claude/settings.local.json / settings.json entry, User is ~/.claude/settings.json (or
+// CLAUDE_CONFIG_DIR). Kept apart so a gated workspace command can still fall back to the user one.
+public sealed record StatusLineDiscovery(StatusLineConfig? Workspace, StatusLineConfig? User)
+{
+    // Claude's own precedence for callers that already trust the workspace level.
+    public StatusLineConfig? Preferred => Workspace ?? User;
 }
 
 // Session context passed as JSON payload on stdin.
@@ -191,23 +277,19 @@ public static class StatusLineSupport
         return obj.ToJsonString();
     }
 
-    // Discover the effective StatusLineConfig by reading Claude config files.
-    // Precedence (macOS order): workspace-local > workspace > user.
-    public static StatusLineConfig? Discover(string? workspacePath, string? homeDir, IDictionary<string, string>? env = null)
+    // Discover both levels Claude consults (macOS StatusLineConfig.discover): workspace-local
+    // then workspace at the workspace path (first of the two that has a command wins), and the
+    // user-level config from configDir. Kept apart — see StatusLineDiscovery — so a workspace
+    // command still waiting on trust does not blank the status line while a user command exists.
+    public static StatusLineDiscovery Discover(string? workspacePath, string? homeDir, IDictionary<string, string>? env = null)
     {
-        var configDir = ConfigDir(homeDir, env);
-        if (configDir is null) return null;
-
-        // workspace-local: <workspace>/.claude/settings.local.json
+        StatusLineConfig? workspace = null;
         if (workspacePath is not null)
-        {
-            var local = TryReadCommand(Path.Combine(workspacePath, ".claude", "settings.local.json"), fromWorkspace: true, StatusLineStrings.SourceWorkspaceLocal);
-            if (local is not null) return local;
-            var proj = TryReadCommand(Path.Combine(workspacePath, ".claude", "settings.json"), fromWorkspace: true, StatusLineStrings.SourceWorkspace);
-            if (proj is not null) return proj;
-        }
-        // user: <configDir>/settings.json
-        return TryReadCommand(Path.Combine(configDir, "settings.json"), fromWorkspace: false, StatusLineStrings.SourceUser);
+            workspace = TryReadCommand(Path.Combine(workspacePath, ".claude", "settings.local.json"), fromWorkspace: true, StatusLineStrings.SourceWorkspaceLocal)
+                     ?? TryReadCommand(Path.Combine(workspacePath, ".claude", "settings.json"), fromWorkspace: true, StatusLineStrings.SourceWorkspace);
+        var configDir = ConfigDir(homeDir, env);
+        var user = configDir is null ? null : TryReadCommand(Path.Combine(configDir, "settings.json"), fromWorkspace: false, StatusLineStrings.SourceUser);
+        return new StatusLineDiscovery(workspace, user);
     }
 
     public static string? ConfigDir(string? homeDir, IDictionary<string, string>? env = null)
