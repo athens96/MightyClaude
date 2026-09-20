@@ -109,7 +109,9 @@ public sealed partial class MainWindow
                 errors.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Red) });
             dialog.IsPrimaryButtonEnabled = RenameSupport.IsValid(field.Text);
         }
-        field.TextChanged += (_, _) => Validate();
+        // TextChanged is raised by the realised text editor, so it stays silent while the dialog is
+        // not in the visual tree. Watching the Text property covers typing and programmatic edits alike.
+        field.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => Validate());
         Validate();
         dialog.Opened += (_, _) => { field.Focus(FocusState.Programmatic); field.SelectAll(); };
         dialogOpen = true;

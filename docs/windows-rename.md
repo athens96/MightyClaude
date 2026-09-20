@@ -12,6 +12,7 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 | 이름 필드 레이블 | `TextField("이름", …)`의 자리 표시자 | `TextBox.Header = "이름"` | WinUI TextBox에는 자리 표시자 레이블이 없어 Header가 같은 자리를 차지 |
 | 오류 문구 색 | `.foregroundStyle(.red)` | `SolidColorBrush(Colors.Red)` | 같은 색 |
 | 저장 비활성화 | `Button("저장").disabled(!validName)` | `ContentDialog.IsPrimaryButtonEnabled` | 같은 동작 |
+| 입력 변화 감지 | SwiftUI `@State` 바인딩이 타자마다 다시 평가 | `TextBox.TextProperty`의 `RegisterPropertyChangedCallback` | `TextChanged`는 실제로 그려진 편집기가 올리므로 대화상자가 시각 트리 밖이면 조용하다. Text 속성을 지켜보면 타자와 코드 수정이 모두 잡힌다 |
 
 ## 검증 규칙 (Core)
 
@@ -53,6 +54,6 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 ## WinUI 연결
 
 `MainWindow.Navigation.cs` — `WorkspaceMenu`·`SessionMenu`가 `RenameStrings.MenuEntry`를 띄우고
-`AskName`이 `RenameSupport.Messages`·`IsValid`·`DisplayName`만 사용한다.
+`RenameDialog`가 `RenameSupport.Messages`·`IsValid`·`DisplayName`만 사용한다.
 저장은 `DesktopService.RenameWorkspaceAsync`·`RenameSessionAsync`를 거치므로
 사이드바·탭·창이 같은 스냅샷에서 다시 그려진다. WinUI에는 새 문구 리터럴이 없다.
