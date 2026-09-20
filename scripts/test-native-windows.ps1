@@ -60,6 +60,14 @@ try {
     }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
+    # Outcomes that are neither pass nor fail (a check that had to be skipped on
+    # this runner) are published as a notice so they can be read without the log.
+    $outcomes = @($result.PSObject.Properties | Where-Object { $_.Value -is [pscustomobject] -and $_.Value.status -is [string] } |
+        ForEach-Object { "$($_.Name)=$($_.Value.status)$(if ($_.Value.reason) { " ($($_.Value.reason))" })" }) -join '; '
+    if ($outcomes -and $env:GITHUB_ACTIONS) {
+        $text = if ($outcomes.Length -gt 800) { $outcomes.Substring(0, 800) } else { $outcomes }
+        Write-Output "::notice title=Windows GUI smoke outcomes::$($text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))"
+    }
     Write-Output "Windows GUI PASS: $resultPath"
 } finally {
     if ($started -and $process.HasExited -and $process.ExitCode -ne 0) {
