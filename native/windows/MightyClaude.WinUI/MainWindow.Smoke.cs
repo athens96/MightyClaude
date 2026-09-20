@@ -111,8 +111,8 @@ public sealed partial class MainWindow
             var emptyDisablesSave = false;
             var tooLongDisablesSave = false;
             var tooLongShowsCaption = false;
-            var lineBreakDisablesSave = false;
-            var lineBreakShowsCaption = false;
+            var lineBreakNeverReachesName = false;
+            var lineBreakTracksCore = false;
 
             smokeAskName = async (dialog, field, errors) =>
             {
@@ -126,11 +126,17 @@ public sealed partial class MainWindow
                 await Task.Delay(20);
                 tooLongDisablesSave = !dialog.IsPrimaryButtonEnabled;
                 tooLongShowsCaption = errors.Children.OfType<TextBlock>().Any(t => t.Text == RenameStrings.ErrorTooLong);
-                // Line break: save disabled, control-character caption shown
+                // Line break: a single-line WinUI TextBox drops \r and \n before the Text property
+                // changes, so the break never reaches the name and the 줄바꿈 caption cannot appear
+                // from the field. Prove both halves: the break never survives, and 저장 and the caption
+                // still agree with RenameSupport for whatever the control kept. The caption and the
+                // control-character rule themselves stay proven by the `rename …` checks in Core.Tests.
                 field.Text = "hello\rworld";
                 await Task.Delay(20);
-                lineBreakDisablesSave = !dialog.IsPrimaryButtonEnabled;
-                lineBreakShowsCaption = errors.Children.OfType<TextBlock>().Any(t => t.Text == RenameStrings.ErrorControlCharacter);
+                lineBreakNeverReachesName = !field.Text.Contains('\r') && !field.Text.Contains('\n');
+                lineBreakTracksCore = dialog.IsPrimaryButtonEnabled == RenameSupport.IsValid(field.Text)
+                    && errors.Children.OfType<TextBlock>().Any(t => t.Text == RenameStrings.ErrorControlCharacter)
+                        == RenameSupport.Messages(field.Text).Contains(RenameStrings.ErrorControlCharacter);
                 // Save a valid Korean name
                 field.Text = "변경된 이름";
                 await Task.Delay(20);
@@ -142,9 +148,10 @@ public sealed partial class MainWindow
             Require(emptyDisablesSave, "빈 이름에서 저장 버튼이 비활성화되지 않았습니다.");
             Require(tooLongDisablesSave, "121자 이름에서 저장 버튼이 비활성화되지 않았습니다.");
             Require(tooLongShowsCaption, "121자 이름에서 길이 초과 메시지가 표시되지 않았습니다.");
-            Require(lineBreakDisablesSave, "줄바꿈 이름에서 저장 버튼이 비활성화되지 않았습니다.");
-            Require(lineBreakShowsCaption, "줄바꿈 이름에서 줄바꿈 메시지가 표시되지 않았습니다.");
+            Require(lineBreakNeverReachesName, "줄바꿈이 이름 입력란에 그대로 남았습니다.");
+            Require(lineBreakTracksCore, "줄바꿈 입력 뒤 저장 버튼·문구가 Core 규칙과 어긋납니다.");
             checks["validationRulesMatchMacOS"] = true;
+            checks["lineBreakStrippedByTextBox"] = true;
 
             // Verify the new name appears in the snapshot, tab indicator and sidebar
             await WaitUI(() => service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).Title == "변경된 이름");

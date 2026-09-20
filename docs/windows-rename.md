@@ -13,6 +13,7 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 | 오류 문구 색 | `.foregroundStyle(.red)` | `SolidColorBrush(Colors.Red)` | 같은 색 |
 | 저장 비활성화 | `Button("저장").disabled(!validName)` | `ContentDialog.IsPrimaryButtonEnabled` | 같은 동작 |
 | 입력 변화 감지 | SwiftUI `@State` 바인딩이 타자마다 다시 평가 | `TextBox.TextProperty`의 `RegisterPropertyChangedCallback` | `TextChanged`는 실제로 그려진 편집기가 올리므로 대화상자가 시각 트리 밖이면 조용하다. Text 속성을 지켜보면 타자와 코드 수정이 모두 잡힌다 |
+| 줄바꿈 입력 | SwiftUI `TextField`에 줄바꿈이 들어오면 `이름은 줄바꿈 없이 입력하세요.` 표시 | 한 줄짜리 `TextBox`가 `\r`·`\n`을 Text 속성에 닿기 전에 버린다 | WinUI 기본 동작이라 막을 수 없다. 줄바꿈이 이름에 닿지 못하므로 macOS보다 엄격하고, 그 대신 `이름은 줄바꿈 없이 입력하세요.`가 입력란에서는 뜰 일이 없다 (보류 행: `docs/windows-parity.md`) |
 
 ## 검증 규칙 (Core)
 
@@ -21,6 +22,11 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 2. 빈 문자열 거부
 3. 텍스트 요소(자소 묶음) 기준 120자 초과 거부 — UTF-16 단위 아님, Korean·emoji 포함
 4. 제어 문자(Unicode Cc 범주) 거부 — 중간 줄바꿈 포함
+
+규칙 4는 Windows 입력란에서는 닿지 않는다. 한 줄 `TextBox`가 줄바꿈을 먼저 버리기 때문이다.
+그래도 붙여넣기·복원·원격 제목 등 입력란을 거치지 않는 경로가 있어 규칙은 그대로 두고,
+`rename …` Core.Tests 검사가 규칙과 문구를 증명한다. 스모크 검사는 입력란에서
+줄바꿈이 살아남지 못하는 것과 저장 버튼·문구가 Core 규칙과 언제나 일치하는 것을 본다.
 
 ## 문구 대응
 
