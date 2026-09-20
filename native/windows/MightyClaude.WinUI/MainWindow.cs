@@ -34,6 +34,9 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly CliUpdateService cliUpdateService;
     internal readonly CliUpdateCoordinator coordinator;
+    // Reads who each CLI is signed in as when the CLI 계정 section opens and
+    // after a sign-in terminal closes; the section's buttons call it.
+    internal readonly CliAccountsCoordinator accountsCoordinator = new(new CliRunner());
     internal Func<string, CancellationToken, Task<CliUpdateResult>>? smokeCliUpdater;
     internal Func<StatusLineDiscovery>? smokeStatusLineDiscovery;
     internal Func<StatusLineConfig, StatusLineContext, CancellationToken, Task<StatusLineResult>>? smokeStatusLineRunner;
