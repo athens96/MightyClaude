@@ -32,6 +32,9 @@ public sealed partial class MainWindow : Window
     private bool rendering, canClose, closing;
     private readonly StartupOptions options;
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly CliUpdateService cliUpdateService;
+    internal readonly CliUpdateCoordinator coordinator;
+    internal Func<string, CancellationToken, Task<CliUpdateResult>>? smokeCliUpdater;
     public MainWindow(StartupOptions options)
     {
         this.options = options;
@@ -40,6 +43,17 @@ public sealed partial class MainWindow : Window
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
         service = new(options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative"), options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
+        cliUpdateService = new(new CliRunner());
+        coordinator = new((provider, token) =>
+        {
+            var fn = smokeCliUpdater;
+            return fn is not null ? fn(provider, token) : cliUpdateService.UpdateAsync(provider, token);
+        });
+        coordinator.StateChanged += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!coordinator.IsUpdating && coordinator.Results.Count > 0)
+                lastCliUpdateResults = coordinator.Results;
+        });
         service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
@@ -64,13 +78,13 @@ public sealed partial class MainWindow : Window
         workspaces.SelectionChanged += async (_, _) => { if (!rendering && workspaces.SelectedItem is ListViewItem { Tag: string id }) await SelectWorkspace(id); };
         Grid.SetRow(sideHost, 1); root.Children.Add(sideHost); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
         var footer = new StackPanel { Spacing = 3 }; footer.Children.Add(error); footer.Children.Add(status); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         _ = Initialize();
     }
     private async Task Initialize()
     {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); }); return; }
         try { await service.InitializeAsync(); Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
     }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading;
 using MightyClaude.Core;
 
 // The CLI updater proven with a fake runner: no claude, codex, gemini, npm or
@@ -287,5 +288,114 @@ internal static class CliUpdateVerification
             Check(runner.Calls.Count == 0, "the start-up pass must not start anything when no CLI is installed");
         }
         finally { Directory.Delete(home, true); }
+    }
+
+    // ── CliUpdateCoordinator tests ────────────────────────────────────────────
+
+    private static CliUpdateCoordinator FakeCoordinator(
+        Func<string, CancellationToken, Task<CliUpdateResult>>? fn = null)
+        => new(fn ?? ((provider, _) => Task.FromResult(new CliUpdateResult(provider, "updated", "1.0", "2.0", "native", CliUpdateStrings.DetailUpdated))));
+
+    /// The coordinator runs all three providers in order, emits StateChanged
+    /// after each result, and sets isUpdating / finishedAt correctly.
+    internal static async Task CoordinatorTracksStateAndRunsInOrder()
+    {
+        var changes = new List<(bool isUpdating, int resultCount)>();
+        var coordinator = FakeCoordinator();
+        coordinator.StateChanged += () => changes.Add((coordinator.IsUpdating, coordinator.Results.Count));
+
+        Check(!coordinator.IsUpdating, "must not be updating before Start");
+        Check(coordinator.FinishedAt is null, "finishedAt must be null before any run");
+
+        var started = coordinator.Start();
+        Check(started, "Start must return true when idle");
+        Check(coordinator.IsUpdating, "must be updating immediately after Start");
+
+        await Verification.Until(() => !coordinator.IsUpdating);
+
+        Check(coordinator.Results.Count == 3, "coordinator must have one result per provider");
+        Check(coordinator.Results.Select(r => r.Provider).SequenceEqual(Wire.Providers), "providers must appear in Wire.Providers order");
+        Check(coordinator.Results.All(r => r.Status == "updated"), "all results must be updated");
+        Check(coordinator.FinishedAt is not null, "finishedAt must be set after the run");
+        // StateChanged fires: started (isUpdating=true, 0 results), then once per provider, then done
+        Check(changes.Count >= 4, "StateChanged must fire at start and after each provider plus at end");
+        Check(changes[0].isUpdating && changes[0].resultCount == 0, "first StateChanged must show isUpdating=true");
+        Check(!changes[^1].isUpdating, "last StateChanged must show isUpdating=false");
+    }
+
+    /// A second Start call while running returns false; the coordinator keeps
+    /// running the first call to completion.
+    internal static async Task CoordinatorRefusesSecondStartWhileRunning()
+    {
+        var gate = new TaskCompletionSource();
+        var coordinator = new CliUpdateCoordinator(async (provider, token) =>
+        {
+            if (provider == Wire.Providers[0]) await gate.Task.WaitAsync(token);
+            return new CliUpdateResult(provider, "updated");
+        });
+
+        var first = coordinator.Start();
+        Check(first, "first Start must succeed");
+        Check(coordinator.IsUpdating, "must be updating after first Start");
+
+        var second = coordinator.Start();
+        Check(!second, "second Start while running must return false");
+
+        gate.SetResult();
+        await Verification.Until(() => !coordinator.IsUpdating);
+        Check(coordinator.Results.Count == Wire.Providers.Length, "first run must complete all providers");
+    }
+
+    /// BeginAutomaticIfNeeded starts a run only when AutoUpdateCLIs is true and
+    /// only fires once regardless of how many times it is called.
+    internal static async Task CoordinatorBeginsAutomaticOnlyOnceAndOnlyWhenSwitchIsOn()
+    {
+        var calls = 0;
+        var coordinator = new CliUpdateCoordinator((provider, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            return Task.FromResult(new CliUpdateResult(provider, "updated"));
+        });
+
+        coordinator.BeginAutomaticIfNeeded(new AppSnapshot());
+        coordinator.BeginAutomaticIfNeeded(new AppSnapshot { AutoUpdateCLIs = false });
+        Check(!coordinator.IsUpdating, "BeginAutomaticIfNeeded must not start when the switch is off or default");
+
+        coordinator.BeginAutomaticIfNeeded(new AppSnapshot { AutoUpdateCLIs = true });
+        Check(coordinator.IsUpdating, "BeginAutomaticIfNeeded must start when the switch is on");
+
+        await Verification.Until(() => !coordinator.IsUpdating);
+        var countAfterFirst = calls;
+        Check(countAfterFirst == Wire.Providers.Length, "the automatic run must cover all providers");
+
+        // A second call must not start another run even when the switch is still on.
+        coordinator.BeginAutomaticIfNeeded(new AppSnapshot { AutoUpdateCLIs = true });
+        await Task.Delay(50);
+        Check(calls == countAfterFirst, "BeginAutomaticIfNeeded must not start a second automatic run");
+    }
+
+    /// CancelAsync stops the running update, and ShutdownAsync refuses any
+    /// subsequent Start call.
+    internal static async Task CoordinatorCancelStopsRunAndShutdownRefusesNew()
+    {
+        var started = new TaskCompletionSource();
+        var blocked = new TaskCompletionSource();
+        var coordinator = new CliUpdateCoordinator(async (provider, token) =>
+        {
+            started.TrySetResult();
+            await blocked.Task.WaitAsync(token);
+            return new CliUpdateResult(provider, "updated");
+        });
+
+        coordinator.Start();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await coordinator.CancelAsync();
+        Check(!coordinator.IsUpdating, "CancelAsync must stop the running update");
+
+        await coordinator.ShutdownAsync();
+        var afterShutdown = coordinator.Start();
+        Check(!afterShutdown, "Start after ShutdownAsync must return false");
+        blocked.TrySetResult();
     }
 }

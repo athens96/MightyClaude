@@ -431,6 +431,10 @@ internal static class Verification
         await Test("cli update reports a failing installer with a bounded diagnostic output", CliUpdateVerification.FailingInstallerIsReportedWithBoundedOutput);
         await Test("cli update runs one at a time, reports busy and cancels cleanly", CliUpdateVerification.SecondRequestIsBusyAndCancelStopsTheRun);
         await Test("cli update start-up pass covers every provider only when the switch is on", CliUpdateVerification.StartupPassCoversEveryProviderOnlyWhenTheSwitchIsOn);
+        await Test("cli update coordinator tracks state through a complete run", CliUpdateVerification.CoordinatorTracksStateAndRunsInOrder);
+        await Test("cli update coordinator refuses a second start while running", CliUpdateVerification.CoordinatorRefusesSecondStartWhileRunning);
+        await Test("cli update coordinator begins automatic only once and only when the switch is on", CliUpdateVerification.CoordinatorBeginsAutomaticOnlyOnceAndOnlyWhenSwitchIsOn);
+        await Test("cli update coordinator cancel stops the run and shutdown refuses new work", CliUpdateVerification.CoordinatorCancelStopsRunAndShutdownRefusesNew);
         await Test("cli update strings match macOS", StringsVerification.CliUpdateStringsMatchMacOS);
         await Test("settings preferences missing key keeps default off and version stays 1", SettingsPreferencesVerification.MissingKeyKeepsDefaultOff);
         await Test("settings preferences explicit on and off persist across state store reloads", SettingsPreferencesVerification.ExplicitOnAndOffPersistAcrossReloads);
