@@ -37,17 +37,24 @@ export const ACTION_FLAGS = ['userInvoked', 'readOnly'] as const;
 
 /**
  * Contract 1.11's banned set, in full: C0/C1 controls, the bidi overrides and isolates
- * that can reorder what a row appears to say, the zero-width characters and joiners that
- * make `"Ouro<U+200B>boros"` read as a name it is not, and the line/paragraph separators
- * that break a text box open. The Mac refuses a manifest carrying any of them; this is
- * the second layer (contract 1.8), so it strips rather than refuses.
+ * that can reorder what a row appears to say, zero-width non-printing characters (U+200B
+ * ZWSP, U+200C ZWNJ, U+200E LRM, U+200F RLM) that make `"Ouro<U+200B>boros"` read as a
+ * name it is not, and the line/paragraph separators that break a text box open. U+200D
+ * (ZWJ) is intentionally kept: it is the joiner that makes multi-codepoint emoji (e.g.
+ * \ud83d\udc69\u200d\ud83d\udcbb) a single glyph cluster and must survive the glyph pre-sanitisation path intact.
+ * The Mac refuses a manifest carrying any of the banned characters; this is the second
+ * layer (contract 1.8), so it strips rather than refuses.
  *
  * Written with `\u` escapes on purpose: a file whose job is to delete invisible
  * characters must not carry six of them where no reviewer can see them.
  */
 const UNSAFE_INLINE =
-  /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
-/** The same set, less the whitespace a multi-line box keeps: tab, newline, return. */
+  /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200c\u200e-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
+/**
+ * The same set, less the whitespace a multi-line box keeps: tab, newline, return. U+200D
+ * (ZWJ) is still stripped here: install commands and similar block text have no valid use
+ * for a joiner, and its presence there would be an invisible anomaly rather than an emoji.
+ */
 const UNSAFE_BLOCK =
   /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
