@@ -242,6 +242,7 @@ public sealed partial class MainWindow : Window
         internal PaneView(MainWindow owner, string id)
         {
             this.owner = owner; this.id = id;
+            InitSlashPalette();
             var grid = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
             var header = new Grid { ColumnSpacing = 8 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -258,7 +259,7 @@ public sealed partial class MainWindow : Window
             var bottom = new Grid { ColumnSpacing = 5, Height = 32 }; bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.Children.Add(selectors);
             context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; context.Background = new SolidColorBrush(Colors.Transparent); AutomationProperties.SetName(context, "이 세션의 컨텍스트 사용량"); Grid.SetColumn(context, 1); bottom.Children.Add(context);
             send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 20; send.Background = new SolidColorBrush(Colors.CornflowerBlue); send.Foreground = new SolidColorBrush(Colors.Black); AutomationProperties.SetName(send, "보내기"); Grid.SetColumn(send, 2); bottom.Children.Add(send);
-            var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(attachmentChips); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
+            var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
             var card = new Border { Child = composer, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(12, 135, 135, 135)), Padding = new Thickness(10, 2, 10, 10) };
             var composerScroll = new ScrollViewer { Content = card, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
             Grid.SetRow(composerScroll, 2); grid.Children.Add(composerScroll);
@@ -267,7 +268,7 @@ public sealed partial class MainWindow : Window
             fast.Click += async (_, _) => { if (!updating) await ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode }); };
             ToolTipService.SetToolTip(fast, "지원 모델과 계정에서 빠른 처리를 사용합니다. 사용량이 더 많이 소모될 수 있습니다."); AutomationProperties.SetName(fast, "Codex Fast");
             ToolTipService.SetToolTip(input, InputShortcuts);
-            input.TextChanged += async (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); await owner.Act(() => Change(p => p with { Draft = draft })); } };
+            input.TextChanged += async (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); RefreshPalette(draft); await owner.Act(() => Change(p => p with { Draft = draft })); } };
             input.TextCompositionStarted += (_, _) => composingInput = true;
             input.TextCompositionEnded += (_, _) =>
             {
@@ -280,6 +281,7 @@ public sealed partial class MainWindow : Window
             input.PreviewKeyDown += async (_, args) =>
             {
                 if (args.Handled) return;
+                if (paletteState.IsOpen && HandlePaletteKey(args.Key)) { args.Handled = true; return; }
                 if (args.Key == Windows.System.VirtualKey.Enter)
                 {
                     if (!SubmitKeyAllowed(composingInput, suppressCompositionEnter, IsInputKeyDown(Windows.System.VirtualKey.Shift), IsInputKeyDown(Windows.System.VirtualKey.Control) || IsInputKeyDown(Windows.System.VirtualKey.Menu) || IsInputKeyDown(Windows.System.VirtualKey.LeftWindows) || IsInputKeyDown(Windows.System.VirtualKey.RightWindows))) return;
@@ -463,7 +465,7 @@ public sealed partial class MainWindow : Window
             var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider, pane.WorkspaceId); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             label.Text = StateLabel(pane.Status); output.Update(pane, owner.service.Snapshot.Theme == "light"); RefreshElapsed();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
-            if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; }
+            if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);
             var workspace = Workspace;
             detail.Text = (workspace.Remote is null ? "이 컴퓨터" : "원격 · " + workspace.Remote.HostName) + (pane.Kind == "shell" ? " · shell 명령 실행" : $" · {(catalog.Source == "cli" ? "CLI에서 확인" : "기본 모델 목록")}" + (pane.ResumeId is null ? "" : " · 기존 대화 재개"));
