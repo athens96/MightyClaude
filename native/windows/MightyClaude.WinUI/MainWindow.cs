@@ -469,8 +469,17 @@ public sealed partial class MainWindow : Window
             var menu = new MenuFlyout();
             var rename = Item(RenameStrings.MenuEntry, () => owner.RenameSession(id));
             menu.Items.Add(rename);
+            // The plugin window, the same one /plugin opens. Claude only until
+            // the Codex plugin feature lands.
+            MenuFlyoutItem? plugins = null;
+            if (pane.Kind == "claude" && pane.Provider == "claude")
+            {
+                plugins = Item(PluginStrings.TitleTemplate.Replace("{provider}", CliUpdateService.ProviderLabel(pane.Provider)),
+                    () => owner.OpenPluginBrowser(pane.Provider));
+                menu.Items.Add(plugins);
+            }
             menu.Items.Add(new MenuFlyoutSeparator());
-            menu.Opening += (_, _) => rename.IsEnabled = !owner.dialogOpen;
+            menu.Opening += (_, _) => { rename.IsEnabled = !owner.dialogOpen; if (plugins is not null) plugins.IsEnabled = !owner.dialogOpen; };
             AddOverflowSettings(menu, pane, caps);
             if (pane.Kind == "claude" && pane.Provider == "codex")
             {

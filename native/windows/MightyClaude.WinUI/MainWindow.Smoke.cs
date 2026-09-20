@@ -54,6 +54,7 @@ public sealed partial class MainWindow
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
             result["rename"] = await RunRenameSmoke();
+            result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -339,7 +340,9 @@ public sealed partial class MainWindow
                 Require(paletteState.Commands.Length == expected && slashRows.Children.Count == expected,
                     "슬래시 팔레트의 줄 수가 주입한 목록과 다릅니다.");
                 Require(slashCount.Text == SlashPalette.CountLabel(expected), "슬래시 팔레트의 개수 표시가 잘못됐습니다.");
-                Require(!paletteState.Commands.Any(c => c.Action == SlashCommandAction.OpenPlugins),
+                Require(Session.Provider != "claude" || paletteState.Commands.Any(c => c.Action == SlashCommandAction.OpenPlugins && c.Invocation == "plugin"),
+                    "Claude 팔레트에 /plugin이 없습니다.");
+                Require(Session.Provider == "claude" || !paletteState.Commands.Any(c => c.Action == SlashCommandAction.OpenPlugins),
                     "Windows에 화면이 없는 앱 명령이 팔레트에 나왔습니다.");
                 checks["opensAboveComposerWithFixtureRows"] = true;
 

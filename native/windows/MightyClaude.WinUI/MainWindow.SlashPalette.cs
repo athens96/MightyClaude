@@ -233,6 +233,7 @@ public sealed partial class MainWindow
                     else if (pane.ResumeId is null) await SlashNote(SlashCommandStrings.NoteNewConversationNothingToResume);
                     else { await Change(p => p with { ResumeId = null }); Refresh(); }
                     break;
+                case SlashCommandAction.OpenPlugins: await owner.OpenPluginBrowser(pane.Provider); break;
                 case SlashCommandAction.ShowUsage: await ShowContext(); break;
                 case SlashCommandAction.OpenSettings: await owner.OpenSettings(); break;
                 case SlashCommandAction.Rename: await owner.RenameSession(id); break;
