@@ -14,13 +14,23 @@ public sealed class DesktopService : IAsyncDisposable
     public ProviderCatalog Providers { get; }
     public RemoteController Remote { get; }
     public event Action<RunEvent>? RunEventReceived;
+    /// <summary>
+    /// A Claude tool-permission request waiting in — or settled by — the local
+    /// run pane. It is deliberately not a <see cref="RunEvent"/>: an ephemeral
+    /// request never enters <see cref="AppSnapshot"/> and never travels to a
+    /// remote peer. Remote panes keep launching with prompts off.
+    /// </summary>
+    public event Action<ToolPermissionRequest>? ToolPermissionChanged;
     public event Action<Exception>? PersistenceFailed;
     public AppSnapshot Snapshot { get { lock (sync) { var copy = Wire.Clone(snapshot); return copy with { Sessions = copy.Sessions.Select(s => s with { CurrentActivity = snapshot.Sessions.FirstOrDefault(original => original.Id == s.Id)?.CurrentActivity }).ToList() }; } } }
     public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null, ISecretProtector? protector = null, bool testLoopback = false)
     {
-        store = new(directory, legacyDirectory); Providers = providers ?? new(); local = new(ResolveLocal, Providers, pluginDirectory, Receive);
+        store = new(directory, legacyDirectory); Providers = providers ?? new(); local = new(ResolveLocal, Providers, pluginDirectory, Receive, value => ToolPermissionChanged?.Invoke(value));
         Remote = new(directory, () => Snapshot.Workspaces, ResolveLocal, () => Providers.GetRuntimeAsync(), emit => new RunManager(ResolveLocal, Providers, pluginDirectory, emit), Receive, protector ?? (OperatingSystem.IsWindows() ? new WindowsSecretProtector() : null), testLoopback, legacyDirectory: legacyDirectory is null ? null : Path.Combine(legacyDirectory, "remote"));
     }
+    /// <summary>이번만 허용 / 거부 — the only way a request is ever answered, one request at a time.</summary>
+    public void RespondToToolPermission(string sessionId, string requestId, bool allow)
+        => local.RespondToToolPermission(sessionId, requestId, allow);
     public async Task InitializeAsync() { var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded; }
     private Task<Workspace> ResolveLocal(string id)
     {
