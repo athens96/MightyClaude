@@ -137,6 +137,63 @@ internal static class RenameVerification
         finally { await service.DisposeAsync(); Directory.Delete(directory, true); Directory.Delete(workspacePath, true); }
     }
 
+    internal static Task renameMessagesMirrorTheMacOSCaptions()
+    {
+        Check(RenameSupport.Messages("Hello").Count == 0, "a valid name must show no caption");
+        Check(RenameSupport.Messages("").Count == 0, "an empty name shows no caption on macOS, only a disabled 저장");
+        Check(RenameSupport.Messages("   ").Count == 0, "a whitespace-only name shows no caption either");
+        Check(RenameSupport.Messages(new string('a', 121)).SequenceEqual([RenameStrings.ErrorTooLong]), "121 characters must show the length caption");
+        Check(RenameSupport.Messages(new string('가', 121)).SequenceEqual([RenameStrings.ErrorTooLong]), "121 Korean characters must show the length caption");
+        Check(RenameSupport.Messages("hello\nworld").SequenceEqual([RenameStrings.ErrorControlCharacter]), "a line break must show the line-break caption");
+        Check(RenameSupport.Messages(new string('a', 121) + "\n").SequenceEqual([RenameStrings.ErrorTooLong]), "a trailing line break is trimmed away, so only the length caption shows");
+        Check(RenameSupport.Messages(new string('a', 121) + "\nb").SequenceEqual([RenameStrings.ErrorTooLong, RenameStrings.ErrorControlCharacter]), "macOS shows both captions together, length first");
+        return Task.CompletedTask;
+    }
+
+    internal static Task renameSaveButtonIsDisabledExactlyWhenMacOSDisablesIt()
+    {
+        Check(RenameSupport.IsValid("Hello"), "저장 must be enabled for a valid name");
+        Check(RenameSupport.IsValid("  가  "), "저장 must be enabled once trimming leaves a valid name");
+        Check(!RenameSupport.IsValid(""), "저장 must be disabled for an empty name");
+        Check(!RenameSupport.IsValid("   "), "저장 must be disabled for a whitespace-only name");
+        Check(!RenameSupport.IsValid(new string('a', 121)), "저장 must be disabled over 120 characters");
+        Check(!RenameSupport.IsValid("hello\nworld"), "저장 must be disabled for a line break");
+        return Task.CompletedTask;
+    }
+
+    internal static async Task renameKeepsALongEmojiNameWholeAcrossARestart()
+    {
+        // 120 emoji is 240 UTF-16 units; a plain Length cut would halve the name and could split a
+        // surrogate pair, so the stored title must be clamped by text elements instead.
+        var name = string.Concat(Enumerable.Repeat("🎉", 120));
+        Check(RenameSupport.DisplayName(name) == name, "120 emoji must be a valid name");
+        Check(RenameSupport.ClampTitle(name) == name, "120 emoji must survive normalization whole");
+
+        var native = Verification.Temp(); var workspacePath = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = workspacePath };
+            var session = new RunSession { WorkspaceId = workspace.Id, Title = name };
+            var snap = new AppSnapshot { Workspaces = [workspace], Sessions = [session] };
+            await File.WriteAllTextAsync(Path.Combine(native, "workspace-state.json"), JsonSerializer.Serialize(snap, Wire.Json));
+            var restored = await new StateStore(native).LoadAsync();
+            Check(restored.Sessions.Single(s => s.Id == session.Id).Title == name, "a 120-emoji title must survive a restart whole");
+        }
+        finally { Directory.Delete(native, true); Directory.Delete(workspacePath, true); }
+        return;
+    }
+
+    internal static Task renameClampTitleStillBoundsAnOverlongStoredTitle()
+    {
+        Check(RenameSupport.ClampTitle(new string('a', 500)).Length == 120, "an overlong ASCII title must be clamped to 120");
+        var clamped = RenameSupport.ClampTitle(string.Concat(Enumerable.Repeat("🎉", 500)));
+        Check(clamped == string.Concat(Enumerable.Repeat("🎉", 120)), "an overlong emoji title must be clamped to 120 whole emoji");
+        Check(!clamped.Any(char.IsSurrogate) || clamped.Length % 2 == 0, "clamping must never leave a lone surrogate");
+        Check(RenameSupport.ClampTitle(null) == "", "a null title must clamp to empty");
+        Check(RenameSupport.ClampTitle("a\u0000b") == "ab", "control characters must be stripped from a stored title");
+        return Task.CompletedTask;
+    }
+
     private static readonly Dictionary<string, string> RenameMacOS = new()
     {
         ["MenuEntry"] = "이름 변경…",
