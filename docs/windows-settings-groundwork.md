@@ -61,31 +61,73 @@ Every new `AppSnapshot` field that stores a user preference follows these rules:
 
 ## Foundation 3 — Section Registration
 
-**Shape** (`MightyClaude.WinUI/MainWindow.Settings.cs`):
+**Where the order lives** (`MightyClaude.Core/SettingsSections.cs`):
+
+```csharp
+public sealed record SettingsSectionSlot(string Id, string? WindowsTitle)
+{
+    public bool OnWindows => WindowsTitle is not null;
+}
+
+public static class SettingsSections
+{
+    public static IReadOnlyList<SettingsSectionSlot> MacOrder { get; }      // every macOS slot, in order
+    public static IReadOnlyList<SettingsSectionSlot> Windows { get; }       // MacOrder.Where(OnWindows)
+    public static IReadOnlyList<string> WindowsTitles { get; }              // the headings, in order
+}
+```
+
+The slot list is in Core, not in WinUI, so the macOS order is a plain fact a
+Mac-side check can read — `settings sections …` in `Core.Tests` proves the order,
+the omissions and the smoke rules without building WinUI.
+
+**Where the controls live** (`MightyClaude.WinUI/MainWindow.Settings.cs`):
 
 ```csharp
 internal sealed record SettingsSection(string Title, Func<StackPanel> Build);
-```
 
-**How to register** — add one line to the collection literal in `GetSettingsSections()`:
-
-```csharp
 internal List<SettingsSection> GetSettingsSections() =>
-[
-    new("화면",                       BuildDisplaySection),
-    new(CliUpdateStrings.SectionTitle, BuildCliUpdateSectionFromState),
-    new("이 PC의 CLI",                 BuildProvidersSection),
-    new("앱 정보",                     BuildAppInfoSection),
-    // ← add new section here, in the macOS slot order
-];
+    [.. SettingsSections.Windows.Select(slot => new SettingsSection(slot.WindowsTitle!, BuilderFor(slot.Id)))];
+
+private Func<StackPanel> BuilderFor(string slotId) => slotId switch
+{
+    SettingsSections.Display   => BuildDisplaySection,
+    SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
+    SettingsSections.Providers => BuildProvidersSection,
+    SettingsSections.AppInfo   => BuildAppInfoSection,
+    _ => throw new InvalidOperationException("no Settings builder registered for slot " + slotId),
+};
 ```
 
-`Build` is called each time Settings opens; return a fresh `StackPanel` with controls
-wired to `service.UpdateAsync`. The registration does not touch any other section.
+**How to register a section** — two small edits, neither of which touches another
+section:
 
-**Section order** — Windows shows sections in the same relative order as macOS
-(`SettingsViews.swift`). Sections whose feature is not yet on Windows are simply
-absent; they are added here when their feature arrives.
+1. In Core, give the slot a `WindowsTitle` in `MacOrder` (it is already listed
+   with `null`). Its position in the macOS order is already correct.
+2. In WinUI, add one arm to `BuilderFor` returning the builder for its controls.
+
+`Build` is called each time Settings opens; return a fresh `StackPanel` with
+controls wired to `service.UpdateAsync`.
+
+**Sections shown today** (the rest of `MacOrder` carries `null` until its feature
+arrives on Windows):
+
+| Slot | Windows title | macOS |
+|------|---------------|-------|
+| `display` | `화면` | `Section("화면")` |
+| `cliUpdate` | `CLI 업데이트` (`CliUpdateStrings.SectionTitle`) | `CLIUpdateSettingsSection()` |
+| `providers` | `이 PC의 CLI` | the unnamed provider `Section` |
+| `appInfo` | `앱 정보` | `Section("앱 정보")` |
+
+Absent until their feature arrives: `remoteConnection`, `styles`, `components`,
+`mobileRemote`, `companion`, `cliAccounts`, `claudeMods`, `appUpdate`.
+
+**Smoke** — `SettingsSectionsSmoke.RunAsync` (Core) takes the headings and the
+result-row statuses the screen actually built, refuses anything that is not the
+registered order or drops a fixture row, flips the CLI auto-update switch, reads
+it back from saved state and always puts the original value back. WinUI only
+builds the screen and hands Core what it rendered, under the smoke key
+`settingsSections`.
 
 **OS-bound substitution** (recorded here, not a 보류 row):
 
