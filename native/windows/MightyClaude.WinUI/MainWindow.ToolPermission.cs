@@ -142,7 +142,7 @@ public sealed partial class MainWindow
         {
             var checks = new Dictionary<string, object?>();
             var savedDraft = input.Text;
-            var savedFocus = FocusManager.GetFocusedElement(toolPermissionHost.XamlRoot);
+            var savedFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(toolPermissionHost.XamlRoot);
             try
             {
                 owner.smokePermissionResponses = [];
