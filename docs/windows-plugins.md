@@ -202,7 +202,7 @@ different: Claude's plugin JSON has a known first release, so it gates on
 | `remote` | remote workspace | `PluginStrings.DetailRemote` |
 
 Install, `plugin marketplace add` and `plugin marketplace upgrade` belong to the
-marketplace feature and have no copy and no control here.
+marketplace feature. Install and marketplace refresh are now present.
 
 ### OS-bound string substitution
 
@@ -277,6 +277,8 @@ Each was decided without asking; the reason is the last column.
 | Monospaced text | `.monospaced` | `FontFamily("Consolas")` | The same choice the other Windows screens make. |
 | Finding the Codex CLI | PATH entry + `codex` | PATH entry (max 64) + `codex.cmd`, `codex.exe`, `codex.bat`, no extension | An npm install on Windows is `codex.cmd`. |
 | The Codex empty-marketplace sentence | a SwiftUI `Text` under the empty copy | a `TextBlock` with the automation id `codex-plugin-marketplace-help` | WinUI needs an id for the smoke run to read it the way a user reads the screen. |
+| Scope picker (install) | SwiftUI `Picker` | WinUI `ComboBox` | WinUI has no Picker; copy and options are the macOS originals. |
+| Progress while an operation runs | sheet stays open, close button disabled at the sheet level | `ContentDialog` stays open, 닫기 cannot be disabled on its own so the button handler checks `IsMutating` and returns | WinUI `ContentDialog` does not expose a way to disable the primary/close button programmatically. |
 
 ## What the window shows
 
@@ -415,10 +417,49 @@ way at `ecbfb86`, the commit before any Codex plugin work, and at a commit that
 changed nothing but `.md` files. The cause is in `native/macos/**`, which this
 Seed's allow-list does not let this work touch.
 
+### Plugin install and marketplace refresh
+
+Done and on `main` (`28b41e6` Core logic, `1f2563f` WinUI controls, `4551361`
+smoke run, `21c8876` running app wiring).
+
+**New Core file**: `PluginOperations.cs` — holds `InstallAsync` and
+`RefreshMarketplacesAsync`. Arguments are assembled as a `string[]` list, never
+concatenated into a shell string. The plugin id and scope are validated against
+the values `ClaudePluginBrowser.ScopeOptions` and the snapshot just returned
+before they are passed. At most one operation runs at a time (the app-wide gate);
+a second attempt is refused with `PluginStrings.DetailBusy`. The macOS timeout
+and output cap apply. Output is bounded and never saved.
+
+**New Core.Tests file**: `PluginMarketplaceVerification.cs` — 20 checks proving
+argument lists, scope validation, result sentences, busy refusal, cancel,
+argument-list ordering (no shell concatenation), and that the running app owns
+the operations object. All driven by a fake `ICliRunner`; no real `claude` or
+`codex` process starts.
+
+**Modified Core files**: `ClaudePlugins.cs` gained `InstallAsync`,
+`RefreshMarketplacesAsync`, `ScopeOptions`, `CanInstall`,
+`CanRefreshMarketplaces`, `IsMutating`, `CanCancel`, `RequestCancel`, and
+`NamesAllowedChange`. `PluginStrings.cs` gained the macOS-verbatim strings for
+scope labels, progress, cancel, result, and the busy sentence.
+
+**Modified WinUI files**: `MainWindow.Plugins.cs` gained the scope picker,
+per-row install button, marketplace refresh button, cancel button, progress
+label, and result line. `MainWindow.Smoke.cs` registered the `pluginMarketplace`
+smoke key.
+
+Present: scope picker (Claude: three scopes, Codex: user only), install button
+per catalog row (disabled when already installed at that scope), marketplace
+refresh button (disabled when nothing refreshable), cancel, progress label, close
+disabled while running, result sentence, list reload after the operation, one
+operation at a time across both windows.
+
+Absent, deliberately — these are not in the macOS app either: uninstall, enable,
+disable, `plugin marketplace add`.
+
 ### Still open
 
 The on-device pass. Every screen item is marked `기기 미확인` in
 `docs/windows-screen-checklist.md`, because no Windows machine has run this
 build; the Core checks and the GUI smoke run are what stands behind it so far.
-The `완료` mark on the `Codex 플러그인` parity row is set by the main session
-once it has read both Windows CI jobs.
+The `완료` mark on the `플러그인 마켓플레이스` parity row is set by the main
+session once it has read both Windows CI jobs.
