@@ -87,7 +87,7 @@ public sealed partial class MainWindow
     /// the field and 저장 disabled while the name is invalid. Every literal comes from RenameStrings
     /// and every rule from RenameSupport, so Windows and macOS accept and refuse the same names.
     /// </summary>
-    private async Task<string?> AskName(string heading, string hint, string current)
+    private async Task<string?> RenameDialog(string heading, string hint, string current)
     {
         var field = new TextBox { Header = RenameStrings.FieldLabel, Text = current, MinWidth = 300 };
         var hintText = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
@@ -125,14 +125,14 @@ public sealed partial class MainWindow
     private Task RenameWorkspace(string id) => Act(async () =>
     {
         if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id) is not { } workspace) return;
-        if (await AskName(RenameStrings.HeadingWorkspace, RenameStrings.HintWorkspace, workspace.Name) is not { } name) return;
+        if (await RenameDialog(RenameStrings.HeadingWorkspace, RenameStrings.HintWorkspace, workspace.Name) is not { } name) return;
         await service.RenameWorkspaceAsync(id, name);
         Render();
     });
     private Task RenameSession(string id) => Act(async () =>
     {
         if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } session) return;
-        if (await AskName(RenameStrings.HeadingSession, RenameStrings.HintSession, session.Title) is not { } name) return;
+        if (await RenameDialog(RenameStrings.HeadingSession, RenameStrings.HintSession, session.Title) is not { } name) return;
         await service.RenameSessionAsync(id, name);
         Render();
     });

@@ -467,6 +467,10 @@ public sealed partial class MainWindow : Window
         private MenuFlyout MoreMenu(RunSession pane, ProviderCapabilities caps)
         {
             var menu = new MenuFlyout();
+            var rename = Item(RenameStrings.MenuEntry, () => owner.RenameSession(id));
+            menu.Items.Add(rename);
+            menu.Items.Add(new MenuFlyoutSeparator());
+            menu.Opening += (_, _) => rename.IsEnabled = !owner.dialogOpen;
             AddOverflowSettings(menu, pane, caps);
             if (pane.Kind == "claude" && pane.Provider == "codex")
             {
