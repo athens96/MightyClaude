@@ -45,6 +45,7 @@ public sealed class CodexPluginReader : IPluginReader
     private readonly Lock gate = new();
     private Task<ClaudePluginSnapshot>? running;
     private bool closed;
+    private bool operating;
 
     /// The runner must be built with an output cap of at least
     /// ClaudePluginSupport.MaximumListingBytes; anything larger than the cap is
@@ -81,6 +82,146 @@ public sealed class CodexPluginReader : IPluginReader
     /// because nothing was changed.
     public void Shutdown() { lock (gate) closed = true; }
 
+    /// macOS CodexPluginService: the operation timeout is 180 seconds.
+    public static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(180);
+
+    /// codex plugin add <id> --json. Codex installs at user level only, so any
+    /// other scope is refused before a snapshot is read.
+    public Task<ClaudePluginOperationResult> InstallAsync(string pluginId, string scope, Workspace workspace, CancellationToken cancellation = default)
+    {
+        if (ClaudePluginSupport.PluginParts(pluginId) is null || scope != "user")
+            return Refused(workspace, PluginStrings.InstallBadIdOrScope);
+        return OperateAsync(pluginId, null, workspace, cancellation);
+    }
+
+    /// codex plugin marketplace upgrade <name> --json, for a registered Git source.
+    public Task<ClaudePluginOperationResult> RefreshMarketplaceAsync(string marketplace, Workspace workspace, CancellationToken cancellation = default)
+    {
+        if (!ClaudePluginSupport.Identifier(marketplace))
+            return Refused(workspace, PluginStrings.MarketplaceBadName);
+        return OperateAsync(null, marketplace, workspace, cancellation);
+    }
+
+    private Task<ClaudePluginOperationResult> Refused(Workspace workspace, string detail) =>
+        Task.FromResult(workspace.Remote is not null
+            ? new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.DetailRemote)
+            : new ClaudePluginOperationResult(ClaudePluginStatus.Failed, detail));
+
+    private Task<ClaudePluginOperationResult> OperateAsync(
+        string? pluginId, string? marketplace, Workspace workspace, CancellationToken cancellation)
+    {
+        if (workspace.Remote is not null)
+            return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.DetailRemote));
+        lock (gate)
+        {
+            if (closed)
+                return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Cancelled, PluginStrings.OperationCancelled));
+            if (operating)
+                return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Busy, PluginStrings.OperationBusy));
+            operating = true;
+        }
+        return RunOperationAsync(pluginId, marketplace, workspace, cancellation);
+    }
+
+    private async Task<ClaudePluginOperationResult> RunOperationAsync(
+        string? pluginId, string? marketplace, Workspace workspace, CancellationToken cancellation)
+    {
+        try
+        {
+            var cwd = LocalDirectory(workspace);
+            var (executable, version) = await CommandAsync(cwd, cancellation);
+            var snapshot = await ListAsync(executable, cwd, version, cancellation);
+            if (snapshot.Status != ClaudePluginStatus.Ready)
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, snapshot.Detail, snapshot.DiagnosticOutput);
+            cancellation.ThrowIfCancellationRequested();
+
+            string[] arguments;
+            if (pluginId is not null)
+            {
+                if (snapshot.Installed.Any(p => p.PluginId == pluginId))
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Skipped, CodexPluginStrings.InstallSkipped);
+                if (!snapshot.Available.Any(p => p.Id == pluginId))
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, CodexPluginStrings.InstallNotFound);
+                arguments = ["plugin", "add", pluginId, "--json"];
+            }
+            else
+            {
+                if (snapshot.Marketplaces.FirstOrDefault(m => m.Name == marketplace) is not { } selected)
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.MarketplaceNotRegistered);
+                if (selected.SourceKind != "git")
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Skipped, CodexPluginStrings.MarketplaceNotGit);
+                arguments = ["plugin", "marketplace", "upgrade", marketplace!, "--json"];
+            }
+
+            CliRunResult result;
+            try { result = await runner.RunAsync(executable, arguments, OperationTimeout, cancellation, environment, cwd); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error)
+            {
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.DetailIncomplete,
+                    ClaudePluginSupport.Display(error.Message, ClaudePluginSupport.MessageCap));
+            }
+            cancellation.ThrowIfCancellationRequested();
+            var output = ClaudePluginSupport.Output(result);
+            if (result.TimedOut)
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.DetailIncomplete, output);
+
+            System.Text.Json.JsonDocument document;
+            try { document = System.Text.Json.JsonDocument.Parse(result.Output); }
+            catch { return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, CodexPluginStrings.OperationFailed, output); }
+            using (document)
+            {
+                var root = document.RootElement;
+                if (result.ExitCode != 0 || root.ValueKind != System.Text.Json.JsonValueKind.Object)
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, CodexPluginStrings.OperationFailed, output);
+
+                if (pluginId is not null)
+                {
+                    var parts = ClaudePluginSupport.PluginParts(pluginId)!.Value;
+                    // OS-bound substitution, recorded in docs/windows-plugins.md:
+                    // macOS asks installedPath to start with "/", Windows asks
+                    // Path.IsPathRooted, the same "an absolute path" question.
+                    var installedPath = root.Text("installedPath");
+                    if (root.Text("pluginId") != pluginId || root.Text("name") != parts.Name
+                        || root.Text("marketplaceName") != parts.Marketplace
+                        || installedPath is null || installedPath.Contains('\0') || !Path.IsPathRooted(installedPath))
+                        return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.InstallUnconfirmed, output);
+                    var verified = await ListAsync(executable, cwd, version, cancellation);
+                    if (!verified.Installed.Any(p => p.PluginId == pluginId))
+                        return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, CodexPluginStrings.InstallVerifyFailed, output);
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, CodexPluginStrings.InstallSucceeded, output);
+                }
+
+                if (!Names(root, "selectedMarketplaces").SequenceEqual([marketplace!])
+                    || !root.TryGetProperty("upgradedRoots", out var roots) || roots.ValueKind != System.Text.Json.JsonValueKind.Array
+                    || !root.TryGetProperty("errors", out var errors) || errors.ValueKind != System.Text.Json.JsonValueKind.Array
+                    || errors.GetArrayLength() != 0)
+                    return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, CodexPluginStrings.MarketplaceRefreshUnconfirmed, output);
+                return new ClaudePluginOperationResult(ClaudePluginStatus.Succeeded, PluginStrings.MarketplaceRefreshSucceeded, output);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return new ClaudePluginOperationResult(ClaudePluginStatus.Cancelled, PluginStrings.OperationCancelled);
+        }
+        catch (PluginFailure failure)
+        {
+            return new ClaudePluginOperationResult(
+                failure.Status == ClaudePluginStatus.Cancelled ? ClaudePluginStatus.Cancelled : ClaudePluginStatus.Failed,
+                failure.Detail, failure.Output);
+        }
+        catch
+        {
+            return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.DetailIncomplete);
+        }
+        finally { lock (gate) operating = false; }
+    }
+
+    private static IReadOnlyList<string> Names(System.Text.Json.JsonElement root, string property) =>
+        root.TryGetProperty(property, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.Array
+            ? [.. value.EnumerateArray().Where(v => v.ValueKind == System.Text.Json.JsonValueKind.String).Select(v => v.GetString()!)]
+            : [];
+
     private sealed class PluginFailure(string status, string detail, string output = "") : Exception(detail)
     {
         internal string Status { get; } = status;
@@ -94,16 +235,7 @@ public sealed class CodexPluginReader : IPluginReader
         {
             var cwd = LocalDirectory(workspace);
             var (executable, version) = await CommandAsync(cwd, cancellation);
-            var listing = await RunAsync(executable, ["plugin", "list", "--json", "--available"], cwd,
-                CodexPluginStrings.DetailListingFailed, cancellation);
-            var marketplaces = await RunAsync(executable, ["plugin", "marketplace", "list", "--json"], cwd,
-                PluginStrings.DetailMarketplacesFailed, cancellation);
-            var snapshot = ClaudePluginSupport.ParseCodexSnapshot(listing.Output, marketplaces.Output, cwd, version);
-            // A CLI that still answered but warned on stderr: keep the warning
-            // and say the list may be stale, as macOS readSnapshot does.
-            var warnings = ClaudePluginSupport.Display((listing.ErrorOutput + "\n" + marketplaces.ErrorOutput).Trim(), ClaudePluginSupport.OutputCap);
-            if (warnings.Length == 0 || snapshot.Status != ClaudePluginStatus.Ready) return snapshot;
-            return snapshot with { DiagnosticOutput = warnings, Detail = snapshot.Detail + CodexPluginStrings.DetailWarningSuffix };
+            return await ListAsync(executable, cwd, version, cancellation);
         }
         catch (OperationCanceledException)
         {
@@ -117,6 +249,23 @@ public sealed class CodexPluginReader : IPluginReader
         {
             return new ClaudePluginSnapshot { Status = ClaudePluginStatus.Failed, Detail = PluginStrings.DetailIncomplete };
         }
+    }
+
+    /// The two read subcommands and the parse, shared by the list and by the
+    /// re-read an install or a marketplace upgrade does before it assembles
+    /// its arguments.
+    private async Task<ClaudePluginSnapshot> ListAsync(string executable, string cwd, string? version, CancellationToken cancellation)
+    {
+        var listing = await RunAsync(executable, ["plugin", "list", "--json", "--available"], cwd,
+            CodexPluginStrings.DetailListingFailed, cancellation);
+        var marketplaces = await RunAsync(executable, ["plugin", "marketplace", "list", "--json"], cwd,
+            PluginStrings.DetailMarketplacesFailed, cancellation);
+        var snapshot = ClaudePluginSupport.ParseCodexSnapshot(listing.Output, marketplaces.Output, cwd, version);
+        // A CLI that still answered but warned on stderr: keep the warning
+        // and say the list may be stale, as macOS readSnapshot does.
+        var warnings = ClaudePluginSupport.Display((listing.ErrorOutput + "\n" + marketplaces.ErrorOutput).Trim(), ClaudePluginSupport.OutputCap);
+        if (warnings.Length == 0 || snapshot.Status != ClaudePluginStatus.Ready) return snapshot;
+        return snapshot with { DiagnosticOutput = warnings, Detail = snapshot.Detail + CodexPluginStrings.DetailWarningSuffix };
     }
 
     private async Task<CliRunResult> RunAsync(string executable, string[] arguments, string cwd, string failureDetail, CancellationToken cancellation)

@@ -75,4 +75,45 @@ public static class PluginStrings
     public const string DetailMarketplacesFailed = "등록된 마켓플레이스 목록을 읽지 못했습니다.";
     public const string DetailMalformed = "플러그인 목록 형식 또는 크기가 올바르지 않습니다. 빈 목록으로 처리하지 않았습니다.";
     public const string DetailIncomplete = "플러그인 작업을 완료하지 못했습니다. 실행 시간·출력 한도 또는 CLI 접근 상태를 확인하세요.";
+
+    // ---- Install and marketplace refresh controls (ClaudePluginView.swift) ----
+    // The scope picker, the per-plugin install button, 마켓플레이스 새로고침, the
+    // progress line and the cancel button, word for word as macOS writes them.
+    public const string ScopePickerLabel = "설치 범위";
+    public const string ScopeLocalOption = "로컬 · 이 워크스페이스, 나만";
+    public const string ScopeProjectOption = "프로젝트 · 팀과 공유";
+    public const string ScopeUserOption = "사용자 · 모든 프로젝트";
+    public const string ScopeNoteLocal = "현재 워크스페이스에만 적용하며 팀의 공유 설정은 바꾸지 않습니다.";
+    public const string ScopeNoteProject = "프로젝트 설정에 기록해 팀과 같은 플러그인을 사용합니다.";
+    // OS-bound substitution, recorded in docs/windows-plugins.md:
+    // macOS reads "이 Mac의 모든 프로젝트에서 ...".
+    public const string ScopeNoteUser = "이 PC의 모든 프로젝트에서 사용하는 사용자 설정에 설치합니다.";
+    public const string ButtonInstall = "설치";
+    public const string ButtonInstalling = "설치 중…";
+    public const string ButtonMarketplaceRefresh = "마켓플레이스 새로고침";
+    public const string ButtonCancelOperation = "작업 취소";
+    public const string ButtonCancelling = "취소 중…";
+    public const string ProgressInstalling = "플러그인 설치 중…";
+    public const string ProgressRefreshing = "마켓플레이스 갱신 중…";
+    public const string ProgressCancelling = "작업을 취소하는 중…";
+    public const string NoRefreshableMarketplaces = "새로고침할 등록된 마켓플레이스가 없습니다.";
+    public const string SelectPluginAndScopeAgain = "목록에서 플러그인과 설치 범위를 다시 선택하세요.";
+    public const string LoadListFirst = "플러그인 목록을 먼저 불러오세요.";
+    public const string MarketplacesRefreshedTemplate = "{count}개 마켓플레이스의 목록을 갱신했습니다.";
+
+    // ---- Operation results (ClaudePluginService.swift install / refreshMarketplace) ----
+    public const string OperationBusy = "다른 플러그인 작업이 진행 중입니다.";
+    public const string OperationCancelled = "플러그인 작업을 취소했습니다.";
+    public const string OperationCancelledByUser = "작업을 취소했습니다. 이미 반영된 변경이 있을 수 있어 목록을 다시 확인합니다.";
+    public const string InstallBadIdOrScope = "플러그인 이름 또는 설치 범위가 올바르지 않습니다.";
+    public const string InstallNotFound = "현재 등록된 마켓플레이스 목록에서 이 플러그인을 찾지 못했습니다. 목록을 다시 확인하세요.";
+    public const string InstallSkipped = "선택한 범위에 이미 설치되어 있습니다. 비활성 상태라면 Claude CLI에서 활성화하세요.";
+    public const string InstallCommandRequired = "이 플러그인은 추가 명령 실행 동의가 필요합니다. Claude CLI에서 표시된 명령을 확인한 뒤 설치하세요. 앱은 자동 승인하지 않습니다.";
+    public const string InstallUnconfirmed = "설치 결과를 확인하지 못했습니다. 목록을 다시 읽어 설치 상태를 확인하세요.";
+    public const string InstallFailed = "플러그인 설치에 실패했습니다. 네트워크·권한·조직 정책을 확인하세요.";
+    public const string InstallSucceeded = "플러그인을 설치했습니다. 다음 Claude 실행부터 적용됩니다.";
+    public const string MarketplaceBadName = "마켓플레이스 이름이 올바르지 않습니다.";
+    public const string MarketplaceNotRegistered = "등록되지 않은 마켓플레이스입니다. 기존 등록 목록에서 선택하세요.";
+    public const string MarketplaceRefreshFailed = "마켓플레이스 새로고침에 실패했습니다. 네트워크 상태와 접근 권한을 확인하세요.";
+    public const string MarketplaceRefreshSucceeded = "선택한 마켓플레이스 목록을 새로고침했습니다.";
 }

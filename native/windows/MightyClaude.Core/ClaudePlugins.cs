@@ -20,6 +20,14 @@ public interface IPluginReader
 {
     Task<ClaudePluginSnapshot> SnapshotAsync(Workspace workspace, CancellationToken cancellation = default);
     void Shutdown();
+
+    /// The two mutations macOS has, and no others: install one available plugin
+    /// and refresh one registered marketplace. Both assemble their argument list
+    /// out of values the snapshot just returned, run it through the shared
+    /// one-shot runner and interpret the answer. There is no uninstall, enable,
+    /// disable or marketplace add, because the macOS app has none.
+    Task<ClaudePluginOperationResult> InstallAsync(string pluginId, string scope, Workspace workspace, CancellationToken cancellation = default);
+    Task<ClaudePluginOperationResult> RefreshMarketplaceAsync(string marketplace, Workspace workspace, CancellationToken cancellation = default);
 }
 
 /// CLI settings state for this working directory, not proof that an already
@@ -69,9 +77,8 @@ public sealed record ClaudePluginSnapshot
     public string DiagnosticOutput { get; init; } = "";
 }
 
-/// The result shape a later mutating operation (install, marketplace refresh)
-/// reports. Nothing in this feature produces one; the type exists so the
-/// marketplace and Codex features add their method without reshaping the model.
+/// What an install or a marketplace refresh reports: the macOS status word, the
+/// macOS sentence and the bounded CLI output that is only shown on request.
 public sealed record ClaudePluginOperationResult(string Status, string Detail, string Output = "");
 
 public static class ClaudePluginStatus
@@ -82,6 +89,10 @@ public static class ClaudePluginStatus
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
     public const string Remote = "remote";
+    // Operation results add three words of their own (ClaudePluginService.swift).
+    public const string Succeeded = "succeeded";
+    public const string Skipped = "skipped";
+    public const string Busy = "busy";
 }
 
 /// Parsing and shaping that depend only on data — no process, no file system.
