@@ -344,6 +344,14 @@ internal static class Verification
         await Test("slash frontmatter", SlashCommandVerification.Frontmatter);
         await Test("slash discovery from temp home and workspace", SlashCommandVerification.Discovery);
         await Test("slash 400 cap", SlashCommandVerification.CapAt400);
+        await Test("status line config follows Claude settings precedence and command-only entries", StatusLineVerification.ConfigFollowsPrecedenceAndOnlyCommandEntries);
+        await Test("status line fingerprint matches macOS formula", StatusLineVerification.FingerprintMatchesMacOS);
+        await Test("status line payload uses the CLI field names and transcript layout", StatusLineVerification.PayloadUsesCliFieldNamesAndTranscriptLayout);
+        await Test("status line ANSI parsing keeps colours weight and strips other escapes", StatusLineVerification.AnsiParsingKeepsColoursWeightAndStripsEscapes);
+        await Test("status line trust rule requires fingerprint for workspace commands", StatusLineVerification.TrustRuleRequiresFingerprintForWorkspaceCommands);
+        await Test("status line runner feeds stdin captures output and colour", StatusLineVerification.RunnerFeedsStdinCapturesOutputAndColour);
+        await Test("status line runner enforces timeout", StatusLineVerification.RunnerEnforcesTimeout);
+        await Test("strings match macOS", StringsVerification.MatchMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
