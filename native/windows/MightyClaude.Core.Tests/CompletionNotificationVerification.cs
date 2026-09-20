@@ -104,9 +104,14 @@ internal static class CompletionNotificationVerification
             throw new InvalidOperationException("the smoke call must carry the fixture title and session id only");
         if (outcome.Status != CompletionNotificationSmokeOutcome.SentStatus || outcome.Reason is not null)
             throw new InvalidOperationException("a successful call must be recorded as sent without a reason");
-        var json = JsonSerializer.Serialize(outcome, Wire.Json);
-        if (json != """{"status":"sent"}""")
-            throw new InvalidOperationException("unexpected recorded value: " + json);
+        // The smoke result file is written with plain options; the recorded shape
+        // must be the same there as on the wire.
+        foreach (var options in new[] { Wire.Json, new JsonSerializerOptions() })
+        {
+            var json = JsonSerializer.Serialize(outcome, options);
+            if (json != """{"status":"sent"}""")
+                throw new InvalidOperationException("unexpected recorded value: " + json);
+        }
     }
 
     // Unsupported or unregistered notifications are recorded as skipped with a
@@ -128,9 +133,12 @@ internal static class CompletionNotificationVerification
         if (blank.Reason != CompletionNotificationSmokeOutcome.UnknownReason)
             throw new InvalidOperationException("a skipped outcome must always carry a reason");
         if (sent != 0) throw new InvalidOperationException("a skipped smoke run must not send a notification");
-        var json = JsonSerializer.Serialize(unsupported, Wire.Json);
-        if (json != """{"status":"skipped","reason":"IsSupported false"}""")
-            throw new InvalidOperationException("unexpected recorded value: " + json);
+        foreach (var options in new[] { Wire.Json, new JsonSerializerOptions() })
+        {
+            var json = JsonSerializer.Serialize(unsupported, options);
+            if (json != """{"status":"skipped","reason":"IsSupported false"}""")
+                throw new InvalidOperationException("unexpected recorded value: " + json);
+        }
     }
 
     // An exception after support was confirmed is a real failure, not a skip.

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MightyClaude.Core;
 
 // What the GUI smoke run records under the key "completionNotification" after
@@ -17,7 +19,11 @@ public sealed record CompletionNotificationSmokeOutcome
     public const string UnsupportedReason = "IsSupported false";
     public const string UnknownReason = "unknown reason";
 
-    public string Status { get; init; } = SentStatus;
+    // Named explicitly so the recorded shape is the same whichever serializer
+    // options the smoke result file is written with.
+    [JsonPropertyName("status")] public string Status { get; init; } = SentStatus;
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Reason { get; init; }
 
     public static CompletionNotificationSmokeOutcome Sent() => new();
