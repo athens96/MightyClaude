@@ -23,6 +23,14 @@ public sealed class CliUpdateCoordinator
     public DateTimeOffset? FinishedAt { get { lock (gate) return finishedAt; } }
     public IReadOnlyList<CliUpdateResult> Results { get { lock (gate) return results; } }
 
+    /// The macOS button: 업데이트 중… while a run is on, 업데이트 하기 otherwise
+    /// (CLIUpdateSettingsView.swift line 26). WinUI only shows this value.
+    public string ButtonLabel => IsUpdating ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton;
+
+    /// The button is disabled while a run is on, so a second start is refused
+    /// before it is even attempted.
+    public bool CanStart => !IsUpdating;
+
     public CliUpdateCoordinator(Func<string, CancellationToken, Task<CliUpdateResult>> updater)
         => this.updater = updater;
 
