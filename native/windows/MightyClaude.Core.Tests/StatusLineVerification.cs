@@ -190,10 +190,12 @@ internal static class StatusLineVerification
     internal static Task StatusLinePayloadUsesTheCLIsFieldNamesAndTranscriptLayout()
     {
         // Transcript path: every non-alphanumeric → '-', leading dash kept (no trimming), first 200 chars.
+        // The layout is the CLI's (<config>/projects/<slug>/<session>.jsonl); the separator is the
+        // platform's, so the expectation is built the same way instead of hard-coding POSIX slashes.
         Check(StatusLineSupport.TranscriptPath("/Users/me/.claude", "/Users/me/Work/My.App", "abc")
-            == "/Users/me/.claude/projects/-Users-me-Work-My-App/abc.jsonl", "transcript path keeps leading dash");
+            == Path.Combine("/Users/me/.claude", "projects", "-Users-me-Work-My-App", "abc.jsonl"), "transcript path keeps leading dash");
         Check(StatusLineSupport.TranscriptPath("/cfg", "/x", "s")
-            == "/cfg/projects/-x/s.jsonl", "transcript path with env config dir");
+            == Path.Combine("/cfg", "projects", "-x", "s.jsonl"), "transcript path with env config dir");
 
         var r = Payload(MacOSShapeContext(ResetInAnHour()));
 
@@ -202,7 +204,7 @@ internal static class StatusLineVerification
         Check(r.GetProperty("version").GetString() == "2.1.274", "version");
         Check(r.GetProperty("cwd").GetString() == "/repo", "cwd");
         Check(r.GetProperty("transcript_path").GetString()
-            == "/Users/me/.claude/projects/-repo/sess.jsonl", "transcript_path");
+            == Path.Combine("/Users/me/.claude", "projects", "-repo", "sess.jsonl"), "transcript_path");
 
         // model is an object {id, display_name} — never a bare string.
         var model = r.GetProperty("model");
