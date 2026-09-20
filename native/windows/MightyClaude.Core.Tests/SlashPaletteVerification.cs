@@ -170,19 +170,23 @@ internal static class SlashPaletteVerification
 
     internal static Task LeavesOutActionsWindowsCannotDo()
     {
-        // /plugin and /plugins would open a marketplace this client does not have.
-        Check(SlashPalette.UnavailableActions.SequenceEqual([SlashCommandAction.OpenPlugins]),
-            "only the plugin browser is missing on Windows today");
-        foreach (var provider in new[] { "claude", "codex", "gemini" })
+        // Claude has the plugin window now. No action is universally blocked.
+        Check(SlashPalette.UnavailableActions.SequenceEqual([]),
+            "no action is universally missing; Claude has /plugin, Codex waits for its feature");
+        // Claude has /plugin restored.
+        Check(SlashPalette.Builtins("claude").Any(c => c.Action == SlashCommandAction.OpenPlugins),
+            "claude must offer /plugin now that the plugin window is built");
+        // Codex /plugins and Gemini stay out until their features land.
+        foreach (var provider in new[] { "codex", "gemini" })
             Check(!SlashPalette.Builtins(provider).Any(c => c.Action == SlashCommandAction.OpenPlugins),
-                provider + " must not offer a row that does nothing");
+                provider + " must not offer a plugin row that does nothing yet");
         Check(SlashCommandCatalog.Builtins("claude").Any(c => c.Action == SlashCommandAction.OpenPlugins),
             "the macOS built-in list itself is left untouched");
-        Check(!State("/plugin").IsOpen, "/plugin finds nothing in the Windows palette");
-        // Everything else macOS offers is still there.
+        Check(State("/plugin").IsOpen, "/plugin now opens the Claude plugin window");
+        // All Claude built-ins are present; /plugin is back in the macOS order.
         Check(SlashPalette.Builtins("claude").Select(c => c.Invocation).SequenceEqual(
-                ["model", "permissions", "clear", "cost", "usage", "config", "rename", "help"]),
-            "the remaining Claude built-ins keep the macOS order");
+                ["plugin", "model", "permissions", "clear", "cost", "usage", "config", "rename", "help"]),
+            "Claude built-ins include /plugin in the macOS order");
         return Task.CompletedTask;
     }
 
