@@ -53,6 +53,8 @@ public sealed class DesktopService : IAsyncDisposable
         foreach (var pane in Snapshot.Sessions.Where(s => s.WorkspaceId == id)) await StopAsync(pane.Id);
         await UpdateAsync(s => s with { Workspaces = s.Workspaces.Where(w => w.Id != id).ToList(), Sessions = s.Sessions.Where(p => p.WorkspaceId != id).ToList(), ActiveWorkspaceId = s.ActiveWorkspaceId == id ? s.Workspaces.FirstOrDefault(w => w.Id != id)?.Id : s.ActiveWorkspaceId });
     }
+    public Task RenameWorkspaceAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameWorkspace(s, id, name));
+    public Task RenameSessionAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameSession(s, id, name));
     public Task UpdateAsync(Func<AppSnapshot, AppSnapshot> update)
     {
         lock (sync) { ObjectDisposedException.ThrowIf(closing, this); snapshot = StateStore.Normalize(update(snapshot), false); return QueueSave(); }

@@ -496,6 +496,18 @@ internal static class Verification
         await Test("app update automatic check happens at most once a day", AppUpdateVerification.AutomaticCheckHappensAtMostOnceADay);
         await Test("app update section shows the macOS copy for every phase", AppUpdateVerification.SectionShowsTheMacOSCopyForEveryPhase);
         await Test("app update pipeline runs from a fixture-signed manifest to a ready install plan", AppUpdateVerification.PipelineRunsFromAFixtureSignedManifestToAReadyInstallPlan);
+        await Test("rename validation accepts valid names", RenameVerification.renameValidationAcceptsValidNames);
+        await Test("rename validation refuses empty", RenameVerification.renameValidationRefusesEmpty);
+        await Test("rename validation refuses over 120 characters", RenameVerification.renameValidationRefusesOver120);
+        await Test("rename validation refuses control characters", RenameVerification.renameValidationRefusesControlCharacters);
+        await Test("rename workspace stores name in snapshot", RenameVerification.renameWorkspaceStoresNameInSnapshot);
+        await Test("rename session stores title in snapshot", RenameVerification.renameSessionStoresTitleInSnapshot);
+        await Test("rename session title survives new output", RenameVerification.renameSessionTitleSurvivesNewOutput);
+        await Test("rename name survives restart", RenameVerification.renameNameSurvivesRestart);
+        await Test("rename rejects invalid name", RenameVerification.renameRejectsInvalidName);
+        await Test("rename rejects unknown target", RenameVerification.renameRejectsUnknownTarget);
+        await Test("rename via DesktopService persists name", RenameVerification.renameViaDesktopServicePersistsName);
+        await Test("rename strings match macOS", RenameVerification.renameStringsMatchMacOS);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();
