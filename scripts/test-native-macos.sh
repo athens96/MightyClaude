@@ -20,9 +20,19 @@ set -e
 if [ "$SWIFT_EXIT" -ne 0 ]; then
   python3 - "$LOGFILE" <<'PY'
 import sys
-lines = [l for l in open(sys.argv[1]).read().splitlines() if l.strip()]
-tail = '\n'.join(lines[-30:])
-msg = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1500]
+all_lines = open(sys.argv[1]).read().splitlines()
+nonempty = [l for l in all_lines if l.strip()]
+# Compiler errors (": error:"), test failures ("✗"), and the final summary
+errors = [l for l in nonempty if ': error:' in l][:8]
+failures = [l for l in nonempty if l.strip().startswith('✗')][:8]
+summary = [l for l in nonempty if 'Test run with' in l or 'test run with' in l][:2]
+tail = nonempty[-10:]
+seen = set(); result = []
+for l in errors + failures + summary + tail:
+    if l not in seen:
+        result.append(l); seen.add(l)
+msg = '\n'.join(result[:30])
+msg = msg.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1500]
 print(f'::error title=macOS Swift tests::{msg}')
 PY
   rm -f "$LOGFILE"

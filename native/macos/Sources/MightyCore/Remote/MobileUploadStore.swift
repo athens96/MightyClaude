@@ -56,7 +56,7 @@ public actor MobileUploadStore {
     private var uploads: [String: Upload] = [:]
     private var prepared = false
 
-    public init(directory: URL, now: @escaping @Sendable () -> Date = Date.init) {
+    public init(directory: URL, now: @escaping @Sendable () -> Date = { Date() }) {
         self.directory = directory; self.now = now
     }
 

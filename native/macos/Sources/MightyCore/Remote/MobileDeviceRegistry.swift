@@ -159,7 +159,7 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
     /// First pairings inside the rolling window, for the rate limit.
     private var registrations: [Date] = []
 
-    public init(url: URL, now: @escaping @Sendable () -> Date = Date.init) {
+    public init(url: URL, now: @escaping @Sendable () -> Date = { Date() }) {
         self.url = url; self.now = now
     }
 
