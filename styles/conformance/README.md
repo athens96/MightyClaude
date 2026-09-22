@@ -21,7 +21,7 @@
 
 ## 코퍼스가 다루지 않는 오류 코드
 
-오류 코드는 모두 47개이고, 그중 45개가 `invalid/` 에 파일로 들어 있습니다.
+오류 코드는 모두 48개이고, 그중 46개가 `invalid/` 에 파일로 들어 있습니다.
 남은 둘은 정적 파일로 다룰 수 없어 빠졌으며 사유는 다음과 같습니다.
 
 | 코드 | 빠진 사유 | 대신 확인하는 곳 |
@@ -29,7 +29,7 @@
 | `E_TOO_LARGE` | 256 KB 를 넘는 파일이라야 나오는 판정입니다. 그만한 파일을 저장소에 두면 clone 과 diff 가 무거워집니다 | `StylesThirdPartyConformanceTests.tooLargeIsRejectedDynamically` 가 테스트 안에서 데이터를 만들어 확인합니다 |
 | `E_ID_COLLISION` | 매니페스트 한 장을 읽어서는 나올 수 없는 판정입니다. 이미 등록된 다른 스타일과 id 가 겹칠 때 앱 등록 단계에서 레지스트리가 내리는 판정이라 디코더로는 닿지 않습니다 | `StyleManifestTests` 가 레지스트리 경로에서 따로 확인합니다 |
 
-`invalidCorpusCoversExpectedErrorCodes` 가 위 둘을 제외한 45개 코드 전부가
+`invalidCorpusCoversExpectedErrorCodes` 가 위 둘을 제외한 46개 코드 전부가
 코퍼스에 있는지, 그리고 코퍼스에 알 수 없는 코드가 섞이지 않았는지를 검사합니다.
 엔진에 코드가 늘면 이 검사가 먼저 실패하므로 코퍼스가 조용히 뒤처지지 않습니다.
 

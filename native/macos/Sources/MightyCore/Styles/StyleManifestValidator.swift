@@ -41,6 +41,11 @@ public enum StyleManifestValidator {
         let actionIds = Set(manifest.actions.map(\.id))
         let phaseIds = Set(manifest.phases.map(\.id))
         let matches = manifest.actions.compactMap(\.match)
+        if let job = manifest.job {
+            for id in job.whileOpen where !actionIds.contains(id) {
+                throw StyleErrors.unknownReference("job.whileOpen", id)
+            }
+        }
 
         for group in manifest.groups {
             for action in group.actions where !actionIds.contains(action) {

@@ -155,6 +155,9 @@ public enum StyleErrors {
     public static let autoAllowQuestion = code("E_AUTOALLOW_QUESTION", "AskUserQuestion은 자동 허용할 수 없습니다.")
     public static func autoAllowDuplicate(_ wire: String) -> StyleManifestError { code("E_AUTOALLOW_DUPLICATE", "같은 도구가 두 번 있습니다: \(StyleText.safe(wire)).") }
     public static let placeholderInitial = code("E_PLACEHOLDER_INITIAL", "initial placeholder는 Enter 규칙이 rewriteBareDraftTo일 때만 쓸 수 있습니다.")
+    public static func jobMatcherLiteral(_ path: String) -> StyleManifestError {
+        code("E_JOB_MATCHER_LITERAL", "매처에는 contains 또는 notContains 중 하나만 쓸 수 있습니다: \(StyleText.safe(path)).")
+    }
     public static func idCollision(_ id: String, _ winner: StyleSource) -> StyleManifestError {
         code("E_ID_COLLISION", "이미 같은 id의 스타일이 있습니다: \(StyleText.safe(id)) (\(winner.rawValue)).")
     }
@@ -179,6 +182,7 @@ public enum StyleErrorCodes {
         StyleErrors.probeNameShape(""), StyleErrors.scopes(""), StyleErrors.autoAllowServer(""),
         StyleErrors.autoAllowShape(""), StyleErrors.autoAllowForeignServer(""), StyleErrors.autoAllowToolSearchBundled,
         StyleErrors.autoAllowQuestion, StyleErrors.autoAllowDuplicate(""), StyleErrors.placeholderInitial,
+        StyleErrors.jobMatcherLiteral(""),
         StyleErrors.idCollision("", .user),
     ]
     public static let all: Set<String> = Set(produced.map(\.code))
@@ -391,6 +395,30 @@ public struct StyleRules: Sendable, Equatable {
     }
 }
 
+/// One entry in a job declaration's open or close list: the tool name whose
+/// result triggers the state change, with an optional literal that must (or
+/// must not) appear in the result text (§1.13).
+public struct StyleJobMatcher: Sendable, Equatable {
+    public var tool: String
+    public var contains: String?
+    public var notContains: String?
+    public init(tool: String, contains: String? = nil, notContains: String? = nil) {
+        self.tool = tool; self.contains = contains; self.notContains = notContains
+    }
+}
+
+/// Optional manifest field that makes the panel aware of background jobs
+/// (§1.13). Manifests without this field behave exactly as before.
+public struct StyleJobDeclaration: Sendable, Equatable {
+    public var open: [StyleJobMatcher]
+    public var close: [StyleJobMatcher]
+    public var whileOpen: [String]
+    public var guidance: String?
+    public init(open: [StyleJobMatcher], close: [StyleJobMatcher], whileOpen: [String], guidance: String? = nil) {
+        self.open = open; self.close = close; self.whileOpen = whileOpen; self.guidance = guidance
+    }
+}
+
 public struct StyleManifest: Sendable, Equatable {
     public var schema: Int
     public var id, name, summary, subtitle: String
@@ -407,15 +435,17 @@ public struct StyleManifest: Sendable, Equatable {
     public var capabilities: [String]
     public var autoAllow: [StyleAutoAllowEntry]
     public var presentation: StylePresentation
+    public var job: StyleJobDeclaration?
     public init(schema: Int, id: String, name: String, summary: String, subtitle: String, placeholders: StylePlaceholders,
                 guidance: StyleGuidance, prerequisites: StylePrerequisites, install: StyleInstall?, phases: [StylePhase],
                 groups: [StyleGroup], actions: [StyleAction], aliases: [StyleAlias], recognition: StyleRecognition,
-                rules: StyleRules, capabilities: [String], autoAllow: [StyleAutoAllowEntry], presentation: StylePresentation) {
+                rules: StyleRules, capabilities: [String], autoAllow: [StyleAutoAllowEntry], presentation: StylePresentation,
+                job: StyleJobDeclaration? = nil) {
         self.schema = schema; self.id = id; self.name = name; self.summary = summary; self.subtitle = subtitle
         self.placeholders = placeholders; self.guidance = guidance; self.prerequisites = prerequisites; self.install = install
         self.phases = phases; self.groups = groups; self.actions = actions; self.aliases = aliases
         self.recognition = recognition; self.rules = rules; self.capabilities = capabilities
-        self.autoAllow = autoAllow; self.presentation = presentation
+        self.autoAllow = autoAllow; self.presentation = presentation; self.job = job
     }
 
     public func action(_ id: String) -> StyleAction? { actions.first { $0.id == id } }
