@@ -92,8 +92,9 @@ struct GuidedPanel: View {
     private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: 5, alignment: .leading)]
 
     var body: some View {
+        let jobOpen = evaluator.isJobOpen(session: session)
         let chips = StyleChips.make(evaluator, phase: phase, group: group, startingNew: selection.startingNew,
-                                    capabilityStates: states, running: running)
+                                    capabilityStates: states, running: running, jobOpen: jobOpen)
         let setup = store.stylePrerequisite(style, for: session)
         return VStack(alignment: .leading, spacing: 8) {
             if !manifest.phases.isEmpty { stepper(chips.phaseId) }
@@ -111,7 +112,7 @@ struct GuidedPanel: View {
                 }
                 if showsAttachments { attachmentRow }
                 if chips.progress { progressRow } else { actionRow(chips) }
-                if let guidance = evaluator.guidanceLine(phase: chips.phaseId.flatMap { manifest.phase($0) }, running: running) {
+                if let guidance = evaluator.guidanceLine(phase: chips.phaseId.flatMap { manifest.phase($0) }, running: running, jobOpen: jobOpen) {
                     Text(verbatim: guidance).font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
             }

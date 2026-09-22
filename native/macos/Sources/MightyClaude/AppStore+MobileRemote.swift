@@ -363,7 +363,8 @@ extension AppStore {
                                          capabilityStates: styleStates(style, for: session),
                                          attachments: styleChips(style, for: session),
                                          prerequisites: stylePrerequisite(style, for: session) ?? unknown,
-                                         running: session.status == "running")
+                                         running: session.status == "running",
+                                         session: session)
     }
 
     /// What a phone watching the Mighty view would notice change: the run and
