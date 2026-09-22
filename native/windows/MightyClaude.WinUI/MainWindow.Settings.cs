@@ -93,7 +93,7 @@ public sealed partial class MainWindow
         return wrapper;
     }
 
-    // 화면 — theme and completion-notification controls; behaviour unchanged.
+    // 화면 — theme, language picker, and completion-notification controls.
     private StackPanel BuildDisplaySection()
     {
         var panel = new StackPanel { Spacing = 8 };
@@ -107,6 +107,22 @@ public sealed partial class MainWindow
                 await Act(async () => { await service.UpdateAsync(s => s with { Theme = (string)item.Tag }); Render(); });
         };
         panel.Children.Add(theme);
+
+        // Language picker — takes effect on the next app start.
+        var language = new ComboBox { Header = Locale.Get("settings.display.languageLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        AutomationProperties.SetAutomationId(language, "settings-language");
+        language.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.languageSystem"), Tag = "system" });
+        language.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.languageKorean"), Tag = "ko" });
+        language.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.languageEnglish"), Tag = "en" });
+        var savedLang = service.Snapshot.LanguagePreference;
+        language.SelectedIndex = savedLang switch { "ko" => 1, "en" => 2, _ => 0 };
+        language.SelectionChanged += async (_, _) =>
+        {
+            if (language.SelectedItem is ComboBoxItem item)
+                await Act(async () => await service.UpdateAsync(s => s with { LanguagePreference = (string)item.Tag }));
+        };
+        panel.Children.Add(language);
+
         panel.Children.Add(BuildNotificationSettingsSection());
         return panel;
     }

@@ -460,6 +460,12 @@ internal static class Verification
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
         await Test("settings sections smoke flips the CLI auto-update switch and restores it", SettingsSectionsVerification.SmokeFlipsTheAutoUpdateSwitchAndRestoresIt);
         await Test("settings sections smoke shows every fixture status and rejects a wrong screen", SettingsSectionsVerification.SmokeShowsEveryFixtureStatusAndRejectsAWrongScreen);
+        await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);
+        await Test("locale English file loads from shared locales path", LocalizationVerification.EnglishLocaleLoadsFromSharedFile);
+        await Test("locale key absent from both catalogs returns the key itself", LocalizationVerification.MissingKeyInChosenLanguageFallsBackToKorean);
+        await Test("locale placeholders are substituted when subs supplied", LocalizationVerification.PlaceholdersAreSubstituted);
+        await Test("locale language picker keys exist with expected values", LocalizationVerification.LanguagePickerLocaleKeysExist);
+        await Test("locale language preference defaults to system and persists through Normalize", LocalizationVerification.LanguagePreferencePersistsInSnapshot);
         await Test("cli account strings match macOS", StringsVerification.CliAccountStringsMatchMacOS);
         await Test("cli account claude and codex statuses expose account labels only", CliAccountVerification.ClaudeAndCodexStatusesExposeAccountLabelsOnly);
         await Test("cli account token never survives the read", CliAccountVerification.TokenNeverSurvivesTheRead);

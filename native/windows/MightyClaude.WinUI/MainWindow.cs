@@ -96,8 +96,8 @@ public sealed partial class MainWindow : Window
     }
     private async Task Initialize()
     {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
-        try { await service.InitializeAsync(); Render(); await RunUISmoke(); }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
+        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
     }
     private async Task Act(Func<Task> action)
