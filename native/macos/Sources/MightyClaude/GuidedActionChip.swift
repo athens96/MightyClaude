@@ -69,8 +69,8 @@ struct GuidedApprovalStrip: View {
             Image(systemName: "questionmark.square.dashed").font(.system(size: 10)).foregroundStyle(.secondary)
             Text(verbatim: name).font(.system(size: 11, weight: .medium)).lineLimit(1)
             if let badge = StyleChrome.sourceBadge(source) { SourceBadge(text: badge) }
-            Text("확인이 필요합니다").font(.system(size: 11)).foregroundStyle(.secondary)
-            Button("내용 보기", action: onOpen).controlSize(.small)
+            Text(L("guidedPanel.approvalRequired")).font(.system(size: 11)).foregroundStyle(.secondary)
+            Button(L("guidedPanel.viewContentsButton"), action: onOpen).controlSize(.small)
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .contain)
@@ -87,6 +87,6 @@ struct SourceBadge: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(Palette.subtle, in: Capsule())
-            .accessibilityLabel("출처: " + text)
+            .accessibilityLabel(L("guidedPanel.sourcePrefix") + text)
     }
 }

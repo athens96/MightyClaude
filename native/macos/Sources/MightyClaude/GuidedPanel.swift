@@ -43,8 +43,8 @@ struct MightyStylePicker: View {
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .disabled(session.status == "running")
-        .help("요청 스타일 " + StyleChrome.separator + " CLI는 지금처럼 자유롭게 요청합니다. 스타일은 그 매니페스트가 정한 단계와 행동을 씁니다.")
-        .accessibilityLabel("요청 스타일").accessibilityValue(label)
+        .help(L("guidedPanel.stylesMenuHelp"))
+        .accessibilityLabel(L("guidedPanel.stylesMenuAccessibility")).accessibilityValue(label)
         .accessibilityIdentifier("mighty-style-\(session.id)")
     }
 
@@ -148,7 +148,7 @@ struct GuidedPanel: View {
             }
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .ignore).accessibilityLabel("진행 단계")
+        .accessibilityElement(children: .ignore).accessibilityLabel(L("guidedPanel.phasesAccessibility"))
         .accessibilityValue(ordered.first { $0.id == currentId }?.title ?? "")
         .accessibilityIdentifier("mighty-phases-\(session.id)")
     }
@@ -167,8 +167,8 @@ struct GuidedPanel: View {
             }
             HStack(spacing: 6) {
                 // Only when the command actually fixes one of the unmet checks.
-                if result.canInstall { Button("설치") { store.startStyleInstall(style, from: session) }.controlSize(.small) }
-                Button("다시 확인") { store.refreshStylePrerequisites(style, for: session) }.controlSize(.small)
+                if result.canInstall { Button(L("guidedPanel.installButton")) { store.startStyleInstall(style, from: session) }.controlSize(.small) }
+                Button(L("guidedPanel.recheckButton")) { store.refreshStylePrerequisites(style, for: session) }.controlSize(.small)
             }
         }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-setup-\(session.id)")
@@ -224,7 +224,7 @@ struct GuidedPanel: View {
             Button { store.refreshStyleCapabilities(style, for: session) } label: {
                 Image(systemName: "arrow.clockwise").font(.system(size: 9))
             }
-            .buttonStyle(.plain).help("다시 읽기")
+            .buttonStyle(.plain).help(L("guidedPanel.reloadHelp"))
         }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-attachments-\(session.id)")
     }
@@ -243,7 +243,7 @@ struct GuidedPanel: View {
                         .buttonStyle(.plain).font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(item.openPath == nil ? Color.secondary : Palette.accent)
                         .disabled(item.openPath == nil)
-                        .help(item.openPath.map { "열기: " + $0 } ?? item.title)
+                        .help(item.openPath.map { L("guidedPanel.openPathPrefix") + $0 } ?? item.title)
                 }
             }
         }
@@ -264,7 +264,7 @@ struct GuidedPanel: View {
             ProgressView().controlSize(.small)
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .ignore).accessibilityLabel("실행 중")
+        .accessibilityElement(children: .ignore).accessibilityLabel(L("guidedPanel.progressAccessibility"))
         .accessibilityIdentifier("mighty-progress-\(session.id)")
     }
 
@@ -309,10 +309,10 @@ struct GuidedPanel: View {
             EmptyView()
         case .reset(let title):
             Button { selection.startingNew = true } label: { Label(title, systemImage: "plus") }
-                .controlSize(.small).help("시작 단계의 행동을 다시 보여줍니다")
+                .controlSize(.small).help(L("guidedPanel.resetHelp"))
                 .accessibilityIdentifier("mighty-reset-\(session.id)")
         case .cancel:
-            Button("취소") { selection.startingNew = false }
+            Button(L("guidedPanel.cancelButton")) { selection.startingNew = false }
                 .controlSize(.small)
                 .accessibilityIdentifier("mighty-reset-cancel-\(session.id)")
         }

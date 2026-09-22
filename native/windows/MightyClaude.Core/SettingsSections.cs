@@ -38,9 +38,9 @@ public static class SettingsSections
 
     // OS-bound substitution (recorded in docs/windows-settings-groundwork.md):
     //   "이 PC의 CLI" replaces the macOS "이 Mac의 CLI".
-    public const string ProvidersTitle = "이 PC의 CLI";
-    public const string DisplayTitle = "화면";
-    public const string AppInfoTitle = "앱 정보";
+    public static readonly string ProvidersTitle = Locale.Get("settings.providers.sectionTitleWindows");
+    public static readonly string DisplayTitle = Locale.Get("settings.display.sectionTitle");
+    public static readonly string AppInfoTitle = Locale.Get("settings.appInfo.sectionTitle");
 
     /// Every macOS slot, in the macOS order. A null title marks a feature that
     /// Windows does not have yet.

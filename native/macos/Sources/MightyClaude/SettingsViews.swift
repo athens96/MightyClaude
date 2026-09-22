@@ -164,25 +164,33 @@ struct AppSettingsView: View {
 
     private var generalSettings: some View {
         VStack(spacing: 0) {
-            SheetHeading(title: "MightyClaude 설정", subtitle: "macOS · SwiftUI", systemImage: "gearshape") { dismiss() }
+            SheetHeading(title: L("settings.title"), subtitle: "macOS · SwiftUI", systemImage: "gearshape") { dismiss() }
             Form {
-                Section("화면") {
-                    Picker("테마", selection: $store.snapshot.theme) { Text("다크").tag("dark"); Text("라이트").tag("light") }.pickerStyle(.segmented)
+                Section(L("settings.display.sectionTitle")) {
+                    Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }.pickerStyle(.segmented)
+                    Picker(L("settings.display.languageLabel"), selection: Binding(
+                        get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
+                        set: { UserDefaults.standard.set($0.rawValue, forKey: "language") }
+                    )) {
+                        Text(L("settings.display.languageSystem")).tag(AppLanguage.system)
+                        Text(L("settings.display.languageKorean")).tag(AppLanguage.ko)
+                        Text(L("settings.display.languageEnglish")).tag(AppLanguage.en)
+                    }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
                     Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Claude 상태 줄 표시")
-                            Text("settings.json의 statusLine 명령을 실행해 입력창 아래에 보여줍니다. oh-my-claudecode HUD 같은 도구가 그대로 동작합니다.")
+                            Text(L("settings.display.statusLineToggle"))
+                            Text(L("settings.display.statusLineDescription"))
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                     .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
                 }
-                Section("원격 연결") {
+                Section(L("settings.remote.sectionTitle")) {
                     Button { store.settingsShowsRemote = true } label: {
-                        Label("Tailscale 원격 연결 설정…", systemImage: "network")
+                        Label(L("settings.remote.tailscaleButton"), systemImage: "network")
                     }
                     .accessibilityIdentifier("settings-remote")
-                    Text("다른 컴퓨터의 워크스페이스에 연결하거나 이 Mac의 워크스페이스를 공유합니다.")
+                    Text(L("settings.remote.description"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 StyleSettingsSection().environmentObject(store)
@@ -197,37 +205,37 @@ struct AppSettingsView: View {
                             HStack {
                                 HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name) }.font(.system(size: 13, weight: .medium))
                                 Spacer()
-                                Text(provider.available ? "실행 준비됨" : "설정 필요").font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
+                                Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
                             }
                             if let version = provider.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                             Text(provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         }.padding(.vertical, 4)
                     }
                     HStack {
-                        Text("로그인 계정은 아래 CLI 계정에서 바꿀 수 있습니다.").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("settings.providers.loginNote")).font(.system(size: 11)).foregroundStyle(.secondary)
                         Spacer()
-                        Button(store.isRefreshingRuntime ? "확인 중…" : "다시 확인") { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
+                        Button(store.isRefreshingRuntime ? L("settings.providers.checkingButton") : L("settings.providers.checkButton")) { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
                     }
-                } header: { Text("이 Mac의 CLI") }
+                } header: { Text(L("settings.providers.sectionTitleMac")) }
                 CLIAccountsSettingsSection()
                 if let mods = store.runtime?.mods {
                     Section("Claude Mods") {
                         Text(mods.detail).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
-                        LabeledContent("앱 호환 기준", value: mods.minimumVersion)
+                        LabeledContent(L("settings.claudeMods.compatLabel"), value: mods.minimumVersion)
                     }
                 }
                 AppUpdateSettingsSection()
-                Section("앱 정보") {
-                    LabeledContent("버전", value: store.runtime?.appVersion ?? "0.1.0")
-                    Text("SwiftUI · AppKit · 네이티브 프로세스 실행").font(.system(size: 11)).foregroundStyle(.secondary)
-                    LabeledContent("상태 저장 위치") {
-                        Button("Finder에서 열기") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
+                Section(L("settings.appInfo.sectionTitle")) {
+                    LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.1.0")
+                    Text(L("settings.appInfo.runtimeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    LabeledContent(L("settings.appInfo.stateLocationLabel")) {
+                        Button(L("settings.appInfo.openFinderButton")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
                     }
                     Text(store.dataDirectory.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                 }
             }.formStyle(.grouped)
             Divider()
-            HStack { Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction) }.padding(18)
+            HStack { Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }.padding(18)
         }
         .frame(width: 570, height: 700)
         // Opening Settings is one of the four moments the sources are re-read.
@@ -246,7 +254,7 @@ struct SheetHeading: View {
             Image(systemName: systemImage).font(.system(size: 21, weight: .light)).foregroundStyle(Palette.accent).frame(width: 31)
             VStack(alignment: .leading, spacing: 4) { Text(title).font(.system(size: 17, weight: .semibold)); Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary) }
             Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark.circle.fill").font(.system(size: 17)).foregroundStyle(.tertiary) }.buttonStyle(.plain).accessibilityLabel("닫기")
+            Button(action: dismiss) { Image(systemName: "xmark.circle.fill").font(.system(size: 17)).foregroundStyle(.tertiary) }.buttonStyle(.plain).accessibilityLabel(L("settings.closeButton"))
         }.padding(22).frame(maxWidth: .infinity, alignment: .leading).overlay(alignment: .bottom) { Divider() }
     }
 }

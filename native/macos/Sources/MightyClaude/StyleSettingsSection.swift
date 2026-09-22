@@ -17,9 +17,9 @@ struct StyleSettingsSection: View {
         Section {
             if store.styleTrustLocked { lockBanner }
             HStack(spacing: 8) {
-                Button("파일에서 스타일 등록…") { register() }.disabled(store.styleTrustLocked)
+                Button(L("settings.styles.registerButton")) { register() }.disabled(store.styleTrustLocked)
                     .accessibilityIdentifier("settings-style-register")
-                Button("다시 스캔") { store.rescanStyles() }
+                Button(L("settings.styles.rescanButton")) { store.rescanStyles() }
                     .accessibilityIdentifier("settings-style-rescan")
                 Spacer(minLength: 0)
             }
@@ -27,12 +27,12 @@ struct StyleSettingsSection: View {
                 Label(registerError, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("내장 스타일은 언제나 쓸 수 있습니다. 사용자가 등록한 파일과 저장소에서 발견된 파일은 내용을 한 번 확인한 뒤에만 쓰입니다.")
+            Text(L("settings.styles.description"))
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(rows) { row in styleRow(row) }
             ForEach(store.styleRejections, id: \.path) { rejection in rejectionRow(rejection) }
         } header: {
-            Text("마이티 스타일")
+            Text(L("settings.styles.sectionTitle"))
         }
         .sheet(item: $candidate) { item in
             StyleApprovalSheet(candidate: item, onClose: { candidate = nil }).environmentObject(store)
@@ -43,7 +43,7 @@ struct StyleSettingsSection: View {
         VStack(alignment: .leading, spacing: 3) {
             Label(StyleSettingsList.lockedMessage(store.styleTrustPath), systemImage: "exclamationmark.triangle")
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
-            Text("이 파일을 직접 고치거나 지운 뒤 다시 스캔하세요. 그때까지 허용과 취소는 저장되지 않습니다.")
+            Text(L("settings.styles.lockBanner"))
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .textSelection(.enabled)
@@ -52,8 +52,12 @@ struct StyleSettingsSection: View {
 
     private func styleRow(_ row: StyleSettingsRow) -> some View {
         let head = [row.name, row.badge].compactMap { $0 }.joined(separator: " " + StyleChrome.separator + " ")
-        let detail = [row.styleId, "해시 " + row.hashPrefix, "행동 \(row.actionCount)", "자동 허용 \(row.autoAllowCount)"]
-            .joined(separator: " " + StyleChrome.separator + " ")
+        let detail = [
+            row.styleId,
+            L("settings.styles.hashDetailTemplate", ["hash": row.hashPrefix]),
+            L("settings.styles.actionCountTemplate", ["count": "\(row.actionCount)"]),
+            L("settings.styles.autoAllowCountTemplate", ["count": "\(row.autoAllowCount)"]),
+        ].joined(separator: " " + StyleChrome.separator + " ")
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(verbatim: head).font(.system(size: 12, weight: .medium))
@@ -73,21 +77,21 @@ struct StyleSettingsSection: View {
     @ViewBuilder private func buttons(_ row: StyleSettingsRow) -> some View {
         let style = byPath[row.path]
         HStack(spacing: 6) {
-            Button("내용 보기") {
+            Button(L("settings.styles.viewButton")) {
                 guard let style else { return }
                 candidate = StyleApprovalCandidate(style: style, data: store.styleBytes(for: style), readOnly: true)
             }.controlSize(.small).disabled(style == nil)
             if row.canApprove {
-                Button("허용") {
+                Button(L("settings.styles.allowButton")) {
                     guard let style else { return }
                     candidate = StyleApprovalCandidate(style: style, data: nil)
                 }.controlSize(.small)
             }
-            if row.canRevoke { Button("취소") { style.map { store.revokeStyle($0) } }.controlSize(.small) }
+            if row.canRevoke { Button(L("settings.styles.revokeButton")) { style.map { store.revokeStyle($0) } }.controlSize(.small) }
             // The button drops the refusal; the style then goes back through
             // the approval card like any other pending one (§4.2).
-            if row.canAllowAgain { Button("차단 해제") { style.map { store.allowStyleAgain($0) } }.controlSize(.small) }
-            if row.canRemove { Button("제거", role: .destructive) { style.map { store.removeStyle($0) } }.controlSize(.small) }
+            if row.canAllowAgain { Button(L("settings.styles.unblockButton")) { style.map { store.allowStyleAgain($0) } }.controlSize(.small) }
+            if row.canRemove { Button(L("settings.styles.removeButton"), role: .destructive) { style.map { store.removeStyle($0) } }.controlSize(.small) }
             Spacer(minLength: 0)
         }
     }

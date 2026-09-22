@@ -91,6 +91,12 @@ internal static class StringsVerification
         .Where(f => f.IsLiteral && f.FieldType == typeof(string))
         .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
 
+    // For classes that use static readonly (loaded from locale files at runtime).
+    private static Dictionary<string, string> StaticReadonlyStrings(Type type) => type
+        .GetFields(BindingFlags.Public | BindingFlags.Static)
+        .Where(f => f.IsInitOnly && f.FieldType == typeof(string))
+        .ToDictionary(f => f.Name, f => (string)f.GetValue(null)!);
+
     internal static Task MatchMacOS()
     {
         void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
@@ -329,7 +335,7 @@ internal static class StringsVerification
     /// substitution, and the status labels come from the same table.
     internal static Task CliUpdateStringsMatchMacOS()
     {
-        var actual = Constants(typeof(CliUpdateStrings));
+        var actual = StaticReadonlyStrings(typeof(CliUpdateStrings));
         var reason = Validate(nameof(CliUpdateStrings), actual, CliUpdateMacOS);
         if (reason is not null) throw new InvalidOperationException(reason);
 
@@ -454,7 +460,7 @@ internal static class StringsVerification
     /// The app update copy matches the macOS literals plus one Windows-only notice.
     internal static Task AppUpdateStringsMatchMacOS()
     {
-        var actual = Constants(typeof(AppUpdateStrings));
+        var actual = StaticReadonlyStrings(typeof(AppUpdateStrings));
         var reason = Validate(nameof(AppUpdateStrings), actual, AppUpdateMacOS);
         if (reason is not null) throw new InvalidOperationException(reason);
 
@@ -473,7 +479,7 @@ internal static class StringsVerification
     /// OS-bound substitution in SectionDescription.
     internal static Task CliAccountStringsMatchMacOS()
     {
-        var actual = Constants(typeof(CliAccountStrings));
+        var actual = StaticReadonlyStrings(typeof(CliAccountStrings));
         var reason = Validate(nameof(CliAccountStrings), actual, CliAccountMacOS);
         if (reason is not null) throw new InvalidOperationException(reason);
 

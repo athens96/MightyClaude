@@ -70,9 +70,9 @@ public sealed partial class MainWindow
         };
         await new ContentDialog
         {
-            Title = "설정",
+            Title = Locale.Get("settings.settingsWindowTitle"),
             Content = scroll,
-            CloseButtonText = "닫기",
+            CloseButtonText = Locale.Get("settings.closeButton"),
             XamlRoot = root.XamlRoot,
         }.ShowAsync();
     });
@@ -97,9 +97,9 @@ public sealed partial class MainWindow
     private StackPanel BuildDisplaySection()
     {
         var panel = new StackPanel { Spacing = 8 };
-        var theme = new ComboBox { Header = "테마", HorizontalAlignment = HorizontalAlignment.Stretch };
-        theme.Items.Add(new ComboBoxItem { Content = "어둡게", Tag = "dark" });
-        theme.Items.Add(new ComboBoxItem { Content = "밝게", Tag = "light" });
+        var theme = new ComboBox { Header = Locale.Get("settings.display.themeLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        theme.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.themeDarkWindows"), Tag = "dark" });
+        theme.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.themeLightWindows"), Tag = "light" });
         theme.SelectedIndex = service.Snapshot.Theme == "light" ? 1 : 0;
         theme.SelectionChanged += async (_, _) =>
         {
@@ -201,10 +201,10 @@ public sealed partial class MainWindow
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(new TextBlock
         {
-            Text = "로컬 Claude Code · Codex CLI · Gemini CLI를 그대로 사용합니다. 로그인과 설치는 각 CLI에서 진행하세요.",
+            Text = Locale.Get("settings.providers.windowsDescription"),
             TextWrapping = TextWrapping.Wrap,
         });
-        panel.Children.Add(Button("설치된 실행기 새로고침", RefreshRuntime));
+        panel.Children.Add(Button(Locale.Get("settings.providers.refreshButton"), RefreshRuntime));
         foreach (var item in runtime?.Providers ?? [])
             panel.Children.Add(new TextBlock
             {
@@ -334,7 +334,7 @@ public sealed partial class MainWindow
         var panel = new StackPanel { Spacing = 6 };
         panel.Children.Add(new TextBlock
         {
-            Text = "Enter로 전송 · Shift+Enter로 줄바꿈\n탭을 드래그해 합치거나 가장자리로 옮겨 분할합니다.\n명령 실행 창은 명령별 실행이며 대화형 터미널이 아닙니다.",
+            Text = Locale.Get("settings.appInfo.windowsNote"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = .7,
             FontSize = 12,
