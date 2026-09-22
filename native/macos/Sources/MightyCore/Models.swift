@@ -264,8 +264,10 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
     public var settings: RunSettings
     public var resumeId: String?
     public var attachments: [RunAttachment]
-    public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = []) {
-        self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments
+    /// Registered model names for the provider — used by validateSelection; not persisted.
+    public var registeredModels: [RegisteredModelEntry]
+    public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = [], registeredModels: [RegisteredModelEntry] = []) {
+        self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments; self.registeredModels = registeredModels
     }
     enum CodingKeys: String, CodingKey { case sessionId, workspaceId, kind, input, model, provider, settings, resumeId, attachments }
     public init(from decoder: Decoder) throws {
@@ -275,6 +277,7 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
         provider = try c.decodeIfPresent(String.self, forKey: .provider) ?? "claude"; settings = try c.decodeIfPresent(RunSettings.self, forKey: .settings) ?? .init()
         resumeId = try c.decodeIfPresent(String.self, forKey: .resumeId)
         attachments = try c.decodeIfPresent([RunAttachment].self, forKey: .attachments) ?? []
+        registeredModels = []
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)

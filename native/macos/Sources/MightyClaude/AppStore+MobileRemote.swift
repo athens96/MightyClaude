@@ -428,7 +428,7 @@ extension AppStore {
         // No effort capability, no picker: "default" alone is not a choice.
         var efforts: [MobileOption]?
         if runtime.capabilities.effort {
-            let levels = ProviderOptions.effortLevels(provider: session.provider, model: model ?? session.model, catalog: runtime.modelCatalog)
+            let levels = ProviderOptions.effortLevels(provider: session.provider, model: model ?? session.model, catalog: runtime.modelCatalog, registeredModels: providerRegisteredModels(session.provider))
             efforts = [MobileOption(id: "default", label: effortLabel("default"))] + levels.map { MobileOption(id: $0, label: effortLabel($0)) }
         }
         let guided = mobileSupportsGuidedStyles(session, viewMode: agentViewMode ?? mobileViewMode(session))
