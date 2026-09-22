@@ -314,6 +314,17 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
 
     // MARK: Revoking
 
+    /// Empties the registry atomically. Called when the pairing key is rotated
+    /// so no token issued under the old key can authenticate again.
+    public func clearAll() throws {
+        lock.lock(); defer { lock.unlock() }
+        load()
+        guard !devices.isEmpty else { return }
+        let snapshot = devices
+        devices = []
+        do { try save() } catch { devices = snapshot; throw error }
+    }
+
     /// Removes one row. Throws when the list could not be written, with the
     /// row put back, so the caller reports a failed revoke rather than showing
     /// a device as gone while the file still admits it.

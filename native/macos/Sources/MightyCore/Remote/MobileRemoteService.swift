@@ -127,6 +127,9 @@ public actor MobileRemoteService {
     }
     public func regenerateKey() throws -> String {
         if let keyRotationFailure { throw MightyError(keyRotationFailure) }
+        // Capture before any writes: true when an existing key is being rotated,
+        // false on first-time creation where no tokens have been issued yet.
+        let isRotation = key != nil || FileManager.default.fileExists(atPath: keyURL.path)
         guard let fresh = MobilePairing.generateKey() else { throw MightyError("연결 키를 생성하지 못했습니다.") }
         try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
@@ -136,6 +139,10 @@ public actor MobileRemoteService {
         else { try FileManager.default.moveItem(at: temporary, to: keyURL) }
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
         key = fresh
+        // A new key invalidates every token issued under the old key: clear the
+        // registry so no stale token can authenticate again. clearAll writes []
+        // atomically; a write failure is tolerated since the key is already rotated.
+        if isRotation { try? deviceRegistry.clearAll() }
         dropKeyDependentClients()
         return fresh
     }
@@ -184,9 +191,11 @@ public actor MobileRemoteService {
     @discardableResult public func revokeDevice(_ id: String) async throws -> MobileHostStatus {
         guard deviceRegistry.contains(id) else { throw MightyError("이미 해제된 기기입니다.") }
         // A rotation that fails leaves everything as it was, including the
-        // device: half a revoke would be reported as a whole one.
+        // device: half a revoke must never be reported as a whole one.
+        // regenerateKey() clears the whole registry so no remove() is needed.
         _ = try regenerateKey()
-        guard try deviceRegistry.remove(id) else { throw MightyError("이미 해제된 기기입니다.") }
+        // dropKeyDependentClients handles key-dependent connections; close
+        // this device's token-authenticated socket explicitly.
         close(connections: connectedDevices.filter { $0.value == id }.map(\.key), reason: "device revoked")
         await uploads.discard(device: id)
         publish()

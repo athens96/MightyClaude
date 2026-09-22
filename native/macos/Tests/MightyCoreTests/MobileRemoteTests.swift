@@ -685,9 +685,18 @@ struct MobileRemoteTests {
         let reloaded = try await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").loadOrCreateKey()
         #expect(reloaded == key)
         #expect((try FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent("mobile-remote.key").path)[.posixPermissions] as? Int) == 0o600)
+        // Seed one device so regeneration has something to clear.
+        let seededRegistry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+        guard case .issued = seededRegistry.issueToken(clientId: "cGhvbmUtb25lLTAwMDAwMDA", name: "iPhone") else {
+            Issue.record("토큰을 발급하지 못했습니다."); return
+        }
+        // Confirm the seed worked via the registry that wrote it.
+        #expect(seededRegistry.all().count == 1)
         let rotated = try await service.regenerateKey()
         let afterRotation = try await service.loadOrCreateKey()
         #expect(rotated != key && afterRotation == rotated)
+        // A new key means every phone must re-pair: the device list is empty.
+        #expect(await service.status().devices.isEmpty)
 
         // Off: no offer. On without a relay: still no offer, but a hint.
         var status = await service.apply(settings: MobileRemoteSettings(enabled: false))
