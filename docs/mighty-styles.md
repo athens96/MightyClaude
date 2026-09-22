@@ -38,6 +38,7 @@
 | `capabilities` | array&lt;string&gt; | ✓ | ≤4, 비어 있어도 됨 | 이 매니페스트가 이름으로 참조하는 앱 내장 기능(1.8) |
 | `autoAllow` | array | ✓ | ≤32, 비어 있어도 됨 | 1.9 |
 | `presentation` | object | ✓ | 1.10 | 스타일 단위 아이콘·색 |
+| `job` | object | — | 1.13 | 백그라운드 잡 선언 (선택). 없으면 오늘과 동일하게 동작 |
 
 **최상위·중첩을 통틀어 모르는 키는 거부한다**(`E_UNKNOWN_FIELD`). 이유 한 줄: 승인 화면이 "파일 내용 전부"를 보여 주기로 한 이상, 앱이 뜻을 모르는 필드는 보여 줄 수도 설명할 수도 없어 약속을 깨기 때문이다. 앞으로의 확장은 `schema` 값으로 받는다 — v2 파일은 절반만 읽히는 대신 "이 앱은 schema 1만 읽습니다"로 분명히 거부된다(폰·Windows가 나중에 같은 파일을 읽을 때도 같은 판정을 내린다).
 
@@ -260,6 +261,8 @@ rules: {
 - `{ "kind": "fixed", "group": groupId }`
 - `{ "kind": "capabilityState", "capability": name, "map": { state: groupId } }` — 내장 기능을 **처음 읽었을 때 한 번** 그룹을 정한다. 이후 상태가 바뀌어도 보고 있던 그룹은 움직이지 않는다(`PaperthinPanel.swift:43-46`). `map`은 `RecommendRule`과 같은 규칙으로 그 기능의 상태 값을 빠짐없이 담아야 하며, 같은 코드 `E_CAPABILITY_MAP`을 쓴다.
 
+**백그라운드 잡이 열린 동안의 행동 목록.** 매니페스트가 `job` 선언을 갖고 있고 잡이 열린 상태이면, `rules.start`와 `rules.next`를 완전히 무시하고 `job.whileOpen` 목록만 순서대로 보여 준다(첫 항목이 prominent). 잡이 닫히면 정상 규칙으로 돌아온다. 선언이 없거나 잡이 닫혀 있으면 이 분기는 없다(§1.13).
+
 ### 1.7 `placeholders`와 `guidance`
 
 ```
@@ -270,7 +273,9 @@ placeholders: { "idle": string, "initial": string?, "running": string?, "answeri
 ```
 guidance: { "start": string?, "next": string?, "running": string? }
 ```
-각 0–160자. **패널의 맨 아랫줄**(6.1의 8번)이며 입력창 placeholder와는 다른 자리다. 고르는 순서: 실행 중이면 `running` → `rules.start`가 그려지고 있으면 `start` → 그 밖에는 `next`. 해당 값이 없으면 그 줄을 그리지 않는다.
+각 0–160자. **패널의 맨 아랫줄**(6.1의 8번)이며 입력창 placeholder와는 다른 자리다. 고르는 순서: 잡이 열려 있으면 `job.guidance`(§1.13) → 실행 중이면 `running` → `rules.start`가 그려지고 있으면 `start` → 그 밖에는 `next`. 해당 값이 없으면 그 줄을 그리지 않는다.
+
+**잡이 열린 동안 placeholder.** 잡이 열려 있으면 실행 중일 때와 같은 우선순위로 `running` placeholder를 쓴다. 응답 대기 중이면 `answering`이 먼저다(§1.13).
 
 치환자는 **`{phase}` 하나**뿐이며 현재 단계의 `title`로 바뀐다. 단계가 없으면 `{phase}`와 **바로 뒤에 붙어 있는 U+0020 하나**를 함께 지운다. `{phase}` 이외의 중괄호는 `E_PROMPT_PLACEHOLDER`.
 
@@ -302,11 +307,11 @@ autoAllow: [{ "server": string?, "tool": string }]
 - `server` — `^[A-Za-z0-9_-]{1,64}$`이고 `__`를 **포함할 수 없으며** `_`로 **끝날 수 없다**. 와이어 이름은 정확히 `mcp__<server>__<tool>`로 조립된다. Ouroboros 플러그인의 서버 이름은 `plugin_ouroboros_ouroboros`다(`OuroborosFlow.swift:38`). 하이픈을 허용하는 이유: 실제로 쓰이는 서버 이름에 하이픈이 들어간다(oh-my-claudecode의 `plugin_oh-my-claudecode_t`).
 - `tool` — `^[A-Za-z0-9_-]{1,64}$`이고 `__`를 포함할 수 없으며 `_`로 **시작할 수 없다**.
 - 끝/앞 밑줄을 함께 막아야 `mcp__<server>__<tool>`의 분해가 **유일해진다**. `__`만 막으면 `server: "a_"` + `tool: "_b"`가 `mcp__a____b`를 만들고, 이는 서버 `a`의 도구 `__b`로도 읽힌다. 위반은 `E_AUTOALLOW_SHAPE`.
-- **소속 규칙.** `server`가 있는 항목은, 이 매니페스트의 `prerequisites.probes` 중 `kind: "plugin"`이고 `prefix`가 **`@`로 끝나는** probe에 대해, 그 `@`를 뗀 이름 `P`에 대해 `plugin_<P>_`로 **시작해야 한다**. 아니면 `E_AUTOALLOW_FOREIGN_SERVER`. `@`로 끝나지 않는 `prefix`는 소속을 만들지 못한다: 그런 probe는 설치 목록의 키를 `hasPrefix`로 보므로, `prefix: "a"` 하나가 설치된 플러그인 `a_b`를 만족시키면서 `plugin_a_b_*` 서버 전부를 주장하게 된다. 남는 헐거움은 `docs/styles-followups.md`에 적었다 — Claude Code의 플러그인 이름에 `_`가 들어갈 수 있는 한, 이름 하나를 정확히 짚는 검사는 probe가 설치된 키로 풀려야 가능하고 그것은 검증 시점에 없는 정보다. 스타일은 **자기가 설치를 요구하는 플러그인의 도구만** 자동 허용할 수 있고, 사용자가 따로 설정한 MCP 서버(`mcp-atlassian`, 사내 서버 등)나 **다른 플러그인의 도구는 어떤 매니페스트도 자동 허용할 수 없다**. 근거: 오늘 `ouroboros@` probe ↔ `plugin_ouroboros_ouroboros`, `oh-my-claudecode@` probe ↔ `plugin_oh-my-claudecode_t`가 모두 이 규칙을 만족한다(1.13·A.3). Paperthin·gstack은 `autoAllow`가 비어 있어 무관하다.
+- **소속 규칙.** `server`가 있는 항목은, 이 매니페스트의 `prerequisites.probes` 중 `kind: "plugin"`이고 `prefix`가 **`@`로 끝나는** probe에 대해, 그 `@`를 뗀 이름 `P`에 대해 `plugin_<P>_`로 **시작해야 한다**. 아니면 `E_AUTOALLOW_FOREIGN_SERVER`. `@`로 끝나지 않는 `prefix`는 소속을 만들지 못한다: 그런 probe는 설치 목록의 키를 `hasPrefix`로 보므로, `prefix: "a"` 하나가 설치된 플러그인 `a_b`를 만족시키면서 `plugin_a_b_*` 서버 전부를 주장하게 된다. 남는 헐거움은 `docs/styles-followups.md`에 적었다 — Claude Code의 플러그인 이름에 `_`가 들어갈 수 있는 한, 이름 하나를 정확히 짚는 검사는 probe가 설치된 키로 풀려야 가능하고 그것은 검증 시점에 없는 정보다. 스타일은 **자기가 설치를 요구하는 플러그인의 도구만** 자동 허용할 수 있고, 사용자가 따로 설정한 MCP 서버(`mcp-atlassian`, 사내 서버 등)나 **다른 플러그인의 도구는 어떤 매니페스트도 자동 허용할 수 없다**. 근거: 오늘 `ouroboros@` probe ↔ `plugin_ouroboros_ouroboros`, `oh-my-claudecode@` probe ↔ `plugin_oh-my-claudecode_t`가 모두 이 규칙을 만족한다(1.14·A.3). Paperthin·gstack은 `autoAllow`가 비어 있어 무관하다.
 - `server`를 생략할 수 있는 것은 **`tool`이 정확히 `ToolSearch`일 때뿐**이다(런타임의 도구 검색, MCP가 아니다). 그 밖에 `server` 없는 항목은 `E_AUTOALLOW_SERVER`. 그리고 `ToolSearch`는 **번들 매니페스트에서만** 허용한다 — 비번들이 쓰면 `E_AUTOALLOW_TOOLSEARCH_BUNDLED`. 근거: `ToolSearch`는 실행이 아니라 *도구 표면의 확장*이며, 프롬프트 없이 런타임이 새 도구 스키마(`WebFetch`·`RemoteTrigger`·`CronCreate`·쓰기 가능한 MCP 도구 전부)를 끌어오게 하는 유일한 열쇠다. 제3자가 이것을 조용히 가질 이유가 없다.
 - `tool`이 `AskUserQuestion`이면 `E_AUTOALLOW_QUESTION`으로 파일 전체가 거부된다. 또한 엔진은 런타임에도 이 이름을 무조건 거절한다 — 두 겹으로 막는다.
 - 같은 `(server, tool)` 쌍이 두 번 나오면 `E_AUTOALLOW_DUPLICATE`.
-- 한도는 **32**다. 사람이 한 화면에서 읽을 수 있는 수가 상한의 근거다. 번들 최대치는 17개(`ToolSearch` + 상태 도구 16개, 1.13)이고 A.3의 oh-my-claudecode는 16개이므로, 이 한도는 계획된 네 스타일을 모두 담는다.
+- 한도는 **32**다. 사람이 한 화면에서 읽을 수 있는 수가 상한의 근거다. 번들 최대치는 17개(`ToolSearch` + 상태 도구 16개, 1.14)이고 A.3의 oh-my-claudecode는 16개이므로, 이 한도는 계획된 네 스타일을 모두 담는다.
 
 판정은 **와이어 이름 문자열의 완전 일치**다. 접두사 일치도, 글롭도, 정규식도 없다. 두 정규식이 `*`·`(`·`)`·`:`·공백을 모두 막으므로 `Bash(*)`·`Write`·`Edit(src/**)` 같은 패턴은 **스키마로 표현 불가능**하다. `__`를 금지하므로 `mcp__plugin_ouroboros_ouroboros__evil__ouroboros_interview` 같은 경계 위조도 만들 수 없고, 다른 서버가 `ouroboros_interview`라는 이름을 흉내 내도 `server`가 다르므로 일치하지 않는다(오늘의 스푸핑 방지 근거를 그대로 유지, `OuroborosFlowTests.swift:34-38`).
 
@@ -409,7 +414,36 @@ v1 목록(33개):
 
 매니페스트의 문자열은 **작성자가 쓴 그대로** 표시된다. 번역 테이블도, 치환도, 복수형 처리도 없다. 앱 자신의 문구(버튼 "허용", 오류 메시지)는 앱의 언어를 따른다.
 
-### 1.13 Ouroboros 번들 매니페스트 (전문)
+### 1.13 백그라운드 잡 선언 (`job`)
+
+```
+job: {
+  "open":      [JobMatcher],   // 열림 신호
+  "close":     [JobMatcher],   // 닫힘 신호
+  "whileOpen": [actionId],     // 열린 동안 보여 줄 행동 목록 (첫 항목이 prominent)
+  "guidance":  string?         // 열린 동안 패널 안내 한 줄. {phase} 치환 적용
+}
+
+JobMatcher: {
+  "tool":        string,   // 도구 짧은 이름 (mcp__server__ 부분 제거 후 비교)
+  "contains":    string?,  // 결과 텍스트에 이 글이 있어야 일치
+  "notContains": string?   // 결과 텍스트에 이 글이 없어야 일치
+}
+```
+
+선택적 최상위 필드다. **없으면 오늘과 똑같이 동작한다.** `contains`와 `notContains`를 동시에 쓰면 `E_JOB_MATCHER_LITERAL`로 거부된다.
+
+**잡 상태 판단.** 잡의 열림·닫힘은 실행 창 로그(`RunSession.logs`)의 `AgentActivity` 항목들로만 판단한다. 프로세스·파일·타이머는 보지 않는다. 가장 최신 `open` 일치 항목이 가장 최신 `close` 일치 항목보다 뒤에 있으면 열린 상태다. `open` 일치가 없으면 닫힘. `open`만 있고 `close`가 없으면 열림. 도구 이름 비교는 짧은 이름(`mcp__server__name` → `name`)으로 한다.
+
+**열린 동안 패널 동작.**
+- 행동 목록: `rules.start`·`rules.next`를 완전히 무시하고 `whileOpen` 목록만 보여 준다(§1.6).
+- 안내 줄: `guidance` 값을 쓴다. 없으면 줄을 그리지 않는다. `{phase}` 치환이 적용된다(§1.7).
+- placeholder: 실행 중일 때와 같은 `running` placeholder를 쓴다(§1.7).
+- Enter 행동 규칙과 단계 계산은 평소와 같다.
+
+**수용된 제한.** 차례가 끝난 뒤 잡이 끝나도 닫힘 도구 결과가 도달할 때까지 패널은 잡이 열린 것으로 본다. 취소 행동이 잡을 닫으려면 그 결과가 `close` 매처에 들어 있어야 한다.
+
+### 1.14 Ouroboros 번들 매니페스트 (전문)
 
 ```json
 {
@@ -454,7 +488,7 @@ v1 목록(33개):
   ],
   "groups": [
     { "id": "flow", "title": "흐름",
-      "actions": ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck"] }
+      "actions": ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck", "cancel"] }
   ],
   "actions": [
     { "id": "interview", "title": "인터뷰 시작", "help": "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)", "prompt": "/ouroboros:interview {text}", "takesText": true,  "foldText": "trimOnly", "requiresText": true, "phase": "interview", "icon": "questionmark.bubble" },
@@ -465,7 +499,8 @@ v1 목록(33개):
     { "id": "evolve",    "title": "진화",        "help": "평가를 반영해 다음 세대 시드로 수렴할 때까지 반복합니다",             "prompt": "/ouroboros:evolve",           "takesText": false, "phase": "evolve",    "icon": "arrow.triangle.2.circlepath" },
     { "id": "ralph",     "title": "랄프 루프",   "help": "수렴할 때까지 진화 단계를 계속 돌립니다",                            "prompt": "/ouroboros:ralph",            "takesText": false, "phase": "evolve",    "icon": "infinity" },
     { "id": "status",    "title": "상태",        "help": "세션 상태와 목표 이탈(drift)을 확인합니다",                          "prompt": "/ouroboros:status",           "takesText": false, "icon": "gauge.with.dots.needle.33percent" },
-    { "id": "unstuck",   "title": "막힘 풀기",   "help": "다섯 가지 관점으로 막힌 지점을 다시 봅니다",                         "prompt": "/ouroboros:unstuck {text}",   "takesText": true,  "foldText": "trimOnly", "icon": "lightbulb" }
+    { "id": "unstuck",   "title": "막힘 풀기",   "help": "다섯 가지 관점으로 막힌 지점을 다시 봅니다",                         "prompt": "/ouroboros:unstuck {text}",   "takesText": true,  "foldText": "trimOnly", "icon": "lightbulb" },
+    { "id": "cancel",    "title": "취소",        "help": "백그라운드에서 실행 중인 작업을 취소합니다",                          "prompt": "/ouroboros:cancel",           "takesText": false }
   ],
   "aliases": [
     { "name": "pm",          "phase": "interview" },
@@ -485,9 +520,9 @@ v1 목록(33개):
         "goal":      [],
         "interview": ["seed", "status", "unstuck"],
         "seed":      ["run", "evaluate", "status"],
-        "run":       ["evaluate", "evolve", "status", "unstuck"],
+        "run":       ["evaluate", "evolve", "run", "status", "unstuck"],
         "evaluate":  ["evolve", "run", "status", "unstuck"],
-        "evolve":    ["ralph", "evaluate", "status", "unstuck"]
+        "evolve":    ["ralph", "evaluate", "run", "status", "unstuck"]
       }
     },
     "enter": { "kind": "rewriteBareDraftTo", "action": "interview", "phase": "goal" },
@@ -514,7 +549,22 @@ v1 목록(33개):
     { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_ac_tree_hud" },
     { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_session_signal_targets" }
   ],
-  "presentation": { "icon": "point.3.connected.trianglepath.dotted", "tint": "accent" }
+  "presentation": { "icon": "point.3.connected.trianglepath.dotted", "tint": "accent" },
+  "job": {
+    "open": [
+      { "tool": "ouroboros_start_execute_seed" },
+      { "tool": "ouroboros_start_auto" },
+      { "tool": "ouroboros_start_evolve_step" },
+      { "tool": "ouroboros_start_ralph" }
+    ],
+    "close": [
+      { "tool": "ouroboros_job_result" },
+      { "tool": "ouroboros_cancel_job" },
+      { "tool": "ouroboros_job_status", "notContains": "running" }
+    ],
+    "whileOpen": ["status", "cancel", "unstuck"],
+    "guidance": "백그라운드에서 실행 중입니다 · 취소하거나 상태를 확인하세요"
+  }
 }
 ```
 
@@ -526,7 +576,7 @@ v1 목록(33개):
 
 `E_PROMPT_RECOGNITION` 확인: 행동 9개 모두 `{text}`를 지운 프롬프트가 `/ouroboros:<id>`이고, `recognition`이 `/ouroboros:` 접두사를 떼면 이름이 곧 `id`다. `match`가 필요 없다.
 
-### 1.14 Paperthin 번들 매니페스트 (전문)
+### 1.15 Paperthin 번들 매니페스트 (전문)
 
 ```json
 {
@@ -699,6 +749,7 @@ v1 목록(33개):
 | `E_AUTOALLOW_QUESTION` | AskUserQuestion은 자동 허용할 수 없습니다. |
 | `E_AUTOALLOW_DUPLICATE` | 같은 도구가 두 번 있습니다: `<와이어 이름>`. |
 | `E_PLACEHOLDER_INITIAL` | initial placeholder는 Enter 규칙이 rewriteBareDraftTo일 때만 쓸 수 있습니다. |
+| `E_JOB_MATCHER_LITERAL` | 매처에는 contains 또는 notContains 중 하나만 쓸 수 있습니다: `<경로>`. |
 | `E_ID_COLLISION` | 이미 같은 id의 스타일이 있습니다: `<id>` (`<우선 출처>`). |
 
 **메시지에 끼워 넣는 값은 그 자체가 공격자의 글이다.** `<경로>`·`<값>`·`<도구>`·`<와이어 이름>`은 **64자로 자르고**(넘치면 마지막 한 자리가 `…`이므로 화면에 나가는 길이는 정확히 64다), 1.11의 금지 문자를 U+FFFD로 바꾼 뒤에 쓴다. `E_UNKNOWN_FIELD`의 `<경로>`는 매니페스트의 **키 이름**으로 조립되므로 특히 그렇다 — 승인도 되기 전에 20만 자짜리 키가 설정 화면의 거부 목록에 그대로 그려질 수 있다. 키 이름은 값 문자열과 똑같이 다루므로(1.11) 그 키는 애초에 `E_STRING_LENGTH`로 거부되지만, 메시지의 한도는 그것과 무관하게 걸린다. 같은 "자른 뒤 `…`"는 1.8의 80자 한도에도 그대로 적용된다.
@@ -1109,7 +1160,8 @@ public struct StyleEvaluator: Sendable {
     public var resetTitle: String? { get }
     public func nextActions(phase: StylePhase?, group: StyleGroup?) -> [StyleAction]
     /// 6.1의 7번: 실행 중인 byPhase 스타일은 빈 배열, 그 밖에는 start 또는 next.
-    public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool) -> [StyleAction]
+    /// jobOpen이 true이면 job.whileOpen 목록만 반환한다 (§1.13).
+    public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool, jobOpen: Bool = false) -> [StyleAction]
     public func recommendedAction(capabilityStates: [String: String]) -> String?
     public var recommendGroupId: String? { get }                       // 첨부 줄이 붙는 그룹 (1.6)
     public func initialGroup(capabilityStates: [String: String]) -> StyleGroup?
@@ -1122,8 +1174,11 @@ public struct StyleEvaluator: Sendable {
                                startingNew: Bool = false) -> StyleEnterBehaviour          // .verbatim | .rewrite(actionId)
     public func enterArmedPrefix(draft: String, phase: StylePhase?, hasAttachments: Bool = false,
                                  running: Bool, hasRequests: Bool, startingNew: Bool = false) -> String?
-    public func placeholder(phase: StylePhase?, running: Bool, answering: Bool) -> String
-    public func guidanceLine(phase: StylePhase?, running: Bool) -> String?
+    public func placeholder(phase: StylePhase?, running: Bool, answering: Bool, jobOpen: Bool = false) -> String
+    public func guidanceLine(phase: StylePhase?, running: Bool, jobOpen: Bool = false) -> String?
+
+    // 잡 상태 (§1.13)
+    public func isJobOpen(session: RunSession) -> Bool                 // 선언 없으면 항상 false
 
     // 권한
     public func autoAllowed(toolName: String) -> Bool                  // AskUserQuestion은 언제나 false
@@ -1229,7 +1284,7 @@ public enum TerminalInputPolicy {
 | 기존 | 새 이름 | 같은 값으로 남는 단언 |
 |---|---|---|
 | `OuroborosFlowTests.promptsPhasesAndNextStepsFollowTheOuroborosLoop` | `StylesOuroborosTests.promptsPhasesAndNextSteps` | 프롬프트 문자열, `.seed`/`.goal`/`.run` 단계 계산, 단계별 첫 다음 행동(`seed`/`run`/`evaluate`/`evolve`), `requestTitle` `"평가"`·`"막힘 풀기"`·`nil`, `takesText` 4개 |
-| `…onlyOuroborosStateToolsAndToolDiscoveryAreAutoAllowed` | `StylesOuroborosTests.autoAllowIsExactNamesOnly` | 상태 도구 **16개 정확 이름**(1.13의 정정) + `ToolSearch`, 거부 목록 11개 그대로 |
+| `…onlyOuroborosStateToolsAndToolDiscoveryAreAutoAllowed` | `StylesOuroborosTests.autoAllowIsExactNamesOnly` | 상태 도구 **16개 정확 이름**(1.14의 정정) + `ToolSearch`, 거부 목록 11개 그대로 |
 | `…prerequisitesReadThePluginRegistryAndPath` | `StylesOuroborosTests.prerequisites` | 플러그인 레지스트리·PATH 판정 |
 | `…questionnaireProgressWalksQuestions…` | `QuestionnaireProgressTests` (신규 파일) | 변경 없음 |
 | `…askUserQuestionBecomesAQuestionBlock…` | 앞부분은 `ExecutionGraphTests`로, 뒷부분(`mightyStyle` 정규화)은 `StyleRegistryTests` | `["ouroboros", nil, nil]` — `knownStyleIds`를 넘겨 유지 (3.4) |
@@ -1483,7 +1538,7 @@ MobileStylePanel {
 - **내장 기능 목록** — `paperthin.casebook` 하나. 그 상태 값 3개와 빈 상태 문구.
 - **팔레트** — 1.10의 9개 이름.
 - **아이콘 목록** — 1.10의 33개 이름.
-- **오류 코드 목록** — 2장의 **47개**.
+- **오류 코드 목록** — 2장의 **48개**.
 - **검증 순서** — 2장의 ⓪①②③④와 사전 스캔이 보는 다섯 가지.
 - **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 6가지**(8.4).
 - **폰 페이로드** — `MobileStylePanel`의 모양, `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
@@ -1591,7 +1646,7 @@ scripts/check-style-freeze.sh                       # 0
 | `StylesBundledTests` | 번들 매니페스트 2개가 3.2의 탐색으로 발견되고 디코딩·검증을 통과한다. id가 `ouroboros`·`paperthin`. `swift test`와 `.app` 양쪽 후보 경로에서 실패 없이 돈다 |
 | `StylesOuroborosTests` | 5.9의 값 전부 |
 | `StylesPaperthinTests` | 5.9의 값 전부 |
-| `StyleManifestTests` | 2장 오류 코드 **하나마다 최소 한 개**의 거부 픽스처(47개). 목록은 **프로덕션의 `StyleErrorCodes.all`과 집합으로 같아야** 한다 — 테스트 안의 숫자 리터럴은 새 코드를 알아차리지 못한다. 유효 최소 매니페스트가 통과한다. 키의 이스케이프(`E_KEY_ESCAPE`, 확인된 `autoAllow` 공격 입력 포함) · 키의 제어 문자·길이 · 최상위 뒤 잔여물 · `map` 없는 규칙 · `glyph`의 ZWJ 이모지 · `lowercase` 인식 아래의 대문자 id/match/별칭 |
+| `StyleManifestTests` | 2장 오류 코드 **하나마다 최소 한 개**의 거부 픽스처(48개). 목록은 **프로덕션의 `StyleErrorCodes.all`과 집합으로 같아야** 한다 — 테스트 안의 숫자 리터럴은 새 코드를 알아차리지 못한다. 유효 최소 매니페스트가 통과한다. 키의 이스케이프(`E_KEY_ESCAPE`, 확인된 `autoAllow` 공격 입력 포함) · 키의 제어 문자·길이 · 최상위 뒤 잔여물 · `map` 없는 규칙 · `glyph`의 ZWJ 이모지 · `lowercase` 인식 아래의 대문자 id/match/별칭 |
 | `StyleRegistryTests` | 우선순위 3종, 같은 출처 안 충돌의 결정적 순서(§3.3의 이름순), `applicable`이 남의 워크스페이스 매니페스트를 내지 않음, 원격 워크스페이스가 workspace 출처를 내지 않음, `mightyStyle` 정규화(3.4), **레지스트리 제목**이 교차 스타일 값을 낸다(1.10), 인식되지 않은 입력은 아이콘·색도 얻지 않는다, 스타일 없는 실행 창은 훑을 것이 없다, 해시 불일치 창이 제목을 잃는다, 링크·하드 링크 픽스처는 32개 상한 **안쪽**에 정렬되는 이름을 쓴다 |
 | `StyleTrustTests` | 승인 → `approved`, 1바이트 수정 → 스캔 후 `pending`, 취소 → `revoked`, 내용이 바뀌어도 자리가 `revoked`, 레코드 파일 권한 0600, 256개 상한, 잠금 상태, 원자적 병합, **병합이 자리당 승인 하나를 지키고 거부는 전부 남긴다**(4.3), 로드 뒤 깨진 파일은 잠기고 덮어쓰이지 않는다, 두 번째 프로세스의 승인이 다음 `load()`에 보인다 |
 | `StyleEvaluatorTests` | 프롬프트 치환 4경우(텍스트 있음/없음 × 두 접기), `recognised` vs `namesSomething`의 차이(`"ooo 이거 해줘"`), 별칭, 단계 계산, `start`/`byPhase`/`byGroup`, Enter 6조건 각각의 거짓 경우와 **되돌리기 칩 예외**, 무장 칩이 입력창의 글까지 본다, 질문이 Enter 규칙보다 먼저다(`StyleComposer`), 실행 중 `byPhase`는 칩이 없고 `byGroup`은 그대로다, `initialGroup` 3상태, 추천이 그룹과 무관하다, `guidance`의 `{phase}` 치환과 단계 없을 때의 삭제 |
@@ -1681,12 +1736,12 @@ scripts/check-style-freeze.sh                       # 0
 
 확정이 아니라, 어휘가 넷을 담을 수 있는지 확인하는 스케치다. 각 항목 끝에 **무엇을 낮춰 담았는지** 정직하게 적는다.
 
-### A.1 Ouroboros (번들, 1.13에 전문)
+### A.1 Ouroboros (번들, 1.14에 전문)
 
 행동 9 · 단계 6 · 그룹 1 · 별칭 6 · 자동 허용 **17**(`ToolSearch` + 상태 16) · 준비물 `all`+`first`(plugin + executable, executable은 `install:false`) · `start: actions` · `byPhase` · `rewriteBareDraftTo`.
-**낮춘 것: 없다.** 오늘 동작이 그대로 표현된다. `autoAllow`는 한도 32 안이고 소속 규칙을 만족한다(1.13).
+**낮춘 것: 없다.** 오늘 동작이 그대로 표현된다. `autoAllow`는 한도 32 안이고 소속 규칙을 만족한다(1.14).
 
-### A.2 Paperthin (번들, 1.14에 전문)
+### A.2 Paperthin (번들, 1.15에 전문)
 
 행동 28 · 단계 0 · 그룹 4(axis+question) · 자동 허용 0 · 준비물 `any`+`first`(skill×3 + plugin) · `start: none` · `byGroup` · `verbatim` · `paperthin.casebook`로 추천·첨부·초기 그룹.
 **낮춘 것**: 2×2 지도가 4버튼 줄이다(항목 1). 오늘 Mac 화면도 같은 모양이므로 회귀는 아니다.
