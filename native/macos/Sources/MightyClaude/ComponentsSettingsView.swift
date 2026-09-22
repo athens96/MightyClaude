@@ -17,12 +17,12 @@ struct ComponentsSettingsSection: View {
                 .accessibilityIdentifier("components-message")
             }
             HStack {
-                Text("에이전트 CLI의 상태와 설치 명령, 앱이 요구하는 플러그인을 보여줍니다.").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("settings.components.sectionDescription")).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-                Button(store.componentsRefreshing ? "확인 중…" : "다시 확인") { Task { await store.refreshComponents() } }
+                Button(store.componentsRefreshing ? L("settings.components.checkingButton") : L("settings.components.recheckButton")) { Task { await store.refreshComponents() } }
                     .disabled(store.componentsRefreshing || store.componentAction != nil).accessibilityIdentifier("components-refresh")
             }
-        } header: { Text("구성 요소") }
+        } header: { Text(L("settings.components.sectionTitle")) }
         .task {
             // Re-check whenever the sheet opens, then keep polling while
             // something still needs the user (an App Store install lands
@@ -56,7 +56,7 @@ struct ComponentsSettingsSection: View {
                         } label: {
                             HStack(spacing: 5) {
                                 if running { ProgressView().controlSize(.mini) }
-                                Text(running ? "진행 중…" : action.title)
+                                Text(running ? L("settings.components.inProgressLabel") : action.title)
                             }
                         }
                         .controlSize(.small).buttonStyle(action.primary ? AnyPrimitiveButtonStyle(.borderedProminent) : AnyPrimitiveButtonStyle(.bordered))
@@ -77,11 +77,11 @@ struct ComponentsSettingsSection: View {
 
     private func stateLabel(_ state: String) -> some View {
         let (text, color): (String, Color) = switch state {
-        case "installed": ("준비됨", .green)
-        case "missing": ("설치 필요", .orange)
-        case "attention": ("조치 필요", .orange)
-        case "unsupported": ("미지원", .red)
-        default: ("확인 중", .secondary)
+        case "installed": (L("settings.components.statusInstalled"), .green)
+        case "missing": (L("settings.components.statusMissing"), .orange)
+        case "attention": (L("settings.components.statusAttention"), .orange)
+        case "unsupported": (L("settings.components.statusUnsupported"), .red)
+        default: (L("settings.components.statusChecking"), .secondary)
         }
         return Text(text).font(.system(size: 10, weight: .medium)).foregroundStyle(color)
     }
