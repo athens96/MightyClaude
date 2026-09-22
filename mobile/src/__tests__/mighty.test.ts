@@ -299,6 +299,112 @@ describe('which panes draw a guided panel', () => {
   });
 });
 
+describe('model labels on blocks', () => {
+  it('preserves nodeModelLabel on the main block when the Mac projected a confirmed model', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      runs: [
+        {
+          id: 'r1',
+          input: '고쳐 줘',
+          status: 'completed',
+          blocks: [{ id: 'b1', kind: 'main', title: '요청 1', status: 'completed', nodeModelLabel: 'claude-sonnet-5' }],
+        },
+      ],
+    });
+    expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBe('claude-sonnet-5');
+  });
+
+  it('preserves a configured-name label (with settings marker) from the Mac', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      runs: [
+        {
+          id: 'r1',
+          input: '고쳐 줘',
+          status: 'completed',
+          blocks: [
+            { id: 'b1', kind: 'main', title: '요청 1', status: 'completed', nodeModelLabel: 'claude-opus-5 · 설정' },
+          ],
+        },
+      ],
+    });
+    expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBe('claude-opus-5 · 설정');
+  });
+
+  it('leaves nodeModelLabel absent when the block has none', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      runs: [
+        {
+          id: 'r1',
+          input: '고쳐 줘',
+          status: 'completed',
+          blocks: [{ id: 'b1', kind: 'main', title: '요청 1', status: 'completed' }],
+        },
+      ],
+    });
+    expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBeUndefined();
+  });
+
+  it('leaves nodeModelLabel absent when the Mac sent default (no label)', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      runs: [
+        {
+          id: 'r1',
+          input: '고쳐 줘',
+          status: 'completed',
+          blocks: [{ id: 'b1', kind: 'main', title: '요청 1', status: 'completed', nodeModelLabel: null }],
+        },
+      ],
+    });
+    expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBeUndefined();
+  });
+
+  it('strips unsafe characters from the model label', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      runs: [
+        {
+          id: 'r1',
+          input: '',
+          status: '',
+          blocks: [
+            {
+              id: 'b1',
+              kind: 'main',
+              title: '',
+              status: '',
+              nodeModelLabel: 'claude‮-sonnet‬-5',
+            },
+          ],
+        },
+      ],
+    });
+    expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBe('claude-sonnet-5');
+  });
+
+  it('shows the label on the main block and not on child blocks', () => {
+    const mighty = normalizeMighty({
+      style: 'cli',
+      runs: [
+        {
+          id: 'r1',
+          input: '',
+          status: 'completed',
+          blocks: [
+            { id: 'b1', kind: 'main', title: '요청 1', status: 'completed', nodeModelLabel: 'claude-sonnet-5' },
+            { id: 'b2', kind: 'agent', title: '하위 에이전트', status: 'completed' },
+          ],
+        },
+      ],
+    });
+    expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBe('claude-sonnet-5');
+    expect(mighty?.runs[0]?.blocks[1]?.nodeModelLabel).toBeUndefined();
+  });
+});
+
 describe('block labels keyed by what the host sent', () => {
   it('reads a prototype key as an unknown kind, not as a function', () => {
     // A plain object answers `constructor` with a function and `__proto__` with an

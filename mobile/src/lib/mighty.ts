@@ -119,6 +119,8 @@ function parseBlock(raw: unknown): MobileBlock | undefined {
   if (typeof raw.durationMs === 'number' && Number.isFinite(raw.durationMs) && raw.durationMs >= 0) {
     block.durationMs = raw.durationMs;
   }
+  const nodeModelLabel = inlineText(raw.nodeModelLabel, 240);
+  if (nodeModelLabel.length > 0) block.nodeModelLabel = nodeModelLabel;
   return block;
 }
 
