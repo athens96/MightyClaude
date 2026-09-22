@@ -71,6 +71,7 @@ struct StyleManifestTests {
         cases.append(("E_AUTOALLOW_DUPLICATE", f.data(f.flat, ["prerequisites": acmeProbe,
                                                                "autoAllow": "[{\"server\":\"plugin_acme_x\",\"tool\":\"read\"},{\"server\":\"plugin_acme_x\",\"tool\":\"read\"}]"])))
         cases.append(("E_PLACEHOLDER_INITIAL", f.data(f.flat, ["placeholders": "{\"idle\":\"i\",\"answering\":\"a\",\"initial\":\"first\"}"])))
+        cases.append(("E_JOB_MATCHER_LITERAL", f.data(f.flat, [:], extra: [("job", "{\"open\":[{\"tool\":\"t\",\"contains\":\"a\",\"notContains\":\"b\"}],\"close\":[],\"whileOpen\":[]}")])))
 
         for (code, data) in cases {
             #expect(StyleFixtures.code(data) == code, "\(code) 픽스처가 다른 코드를 냈습니다: \(StyleFixtures.code(data) ?? "통과")")
@@ -83,7 +84,7 @@ struct StyleManifestTests {
         // The count comes from the production enum, not from this list: a new
         // code with no fixture has to fail here, and a literal cannot say so.
         #expect(Set(cases.map(\.0) + ["E_ID_COLLISION"]) == StyleErrorCodes.all)
-        #expect(StyleErrorCodes.all.count == 47)
+        #expect(StyleErrorCodes.all.count == 48)
     }
 
     private let unknownRule = "{\"start\":{\"kind\":\"sideways\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"none\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"

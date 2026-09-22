@@ -208,11 +208,12 @@ public enum StyleManifestDecoder {
         let capabilities = try self.capabilities(reader.take("capabilities"))
         let autoAllow = try self.autoAllow(reader.take("autoAllow"))
         let presentation = try self.presentation(reader.take("presentation"))
+        let job = try self.job(reader.take("job"))
         try reader.finish()
         return StyleManifest(schema: 1, id: id, name: name, summary: summary, subtitle: subtitle, placeholders: placeholders,
                              guidance: guidance, prerequisites: prerequisites, install: install, phases: phases, groups: groups,
                              actions: actions, aliases: aliases, recognition: recognition, rules: rules,
-                             capabilities: capabilities, autoAllow: autoAllow, presentation: presentation)
+                             capabilities: capabilities, autoAllow: autoAllow, presentation: presentation, job: job)
     }
 
     private static func placeholders(_ value: Any?) throws -> StylePlaceholders {
@@ -445,6 +446,31 @@ public enum StyleManifestDecoder {
         let tint = try self.tint(reader.take("tint"), at: "presentation.tint")
         try reader.finish()
         return StylePresentation(icon: icon, tint: tint)
+    }
+
+    private static func jobMatcher(_ value: Any, at path: String) throws -> StyleJobMatcher {
+        var reader = try Reader(value, at: path)
+        let tool = try string(reader.take("tool"), at: path + ".tool", range: 1...64)
+        let contains = try optionalString(reader.take("contains"), at: path + ".contains", range: 1...400)
+        let notContains = try optionalString(reader.take("notContains"), at: path + ".notContains", range: 1...400)
+        try reader.finish()
+        guard !(contains != nil && notContains != nil) else { throw StyleErrors.jobMatcherLiteral(path) }
+        return StyleJobMatcher(tool: tool, contains: contains, notContains: notContains)
+    }
+
+    private static func job(_ value: Any?) throws -> StyleJobDeclaration? {
+        guard let value else { return nil }
+        var reader = try Reader(value, at: "job")
+        let openItems = try array(reader.take("open"), at: "job.open", maximum: 32)
+        let closeItems = try array(reader.take("close"), at: "job.close", maximum: 32)
+        let rawWhileOpen = try array(reader.take("whileOpen") ?? [Any](), at: "job.whileOpen", maximum: StyleLimits.maximumActions)
+        let guidance = try optionalString(reader.take("guidance"), at: "job.guidance", range: 0...160)
+        try reader.finish()
+        let open = try openItems.enumerated().map { try jobMatcher($1, at: "job.open[\($0)]") }
+        let close = try closeItems.enumerated().map { try jobMatcher($1, at: "job.close[\($0)]") }
+        let whileOpen = try rawWhileOpen.map { try string($0, at: "job.whileOpen", range: 1...64) }
+        if let guidance { guard StyleGuidanceTemplate.isValid(guidance) else { throw StyleErrors.promptPlaceholder("job.guidance") } }
+        return StyleJobDeclaration(open: open, close: close, whileOpen: whileOpen, guidance: guidance)
     }
 
     private static func rules(_ value: Any?) throws -> StyleRules {
