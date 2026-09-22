@@ -8,6 +8,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | ed33f18 | Test Swift core | (주석 스크립트 추가 전) | 동결 단계 마지막으로 이동 + 주석 스크립트 추가 |
 | 2 | 0359c63 | Test Swift core | `Sendable` 경고만(1500자 잘림, 실제 오류 불명) | `#expect` 옵셔널 체인 바인딩, `Date.init`→`{ Date() }` Sendable 수정, 주석 스크립트 개선 |
+| 3 | f9ec5b1 | Test Swift core | `StyleEvaluator.swift:264` `cannot call value of non-function type '[T]'` — `satisfied` 지역변수가 같은 이름의 정적 함수 섀도잉 → `zip().filter{}` 등 4개 오류 연쇄 | `outcomes`로 이름 변경, `Self.satisfied`, 키패스→명시적 클로저; 주석 스크립트에 경로 제거 + 멀티청크 추가 |
 
 실패 단계: `macos` 작업(분리 전 `.github/workflows/native.yml`, 이 브랜치부터 `.github/workflows/native-macos.yml`)의 **Test Swift core and loopback remote execution**
 (`bash scripts/test-native-macos.sh`, 약 42초 뒤 exit 1, 40회 이상 연속 실패). 로컬에서는 같은 스크립트가 459개 검사를 모두 통과한다.

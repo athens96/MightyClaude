@@ -261,13 +261,19 @@ public enum StylePrerequisiteProbe {
                                 environment: [String: String] = ProviderService.runtimeEnvironment()) -> StylePrerequisiteResult {
         // Nothing to install is a real answer: always ready, no block drawn.
         guard !prerequisites.probes.isEmpty else { return StylePrerequisiteResult(ready: true) }
-        let satisfied = prerequisites.probes.map { satisfied($0, home: home, workspacePath: workspacePath, environment: environment) }
-        let ready = prerequisites.mode == .all ? !satisfied.contains(false) : satisfied.contains(true)
-        let unmet = zip(prerequisites.probes, satisfied).filter { !$0.1 }.map(\.0)
+        // `Self.` and a non-shadowing name: a local called `satisfied` is in scope
+        // inside its own closure, so an older compiler binds the call to the array.
+        let outcomes = prerequisites.probes.map {
+            Self.satisfied($0, home: home, workspacePath: workspacePath, environment: environment)
+        }
+        let ready = prerequisites.mode == .all ? !outcomes.contains(false) : outcomes.contains(true)
+        let unmet = zip(prerequisites.probes, outcomes).filter { !$0.1 }.map { $0.0 }
         guard !ready else { return StylePrerequisiteResult(ready: true) }
-        let missing = prerequisites.report == .first ? Array(unmet.prefix(1).map(\.missing)) : unmet.map(\.missing)
+        let missing = prerequisites.report == .first
+            ? Array(unmet.prefix(1).map { $0.missing })
+            : unmet.map { $0.missing }
         return StylePrerequisiteResult(ready: false, missing: missing, hint: unmet.first?.hint,
-                                       canInstall: install != nil && unmet.contains(where: \.install))
+                                       canInstall: install != nil && unmet.contains { $0.install })
     }
 
     /// The judgement itself, always made on a worker (§1.5).

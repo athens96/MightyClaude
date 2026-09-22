@@ -18,22 +18,51 @@ SWIFT_EXIT=${PIPESTATUS[0]}
 set -e
 
 if [ "$SWIFT_EXIT" -ne 0 ]; then
-  python3 - "$LOGFILE" <<'PY'
-import sys
-all_lines = open(sys.argv[1]).read().splitlines()
-nonempty = [l for l in all_lines if l.strip()]
-# Compiler errors (": error:"), test failures ("✗"), and the final summary
-errors = [l for l in nonempty if ': error:' in l][:8]
+  MIGHTY_PROJECT_ROOT="$PROJECT_ROOT" python3 - "$LOGFILE" <<'PY'
+import os, re, sys
+
+root = os.environ.get("MIGHTY_PROJECT_ROOT", "")
+# Nothing outside the checkout may reach a public annotation: the checkout prefix
+# becomes a repo-relative path and every other absolute path is redacted.
+OUTSIDE = re.compile(r'/(?:Users|home|private|var|tmp|opt|Applications|Library)/[^\s:,\'")\]]*')
+
+def clean(line):
+    if root:
+        line = line.replace(root + "/", "").replace(root, "")
+    line = OUTSIDE.sub("<path>", line)
+    return line[:240]
+
+nonempty = [clean(l) for l in open(sys.argv[1], errors="replace").read().splitlines() if l.strip()]
+errors = [l for l in nonempty if ': error:' in l][:12]
 failures = [l for l in nonempty if l.strip().startswith('✗')][:8]
-summary = [l for l in nonempty if 'Test run with' in l or 'test run with' in l][:2]
-tail = nonempty[-10:]
-seen = set(); result = []
-for l in errors + failures + summary + tail:
+# The contract: the last 30 non-empty lines of a failing run, with the compiler
+# errors and the failing checks hoisted in front of them.
+tail = nonempty[-30:]
+seen, selected = set(), []
+for l in errors + failures + tail:
     if l not in seen:
-        result.append(l); seen.add(l)
-msg = '\n'.join(result[:30])
-msg = msg.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1500]
-print(f'::error title=macOS Swift tests::{msg}')
+        selected.append(l)
+        seen.add(l)
+
+def encode(text):
+    return text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+
+# Annotations are capped at 1500 characters, so the selection is emitted as a
+# short series of capped annotations rather than silently truncated to one.
+chunk, chunks = [], []
+for line in selected:
+    candidate = chunk + [line]
+    if len(encode('\n'.join(candidate))) > 1500 and chunk:
+        chunks.append(chunk)
+        chunk = [line]
+    else:
+        chunk = candidate
+if chunk:
+    chunks.append(chunk)
+
+for index, part in enumerate(chunks[:3], 1):
+    suffix = f' ({index}/{min(len(chunks), 3)})' if len(chunks) > 1 else ''
+    print(f'::error title=macOS Swift tests{suffix}::{encode(chr(10).join(part))[:1500]}')
 PY
   rm -f "$LOGFILE"
   exit "$SWIFT_EXIT"
