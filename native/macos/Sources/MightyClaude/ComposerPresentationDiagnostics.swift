@@ -76,7 +76,6 @@ enum ComposerPresentationDiagnostics {
             window.sendEvent(try mouse(.leftMouseDown))
             report["emptyComposerClickFocusesEditor"] = window.firstResponder === inputEditor
             guard let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0) else { throw MightyError("첫 글자 검증 이벤트를 만들지 못했습니다.") }
-            report["firstCharacterPassesKeyMonitor"] = inputProbe.handleKeyEvent(key) != nil
             window.sendEvent(key)
             try await Task.sleep(for: .milliseconds(120))
             report["firstKeyNativeText"] = inputEditor.string
@@ -183,10 +182,15 @@ enum ComposerPresentationDiagnostics {
                                  "controls": frames.map { ["id": $0.0, "frame": NSStringFromRect($0.1)] }])
                 }
             }
-            guard let actionProbe = probes(actionHost).first, let actionEditor = actionProbe.editor,
+            guard let actionProbe = probes(actionHost).first, let actionEditor = actionProbe.editor as? ComposerTextView,
                   window.makeFirstResponder(actionEditor),
                   let enter = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) else { throw MightyError("실행 중 입력창을 찾지 못했습니다.") }
-            report["runningEnterConsumedWithoutStopOrSubmit"] = actionProbe.handleKeyEvent(enter) == nil && actionEditor.string == nextDraft
+            let originalEligibility = actionEditor.canSubmit, originalSubmit = actionEditor.onSubmit
+            var sends = 0, consumed = false
+            actionEditor.canSubmit = { false }; actionEditor.onSubmit = { _ in sends += 1 }
+            actionEditor.performNativeKeyEvent(enter) { consumed = actionEditor.handleNativeCommand(NSSelectorFromString("insertNewline:")) }
+            actionEditor.canSubmit = originalEligibility; actionEditor.onSubmit = originalSubmit
+            report["disabledNativeReturnDoesNotStopOrSubmit"] = consumed && sends == 0 && actionEditor.string == nextDraft
             report["toolbarRows"] = rows
             report["singleAlignedControlRow"] = allRowsPass
             report["onePrimaryButtonChangesInPlace"] = samePrimaryPosition && allRowsPass
@@ -255,10 +259,11 @@ enum ComposerPresentationDiagnostics {
     private struct PlaceholderFixture: View {
         @ObservedObject var model: FixtureModel
         @ViewState private var height: CGFloat = 22
+        @ViewState private var inputController = ComposerInputController()
         var body: some View {
             VStack {
-                NativeComposerEditor(text: $model.text).frame(height: height)
-                    .background(TextEditorHeightReader(text: model.text, height: $height, canSubmit: false, onSubmit: { _ in }, placeholder: "요청할 작업을 입력하세요…"))
+                NativeComposerEditor(text: $model.text, inputController: inputController).frame(height: height)
+                    .background(TextEditorHeightReader(inputController: inputController, height: $height, placeholder: "요청할 작업을 입력하세요…"))
                 Spacer()
             }.padding(20)
         }

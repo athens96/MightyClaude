@@ -26,10 +26,7 @@ public enum TranscriptCopyClaim {
 
     /// Command and nothing else, on the C key by character or by position.
     public static func isCopyKeyEquivalent(modifiers: UInt, characters: String?, keyCode: UInt16) -> Bool {
-        let meaningful = modifiers & deviceIndependentFlags & ~incidentalFlags
-        guard meaningful == commandFlag else { return false }
-        if keyCode == copyKeyCode { return true }
-        return characters?.lowercased() == "c"
+        ClipboardShortcut.match(modifiers: modifiers, characters: characters, keyCode: keyCode) == .copy
     }
 
     /// The window's current first responder, as far as this decision cares.

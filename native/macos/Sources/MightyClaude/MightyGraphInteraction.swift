@@ -423,6 +423,14 @@ final class MightyGraphInteractionProbe: NSView {
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard !disposed, let window, window.attachedSheet == nil,
               !isHiddenOrHasHiddenAncestor, let graphRoot else { cancelInteraction(); return event }
+        // A local monitor runs before NSWindow dispatch. Consuming the first
+        // click in an inactive window also consumes AppKit's chance to make
+        // it key. Let AppKit establish activation before owning any gesture;
+        // a drag that outlived activation must release its capture as well.
+        guard NSApp.isActive, window.isKeyWindow, NSApp.keyWindow === window else {
+            cancelInteraction()
+            return event
+        }
         if isResizing {
             if event.type == .scrollWheel { return nil }
             if event.type == .leftMouseDragged || event.type == .leftMouseUp {

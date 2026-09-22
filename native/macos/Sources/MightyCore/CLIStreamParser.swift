@@ -65,6 +65,26 @@ public final class CLIStreamParser {
         if let value = value as? [String: Any], let text = value["message"] as? String { return String(text.prefix(32_768)) }
         return fallback
     }
+    private func presentClaudeFailure(_ value: [String: Any], type: String) -> [String: Any] {
+        var presented = value
+        if type == "result", value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error") {
+            if let errors = value["errors"] as? [String] {
+                presented["errors"] = errors.map { BedrockAuthDiagnostics.runtimeFailureGuidance($0) ?? $0 }
+            }
+            if let text = value["result"] as? String, let guidance = BedrockAuthDiagnostics.runtimeFailureGuidance(text) {
+                presented["result"] = guidance
+            }
+        } else if type == "assistant", let error = value["error"] as? String, !error.isEmpty,
+                  var message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
+            message["content"] = blocks.map { block in
+                guard block["type"] as? String == "text", let text = block["text"] as? String,
+                      let guidance = BedrockAuthDiagnostics.runtimeFailureGuidance(text) else { return block }
+                var block = block; block["text"] = guidance; return block
+            }
+            presented["message"] = message
+        }
+        return presented
+    }
     private func resumeIfValid(_ value: Any?) {
         guard let id = value as? String, CoreValidation.identifier(id), id != lastResume else { return }
         lastResume = id; resume(id)
@@ -170,7 +190,10 @@ public final class CLIStreamParser {
     private func consume(_ data: Data) {
         guard !data.isEmpty else { return }
         guard let object = try? JSONSerialization.jsonObject(with: data) else { log("output", String(String(decoding: data, as: UTF8.self).prefix(32_768))); return }
-        guard let value = object as? [String: Any], let type = value["type"] as? String else { return }
+        guard var value = object as? [String: Any], let type = value["type"] as? String else { return }
+        // Normalize confirmed provider failures before both transcript and graph
+        // consume them. Ordinary assistant text and tool results stay intact.
+        if provider == "claude" { value = presentClaudeFailure(value, type: type) }
         let claudeChild = provider == "claude" && ExecutionGraphTracker.parentToolID(value) != nil
         if !claudeChild { usageTracker.consume(value) }
         graphTracker?.consume(value)

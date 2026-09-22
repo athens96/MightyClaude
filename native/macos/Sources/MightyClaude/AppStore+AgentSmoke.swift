@@ -21,6 +21,12 @@ extension AppStore {
             let checks = AgentMarkdownDiagnostics.checks()
             result["markdown"] = checks
             guard checks.values.allSatisfy({ $0 }) else { throw MightyError("Markdown fixture failed") }
+            let copyRouting = ApplicationCopyDiagnostics.run()
+            result["copyRouting"] = copyRouting
+            guard copyRouting.values.allSatisfy({ $0 }) else { throw MightyError("Application copy routing failed") }
+            let terminalCopy = TerminalCopyDiagnostics.run()
+            result["terminalCopy"] = terminalCopy
+            guard terminalCopy.values.allSatisfy({ $0 }) else { throw MightyError("Terminal selection copy failed") }
             let composerPresentation = await ComposerPresentationDiagnostics.run(store: self)
             result["composerPresentation"] = composerPresentation
             guard composerPresentation["passed"] as? Bool == true else { throw MightyError("Composer presentation failed") }

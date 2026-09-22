@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Paperthin 스타일 - 데이터 흐름",
+    "locale": "en",
+    "viewBox": [1200, 880],
+    "quality_profile": "showcase"
+  },
+  "stages": [
+    { "label": "초기화" },
+    { "label": "작성" },
+    { "label": "실행" },
+    { "label": "갱신" },
+    { "label": "설치" }
+  ],
+  "nodes": [
+    { "id": "user", "type": "frontend", "label": "사용자", "sublabel": "Mighty 모드", "stage": 0, "row": 1, "tag": "interaction" },
+    { "id": "picker", "type": "frontend", "label": "MightyStylePicker", "sublabel": "SessionPaneView", "stage": 0, "row": 1, "tag": "UI" },
+    { "id": "appstore1", "type": "backend", "label": "AppStore.setMightyStyle", "sublabel": "state update", "stage": 0, "row": 1, "tag": "action" },
+    { "id": "state1", "type": "database", "label": "RunSession", "sublabel": "mightyStyle='paperthin'", "stage": 0, "row": 1, "tag": "state" },
+    { "id": "panel", "type": "frontend", "label": "PaperthinPanel", "sublabel": "2×2 Map", "stage": 1, "row": 0, "tag": "composer" },
+    { "id": "chip", "type": "frontend", "label": "PaperthinSkillChip", "sublabel": "탭", "stage": 1, "row": 2, "tag": "button" },
+    { "id": "appstore2", "type": "backend", "label": "AppStore.sendPaperthin", "sublabel": "process input", "stage": 1, "row": 1, "tag": "service" },
+    { "id": "catalog", "type": "backend", "label": "PaperthinCatalog", "sublabel": "/skill <대상>", "stage": 1, "row": 1, "tag": "prompt" },
+    { "id": "prompt", "type": "backend", "label": "AppStore.sendGuidedPrompt", "sublabel": "compose message", "stage": 1, "row": 1, "tag": "prep" },
+    { "id": "submit", "type": "backend", "label": "AppStore.submit", "sublabel": "run or queue", "stage": 2, "row": 1, "tag": "execution" },
+    { "id": "cli", "type": "external", "label": "Claude CLI", "sublabel": "Mighty graph", "stage": 2, "row": 1, "tag": "run" },
+    { "id": "title", "type": "backend", "label": "MightyStyles.requestTitle", "sublabel": "\"♻️ re0\"", "stage": 2, "row": 0, "tag": "style" },
+    { "id": "question", "type": "frontend", "label": "AskUserQuestion", "sublabel": "agent tool", "stage": 2, "row": 2, "tag": "prompt" },
+    { "id": "qpanel", "type": "frontend", "label": "AgentQuestionPanel", "sublabel": "replace composer", "stage": 2, "row": 2, "tag": "UI" },
+    { "id": "refresh", "type": "backend", "label": "AppStore.refreshPaperthin", "sublabel": "on run end", "stage": 3, "row": 1, "tag": "sync" },
+    { "id": "installed", "type": "database", "label": "PaperthinCatalog.installed", "sublabel": "~/.claude/skills", "stage": 3, "row": 0, "tag": "discovery" },
+    { "id": "casebook", "type": "database", "label": "PaperthinCasebook.latest", "sublabel": ".re0/iteration/", "stage": 3, "row": 2, "tag": "history" },
+    { "id": "row", "type": "frontend", "label": "Casebook row", "sublabel": "name, type, skills", "stage": 3, "row": 1, "tag": "display" },
+    { "id": "setup", "type": "frontend", "label": "Setup hint", "sublabel": "not installed", "stage": 4, "row": 0, "tag": "help" },
+    { "id": "install", "type": "backend", "label": "AppStore.startPaperthinInstall", "sublabel": "npx skills@latest add", "stage": 4, "row": 1, "tag": "setup" }
+  ],
+  "flows": [
+    { "id": "user-picker", "from": "user", "to": "picker", "label": "선택", "classification": "CLI | Ouroboros | Paperthin", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "picker-store", "from": "picker", "to": "appstore1", "label": "setMightyStyle", "classification": "style selection", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "store-state", "from": "appstore1", "to": "state1", "label": "set 'paperthin'", "classification": "state update", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "state-panel", "from": "state1", "to": "panel", "label": "render", "classification": "UI render", "variant": "default", "fromSide": "bottom", "toSide": "top" },
+    { "id": "user-chip", "from": "user", "to": "chip", "label": "tap", "classification": "tap skill button", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "chip-send", "from": "chip", "to": "appstore2", "label": "sendPaperthin", "classification": "skill selection", "variant": "default", "fromSide": "top", "toSide": "bottom" },
+    { "id": "send-catalog", "from": "appstore2", "to": "catalog", "label": "generate", "classification": "skill prompt", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "catalog-prompt", "from": "catalog", "to": "prompt", "label": "one-line prompt", "classification": "/skill <입력>", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "prompt-submit", "from": "prompt", "to": "submit", "label": "sendGuidedPrompt", "classification": "message ready", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "submit-cli", "from": "submit", "to": "cli", "label": "submit", "classification": "execute immediately or queue", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "cli-title", "from": "cli", "to": "title", "label": "requestTitle", "classification": "guided style only", "variant": "default", "fromSide": "left", "toSide": "right" },
+    { "id": "cli-question", "from": "cli", "to": "question", "label": "AskUserQuestion", "classification": "agent tool", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "question-qpanel", "from": "question", "to": "qpanel", "label": "show panel", "classification": "replace composer", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "qpanel-answer", "from": "qpanel", "to": "submit", "label": "답변", "classification": "tool response", "variant": "default", "fromSide": "top", "toSide": "bottom" },
+    { "id": "cli-refresh", "from": "cli", "to": "refresh", "label": "on run end", "classification": "state sync", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "refresh-installed", "from": "refresh", "to": "installed", "label": "load", "classification": "skill discovery", "variant": "default", "fromSide": "left", "toSide": "right" },
+    { "id": "refresh-casebook", "from": "refresh", "to": "casebook", "label": "load", "classification": "24 recent iterations", "variant": "default", "fromSide": "right", "toSide": "left" },
+    { "id": "installed-row", "from": "installed", "to": "row", "label": "display", "classification": "skill list", "variant": "default", "fromSide": "top", "toSide": "bottom" },
+    { "id": "casebook-row", "from": "casebook", "to": "row", "label": "display", "classification": "name, type, coil", "variant": "default", "fromSide": "bottom", "toSide": "top" },
+    { "id": "row-setup", "from": "row", "to": "setup", "label": "not installed?", "classification": "conditional", "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "id": "setup-install", "from": "setup", "to": "install", "label": "startInstall", "classification": "shell pane", "variant": "default", "fromSide": "right", "toSide": "left" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "스타일 선택 흐름",
+      "items": [
+        "사용자가 MightyStylePicker에서 Paperthin 선택",
+        "AppStore가 RunSession 상태를 갱신",
+        "PaperthinPanel이 2×2 스킬 지도로 렌더링"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "스킬 작성 및 실행",
+      "items": [
+        "사용자가 PaperthinSkillChip 탭",
+        "카탈로그에서 /skill <대상> 한 줄 프롬프트 생성",
+        "AppStore.submit이 즉시 실행 또는 큐에 추가"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "에이전트 상호작용",
+      "items": [
+        "Claude CLI가 MightyStyles.requestTitle로 '♻️ re0' 요청 블록 제목 생성",
+        "AskUserQuestion이 나타나면 AgentQuestionPanel이 작성기를 대체",
+        "답변이 도구 응답으로 반환"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "갱신 및 설치",
+      "items": [
+        "실행 종료 시 AppStore.refreshPaperthin 호출",
+        "PaperthinCatalog.installed와 PaperthinCasebook.latest 로드",
+        "카세북 행이 최근 24개 반복 표시",
+        "미설치 상태에서 설치 힌트와 npm 명령 표시"
+      ]
+    }
+  ]
+}

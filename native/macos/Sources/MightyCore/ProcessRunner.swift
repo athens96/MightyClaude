@@ -202,6 +202,17 @@ public enum ProcessCapture {
 }
 
 private enum ChildEvent: Sendable { case stdout(Data), stderr(Data), exit(Int32) }
+
+/// Pipe callbacks run off-actor. Remember any dropped RPC chunk even if a later
+/// burst also evicts the event that first exposed it.
+private final class ChildOutputIntegrity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lost = false
+    func record(_ result: AsyncStream<ChildEvent>.Continuation.YieldResult) {
+        if case .dropped = result { lock.lock(); lost = true; lock.unlock() }
+    }
+    var hasLoss: Bool { lock.lock(); defer { lock.unlock() }; return lost }
+}
 private final class ManagedProcess {
     let request: StartRunRequest
     let activityId = UUID().uuidString
@@ -209,6 +220,9 @@ private final class ManagedProcess {
     var bridge: ModBridge?
     var parser: CLIStreamParser?
     var permissions: ClaudePermissionChannel?
+    var codexPermissions: CodexApprovalChannel?
+    let outputIntegrity = ChildOutputIntegrity()
+    var transportFailed = false
     var receivedClaudeResult = false
     var permissionInitializationTask: Task<Void, Never>?
     var attachments: AttachmentPreparation?
@@ -244,18 +258,24 @@ public actor ProcessRunner {
         guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &directory), directory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
         let run = ManagedProcess(request); runs[request.sessionId] = run
         do {
-            var environment = ProviderService.runtimeEnvironment()
+            let snapshot = request.kind == "shell"
+                ? CLIEnvironmentSnapshot(values: ProviderService.runtimeEnvironment(), source: .provided)
+                : await providerService.executionEnvironment(workspacePath: workspace.path)
+            try Task.checkCancellation()
+            guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
+            if let detail = snapshot.fallbackDetail { emitLog(run, kind: "system", text: detail) }
+            var environment = snapshot.values
             var executable: URL; var arguments: [String]
             var standardInput = Data()
             if request.kind == "shell" {
                 executable = URL(fileURLWithPath: environment["SHELL"] ?? "/bin/sh"); arguments = ["-l", "-c", request.input]
             } else {
-                guard let command = await providerService.command(provider: request.provider) else { throw MightyError("\(ProviderOptions.label(request.provider)) CLI 실행 파일을 찾을 수 없습니다.") }
+                guard let command = await providerService.command(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot) else { throw MightyError("\(ProviderOptions.label(request.provider)) CLI 실행 파일을 찾을 수 없습니다.") }
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
                 if request.provider == "claude", !ProviderService.supportsMods(command.version) { throw MightyError("이 앱의 Mods 연결은 2.1.271 공개 타입을 기준으로 합니다. 현재 \(command.version)에서는 Claude 실행을 지원하지 않습니다.") }
                 try CoreValidation.validateCapabilities(request, capabilities: ProviderService.capabilities(provider: request.provider, version: command.version))
-                let catalog = await providerService.modelCatalog(provider: request.provider)
+                let catalog = await providerService.modelCatalog(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot)
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
                 try CoreValidation.validateSelection(request, catalog: catalog)
@@ -271,8 +291,13 @@ public actor ProcessRunner {
                 let attachments = try AttachmentPreparation(request.attachments)
                 run.attachments = attachments
                 let interactivePermissions = allowPermissionPrompts && request.provider == "claude"
-                let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions)
-                arguments = prepared.arguments; standardInput = prepared.standardInput
+                let codexApprovals = request.provider == "codex" && request.settings.permissionMode == "onRequest"
+                if codexApprovals {
+                    arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts)
+                } else {
+                    let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions)
+                    arguments = prepared.arguments; standardInput = prepared.standardInput
+                }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
                 if interactivePermissions {
                     run.permissions = ClaudePermissionChannel(runId: run.activityId, prompt: standardInput,
@@ -304,9 +329,20 @@ public actor ProcessRunner {
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "graph", graph: node))
                     }, graphInput: request.input)
+                if codexApprovals {
+                    run.codexPermissions = CodexApprovalChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments,
+                        write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
+                        event: { [weak run] data in guard let run, !run.finished else { return }; run.parser?.push(data) },
+                        emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
+                        activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
+                        warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
+                        fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
+                        completed: { [weak run] in run?.permissionInitializationTask?.cancel(); run?.child?.closeInput() })
+                }
             }
             let stream = AsyncStream<ChildEvent>.makeStream(bufferingPolicy: .bufferingNewest(256))
-            let child = try NativeChildProcess(executable: executable, arguments: arguments, environment: environment, cwd: URL(fileURLWithPath: workspace.path), stdout: { stream.continuation.yield(.stdout($0)) }, stderr: { stream.continuation.yield(.stderr($0)) }, exited: { stream.continuation.yield(.exit($0)); stream.continuation.finish() })
+            let integrity = run.outputIntegrity
+            let child = try NativeChildProcess(executable: executable, arguments: arguments, environment: environment, cwd: URL(fileURLWithPath: workspace.path), stdout: { integrity.record(stream.continuation.yield(.stdout($0))) }, stderr: { integrity.record(stream.continuation.yield(.stderr($0))) }, exited: { integrity.record(stream.continuation.yield(.exit($0))); stream.continuation.finish() })
             run.child = child
             onEvent(RunEvent(sessionId: request.sessionId, type: "status", status: "running"))
             if request.kind == "claude" { Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: request.provider, kind: "turn", state: "running", summary: "\(ProviderOptions.label(request.provider)) 실행 중"), emit: onEvent) }
@@ -314,15 +350,15 @@ public actor ProcessRunner {
             run.task = Task { [weak self, weak run] in
                 for await event in stream.stream { guard let self, let run else { return }; await self.receive(event, run: run) }
             }
-            if let permissions = run.permissions {
-                permissions.start()
+            if run.permissions != nil || run.codexPermissions != nil {
+                run.permissions?.start(); run.codexPermissions?.start()
                 run.permissionInitializationTask = Task { [weak self, weak run] in
                     do { try await Task.sleep(for: .seconds(15)) } catch { return }
                     guard let self, let run else { return }; await self.permissionInitializationTimedOut(run)
                 }
             } else { child.write(standardInput, closeAfter: true) }
         } catch {
-            run.permissions?.cancelAll(); run.permissionInitializationTask?.cancel()
+            run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
             run.attachments?.cleanup(); run.attachments = nil
             await run.bridge?.stop()
             if run.finished { if !request.attachments.isEmpty { throw CancellationError() }; return }
@@ -352,10 +388,12 @@ public actor ProcessRunner {
     /// card from a previous execution of the same pane can never grant access.
     public func respondToPermission(sessionId: String, runId: String, requestId: String, allow: Bool) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
-              !run.stopping, !run.finished, let permissions = run.permissions else {
+              !run.stopping, !run.finished, run.codexPermissions == nil || !run.outputIntegrity.hasLoss else {
             throw MightyError("승인 요청의 실행이 이미 종료되었거나 변경되었습니다.")
         }
-        try permissions.respond(requestId: requestId, allow: allow)
+        if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
+        else if let permissions = run.codexPermissions { try permissions.respond(requestId: requestId, allow: allow) }
+        else { throw MightyError("이 실행은 대화형 승인을 지원하지 않습니다.") }
     }
     public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
@@ -367,6 +405,7 @@ public actor ProcessRunner {
     private func permissionInitializationTimedOut(_ run: ManagedProcess) {
         guard runs[run.request.sessionId] === run, !run.stopping, !run.finished else { return }
         run.permissions?.initializationTimedOut()
+        run.codexPermissions?.initializationTimedOut()
     }
     // The parser is used only inside this actor's synchronous receive/flush path.
     private nonisolated func emitLogSynchronously(_ run: ManagedProcess, kind: String, text: String) { Self.deliverLog(run, kind: kind, text: text, emit: onEvent) }
@@ -411,8 +450,20 @@ public actor ProcessRunner {
     }
     private func receive(_ event: ChildEvent, run: ManagedProcess) async {
         guard !run.finished else { return }
+        if run.codexPermissions != nil, run.outputIntegrity.hasLoss, !run.transportFailed {
+            run.transportFailed = true
+            emitLog(run, kind: "error", text: "Codex 출력이 처리 한도를 초과해 승인 연결을 중단했습니다. 실행을 다시 시작하세요.")
+            run.codexPermissions?.cancelAll(); run.child?.stop()
+        }
+        if run.transportFailed {
+            if case .exit(let code) = event { await finish(run, code: code) }
+            return
+        }
         switch event {
-        case .stdout(let data): if let parser = run.parser { parser.push(data) } else { emitLog(run, kind: "output", text: run.outputDecoder.push(data)) }
+        case .stdout(let data):
+            if let permissions = run.codexPermissions { permissions.receive(data) }
+            else if let parser = run.parser { parser.push(data) }
+            else { emitLog(run, kind: "output", text: run.outputDecoder.push(data)) }
         case .stderr(let data): emitLog(run, kind: "output", text: run.errorDecoder.push(data))
         case .exit(let code): await finish(run, code: code)
         }
@@ -430,15 +481,20 @@ public actor ProcessRunner {
     }
     private func finish(_ run: ManagedProcess, code: Int32) async {
         guard !run.finished else { return }
+        run.codexPermissions?.flush()
         run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); emitLog(run, kind: "output", text: run.errorDecoder.flush())
-        run.permissions?.cancelAll(); run.permissionInitializationTask?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
         let incompletePermissionRun = run.permissions != nil && (run.permissions?.initialized != true || !run.receivedClaudeResult)
         if incompletePermissionRun, !run.stopping, !shuttingDown, run.permissions?.failed != true {
             emitLog(run, kind: "error", text: "Claude가 승인 채널 초기화 또는 응답 결과를 전달하기 전에 종료되었습니다.")
         }
+        let incompleteCodexRun = run.codexPermissions != nil && (run.codexPermissions?.initialized != true || run.codexPermissions?.turnCompleted != true)
+        if incompleteCodexRun, !run.stopping, !shuttingDown, run.codexPermissions?.failed != true {
+            emitLog(run, kind: "error", text: "Codex가 승인 채널 초기화 또는 응답 결과를 전달하기 전에 종료되었습니다.")
+        }
         if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: "Mods 이벤트를 받지 못했습니다. CLI 출력만 표시하며 관리자 정책과 function hooks 설정을 확인해 주세요.") }
         await run.bridge?.stop()
-        let status = run.stopping || shuttingDown ? "stopped" : code == 0 && run.parser?.failed != true && run.permissions?.failed != true && !incompletePermissionRun ? "completed" : "error"
+        let status = run.stopping || shuttingDown ? "stopped" : code == 0 && !run.transportFailed && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
         run.parser?.finishActivities(stopped: status == "stopped")
         run.parser?.finishGraph(state: status)
         run.attachments?.cleanup(); run.attachments = nil
@@ -460,7 +516,7 @@ public actor ProcessRunner {
         guard let run = runs[id] else { return }
         if run.finished { await waitForFinalization(run); return }
         run.stopping = true
-        run.permissions?.cancelAll(); run.permissionInitializationTask?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
         if let child = run.child { child.stop(); let code = await child.wait(timeout: 3); if code == -1 { run.task?.cancel() } else { await run.task?.value }; if !run.finished { await finish(run, code: -1) } else { await waitForFinalization(run) } }
         else { await cancelPending(run) }
     }

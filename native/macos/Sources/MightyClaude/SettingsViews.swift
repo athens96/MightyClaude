@@ -25,7 +25,7 @@ struct RunSettingsView: View {
     private var runtime: ProviderRuntime { store.providerRuntime(session.provider, workspaceId: session.workspaceId) }
     private var selectedModel: ModelOption? { runtime.modelCatalog.models.first { $0.value == session.model } }
     private var currentSession: RunSession { store.snapshot.sessions.first { $0.id == session.id } ?? session }
-    private var running: Bool { currentSession.status == "running" }
+    private var running: Bool { currentSession.status == "running" || store.pendingRuns.contains(session.id) }
     private var unsupportedSettings: Bool {
         (fastMode && !runtime.capabilities.fastMode) || (webSearch != "default" && !runtime.capabilities.webSearch) || (networkAccess && !runtime.capabilities.networkAccess)
     }
@@ -43,7 +43,7 @@ struct RunSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(selectedModel?.displayName ?? session.model).font(.system(size: 13, weight: .medium))
                         if let description = selectedModel?.description, !description.isEmpty { Text(description).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled) }
-                        Label(runtime.modelCatalog.source == "cli" ? L("settings.run.modelSourceCli") : L("settings.run.modelSourceDefault"), systemImage: runtime.modelCatalog.source == "cli" ? "checkmark.circle" : "info.circle")
+                        Label(runtime.modelCatalog.source == "cli" ? L("settings.run.modelSourceCli") : L("settings.run.modelSourceDefault"), systemImage: "info.circle")
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                     Divider()
@@ -54,7 +54,7 @@ struct RunSettingsView: View {
                             Text(L("settings.run.remoteAccountTemplate", ["host": reference.hostName])).font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                         if currentSession.settings.permissionMode != "fullAccess" {
-                            if session.provider == "claude", store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil {
+                            if (session.provider == "claude" || (session.provider == "codex" && currentSession.settings.permissionMode == "onRequest")), store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil {
                                 Text(L("settings.run.approvalInApp")).font(.system(size: 11)).foregroundStyle(.secondary)
                             } else {
                                 Text(L("settings.run.approvalUnsupported")).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -79,8 +79,8 @@ struct RunSettingsView: View {
                     if runtime.capabilities.networkAccess {
                         VStack(alignment: .leading, spacing: 7) {
                             Toggle(L("settings.run.shellNetworkToggle"), isOn: $networkAccess).toggleStyle(.switch).controlSize(.small)
-                                .disabled(currentSession.settings.permissionMode != "acceptEdits").accessibilityLabel(L("settings.run.shellNetworkToggle"))
-                            Text(currentSession.settings.permissionMode == "fullAccess" ? L("settings.run.shellNetworkFullAccess") : currentSession.settings.permissionMode == "acceptEdits" ? L("settings.run.shellNetworkAcceptEdits") : L("settings.run.shellNetworkLocked"))
+                                .disabled(!["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode)).accessibilityLabel(L("settings.run.shellNetworkToggle"))
+                            Text(currentSession.settings.permissionMode == "fullAccess" ? L("settings.run.shellNetworkFullAccess") : ["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode) ? L("settings.run.shellNetworkAcceptEdits") : L("settings.run.shellNetworkLocked"))
                                 .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
@@ -131,7 +131,7 @@ struct RunSettingsView: View {
         var settings = currentSession.settings
         settings.fastMode = fastMode
         settings.webSearch = webSearch
-        settings.networkAccess = currentSession.settings.permissionMode == "acceptEdits" && networkAccess
+        settings.networkAccess = ["acceptEdits", "onRequest"].contains(currentSession.settings.permissionMode) && networkAccess
         let turns = maxTurns.trimmingCharacters(in: .whitespacesAndNewlines)
         let budget = maxBudget.trimmingCharacters(in: .whitespacesAndNewlines)
         if runtime.capabilities.maxTurns, !turns.isEmpty {
@@ -263,7 +263,7 @@ func permissionLabel(_ mode: String, provider: String = "claude") -> String {
     if provider == "claude" {
         switch mode { case "plan": return "Plan mode"; case "acceptEdits": return "Accept file edits"; case "auto": return "Auto mode"; case "fullAccess": return "Bypass"; default: return "Always ask" }
     }
-    switch mode { case "plan": return L("permission.label.plan"); case "acceptEdits": return provider == "codex" ? L("permission.label.acceptEditsCodex") : L("permission.label.acceptEdits"); case "fullAccess": return L("permission.label.fullAccess"); default: return provider == "codex" ? L("permission.label.defaultCodex") : L("permission.label.default") }
+    switch mode { case "plan": return L("permission.label.plan"); case "acceptEdits": return provider == "codex" ? L("permission.label.acceptEditsCodex") : L("permission.label.acceptEdits"); case "onRequest": return L("permission.label.onRequest"); case "fullAccess": return L("permission.label.fullAccess"); default: return provider == "codex" ? L("permission.label.defaultCodex") : L("permission.label.default") }
 }
 
 func permissionDescription(_ mode: String, provider: String) -> String {
@@ -277,6 +277,7 @@ func permissionDescription(_ mode: String, provider: String) -> String {
         }
     }
     if mode == "fullAccess" { return L("permission.other.fullAccess") }
+    if provider == "codex", mode == "onRequest" { return L("permission.codex.onRequest") }
     if provider == "codex" { return mode == "acceptEdits" ? L("permission.codex.acceptEdits") : L("permission.codex.default") }
     switch mode {
     case "plan": return L("permission.other.plan")

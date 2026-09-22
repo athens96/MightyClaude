@@ -160,13 +160,38 @@ enum MightyGraphInteractionDiagnostics {
                 board.clearContents()
                 editor.copyPasteboard = board
                 defer { editor.copyPasteboard = .general; board.releaseGlobally() }
+                let expected = selected.replacingOccurrences(of: "\u{FFFC}", with: "")
+                guard window.makeFirstResponder(editor), commandC(window), board.string(forType: .string) == expected else {
+                    throw MightyError("포커스된 블록에서 한글 입력 상태의 ⌘C가 본문을 복사하지 못했습니다.")
+                }
+                report["focusedKoreanCommandCCopiesSelection"] = true
+                board.clearContents()
+                guard let copyEvent = commandCEvent(window) else { throw MightyError("한글 ⌘C 이벤트를 만들지 못했습니다.") }
+                editor.keyDown(with: copyEvent)
+                guard board.string(forType: .string) == expected else { throw MightyError("직접 전달된 한글 ⌘C가 본문을 복사하지 못했습니다.") }
+                report["focusedKoreanCommandCKeyDownFallback"] = true
+                let selectedRange = editor.selectedRange()
+                editor.setSelectedRange(NSRange(location: selectedRange.location, length: 0))
+                let unchanged = board.changeCount
+                guard commandC(window), board.changeCount == unchanged else { throw MightyError("빈 선택의 ⌘C가 클립보드를 변경했습니다.") }
+                editor.setSelectedRange(selectedRange)
+                report["focusedEmptyCopyPreservesPasteboard"] = true
+                // A caret in another editor must not copy the old block behind
+                // it, even when that block remains visibly selected.
+                let otherEditor = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
+                host.addSubview(otherEditor)
+                guard window.makeFirstResponder(otherEditor) else { throw MightyError("다른 입력창의 복사 우선권을 검증하지 못했습니다.") }
+                _ = editor.performKeyEquivalent(with: copyEvent)
+                guard board.changeCount == unchanged else { throw MightyError("다른 입력창의 ⌘C를 이전 블록이 가로챘습니다.") }
+                otherEditor.removeFromSuperview()
+                report["otherEditorRetainsCopyOwnership"] = true
                 guard window.makeFirstResponder(probe), window.firstResponder === probe else { throw MightyError("⌘C 검증용 포커스 이동에 실패했습니다.") }
+                board.clearContents()
                 guard commandC(window) else { throw MightyError("포커스를 잃은 블록이 ⌘C 키 동등키를 받지 못했습니다.") }
                 let copied = board.string(forType: .string)
                 report["copiedAfterFocusLeftTheCard"] = copied ?? "none"
                 // Attachment placeholders are layout, and the copy path drops
                 // them, so the expectation is the selection without them too.
-                let expected = selected.replacingOccurrences(of: "\u{FFFC}", with: "")
                 guard copied == expected else { throw MightyError("포커스를 잃은 블록에서 ⌘C가 선택한 본문을 복사하지 못했습니다.") }
                 report["copyFollowsSelectionAfterFocusLeavesTheCard"] = true
             }
@@ -543,10 +568,13 @@ enum MightyGraphInteractionDiagnostics {
     /// carries exactly what AppKit delivers on that layout: only the key code
     /// still says "the user pressed ⌘C".
     private static func commandC(_ window: NSWindow) -> Bool {
-        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
-                                           windowNumber: window.windowNumber, context: nil, characters: "ㅊ", charactersIgnoringModifiers: "ㅊ",
-                                           isARepeat: false, keyCode: TranscriptCopyClaim.copyKeyCode) else { return false }
+        guard let event = commandCEvent(window) else { return false }
         return window.performKeyEquivalent(with: event)
+    }
+    private static func commandCEvent(_ window: NSWindow) -> NSEvent? {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: window.windowNumber, context: nil, characters: "ㅊ", charactersIgnoringModifiers: "ㅊ",
+                                           isARepeat: false, keyCode: TranscriptCopyClaim.copyKeyCode)
     }
     private static func escape(_ window: NSWindow) throws {
         guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) else { throw MightyError("Escape 이벤트를 만들지 못했습니다.") }

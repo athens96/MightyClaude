@@ -11,6 +11,7 @@ extension AppStore {
 
     func refreshCLIAccounts(_ providers: [String] = ProviderOptions.ids) {
         for provider in providers where cliAccountRefreshing.insert(provider).inserted {
+            invalidateLocalModels(provider: provider)
             let service = cliAccountService
             Task { [weak self] in
                 let status = await service.status(provider: provider)
@@ -19,7 +20,7 @@ extension AppStore {
                     self.cliAccountRefreshing.remove(provider)
                     guard !self.cliAccountBusy.contains(provider) else { return } // an action owns the row now
                     self.cliAccounts[provider] = status
-                    if status.loggedIn == true { self.endCLILogin(provider) }
+                    if status.loggedIn == true, status.accessVerified != false { self.endCLILogin(provider) }
                 }
             }
         }
@@ -27,7 +28,7 @@ extension AppStore {
 
     /// Why the account cannot change right now, if anything is using it.
     func cliAccountBlockedReason(_ provider: String) -> String? {
-        if snapshot.sessions.contains(where: { $0.kind == "claude" && $0.provider == provider && $0.status == "running" }) {
+        if snapshot.sessions.contains(where: { $0.kind == "claude" && $0.provider == provider && ($0.status == "running" || pendingRuns.contains($0.id)) }) {
             return "\(ProviderOptions.label(provider)) 실행이 진행 중입니다. 끝난 뒤에 계정을 바꾸세요."
         }
         if isUpdatingCLIs { return "CLI 업데이트가 끝난 뒤에 다시 시도하세요." }
@@ -47,6 +48,7 @@ extension AppStore {
                 guard let self else { return }
                 self.cliAccounts[provider] = status
                 self.cliAccountBusy.remove(provider)
+                self.invalidateLocalModels(provider: provider)
                 if status.loggedIn == true { self.cliAccountMessages[provider] = "로그아웃을 확인하지 못했습니다. 터미널에서 직접 로그아웃해 보세요." }
                 else if let option { self.startCLILogin(provider, option: option) }
             }
@@ -73,11 +75,17 @@ extension AppStore {
             cliAccountMessages[provider] = "로그인 터미널을 열지 못했습니다."
             return
         }
-        updateSession(id) { $0.title = "\(ProviderOptions.label(provider)) 로그인" }
+        let settingUpBedrock = provider == "claude" && option == .bedrock
+        updateSession(id) { $0.title = settingUpBedrock ? "Claude Bedrock 설정" : "\(ProviderOptions.label(provider)) 로그인" }
         // The app wrote this command itself, so it is the one thing that still
         // presses Enter for the user (§1.5).
         pendingTerminalInput[id] = TerminalInput(text: command, autoRun: true)
         endCLILogin(provider)
+        if settingUpBedrock {
+            // Bedrock auth status reports backend configuration, even before
+            // AWS credentials work. It cannot complete an OAuth polling flow.
+            return
+        }
         cliLoginPending.insert(provider); cliLoginSessions[provider] = id
         // The poll lives here, not in the Settings view, which is closed now.
         let service = cliAccountService
@@ -90,7 +98,10 @@ extension AppStore {
                 let finished = await MainActor.run { () -> Bool in
                     guard let self, self.cliLoginSessions[provider] == id else { return true }
                     self.cliAccounts[provider] = status
-                    if status.loggedIn == true { self.endCLILogin(provider); return true }
+                    if status.loggedIn == true, status.accessVerified != false {
+                        self.invalidateLocalModels(provider: provider)
+                        self.endCLILogin(provider); return true
+                    }
                     return false
                 }
                 if finished { return }

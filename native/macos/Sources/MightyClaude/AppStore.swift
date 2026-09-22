@@ -142,7 +142,18 @@ final class AppStore: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var runtimeTask: Task<Void, Never>?
-    private(set) var pendingRuns = Set<String>()
+    @Published private(set) var pendingRuns = Set<String>()
+    @Published var modelRefreshRevision = 0
+    @Published var claudeModelResetInProgress = false
+    var modelPriorCatalogs: [String: ModelCatalog] = [:]
+    var modelRefreshSelections: [LocalModelContext: [String: [String]]] = [:]
+    lazy var localModels = LocalModelCatalogRefresh(loader: { [weak self] key in
+        guard let self else { return ProviderOptions.fallbackRuntime(key.provider) }
+        self.modelRefreshSelections[key] = Dictionary(uniqueKeysWithValues: self.snapshot.sessions.filter { $0.workspaceId == key.workspaceID && $0.provider == key.provider }.map { ($0.id, [$0.model, $0.settings.effort]) })
+        return await self.providers.providerRuntime(provider: key.provider, workspacePath: key.path, forceRefresh: true)
+    }, changed: { [weak self] key, previous, refreshed in
+        self?.acceptLocalModels(key, previous: previous, refreshed: refreshed)
+    })
     private var startTasks: [String: Task<Void, Never>] = [:]
     private(set) var closingSessions = Set<String>()
     private var draftRevisions: [String: UInt64] = [:]
@@ -242,6 +253,7 @@ final class AppStore: ObservableObject {
         if let task = runtimeTask { _ = await task.value }
         guard !ending else { return }
         await providers.invalidateCaches()
+        invalidateLocalModels()
         await refreshRuntime()
     }
 
@@ -253,7 +265,10 @@ final class AppStore: ObservableObject {
         let task = Task { [weak self] in
             guard let self else { return }
             let value = await self.providers.runtimeInfo(appVersion: version)
-            if !self.ending, !Task.isCancelled { self.runtime = value }
+            if !self.ending, !Task.isCancelled {
+                self.runtime = value
+                if let session = self.snapshot.sessions.first(where: { $0.id == self.snapshot.activeSessionId }) { self.refreshModels(for: session.id, force: false) }
+            }
             // Complete the whole refresh before waiters invalidate the caches
             // and start a new one; they must not join an old completed probe.
             self.runtimeTask = nil
@@ -268,8 +283,14 @@ final class AppStore: ObservableObject {
         let info: RuntimeInfo?
         if let reference = workspace?.remote {
             info = remoteState.connections.first { $0.id == reference.connectionId }?.runtime
-        } else { info = runtime }
-        if let runtime = info?.providers?.first(where: { $0.id == provider }) { return runtime }
+        } else {
+            if let workspace, let value = localModels.value(for: LocalModelContext(workspaceID: workspace.id, path: workspace.path, provider: provider)) { return value }
+            info = runtime
+        }
+        if var runtime = info?.providers?.first(where: { $0.id == provider }) {
+            if workspace?.remote == nil, localModels.hasDiscarded(provider) { runtime.modelCatalog = ProviderOptions.fallbackCatalog(provider) }
+            return runtime
+        }
         var fallback = ProviderOptions.fallbackRuntime(provider)
         if workspace?.remote != nil {
             // New options require an explicit capability advertisement from the host.
@@ -277,7 +298,7 @@ final class AppStore: ObservableObject {
             fallback.capabilities.webSearch = false
             fallback.capabilities.networkAccess = false
             fallback.capabilities.attachments = false
-            fallback.capabilities.permissionModes.removeAll { $0 == "fullAccess" || $0 == "auto" }
+            fallback.capabilities.permissionModes.removeAll { $0 == "fullAccess" || $0 == "auto" || $0 == "onRequest" }
         }
         return fallback
     }
@@ -287,7 +308,7 @@ final class AppStore: ObservableObject {
         return remoteState.connections.first { $0.id == reference.connectionId }
     }
 
-    func runBlockedReason(_ session: RunSession) -> String? {
+    func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return "워크스페이스를 선택하세요." }
         if workspace.remote == nil, session.kind != "shell", updatingCLI == session.provider {
             return "\(ProviderOptions.label(session.provider)) CLI를 업데이트하고 있습니다. 완료 후 전송하세요."
@@ -296,10 +317,14 @@ final class AppStore: ObservableObject {
             return "플러그인을 변경하고 있습니다. 완료 후 전송하세요."
         }
         if workspace.remote != nil, connection(for: workspace)?.status != "connected" { return "원격 컴퓨터에 연결한 후 실행하세요." }
-        if session.kind != "shell" {
+        if session.kind != "shell", session.settings.permissionMode == "onRequest", workspace.remote != nil {
+            return "Codex 승인 요청은 이 Mac의 로컬 세션에서 사용할 수 있습니다. 원격 세션에서는 다른 권한을 선택하세요."
+        }
+        if session.kind != "shell", checkRuntime {
             let provider = providerRuntime(session.provider, workspaceId: session.workspaceId)
             if !provider.available { return provider.detail.isEmpty ? "\(provider.name) CLI를 설치하고 로그인하세요." : provider.detail }
             if session.settings.permissionMode == "auto", !provider.capabilities.permissionModes.contains("auto") { return "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI·원격 앱을 업데이트하거나 다른 권한을 선택하세요." }
+            if session.settings.permissionMode == "onRequest", !provider.capabilities.permissionModes.contains("onRequest") { return "승인 요청을 사용하려면 Codex CLI 0.153.4 이상으로 업데이트하세요." }
         }
         return nil
     }
@@ -338,7 +363,9 @@ final class AppStore: ObservableObject {
         var next = paneSelectionSnapshot(workspaceId: id, sessionId: selected)
         // Selecting opens this workspace's list without closing the others.
         next.expandedWorkspaceIds = expandedWorkspaceSet().union([id]).sorted()
+        let changed = snapshot.activeWorkspaceId != id || snapshot.activeSessionId != selected
         if next != snapshot { snapshot = next }
+        if changed, let selected { refreshModels(for: selected) }
     }
 
     private func expandedWorkspaceSet() -> Set<String> {
@@ -354,7 +381,9 @@ final class AppStore: ObservableObject {
     func selectSession(_ id: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
         let next = paneSelectionSnapshot(workspaceId: session.workspaceId, sessionId: id)
+        let changed = snapshot.activeSessionId != id || snapshot.activeWorkspaceId != session.workspaceId
         if next != snapshot { snapshot = next }
+        if changed { refreshModels(for: id) }
     }
 
     @discardableResult
@@ -452,10 +481,11 @@ final class AppStore: ObservableObject {
             $0.logs.append(LogEntry(kind: "system", text: "\(ProviderOptions.label(provider))로 전환했습니다. 다음 입력은 새 대화로 시작합니다."))
             $0.logs = TranscriptRetention.trimmed($0.logs)
         }
+        refreshModels(for: id, invalidate: true)
     }
 
     func changeModel(_ id: String, to model: String) {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running" else { return }
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         let catalog = providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog
         updateSession(id) {
             $0.model = model
@@ -464,7 +494,7 @@ final class AppStore: ObservableObject {
     }
 
     func saveSettings(_ id: String, settings: RunSettings) {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running" else { return }
+        guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         if settings.permissionMode != session.settings.permissionMode,
            !providerRuntime(session.provider, workspaceId: session.workspaceId).capabilities.permissionModes.contains(settings.permissionMode) {
             error = "이 실행 환경이 선택한 권한 모드를 지원하는지 확인하지 못했습니다."; return
@@ -473,12 +503,14 @@ final class AppStore: ObservableObject {
     }
 
     func resetConversation(_ id: String) {
+        guard !pendingRuns.contains(id), snapshot.sessions.first(where: { $0.id == id })?.status != "running" else { return }
         updateSession(id) {
             guard $0.status != "running" else { return }
             $0.resumeId = nil
             $0.sessionUsage = nil
             $0.logs.append(LogEntry(kind: "system", text: "다음 입력은 새 대화로 시작합니다. 이전 실행 기록은 유지됩니다."))
         }
+        refreshModels(for: id, invalidate: true)
     }
 
     /// `steering`: while a run is busy, hand the text to the running Claude
@@ -491,7 +523,7 @@ final class AppStore: ObservableObject {
         let input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = attachmentDrafts[id] ?? []
         guard !input.isEmpty || !attachments.isEmpty else { return }
-        if let reason = runBlockedReason(session) { error = reason; return }
+        if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) { error = reason; return }
         if session.status == "running" || pendingRuns.contains(id) {
             deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: steering)
             return
@@ -588,7 +620,7 @@ final class AppStore: ObservableObject {
             guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id),
                   let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
             let next = queue[0]
-            if let reason = runBlockedReason(session) {
+            if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) {
                 queuedInputs.removeValue(forKey: id)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청 \(queue.count)개를 실행할 수 없어 취소했습니다. \(reason)")) }
                 return
@@ -610,42 +642,64 @@ final class AppStore: ObservableObject {
 
     @discardableResult
     func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?) -> Bool {
-        let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
-        do {
-            try CoreValidation.validate(request)
-            if session.kind != "shell" {
-                let provider = providerRuntime(session.provider, workspaceId: workspace.id)
-                try CoreValidation.validateSelection(request, catalog: provider.modelCatalog)
-                try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
-            }
-        } catch { self.error = error.localizedDescription; return false }
+        if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell", workspace.remote == nil {
+            error = "Claude 모델 목록을 다시 불러오는 중입니다. 완료 후 다시 실행하세요."
+            return false
+        }
+        guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), session.status != "running" else { return false }
+        let initialRequest = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
+        var admissionRequest = initialRequest
+        if workspace.remote == nil, session.kind != "shell" { admissionRequest.settings.effort = "default" }
+        do { try CoreValidation.validate(admissionRequest) }
+        catch { self.error = error.localizedDescription; return false }
+        if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) { error = reason; return false }
         pendingRuns.insert(id)
         if restoringDraft != nil { drafts[id] = "" }
         let submittedRevision = draftRevisions[id, default: 0]
+        // Reserve attachments with the input, so another Enter during metadata
+        // preparation cannot submit the same attachment-only request twice.
+        let submittedIds = Set(attachments.map(\.id))
+        attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
         let attachmentSummary = attachments.map { "첨부: \($0.name) (\(AttachmentImport.sizeLabel($0)))" }.joined(separator: "\n")
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
-        companion.recordInput(sessionID: id, text: logText)
-        if session.kind != "shell" { companion.beginRun(sessionID: id) }
         let inputEntry = LogEntry(kind: "user", text: logText)
         updateSession(id) {
             $0.beginGraphRun(input: logText, id: inputEntry.id)
-            $0.beginRunTiming(); $0.status = "running"; $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
+            $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
         }
         startTasks[id] = Task {
             do {
+                try await prepareLocalModels(for: session)
+                try Task.checkCancellation()
+                guard !ending, !closingSessions.contains(id),
+                      let current = snapshot.sessions.first(where: { $0.id == id }),
+                      current.provider == session.provider, current.workspaceId == workspace.id,
+                      let currentWorkspace = snapshot.workspaces.first(where: { $0.id == workspace.id }),
+                      currentWorkspace.path == workspace.path, currentWorkspace.remote == workspace.remote else { throw CancellationError() }
+                if let reason = runBlockedReason(current) { throw MightyError(reason) }
+                let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments)
+                try CoreValidation.validate(request)
+                if current.kind != "shell" {
+                    let provider = providerRuntime(current.provider, workspaceId: workspace.id)
+                    try CoreValidation.validateSelection(request, catalog: provider.modelCatalog)
+                    try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
+                }
+                companion.recordInput(sessionID: id, text: logText)
+                if current.kind != "shell" { companion.beginRun(sessionID: id) }
+                updateSession(id) { $0.beginRunTiming(); $0.status = "running" }
                 try await flush()
                 try Task.checkCancellation()
-                if workspace.remote != nil { try await remote.start(request: request, workspace: workspace) }
-                else { try await runner.start(request: request, workspace: workspace, allowPermissionPrompts: session.kind == "claude" && session.provider == "claude") }
-                // Only accepted request IDs are consumed; files added for the next
-                // request while startup was in flight remain in the composer.
-                let submittedIds = Set(attachments.map(\.id))
-                attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
+                if currentWorkspace.remote != nil { try await remote.start(request: request, workspace: currentWorkspace) }
+                else { try await runner.start(request: request, workspace: currentWorkspace, allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest"))) }
             } catch {
                 if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
                     drafts[id] = restoringDraft
                 }
-                if Task.isCancelled {
+                if !ending, !closingSessions.contains(id), snapshot.sessions.contains(where: { $0.id == id }) {
+                    let existing = Set((attachmentDrafts[id] ?? []).map(\.id))
+                    attachmentDrafts[id, default: []].insert(contentsOf: attachments.filter { !existing.contains($0.id) }, at: 0)
+                }
+                if Task.isCancelled || error is CancellationError {
                     apply(RunEvent(sessionId: id, type: "status", status: "stopped"))
                 } else {
                     apply(RunEvent(sessionId: id, type: "log", entry: LogEntry(kind: "error", text: error.localizedDescription)))
@@ -654,7 +708,6 @@ final class AppStore: ObservableObject {
             }
             pendingRuns.remove(id)
             startTasks.removeValue(forKey: id)
-            // A run that ended before startup bookkeeping finished must still drain.
             settleQueue(id, status: snapshot.sessions.first { $0.id == id }?.status ?? "idle")
         }
         return true
@@ -706,14 +759,14 @@ final class AppStore: ObservableObject {
         }
         guard event.type == "permission", let permission = event.permission,
               let session = snapshot.sessions.first(where: { $0.id == event.sessionId }),
-              session.kind == "claude", session.provider == "claude",
+              session.kind == "claude", (session.provider == "claude" || (session.provider == "codex" && session.settings.permissionMode == "onRequest")),
               snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil else { return }
         var requests = toolPermissions[event.sessionId] ?? []
         let previousFirst = requests.first.map { permissionResponseKey(sessionId: event.sessionId, request: $0) }
         requests.removeAll { $0.id == permission.id && $0.runId == permission.runId }
         if permission.state == "pending", session.status == "running" { requests.append(permission) }
         toolPermissions[event.sessionId] = requests
-        autoAllowGuidedTool(permission, session: session)
+        if session.provider == "claude" { autoAllowGuidedTool(permission, session: session) }
         if previousFirst != requests.first.map({ permissionResponseKey(sessionId: event.sessionId, request: $0) }) {
             permissionErrors.removeValue(forKey: event.sessionId)
         }
@@ -799,6 +852,7 @@ final class AppStore: ObservableObject {
         attachmentDrafts.removeAll()
         pollTask?.cancel()
         runtimeTask?.cancel()
+        localModels.shutdown()
         saveTask?.cancel()
         await saveTask?.value
         let starting = Array(startTasks.values)
@@ -1129,31 +1183,30 @@ final class AppStore: ObservableObject {
             guard noticeVisible else { throw MightyError("실행 기록이 있는 창에서 연결 안내를 확인하지 못했습니다.") }
         }
 
-        // Use the real editor and the monitor's exact routing function, with a
-        // temporary callback counter so these synthetic keys never start a run.
-        func keyProbes(_ root: NSView) -> [TextEditorHeightReader.HeightProbe] {
-            let own = (root as? TextEditorHeightReader.HeightProbe).map { [$0] } ?? []
-            return own + root.subviews.flatMap(keyProbes)
-        }
-        guard let probe = keyProbes(view).first(where: { $0.editor === editor }), probe.onSubmit != nil,
-              probe.canSubmit == sendExpected else { throw MightyError("입력창의 키 전송 조건을 확인하지 못했습니다.") }
+        // Exercise commands already delivered by the native input context.
+        // A temporary submit callback prevents the diagnostic from starting a run.
+        guard let composer = editor as? ComposerTextView, composer.onSubmit != nil,
+              composer.canSubmit() == sendExpected else { throw MightyError("입력창의 키 전송 조건을 확인하지 못했습니다.") }
         func returnEvent(_ modifiers: NSEvent.ModifierFlags = [], keyCode: UInt16 = 36, repeating: Bool = false) throws -> NSEvent {
             guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: repeating, keyCode: keyCode) else { throw MightyError("입력 키 검증 이벤트를 만들지 못했습니다.") }
             return event
         }
         func route(_ event: NSEvent) -> (remaining: NSEvent?, callbacks: Int) {
-            let original = probe.onSubmit
-            var callbacks = 0
-            probe.onSubmit = { _ in callbacks += 1 }
-            defer { probe.onSubmit = original }
-            return (probe.handleKeyEvent(event), callbacks)
+            let original = composer.onSubmit
+            var callbacks = 0, consumed = false
+            composer.onSubmit = { _ in callbacks += 1 }
+            defer { composer.onSubmit = original }
+            composer.performNativeKeyEvent(event) {
+                consumed = composer.handleNativeCommand(NSSelectorFromString("insertNewline:"))
+            }
+            return (consumed ? nil : event, callbacks)
         }
         let enter = route(try returnEvent())
         let commandEnter = route(try returnEvent(.command))
         let keypadEnter = route(try returnEvent(.numericPad, keyCode: 76))
         let repeatedEnter = route(try returnEvent([], repeating: true))
         let expectedCallbacks = sendExpected ? 1 : 0
-        diagnostic["keyVerification"] = "synthetic events: monitor handler and native NSTextView.keyDown"
+        diagnostic["keyVerification"] = "synthetic post-IME delegate commands and native NSTextView.keyDown"
         diagnostic["enterCallbackCount"] = enter.callbacks
         diagnostic["commandEnterCallbackCount"] = commandEnter.callbacks
         diagnostic["keypadEnterCallbackCount"] = keypadEnter.callbacks
@@ -1189,7 +1242,7 @@ final class AppStore: ObservableObject {
         let emptyEnter = route(try returnEvent())
         diagnostic["emptyEnterCallbackCount"] = emptyEnter.callbacks
         report(diagnostic)
-        guard !probe.canSubmit, emptyEnter.remaining == nil, emptyEnter.callbacks == 0 else { throw MightyError("빈 입력의 Enter 전송 차단을 확인하지 못했습니다.") }
+        guard !composer.canSubmit(), emptyEnter.remaining == nil, emptyEnter.callbacks == 0 else { throw MightyError("빈 입력의 Enter 전송 차단을 확인하지 못했습니다.") }
         try await replaceDraft(diagnosticText)
     }
 

@@ -268,14 +268,13 @@ struct RelayIntegrationTests {
         withExtendedLifetime(host) {}
     }
 
-    /// Two phones on one Mac, end to end through the relay: revoking the first
-    /// must cut its live socket and refuse its token, while the second — which
-    /// never presented the pairing key the revoke rotates — keeps answering on
-    /// the socket it already has and can still come back on its own token.
+    /// Revocation rotates the pairing key and clears the entire registry. Both
+    /// live phones must disconnect, both old tokens and the old pairing key
+    /// must fail, and a phone must pair with the new key before returning.
     /// Every step waits for the host's own client count before the next one, so
     /// two simultaneously open sockets stay deterministic rather than racing.
     @Test(.enabled(if: RelayIntegrationTests.relayHarnessAvailable))
-    func revokingOnePhoneLeavesTheOtherConnectedAndAbleToReturn() async throws {
+    func revokingOnePhoneRequiresBothPhonesToPairAgainWithTheNewKey() async throws {
         let script = try #require(Self.relayScript)
         let node = try #require(Self.node)
         let (relay, port) = try await startRelay(script: script, node: node)
@@ -325,27 +324,51 @@ struct RelayIntegrationTests {
 
             let keyBeforeRevoke = try #require(await service.status().key)
             let after = try await service.revokeDevice(phoneA)
-            #expect(after.devices.map(\.id) == [phoneB] && after.key != keyBeforeRevoke)
+            #expect(after.devices.isEmpty && after.key != keyBeforeRevoke)
+            let newOffer = try #require(after.pairingURL.flatMap(MobilePairingOffer.parse))
+            #expect(newOffer.pairingKey != keyBeforeRevoke)
 
-            // A's live socket goes with the row.
+            // Clearing all token holders invalidates both existing connections,
+            // including B's connection authenticated without a pairing key.
             #expect(await liveA.phone.waitUntilClosed(seconds: 6))
-            #expect(await waitForClients(service, count: 1) == 1)
+            #expect(await liveB.phone.waitUntilClosed(seconds: 6))
+            #expect(await waitForClients(service, count: 0) == 0)
 
-            // B never presented the key, so the rotation left its socket alone: the
-            // same connection still answers, on the cipher it has been using.
-            try await liveB.phone.send(["id": "b2", "method": "GET", "path": "/m1/state?since=0&wait=0"])
-            let survivor = try await liveB.phone.receive()
-            #expect(survivor["id"] as? String == "b2" && survivor["status"] as? Int == 200)
-            #expect((survivor["body"] as? [String: Any])?["revision"] as? Int == 3)
-
-            // A's token is refused with the reason the app watches for; B's still works.
-            let returningA = try await dial(offer: offer, frame: ["type": "auth", "clientId": phoneA, "deviceToken": tokenA, "clientName": "Phone A"])
+            // Both old tokens are refused with the reason the phone app watches
+            // for, regardless of which phone was explicitly revoked.
+            let returningA = try await dial(offer: newOffer, frame: ["type": "auth", "clientId": phoneA, "deviceToken": tokenA, "clientName": "Phone A"])
             #expect(returningA.reply["type"] as? String == "auth_error" && returningA.reply["reason"] as? String == "device-revoked")
             returningA.phone.close()
-            let returningB = try await dial(offer: offer, frame: ["type": "auth", "clientId": phoneB, "deviceToken": tokenB, "clientName": "Phone B"])
-            #expect(returningB.reply["type"] as? String == "auth_ok" && returningB.reply["deviceToken"] == nil)
+            let returningB = try await dial(offer: newOffer, frame: ["type": "auth", "clientId": phoneB, "deviceToken": tokenB, "clientName": "Phone B"])
+            #expect(returningB.reply["type"] as? String == "auth_error" && returningB.reply["reason"] as? String == "device-revoked")
             returningB.phone.close()
-            liveB.phone.close()
+
+            // The old QR cannot restore access or re-register either phone.
+            let oldPairing = try await dial(offer: newOffer, frame: ["type": "auth", "pairingKey": keyBeforeRevoke, "clientId": phoneA, "clientName": "Phone A"])
+            #expect(oldPairing.reply["type"] as? String == "auth_error" && oldPairing.reply["reason"] as? String == "pairing-key")
+            oldPairing.phone.close()
+            #expect(await waitForClients(service, count: 0) == 0)
+            #expect(await service.status().devices.isEmpty)
+
+            // A fresh pairing issues a fresh token and restores real requests.
+            let pairedAgain = try await dial(offer: newOffer, frame: ["type": "auth", "pairingKey": newOffer.pairingKey, "clientId": phoneB, "clientName": "Phone B"])
+            #expect(pairedAgain.reply["type"] as? String == "auth_ok")
+            let newTokenB = try #require(pairedAgain.reply["deviceToken"] as? String)
+            #expect(MobileDeviceRegistry.validToken(newTokenB) && newTokenB != tokenB)
+            #expect(await waitForClients(service, count: 1) == 1)
+            try await pairedAgain.phone.send(["id": "b2", "method": "GET", "path": "/m1/state?since=0&wait=0"])
+            let restored = try await pairedAgain.phone.receive()
+            #expect(restored["id"] as? String == "b2" && restored["status"] as? Int == 200)
+            #expect((restored["body"] as? [String: Any])?["revision"] as? Int == 3)
+            pairedAgain.phone.close()
+            #expect(await waitForClients(service, count: 0) == 0)
+
+            // The replacement token supports ordinary reconnects without
+            // silently issuing another token or resurrecting the revoked row.
+            let restoredB = try await dial(offer: newOffer, frame: ["type": "auth", "clientId": phoneB, "deviceToken": newTokenB, "clientName": "Phone B"])
+            #expect(restoredB.reply["type"] as? String == "auth_ok" && restoredB.reply["deviceToken"] == nil)
+            #expect(await service.status().devices.map(\.id) == [phoneB])
+            restoredB.phone.close()
         }
         withExtendedLifetime(host) {}
     }

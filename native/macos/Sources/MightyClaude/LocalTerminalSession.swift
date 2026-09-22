@@ -20,6 +20,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     private(set) weak var surface: TerminalSurface?
     private weak var presentationHost: NSView?
     private var presentationGeneration: UInt64 = 0
+    private var focusPublicationRevision: UInt64 = 0
     private var startCheck: Task<Void, Never>?
     private let statusChanged: (String) -> Void
     private let focused: () -> Void
@@ -39,8 +40,13 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         self.statusChanged = statusChanged
         self.focused = focused
         self.closeRequested = closeRequested
-        view = AppTerminalView(frame: .zero)
+        let terminalView = HostTerminalView(frame: .zero)
+        view = terminalView
         super.init()
+        terminalView.readSelectedText = { [weak self] in
+            guard let surface = self?.surface, surface.hasSelection() else { return nil }
+            return surface.readSelection()
+        }
         var environment: [String: String] = ["MIGHTYCLAUDE_TERMINAL_ID": id]
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
@@ -74,6 +80,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     /// New SwiftUI representations supersede earlier ones synchronously. An
     /// outgoing representation may still receive updates before dismantling.
     func claimPresentation(_ host: NSView) -> UInt64 {
+        focusPublicationRevision &+= 1
         presentationGeneration &+= 1
         presentationHost = host
         return presentationGeneration
@@ -85,6 +92,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
 
     func releasePresentation(_ host: NSView, generation: UInt64) {
         guard ownsPresentation(host, generation: generation) else { return }
+        focusPublicationRevision &+= 1
         presentationHost = nil
         presentationGeneration &+= 1
     }
@@ -92,6 +100,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     func dispose() {
         guard !disposed else { return }
         disposed = true
+        focusPublicationRevision &+= 1
         presentationHost = nil
         presentationGeneration &+= 1
         startCheck?.cancel()
@@ -136,11 +145,37 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
             }
         }
     }
-    func terminalDidDetachSurface() { surface = nil }
+    func terminalDidDetachSurface() {
+        focusPublicationRevision &+= 1
+        surface = nil
+    }
     func terminalDidChangeTitle(_ title: String) { publish { $0.title = String(title.prefix(300)) } }
     func terminalDidChangeWorkingDirectory(_ path: String) { publish { $0.workingDirectory = String(path.prefix(4096)) } }
     func terminalDidResize(_ size: TerminalGridMetrics) { publish { $0.grid = size } }
-    func terminalDidChangeFocus(_ focused: Bool) { if focused { publish { $0.focused() } } }
+    func terminalDidChangeFocus(_ focused: Bool) {
+        // Ghostty reports focus synchronously while AppKit is changing the
+        // responder. Publishing pane selection waits until the next turn, but
+        // a subsequent blur or remount must invalidate that queued selection.
+        focusPublicationRevision &+= 1
+        guard focused, !disposed, let host = presentationHost,
+              view.superview === host, let window = view.window,
+              host.window === window else { return }
+        let revision = focusPublicationRevision
+        let generation = presentationGeneration
+        DispatchQueue.main.async { [weak self, weak host, weak window] in
+            guard let self, let host, let window,
+                  self.focusPublicationRevision == revision,
+                  self.ownsPresentation(host, generation: generation),
+                  self.view.superview === host, self.view.window === window,
+                  host.window === window,
+                  !self.view.isHiddenOrHasHiddenAncestor, !self.view.visibleRect.isEmpty,
+                  NSApp.isActive, NSApp.keyWindow === window,
+                  window.isKeyWindow, window.isVisible, !window.isMiniaturized,
+                  NSApp.modalWindow == nil, window.attachedSheet == nil,
+                  window.firstResponder === self.view else { return }
+            self.focused()
+        }
+    }
     func terminalDidClose(processAlive: Bool) {
         publish {
             if processAlive { $0.closeRequested() }

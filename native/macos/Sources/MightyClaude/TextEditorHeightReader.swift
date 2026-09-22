@@ -1,25 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Measures a copy of the native editor's text and scopes Return handling to it,
-/// without replacing its input view, delegate, selection, or IME marked text.
+/// Presentation only. The controller supplies the exact native editor; this
+/// view never searches SwiftUI geometry or intercepts keyboard events.
 struct TextEditorHeightReader: NSViewRepresentable {
-    let text: String
+    let inputController: ComposerInputController
     @Binding var height: CGFloat
-    let canSubmit: Bool
-    /// Called with `true` when ⌘ was held with Return.
-    let onSubmit: (Bool) -> Void
-    /// Returns true when the palette consumed the key (arrows, Tab, Esc,
-    /// Return while a completion is highlighted).
-    var onNavigationKey: ((ComposerNavigationKey) -> Bool)?
     var placeholder = ""
 
     func makeNSView(context: Context) -> HeightProbe { HeightProbe() }
 
     func updateNSView(_ view: HeightProbe, context: Context) {
-        view.canSubmit = canSubmit
-        view.onSubmit = onSubmit
-        view.onNavigationKey = onNavigationKey
+        view.connect(to: inputController)
         view.placeholder = placeholder
         view.onHeightChange = { measured in
             if abs(height - measured) > 0.5 { height = measured }
@@ -31,26 +23,19 @@ struct TextEditorHeightReader: NSViewRepresentable {
 
     final class HeightProbe: NSView {
         var onHeightChange: ((CGFloat) -> Void)?
-        var onSubmit: ((Bool) -> Void)?
-        var onNavigationKey: ((ComposerNavigationKey) -> Bool)?
-        var canSubmit = false
         var placeholder = "" { didSet { synchronizePlaceholder() } }
         private(set) weak var editor: NSTextView?
         private(set) var placeholderLabel: ComposerPlaceholderLabel?
         private var textObservers: [NSObjectProtocol] = []
-        private var keyMonitor: Any?
+        private weak var inputController: ComposerInputController?
+        private var editorObserver: UUID?
         private var scheduled = false
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if window == nil { removeKeyMonitor(); detachEditor() }
-            else if keyMonitor == nil {
-                keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                    guard let self else { return event }
-                    return self.handleKeyEvent(event)
-                }
-            }
+            if window == nil { detachEditor() }
+            else if let editor = inputController?.editor { attachEditor(editor) }
             scheduleMeasurement()
         }
         override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); scheduleMeasurement() }
@@ -58,20 +43,25 @@ struct TextEditorHeightReader: NSViewRepresentable {
 
         deinit {
             for observer in textObservers { NotificationCenter.default.removeObserver(observer) }
-            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        }
+
+        func connect(to controller: ComposerInputController) {
+            guard inputController !== controller else { return }
+            if let editorObserver { inputController?.removeEditorObserver(editorObserver) }
+            inputController = controller
+            editorObserver = controller.observeEditor { [weak self] editor in
+                guard let self else { return }
+                if let editor { self.attachEditor(editor) }
+                else { self.detachEditor() }
+                self.scheduleMeasurement()
+            }
         }
 
         func tearDown() {
-            removeKeyMonitor()
+            if let editorObserver { inputController?.removeEditorObserver(editorObserver) }
+            editorObserver = nil; inputController = nil
             detachEditor()
             onHeightChange = nil
-            onSubmit = nil
-            onNavigationKey = nil
-        }
-
-        private func removeKeyMonitor() {
-            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-            keyMonitor = nil
         }
 
         private func detachEditor() {
@@ -97,6 +87,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
         }
 
         private func attachEditor(_ found: NSTextView) {
+            guard editor !== found else { return }
             detachEditor()
             editor = found
             let label = ComposerPlaceholderLabel(labelWithString: placeholder)
@@ -120,34 +111,6 @@ struct TextEditorHeightReader: NSViewRepresentable {
             synchronizePlaceholder()
         }
 
-        /// Return's physical key codes also cover the numeric keypad Enter key.
-        /// Composition and modified newlines stay on NSTextView's native path.
-        func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
-            guard event.type == .keyDown, let window, event.windowNumber == window.windowNumber,
-                  let editor, editor.window === window, window.firstResponder === editor,
-                  editor.isEditable, !editor.isHiddenOrHasHiddenAncestor else { return event }
-            guard !editor.hasMarkedText() else { return event }
-            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            // An open completion palette takes arrows, Tab, Esc and Return first.
-            if modifiers.isEmpty, let onNavigationKey {
-                let key: ComposerNavigationKey? = switch event.keyCode {
-                case 126: .up
-                case 125: .down
-                case 48: .select
-                case 53: .dismiss
-                case 36, 76: .select
-                default: nil
-                }
-                if let key, onNavigationKey(key) { return nil }
-            }
-            guard event.keyCode == 36 || event.keyCode == 76 else { return event }
-            guard modifiers.isEmpty || modifiers == .command else { return event }
-            if canSubmit, !event.isARepeat { onSubmit?(modifiers == .command) }
-            // Disabled sends are consumed too: Enter must not submit, insert an
-            // unexpected newline, or fall through to another pane's shortcut.
-            return nil
-        }
-
         func scheduleMeasurement() {
             guard !scheduled else { return }
             scheduled = true
@@ -162,7 +125,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
             guard window != nil, bounds.width > 1 else { return }
             if editor?.window !== window { detachEditor() }
             if editor == nil {
-                guard let found = locateEditor() else { return }
+                guard let found = inputController?.editor, found.window === window else { return }
                 attachEditor(found)
             }
             guard let editor, let sourceContainer = editor.textContainer else { return }
@@ -186,23 +149,7 @@ struct TextEditorHeightReader: NSViewRepresentable {
             onHeightChange?(ceil(min(maximumBody, max(lineHeight, used)) + verticalInsets))
         }
 
-        private func locateEditor() -> NSTextView? {
-            let target = convert(bounds, to: nil)
-            func candidates(in view: NSView) -> [NSTextView] {
-                if let text = view as? NSTextView { return text.isEditable && !text.isFieldEditor ? [text] : [] }
-                return view.subviews.flatMap { candidates(in: $0) }
-            }
-            var ancestor = superview
-            while let root = ancestor {
-                if let matching = candidates(in: root).first(where: { candidate in
-                    guard let scroll = candidate.enclosingScrollView, candidate.window === window else { return false }
-                    let frame = scroll.convert(scroll.bounds, to: nil)
-                    return frame.contains(NSPoint(x: target.midX, y: target.midY)) && abs(frame.width - target.width) < 3
-                }) { return matching }
-                ancestor = root.superview
-            }
-            return nil
-        }
+
     }
 }
 

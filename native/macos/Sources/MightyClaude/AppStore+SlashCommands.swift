@@ -47,7 +47,9 @@ extension AppStore {
     /// that advertises none falls back to the provider's known modes.
     func permissionModes(for session: RunSession) -> [String] {
         let advertised = providerRuntime(session.provider, workspaceId: session.workspaceId).capabilities.permissionModes
-        return advertised.isEmpty ? ProviderOptions.permissionModes(provider: session.provider, includeAuto: false) : advertised
+        let modes = advertised.isEmpty ? ProviderOptions.permissionModes(provider: session.provider, includeAuto: false, includeOnRequest: false) : advertised
+        let remote = snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil
+        return remote ? modes.filter { $0 != "onRequest" } : modes
     }
 
     private func slashArgumentChoices(_ argument: SlashArgument, command: String, session: RunSession) -> [SlashCommand] {
@@ -74,22 +76,21 @@ extension AppStore {
             openPluginBrowser(sessionID: id)
             if pluginBrowser == nil { slashNote(id, "지금은 플러그인 창을 열 수 없습니다. 워크스페이스 상태를 확인해 주세요.") }
         case .newConversation:
-            if session.status == "running" { slashNote(id, "실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.") }
-            else if session.resumeId == nil { slashNote(id, "이어갈 이전 대화가 없습니다. 다음 입력은 이미 새 대화로 시작합니다.") }
+            if session.status == "running" || pendingRuns.contains(id) { slashNote(id, "실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.") }
             else { resetConversation(id) }
         case .showUsage: sessionInfoSessionID = id
         case .openSettings: showSettings = true
         case .rename: beginRenameSession(id)
         case .help: slashNote(id, SlashCommandCatalog.helpText(provider: session.provider))
         case .setModel(let model):
-            guard session.status != "running" else { slashNote(id, "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
+            guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
             let name = modelOptions(for: session).first { $0.value == model }?.displayName ?? model
             guard session.model != model else { slashNote(id, "이미 \(name) 모델입니다."); return true }
             changeModel(id, to: model)
             slashNote(id, "모델을 \(name)\(koreanRo(name)) 바꿨습니다. 다음 요청부터 적용됩니다.")
         case .setPermission(let mode):
             let label = permissionLabel(mode, provider: session.provider)
-            guard session.status != "running" else { slashNote(id, "실행 중에는 작업 권한을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
+            guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, "실행 중에는 작업 권한을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
             guard session.settings.permissionMode != mode else { slashNote(id, "이미 \(label) 권한입니다."); return true }
             var settings = session.settings
             settings.permissionMode = mode
