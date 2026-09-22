@@ -82,8 +82,9 @@ struct StyleCapabilityTests {
                                               attachments: result.attachments, prerequisites: StylePrerequisiteResult(ready: true))
         #expect(panel.attachments.allSatisfy { !StyleText.containsBanned($0.detail ?? "") })
         let legacy = MobileLegacyStyleAdapter.payloads(style: style, panel: panel, casebook: raw)
-        #expect(!StyleText.containsBanned(legacy.paperthin?.casebook?.name ?? ""))
-        #expect((legacy.paperthin?.casebook?.name ?? "").contains("\u{FFFD}"))
+        let casebookName = legacy.paperthin?.casebook?.name ?? ""
+        #expect(!StyleText.containsBanned(casebookName))
+        #expect(casebookName.contains("\u{FFFD}"))
     }
 
     @Test func longNamesAreCutBeforeTheyReachAScreen() throws {
