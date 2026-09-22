@@ -17,14 +17,63 @@ public struct RemoteWorkspaceReference: Codable, Sendable, Equatable {
     }
 }
 
+public struct RegisteredModelEntry: Codable, Sendable, Equatable {
+    public var name: String
+    public var supportsEffort: Bool
+    public var supportedEffortLevels: [String]
+    public init(name: String, supportsEffort: Bool = false, supportedEffortLevels: [String] = []) {
+        self.name = name; self.supportsEffort = supportsEffort; self.supportedEffortLevels = supportedEffortLevels
+    }
+    enum CodingKeys: String, CodingKey { case name, supportsEffort, supportedEffortLevels }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        supportsEffort = try c.decodeIfPresent(Bool.self, forKey: .supportsEffort) ?? false
+        supportedEffortLevels = try c.decodeIfPresent([String].self, forKey: .supportedEffortLevels) ?? []
+    }
+}
+
+/// Per-provider default model per permission mode, plus registered custom model names.
+public struct ProviderModeDefaults: Codable, Sendable, Equatable {
+    /// permissionMode → model name; absent or "default" means use CLI default.
+    public var modeDefaults: [String: String]
+    public var registeredModels: [RegisteredModelEntry]
+    public init(modeDefaults: [String: String] = [:], registeredModels: [RegisteredModelEntry] = []) {
+        self.modeDefaults = modeDefaults; self.registeredModels = registeredModels
+    }
+    enum CodingKeys: String, CodingKey { case modeDefaults, registeredModels }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        modeDefaults = try c.decodeIfPresent([String: String].self, forKey: .modeDefaults) ?? [:]
+        registeredModels = try c.decodeIfPresent([RegisteredModelEntry].self, forKey: .registeredModels) ?? []
+    }
+}
+
+/// App-level (or workspace-level) model defaults for Claude and Codex.
+public struct ModelDefaultsConfig: Codable, Sendable, Equatable {
+    public var claude: ProviderModeDefaults
+    public var codex: ProviderModeDefaults
+    public init(claude: ProviderModeDefaults = .init(), codex: ProviderModeDefaults = .init()) {
+        self.claude = claude; self.codex = codex
+    }
+    enum CodingKeys: String, CodingKey { case claude, codex }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        claude = try c.decodeIfPresent(ProviderModeDefaults.self, forKey: .claude) ?? .init()
+        codex = try c.decodeIfPresent(ProviderModeDefaults.self, forKey: .codex) ?? .init()
+    }
+}
+
 public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var path: String
     public var createdAt: String
     public var remote: RemoteWorkspaceReference?
-    public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), remote: RemoteWorkspaceReference? = nil) {
-        self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.remote = remote
+    /// Workspace-level model defaults override; nil means no workspace-level override.
+    public var modelDefaults: ModelDefaultsConfig?
+    public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), remote: RemoteWorkspaceReference? = nil, modelDefaults: ModelDefaultsConfig? = nil) {
+        self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.remote = remote; self.modelDefaults = modelDefaults
     }
 }
 
@@ -194,11 +243,14 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var expandedWorkspaceIds: [String]?
     /// Phone access over Tailscale; nil means never enabled.
     public var mobileRemote: MobileRemoteSettings?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil) {
+    /// App-level per-provider per-mode model defaults; nil means all modes use "default".
+    public var modelDefaults: ModelDefaultsConfig?
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil) {
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds
         self.autoUpdateCLIs = autoUpdateCLIs; self.expandedWorkspaceIds = expandedWorkspaceIds; self.mobileRemote = mobileRemote
+        self.modelDefaults = modelDefaults
     }
 }
 
@@ -349,11 +401,15 @@ public enum ProviderOptions {
     public static func fallbackRuntime(_ id: String) -> ProviderRuntime {
         ProviderRuntime(id: id, name: id == "claude" ? "Claude Code" : "\(label(id)) CLI", detail: "CLI 설치 상태를 확인해 주세요.", modelCatalog: fallbackCatalog(id), capabilities: ProviderCapabilities(effort: id != "gemini", permissionModes: permissionModes(provider: id, includeAuto: false, includeOnRequest: false), maxTurns: id == "claude", maxBudgetUsd: id == "claude", fastMode: id == "codex", webSearch: id == "codex", networkAccess: id == "codex", attachments: true))
     }
-    public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil) -> [String] {
+    public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil, registeredModels: [RegisteredModelEntry] = []) -> [String] {
         if provider == "gemini" { return [] }
         let option = catalog?.models.first { $0.value == model || $0.resolvedModel == model }
         if option?.supportsEffort == false { return [] }
         if let levels = option?.supportedEffortLevels { return levels.filter { efforts.contains($0) } }
+        if option == nil, let reg = registeredModels.first(where: { $0.name == model }) {
+            if !reg.supportsEffort { return [] }
+            return reg.supportedEffortLevels.filter { efforts.contains($0) }
+        }
         if provider == "codex" || model.lowercased().contains("haiku") { return [] }
         if model.range(of: "(?:opus|sonnet)[-.]4[-.]6", options: .regularExpression) != nil { return efforts.filter { $0 != "xhigh" } }
         if model.range(of: "^(?:default|best|fable|opus|sonnet|opusplan)(?:\\[1m\\])?$|(?:fable[-.]5|opus[-.](?:5|4[-.][78])|sonnet[-.]5)", options: .regularExpression) != nil { return efforts }
@@ -395,12 +451,26 @@ public enum CoreValidation {
     public static func isOfficialClaudeModel(_ value: String) -> Bool {
         ProviderOptions.fallbackCatalog("claude").models.contains { $0.value == value } || value.range(of: "^(?:(?:opus|sonnet|fable)\\[1m\\]|claude-(?:(?:opus|sonnet|haiku|fable)-[0-9]+(?:[-.][0-9]+)*|[0-9]+(?:-[0-9]+)*-(?:opus|sonnet|haiku|fable)(?:-[0-9]+)*)(?:\\[1m\\])?)$", options: .regularExpression) != nil
     }
-    public static func validateSelection(_ request: StartRunRequest, catalog: ModelCatalog) throws {
+    public static func validateSelection(_ request: StartRunRequest, catalog: ModelCatalog, registeredModels: [RegisteredModelEntry] = []) throws {
         try validate(request)
         if request.provider == "claude" {
             let official = isOfficialClaudeModel(request.model)
-            guard official || catalog.models.contains(where: { $0.value == request.model || $0.resolvedModel == request.model }) else { throw MightyError("Claude 모델 목록에서 선택한 모델을 확인하지 못했습니다.") }
+            let inCatalog = catalog.models.contains(where: { $0.value == request.model || $0.resolvedModel == request.model })
+            let isRegistered = registeredModels.contains(where: { $0.name == request.model })
+            guard official || inCatalog || isRegistered else { throw MightyError("Claude 모델 목록에서 선택한 모델을 확인하지 못했습니다.") }
         }
-        if request.settings.effort != "default", !ProviderOptions.effortLevels(provider: request.provider, model: request.model, catalog: catalog).contains(request.settings.effort) { throw MightyError("선택한 모델의 추론 강도를 확인할 수 없습니다. CLI 기본값을 선택해 주세요.") }
+        if request.settings.effort != "default", !ProviderOptions.effortLevels(provider: request.provider, model: request.model, catalog: catalog, registeredModels: registeredModels).contains(request.settings.effort) { throw MightyError("선택한 모델의 추론 강도를 확인할 수 없습니다. CLI 기본값을 선택해 주세요.") }
+    }
+    /// Validates a model name for registration. Trims whitespace and rejects empty names,
+    /// the reserved value "default", names failing CoreValidation.model, and provider duplicates.
+    /// Returns the trimmed name on success.
+    @discardableResult
+    public static func validateRegistration(name: String, provider: String, existingEntries: [RegisteredModelEntry]) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw MightyError("모델 이름은 비어 있을 수 없습니다.") }
+        guard trimmed != "default" else { throw MightyError("'default'는 예약된 이름이므로 사용할 수 없습니다.") }
+        guard model(trimmed) else { throw MightyError("모델 이름에 허용되지 않는 문자가 포함되어 있거나 길이가 초과되었습니다.") }
+        guard !existingEntries.contains(where: { $0.name == trimmed }) else { throw MightyError("같은 제공자에 이미 등록된 이름입니다.") }
+        return trimmed
     }
 }
