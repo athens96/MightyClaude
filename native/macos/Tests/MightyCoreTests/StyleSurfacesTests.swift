@@ -127,7 +127,7 @@ struct StyleSurfacesTests {
         #expect(sections[3].lines.last == "/ouroboros:interview {text}")
         #expect(sections[3].lines.first?.contains("목표") == true)
         // Every action is listed whole, with its prompt template verbatim.
-        #expect(sections[7].title == "행동 9개" && sections[7].lines.contains("/ouroboros:unstuck {text}"))
+        #expect(sections[7].title == "행동 10개" && sections[7].lines.contains("/ouroboros:unstuck {text}"))
         #expect(sections[8].lines.first == "아이콘 point.3.connected.trianglepath.dotted")
 
         let paperthin = StyleApprovalCard.sections(StyleFixtures.bundled("paperthin"))
