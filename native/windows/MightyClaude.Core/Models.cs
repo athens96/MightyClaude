@@ -25,6 +25,8 @@ public sealed record Workspace
     public string Path { get; init; } = "";
     public string CreatedAt { get; init; } = Wire.Now();
     public RemoteReference? Remote { get; init; }
+    // Workspace-level model defaults override; null means no workspace-level override.
+    public ModelDefaultsConfig? ModelDefaults { get; init; }
 }
 [JsonConverter(typeof(RunSettingsJsonConverter))]
 public sealed record RunSettings(string Effort = "default", string PermissionMode = "manual", int? MaxTurns = null, double? MaxBudgetUsd = null, bool FastMode = false, string WebSearch = "default", bool NetworkAccess = false);
@@ -124,6 +126,20 @@ internal sealed class LenientNullableBoolConverter : JsonConverter<bool?>
         else writer.WriteNullValue();
     }
 }
+public sealed record RegisteredModelEntry(string Name, bool SupportsEffort = false, string[]? SupportedEffortLevels = null);
+
+public sealed record ProviderModeDefaults
+{
+    public Dictionary<string, string> ModeDefaults { get; init; } = [];
+    public List<RegisteredModelEntry> RegisteredModels { get; init; } = [];
+}
+
+public sealed record ModelDefaultsConfig
+{
+    public ProviderModeDefaults Claude { get; init; } = new();
+    public ProviderModeDefaults Codex { get; init; } = new();
+}
+
 public sealed record AppSnapshot
 {
     public int Version { get; init; } = 1;
@@ -153,6 +169,9 @@ public sealed record AppSnapshot
     public string? AppUpdateManifestUrlOverride { get; init; }
     // "system", "ko", or "en". Applied at next app start via Locale.LanguagePreference.
     public string LanguagePreference { get; init; } = "system";
+    // App-level per-provider per-mode model defaults; null means all modes use "default".
+    // Additive with a default (null) so Version stays 1.
+    public ModelDefaultsConfig? ModelDefaults { get; init; }
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)

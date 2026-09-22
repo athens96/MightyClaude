@@ -35,8 +35,12 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// Tokens of the main block alone; `totalUsage` adds every child block.
     public var usage: GraphTokenUsage?
     public var provider: String?
-    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, provider: String? = nil) {
-        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.provider = provider
+    /// The model label shown on this request node and projected to phone blocks.
+    /// Computed once when the run starts and updated if the CLI later reports the actual
+    /// model it used. nil means no label (CLI decided and we do not know which model).
+    public var nodeModelLabel: String?
+    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, provider: String? = nil, nodeModelLabel: String? = nil) {
+        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.provider = provider; self.nodeModelLabel = nodeModelLabel
     }
     public var totalUsage: GraphTokenUsage? {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }

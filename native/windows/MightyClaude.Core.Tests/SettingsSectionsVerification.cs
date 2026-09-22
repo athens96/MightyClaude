@@ -15,6 +15,7 @@ internal static class SettingsSectionsVerification
             "화면",
             CliUpdateStrings.SectionTitle,
             "이 PC의 CLI",
+            ModelDefaultsStrings.SectionTitle,
             CliAccountStrings.SectionTitle,
             AppUpdateStrings.SectionTitle,
             "앱 정보",
