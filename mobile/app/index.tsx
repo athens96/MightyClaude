@@ -6,15 +6,16 @@ import { Badge, Button, Card, EmptyState } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost, type Reachability } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
 import { countAttention } from '@/lib/merge';
+import { t } from '@/lib/i18n';
 import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
-const reachabilityLabels: Record<Reachability, string> = {
-  unknown: '확인 전',
-  checking: '확인 중…',
-  online: '연결됨',
-  unauthorized: '재페어링 필요',
-  offline: '호스트 오프라인',
-  'relay-offline': '릴레이 연결 안 됨',
+const reachabilityKeys: Record<Reachability, string> = {
+  unknown: 'phone.hosts.reachability.unknown',
+  checking: 'phone.hosts.reachability.checking',
+  online: 'phone.hosts.reachability.online',
+  unauthorized: 'phone.hosts.reachability.unauthorized',
+  offline: 'phone.hosts.reachability.offline',
+  'relay-offline': 'phone.hosts.reachability.relayOffline',
 };
 
 function reachabilityColor(palette: Palette, reachability: Reachability): string {
@@ -46,9 +47,13 @@ function HostRow({ host }: { host: PairedHost }) {
   const color = reachabilityColor(palette, status);
 
   const confirmRemove = useCallback(() => {
-    Alert.alert('호스트 삭제', `${host.name} 페어링을 삭제할까요?`, [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => void removeHost(host.id) },
+    Alert.alert(t('phone.hosts.remove.title'), t('phone.hosts.remove.message', { name: host.name }), [
+      { text: t('phone.hosts.remove.cancel'), style: 'cancel' },
+      {
+        text: t('phone.hosts.remove.confirm'),
+        style: 'destructive',
+        onPress: () => void removeHost(host.id),
+      },
     ]);
   }, [host.id, host.name, removeHost]);
 
@@ -69,7 +74,7 @@ function HostRow({ host }: { host: PairedHost }) {
         <Text style={styles.address}>{hostAddress(host)}</Text>
         <View style={styles.rowBottom}>
           <View style={[styles.dot, { backgroundColor: color }]} />
-          <Text style={[styles.status, { color }]}>{reachabilityLabels[status]}</Text>
+          <Text style={[styles.status, { color }]}>{t(reachabilityKeys[status])}</Text>
           {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
         </View>
       </Card>
@@ -110,14 +115,18 @@ export default function HostsScreen() {
         ListEmptyComponent={
           loaded ? (
             <EmptyState
-              title="페어링된 호스트가 없습니다"
-              description="데스크톱 MightyClaude에서 QR 코드를 띄우고 아래 버튼으로 추가하세요."
+              title={t('phone.hosts.empty.title')}
+              description={t('phone.hosts.empty.description')}
             />
           ) : null
         }
       />
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        <Button label="+ 호스트 추가" tone="primary" onPress={() => router.push('/pair')} />
+        <Button
+          label={t('phone.hosts.addHost')}
+          tone="primary"
+          onPress={() => router.push('/pair')}
+        />
       </View>
     </View>
   );
