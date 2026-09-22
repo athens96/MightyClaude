@@ -2,6 +2,8 @@
 
 docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이며, 이번 범위 밖이고 확장은 `schema: 2`로 간다. 고정 태그 이후에도 고칠 수 있는 문서다(§8.3).
 
+고정 기준(현재, v4 — 2026-09-22): 고정 전 마지막 커밋 `9bfc93accf039d3973fcf1cd4f7a08056ae4e95f`, 태그 `mighty-style-engine-v4`가 가리키는 커밋 `f838331ebebd97d9575ead8f8ea6913334afa39d`(`styles/FREEZE`만 더한 커밋). v3 이후 바뀐 엔진 쪽 파일은 아래 'v4에 묶어 처리한 것'에 적었다(매니페스트의 `job` 선언, 오류 코드 48번째). 허용 목록은 v3과 같다.
+
 고정 기준(이전, v3 — 2026-09-20): 고정 전 마지막 커밋 `2ae58dcf3e6422eabe3f153cc555350a9a315522`, 태그 `mighty-style-engine-v3`가 가리키는 커밋 `f226e31cc146ba0c7dadd3ba8baaeae3ced05802`(`styles/FREEZE`만 더한 커밋). v2 이후 바뀐 엔진 쪽 파일은 아래 'v3에 묶어 처리한 것'에 적었다. 허용 목록에 Windows 전용 경로가 더해졌다(§8.3).
 
 고정 기준(이전, v2 — 2026-09-20): 고정 전 마지막 커밋 `19748917bc0e99ac6f45e6857d9c4a0cb08353e8`, 태그 `mighty-style-engine-v2`가 가리키는 커밋 `24a07e02559081d43fdb4337ebdc0162897aff44`(`styles/FREEZE`만 더한 커밋). v1 이후 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 바뀌지 않았다. v2를 건 이유는 검사가 저장소 전체를 보는데 main에 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)이 들어왔기 때문이다.
