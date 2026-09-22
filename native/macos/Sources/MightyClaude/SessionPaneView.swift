@@ -22,7 +22,7 @@ struct SessionPaneView: View {
     private var remoteCommand: Bool { session.kind == "shell" && store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil }
     private var runtime: ProviderRuntime { store.providerRuntime(session.provider, workspaceId: session.workspaceId) }
     private var models: [ModelOption] { store.modelOptions(for: session) }
-    private var effortLevels: [String] { runtime.capabilities.effort ? ProviderOptions.effortLevels(provider: session.provider, model: session.model, catalog: runtime.modelCatalog) : [] }
+    private var effortLevels: [String] { runtime.capabilities.effort ? ProviderOptions.effortLevels(provider: session.provider, model: session.model, catalog: runtime.modelCatalog, registeredModels: (session.provider == "codex" ? store.snapshot.modelDefaults?.codex : store.snapshot.modelDefaults?.claude)?.registeredModels ?? []) : [] }
     private var draft: Binding<String> { Binding(get: { store.drafts[session.id] ?? "" }, set: { store.drafts[session.id] = $0 }) }
     private var attachments: [RunAttachment] { store.attachmentDrafts[session.id] ?? [] }
     private var importingAttachments: Bool { store.importingAttachments.contains(session.id) }

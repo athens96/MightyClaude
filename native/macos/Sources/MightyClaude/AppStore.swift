@@ -484,12 +484,17 @@ final class AppStore: ObservableObject {
         refreshModels(for: id, invalidate: true)
     }
 
+    func providerRegisteredModels(_ provider: String) -> [RegisteredModelEntry] {
+        guard let config = snapshot.modelDefaults else { return [] }
+        return provider == "codex" ? config.codex.registeredModels : config.claude.registeredModels
+    }
+
     func changeModel(_ id: String, to model: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         let catalog = providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog
         updateSession(id) {
             $0.model = model
-            if !ProviderOptions.effortLevels(provider: $0.provider, model: model, catalog: catalog).contains($0.settings.effort) { $0.settings.effort = "default" }
+            if !ProviderOptions.effortLevels(provider: $0.provider, model: model, catalog: catalog, registeredModels: providerRegisteredModels($0.provider)).contains($0.settings.effort) { $0.settings.effort = "default" }
         }
     }
 
@@ -677,11 +682,19 @@ final class AppStore: ObservableObject {
                       let currentWorkspace = snapshot.workspaces.first(where: { $0.id == workspace.id }),
                       currentWorkspace.path == workspace.path, currentWorkspace.remote == workspace.remote else { throw CancellationError() }
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
-                let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments)
+                let resolvedModel = ModelDefaultsResolution.resolve(
+                    sessionModel: current.model,
+                    provider: current.provider,
+                    permissionMode: current.settings.permissionMode,
+                    workspaceDefaults: currentWorkspace.modelDefaults,
+                    appDefaults: snapshot.modelDefaults
+                )
+                let registered = providerRegisteredModels(current.provider)
+                let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: resolvedModel, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
                     let provider = providerRuntime(current.provider, workspaceId: workspace.id)
-                    try CoreValidation.validateSelection(request, catalog: provider.modelCatalog)
+                    try CoreValidation.validateSelection(request, catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
                 }
                 companion.recordInput(sessionID: id, text: logText)
@@ -940,7 +953,7 @@ final class AppStore: ObservableObject {
             addSession(kind: "claude", provider: "codex")
             guard let codexId = snapshot.activeSessionId else { throw MightyError("Codex 실행 창을 만들지 못했습니다.") }
             let codexCatalog = providerRuntime("codex", workspaceId: workspace.id).modelCatalog
-            if let known = codexCatalog.models.first(where: { $0.value != "default" && ProviderOptions.effortLevels(provider: "codex", model: $0.value, catalog: codexCatalog).contains("high") }) {
+            if let known = codexCatalog.models.first(where: { $0.value != "default" && ProviderOptions.effortLevels(provider: "codex", model: $0.value, catalog: codexCatalog, registeredModels: providerRegisteredModels("codex")).contains("high") }) {
                 changeModel(codexId, to: known.value)
                 saveSettings(codexId, settings: RunSettings(effort: "high", permissionMode: "acceptEdits"))
                 result["codexHighModel"] = known.value

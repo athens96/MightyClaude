@@ -278,7 +278,7 @@ public actor ProcessRunner {
                 let catalog = await providerService.modelCatalog(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot)
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
-                try CoreValidation.validateSelection(request, catalog: catalog)
+                try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels)
                 if request.provider == "claude" {
                     guard FileManager.default.fileExists(atPath: pluginDirectory.appendingPathComponent(".claude-plugin/plugin.json").path) else { throw MightyError("Mighty bridge Mod 파일을 찾을 수 없습니다.") }
                     let bridge = try ModBridge(graphEnabled: true) { [weak self, weak run] metadata in guard let run else { return }; Task { await self?.receiveMod(metadata, run: run) } }
