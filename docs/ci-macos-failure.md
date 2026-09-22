@@ -1,6 +1,6 @@
 # macOS CI 실패 조사
 
-상태: 진단 — 2라운드 진행 중
+상태: 진단 — 4라운드 진행 중 (원인 확정, 수정 푸시 후 실행 확인 대기)
 
 ## 라운드 기록
 
@@ -8,11 +8,77 @@
 | --- | --- | --- | --- | --- |
 | 1 | ed33f18 | Test Swift core | (주석 스크립트 추가 전) | 동결 단계 마지막으로 이동 + 주석 스크립트 추가 |
 | 2 | 0359c63 | Test Swift core | `Sendable` 경고만(1500자 잘림, 실제 오류 불명) | `#expect` 옵셔널 체인 바인딩, `Date.init`→`{ Date() }` Sendable 수정, 주석 스크립트 개선 |
-| 3 | f9ec5b1 | Test Swift core | `StyleEvaluator.swift:264` `cannot call value of non-function type '[T]'` — `satisfied` 지역변수가 같은 이름의 정적 함수 섀도잉 → `zip().filter{}` 등 4개 오류 연쇄 | `outcomes`로 이름 변경, `Self.satisfied`, 키패스→명시적 클로저; 주석 스크립트에 경로 제거 + 멀티청크 추가 |
+| 3 | f9ec5b1 | Test Swift core | `::error title=macOS Swift tests::` — `StyleEvaluator.swift:264:52: error: cannot call value of non-function type '[T]'` 외 264~270행 컴파일 오류 4건 (전문은 아래 '확정된 원인') | (없음 — 이 라운드로 원인이 확정됐다) |
+| 4 | 4b151ea | Test Swift core | 3라운드 주석이 원인을 지목 | `StylePrerequisiteProbe.evaluate`의 지역 변수 `satisfied` 섀도잉 제거(`Self.satisfied` + `outcomes`로 개명), 같은 식의 키패스-함수 형태를 클로저로 교체, 주석에서 체크아웃 밖 경로 제거 + 1500자 청크 분할 |
 
 실패 단계: `macos` 작업(분리 전 `.github/workflows/native.yml`, 이 브랜치부터 `.github/workflows/native-macos.yml`)의 **Test Swift core and loopback remote execution**
 (`bash scripts/test-native-macos.sh`, 약 42초 뒤 exit 1, 40회 이상 연속 실패). 로컬에서는 같은 스크립트가 459개 검사를 모두 통과한다.
-CI 로그 본문은 아직 확보되지 않았으므로 아래 내용은 전부 코드 증거에 기반한 후보이며, 확정된 원인이 아니다.
+3라운드(`f9ec5b1`)의 공개 주석으로 원인이 확정됐다 — 아래 '확정된 원인'. 그 아래의 '원인 후보' 표와
+증거 절은 확정 전의 기록으로 남겨 두되, 판정 칸을 실제 주석에 비추어 갱신했다.
+
+---
+
+## 확정된 원인 (3라운드 공개 주석, SHA `f9ec5b1`)
+
+`macos` 작업의 **Test Swift core and loopback remote execution** 단계가 남긴 공개 체크런 주석
+(`::error title=macOS Swift tests::`, 자격 증명 없는 공개 REST API로 SHA를 통해 읽음):
+
+```
+native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift:264:52: error: cannot call value of non-function type '[T]'
+native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift:266:65: error: trailing closure passed to parameter of type 'Predicate<Zip2Sequence<[StyleProbe], Sequence2>.Element>' (aka 'Predicate<(StyleProbe, Sequence2.Element)>') that does not accept a closure
+native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift:268:82: error: cannot infer key path type from context; consider explicitly specifying a root type
+native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift:268:106: error: cannot infer key path type from context; consider explicitly specifying a root type
+native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift:270:92: error: cannot infer key path type from context; consider explicitly specifying a root type
+```
+
+즉 검사 하나가 실패한 것이 아니라 **`MightyCore` 타깃이 컴파일되지 않아** 단계가 42초 만에 exit 1로
+끝난 것이다. 후보 A·B·C·F 전부 아니다 — F(`StyleCapabilityTests.swift:86`)는 2라운드에서 이미 고쳤고,
+주석에 그 파일은 등장하지 않는다.
+
+문제의 줄(수정 전):
+
+```swift
+let satisfied = prerequisites.probes.map { satisfied($0, home: home, workspacePath: workspacePath, environment: environment) }
+```
+
+지역 상수 `satisfied`는 **자기 초기화식 안의 클로저에서 이미 스코프에 들어와 있다.** 로컬(Swift 6.4)은
+클로저 안의 `satisfied(...)`를 정적 메서드 `StylePrerequisiteProbe.satisfied(_:home:workspacePath:environment:)`로
+해석하지만, 러너의 더 오래된 컴파일러는 지역 `[Bool]`로 해석해 `cannot call value of non-function type '[T]'`를
+낸다. 266·268·270행의 오류 네 건은 그 타입 실패에서 파생된 것이다. 이 파일도 실패가 시작된 그 푸시에서
+들어왔고, 로컬에서만 통과한다는 관측과 정확히 맞는다.
+
+### 4라운드 수정
+
+```swift
+let outcomes = prerequisites.probes.map {
+    Self.satisfied($0, home: home, workspacePath: workspacePath, environment: environment)
+}
+let ready = prerequisites.mode == .all ? !outcomes.contains(false) : outcomes.contains(true)
+let unmet = zip(prerequisites.probes, outcomes).filter { !$0.1 }.map { $0.0 }
+guard !ready else { return StylePrerequisiteResult(ready: true) }
+let missing = prerequisites.report == .first
+    ? Array(unmet.prefix(1).map { $0.missing })
+    : unmet.map { $0.missing }
+return StylePrerequisiteResult(ready: false, missing: missing, hint: unmet.first?.hint,
+                               canInstall: install != nil && unmet.contains { $0.install })
+```
+
+이름을 `outcomes`로 바꿔 섀도잉을 없애고 호출을 `Self.`로 한정했다. 주석이 오류를 지목한 나머지 세 줄의
+키패스-함수 형태(`\.0`, `\.missing`, `where: \.install`)도 같은 뜻의 클로저로 바꿔 오래된 컴파일러의
+키패스 추론에 기대지 않게 했다. 동작은 동일하고, 로컬에서 467개 검사가 모두 통과한다.
+
+`native/macos/Sources` 전체를 같은 모양(지역 상수가 자기 초기화식의 클로저 안에서 동명 함수를 가림)으로
+훑었을 때 걸리는 곳은 이 한 줄뿐이었다. `StyleManifestDecoder`의 `let kind = try kind(&reader)` 같은 줄은
+클로저가 아니어서 지역 이름이 아직 스코프에 없고, 어느 컴파일러에서도 메서드로 해석된다.
+
+### 주석 자체의 결함과 그 수정
+
+3라운드 주석은 원인을 알려 줬지만 `​/Users/runner/work/...` 로 시작하는 **체크아웃 밖 경로**를 그대로
+실었다. 4라운드에서 `scripts/test-native-macos.sh`의 주석 발행부를 고쳤다.
+
+- 체크아웃 경로 접두사는 저장소 상대 경로로 바꾸고, 남는 절대 경로는 `<path>`로 가린다.
+- 마지막 30개의 비어 있지 않은 줄을 싣되, 1500자를 넘으면 잘라 버리는 대신 1500자짜리 주석
+  최대 3개로 나눠 발행한다. 2라운드에서 실제 오류가 잘려 나간 것이 바로 이 때문이었다.
 
 ---
 
@@ -20,10 +86,10 @@ CI 로그 본문은 아직 확보되지 않았으므로 아래 내용은 전부 
 
 | # | 후보 | 가능성 | 판정 |
 | --- | --- | --- | --- |
-| F | `StyleCapabilityTests.swift:86`의 `#expect((옵셔널 체인 ?? "").contains(…))`를 CI의 더 오래된 swift-testing 매크로가 컴파일하지 못함 | 높음 | 로그 필요 |
-| A | `CLIUpdateTests`의 셸 픽스처가 CI 러너의 낮은 CPU·IO에서 `metadataTimeout`을 넘겨 실패 | 낮음(아래 '측정된 이력'의 시간과 맞지 않음) | 로그 필요 |
-| B | 러너의 Xcode/Swift 버전과 Swift Testing 매크로 플러그인 경로 불일치로 빌드 단계에서 exit 1 | 중간 | 로그 필요 |
-| C | `libghostty-spm` 등 SwiftPM 원격 의존성 해결 실패 | 낮음 | 로그 필요 |
+| F | `StyleCapabilityTests.swift:86`의 `#expect((옵셔널 체인 ?? "").contains(…))`를 CI의 더 오래된 swift-testing 매크로가 컴파일하지 못함 | 높음 | **아님** — 2라운드에서 선제 수정했고 3라운드 주석에 이 파일은 없다 |
+| A | `CLIUpdateTests`의 셸 픽스처가 CI 러너의 낮은 CPU·IO에서 `metadataTimeout`을 넘겨 실패 | 낮음 | **아님** — 주석에 검사 실패가 하나도 없다(컴파일 단계에서 죽었다) |
+| B | 러너의 Xcode/Swift 버전과 Swift Testing 매크로 플러그인 경로 불일치로 빌드 단계에서 exit 1 | 중간 | **부분적으로 맞음** — 플러그인 경로가 아니라 러너의 더 오래된 **컴파일러**가 원인이다 |
+| C | `libghostty-spm` 등 SwiftPM 원격 의존성 해결 실패 | 낮음 | **아님** — 주석에 해결 실패가 없고 컴파일까지 진행됐다 |
 | D | 교차 언어 검사(`MIGHTY_NATIVE_PEER_MANIFEST`) | — | 배제 |
 | E | `RelayIntegrationTests`의 `relay/dist` 부재 | — | 배제 |
 
