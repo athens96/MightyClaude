@@ -19,9 +19,12 @@ private typealias Catalog = [String: String]
 
 private func loadCatalog(_ lang: String) -> Catalog {
     let name = "\(lang).json"
-    // 1. App bundle's Locales subdirectory.
-    // 2. Working directory locales/ (Swift Package Manager tests).
+    // 1. SPM module resource bundle (tests and app via Bundle.module).
+    // 2. App bundle's Locales subdirectory (macOS app bundle).
+    // 3. Working directory locales/ (fallback).
     let candidates: [URL] = [
+        Bundle.module.resourceURL.map { $0.appendingPathComponent("Locales/\(name)") },
+        Bundle.module.url(forResource: lang, withExtension: "json", subdirectory: "Locales"),
         Bundle.main.resourceURL.map { $0.appendingPathComponent("Locales/\(name)") },
         Bundle.main.resourceURL.map { $0.appendingPathComponent(name) },
         URL(fileURLWithPath: "locales/\(lang).json"),
