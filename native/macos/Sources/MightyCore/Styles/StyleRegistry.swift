@@ -240,8 +240,16 @@ public enum BundledStyleSource {
     /// style, and no correct layout ever needs it.
     static func searchRoots() -> [URL] {
         let marker = Bundle(for: BundledStyleMarker.self)
-        return [Bundle.main.resourceURL, marker.resourceURL, marker.bundleURL, Bundle.main.bundleURL,
-                Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent()].compactMap { $0 }
+        var roots: [URL?] = [Bundle.main.resourceURL, marker.resourceURL, marker.bundleURL, Bundle.main.bundleURL,
+                             Bundle.main.executableURL?.resolvingSymlinksInPath().deletingLastPathComponent()]
+        // Under `swift test` the resource bundle is copied inside the `.xctest`
+        // bundle by recent SwiftPM releases and only placed *beside* it by older
+        // ones (the CI runner's toolchain). The parent of a test bundle is added
+        // for that layout alone; an `.app`'s parent stays excluded (see above).
+        for bundle in [Bundle.main.bundleURL, marker.bundleURL] where bundle.pathExtension == "xctest" {
+            roots.append(bundle.deletingLastPathComponent())
+        }
+        return roots.compactMap { $0 }
     }
 
     public static func directories() -> [URL] {

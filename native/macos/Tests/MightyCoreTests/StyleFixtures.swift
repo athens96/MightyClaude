@@ -89,6 +89,12 @@ enum StyleFixtures {
     }
 
     static func bundled(_ id: String) -> RegisteredStyle {
-        BundledStyles.shared.style(id)!
+        if let style = BundledStyles.shared.style(id) { return style }
+        // A trap here used to be the only CI evidence. Say what was searched
+        // and what was rejected so the public annotation names the cause.
+        let files = StyleSourceScanner.bundled()
+        let rejections = StyleRegistry.make(files: files, approvals: []).rejections
+        fatalError("bundled style '\(id)' missing: directories=\(BundledStyleSource.directories().map(\.path)) "
+                   + "files=\(files.count) rejections=\(rejections)")
     }
 }
