@@ -40,5 +40,9 @@
     <Content Include="../../../assets/icons/MightyClaude.ico" Link="Assets/MightyClaude.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../../assets/icons/mightyclaude.png" Link="Assets/mightyclaude.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../../mods/mighty-bridge/**/*" Link="claude-mods/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The published app carries the repo-root locale files themselves, so the Windows
+         copy cannot drift from the one source; scripts/check-locales.js asserts these links. -->
+    <Content Include="../../../locales/ko.json" Link="Locales/ko.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../../locales/en.json" Link="Locales/en.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

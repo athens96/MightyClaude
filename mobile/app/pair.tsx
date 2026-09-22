@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import { Button, Card, Chip, ErrorBanner } from '@/components/ui';
 import { describeError, probeHost } from '@/api/client';
 import { parsePairingUrl, relayTransportError, type PairingPayload } from '@/lib/pairing';
+import { t } from '@/lib/i18n';
 import { useHostsStore } from '@/store/hosts';
 import { showToast } from '@/store/toast';
 import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
@@ -58,7 +59,7 @@ export default function PairScreen() {
           { ...payload, name: payload.name || info.hostName || payload.serverId },
           { hostId: info.hostId, appVersion: info.appVersion, deviceToken: info.deviceToken },
         );
-        showToast(`${saved.name} 페어링 완료`, 'success');
+        showToast(t('phone.pair.paired', { name: saved.name }), 'success');
         router.replace(`/host/${saved.id}`);
       } catch (caught) {
         setError(describeError(caught));
@@ -98,13 +99,13 @@ export default function PairScreen() {
     >
       <View style={styles.modes}>
         <Chip
-          label="QR 스캔"
+          label={t('phone.pair.mode.qr')}
           selected={mode === 'qr'}
           color={palette.accent}
           onPress={() => setMode('qr')}
         />
         <Chip
-          label="링크 붙여넣기"
+          label={t('phone.pair.mode.manual')}
           selected={mode === 'manual'}
           color={palette.accent}
           onPress={() => setMode('manual')}
@@ -116,14 +117,12 @@ export default function PairScreen() {
       {mode === 'qr' ? (
         <View style={styles.scannerWrap}>
           {!permission ? (
-            <Text style={styles.hint}>카메라 권한을 확인하는 중…</Text>
+            <Text style={styles.hint}>{t('phone.pair.permissionChecking')}</Text>
           ) : !permission.granted ? (
             <Card style={styles.permissionCard}>
-              <Text style={styles.hint}>
-                페어링 QR 코드를 읽으려면 카메라 권한이 필요합니다.
-              </Text>
+              <Text style={styles.hint}>{t('phone.pair.permissionNeeded')}</Text>
               <Button
-                label="카메라 권한 허용"
+                label={t('phone.pair.permissionAllow')}
                 tone="primary"
                 onPress={() => void requestPermission()}
               />
@@ -139,24 +138,25 @@ export default function PairScreen() {
               <View pointerEvents="none" style={styles.reticle} />
             </View>
           )}
-          <Text style={styles.hint}>
-            Mac의 설정 → 모바일 리모트에서 QR 코드를 띄우고 화면에 맞추세요.
-          </Text>
+          <Text style={styles.hint}>{t('phone.pair.qrHint')}</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           <Field
-            label="페어링 링크"
+            label={t('phone.pair.linkLabel')}
             value={link}
             onChange={setLink}
             placeholder="mightyclaude://pair?v=2&sid=…"
             autoCapitalize="none"
             multiline
           />
-          <Text style={styles.hint}>
-            Mac의 설정 → 모바일 리모트에서 페어링 링크를 복사해 붙여넣으세요.
-          </Text>
-          <Button label="연결하기" tone="primary" busy={busy} onPress={onManualSubmit} />
+          <Text style={styles.hint}>{t('phone.pair.linkHint')}</Text>
+          <Button
+            label={t('phone.pair.connect')}
+            tone="primary"
+            busy={busy}
+            onPress={onManualSubmit}
+          />
         </ScrollView>
       )}
     </KeyboardAvoidingView>
