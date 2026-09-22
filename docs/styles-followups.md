@@ -82,6 +82,13 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 
 4. **CI 서명 작업 분리.** `.github/workflows/native-macos.yml`의 서명 스텝을 `sign-manifest`라는 별도 잡으로 옮겼다. `sign-manifest`는 `macos` 잡에 `needs`로 의존하고, `secrets.MIGHTY_UPDATE_SIGNING_KEY`를 참조하는 유일한 잡이다. `macos` 잡은 더 이상 그 시크릿을 참조하지 않는다.
 
+### v4의 나머지 단계 (2026-09-22)
+
+- **macOS CI.** 다섯 라운드(`ed33f18`·`0359c63`·`f9ec5b1`·`4b151ea`·`9ffeb42`)를 썼다. Swift 테스트 단계는 `ac6cbf8`에서 처음으로 초록이 됐고 빌드·스모크 실행 단계도 초록이다. `Check smoke result`만 빨갛다(`단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다`). 상한을 지켜 더 고치지 않았고, 화면 확인 때 사용자가 정한다. 라운드 기록은 `docs/ci-macos-failure.md`.
+- **다국어 토대.** `locales/ko.json`·`en.json`(272키), Swift·C#·TypeScript 로더, `scripts/check-locales.js`, 설정의 언어 선택(맥·Windows), 설정 화면·안내 패널 문구 이전(`39eadee`…`0f4222e`·`4f60a8a`). 남은 하드코딩 문구 3,239개는 `docs/i18n.md`에 세어 두었고 다음 묶음이다. 영어 초안의 검토 목록도 같은 문서에 있다.
+- **화면 확인.** 이 단계들 뒤에 새 빌드를 설치하고 멈춘다. 확인에서 나온 문제는 아래 목록에 적고 태그 전에 고친다.
+- 화면 확인에서 나온 문제: (확인 뒤 여기에 적는다)
+
 ## 다음 고정(v5)에 묶을 것
 
 검사가 저장소 전체를 보므로, 허용 목록 밖을 건드리는 작업이 main에 들어갈 때마다 새 고정이 필요하다. 예정된 것:
