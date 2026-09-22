@@ -13,14 +13,6 @@ jobs:
         with:
           # The freeze gate below reads the tag and the history behind it.
           fetch-depth: 0
-      - name: Check the manifest-only freeze after the tag
-        run: |
-          set -euo pipefail
-          if git rev-parse -q --verify refs/tags/mighty-style-engine-v3 >/dev/null; then
-            bash scripts/check-style-freeze.sh
-          else
-            echo "mighty-style-engine-v3 태그가 아직 없어 고정 검사를 건너뜁니다."
-          fi
       - name: Report the selected Apple toolchain
         run: |
           xcode-select -p
@@ -40,15 +32,26 @@ jobs:
       - name: Check smoke result
         run: |
           python3 - <<'PY'
-          import json, os, pathlib
+          import json, os, pathlib, sys
           profile = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mighty-native-smoke"
           result = json.loads((profile / "smoke-result.json").read_text())
           print(result)
           tree = profile / "composer-accessibility.json"
-          if not result["passed"] and tree.exists():
-              print("Composer accessibility diagnostics:")
-              print(tree.read_text())
-          assert result["passed"]
+          if not result["passed"]:
+              if tree.exists():
+                  print("Composer accessibility diagnostics:")
+                  print(tree.read_text())
+              error = str(result.get("error", "unknown"))
+              exc_type = str(result.get("exceptionType", result.get("exception_type", "")))
+              passed = result.get("checks", result.get("passedChecks", result.get("passed_checks", [])))
+              if isinstance(passed, list):
+                  passed_str = ", ".join(str(c) for c in passed)
+              else:
+                  passed_str = str(passed)
+              msg = f"error={error}; exceptionType={exc_type}; passed=[{passed_str}]"
+              msg_enc = msg.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1500]
+              print(f'::error title=macOS GUI smoke::{msg_enc}', flush=True)
+              sys.exit(1)
           PY
       - name: Upload isolated macOS GUI result and screenshots
         if: always()
@@ -81,3 +84,11 @@ jobs:
             release/latest.json
             release/latest.unsigned.json
           if-no-files-found: error
+      - name: Check the manifest-only freeze after the tag
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify refs/tags/mighty-style-engine-v3 >/dev/null; then
+            bash scripts/check-style-freeze.sh
+          else
+            echo "mighty-style-engine-v3 태그가 아직 없어 고정 검사를 건너뜁니다."
+          fi

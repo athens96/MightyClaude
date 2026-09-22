@@ -10,4 +10,22 @@ TEST_ARGUMENTS=(--package-path "$PROJECT_ROOT/native/macos" --disable-xctest --e
 if [[ -f "$TESTING_PLUGIN" ]]; then
   TEST_ARGUMENTS+=(-Xswiftc -load-plugin-library -Xswiftc "$TESTING_PLUGIN")
 fi
-"$SWIFT_EXECUTABLE" test "${TEST_ARGUMENTS[@]}" "$@"
+
+LOGFILE="$(mktemp /tmp/swift-test-XXXXXX.log)"
+set +e
+"$SWIFT_EXECUTABLE" test "${TEST_ARGUMENTS[@]}" "$@" 2>&1 | tee "$LOGFILE"
+SWIFT_EXIT=${PIPESTATUS[0]}
+set -e
+
+if [ "$SWIFT_EXIT" -ne 0 ]; then
+  python3 - "$LOGFILE" <<'PY'
+import sys
+lines = [l for l in open(sys.argv[1]).read().splitlines() if l.strip()]
+tail = '\n'.join(lines[-30:])
+msg = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1500]
+print(f'::error title=macOS Swift tests::{msg}')
+PY
+  rm -f "$LOGFILE"
+  exit "$SWIFT_EXIT"
+fi
+rm -f "$LOGFILE"
