@@ -70,12 +70,23 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 
 **남긴 것.** `◆ … → next: ooo <동작>` 줄을 읽어 다음 행동을 추천하는 `recommend` 규칙은 이번에 추가하지 않았다 — 잡 선언만으로 Ouroboros의 실용 요구를 충족할 수 있어서다.
 
+### v4에 함께 처리한 보안 수정 (2026-09-20 검토 결과)
+
+스타일 엔진 밖의 코드 변경이지만 같은 v4 범위에서 완료한 네 가지 보안 수정이다.
+
+1. **macOS 업데이트 신뢰 규칙 — Windows와 동일하게 강화, 우회 없음.** `AppUpdate.swift`·`AppStore+AppUpdate.swift`·`AppUpdateSettingsView.swift`에 네 규칙을 적용했다. ① `MightyUpdatePublicKey`가 없는 빌드는 업데이트 확인 자체를 하지 않는다(자동 예약도, 수동 버튼도, 개발자 우회도 없음). ② 매니페스트 파싱 시 `sha256`과 `size` 두 필드가 없으면 다운로드 전에 거부된다. ③ `MightyUpdateManifestURL`이 바이너리에 새겨진 경우 그 주소만 사용하고 사용자 설정 주소 필드는 무시된다. ④ 설치 직전 스테이징된 패키지를 다시 해시하여 매니페스트 값과 다르면 현재 앱을 그대로 두고 중단된다. `docs/app-update.md`에서 `sha256`·`size`는 필수(`필수`)로, 키 없는 빌드는 업데이트 미지원으로 기술이 바뀌었다.
+
+2. **릴레이 소켓별 송신 버퍼 상한.** `relay/src/config.ts`에 `maxSocketBufferedBytes`(기본값 4 MiB, `RELAY_MAX_SOCKET_BUFFERED_BYTES` 환경 변수로 재정의)를 추가했다. `relay/src/hub.ts`의 `forward()`가 대상 소켓의 `bufferedAmount`를 확인해 초과 시 해당 연결만 닫고(닫기 코드 4414 `socketBufferOverflow`), 호스트 제어 소켓과 다른 연결은 그대로 유지한다. 클라이언트→호스트, 호스트→클라이언트 양방향 모두 적용된다. `relay/src/protocol.ts`에 닫기 코드를 추가했고 `docs/relay.md`에 모든 제한과 코드 목록을 기재했다.
+
+3. **페어링 키 재생성 시 기기 목록 전체 삭제.** `MobileDeviceRegistry.swift`에 `clearAll()` 메서드를 추가하고, `MobileRemoteService.swift`의 `regenerateKey()`가 키를 새로 쓰고 키 의존 클라이언트를 닫는 것에 더해 기기 레지스트리 전체를 원자적으로 비운다(`devices.json` 빈 배열로 대체). 재생성 후 설정 화면의 기기 목록은 비어 있다. `docs/mobile-remote.md`에 새 키를 생성하면 모든 기기가 다시 페어링해야 한다고 명시했다.
+
+4. **CI 서명 작업 분리.** `.github/workflows/native-macos.yml`의 서명 스텝을 `sign-manifest`라는 별도 잡으로 옮겼다. `sign-manifest`는 `macos` 잡에 `needs`로 의존하고, `secrets.MIGHTY_UPDATE_SIGNING_KEY`를 참조하는 유일한 잡이다. `macos` 잡은 더 이상 그 시크릿을 참조하지 않는다.
+
 ## 다음 고정(v5)에 묶을 것
 
 검사가 저장소 전체를 보므로, 허용 목록 밖을 건드리는 작업이 main에 들어갈 때마다 새 고정이 필요하다. 예정된 것:
 
 - 화면 확인에서 나온 문제: (확인 뒤 여기에 적는다)
 - 다국어 지원(`locales/ko.json`·`en.json`, 세 클라이언트 공용). 엔진 파일 안의 문구를 옮길지는 그때 정한다.
-- 보안 점검(2026-09-20)에서 나온 수정: 릴레이 버퍼·소켓 상한, 페어링 키 재생성 시 기기 목록 정리, 업데이트 서명·해시 필수화, CI 서명 작업 분리 등.
 - macOS CI 실패의 수정(`docs/ci-macos-failure.md`의 후보 F)과 그 결과 기록.
 - `◆ … → next: ooo <동작>` 줄을 읽는 `recommend` 규칙(항목 6의 나머지).
