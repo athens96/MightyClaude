@@ -337,7 +337,7 @@ struct MobileRemoteExtensionTests {
         #expect(ouroboros.phase == "seed" && !ouroboros.ready)
         #expect(ouroboros.next.map(\.skill) == ["run", "evaluate", "status"])
         // The literal catalogue the deleted `OuroborosFlowTests` pinned.
-        #expect(ouroboros.all.map(\.skill) == ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck"])
+        #expect(ouroboros.all.map(\.skill) == ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck", "cancel"])
         #expect(ouroboros.takesText == ["interview", "auto", "unstuck"])
         #expect(ouroboros.all.first { $0.skill == "seed" }?.title == "시드 생성")
         // The literal phase walk, as the old payload reported it.
