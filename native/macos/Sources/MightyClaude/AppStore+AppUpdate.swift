@@ -39,8 +39,13 @@ extension AppStore {
         set { objectWillChange.send(); UserDefaults.standard.set(newValue, forKey: Self.appUpdateURLDefaultsKey) }
     }
     var appUpdateManifestURL: URL? {
+        // Rule 3: the stamped address wins; user override is not consulted when the build carries a URL.
+        if let builtIn = builtInUpdateManifestURL, !builtIn.isEmpty {
+            return URL(string: builtIn).flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil }
+        }
         let override = appUpdateManifestURLOverride.trimmingCharacters(in: .whitespacesAndNewlines)
-        return URL(string: override.isEmpty ? (builtInUpdateManifestURL ?? "") : override).flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil }
+        guard !override.isEmpty else { return nil }
+        return URL(string: override).flatMap { $0.scheme?.lowercased() == "https" ? $0 : nil }
     }
     var appUpdateAutomatic: Bool {
         get { UserDefaults.standard.object(forKey: Self.appUpdateAutomaticKey) as? Bool ?? true }
@@ -54,10 +59,10 @@ extension AppStore {
         return service
     }
 
-    /// Once a day when a manifest address is known and the user has not
-    /// turned automatic checks off. Never downloads on its own.
+    /// Once a day when a manifest address is known, the build carries a public key,
+    /// and the user has not turned automatic checks off. Never downloads on its own.
     func checkForAppUpdateAutomatically() {
-        guard appUpdateAutomatic, !smokeTesting, appUpdateManifestURL != nil else { return }
+        guard appUpdateAutomatic, !smokeTesting, appUpdatePublicKey != nil, appUpdateManifestURL != nil else { return }
         let last = UserDefaults.standard.object(forKey: Self.appUpdateLastCheckKey) as? Date
         guard last.map({ Date().timeIntervalSince($0) >= Self.appUpdateCheckInterval }) ?? true else { return }
         checkForAppUpdate()
@@ -124,11 +129,14 @@ extension AppStore {
         Task { await service.cancelDownload() }
     }
 
-    /// Re-validates the staged bundle, starts the helper and quits. The
-    /// helper waits for this process to end, swaps the bundle at the running
+    /// Re-validates the staged bundle and the package hash, starts the helper and quits.
+    /// The helper waits for this process to end, swaps the bundle at the running
     /// app's own path, and relaunches it.
     func installAppUpdateAndRelaunch() {
         guard !ending, case .ready = appUpdate.phase, let staged = appUpdate.stagedApp, let package = appUpdate.package else { return }
+        guard let asset = appUpdate.availability?.manifest.macos else {
+            appUpdate.phase = .failed("설치할 패키지 정보를 찾을 수 없습니다."); return
+        }
         let destination = Bundle.main.bundleURL
         guard destination.pathExtension == "app", FileManager.default.isWritableFile(atPath: destination.deletingLastPathComponent().path) else {
             appUpdate.phase = .failed("실행 중인 앱의 위치(\(destination.path))에 쓸 수 없어 교체할 수 없습니다."); return
@@ -141,10 +149,18 @@ extension AppStore {
         let store = AppUpdateProgressSink(self)
         Task {
             do {
+                // Rule 4: re-verify the package on disk immediately before replacement.
+                if let size = asset.size {
+                    let actual = (try? FileManager.default.attributesOfItem(atPath: package.path)[.size] as? Int) ?? -1
+                    if actual != size { throw MightyError("패키지 크기가 업데이트 정보와 다릅니다 — 다시 다운로드하세요.") }
+                }
+                if let sha256 = asset.sha256, try AppUpdateService.fileDigest(package) != sha256 {
+                    throw MightyError("패키지 SHA-256이 업데이트 정보와 다릅니다 — 다시 다운로드하세요.")
+                }
                 try await service.launchInstaller(script: script, near: package)
                 await MainActor.run { NSApp.terminate(nil) }
             } catch {
-                await MainActor.run { store.owner?.appUpdate.phase = .failed("업데이트 도우미를 시작하지 못했습니다: \(error.localizedDescription)") }
+                await MainActor.run { store.owner?.appUpdate.phase = .failed("업데이트를 설치하지 못했습니다: \(error.localizedDescription)") }
             }
         }
     }

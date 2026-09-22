@@ -7,25 +7,40 @@ struct AppUpdateSettingsSection: View {
     var body: some View {
         Section("앱 업데이트") {
             LabeledContent("현재 버전", value: store.appVersion)
-            TextField("업데이트 정보 주소 (https://…/latest.json)", text: Binding(get: { store.appUpdateManifestURLOverride }, set: { store.appUpdateManifestURLOverride = $0 }))
-                .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
-                .accessibilityIdentifier("app-update-url")
-            if let builtIn = store.builtInUpdateManifestURL, store.appUpdateManifestURLOverride.isEmpty {
-                Text("빌드에 포함된 주소를 사용합니다: \(builtIn)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
-            } else if store.appUpdateManifestURL == nil {
-                Text("Cloudflare에 올린 latest.json의 https 주소를 입력하세요. 비워 두면 빌드에 포함된 주소를 씁니다.").font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Toggle("앱 시작 시 하루 한 번 새 버전 확인", isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 }))
-                .accessibilityIdentifier("app-update-automatic")
-            Text(store.appUpdatePublicKey != nil ? "서명 검증: 이 빌드에 포함된 공개 키로 서명된 업데이트 정보만 받습니다." : "서명 검증 없음: 이 빌드에는 공개 키가 없어 서명을 확인하지 않습니다. 배포 빌드에는 MIGHTY_UPDATE_PUBLIC_KEY를 넣으세요.")
-                .font(.system(size: 10)).foregroundStyle(store.appUpdatePublicKey != nil ? Color.secondary : Color.orange)
-            HStack(spacing: 8) {
-                statusView
-                Spacer()
-                actionButton
-            }
-            if let manifest = store.appUpdate.availability?.manifest, store.appUpdate.availability?.isNewer == true, let notes = manifest.notes, !notes.isEmpty {
-                Text(notes).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(8)
+            if store.appUpdatePublicKey == nil {
+                // Rule 1: keyless builds do not support update checks — no bypass.
+                Text("이 빌드는 업데이트 확인을 지원하지 않습니다.")
+                    .font(.system(size: 11)).foregroundStyle(.orange)
+                HStack(spacing: 8) {
+                    Spacer()
+                    Button("업데이트 확인") {}.disabled(true)
+                }
+            } else {
+                // Rule 3: when the build carries a URL it is the only address; show it read-only.
+                if let builtIn = store.builtInUpdateManifestURL {
+                    LabeledContent("업데이트 주소") {
+                        Text(builtIn).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                } else {
+                    TextField("업데이트 정보 주소 (https://…/latest.json)", text: Binding(get: { store.appUpdateManifestURLOverride }, set: { store.appUpdateManifestURLOverride = $0 }))
+                        .textFieldStyle(.roundedBorder).font(.system(size: 12, design: .monospaced))
+                        .accessibilityIdentifier("app-update-url")
+                    if store.appUpdateManifestURL == nil {
+                        Text("Cloudflare에 올린 latest.json의 https 주소를 입력하세요.").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                Toggle("앱 시작 시 하루 한 번 새 버전 확인", isOn: Binding(get: { store.appUpdateAutomatic }, set: { store.appUpdateAutomatic = $0 }))
+                    .accessibilityIdentifier("app-update-automatic")
+                Text("서명 검증: 이 빌드에 포함된 공개 키로 서명된 업데이트 정보만 받습니다.")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    statusView
+                    Spacer()
+                    actionButton
+                }
+                if let manifest = store.appUpdate.availability?.manifest, store.appUpdate.availability?.isNewer == true, let notes = manifest.notes, !notes.isEmpty {
+                    Text(notes).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(8)
+                }
             }
         }
     }

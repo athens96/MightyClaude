@@ -25,14 +25,19 @@ import Testing
         #expect(manifest.version == "0.2.0" && manifest.build == 42 && manifest.notes == "Fixes" && manifest.minimumSystemVersion == "14.0" && !manifest.signed)
         #expect(manifest.macos?.url.absoluteString == "https://cdn.example.com/m/MightyClaude-macos.zip" && manifest.macos?.size == 123)
         #expect(manifest.macos?.sha256 == "ab" + String(repeating: "c", count: 62))
-        #expect(manifest.windows["x64"]?.url.host == "cdn.example.com" && manifest.windows["arm64"] != nil)
+        // Rule 2: windows assets without sha256 and size are rejected.
+        #expect(manifest.windows["x64"] == nil && manifest.windows["arm64"] == nil)
+        // Rule 2: a bare-URL asset (no sha256/size) is always rejected.
         let variant = try AppUpdateManifest.parse(Data(#"{"latest":"v0.3.0","platforms":{"mac":"https://cdn.example.com/a.zip"}}"#.utf8))
-        #expect(variant.version == "0.3.0" && variant.macos?.url.lastPathComponent == "a.zip" && variant.macos?.sha256 == nil)
-        // Bad digests are ignored, non-https packages dropped, missing versions rejected, file URLs only under the flag.
+        #expect(variant.version == "0.3.0" && variant.macos == nil)
+        // Bad digests are ignored, non-https packages dropped, missing versions rejected.
         let loose = try AppUpdateManifest.parse(Data(#"{"version":"0.2.0","macos":{"url":"http://cdn.example.com/a.zip","sha256":"zz"}}"#.utf8))
         #expect(loose.macos == nil)
+        // file URLs are only allowed under the test flag, and only when sha256 and size are present.
+        let fileDigest = String(repeating: "a", count: 64)
         #expect(try AppUpdateManifest.parse(Data(#"{"version":"0.2.0","macos":"file:///tmp/a.zip"}"#.utf8)).macos == nil)
-        #expect(try AppUpdateManifest.parse(Data(#"{"version":"0.2.0","macos":"file:///tmp/a.zip"}"#.utf8), allowsFileURLs: true).macos != nil)
+        #expect(try AppUpdateManifest.parse(Data(#"{"version":"0.2.0","macos":{"url":"file:///tmp/a.zip","sha256":"\#(fileDigest)","size":100}}"#.utf8)).macos == nil)
+        #expect(try AppUpdateManifest.parse(Data(#"{"version":"0.2.0","macos":{"url":"file:///tmp/a.zip","sha256":"\#(fileDigest)","size":100}}"#.utf8), allowsFileURLs: true).macos != nil)
         #expect(throws: MightyError.self) { try AppUpdateManifest.parse(Data(#"{"macos":{"url":"https://x/a.zip"}}"#.utf8)) }
         #expect(throws: MightyError.self) { try AppUpdateManifest.parse(Data("[1,2]".utf8)) }
         #expect(throws: MightyError.self) { try AppUpdateManifest.parse(Data(repeating: 0x20, count: 300 * 1024)) }
@@ -100,12 +105,23 @@ import Testing
         let data = try Data(contentsOf: package)
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let updates = root.appendingPathComponent("updates", isDirectory: true)
-        let service = AppUpdateService(directory: updates, allowsFileURLs: true)
-        #expect(!(await service.verifiesSignatures))
-
-        // Manifest check against a local file, then download.
         let manifestFile = root.appendingPathComponent("latest.json")
-        try Data(#"{"version":"0.2.0","macos":{"url":"\#(package.absoluteString)","sha256":"\#(digest)","size":\#(data.count)}}"#.utf8).write(to: manifestFile)
+        let plainPayload = Data(#"{"version":"0.2.0","macos":{"url":"\#(package.absoluteString)","sha256":"\#(digest)","size":\#(data.count)}}"#.utf8)
+
+        // Rule 1: a keyless service refuses check() with a clear error.
+        let keylessService = AppUpdateService(directory: updates, allowsFileURLs: true)
+        #expect(!(await keylessService.verifiesSignatures))
+        try plainPayload.write(to: manifestFile)
+        await #expect(throws: MightyError.self) { try await keylessService.check(manifestURL: manifestFile, currentVersion: "0.1.0") }
+
+        // Successful check requires a keyed service and a signed envelope.
+        let key = Curve25519.Signing.PrivateKey()
+        let sig = try key.signature(for: plainPayload)
+        let envelope = Data(("{\"format\":\"\(AppUpdateManifest.envelopeFormat)\",\"payload\":\"\(plainPayload.base64EncodedString())\",\"signature\":\"\(sig.base64EncodedString())\"}").utf8)
+        try envelope.write(to: manifestFile)
+        let service = AppUpdateService(directory: updates, publicKey: key.publicKey.rawRepresentation, allowsFileURLs: true)
+        #expect(await service.verifiesSignatures)
+
         let availability = try await service.check(manifestURL: manifestFile, currentVersion: "0.1.0")
         #expect(availability.isNewer && availability.manifest.macos?.size == data.count)
         #expect(!(try await service.check(manifestURL: manifestFile, currentVersion: "0.2.0")).isNewer)
@@ -145,8 +161,8 @@ import Testing
         try FileManager.default.removeItem(at: plistLinked.appendingPathComponent("Contents/Info.plist"))
         try FileManager.default.createSymbolicLink(at: plistLinked.appendingPathComponent("Contents/Info.plist"), withDestinationURL: app.appendingPathComponent("Contents/Info.plist"))
         #expect(throws: MightyError.self) { try AppUpdateService.validate(app: plistLinked, expectedBundleIdentifier: "dev.mightyclaude.native") }
-        // Manifest addresses must be https when file URLs are not allowed.
-        let strict = AppUpdateService(directory: updates)
+        // Manifest addresses must be https when file URLs are not allowed (keyed service, no allowsFileURLs).
+        let strict = AppUpdateService(directory: updates, publicKey: key.publicKey.rawRepresentation)
         await #expect(throws: MightyError.self) { try await strict.check(manifestURL: manifestFile, currentVersion: "0.1.0") }
     }
 
