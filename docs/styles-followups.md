@@ -60,7 +60,17 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 - 허용 목록에 Windows 전용 경로를 더했고 CI 설정을 `native-macos.yml`/`native-windows.yml`로 나눴다(§8.3). 검사 방식(저장소 전체 diff + 허용 목록)은 그대로 둔다는 결정이다(2026-09-20).
 - 화면 확인은 v3 전에 하지 못했다. 거기서 나오는 문제는 아래 다음 고정으로 간다.
 
-## 다음 고정(v4)에 묶을 것
+## v4에 묶어 처리한 것 (2026-09-22)
+
+항목 5(상태를 읽는 단계 계산)와 6(루프 진행·중지)의 범위 안에서, 패널이 백그라운드 잡을 인식하는 선언을 추가했다. 풀어낸 것과 수용된 한계는 아래와 같다.
+
+**풀어낸 것.** 매니페스트의 선택적 `job` 필드(§1.13)를 도입했다. 도구 이름을 매처로 선언하면 엔진이 실행 창 로그에서 가장 최신 열림/닫힘 결과를 찾아 잡 상태를 결정한다. 잡이 열린 동안 패널은 `whileOpen` 목록만 보여 주고 `job.guidance` 한 줄을 쓴다. Ouroboros 번들 매니페스트가 `ouroboros_start_*` 네 도구를 열림, `ouroboros_job_result` · `ouroboros_cancel_job` · 터미널 `ouroboros_job_status`를 닫힘으로 선언하고, `status` · `cancel` · `unstuck`을 while-open 목록으로 쓴다. `cancel` 행동(`/ouroboros:cancel`)과 `run`을 run/evolve next 목록에 추가했다. 매처에 `contains`와 `notContains`를 동시에 쓰면 `E_JOB_MATCHER_LITERAL`(오류 코드 48번째)로 거부된다. 폰은 호스트가 투영한 `guidance`와 `next` 목록을 그대로 렌더링하며 트랜스크립트를 직접 파싱하지 않는다.
+
+**수용된 한계.** 차례가 끝난 뒤 잡이 끝나도 닫힘 도구 결과가 도달할 때까지 패널은 잡이 열린 것으로 본다. 선언이 없는 매니페스트는 오늘과 동일하게 동작한다.
+
+**남긴 것.** `◆ … → next: ooo <동작>` 줄을 읽어 다음 행동을 추천하는 `recommend` 규칙은 이번에 추가하지 않았다 — 잡 선언만으로 Ouroboros의 실용 요구를 충족할 수 있어서다.
+
+## 다음 고정(v5)에 묶을 것
 
 검사가 저장소 전체를 보므로, 허용 목록 밖을 건드리는 작업이 main에 들어갈 때마다 새 고정이 필요하다. 예정된 것:
 
@@ -68,6 +78,4 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 - 다국어 지원(`locales/ko.json`·`en.json`, 세 클라이언트 공용). 엔진 파일 안의 문구를 옮길지는 그때 정한다.
 - 보안 점검(2026-09-20)에서 나온 수정: 릴레이 버퍼·소켓 상한, 페어링 키 재생성 시 기기 목록 정리, 업데이트 서명·해시 필수화, CI 서명 작업 분리 등.
 - macOS CI 실패의 수정(`docs/ci-macos-failure.md`의 후보 F)과 그 결과 기록.
-- 안내 패널이 백그라운드 작업을 모른다(2026-09-20 실사용에서 확인). `rules.phase`는 마지막으로 누른 버튼만 보고(`lastRecognisedAction`), '진행 중'은 CLI 한 차례가 도는 동안만 참이다(`StyleEvaluator.guidanceLine`). Ouroboros의 실행은 작업을 백그라운드로 넘기고 차례를 끝내므로, 실행이 40분째 도는 동안 패널은 "실행 단계가 끝났습니다"를 띄우고 평가 → 진화 → 랄프를 권했다. 랄프를 누른 뒤에는 `rules.next.map.evolve`에 `run`이 없어 실행 버튼이 사라졌다. 고칠 것 두 가지:
-  - 매니페스트(`Resources/Styles/ouroboros.json`): `evolve`의 다음 동작에 `run`을 넣고, `run`의 다음 동작 맨 앞에 `status`를 두고, `guidance.next`가 "끝났습니다"라고 단정하지 않게 한다.
-  - 엔진: 스킬이 답변 끝에 남기는 `◆ … → next: ooo <동작>` 줄을 읽어 그 동작을 추천 버튼으로 세우는 `recommend` 규칙을 더한다(`StyleRecommendRule`은 지금 `none`과 `capability`뿐이다). 같은 줄로 '진행 중' 문구를 유지할 수 있다. 폰 렌더러도 같은 매니페스트를 그리므로 함께 바뀐다.
+- `◆ … → next: ooo <동작>` 줄을 읽는 `recommend` 규칙(항목 6의 나머지).
