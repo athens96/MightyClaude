@@ -106,6 +106,12 @@ internal static class Verification
     }
     internal static async Task RunAsync()
     {
+        // The strings checks compare the Windows copy with locales/ko.json, and the
+        // per-feature strings classes capture Locale.Get once at type initialisation.
+        // Pin Korean before anything touches them so the checks mean the same on an
+        // English CI runner as on a Korean Mac; the locale checks set their own preference.
+        Locale.LanguagePreference = "ko";
+        Locale.ResetCache();
         await Test("structured tool identity, duration, Mods dedup and cancellation", ActivityUsageVerification.Activities);
         await Test("Codex/Gemini direct usage snapshots and intact long Markdown", ActivityUsageVerification.ProviderUsage);
         await Test("Claude current context, cumulative totals and quota observation age", ActivityUsageVerification.ClaudeContext);
