@@ -229,6 +229,7 @@
   "settings.providers.windowsDescription": "로컬 Claude Code · Codex CLI · Gemini CLI를 그대로 사용합니다. 로그인과 설치는 각 CLI에서 진행하세요.",
   "graph.nodeModel.configuredSuffix": "· 설정",
   "settings.modelDefaults.sectionTitle": "모델 기본값",
+  "settings.modelDefaults.windowsDescription": "제공자별·권한 모드별 기본 모델을 설정합니다. 'default'로 두면 CLI의 기본 모델을 사용합니다.",
   "settings.remote.description": "다른 컴퓨터의 워크스페이스에 연결하거나 이 Mac의 워크스페이스를 공유합니다.",
   "settings.remote.sectionTitle": "원격 연결",
   "settings.remote.tailscaleButton": "Tailscale 원격 연결 설정…",

@@ -35,6 +35,7 @@ public sealed partial class MainWindow
         SettingsSections.Display => BuildDisplaySection,
         SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
         SettingsSections.Providers => BuildProvidersSection,
+        SettingsSections.ModelDefaults => BuildModelDefaultsSection,
         SettingsSections.CliAccounts => BuildCliAccountsSectionFromState,
         SettingsSections.AppUpdate => BuildAppUpdateSectionFromState,
         SettingsSections.AppInfo => BuildAppInfoSection,
@@ -343,6 +344,20 @@ public sealed partial class MainWindow
 
     // Read the statuses when the section opens and after a sign-in terminal closes.
     internal Task RefreshCliAccounts() => accountsCoordinator.RefreshAsync(CliAccountProviders);
+
+    // 모델 기본값 — description only; per-mode model pickers are device-unverified UI.
+    private StackPanel BuildModelDefaultsSection()
+    {
+        var panel = new StackPanel { Spacing = 6 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = ModelDefaultsStrings.WindowsDescription,
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = .7,
+            FontSize = 12,
+        });
+        return panel;
+    }
 
     // 앱 정보 — usage notes; behaviour unchanged.
     private StackPanel BuildAppInfoSection()
