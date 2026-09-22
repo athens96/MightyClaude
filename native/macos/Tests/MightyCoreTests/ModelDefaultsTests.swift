@@ -305,6 +305,39 @@ struct RegisteredModelTests {
         #expect(levels.isEmpty)
     }
 
+    // MARK: - The run path carries the registered names on the request
+
+    // ProcessRunner validates with `registeredModels: request.registeredModels`, so a
+    // registered name only survives the Claude official-name gate if the request the
+    // store built actually carries the provider's names. These drive that same
+    // expression instead of handing validateSelection a separate array.
+
+    @Test func requestCarriedRegisteredModelsReachValidateSelection() throws {
+        let catalog = ProviderOptions.fallbackCatalog("claude")
+        let request = StartRunRequest(sessionId: "sess-1", workspaceId: "ws-1", kind: "claude", input: "hello",
+                                      model: "acme/run-path-model", provider: "claude",
+                                      registeredModels: [RegisteredModelEntry(name: "acme/run-path-model")])
+        try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels)
+    }
+
+    @Test func requestWithoutRegisteredModelsIsRejectedOnTheRunPath() {
+        let catalog = ProviderOptions.fallbackCatalog("claude")
+        let request = StartRunRequest(sessionId: "sess-1", workspaceId: "ws-1", kind: "claude", input: "hello",
+                                      model: "acme/run-path-model", provider: "claude")
+        var threw = false
+        do { try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels) } catch { threw = true }
+        #expect(threw)
+    }
+
+    @Test func requestCarriedRegisteredEffortReachesValidateSelection() throws {
+        let catalog = ProviderOptions.fallbackCatalog("claude")
+        var settings = RunSettings(); settings.effort = "high"
+        let request = StartRunRequest(sessionId: "sess-1", workspaceId: "ws-1", kind: "claude", input: "hello",
+                                      model: "acme/effort-model", provider: "claude", settings: settings,
+                                      registeredModels: [RegisteredModelEntry(name: "acme/effort-model", supportsEffort: true, supportedEffortLevels: ["high", "max"])])
+        try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels)
+    }
+
     // MARK: - Registration rejection: reason must be exposed (not just thrown)
 
     @Test func registrationEmptyNameExposesMeaningfulReason() {
