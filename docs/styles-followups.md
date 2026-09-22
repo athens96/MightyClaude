@@ -2,7 +2,7 @@
 
 docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이며, 이번 범위 밖이고 확장은 `schema: 2`로 간다. 고정 태그 이후에도 고칠 수 있는 문서다(§8.3).
 
-고정 기준(현재, v3 — 2026-09-20): 고정 전 마지막 커밋 `2ae58dcf3e6422eabe3f153cc555350a9a315522`, 태그 `mighty-style-engine-v3`가 가리키는 커밋 `f226e31cc146ba0c7dadd3ba8baaeae3ced05802`(`styles/FREEZE`만 더한 커밋). v2 이후 바뀐 엔진 쪽 파일은 아래 'v3에 묶어 처리한 것'에 적었다. 허용 목록에 Windows 전용 경로가 더해졌다(§8.3).
+고정 기준(이전, v3 — 2026-09-20): 고정 전 마지막 커밋 `2ae58dcf3e6422eabe3f153cc555350a9a315522`, 태그 `mighty-style-engine-v3`가 가리키는 커밋 `f226e31cc146ba0c7dadd3ba8baaeae3ced05802`(`styles/FREEZE`만 더한 커밋). v2 이후 바뀐 엔진 쪽 파일은 아래 'v3에 묶어 처리한 것'에 적었다. 허용 목록에 Windows 전용 경로가 더해졌다(§8.3).
 
 고정 기준(이전, v2 — 2026-09-20): 고정 전 마지막 커밋 `19748917bc0e99ac6f45e6857d9c4a0cb08353e8`, 태그 `mighty-style-engine-v2`가 가리키는 커밋 `24a07e02559081d43fdb4337ebdc0162897aff44`(`styles/FREEZE`만 더한 커밋). v1 이후 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 바뀌지 않았다. v2를 건 이유는 검사가 저장소 전체를 보는데 main에 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)이 들어왔기 때문이다.
 
@@ -87,13 +87,14 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 - **macOS CI.** 다섯 라운드(`ed33f18`·`0359c63`·`f9ec5b1`·`4b151ea`·`9ffeb42`)를 썼다. Swift 테스트 단계는 `ac6cbf8`에서 처음으로 초록이 됐고 빌드·스모크 실행 단계도 초록이다. `Check smoke result`만 빨갛다(`단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다`). 상한을 지켜 더 고치지 않았고, 화면 확인 때 사용자가 정한다. 라운드 기록은 `docs/ci-macos-failure.md`.
 - **다국어 토대.** `locales/ko.json`·`en.json`(272키), Swift·C#·TypeScript 로더, `scripts/check-locales.js`, 설정의 언어 선택(맥·Windows), 설정 화면·안내 패널 문구 이전(`39eadee`…`0f4222e`·`4f60a8a`). 남은 하드코딩 문구 3,239개는 `docs/i18n.md`에 세어 두었고 다음 묶음이다. 영어 초안의 검토 목록도 같은 문서에 있다.
 - **화면 확인.** 이 단계들 뒤에 새 빌드를 설치하고 멈춘다. 확인에서 나온 문제는 아래 목록에 적고 태그 전에 고친다.
-- 화면 확인에서 나온 문제: (확인 뒤 여기에 적는다)
+- 화면 확인에서 나온 문제: 없음. 2026-09-22 사용자가 새 빌드(안내 패널의 잡 인식, 언어 선택, 업데이트 신뢰 문구)를 확인하고 태그를 승인했다. macOS `Check smoke result`는 다섯 라운드 상한을 지켜 빨간 채로 태그했다(후보는 `docs/ci-macos-failure.md`).
+- **플러그인 저장소.** `~/Work/mighty-styles`의 고정 사본은 아직 v1(`b767328`)을 가리킨다. v4 태그 뒤에 같은 태그를 로컬로 걸고 엔진 사본·코퍼스·체크섬·기준 상수를 v4 시점으로 올린다(별도 시드).
 
 ## 다음 고정(v5)에 묶을 것
 
 검사가 저장소 전체를 보므로, 허용 목록 밖을 건드리는 작업이 main에 들어갈 때마다 새 고정이 필요하다. 예정된 것:
 
-- 화면 확인에서 나온 문제: (확인 뒤 여기에 적는다)
-- 다국어 지원(`locales/ko.json`·`en.json`, 세 클라이언트 공용). 엔진 파일 안의 문구를 옮길지는 그때 정한다.
-- macOS CI 실패의 수정(`docs/ci-macos-failure.md`의 후보 F)과 그 결과 기록.
+- 권한 모드별 기본 모델·등록 이름·그래프의 모델 표시(인터뷰 `interview_20260922_062850`, 시드 `seed_8f34bc3208d3`). v5의 첫 항목이며 태그 직후 실행한다.
+- 다국어 지원의 나머지: 토대(`locales/ko.json`·`en.json`, 세 클라이언트 로더, 설정·안내 패널)는 v4에 들어갔다. 남은 하드코딩 문구 3,239개와 영어 초안 검토는 `docs/i18n.md`에 있다. 엔진 파일 안의 문구를 옮길지는 그때 정한다. Windows `LocalizationVerification`에 en→ko 되돌림 검사가 없다(평가 후속).
+- macOS CI `Check smoke result`의 수정(`docs/ci-macos-failure.md`의 후보 F)과 그 결과 기록.
 - `◆ … → next: ooo <동작>` 줄을 읽는 `recommend` 규칙(항목 6의 나머지).
