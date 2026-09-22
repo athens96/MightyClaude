@@ -304,4 +304,66 @@ describe('limits', () => {
     for (let i = 0; i < 65; i += 1) client.send(`frame-${i}`);
     expect((await closed(client)).code).toBe(4413);
   });
+
+  it('closes 4507 when forwarding would exceed maxSocketBufferedBytes (host→client)', async () => {
+    const tinyRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      maxSocketBufferedBytes: 0,
+    });
+    try {
+      const serverId = 'sockbuf-hc';
+      const connectionId = 'conn-sockbuf-01';
+      const ctrl = new WebSocket(url(tinyRelay, { serverId, role: 'server', v: '1' }));
+      open.push(ctrl);
+      await opened(ctrl);
+      const cli = new WebSocket(url(tinyRelay, { serverId, role: 'client', connectionId, v: '1' }));
+      open.push(cli);
+      await opened(cli);
+      await nextJson(ctrl);
+      const hst = new WebSocket(url(tinyRelay, { serverId, role: 'server', connectionId, v: '1' }));
+      open.push(hst);
+      await opened(hst);
+
+      const cliClosed = closed(cli);
+      const hstClosed = closed(hst);
+      hst.send('payload');
+      expect((await cliClosed).code).toBe(4507);
+      expect((await hstClosed).code).toBe(4507);
+    } finally {
+      await tinyRelay.close();
+    }
+  });
+
+  it('closes 4507 when forwarding would exceed maxSocketBufferedBytes (client→host)', async () => {
+    const tinyRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      maxSocketBufferedBytes: 0,
+    });
+    try {
+      const serverId = 'sockbuf-ch';
+      const connectionId = 'conn-sockbuf-02';
+      const ctrl = new WebSocket(url(tinyRelay, { serverId, role: 'server', v: '1' }));
+      open.push(ctrl);
+      await opened(ctrl);
+      const cli = new WebSocket(url(tinyRelay, { serverId, role: 'client', connectionId, v: '1' }));
+      open.push(cli);
+      await opened(cli);
+      await nextJson(ctrl);
+      const hst = new WebSocket(url(tinyRelay, { serverId, role: 'server', connectionId, v: '1' }));
+      open.push(hst);
+      await opened(hst);
+
+      const cliClosed = closed(cli);
+      const hstClosed = closed(hst);
+      cli.send('payload');
+      expect((await cliClosed).code).toBe(4507);
+      expect((await hstClosed).code).toBe(4507);
+    } finally {
+      await tinyRelay.close();
+    }
+  });
 });

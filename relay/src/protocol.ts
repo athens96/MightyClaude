@@ -24,6 +24,8 @@ export const CloseCode = {
   tooManyConnections: 4429,
   /** Host data socket did not attach in time. */
   attachTimeout: 4504,
+  /** Forwarding a frame would exceed the per-socket byte buffer bound. */
+  socketBufferOverflow: 4507,
 } as const;
 
 export type CloseCodeValue = (typeof CloseCode)[keyof typeof CloseCode];

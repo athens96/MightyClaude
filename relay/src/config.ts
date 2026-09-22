@@ -14,6 +14,8 @@ export interface RelayConfig {
   readonly maxBufferedFrames: number;
   /** Maximum WebSocket frame payload in bytes. */
   readonly maxPayload: number;
+  /** Maximum bytes buffered for sending on a single data socket before closing that connection. */
+  readonly maxSocketBufferedBytes: number;
 }
 
 const DEFAULTS: RelayConfig = {
@@ -24,6 +26,7 @@ const DEFAULTS: RelayConfig = {
   maxConnectionsPerServer: 32,
   maxBufferedFrames: 64,
   maxPayload: 1024 * 1024,
+  maxSocketBufferedBytes: 4 * 1024 * 1024,
 };
 
 function envInt(name: string, fallback: number): number {
@@ -43,6 +46,7 @@ export function loadConfig(overrides: Partial<RelayConfig> = {}): RelayConfig {
     maxConnectionsPerServer: envInt('RELAY_MAX_CONNECTIONS', DEFAULTS.maxConnectionsPerServer),
     maxBufferedFrames: envInt('RELAY_MAX_BUFFERED_FRAMES', DEFAULTS.maxBufferedFrames),
     maxPayload: envInt('RELAY_MAX_PAYLOAD', DEFAULTS.maxPayload),
+    maxSocketBufferedBytes: envInt('RELAY_MAX_SOCKET_BUFFERED_BYTES', DEFAULTS.maxSocketBufferedBytes),
   };
   return { ...fromEnv, ...overrides };
 }
