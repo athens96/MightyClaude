@@ -20,7 +20,32 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 | 클라이언트 데이터 | `serverId=…&role=client&connectionId=<uuid>&v=1` | 호스트 제어 소켓이 없으면 4404로 즉시 닫음. 있으면 제어 소켓에 `connected`를 보내고 호스트 데이터 소켓을 최대 10초 기다린다(그동안 프레임 64개까지 버퍼, 초과 시 4413). 시간 내 안 오면 4504 |
 | 호스트 데이터 | `serverId=…&role=server&connectionId=<uuid>&v=1` | 대기 중인 클라이언트가 없으면 4404. 있으면 두 소켓을 양방향으로 잇는다 |
 
-데이터 소켓의 프레임(텍스트·바이너리)은 그대로 상대에게 전달된다. 한쪽이 닫히면 다른 쪽도 같은 코드로 닫고 제어 소켓에 `disconnected`를 보낸다. 모든 소켓에 30초 간격 WebSocket ping, 프레임 최대 1 MiB, 호스트당 동시 연결 32개. `GET /healthz` → `200 ok`.
+데이터 소켓의 프레임(텍스트·바이너리)은 그대로 상대에게 전달된다. 한쪽이 닫히면 다른 쪽도 같은 코드로 닫고 제어 소켓에 `disconnected`를 보낸다. `GET /healthz` → `200 ok`.
+
+## 릴레이 제한 및 닫기 코드
+
+| 제한 | 기본값 | 환경 변수 | 닫기 코드 | 설명 |
+|---|---|---|---|---|
+| 프레임 최대 크기 | 1 MiB | `RELAY_MAX_PAYLOAD` | 1009 (ws 라이브러리) | 초과 시 연결 즉시 종료 |
+| 호스트당 동시 연결 | 32개 | `RELAY_MAX_CONNECTIONS` | 4429 | 33번째 클라이언트 거절 |
+| 호스트 대기 중 프레임 버퍼 | 64개 | `RELAY_MAX_BUFFERED_FRAMES` | 4413 | 호스트 연결 전 클라이언트 초과 시 |
+| 소켓당 송신 버퍼 | 4 MiB | `RELAY_MAX_SOCKET_BUFFERED_BYTES` | 4507 | 전달이 한도를 초과하면 해당 연결만 종료 (제어 소켓·다른 연결 무관) |
+| 호스트 데이터 소켓 대기 시간 | 10초 | `RELAY_ATTACH_TIMEOUT_MS` | 4504 | 시간 내 호스트 미연결 시 |
+| ping 간격 | 30초 | `RELAY_PING_INTERVAL_MS` | — | 응답 없으면 소켓 강제 종료 |
+
+전체 닫기 코드 목록:
+
+| 코드 | 이름 | 발생 조건 |
+|---|---|---|
+| 1000 | normal | 정상 종료 |
+| 4400 | badRequest | 쿼리 파라미터 오류 |
+| 4404 | notFound | 호스트 제어 소켓 없음, 또는 알 수 없는 connectionId |
+| 4409 | conflict | 새 제어 소켓으로 대체됨 |
+| 4410 | hostOffline | 호스트 제어 소켓 연결 끊김 |
+| 4413 | bufferOverflow | 호스트 연결 전 클라이언트 프레임 초과 |
+| 4429 | tooManyConnections | serverId당 연결 수 초과 |
+| 4504 | attachTimeout | 호스트 데이터 소켓 시간 초과 |
+| 4507 | socketBufferOverflow | 소켓 송신 버퍼 한도 초과 — 해당 연결만 종료 |
 
 ## 종단 간 암호화 (릴레이는 해석 불가)
 

@@ -162,7 +162,7 @@ export class RelayHub {
     ws.on('message', (data: RawData, isBinary: boolean) => {
       const payload = toBuffer(data);
       if (connection.host !== null) {
-        forward(connection.host, payload, isBinary);
+        this.#forwardOrClose(connection, connection.host, payload, isBinary);
         return;
       }
       if (connection.buffered.length >= this.#config.maxBufferedFrames) {
@@ -203,10 +203,13 @@ export class RelayHub {
 
     const pending = connection.buffered;
     connection.buffered = [];
-    for (const frame of pending) forward(ws, frame.payload, frame.binary);
+    for (const frame of pending) {
+      if (connection.closed) break;
+      this.#forwardOrClose(connection, ws, frame.payload, frame.binary);
+    }
 
     ws.on('message', (data: RawData, isBinary: boolean) => {
-      forward(connection.client, toBuffer(data), isBinary);
+      this.#forwardOrClose(connection, connection.client, toBuffer(data), isBinary);
     });
     ws.on('close', (code: number, reason: Buffer) => {
       this.#untrack(ws);
@@ -255,6 +258,15 @@ export class RelayHub {
     if (entry !== undefined) {
       this.#notify(entry, { type: 'disconnected', connectionId: connection.connectionId });
     }
+  }
+
+  #forwardOrClose(connection: Connection, target: WebSocket, payload: Buffer, binary: boolean): void {
+    if (target.readyState !== target.OPEN) return;
+    if (target.bufferedAmount + payload.byteLength > this.#config.maxSocketBufferedBytes) {
+      this.#teardown(connection, CloseCode.socketBufferOverflow, 'socket buffer overflow', null);
+      return;
+    }
+    target.send(payload, { binary });
   }
 
   #notify(entry: ServerEntry, notice: ControlNotice): void {
