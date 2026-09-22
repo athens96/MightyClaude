@@ -5,6 +5,30 @@ using MightyClaude.Core;
 // check can prove each rule rejects its own failure before trusting a pass.
 internal static class StringsVerification
 {
+    // ── The shared locale files ────────────────────────────────────────────────
+    // The Settings sections carry no Korean of their own any more: every value
+    // comes from locales/ko.json through Locale.Get. So the checks that once
+    // held the macOS literal now hold the *key* each field must read, and the
+    // expected value is looked up in locales/ko.json itself (the file Core
+    // embeds straight from the repository root). macOS reads the same key,
+    // which is how "Windows copy is the macOS copy" is enforced from here on.
+
+    /// The copy a class must show, built from locales/ko.json: field name → locale key.
+    /// A key that is not in the shared file fails here rather than silently
+    /// letting the field fall back to the key string.
+    private static Dictionary<string, string> FromShared(string className, params (string Field, string Key)[] map)
+    {
+        var korean = Locale.Catalogue("ko");
+        var expected = new Dictionary<string, string>();
+        foreach (var (field, key) in map)
+        {
+            if (!korean.TryGetValue(key, out var value))
+                throw new InvalidOperationException(className + "." + field + " reads " + key + ", which locales/ko.json does not have");
+            expected[field] = value;
+        }
+        return expected;
+    }
+
     // The macOS literal every constant mirrors, by field name.
     // SlashCommands.swift / SlashCommandPalette.swift
     private static readonly Dictionary<string, string> SlashMacOS = new()
@@ -52,8 +76,11 @@ internal static class StringsVerification
         ["SourceUser"] = "사용자 설정",
     };
 
-    /// Returns the reason the class fails, or null when the copy is the macOS copy.
-    private static string? Validate(string className, IReadOnlyDictionary<string, string> actual, IReadOnlyDictionary<string, string> macOS)
+    /// Returns the reason the class fails, or null when the copy matches the
+    /// source of truth. `source` names it: the macOS literal for the classes that
+    /// still carry Korean of their own, and locales/ko.json for the Settings
+    /// sections, which now read the shared file.
+    private static string? Validate(string className, IReadOnlyDictionary<string, string> actual, IReadOnlyDictionary<string, string> truth, string source = "macOS")
     {
         var seen = new Dictionary<string, string>();
         foreach (var (name, value) in actual)
@@ -62,10 +89,10 @@ internal static class StringsVerification
             if (seen.TryGetValue(value, out var twin)) return className + "." + name + " duplicates " + twin;
             seen[value] = name;
             if (Placeholders(value) is { } bad) return className + "." + name + " has a placeholder that is not {name}: " + bad;
-            if (!macOS.TryGetValue(name, out var expected)) return className + "." + name + " mirrors no macOS literal";
-            if (value != expected) return className + "." + name + " differs from macOS: " + value;
+            if (!truth.TryGetValue(name, out var expected)) return className + "." + name + " mirrors nothing in " + source;
+            if (value != expected) return className + "." + name + " differs from " + source + ": " + value;
         }
-        foreach (var name in macOS.Keys)
+        foreach (var name in truth.Keys)
             if (!actual.ContainsKey(name)) return className + " is missing " + name;
         return null;
     }
@@ -285,61 +312,56 @@ internal static class StringsVerification
         return Task.CompletedTask;
     }
 
-    // CLIUpdateSettingsView.swift (section, toggle, button, status labels) and
-    // CLIUpdateService.swift (every detail sentence).
-    // SectionDescription carries the one recorded OS-bound substitution
-    // (이 PC에 for 이 Mac에), documented in docs/windows-cli-update.md.
-    // DetailWingetPlan and DetailWingetRuntimeMissing have no macOS literal —
-    // Windows has no Homebrew — and are 보류 rows in docs/windows-parity.md.
-    private static readonly Dictionary<string, string> CliUpdateMacOS = new()
-    {
-        ["SectionTitle"] = "CLI 업데이트",
-        ["AutoUpdateToggle"] = "앱 시작 시 CLI 자동 업데이트",
-        ["SectionDescription"] = "이 PC에 설치된 Claude Code·Codex·Gemini CLI를 기존 설치 방식으로 업데이트합니다.",
-        ["ProgressInspecting"] = "설치 정보 확인 중…",
-        ["ProgressProviderTemplate"] = "{provider} 업데이트 중…",
-        ["LastRunTemplate"] = "마지막 실행 {time}",
-        ["UpdateButton"] = "업데이트 하기",
-        ["UpdatingButton"] = "업데이트 중…",
-        ["ResultRowTemplate"] = "{provider} · {status}",
-        ["VersionChangeTemplate"] = "{before} → {after}",
-        ["StatusUpdated"] = "업데이트 완료",
-        ["StatusCurrent"] = "변경 없음",
-        ["StatusFailed"] = "업데이트 실패",
-        ["StatusCancelled"] = "취소됨",
-        ["StatusBusy"] = "다른 업데이트 진행 중",
-        ["StatusSkipped"] = "건너뜀",
-        ["DetailClosing"] = "앱이 종료 중입니다.",
-        ["DetailInspectCancelled"] = "설치 확인을 취소했습니다.",
-        ["DetailInspectFailed"] = "CLI 설치 정보를 확인하지 못했습니다.",
-        ["DetailBusy"] = "다른 CLI를 업데이트하고 있습니다.",
-        ["DetailCancelled"] = "업데이트를 취소했습니다.",
-        ["DetailUnsupportedProvider"] = "지원하지 않는 CLI입니다.",
-        ["DetailVersionUnknown"] = "CLI 버전을 확인하지 못해 업데이트하지 않았습니다.",
-        ["DetailMissing"] = "설치된 CLI가 없어 건너뜁니다. 새로 설치하지 않습니다.",
-        ["DetailUnknownMethod"] = "수동 설치 또는 확인할 수 없는 설치 방식입니다. 기존 설치 방법으로 직접 업데이트하세요.",
-        ["DetailNativeClaude"] = "Claude Code의 기본 업데이트 명령을 사용합니다.",
-        ["DetailNpmPrerelease"] = "시험판 또는 확인할 수 없는 npm 채널은 자동 변경하지 않습니다. 기존 채널에서 직접 업데이트하세요.",
-        ["DetailNpmRuntimeMissing"] = "npm 설치는 확인했지만 해당 설치를 업데이트할 Node.js/npm을 찾지 못했습니다.",
-        ["DetailNpmPlan"] = "기존 npm 설치 위치에서 공식 패키지만 업데이트합니다.",
-        ["DetailFailedExitTemplate"] = "업데이트 명령이 종료 코드 {code}로 실패했습니다. 설치 권한이나 네트워크 상태를 확인하세요.",
-        ["DetailVersionRecheckFailed"] = "업데이트 명령은 끝났지만 CLI 버전을 다시 확인하지 못했습니다.",
-        ["DetailUpdated"] = "CLI를 업데이트했습니다.",
-        ["DetailUnchanged"] = "업데이트 명령을 완료했습니다. 설치된 버전은 동일합니다.",
-        // 보류: no macOS literal, recorded in docs/windows-parity.md.
-        ["DetailWingetPlan"] = "설치된 winget의 해당 패키지만 업데이트합니다.",
-        ["DetailWingetRuntimeMissing"] = "winget 설치이지만 winget 실행 파일을 찾지 못했습니다.",
-    };
+    // The CLI update section reads locales/ko.json. SectionDescription reads the
+    // ...Windows key (이 PC에 for 이 Mac에, docs/windows-cli-update.md), and the two
+    // winget rows are Windows-only 보류 rows in docs/windows-parity.md.
+    private static readonly Lazy<Dictionary<string, string>> CliUpdateShared = new(() => FromShared(nameof(CliUpdateStrings),
+        ("SectionTitle", "settings.cliUpdate.sectionTitle"),
+        ("AutoUpdateToggle", "settings.cliUpdate.autoUpdateToggle"),
+        ("SectionDescription", "settings.cliUpdate.sectionDescriptionWindows"),
+        ("ProgressInspecting", "settings.cliUpdate.progressInspecting"),
+        ("ProgressProviderTemplate", "settings.cliUpdate.progressProviderTemplate"),
+        ("LastRunTemplate", "settings.cliUpdate.lastRunTemplate"),
+        ("UpdateButton", "settings.cliUpdate.updateButton"),
+        ("UpdatingButton", "settings.cliUpdate.updatingButton"),
+        ("ResultRowTemplate", "settings.cliUpdate.resultRowTemplate"),
+        ("VersionChangeTemplate", "settings.cliUpdate.versionChangeTemplate"),
+        ("StatusUpdated", "settings.cliUpdate.statusUpdated"),
+        ("StatusCurrent", "settings.cliUpdate.statusCurrent"),
+        ("StatusFailed", "settings.cliUpdate.statusFailed"),
+        ("StatusCancelled", "settings.cliUpdate.statusCancelled"),
+        ("StatusBusy", "settings.cliUpdate.statusBusy"),
+        ("StatusSkipped", "settings.cliUpdate.statusSkipped"),
+        ("DetailClosing", "settings.cliUpdate.detailClosing"),
+        ("DetailInspectCancelled", "settings.cliUpdate.detailInspectCancelled"),
+        ("DetailInspectFailed", "settings.cliUpdate.detailInspectFailed"),
+        ("DetailBusy", "settings.cliUpdate.detailBusy"),
+        ("DetailCancelled", "settings.cliUpdate.detailCancelled"),
+        ("DetailUnsupportedProvider", "settings.cliUpdate.detailUnsupportedProvider"),
+        ("DetailVersionUnknown", "settings.cliUpdate.detailVersionUnknown"),
+        ("DetailMissing", "settings.cliUpdate.detailMissing"),
+        ("DetailUnknownMethod", "settings.cliUpdate.detailUnknownMethod"),
+        ("DetailNativeClaude", "settings.cliUpdate.detailNativeClaude"),
+        ("DetailNpmPrerelease", "settings.cliUpdate.detailNpmPrerelease"),
+        ("DetailNpmRuntimeMissing", "settings.cliUpdate.detailNpmRuntimeMissing"),
+        ("DetailNpmPlan", "settings.cliUpdate.detailNpmPlan"),
+        ("DetailFailedExitTemplate", "settings.cliUpdate.detailFailedExitTemplate"),
+        ("DetailVersionRecheckFailed", "settings.cliUpdate.detailVersionRecheckFailed"),
+        ("DetailUpdated", "settings.cliUpdate.detailUpdated"),
+        ("DetailUnchanged", "settings.cliUpdate.detailUnchanged"),
+        ("DetailWingetPlan", "settings.cliUpdate.detailWingetPlan"),
+        ("DetailWingetRuntimeMissing", "settings.cliUpdate.detailWingetRuntimeMissing")
+    ));
 
     /// The CLI update copy is the macOS copy apart from the recorded
     /// substitution, and the status labels come from the same table.
     internal static Task CliUpdateStringsMatchMacOS()
     {
         var actual = StaticReadonlyStrings(typeof(CliUpdateStrings));
-        var reason = Validate(nameof(CliUpdateStrings), actual, CliUpdateMacOS);
+        var reason = Validate(nameof(CliUpdateStrings), actual, CliUpdateShared.Value, "locales/ko.json");
         if (reason is not null) throw new InvalidOperationException(reason);
 
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CliUpdateStrings), copy, CliUpdateMacOS);
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CliUpdateStrings), copy, CliUpdateShared.Value, "locales/ko.json");
         Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
         if (Bad(Broken("SectionDescription", "이 Mac에 설치된 Claude Code·Codex·Gemini CLI를 기존 설치 방식으로 업데이트합니다.")) is null)
             throw new InvalidOperationException("an unrecorded OS name must fail");
@@ -380,91 +402,79 @@ internal static class StringsVerification
         return Task.CompletedTask;
     }
 
-    // CLIAccountsSettingsView.swift (section, buttons, confirmation, notes),
-    // CLIAccountStatus.summary (summary labels), CLIAccountService (detail sentences).
-    // SectionDescription carries the one recorded OS-bound substitution
-    // ("외부 터미널 창에서" for "터미널 실행 창에서"), documented in docs/windows-cli-accounts.md.
-    private static readonly Dictionary<string, string> CliAccountMacOS = new()
-    {
-        // CLIAccountsSettingsView.swift
-        ["SectionTitle"] = "CLI 계정",
-        // OS-bound substitution: "외부 터미널 창에서" replaces "터미널 실행 창에서".
-        ["SectionDescription"] = "로그인은 외부 터미널 창에서 진행됩니다. 앱이 명령을 실행해 두면 CLI가 브라우저를 엽니다. 다른 계정으로 바꿀 때는 브라우저에서 원하는 계정을 고르세요. 바꾼 계정은 다음 요청부터 적용됩니다.",
-        ["StatusChecking"] = "확인 중…",
-        ["StatusPending"] = "로그인 터미널을 열었습니다. 브라우저에서 로그인을 마치면 여기에 반영됩니다.",
-        ["StatusNotInstalled"] = "미설치",
-        ["ButtonCancelWait"] = "대기 취소",
-        ["ButtonChange"] = "계정 변경",
-        ["ButtonLogout"] = "로그아웃",
-        ["ButtonLogin"] = "로그인",
-        ["ButtonLoginClaude"] = "Claude 구독으로 로그인",
-        ["ButtonLoginConsole"] = "Anthropic Console(API 과금)로 로그인",
-        ["ButtonCancel"] = "취소",
-        ["RefreshTooltip"] = "상태 다시 확인",
-        ["ConfirmLogoutTitleTemplate"] = "{provider} 에서 로그아웃할까요?",
-        ["ConfirmChangeTitleTemplate"] = "{provider} 계정을 바꿀까요?",
-        ["ConfirmMessageTemplate"] = "{provider} CLI에 저장된 로그인 정보를 지웁니다. 터미널에서 직접 실행하는 {provider}에도 같이 적용됩니다.",
-        // CLIAccountStatus.summary
-        ["SummarySignedOut"] = "로그인되지 않음",
-        ["SummaryUnknown"] = "상태를 확인하지 못했습니다.",
-        ["SummarySignedIn"] = "로그인됨",
-        // CLIAccountService detail sentences
-        ["DetailClaudeParseError"] = "Claude 로그인 상태를 읽지 못했습니다.",
-        ["DetailCodexParseError"] = "Codex 로그인 상태를 읽지 못했습니다.",
-        ["DetailGeminiNotInstalled"] = "Gemini CLI가 설치되어 있지 않습니다.",
-        ["DetailNotInstalledTemplate"] = "{provider} CLI가 설치되어 있지 않습니다.",
-        ["DetailUnsupportedProvider"] = "지원하지 않는 실행기입니다.",
-        ["DetailGeminiApiKeyPresent"] = "GEMINI_API_KEY 환경 변수로 인증합니다. 바꾸려면 그 값을 바꾸거나 Gemini의 /auth에서 방식을 바꾸세요.",
-        ["DetailGeminiApiKeyAbsent"] = "GEMINI_API_KEY 환경 변수를 확인하세요.",
-        ["DetailVertexPresent"] = "Google Cloud 자격 증명으로 인증합니다. gcloud에서 계정을 바꾸세요.",
-        ["DetailVertexAbsent"] = "Vertex AI 자격 증명을 확인하지 못했습니다.",
-        ["DetailClaudeTimeout"] = "Claude 상태 확인이 제한 시간 안에 끝나지 않았습니다.",
-        ["DetailClaudeUnknown"] = "이 Claude CLI에서 로그인 상태를 읽지 못했습니다. CLI를 업데이트해 보세요.",
-        ["DetailRunFailed"] = "상태 명령을 실행하지 못했습니다.",
-        ["DetailGeminiLogoutFailedTemplate"] = "Gemini 로그아웃에 실패했습니다: {reason}",
-    };
+    // The CLI accounts section reads locales/ko.json. SectionDescription reads the
+    // ...Windows key ("외부 터미널 창에서" for "터미널 실행 창에서", docs/windows-cli-accounts.md).
+    private static readonly Lazy<Dictionary<string, string>> CliAccountShared = new(() => FromShared(nameof(CliAccountStrings),
+        ("SectionTitle", "settings.cliAccounts.sectionTitle"),
+        ("SectionDescription", "settings.cliAccounts.sectionDescriptionWindows"),
+        ("StatusChecking", "settings.cliAccounts.statusChecking"),
+        ("StatusPending", "settings.cliAccounts.statusPending"),
+        ("StatusNotInstalled", "settings.cliAccounts.statusNotInstalled"),
+        ("ButtonCancelWait", "settings.cliAccounts.buttonCancelWait"),
+        ("ButtonChange", "settings.cliAccounts.buttonChange"),
+        ("ButtonLogout", "settings.cliAccounts.buttonLogout"),
+        ("ButtonLogin", "settings.cliAccounts.buttonLogin"),
+        ("ButtonLoginClaude", "settings.cliAccounts.buttonLoginClaude"),
+        ("ButtonLoginConsole", "settings.cliAccounts.buttonLoginConsole"),
+        ("ButtonCancel", "settings.cliAccounts.buttonCancel"),
+        ("RefreshTooltip", "settings.cliAccounts.refreshTooltip"),
+        ("ConfirmLogoutTitleTemplate", "settings.cliAccounts.confirmLogoutTitleTemplate"),
+        ("ConfirmChangeTitleTemplate", "settings.cliAccounts.confirmChangeTitleTemplate"),
+        ("ConfirmMessageTemplate", "settings.cliAccounts.confirmMessageTemplate"),
+        ("SummarySignedOut", "settings.cliAccounts.summarySignedOut"),
+        ("SummaryUnknown", "settings.cliAccounts.summaryUnknown"),
+        ("SummarySignedIn", "settings.cliAccounts.summarySignedIn"),
+        ("DetailClaudeParseError", "settings.cliAccounts.detailClaudeParseError"),
+        ("DetailCodexParseError", "settings.cliAccounts.detailCodexParseError"),
+        ("DetailGeminiNotInstalled", "settings.cliAccounts.detailGeminiNotInstalled"),
+        ("DetailNotInstalledTemplate", "settings.cliAccounts.detailNotInstalledTemplate"),
+        ("DetailUnsupportedProvider", "settings.cliAccounts.detailUnsupportedProvider"),
+        ("DetailGeminiApiKeyPresent", "settings.cliAccounts.detailGeminiApiKeyPresent"),
+        ("DetailGeminiApiKeyAbsent", "settings.cliAccounts.detailGeminiApiKeyAbsent"),
+        ("DetailVertexPresent", "settings.cliAccounts.detailVertexPresent"),
+        ("DetailVertexAbsent", "settings.cliAccounts.detailVertexAbsent"),
+        ("DetailClaudeTimeout", "settings.cliAccounts.detailClaudeTimeout"),
+        ("DetailClaudeUnknown", "settings.cliAccounts.detailClaudeUnknown"),
+        ("DetailRunFailed", "settings.cliAccounts.detailRunFailed"),
+        ("DetailGeminiLogoutFailedTemplate", "settings.cliAccounts.detailGeminiLogoutFailedTemplate")
+    ));
 
-    // AppUpdateSettingsView.swift (section, labels, toggle, status, buttons).
-    // NoPublicKeyNotice has no macOS literal (Windows rule 1 behavior has no
-    // macOS equivalent) — the Windows value is listed here as a 보류 entry so
-    // Validate can confirm the constant is present.
-    private static readonly Dictionary<string, string> AppUpdateMacOS = new()
-    {
-        ["SectionTitle"] = "앱 업데이트",
-        ["CurrentVersionLabel"] = "현재 버전",
-        ["ManifestUrlPlaceholder"] = "업데이트 정보 주소 (https://…/latest.json)",
-        ["BuiltInAddressTemplate"] = "빌드에 포함된 주소를 사용합니다: {address}",
-        ["ManifestUrlHint"] = "Cloudflare에 올린 latest.json의 https 주소를 입력하세요. 비워 두면 빌드에 포함된 주소를 씁니다.",
-        ["AutoCheckToggle"] = "앱 시작 시 하루 한 번 새 버전 확인",
-        ["SignatureVerified"] = "서명 검증: 이 빌드에 포함된 공개 키로 서명된 업데이트 정보만 받습니다.",
-        ["NotCheckedYet"] = "아직 확인하지 않았습니다.",
-        ["LastCheckedTemplate"] = "마지막 확인 {time}",
-        ["Checking"] = "새 버전 확인 중…",
-        ["UpToDate"] = "최신 버전입니다.",
-        ["AvailableTemplate"] = "새 버전 {version} 이 있습니다.",
-        ["DownloadingTemplate"] = "{percent}% 받는 중…",
-        ["StagingProgress"] = "패키지를 풀고 확인하는 중…",
-        ["ReadyTemplate"] = "{version} 설치 준비 완료 · 설치하면 앱이 종료된 뒤 교체되고 다시 실행됩니다.",
-        ["Installing"] = "앱을 종료하고 교체하는 중…",
-        ["CheckButton"] = "업데이트 확인",
-        ["DownloadButton"] = "다운로드",
-        ["CancelButton"] = "취소",
-        ["InstallButton"] = "설치하고 다시 실행",
-        ["InProgressButton"] = "진행 중…",
-        // 보류: no macOS literal — Windows rule 1 disables the entire section
-        // when no public key is compiled in; macOS shows an orange warning but
-        // still allows the check. Recorded in docs/windows-parity.md.
-        ["NoPublicKeyNotice"] = "이 빌드에는 업데이트 공개 키가 없어 업데이트 확인을 지원하지 않습니다.",
-    };
+    // The app update section reads locales/ko.json; the keys below are the ones
+    // each field must read. ManifestUrlHint and NoPublicKeyNotice read the
+    // ...Windows keys — the OS-bound rows recorded in docs/windows-parity.md.
+    private static readonly Lazy<Dictionary<string, string>> AppUpdateShared = new(() => FromShared(nameof(AppUpdateStrings),
+        ("SectionTitle", "settings.appUpdate.sectionTitle"),
+        ("CurrentVersionLabel", "settings.appUpdate.currentVersionLabel"),
+        ("ManifestUrlPlaceholder", "settings.appUpdate.manifestUrlPlaceholder"),
+        ("BuiltInAddressTemplate", "settings.appUpdate.builtInAddressTemplate"),
+        ("ManifestUrlHint", "settings.appUpdate.manifestUrlHintWindows"),
+        ("AutoCheckToggle", "settings.appUpdate.autoCheckToggle"),
+        ("SignatureVerified", "settings.appUpdate.signatureVerified"),
+        ("NotCheckedYet", "settings.appUpdate.notCheckedYet"),
+        ("LastCheckedTemplate", "settings.appUpdate.lastCheckedTemplate"),
+        ("Checking", "settings.appUpdate.checking"),
+        ("UpToDate", "settings.appUpdate.upToDate"),
+        ("AvailableTemplate", "settings.appUpdate.availableTemplate"),
+        ("DownloadingTemplate", "settings.appUpdate.downloadingTemplate"),
+        ("StagingProgress", "settings.appUpdate.stagingProgress"),
+        ("ReadyTemplate", "settings.appUpdate.readyTemplate"),
+        ("Installing", "settings.appUpdate.installing"),
+        ("CheckButton", "settings.appUpdate.checkButton"),
+        ("DownloadButton", "settings.appUpdate.downloadButton"),
+        ("CancelButton", "settings.appUpdate.cancelButton"),
+        ("InstallButton", "settings.appUpdate.installButton"),
+        ("InProgressButton", "settings.appUpdate.inProgressButton"),
+        ("NoPublicKeyNotice", "settings.appUpdate.noPublicKeyNoticeWindows")
+    ));
 
     /// The app update copy matches the macOS literals plus one Windows-only notice.
     internal static Task AppUpdateStringsMatchMacOS()
     {
         var actual = StaticReadonlyStrings(typeof(AppUpdateStrings));
-        var reason = Validate(nameof(AppUpdateStrings), actual, AppUpdateMacOS);
+        var reason = Validate(nameof(AppUpdateStrings), actual, AppUpdateShared.Value, "locales/ko.json");
         if (reason is not null) throw new InvalidOperationException(reason);
 
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(AppUpdateStrings), copy, AppUpdateMacOS);
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(AppUpdateStrings), copy, AppUpdateShared.Value, "locales/ko.json");
         Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
         if (Bad(Broken("SectionTitle", "")) is null) throw new InvalidOperationException("an empty value must fail");
         if (Bad(Broken("SectionTitle", AppUpdateStrings.UpToDate)) is null) throw new InvalidOperationException("a duplicate value must fail");
@@ -480,10 +490,10 @@ internal static class StringsVerification
     internal static Task CliAccountStringsMatchMacOS()
     {
         var actual = StaticReadonlyStrings(typeof(CliAccountStrings));
-        var reason = Validate(nameof(CliAccountStrings), actual, CliAccountMacOS);
+        var reason = Validate(nameof(CliAccountStrings), actual, CliAccountShared.Value, "locales/ko.json");
         if (reason is not null) throw new InvalidOperationException(reason);
 
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CliAccountStrings), copy, CliAccountMacOS);
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CliAccountStrings), copy, CliAccountShared.Value, "locales/ko.json");
         Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
         // The macOS description must fail — "터미널 실행 창" is not the Windows copy.
         if (Bad(Broken("SectionDescription", "로그인은 터미널 실행 창에서 진행됩니다. 앱이 명령을 실행해 두면 CLI가 브라우저를 엽니다. 다른 계정으로 바꿀 때는 브라우저에서 원하는 계정을 고르세요. 바꾼 계정은 다음 요청부터 적용됩니다.")) is null)

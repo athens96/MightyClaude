@@ -1,4 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <!-- The shared locale files themselves, embedded straight from the repository
+       root: Core carries no copy of its own, so it cannot drift from the one
+       source, and Locale finds them wherever the process runs from. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../../locales/ko.json" LogicalName="MightyClaude.Core.Locales.ko.json" />
+    <EmbeddedResource Include="../../../locales/en.json" LogicalName="MightyClaude.Core.Locales.en.json" />
+  </ItemGroup>
 </Project>
