@@ -19,16 +19,25 @@ private typealias Catalog = [String: String]
 
 private func loadCatalog(_ lang: String) -> Catalog {
     let name = "\(lang).json"
-    // 1. SPM module resource bundle (tests and app via Bundle.module).
-    // 2. App bundle's Locales subdirectory (macOS app bundle).
-    // 3. Working directory locales/ (fallback).
-    let candidates: [URL] = [
-        Bundle.module.resourceURL.map { $0.appendingPathComponent("Locales/\(name)") },
-        Bundle.module.url(forResource: lang, withExtension: "json", subdirectory: "Locales"),
-        Bundle.main.resourceURL.map { $0.appendingPathComponent("Locales/\(name)") },
-        Bundle.main.resourceURL.map { $0.appendingPathComponent(name) },
-        URL(fileURLWithPath: "locales/\(lang).json"),
-    ].compactMap { $0 }
+    // `Bundle.module` traps when the resource bundle is not where its generated
+    // accessor expects it — beside the `.xctest` on the CI runner's SwiftPM, or
+    // after a packaging slip in the `.app`. The bundled-style search already
+    // knows every place the bundle can sit (StyleRegistry.swift), so the locale
+    // files are found through the same roots and a miss is an empty catalog.
+    // 1. `Locales/` inside the MightyCore resource bundle (SwiftPM layouts, the app).
+    // 2. The app's own `Contents/Resources/Locales`.
+    // 3. Working directory locales/ (a plain checkout).
+    var candidates: [URL] = []
+    for root in BundledStyleSource.searchRoots() {
+        let bundle = root.appendingPathComponent(BundledStyleSource.bundleName, isDirectory: true)
+        candidates.append(bundle.appendingPathComponent("Contents/Resources/Locales/\(name)"))
+        candidates.append(bundle.appendingPathComponent("Locales/\(name)"))
+    }
+    if let resources = Bundle.main.resourceURL {
+        candidates.append(resources.appendingPathComponent("Locales/\(name)"))
+        candidates.append(resources.appendingPathComponent(name))
+    }
+    candidates.append(URL(fileURLWithPath: "locales/\(lang).json"))
     for url in candidates {
         if let data = try? Data(contentsOf: url),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
