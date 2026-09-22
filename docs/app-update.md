@@ -13,7 +13,7 @@
 
 ## 서명
 
-`latest.json`이 신뢰의 뿌리이므로 Ed25519로 서명한다. 배포 빌드에는 공개 키를 넣고(`MIGHTY_UPDATE_PUBLIC_KEY`, Info.plist `MightyUpdatePublicKey`), 그 앱은 **서명된 봉투만** 받는다. 공개 키가 없는 개발 빌드는 평문 manifest도 받되 설정 화면에 "서명 검증 없음"을 표시한다.
+`latest.json`이 신뢰의 뿌리이므로 Ed25519로 서명한다. 배포 빌드에는 공개 키를 넣고(`MIGHTY_UPDATE_PUBLIC_KEY`, Info.plist `MightyUpdatePublicKey`), 그 앱은 **서명된 봉투만** 받는다. **공개 키가 없는 빌드는 업데이트 확인을 전혀 하지 않는다** — `check()`가 즉시 오류를 반환하고, 자동 확인은 예약되지 않으며, 설정 화면에 "이 빌드는 업데이트 확인을 지원하지 않습니다"가 표시되고 확인 버튼은 비활성화된다. 우회 경로는 없다.
 
 ```bash
 # 한 번만: 키 쌍 생성 (개인 키는 CI 시크릿 MIGHTY_UPDATE_SIGNING_KEY로, 공개 키는 빌드 변수로)
@@ -49,7 +49,7 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 }
 ```
 
-`version`은 `1.2.3` 같은 숫자 버전(선택적으로 `-beta.1` 같은 프리릴리스, 앞의 `v` 허용). `sha256`·`size`는 선택이지만 넣는 것을 권한다. `platforms`/`downloads` 아래에 두거나 `"macos": "https://…zip"`처럼 문자열만 써도 읽는다. Windows 항목은 형식만 정의해 두었고 Windows 클라이언트 구현은 아직 없다.
+`version`은 `1.2.3` 같은 숫자 버전(선택적으로 `-beta.1` 같은 프리릴리스, 앞의 `v` 허용). **`sha256`·`size`는 필수**다 — 둘 중 하나라도 없으면 해당 asset이 파싱 단계에서 거부된다(다운로드 전). `"macos": "https://…zip"` 같은 문자열 형태는 sha256·size를 담을 수 없으므로 거부된다. `scripts/make-update-manifest.py`가 이 두 값을 자동으로 채운다. `latest.unsigned.json`(CI 아티팩트에 포함됨)은 서명 검증·다운로드 테스트용 개발 보조 파일이며, 앱은 이 파일을 절대 소비하지 않는다.
 
 `scripts/make-update-manifest.py`가 이 파일을 만든다.
 
@@ -61,7 +61,7 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 ## 버전과 주소를 빌드에 넣기
 
 - 저장소 루트 `VERSION` 파일이 앱 버전이다(또는 `MIGHTY_APP_VERSION`). 빌드 번호는 커밋 수(또는 `MIGHTY_BUILD_NUMBER`). `scripts/build-macos.sh`가 Info.plist에 써 넣는다.
-- `MIGHTY_UPDATE_URL`을 주면 `MightyUpdateManifestURL`로 Info.plist에 들어가 기본 주소가 된다. 설정 화면의 주소 칸이 비어 있으면 이 값을 쓰고, 입력하면 그쪽이 우선한다.
+- `MIGHTY_UPDATE_URL`을 주면 `MightyUpdateManifestURL`로 Info.plist에 들어가 **유일한** 주소가 된다. 빌드에 이 값이 있으면 설정 화면에 읽기 전용으로 표시되며, 사용자 입력 칸은 나타나지 않는다. 빌드에 없을 때만 설정 화면에서 주소를 입력할 수 있다.
 - GitHub Actions는 저장소 변수 `MIGHTY_UPDATE_URL`(앱이 확인할 latest.json 주소), `MIGHTY_UPDATE_PUBLIC_KEY`(공개 키), `MIGHTY_DOWNLOAD_BASE`(패키지를 올릴 폴더의 루트 주소, 여기에 `/<버전>`이 붙는다)와 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`(개인 키 파일 내용)를 읽는다. `MIGHTY_DOWNLOAD_BASE`가 없으면 manifest 단계를 건너뛰고, 있으면 macOS 아티팩트에 `MightyClaude-macos.zip`, `latest.json`, `latest.unsigned.json`을 담는다.
 
 ## Cloudflare에 올리기

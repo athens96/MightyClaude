@@ -69,7 +69,7 @@ public struct AppUpdateManifest: Sendable, Equatable {
               let version = AppVersion.normalized(rawVersion) else { throw MightyError("업데이트 정보에 유효한 version이 없습니다.") }
         let assets = (object["platforms"] ?? object["downloads"] ?? object["assets"]) as? [String: Any] ?? object
         func asset(_ value: Any?) -> AppUpdateAsset? {
-            if let text = value as? String { return URL(string: text).flatMap { allowed($0, allowsFileURLs: allowsFileURLs) ? AppUpdateAsset(url: $0) : nil } }
+            // Bare string URLs are always rejected: they cannot carry sha256 or size.
             guard let dictionary = value as? [String: Any],
                   let text = (dictionary["url"] ?? dictionary["download"] ?? dictionary["downloadUrl"] ?? dictionary["href"]) as? String,
                   let url = URL(string: text), allowed(url, allowsFileURLs: allowsFileURLs) else { return nil }
@@ -78,6 +78,8 @@ public struct AppUpdateManifest: Sendable, Equatable {
                 return clean.count == 64 && clean.allSatisfy(\.isHexDigit) ? clean : nil
             }
             let size = (dictionary["size"] as? Int).flatMap { $0 > 0 ? $0 : nil }
+            // Rule 2: both sha256 and size are required; reject assets missing either.
+            guard let digest, let size else { return nil }
             return AppUpdateAsset(url: url, sha256: digest, size: size)
         }
         var windows: [String: AppUpdateAsset] = [:]
@@ -192,6 +194,7 @@ public actor AppUpdateService {
     public var verifiesSignatures: Bool { publicKey != nil }
 
     public func check(manifestURL: URL, currentVersion: String) async throws -> AppUpdateAvailability {
+        guard publicKey != nil else { throw MightyError("이 빌드는 업데이트 확인을 지원하지 않습니다.") }
         guard AppUpdateManifest.allowed(manifestURL, allowsFileURLs: allowsFileURLs) else { throw MightyError("업데이트 정보 주소는 https여야 합니다.") }
         var request = URLRequest(url: manifestURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -236,7 +239,7 @@ public actor AppUpdateService {
     }
 
     /// SHA-256 of the bytes actually on disk, read in 1 MiB pieces.
-    static func fileDigest(_ url: URL) throws -> String {
+    public static func fileDigest(_ url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
