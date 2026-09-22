@@ -485,7 +485,7 @@ extension AppStore {
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창에는 휴대폰에서 명령을 보낼 수 없습니다.") }
         guard !text.isEmpty || !attachments.isEmpty else { throw MightyError("보낼 내용이 없습니다.") }
-        if let reason = runBlockedReason(session) { throw MightyError(reason) }
+        if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) { throw MightyError(reason) }
         if session.status == "running" || pendingRuns.contains(id) {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError("대기열이 가득 찼습니다.") }
             let item = QueuedInput(text: text, attachments: attachments)
@@ -555,7 +555,8 @@ extension AppStore {
         guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict("실행이 끝난 뒤에 다음 요청을 시작할 수 있습니다.") }
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.
-        if let reason = runBlockedReason(session) { throw MobileHostError.conflict(reason) }
+        let isRemote = snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil
+        if let reason = runBlockedReason(session, checkRuntime: isRemote) { throw MobileHostError.conflict(reason) }
         runNextQueuedInput(id)
     }
 
@@ -616,7 +617,7 @@ extension AppStore {
             throw MobileHostError.conflict("이 실행 창에서는 이 스타일을 쓸 수 없습니다.")
         }
         if let mode = request.permissionMode, mode != session.settings.permissionMode,
-           !providerRuntime(session.provider, workspaceId: session.workspaceId).capabilities.permissionModes.contains(mode) {
+           !permissionModes(for: session).contains(mode) {
             throw MobileHostError.conflict("이 실행 환경이 선택한 권한 모드를 지원하는지 확인하지 못했습니다.")
         }
     }

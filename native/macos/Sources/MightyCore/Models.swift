@@ -334,9 +334,9 @@ public enum ProviderOptions {
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
     public static let webSearchModes = ["default", "disabled", "cached", "live"]
     /// Schema support preserves saved choices independently of CLI discovery.
-    /// Runtime advertisements deliberately omit Auto until a supported CLI is found.
-    public static func permissionModes(provider: String, includeAuto: Bool = true) -> [String] {
-        if provider == "codex" { return ["manual", "acceptEdits", "fullAccess"] }
+    /// Runtime advertisements omit opt-in approval modes until a supported CLI is found.
+    public static func permissionModes(provider: String, includeAuto: Bool = true, includeOnRequest: Bool = true) -> [String] {
+        if provider == "codex" { return includeOnRequest ? ["manual", "acceptEdits", "onRequest", "fullAccess"] : ["manual", "acceptEdits", "fullAccess"] }
         if provider == "claude", includeAuto { return ["plan", "manual", "acceptEdits", "auto", "fullAccess"] }
         return ["manual", "plan", "acceptEdits", "fullAccess"]
     }
@@ -344,10 +344,10 @@ public enum ProviderOptions {
     public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Gemini"][id] ?? "Claude" }
     public static func fallbackCatalog(_ id: String) -> ModelCatalog {
         let names = id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default", "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"] : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
-        return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? "\(label(id)) 설정 따름" : $0, description: $0 == "default" ? "CLI 설정 또는 재개한 세션의 모델을 사용합니다." : "공식 모델 이름 예시 · 사용 가능 여부는 CLI 계정과 제공자 설정에 따릅니다.", supportsEffort: $0 == "haiku" ? false : nil) }, detail: "공식 모델 이름 예시입니다. 사용 가능 여부에는 CLI 계정·제공자 설정이 적용됩니다.")
+        return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? "\(label(id)) 설정 따름" : $0, description: $0 == "default" ? (id == "claude" ? "현재 Claude CLI의 기본 모델을 사용합니다. 재개한 대화의 이전 모델 선택은 해제됩니다." : "CLI 설정 또는 재개한 세션의 모델을 사용합니다.") : "공식 모델 이름 예시 · 사용 가능 여부는 CLI 계정과 제공자 설정에 따릅니다.", supportsEffort: $0 == "haiku" ? false : nil) }, detail: "공식 모델 이름 예시입니다. 사용 가능 여부에는 CLI 계정·제공자 설정이 적용됩니다.")
     }
     public static func fallbackRuntime(_ id: String) -> ProviderRuntime {
-        ProviderRuntime(id: id, name: id == "claude" ? "Claude Code" : "\(label(id)) CLI", detail: "CLI 설치 상태를 확인해 주세요.", modelCatalog: fallbackCatalog(id), capabilities: ProviderCapabilities(effort: id != "gemini", permissionModes: permissionModes(provider: id, includeAuto: false), maxTurns: id == "claude", maxBudgetUsd: id == "claude", fastMode: id == "codex", webSearch: id == "codex", networkAccess: id == "codex", attachments: true))
+        ProviderRuntime(id: id, name: id == "claude" ? "Claude Code" : "\(label(id)) CLI", detail: "CLI 설치 상태를 확인해 주세요.", modelCatalog: fallbackCatalog(id), capabilities: ProviderCapabilities(effort: id != "gemini", permissionModes: permissionModes(provider: id, includeAuto: false, includeOnRequest: false), maxTurns: id == "claude", maxBudgetUsd: id == "claude", fastMode: id == "codex", webSearch: id == "codex", networkAccess: id == "codex", attachments: true))
     }
     public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil) -> [String] {
         if provider == "gemini" { return [] }
@@ -362,7 +362,7 @@ public enum ProviderOptions {
     public static func normalizedSettings(provider: String, settings: RunSettings) -> RunSettings {
         var caps = fallbackRuntime(provider).capabilities
         caps.permissionModes = permissionModes(provider: provider)
-        return RunSettings(effort: caps.effort && efforts.contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && settings.permissionMode == "acceptEdits" && settings.networkAccess)
+        return RunSettings(effort: caps.effort && efforts.contains(settings.effort) ? settings.effort : "default", permissionMode: caps.permissionModes.contains(settings.permissionMode) ? settings.permissionMode : "manual", maxTurns: caps.maxTurns && (1...1000).contains(settings.maxTurns ?? 0) ? settings.maxTurns : nil, maxBudgetUsd: caps.maxBudgetUsd && (settings.maxBudgetUsd ?? 0).isFinite && (settings.maxBudgetUsd ?? 0) > 0 && (settings.maxBudgetUsd ?? 0) <= 10_000 ? settings.maxBudgetUsd : nil, fastMode: caps.fastMode && settings.fastMode, webSearch: caps.webSearch && webSearchModes.contains(settings.webSearch) ? settings.webSearch : "default", networkAccess: caps.networkAccess && ["acceptEdits", "onRequest"].contains(settings.permissionMode) && settings.networkAccess)
     }
 }
 
@@ -376,8 +376,9 @@ public enum CoreValidation {
         guard !request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !request.attachments.isEmpty, request.input.utf8.count <= 400_000, request.input.count <= 100_000, !request.input.contains("\0") else { throw MightyError("실행 입력은 비어 있지 않은 100,000자 이하의 텍스트여야 합니다.") }
         if let resume = request.resumeId, !identifier(resume) { throw MightyError("CLI 세션 ID가 올바르지 않습니다.") }
         let s = request.settings
-        guard (["default"] + ProviderOptions.efforts).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000) else { throw MightyError("실행 설정이 올바르지 않습니다.") }
+        guard (["default"] + ProviderOptions.efforts).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000) else { throw MightyError("실행 설정이 올바르지 않습니다.") }
         if s.permissionMode == "auto", request.kind != "claude" || request.provider != "claude" { throw MightyError("Auto mode는 Claude 실행 창에서만 사용할 수 있습니다.") }
+        if s.permissionMode == "onRequest", request.kind != "claude" || request.provider != "codex" { throw MightyError("승인 요청은 Codex 실행 창에서만 사용할 수 있습니다.") }
         if request.kind == "shell", s.fastMode || s.webSearch != "default" || s.networkAccess { throw MightyError("명령 창은 AI 실행 설정을 지원하지 않습니다.") }
         if request.kind == "claude" {
             var caps = ProviderOptions.fallbackRuntime(request.provider).capabilities
@@ -389,12 +390,15 @@ public enum CoreValidation {
     public static func validateCapabilities(_ request: StartRunRequest, capabilities caps: ProviderCapabilities) throws {
         let s = request.settings
         guard caps.attachments || request.attachments.isEmpty else { throw MightyError("이 실행기가 첨부 파일을 지원하지 않습니다. 원격 앱을 업데이트하세요.") }
-        guard caps.permissionModes.contains(s.permissionMode), caps.effort || s.effort == "default", caps.maxTurns || s.maxTurns == nil, caps.maxBudgetUsd || s.maxBudgetUsd == nil, caps.fastMode || !s.fastMode, caps.webSearch || s.webSearch == "default", caps.networkAccess || !s.networkAccess, !s.networkAccess || (request.provider == "codex" && s.permissionMode == "acceptEdits"), caps.resume || request.resumeId == nil else { throw MightyError("선택한 실행기가 이 실행 설정을 지원하지 않습니다. 실행기 또는 원격 앱을 확인해 주세요.") }
+        guard caps.permissionModes.contains(s.permissionMode), caps.effort || s.effort == "default", caps.maxTurns || s.maxTurns == nil, caps.maxBudgetUsd || s.maxBudgetUsd == nil, caps.fastMode || !s.fastMode, caps.webSearch || s.webSearch == "default", caps.networkAccess || !s.networkAccess, !s.networkAccess || (request.provider == "codex" && ["acceptEdits", "onRequest"].contains(s.permissionMode)), caps.resume || request.resumeId == nil else { throw MightyError("선택한 실행기가 이 실행 설정을 지원하지 않습니다. 실행기 또는 원격 앱을 확인해 주세요.") }
+    }
+    public static func isOfficialClaudeModel(_ value: String) -> Bool {
+        ProviderOptions.fallbackCatalog("claude").models.contains { $0.value == value } || value.range(of: "^(?:(?:opus|sonnet|fable)\\[1m\\]|claude-(?:(?:opus|sonnet|haiku|fable)-[0-9]+(?:[-.][0-9]+)*|[0-9]+(?:-[0-9]+)*-(?:opus|sonnet|haiku|fable)(?:-[0-9]+)*)(?:\\[1m\\])?)$", options: .regularExpression) != nil
     }
     public static func validateSelection(_ request: StartRunRequest, catalog: ModelCatalog) throws {
         try validate(request)
         if request.provider == "claude" {
-            let official = ProviderOptions.fallbackCatalog("claude").models.contains { $0.value == request.model } || request.model.range(of: "^(?:(?:opus|sonnet|fable)\\[1m\\]|claude-(?:(?:opus|sonnet|haiku|fable)-[0-9]+(?:[-.][0-9]+)*|[0-9]+(?:-[0-9]+)*-(?:opus|sonnet|haiku|fable)(?:-[0-9]+)*)(?:\\[1m\\])?)$", options: .regularExpression) != nil
+            let official = isOfficialClaudeModel(request.model)
             guard official || catalog.models.contains(where: { $0.value == request.model || $0.resolvedModel == request.model }) else { throw MightyError("Claude 모델 목록에서 선택한 모델을 확인하지 못했습니다.") }
         }
         if request.settings.effort != "default", !ProviderOptions.effortLevels(provider: request.provider, model: request.model, catalog: catalog).contains(request.settings.effort) { throw MightyError("선택한 모델의 추론 강도를 확인할 수 없습니다. CLI 기본값을 선택해 주세요.") }

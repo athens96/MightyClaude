@@ -9,12 +9,20 @@ struct MightyClaudeApp: App {
 
     var body: some Scene {
         WindowGroup("MightyClaude", id: "workspace") {
-            WorkspaceView()
-                .environmentObject(store)
-                .frame(minWidth: 940, minHeight: 650)
-                .preferredColorScheme(store.snapshot.theme == "light" ? .light : .dark)
-                .tint(Palette.accent)
-                .task { await store.load() }
+            ZStack {
+                if store.isLoaded {
+                    WorkspaceView()
+                } else {
+                    LaunchSplashView()
+                }
+            }
+            .environmentObject(store)
+            .frame(minWidth: 940, minHeight: 650)
+            .preferredColorScheme(store.snapshot.theme == "light" ? .light : .dark)
+            .tint(Palette.accent)
+            // Keep the load task on the stable container: replacing the splash
+            // must not cancel startup's remaining background setup.
+            .task { await store.load() }
         }
         .defaultSize(width: 1360, height: 900)
         .windowStyle(.hiddenTitleBar)
@@ -22,24 +30,24 @@ struct MightyClaudeApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("프로젝트 폴더 열기…") { store.openWorkspace() }
                     .keyboardShortcut("o", modifiers: .command)
-                    .disabled(store.hasModal)
+                    .disabled(!store.isLoaded || store.hasModal)
                 Button("새 Claude 실행 창") { store.addSession(kind: "claude") }
                     .keyboardShortcut("n", modifiers: .command)
-                    .disabled(store.activeWorkspace == nil || store.hasModal)
+                    .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
             }
             CommandMenu("워크스페이스") {
                 Button("워크스페이스 검색") { store.focusSearch = true }
-                    .keyboardShortcut("k", modifiers: .command).disabled(store.hasModal)
+                    .keyboardShortcut("k", modifiers: .command).disabled(!store.isLoaded || store.hasModal)
                 Button("터미널 실행 창 추가") { store.addSession(kind: "shell") }
                     .keyboardShortcut("t", modifiers: .command)
-                    .disabled(store.activeWorkspace == nil || store.hasModal)
+                    .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
                 Divider()
                 Button("입력기 다시 연결") { store.reconnectInputMethod(editor: nil) }
                 Button("입력기 진단 저장") { store.saveInputMethodDiagnostics() }
                 Divider()
                 Button("설정…") { store.showSettings = true }
                     .keyboardShortcut(",", modifiers: .command)
-                    .disabled(store.hasModal)
+                    .disabled(!store.isLoaded || store.hasModal)
             }
         }
     }
@@ -49,8 +57,10 @@ struct MightyClaudeApp: App {
 final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private var terminating = false
     private var terminationReady = false
+    private let copyRouter = ApplicationCopyRouter()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        copyRouter.install()
         NSApp.setActivationPolicy(.regular)
         if let image = BrandAssets.icon { NSApp.applicationIconImage = image }
         NSApp.activate(ignoringOtherApps: true)
@@ -72,6 +82,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        copyRouter.uninstall()
+    }
 
 }
 

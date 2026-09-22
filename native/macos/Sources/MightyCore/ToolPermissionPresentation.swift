@@ -30,6 +30,9 @@ public struct ToolPermissionPresentation: Equatable, Sendable {
     public static func make(toolName: String, inputJSON: String) -> ToolPermissionPresentation {
         let name = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
         let input = (inputJSON.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+        if name == "command_execution" || name == "file_change" {
+            return codexPresentation(name: name, input: input)
+        }
         func text(_ key: String) -> String? {
             guard let raw = input[key] else { return nil }
             let string: String
@@ -102,4 +105,52 @@ public struct ToolPermissionPresentation: Equatable, Sendable {
         for key in rest { fields.append(field(key, key, code: preferred.contains(key))) }
         return ToolPermissionPresentation(title: title, headline: headline, fields: Array(fields.compactMap { $0 }.prefix(maximumFields)))
     }
+
+    /// Codex's channel rejects oversized requests before they reach the card.
+    /// Show every approved command/diff byte here instead of a truncated preview.
+    private static func codexPresentation(name: String, input: [String: Any]) -> ToolPermissionPresentation {
+        func display(_ raw: Any?) -> String? {
+            guard let raw, !(raw is NSNull) else { return nil }
+            let text: String
+            if let value = raw as? String { text = value }
+            else if JSONSerialization.isValidJSONObject(raw),
+                    let data = try? JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) {
+                text = String(decoding: data, as: UTF8.self)
+            } else { text = String(describing: raw) }
+            // Keep line breaks/tab layout, but render other control characters
+            // and invisible direction/format marks literally rather than hiding them.
+            return text.unicodeScalars.map { scalar in
+                let category = scalar.properties.generalCategory
+                if category == .format || (category == .control && scalar.value != 10 && scalar.value != 9) {
+                    return String(scalar).utf16.map { String(format: "\\u%04x", $0) }.joined()
+                }
+                return String(scalar)
+            }.joined()
+        }
+        var fields: [ToolPermissionField] = []
+        func append(_ raw: Any?, _ label: String, code: Bool = true) {
+            if let value = display(raw), !value.isEmpty { fields.append(ToolPermissionField(label: label, value: value, code: code)) }
+        }
+        var consumed: Set<String> = ["threadId", "turnId", "itemId", "reason"]
+        if name == "command_execution" {
+            append(input["command"], "명령")
+            append(input["cwd"], "작업 폴더")
+            if let network = input["networkApprovalContext"] as? [String: Any] {
+                append(network["host"], "네트워크 호스트")
+                append(network["protocol"], "네트워크 프로토콜")
+                let extra = network.filter { $0.key != "host" && $0.key != "protocol" }
+                if !extra.isEmpty { append(extra, "추가 네트워크 조건") }
+            } else { append(input["networkApprovalContext"], "네트워크 조건") }
+            consumed.formUnion(["command", "cwd", "networkApprovalContext"])
+        } else {
+            append(input["changes"], "파일 변경 전체")
+            append(input["grantRoot"], "추가 권한 경로")
+            consumed.formUnion(["changes", "grantRoot"])
+        }
+        append(input["reason"], "승인 요청 이유", code: false)
+        let remaining = input.filter { !consumed.contains($0.key) }
+        if !remaining.isEmpty { append(remaining, "추가 요청 정보") }
+        return ToolPermissionPresentation(title: name == "command_execution" ? "명령 실행" : "파일 수정", fields: fields)
+    }
+
 }

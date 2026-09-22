@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "CLI Account Management Flow",
+    "quality_profile": "showcase",
+    "viewBox": [1000, 650]
+  },
+  "lanes": [
+    { "id": "ui", "label": "Settings UI" },
+    { "id": "cli", "label": "CLI & Terminal" },
+    { "id": "auth", "label": "Auth & Store" }
+  ],
+  "phases": [
+    { "id": "interact", "label": "User Action", "fromCol": 0, "toCol": 1 },
+    { "id": "exec", "label": "Execution", "fromCol": 2, "toCol": 3 },
+    { "id": "result", "label": "Update", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": ["status-row", "user-click", "logout-run", "poll-start", "status-ready", "row-updated"],
+  "nodes": [
+    { "id": "status-row", "lane": "ui", "col": 0, "type": "frontend", "label": "Settings Row", "sublabel": "shows CLI status", "width": 130 },
+    { "id": "user-click", "lane": "ui", "col": 1, "type": "external", "label": "User Click", "sublabel": "logout/login", "width": 130 },
+    { "id": "logout-run", "lane": "cli", "col": 2, "type": "backend", "label": "CLI Command", "sublabel": "auth logout/login", "width": 130 },
+    { "id": "browser-auth", "lane": "auth", "col": 3, "type": "external", "label": "Browser Auth", "sublabel": "user interaction", "width": 130 },
+    { "id": "poll-start", "lane": "cli", "col": 3, "type": "database", "label": "Poll Status", "sublabel": "every 5s", "width": 130 },
+    { "id": "status-ready", "lane": "auth", "col": 4, "type": "messagebus", "label": "Status Ready", "sublabel": "signed in", "width": 130 },
+    { "id": "row-updated", "lane": "ui", "col": 5, "type": "frontend", "label": "Row Updated", "sublabel": "new account", "width": 130 }
+  ],
+  "edges": [
+    { "id": "row-to-click", "from": "status-row", "to": "user-click", "label": "interact", "variant": "default" },
+    { "id": "click-to-logout", "from": "user-click", "to": "logout-run", "label": "logout/login", "variant": "emphasis" },
+    { "id": "logout-to-browser", "from": "logout-run", "to": "browser-auth", "variant": "default" },
+    { "id": "logout-to-poll", "from": "logout-run", "to": "poll-start", "label": "poll status", "variant": "dashed" },
+    { "id": "browser-to-poll", "from": "browser-auth", "to": "poll-start", "label": "status ready", "variant": "emphasis", "role": "return" },
+    { "id": "poll-detect", "from": "poll-start", "to": "status-ready", "label": "detected", "variant": "emphasis" },
+    { "id": "status-update-row", "from": "status-ready", "to": "row-updated", "variant": "emphasis", "role": "return" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Status Detection",
+      "items": [
+        "claude auth status --json",
+        "codex login status + ~/.codex/auth.json",
+        "Gemini: ~/.gemini/settings.json & google_accounts.json"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Login Flow",
+      "items": [
+        "Terminal pane opens with command auto-pasted",
+        "Browser handles user authentication",
+        "Store polls every 5 seconds for up to 10 minutes",
+        "Pane auto-closes when signed in or on user cancel"
+      ]
+    }
+  ]
+}

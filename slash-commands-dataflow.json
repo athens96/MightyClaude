@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "입력창 / 명령 완성: 스킬·명령 목록과 선택",
+    "quality_profile": "showcase",
+    "viewBox": [1070, 820]
+  },
+  "stages": [
+    { "label": "입력" },
+    { "label": "발견" },
+    { "label": "필터링" },
+    { "label": "표시" },
+    { "label": "선택·실행" }
+  ],
+  "nodes": [
+    { "id": "user_input", "type": "frontend", "label": "입력", "sublabel": "사용자 /", "stage": 0, "row": 1, "width": 95, "height": 46 },
+    { "id": "session_pane", "type": "backend", "label": "Pane", "sublabel": "draft", "stage": 1, "row": 1, "width": 105, "height": 46 },
+
+    { "id": "cache_provider", "type": "database", "label": "캐시+", "sublabel": "발견", "stage": 1, "row": 0, "width": 100, "height": 46 },
+    { "id": "scanner", "type": "backend", "label": "스캔", "sublabel": "공급자", "stage": 1, "row": 3, "width": 100, "height": 46 },
+
+    { "id": "command_db", "type": "database", "label": "DB", "sublabel": "명령", "stage": 2, "row": 0, "width": 90, "height": 46 },
+    { "id": "filter_module", "type": "backend", "label": "필터", "sublabel": "정렬", "stage": 2, "row": 2, "width": 95, "height": 46, "yOffset": 55 },
+
+    { "id": "palette_display", "type": "frontend", "label": "팔레트", "sublabel": "표시", "stage": 3, "row": 0, "width": 100, "height": 46 },
+    { "id": "key_handler", "type": "backend", "label": "키", "sublabel": "입력", "stage": 3, "row": 3, "width": 90, "height": 46 },
+
+    { "id": "selection_module", "type": "backend", "label": "선택", "sublabel": "처리", "stage": 4, "row": 0, "width": 95, "height": 46 },
+    { "id": "execute_module", "type": "backend", "label": "실행", "sublabel": "전송", "stage": 4, "row": 3, "width": 95, "height": 46 }
+  ],
+  "flows": [
+    { "from": "user_input", "to": "session_pane", "label": "입력", "variant": "emphasis", "channelY": 180 },
+    { "from": "session_pane", "to": "cache_provider", "label": "신호", "variant": "emphasis" },
+    { "from": "session_pane", "to": "scanner", "label": "스캔", "variant": "emphasis", "labelDy": 20 },
+
+    { "from": "cache_provider", "to": "command_db", "label": "캐시", "variant": "default" },
+    { "from": "scanner", "to": "command_db", "label": "발견", "variant": "emphasis", "channelY": 290 },
+
+    { "from": "command_db", "to": "filter_module", "label": "명령", "variant": "emphasis", "labelDy": 20 },
+
+    { "from": "filter_module", "to": "palette_display", "label": "필터됨", "variant": "emphasis", "channelY": 160 },
+    { "from": "key_handler", "to": "palette_display", "label": "키", "variant": "default", "channelX": 680 },
+
+    { "from": "palette_display", "to": "selection_module", "label": "선택", "variant": "emphasis" },
+    { "from": "selection_module", "to": "execute_module", "label": "적용", "variant": "emphasis", "labelDy": 20, "channelY": 560 }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "입력·발견",
+      "items": [
+        "사용자 / 입력 → SessionPaneView 감시",
+        "30초 캐시 확인 + 백그라운드 스캔",
+        "스킬·명령·플러그인 수집 (최대 400)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "필터링·표시",
+      "items": [
+        "필터·정렬: 접두사/포함 기준",
+        "이름 검증: [A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+        "팔레트: 최대 8행 배지"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "선택·실행",
+      "items": [
+        "키 핸들러: IME 감지, ↑↓/Enter/Esc",
+        "선택 → draft 치환: '/이름 '",
+        "Enter 전송 (대기열 규칙)"
+      ]
+    }
+  ]
+}

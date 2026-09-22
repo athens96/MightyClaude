@@ -147,10 +147,9 @@ public actor MobileRemoteService {
         return fresh
     }
 
-    /// Closes every connection whose right to be here was the old pairing key:
-    /// handshakes still in flight and phones that authenticate with the key
-    /// each time ("구버전 앱"). A phone holding a device token never presents
-    /// the key, so rotating it must not interrupt that phone at all.
+    /// Closes connections without a token in the current registry, including
+    /// pending handshakes and pairing-key clients. After a successful registry
+    /// clear during rotation, this also closes formerly token-authenticated phones.
     private func dropKeyDependentClients() {
         let doomed = MobileAuthSupport.keyDependent(connections: Array(clients.keys), devices: connectedDevices, tokenHolders: deviceRegistry.tokenHolders())
         close(connections: doomed, reason: "pairing key rotated")
@@ -182,12 +181,9 @@ public actor MobileRemoteService {
                                 registryWarning: deviceRegistry.warning())
     }
 
-    /// Unpairs one phone. The order matters: the pairing key is rotated first,
-    /// so a phone reconnecting in the middle of a revoke finds the old QR dead
-    /// rather than a live key and a row still in the list. Only then does the
-    /// row go, its sockets close and its half-finished uploads with them.
-    /// Every other phone authenticates with its own token, which this does not
-    /// touch, so those connections are left alone.
+    /// Revoking a phone rotates the pairing key and clears the entire registry.
+    /// All phones must pair again with the new key; previously issued device
+    /// tokens no longer grant access. The selected phone's uploads are discarded.
     @discardableResult public func revokeDevice(_ id: String) async throws -> MobileHostStatus {
         guard deviceRegistry.contains(id) else { throw MightyError("이미 해제된 기기입니다.") }
         // A rotation that fails leaves everything as it was, including the

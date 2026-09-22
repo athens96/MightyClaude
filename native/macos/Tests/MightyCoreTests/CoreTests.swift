@@ -69,7 +69,7 @@ final class CoreTests {
         try CoreValidation.validateSelection(valid, catalog: catalog)
         var invalid = valid; invalid.settings.effort = "max"; #expect(throws: (any Error).self) { try CoreValidation.validateSelection(invalid, catalog: catalog) }
         let claude = ProviderService.normalizeClaudeCatalog([["value": "default", "displayName": "Account default", "supportedEffortLevels": ["high"]], ["value": "company/claude", "supportsEffort": true, "supportedEffortLevels": ["low", "max"]]])
-        #expect((claude.models.first?.displayName) == ("Claude 설정 따름")); #expect((claude.models.first?.supportedEffortLevels) == nil)
+        #expect((claude.models.first?.displayName) == ("Claude 설정 따름")); #expect((claude.models.first?.supportedEffortLevels) == ["high"])
     }
 
     @Test func testExecutionSettingsLegacyCodingAndPersistence() async throws {

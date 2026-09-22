@@ -243,14 +243,32 @@ extension AppStore {
         return group.convert(point, to: nil)
     }
 
-    /// Use the actual NSWindow hit test and the production mouse-tracking loop.
-    /// The private NSEvent queue never moves the user's cursor or reads clipboard.
+    /// Use the actual NSWindow hit test and normal application event dispatch.
+    /// Synthetic events never move the user's cursor or read the clipboard.
     @discardableResult
     private func layoutSmokeNativeDrag(sessionId: String, window: NSWindow, destination: NSPoint, previewGroupId: String? = nil, previewFilename: String? = nil, cancel: Bool = false) throws -> Bool {
         let coordinator = PaneDockDragCoordinator.shared
         guard let content = window.contentView else { throw MightyError("검증할 창이 없습니다.") }
         window.makeKeyAndOrderFront(nil); content.layoutSubtreeIfNeeded()
+        let inputState: [String: Any] = [
+            "appIsActive": NSApp.isActive,
+            "windowIsKey": window.isKeyWindow,
+            "windowMatchesAppKeyWindow": NSApp.keyWindow === window,
+            "windowIsOnActiveSpace": window.isOnActiveSpace,
+            "frontmostIsOwnApplication": NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
+        ]
+        let stateData = try JSONSerialization.data(withJSONObject: inputState, options: [.prettyPrinted, .sortedKeys])
+        try stateData.write(to: dataDirectory.appendingPathComponent("layout-input-state.json"), options: .atomic)
+        guard NSApp.isActive, window.isKeyWindow, NSApp.keyWindow === window, window.isOnActiveSpace else {
+            throw MightyError("macOS가 검증 창을 활성화하지 않았습니다. 잠금 화면을 해제한 뒤 다시 검사하세요.")
+        }
         guard let source = coordinator.tab(sessionId: sessionId, in: window) else { throw MightyError("네이티브 탭 드래그 핸들을 찾지 못했습니다.") }
+        // Synthetic mouse events do not press the hardware button. Keep the
+        // test gesture alive while a screenshot flushes AppKit work; production
+        // still observes the real button to recover from a lost mouse-up.
+        let originalEnvironment = source.gestureEnvironment
+        source.gestureEnvironment.isLeftMouseButtonDown = { true }
+        defer { source.cancelGesture(); source.gestureEnvironment = originalEnvironment }
         let sourceBounds = source.paneDockVisibleRect
         let start = source.convert(NSPoint(x: sourceBounds.midX, y: sourceBounds.midY), to: nil)
         let hit = content.hitTest(content.superview?.convert(start, from: nil) ?? start)
@@ -262,41 +280,37 @@ extension AppStore {
         let down = try event(.leftMouseDown, start, 1)
         let step = try event(.leftMouseDragged, NSPoint(x: start.x + 8, y: start.y), 2)
         let drag = try event(.leftMouseDragged, destination, 3)
+        let up = try event(.leftMouseUp, destination, 4)
+        let escape = cancel ? NSEvent.keyEvent(with: .keyDown, location: destination, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) : nil
+        if cancel && escape == nil { throw MightyError("취소 검증 이벤트를 만들지 못했습니다.") }
         let beforeLayout = snapshot.paneLayouts
         let anchor = previewGroupId.flatMap { coordinator.group(id: $0, in: window) }
         let beforeDraw = anchor?.previewDrawCount ?? 0
-        var previewDrawn = false
         var previewError: Error?
-        // Fire in the same tracking mode while mouseDown is still active. The
-        // preview must already be rendered and the layout must remain unchanged.
-        let release = Timer(timeInterval: 0.06, repeats: false) { [self] _ in
-            MainActor.assumeIsolated {
-                previewDrawn = anchor.map { $0.previewDrawCount > beforeDraw } == true && snapshot.paneLayouts == beforeLayout
-                if let previewFilename, previewDrawn {
-                    do { _ = try captureSmokeWindow(window, filename: previewFilename) } catch { previewError = error }
-                }
-                let trace: [String: Any] = [
-                    "sessionId": sessionId, "start": NSStringFromPoint(start), "destination": NSStringFromPoint(destination),
-                    "sourceGroupId": source.groupId, "expectedGroupId": previewGroupId ?? "tab",
-                    "actualGroupId": coordinator.target?.groupId ?? "none", "zone": coordinator.target?.zone.rawValue ?? "none",
-                    "targetTab": coordinator.target?.tabId ?? "none",
-                    "expectedBounds": anchor.map { NSStringFromRect($0.bounds) } ?? "none",
-                    "expectedVisibleRect": anchor.map { NSStringFromRect($0.visibleRect) } ?? "none",
-                    "expectedClippedVisibleRect": anchor.map { NSStringFromRect($0.paneDockVisibleRect) } ?? "none",
-                    "expectedWindowRect": anchor.map { NSStringFromRect($0.convert($0.bounds, to: nil)) } ?? "none",
-                ]
-                if let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]) {
-                    try? data.write(to: dataDirectory.appendingPathComponent("layout-drag-\(coordinator.nativeDragStarts).json"))
-                }
-                if cancel, let escape = NSEvent.keyEvent(with: .keyDown, location: destination, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) { NSApp.postEvent(escape, atStart: false) }
-                if let up = NSEvent.mouseEvent(with: .leftMouseUp, location: destination, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 4, clickCount: 1, pressure: 0) { NSApp.postEvent(up, atStart: false) }
-            }
+        // Each handler must return to normal dispatch; a missing mouse-up must
+        // never trap subsequent keyboard or application-activation events.
+        NSApp.sendEvent(down)
+        NSApp.sendEvent(step)
+        NSApp.sendEvent(drag)
+        let previewDrawn = anchor.map { $0.previewDrawCount > beforeDraw } == true && snapshot.paneLayouts == beforeLayout
+        if let previewFilename, previewDrawn {
+            do { _ = try captureSmokeWindow(window, filename: previewFilename) } catch { previewError = error }
         }
-        RunLoop.main.add(release, forMode: .eventTracking)
-        NSApp.postEvent(step, atStart: false); NSApp.postEvent(drag, atStart: false)
-        window.sendEvent(down)
-        release.invalidate()
-        if cancel, let pendingUp = window.nextEvent(matching: .leftMouseUp, until: Date(), inMode: .eventTracking, dequeue: true) { window.sendEvent(pendingUp) }
+        let trace: [String: Any] = [
+            "sessionId": sessionId, "start": NSStringFromPoint(start), "destination": NSStringFromPoint(destination),
+            "sourceGroupId": source.groupId, "expectedGroupId": previewGroupId ?? "tab",
+            "actualGroupId": coordinator.target?.groupId ?? "none", "zone": coordinator.target?.zone.rawValue ?? "none",
+            "targetTab": coordinator.target?.tabId ?? "none",
+            "expectedBounds": anchor.map { NSStringFromRect($0.bounds) } ?? "none",
+            "expectedVisibleRect": anchor.map { NSStringFromRect($0.visibleRect) } ?? "none",
+            "expectedClippedVisibleRect": anchor.map { NSStringFromRect($0.paneDockVisibleRect) } ?? "none",
+            "expectedWindowRect": anchor.map { NSStringFromRect($0.convert($0.bounds, to: nil)) } ?? "none",
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: dataDirectory.appendingPathComponent("layout-drag-\(coordinator.nativeDragStarts).json"))
+        }
+        if let escape { NSApp.sendEvent(escape) }
+        NSApp.sendEvent(up)
         if let previewError { throw previewError }
         guard draggedPane == nil else { throw MightyError("드롭 후 드래그 상태가 정리되지 않았습니다.") }
         return previewDrawn

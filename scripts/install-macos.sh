@@ -17,6 +17,16 @@ DESTINATION="${MIGHTY_INSTALL_PATH:-/Applications/MightyClaude.app}"
 BINARY="$DESTINATION/Contents/MacOS/MightyClaude"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
+# Serialize the entire wait/copy/relaunch sequence. Two pending installers used
+# to wake on the same app exit and write the same timestamped backup together.
+# Keep the lock inode: unlinking it permits another process to lock a new inode.
+LOCK_KEY="$(printf '%s' "$DESTINATION" | shasum -a 256 | cut -d ' ' -f 1)"
+LOCK_PATH="/tmp/mightyclaude-install-${UID}-${LOCK_KEY}.lock"
+# The shell itself retains the locked file descriptor. A wrapper process would
+# release its lock when cancelled while leaving this child installer running.
+exec 9>"$LOCK_PATH"
+/usr/bin/lockf -t 0 9
+
 running() { ps -axo command | grep -F "$BINARY" | grep -v grep >/dev/null; }
 
 [ -d "$SOURCE" ] || { echo "설치할 앱이 없습니다: $SOURCE" >&2; exit 1; }
@@ -32,8 +42,7 @@ fi
 # Keep two backups, named so LaunchServices does not treat them as apps.
 ls -dt /tmp/MightyClaude-app-backup-* 2>/dev/null | tail -n +3 | xargs rm -rf 2>/dev/null || true
 if [ -d "$DESTINATION" ]; then
-  BACKUP="/tmp/MightyClaude-app-backup-$(date +%Y%m%d-%H%M%S)"
-  mkdir -p "$BACKUP"
+  BACKUP="$(mktemp -d /tmp/MightyClaude-app-backup-XXXXXXXX)"
   ditto "$DESTINATION" "$BACKUP/MightyClaude.app.bak"
   echo "이전 앱 백업: $BACKUP/MightyClaude.app.bak (복원: ditto 그 폴더 → $DESTINATION)"
   rm -rf "$DESTINATION"

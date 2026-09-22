@@ -197,7 +197,14 @@ public actor RemoteService {
             guard let url = URLComponents(string: request.target), url.scheme == nil, url.host == nil else { throw HTTPFailure(400, "경로가 올바르지 않습니다.") }
             if request.method == "GET", url.path == "/v1/info", url.query == nil {
                 let snapshot = try await repository.load()
-                let runtime = await providers.runtimeInfo()
+                var runtime = await providers.runtimeInfo()
+                // v1 has no approval response channel. Advertise only modes the
+                // remote host can run; keep local discovery's opt-in mode intact.
+                runtime.providers = runtime.providers?.map { provider in
+                    var remote = provider
+                    remote.capabilities.permissionModes.removeAll { $0 == "onRequest" }
+                    return remote
+                }
                 guard generation == hostRevision else { throw HTTPFailure(503, "공유가 종료되었습니다.") }
                 let workspaces = snapshot.workspaces.filter { host.workspaceIds.contains($0.id) && $0.remote == nil && RemoteValidation.workspace($0) }
                 return response(200, WireInfo(hostId: hostId, hostName: Host.current().localizedName ?? "MightyClaude Mac", workspaces: workspaces, runtime: runtime))
@@ -206,6 +213,7 @@ public actor RemoteService {
                 guard request.headers["content-type"]?.split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == "application/json" else { throw HTTPFailure(415, "JSON 요청이 필요합니다.") }
                 let incoming: StartRunRequest
                 do { incoming = try JSONDecoder().decode(WireStart.self, from: request.body).request; try CoreValidation.validate(incoming) } catch { throw HTTPFailure(400, "실행 요청이 올바르지 않습니다.") }
+                guard incoming.settings.permissionMode != "onRequest" else { throw HTTPFailure(400, "원격 실행은 Codex 승인 요청을 지원하지 않습니다.") }
                 guard host.workspaceIds.contains(incoming.workspaceId) else { throw HTTPFailure(403, "공유하지 않은 워크스페이스입니다.") }
                 let snapshot = try await repository.load()
                 guard snapshot.workspaces.contains(where: { $0.id == incoming.workspaceId && $0.remote == nil }) else { throw HTTPFailure(403, "등록되지 않은 워크스페이스입니다.") }

@@ -114,6 +114,9 @@ public struct ProviderInput {
         data.append(10); return data
     }
     public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false) throws -> ProviderInput {
+        guard request.provider != "codex" || request.settings.permissionMode != "onRequest" else {
+            throw MightyError("Codex 승인 요청의 입력과 첨부는 app-server 연결로 전송해야 합니다.")
+        }
         var arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts)
         guard !request.attachments.isEmpty else {
             if request.provider == "claude", allowPermissionPrompts {

@@ -39,7 +39,7 @@ struct CLIAccountsSettingsSection: View {
                 Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
                 Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.system(size: 11)).foregroundStyle(status?.loggedIn == false ? Color.orange : Color.secondary).lineLimit(1).textSelection(.enabled)
                     .accessibilityIdentifier("cli-account-status-\(provider)")
-                if let status, status.loggedIn == true, !status.canSignOut, !status.detail.isEmpty {
+                if let status, !status.canSignOut, !status.detail.isEmpty, status.detail != status.summary {
                     Text(status.detail).font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
                 if pending { Text(L("settings.cliAccounts.statusPending")).font(.system(size: 10)).foregroundStyle(.tertiary) }
@@ -66,6 +66,16 @@ struct CLIAccountsSettingsSection: View {
                 }.fixedSize().disabled(busy)
             } else {
                 Button(L("settings.cliAccounts.buttonLogin")) { store.startCLILogin(provider) }.disabled(busy).accessibilityIdentifier("cli-account-login-\(provider)")
+            }
+            if provider == "claude", status?.installed != false {
+                Button(L("settings.cliAccounts.resetModelsButton")) { store.resetClaudeModels() }
+                    .disabled(busy || pending || store.claudeModelResetInProgress)
+                    .help(L("settings.cliAccounts.resetModelsHelp"))
+                    .accessibilityIdentifier("cli-account-reset-models-claude")
+                Button(L("settings.cliAccounts.bedrockButton")) { store.startCLILogin(provider, option: .bedrock) }
+                    .disabled(busy || pending)
+                    .help(L("settings.cliAccounts.bedrockHelp"))
+                    .accessibilityIdentifier("cli-account-bedrock-claude")
             }
             Button { store.cliAccountMessages[provider] = nil; store.refreshCLIAccounts([provider]) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(busy).help(L("settings.cliAccounts.refreshTooltip"))
         }

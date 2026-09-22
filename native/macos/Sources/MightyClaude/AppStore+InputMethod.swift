@@ -2,11 +2,10 @@ import AppKit
 import Foundation
 
 extension AppStore {
-    /// Tries to re-establish the composition session in the focused editor
-    /// (or the key window's first responder) without relaunching.
+    /// The coordinator can retain a weak, validated target even when AppKit has
+    /// lost the key window. Activation is verified before reconnecting it.
     func reconnectInputMethod(editor: NSTextView?) {
-        let target = editor ?? (NSApp.keyWindow?.firstResponder as? NSTextView)
-        InputMethodMonitor.shared.attemptRecovery(editor: target)
+        InputMethodMonitor.shared.attemptRecovery(editor: editor)
         inputMethodProblem = InputMethodMonitor.shared.problem
     }
 
@@ -17,7 +16,7 @@ extension AppStore {
 
     /// Manual capture for the next report: writes the snapshot and shows where.
     func saveInputMethodDiagnostics() {
-        let editor = NSApp.keyWindow?.firstResponder as? NSTextView
+        let editor = InputSessionRecoveryCoordinator.shared.resolveEditor()
         if let file = InputMethodMonitor.shared.writeDiagnostics(editor: editor, reason: "manual") {
             NSWorkspace.shared.selectFile(file.path, inFileViewerRootedAtPath: file.deletingLastPathComponent().path)
         } else { error = "진단 파일을 저장하지 못했습니다." }

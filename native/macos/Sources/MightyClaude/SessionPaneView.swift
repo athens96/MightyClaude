@@ -16,7 +16,7 @@ struct SessionPaneView: View {
     @ViewState private var paletteIndex = 0
     @ViewState private var paletteDismissedFor: String?
 
-    private var running: Bool { session.status == "running" }
+    private var running: Bool { session.status == "running" || store.pendingRuns.contains(session.id) }
     private var active: Bool { store.snapshot.activeSessionId == session.id }
     private var localTerminal: Bool { store.usesLocalTerminal(session) }
     private var remoteCommand: Bool { session.kind == "shell" && store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil }
@@ -27,7 +27,9 @@ struct SessionPaneView: View {
     private var attachments: [RunAttachment] { store.attachmentDrafts[session.id] ?? [] }
     private var importingAttachments: Bool { store.importingAttachments.contains(session.id) }
     private var blockedReason: String? {
-        if let reason = store.runBlockedReason(session) { return reason }
+        if let reason = store.runBlockedReason(session, checkRuntime: store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil) { return reason }
+        // Local metadata is refreshed and validated by start preflight.
+        guard store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil else { return nil }
         if session.kind != "shell", session.settings.effort != "default", !effortLevels.contains(session.settings.effort) {
             return "선택한 모델에서 저장된 사고 강도를 확인할 수 없습니다. Auto 또는 지원되는 강도를 선택하세요."
         }
@@ -96,6 +98,7 @@ struct SessionPaneView: View {
             // which lives here and not in the engine (§1.7).
             if !value.isEmpty { return value }
         }
+        if store.pendingRuns.contains(session.id), session.status != "running" { return "현재 CLI의 모델 설정을 확인하고 있습니다 · 다음 요청을 입력할 수 있습니다" }
         if running { return steers ? "Enter: 다음 요청으로 대기 · ⌘Enter: 실행 중인 작업에 바로 전달" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다" }
         return session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…"
     }
@@ -159,17 +162,20 @@ struct SessionPaneView: View {
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 11))
         .overlay { RoundedRectangle(cornerRadius: 11).stroke(active ? Palette.accent.opacity(0.58) : Palette.border, lineWidth: 1).allowsHitTesting(false) }
         .clipShape(RoundedRectangle(cornerRadius: 11))
-        .onChange(of: composerFocused) { _, focused in
-            // SwiftUI can deliver this after a tab switch detached the editor.
-            // Only the editor that still owns native focus may select a pane.
-            guard focused, store.snapshot.activeWorkspaceId == session.workspaceId,
-                  store.layoutForWorkspace(session.workspaceId)?.group(containing: session.id)?.selectedSessionId == session.id,
-                  let editor = composerInput.editor, let window = editor.window,
-                  !editor.isHiddenOrHasHiddenAncestor, window.firstResponder === editor else { return }
-            store.selectSession(session.id)
-        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(session.title)
+    }
+
+    private func composerFocusChanged(_ focused: Bool) {
+        composerFocused = focused
+        // Every native focus notification matters, including repeated true
+        // values after a different pane became active. A coalesced SwiftUI
+        // Boolean transition cannot represent these responder events.
+        guard focused, store.snapshot.activeWorkspaceId == session.workspaceId,
+              store.layoutForWorkspace(session.workspaceId)?.group(containing: session.id)?.selectedSessionId == session.id,
+              let editor = composerInput.editor, let window = editor.window,
+              !editor.isHiddenOrHasHiddenAncestor, window.firstResponder === editor else { return }
+        store.selectSession(session.id)
     }
 
     private var header: some View {
@@ -244,6 +250,11 @@ struct SessionPaneView: View {
                     }
                 }
             }
+            if store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil {
+                Button(store.isRefreshingModels(for: session) ? "모델 목록 확인 중…" : "모델 목록 새로고침") {
+                    store.refreshModels(for: session.id, invalidate: true)
+                }.disabled(store.isRefreshingModels(for: session))
+            }
             Section("모델") {
                 ForEach(models) { model in
                     Button {
@@ -287,7 +298,7 @@ struct SessionPaneView: View {
     }
 
     private var permissionOptions: some View {
-        ForEach(["plan", "manual", "acceptEdits", "auto", "fullAccess"].filter { runtime.capabilities.permissionModes.contains($0) }, id: \.self) { mode in
+        ForEach(["plan", "manual", "acceptEdits", "auto", "onRequest", "fullAccess"].filter { store.permissionModes(for: session).contains($0) }, id: \.self) { mode in
             Button { updateSettings { $0.permissionMode = mode } } label: {
                 if mode == session.settings.permissionMode { Label(permissionLabel(mode, provider: session.provider), systemImage: "checkmark") }
                 else { Text(permissionLabel(mode, provider: session.provider)) }
@@ -358,7 +369,7 @@ struct SessionPaneView: View {
         store.selectSession(session.id)
         var settings = session.settings
         update(&settings)
-        if session.provider == "codex", settings.permissionMode != "acceptEdits" { settings.networkAccess = false }
+        if session.provider == "codex", !["acceptEdits", "onRequest"].contains(settings.permissionMode) { settings.networkAccess = false }
         store.saveSettings(session.id, settings: settings)
     }
 
@@ -455,13 +466,13 @@ struct SessionPaneView: View {
                         .accessibilityLabel("Enter로 보낼 명령: " + armedPrefix)
                         .accessibilityIdentifier("mighty-enter-armed-\(session.id)")
                 }
-                NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocused = $0 }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput)
+                NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocusChanged($0) }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput, canSubmit: { canSend && !store.hasModal }, onSubmit: { submitComposer(command: $0) }, onNavigationKey: { key in paletteVisible && !store.hasModal ? handlePaletteKey(key) : false })
                     .onChange(of: paletteDraft) { _, text in
                         paletteIndex = 0
                         if text != nil { store.refreshSlashCommands(for: session) }
                     }
                     .frame(height: editorHeight)
-                    .background(TextEditorHeightReader(text: draft.wrappedValue, height: $editorHeight, canSubmit: canSend && active && !store.hasModal, onSubmit: { submitComposer(command: $0) }, onNavigationKey: paletteVisible && !store.hasModal ? handlePaletteKey : nil, placeholder: composerPlaceholder).allowsHitTesting(false))
+                    .background(TextEditorHeightReader(inputController: composerInput, height: $editorHeight, placeholder: composerPlaceholder).allowsHitTesting(false))
             }
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
                 .help(running ? (steers ? "Enter: 현재 작업이 끝난 뒤 실행 · ⌘Enter: 실행 중인 Claude에 바로 전달 · Shift+Enter: 줄바꿈" : "Enter: 현재 작업이 끝난 뒤 실행 · Shift+Enter: 줄바꿈") : "Enter 또는 ⌘Enter로 전송 · Shift+Enter로 줄바꿈")
@@ -483,26 +494,16 @@ struct SessionPaneView: View {
             }
             if let problem = store.inputMethodProblem, composerFocused {
                 HStack(alignment: .top, spacing: 7) {
-                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.fallbackEngaged ? Color.secondary : .orange).padding(.top, 1)
+                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? .green : .orange).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
-                        // The app composes the same syllables the input method
-                        // would, so a covered break is a notice, not a warning.
-                        if problem.fallbackEngaged {
-                            Text("입력기 연결이 끊겨 앱이 직접 한글을 조합하고 있습니다")
-                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                            if problem.recoveryAttempts > 0 {
-                                Text("다시 연결을 시도했습니다. 계속 이 안내가 보이면 앱을 종료(⌘Q)하고 다시 여세요.")
-                                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                            }
-                        } else {
-                            Text("한글 조합이 끊긴 것 같습니다 (자모가 따로 입력됨)").fontWeight(.medium)
-                            Text(problem.recoveryAttempts == 0 ? "입력기 다시 연결을 눌러 보세요. 그래도 안 되면 앱을 종료(⌘Q)하고 다시 여세요." : "다시 연결을 시도했습니다. 여전히 그렇다면 앱을 종료(⌘Q)하고 다시 여세요.")
-                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                            if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
-                        }
+                        Text(problem.recoveryState == .reconnected ? "입력기 연결을 확인했습니다" : "입력기 연결 상태를 확인해 주세요").fontWeight(.medium)
+                        Text(problem.recoveryState.message)
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
                     }
                     Spacer(minLength: 4)
                     Button("입력기 다시 연결") { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)
+                        .disabled(problem.recoveryState.isPending)
                     Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).accessibilityLabel("입력기 안내 닫기")
                 }

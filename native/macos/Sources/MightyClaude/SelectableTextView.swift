@@ -29,7 +29,7 @@ class SelectableTextView: NSTextView {
     /// Mouse tracking has ended. A non-empty selection makes this view both the
     /// ⌘C owner and, when the monitor moved focus during the click, the first
     /// responder again; an empty one gives up the claim it may have held.
-    private func claimSelectionFocus() {
+    func claimSelectionFocus() {
         guard let window else { return }
         guard selectionLength > 0 else {
             if Self.mostRecentlySelected === self { Self.mostRecentlySelected = nil }
@@ -40,24 +40,57 @@ class SelectableTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handleCopyKey(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Some hosting/menu routes pass an unmatched Korean key equivalent
+        // directly to the responder. Keep the same physical-key fallback here.
+        if handleCopyKey(event) { return }
+        super.keyDown(with: event)
+    }
+
+    static func copyMostRecentSelection(for event: NSEvent) -> Bool {
+        mostRecentlySelected?.handleCopyKey(event) ?? false
+    }
+
+    func handleCopyKey(_ event: NSEvent) -> Bool {
         guard event.type == .keyDown,
               TranscriptCopyClaim.isCopyKeyEquivalent(modifiers: event.modifierFlags.rawValue,
                                                       characters: event.charactersIgnoringModifiers,
                                                       keyCode: event.keyCode),
-              let window, window === event.window, window.firstResponder !== self,
-              TranscriptCopyClaim.claims(copyKeyEquivalent: true, selectionLength: selectionLength,
+              let window, window === event.window, window.attachedSheet == nil,
+              !isHiddenOrHasHiddenAncestor, !visibleRect.isEmpty
+        else { return false }
+        // A focused block needs the same Korean physical-key handling as one
+        // whose focus moved to the canvas. Falling back to NSTextView here left
+        // the common focused case dependent on the input source's characters.
+        if window.firstResponder === self {
+            copy(nil)
+            return true
+        }
+        guard TranscriptCopyClaim.claims(copyKeyEquivalent: true, selectionLength: selectionLength,
                                          isMostRecentlySelected: Self.mostRecentlySelected === self,
                                          isVisible: !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty,
                                          isSelectionOnScreen: isSelectionOnScreen,
-                                         isBlocked: window.attachedSheet != nil,
+                                         isBlocked: false,
                                          responder: Self.responderState(window.firstResponder))
-        else { return super.performKeyEquivalent(with: event) }
+        else { return false }
+        copy(nil)
+        return true
+    }
+
+    override func copy(_ sender: Any?) {
+        // An empty focused selection is a no-op, including the pasteboard's
+        // change count. Never clear it and then discover there is nothing to copy.
+        guard selectionLength > 0 else { return }
         // The same flavours the Copy menu item writes, so a claimed ⌘C and an
         // ordinary one leave the pasteboard in the same shape. Declaring the
         // types is what makes the per-type writes below stick.
         let types = writablePasteboardTypes
         copyPasteboard.declareTypes(types, owner: nil)
-        return writeSelection(to: copyPasteboard, types: types)
+        _ = writeSelection(to: copyPasteboard, types: types)
     }
 
     /// Whether any of the drawn selection is really on screen. A card preview

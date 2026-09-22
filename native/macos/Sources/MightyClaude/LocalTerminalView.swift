@@ -3,6 +3,41 @@ import GhosttyTerminal
 import MightyCore
 import SwiftUI
 
+/// A deferred focus request belongs to the presentation and responder observed
+/// when it was queued. It cannot replace a newer user focus choice.
+@MainActor
+final class TerminalFocusRequest {
+    private weak var view: NSView?
+    private weak var window: NSWindow?
+    private weak var parent: NSView?
+    private weak var responder: NSResponder?
+    private let hadResponder: Bool
+
+    init?(view: NSView, allowReplacingResponder: Bool = false) {
+        guard let window = view.window, let parent = view.superview else { return nil }
+        if !allowReplacingResponder, let focused = window.firstResponder, focused !== view,
+           focused.responds(to: #selector(NSText.copy(_:))) { return nil }
+        self.view = view
+        self.window = window
+        self.parent = parent
+        responder = window.firstResponder
+        hadResponder = responder != nil
+    }
+
+    @discardableResult
+    func perform(appActive: Bool, keyWindow: NSWindow?, modalWindow: NSWindow?) -> Bool {
+        guard appActive, let view, let window, let parent,
+              keyWindow === window, window.isKeyWindow, window.isVisible, !window.isMiniaturized,
+              modalWindow == nil, window.attachedSheet == nil,
+              view.window === window, view.superview === parent,
+              !view.isHiddenOrHasHiddenAncestor, !view.visibleRect.isEmpty else { return false }
+        if hadResponder {
+            guard let responder, window.firstResponder === responder else { return false }
+        } else if window.firstResponder != nil { return false }
+        return window.firstResponder === view || window.makeFirstResponder(view)
+    }
+}
+
 struct LocalTerminalPane: View {
     @EnvironmentObject private var store: AppStore
     let session: RunSession
@@ -31,7 +66,7 @@ private struct LocalTerminalContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NativeTerminalHost(terminal: terminal)
+            NativeTerminalHost(terminal: terminal, onMount: { focusIfActive() })
                 .id(ObjectIdentifier(terminal))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if terminal.exited || terminal.failure != nil {
@@ -54,30 +89,37 @@ private struct LocalTerminalContent: View {
         }
         .onAppear { focusIfActive() }
         .onChange(of: terminal.ready) { _, ready in if ready { focusIfActive() } }
-        .onChange(of: store.snapshot.activeSessionId) { _, _ in focusIfActive() }
+        .onChange(of: store.snapshot.activeSessionId) { _, _ in focusIfActive(allowReplacingResponder: true) }
     }
 
-    private func focusIfActive() {
-        guard store.snapshot.activeSessionId == terminal.id, !store.hasModal else { return }
+    private func focusIfActive(allowReplacingResponder: Bool = false) {
+        guard store.snapshot.activeSessionId == terminal.id, !store.hasModal,
+              let request = TerminalFocusRequest(view: terminal.view, allowReplacingResponder: allowReplacingResponder) else { return }
         DispatchQueue.main.async { [weak terminal, weak store] in
             guard let terminal, !terminal.disposed, let store, store.snapshot.activeSessionId == terminal.id, !store.hasModal else { return }
-            _ = terminal.view.acquireProgrammaticFocus()
+            request.perform(appActive: NSApp.isActive, keyWindow: NSApp.keyWindow, modalWindow: NSApp.modalWindow)
         }
     }
 }
 
 private struct NativeTerminalHost: NSViewRepresentable {
     let terminal: LocalTerminalSession
+    let onMount: () -> Void
 
     func makeNSView(context: Context) -> TerminalContainer {
         let host = TerminalContainer()
+        host.onMounted = onMount
         host.claim(terminal)
         return host
     }
-    func updateNSView(_ host: TerminalContainer, context: Context) { host.attach(terminal) }
+    func updateNSView(_ host: TerminalContainer, context: Context) {
+        host.onMounted = onMount
+        host.attach(terminal)
+    }
     static func dismantleNSView(_ host: TerminalContainer, coordinator: ()) { host.detach() }
 
     final class TerminalContainer: NSView {
+        var onMounted: (() -> Void)?
         private weak var terminal: LocalTerminalSession?
         private var generation: UInt64?
         private var retired = false
@@ -99,11 +141,13 @@ private struct NativeTerminalHost: NSViewRepresentable {
                 next.view.frame = bounds
                 next.view.autoresizingMask = [.width, .height]
                 addSubview(next.view)
+                if window != nil { onMounted?() }
             }
             next.mounted()
         }
         func detach() {
             retired = true
+            onMounted = nil
             if let terminal, let generation, terminal.ownsPresentation(self, generation: generation) {
                 if terminal.view.superview === self {
                     terminal.view.setSurfaceVisible(false)
@@ -113,6 +157,14 @@ private struct NativeTerminalHost: NSViewRepresentable {
             }
             terminal = nil
             generation = nil
+        }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window != nil, let terminal, let generation,
+                  terminal.ownsPresentation(self, generation: generation), terminal.view.window === window else { return }
+            // A cached terminal may already be ready before SwiftUI attaches its
+            // new host. Retry at mount without refocusing on every render.
+            onMounted?()
         }
         override func layout() {
             super.layout()
