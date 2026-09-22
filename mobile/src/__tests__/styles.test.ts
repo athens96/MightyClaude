@@ -303,6 +303,46 @@ describe('styleViewModel', () => {
     expect(model.rest.map((action) => action.id)).toEqual(['qa']);
   });
 
+  it('renders the job-open guidance and reduced while-open next list from a projected panel', () => {
+    // The host projects the job-open state into the panel payload; the phone renders
+    // what it receives without re-deriving anything from the transcript.
+    // While-open: status (first / prominent), cancel, unstuck. Evaluate, evolve, ralph
+    // are in the catalogue but absent from `next`, so they land in `rest`.
+    const jobOpenPanel = normalizeStylePanel({
+      style: { id: 'ouroboros', name: 'Ouroboros', source: 'bundled' },
+      actions: [
+        { id: 'evaluate', title: '평가', help: '', takesText: false, requiresText: false, flags: [], prominent: false },
+        { id: 'evolve', title: '진화', help: '', takesText: false, requiresText: false, flags: [], prominent: false },
+        { id: 'ralph', title: 'Ralph', help: '', takesText: false, requiresText: false, flags: [], prominent: false },
+        { id: 'run', title: '실행', help: '', takesText: false, requiresText: false, flags: [], prominent: false },
+        { id: 'status', title: '상태', help: '세션 상태를 확인합니다', takesText: false, requiresText: false, flags: [], prominent: false },
+        { id: 'cancel', title: '취소', help: '실행 중인 작업을 취소합니다', takesText: false, requiresText: false, flags: [], prominent: false },
+        { id: 'unstuck', title: '막힘 풀기', help: '', takesText: true, requiresText: false, flags: [], prominent: false },
+      ],
+      groups: [],
+      next: ['status', 'cancel', 'unstuck'],
+      attachments: [],
+      setup: { ready: true, missing: [] },
+      guidance: '백그라운드에서 실행 중입니다 · 취소하거나 상태를 확인하세요',
+      presentation: { headerTitle: 'Ouroboros', source: 'bundled' },
+    })!;
+
+    expect(jobOpenPanel.next).toEqual(['status', 'cancel', 'unstuck']);
+    expect(jobOpenPanel.guidance).toBe('백그라운드에서 실행 중입니다 · 취소하거나 상태를 확인하세요');
+
+    const model = styleViewModel(jobOpenPanel);
+    // Only the three while-open actions appear; evaluate/evolve/ralph/run go to rest.
+    expect(model.actions.map((v) => v.action.id)).toEqual(['status', 'cancel', 'unstuck']);
+    // First of next is drawn prominent.
+    expect(model.actions[0]?.prominent).toBe(true);
+    expect(model.actions[1]?.prominent).toBe(false);
+    expect(model.actions[2]?.prominent).toBe(false);
+    // The manifest's job-open guidance is shown.
+    expect(model.guidance).toBe('백그라운드에서 실행 중입니다 · 취소하거나 상태를 확인하세요');
+    // The hidden actions are reachable through the catalogue sheet.
+    expect(model.rest.map((a) => a.id)).toEqual(['evaluate', 'evolve', 'ralph', 'run']);
+  });
+
   it('shows the source badge and the setup block, and hides setup once ready', () => {
     const panel = normalizeStylePanel(panelPayload())!;
     const model = styleViewModel(panel);
