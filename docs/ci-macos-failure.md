@@ -1,6 +1,6 @@
 # macOS CI 실패 조사
 
-상태: 진단 — 5라운드 진행 중 (마지막 라운드, 실행 확인 대기)
+상태: 5회 시도 후 미해결 — Check smoke result (Swift 테스트 단계는 5라운드 `ac6cbf8`에서 처음으로 초록, 빌드·스모크 실행 단계도 초록; GUI 결과 검사만 빨강)
 
 ## 라운드 기록
 
@@ -11,6 +11,7 @@
 | 3 | f9ec5b1 | Test Swift core | `::error title=macOS Swift tests::` — `StyleEvaluator.swift:264:52: error: cannot call value of non-function type '[T]'` 외 264~270행 컴파일 오류 4건 (전문은 아래 '확정된 원인') | (없음 — 이 라운드로 원인이 확정됐다) |
 | 4 | 4b151ea | Test Swift core | 3라운드 주석이 원인을 지목 | `StylePrerequisiteProbe.evaluate`의 지역 변수 `satisfied` 섀도잉 제거(`Self.satisfied` + `outcomes`로 개명), 같은 식의 키패스-함수 형태를 클로저로 교체, 주석에서 체크아웃 밖 경로 제거 + 1500자 청크 분할 |
 | 5 | 9ffeb42 | Test Swift core | 4라운드(`f2dbbe2` 실행) 주석: 컴파일은 통과, 테스트 실행 중 `MightyCoreTests/StyleFixtures.swift:92: Fatal error: Unexpectedly found nil` — `BundledStyles.shared.style(id)!`가 nil. 러너의 SwiftPM은 리소스 번들 `MightyClaude_MightyCore.bundle`을 `.xctest` **안**(Contents/Resources)이 아니라 **옆**(.build/debug)에 두는데, `BundledStyleSource.searchRoots()`에는 `.xctest`의 부모 폴더가 없었다(로컬 Swift 6.4는 안에 복사하므로 통과) | `searchRoots()`에 `.xctest` 번들의 부모를 더함(확장자가 xctest일 때만 — `.app`의 부모는 여전히 제외). `StyleFixtures.bundled`는 nil이면 탐색한 폴더·파일 수·거절 목록을 적고 멈춰 다음 주석이 원인을 말하게 함 |
+| 5 결과 | ac6cbf8 | Check smoke result | **Test Swift core 초록(사상 처음)**, Build·Smoke test 초록. `::error title=macOS GUI smoke::` — `error=단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.; exceptionType=; passed=[]` | (없음 — 상한 5회 소진. 이 실패는 `306d8be` 이전에도 매번 났던 별개의 GUI 문제(아래 수정안 0 참고)이며, 화면 확인 멈춤 때 사용자에게 보고한다) |
 
 실패 단계: `macos` 작업(분리 전 `.github/workflows/native.yml`, 이 브랜치부터 `.github/workflows/native-macos.yml`)의 **Test Swift core and loopback remote execution**
 (`bash scripts/test-native-macos.sh`, 약 42초 뒤 exit 1, 40회 이상 연속 실패). 로컬에서는 같은 스크립트가 459개 검사를 모두 통과한다.
