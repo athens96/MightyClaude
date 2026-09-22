@@ -108,6 +108,17 @@
         "requiresText" : false,
         "takesText" : true,
         "title" : "막힘 풀기"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "백그라운드에서 실행 중인 작업을 취소합니다",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "취소"
       }
     ],
     "attachments" : [
@@ -124,7 +135,8 @@
           "evolve",
           "ralph",
           "status",
-          "unstuck"
+          "unstuck",
+          "cancel"
         ],
         "id" : "flow",
         "selected" : true,
@@ -273,6 +285,17 @@
         "requiresText" : false,
         "takesText" : true,
         "title" : "막힘 풀기"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "백그라운드에서 실행 중인 작업을 취소합니다",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "취소"
       }
     ],
     "attachments" : [
@@ -300,7 +323,8 @@
           "evolve",
           "ralph",
           "status",
-          "unstuck"
+          "unstuck",
+          "cancel"
         ],
         "id" : "flow",
         "selected" : true,
@@ -448,6 +472,17 @@
         "requiresText" : false,
         "takesText" : true,
         "title" : "막힘 풀기"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "백그라운드에서 실행 중인 작업을 취소합니다",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "취소"
       }
     ],
     "attachments" : [
@@ -464,7 +499,8 @@
           "evolve",
           "ralph",
           "status",
-          "unstuck"
+          "unstuck",
+          "cancel"
         ],
         "id" : "flow",
         "selected" : true,
@@ -612,6 +648,17 @@
         "requiresText" : false,
         "takesText" : true,
         "title" : "막힘 풀기"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "백그라운드에서 실행 중인 작업을 취소합니다",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "취소"
       }
     ],
     "attachments" : [
@@ -628,7 +675,8 @@
           "evolve",
           "ralph",
           "status",
-          "unstuck"
+          "unstuck",
+          "cancel"
         ],
         "id" : "flow",
         "selected" : true,
@@ -776,6 +824,17 @@
         "requiresText" : false,
         "takesText" : true,
         "title" : "막힘 풀기"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "백그라운드에서 실행 중인 작업을 취소합니다",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "취소"
       }
     ],
     "attachments" : [
@@ -792,7 +851,8 @@
           "evolve",
           "ralph",
           "status",
-          "unstuck"
+          "unstuck",
+          "cancel"
         ],
         "id" : "flow",
         "selected" : true,
@@ -940,6 +1000,17 @@
         "requiresText" : false,
         "takesText" : true,
         "title" : "막힘 풀기"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "백그라운드에서 실행 중인 작업을 취소합니다",
+        "id" : "cancel",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "취소"
       }
     ],
     "attachments" : [
@@ -956,7 +1027,8 @@
           "evolve",
           "ralph",
           "status",
-          "unstuck"
+          "unstuck",
+          "cancel"
         ],
         "id" : "flow",
         "selected" : true,

@@ -95,4 +95,29 @@ struct StylesOuroborosTests {
         #expect(evaluator.enterArmedPrefix(draft: "ooo 뭐 좀", phase: phase("goal"), running: false, hasRequests: false) == nil)
         #expect(!evaluator.drawsGroupMap() && evaluator.drawsPhaseProgress)
     }
+
+    @Test func jobDeclarationMatchersAndWhileOpenList() {
+        let job = style.manifest.job
+        #expect(job != nil)
+        let openTools = Set(job?.open.map(\.tool) ?? [])
+        #expect(openTools == ["ouroboros_start_execute_seed", "ouroboros_start_auto",
+                              "ouroboros_start_evolve_step", "ouroboros_start_ralph"])
+        let closeTools = Set(job?.close.map(\.tool) ?? [])
+        #expect(closeTools == ["ouroboros_job_result", "ouroboros_cancel_job", "ouroboros_job_status"])
+        // The terminal status matcher uses notContains to exclude running results.
+        #expect(job?.close.first(where: { $0.tool == "ouroboros_job_status" })?.notContains == "running")
+        // The while-open list: status first (prominent), then cancel, then unstuck.
+        #expect(job?.whileOpen == ["status", "cancel", "unstuck"])
+        // All while-open ids resolve to known actions.
+        let whileOpenActions = (job?.whileOpen ?? []).compactMap { style.manifest.action($0) }
+        #expect(whileOpenActions.count == 3)
+        // run now appears in the run and evolve next maps so it is offered after a job closes.
+        let nextRun = evaluator.nextActions(phase: phase("run"), group: nil).map(\.id)
+        let nextEvolve = evaluator.nextActions(phase: phase("evolve"), group: nil).map(\.id)
+        #expect(nextRun.contains("run"))
+        #expect(nextEvolve.contains("run"))
+        // The cancel action is present with the declared prompt.
+        #expect(style.manifest.action("cancel")?.prompt == "/ouroboros:cancel")
+        #expect(style.manifest.action("cancel")?.takesText == false)
+    }
 }

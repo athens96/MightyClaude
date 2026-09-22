@@ -65,13 +65,15 @@ public enum StylePanelProjection {
                             capabilityStates: [String: String],
                             attachments: [StyleAttachmentItem],
                             prerequisites: StylePrerequisiteResult,
-                            running: Bool = false) -> StylePanel {
+                            running: Bool = false,
+                            session: RunSession? = nil) -> StylePanel {
         let manifest = style.manifest
         let evaluator = style.evaluator
         let phase = evaluator.currentPhase(prompts: prompts)
+        let jobOpen = session.map { evaluator.isJobOpen(session: $0) } ?? false
         let ordered = manifest.orderedPhases
         let selected = selectedGroupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: capabilityStates)
-        let nextIds = evaluator.visibleActions(phase: phase, group: selected, running: running).map(\.id)
+        let nextIds = evaluator.visibleActions(phase: phase, group: selected, running: running, jobOpen: jobOpen).map(\.id)
 
         let panelPhase = phase.flatMap { value -> StylePanel.Phase? in
             guard let index = ordered.firstIndex(where: { $0.id == value.id }) else { return nil }
@@ -100,7 +102,7 @@ public enum StylePanelProjection {
                           attachments: attachments.map { StylePanel.Attachment(id: $0.id, title: $0.title, detail: $0.detail, readOnly: $0.readOnly) },
                           setup: StylePanel.Setup(ready: prerequisites.ready, missing: prerequisites.missing,
                                                   hint: prerequisites.hint, installCommand: manifest.install?.command),
-                          guidance: evaluator.guidanceLine(phase: phase, running: running),
+                          guidance: evaluator.guidanceLine(phase: phase, running: running, jobOpen: jobOpen),
                           presentation: StylePanel.Presentation(headerTitle: headerTitle, source: style.source,
                                                                 icon: manifest.presentation.icon?.rawValue, tint: manifest.presentation.tint))
     }

@@ -171,4 +171,88 @@ struct StyleEvaluatorTests {
         #expect(paperthin.nextActions(phase: nil, group: coil).map(\.id) == ["re0-plan", "re0-loop", "re0-memo", "re0-work", "catchup", "nba"])
         #expect(paperthin.nextActions(phase: nil, group: nil).isEmpty)
     }
+
+    @Test func jobOpenStateDerivesFromToolResults() throws {
+        let ouro = StyleFixtures.bundled("ouroboros").evaluator
+        let paperthin = StyleFixtures.bundled("paperthin").evaluator
+
+        // A manifest without a job declaration is never open.
+        #expect(!paperthin.isJobOpen(session: RunSession(workspaceId: "ws", title: "T")))
+
+        func session(_ pairs: [(tool: String, output: String?)]) -> RunSession {
+            var s = RunSession(workspaceId: "ws", title: "T")
+            s.logs = pairs.map { pair in
+                let act = AgentActivity(id: UUID().uuidString, provider: "claude", kind: "tool",
+                                        state: "completed", toolName: pair.tool, summary: pair.tool,
+                                        output: pair.output)
+                return LogEntry(kind: "system", text: pair.tool, activity: act)
+            }
+            return s
+        }
+
+        // Open result → job is open.
+        #expect(ouro.isJobOpen(session: session([("ouroboros_start_execute_seed", nil)])))
+
+        // Open then close → closed.
+        #expect(!ouro.isJobOpen(session: session([
+            ("ouroboros_start_execute_seed", nil),
+            ("ouroboros_job_result", nil)
+        ])))
+
+        // Close then open → open again.
+        #expect(ouro.isJobOpen(session: session([
+            ("ouroboros_job_result", nil),
+            ("ouroboros_start_auto", nil)
+        ])))
+
+        // Terminal status (notContains "running") closes.
+        #expect(!ouro.isJobOpen(session: session([
+            ("ouroboros_start_execute_seed", nil),
+            ("ouroboros_job_status", "completed")
+        ])))
+
+        // Non-terminal status (contains "running") does NOT close.
+        #expect(ouro.isJobOpen(session: session([
+            ("ouroboros_start_execute_seed", nil),
+            ("ouroboros_job_status", "still running")
+        ])))
+
+        // Wire names are matched by short name (server prefix stripped).
+        #expect(ouro.isJobOpen(session: session([
+            ("mcp__plugin_ouroboros_ouroboros__ouroboros_start_ralph", nil)
+        ])))
+        #expect(!ouro.isJobOpen(session: session([
+            ("mcp__plugin_ouroboros_ouroboros__ouroboros_start_ralph", nil),
+            ("mcp__plugin_ouroboros_ouroboros__ouroboros_cancel_job", nil)
+        ])))
+
+        // While open: whileOpen actions in declared order (first prominent).
+        let runPhase = ouro.manifest.phase("run")
+        let openActions = ouro.visibleActions(phase: runPhase, group: nil, running: false, jobOpen: true)
+        #expect(openActions.map(\.id) == ["status", "cancel", "unstuck"])
+        // Normal next returns when closed.
+        #expect(ouro.visibleActions(phase: runPhase, group: nil, running: false, jobOpen: false).first?.id == "evaluate")
+
+        // Guidance while open comes from job.guidance.
+        #expect(ouro.guidanceLine(phase: runPhase, running: false, jobOpen: true)?
+            .contains("백그라운드에서 실행 중입니다") == true)
+        // Normal guidance returns when closed.
+        #expect(ouro.guidanceLine(phase: runPhase, running: false, jobOpen: false)?
+            .contains("실행 단계가 끝났습니다") == true)
+
+        // Placeholder follows running rules when job is open (returns "" when no running placeholder).
+        #expect(ouro.placeholder(phase: runPhase, running: false, answering: false, jobOpen: true) == "")
+        #expect(ouro.placeholder(phase: runPhase, running: false, answering: false, jobOpen: false)
+            == "이어서 요청하거나 위에서 다음 단계를 고르세요…")
+        // Answering still wins over job-open.
+        #expect(ouro.placeholder(phase: runPhase, running: false, answering: true, jobOpen: true)
+            == "직접 답하려면 여기에 적고 Enter…")
+
+        // A "turn" activity entry is never matched (it is the CLI turn, not a tool result).
+        var turnSession = RunSession(workspaceId: "ws", title: "T")
+        let turnAct = AgentActivity(id: "t1", provider: "claude", kind: "turn", state: "completed",
+                                    toolName: "ouroboros_start_execute_seed", summary: "turn")
+        turnSession.logs = [LogEntry(kind: "system", text: "turn", activity: turnAct)]
+        #expect(!ouro.isJobOpen(session: turnSession))
+    }
 }
