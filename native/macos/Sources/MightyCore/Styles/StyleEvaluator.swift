@@ -115,7 +115,9 @@ public struct StyleEvaluator: Sendable {
     /// while a run is in flight there is no next step to offer and the panel
     /// shows a spinner instead; a `byGroup` style is a catalogue, and picking
     /// from it queues the next request, which is what it did before (§6.1).
-    public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool) -> [StyleAction] {
+    /// When a background job is open the while-open list is shown instead (§1.13).
+    public func visibleActions(phase: StylePhase?, group: StyleGroup?, running: Bool, jobOpen: Bool = false) -> [StyleAction] {
+        if jobOpen { return manifest.job.map { $0.whileOpen.compactMap { byId[$0] } } ?? [] }
         if running, drawsPhaseProgress { return [] }
         let start = startActions(phase: phase)
         return start.isEmpty ? nextActions(phase: phase, group: group) : start
@@ -185,22 +187,57 @@ public struct StyleEvaluator: Sendable {
         return byId[action]?.prompt(text: "")
     }
 
-    /// Answering wins, then running, then the entry phase (§1.7). An empty
-    /// string means "the app's own default", which lives in the app.
-    public func placeholder(phase: StylePhase?, running: Bool, answering: Bool) -> String {
+    /// Answering wins, then running (or job-open), then the entry phase (§1.7).
+    /// An empty string means "the app's own default", which lives in the app.
+    public func placeholder(phase: StylePhase?, running: Bool, answering: Bool, jobOpen: Bool = false) -> String {
         if answering { return manifest.placeholders.answering }
-        if running { return manifest.placeholders.running ?? "" }
+        if running || jobOpen { return manifest.placeholders.running ?? "" }
         if case .rewriteBareDraftTo(_, let rulePhase) = manifest.rules.enter, phase?.id == rulePhase, let initial = manifest.placeholders.initial { return initial }
         return manifest.placeholders.idle
     }
 
-    public func guidanceLine(phase: StylePhase?, running: Bool) -> String? {
+    public func guidanceLine(phase: StylePhase?, running: Bool, jobOpen: Bool = false) -> String? {
+        if jobOpen {
+            guard let text = manifest.job?.guidance, !text.isEmpty else { return nil }
+            return StyleGuidanceTemplate.render(text, phaseTitle: phase?.title)
+        }
         let text: String?
         if running { text = manifest.guidance.running }
         else if case .actions(let startPhase, _, _) = manifest.rules.start, phase?.id == startPhase { text = manifest.guidance.start }
         else { text = manifest.guidance.next }
         guard let text, !text.isEmpty else { return nil }
         return StyleGuidanceTemplate.render(text, phaseTitle: phase?.title)
+    }
+
+    // MARK: - job state (§1.13)
+
+    /// Strips the MCP server prefix so `mcp__plugin_x__tool` → `tool`.
+    private func shortName(_ wireName: String) -> String {
+        guard let range = wireName.range(of: "__", options: .backwards) else { return wireName }
+        return String(wireName[range.upperBound...])
+    }
+
+    private func matches(_ matcher: StyleJobMatcher, activity: AgentActivity) -> Bool {
+        guard shortName(activity.toolName ?? "") == matcher.tool else { return false }
+        if let contains = matcher.contains, !(activity.output ?? "").contains(contains) { return false }
+        if let notContains = matcher.notContains, (activity.output ?? "").contains(notContains) { return false }
+        return true
+    }
+
+    /// Returns true when the pane has an open background job (§1.13).
+    /// Always returns false when the manifest has no job declaration.
+    public func isJobOpen(session: RunSession) -> Bool {
+        guard let job = manifest.job else { return false }
+        var lastOpenIndex: Int? = nil
+        var lastCloseIndex: Int? = nil
+        for (index, entry) in session.logs.enumerated() {
+            guard let activity = entry.activity, activity.kind != "turn", activity.toolName != nil else { continue }
+            if job.open.contains(where: { matches($0, activity: activity) }) { lastOpenIndex = index }
+            if job.close.contains(where: { matches($0, activity: activity) }) { lastCloseIndex = index }
+        }
+        guard let openIdx = lastOpenIndex else { return false }
+        guard let closeIdx = lastCloseIndex else { return true }
+        return openIdx > closeIdx
     }
 
     // MARK: - permission

@@ -82,18 +82,19 @@ public enum StyleChips {
     /// been pressed, which shows the start rule's row instead.
     public static func make(_ evaluator: StyleEvaluator, phase: StylePhase?, group: StyleGroup?,
                             startingNew: Bool, capabilityStates: [String: String] = [:],
-                            running: Bool = false) -> StyleChipList {
+                            running: Bool = false, jobOpen: Bool = false) -> StyleChipList {
         let manifest = evaluator.manifest
         var effective = phase
         if startingNew, case .actions(let startPhase, _, _) = manifest.rules.start { effective = manifest.phase(startPhase) }
         let start = evaluator.startActions(phase: effective)
-        let actions = evaluator.visibleActions(phase: effective, group: group, running: running)
+        let actions = evaluator.visibleActions(phase: effective, group: group, running: running, jobOpen: jobOpen)
         // `byGroup` has no prominent chip: the recommendation plays that role.
         var prominent = actions.first?.id
-        if start.isEmpty, case .byGroup = manifest.rules.next { prominent = nil }
+        if !jobOpen, start.isEmpty, case .byGroup = manifest.rules.next { prominent = nil }
         // A sequence in flight has no next step, so its whole row goes and a
         // spinner takes its place; a catalogue keeps its chips (§6.1).
-        let waiting = running && evaluator.drawsPhaseProgress
+        // When a background job is open, the while-open chips are shown instead.
+        let waiting = !jobOpen && running && evaluator.drawsPhaseProgress
         let reset: StyleResetChip
         if waiting { reset = .none }
         else if startingNew { reset = .cancel }

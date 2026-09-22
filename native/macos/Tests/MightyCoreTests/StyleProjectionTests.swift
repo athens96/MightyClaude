@@ -5,16 +5,27 @@ import Testing
 struct StyleProjectionTests {
     private func panel(_ style: RegisteredStyle, prompts: [String] = [], group: String? = nil,
                        states: [String: String] = [:], attachments: [StyleAttachmentItem] = [],
-                       prerequisites: StylePrerequisiteResult = StylePrerequisiteResult(ready: true)) -> StylePanel {
+                       prerequisites: StylePrerequisiteResult = StylePrerequisiteResult(ready: true),
+                       session: RunSession? = nil) -> StylePanel {
         StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: group,
-                                  capabilityStates: states, attachments: attachments, prerequisites: prerequisites)
+                                  capabilityStates: states, attachments: attachments, prerequisites: prerequisites,
+                                  session: session)
+    }
+
+    private func jobSession(open: Bool) -> RunSession {
+        let toolName = open ? "ouroboros_start_execute_seed" : "ouroboros_job_result"
+        let act = AgentActivity(id: "j1", provider: "claude", kind: "tool", state: "completed",
+                                toolName: toolName, summary: toolName)
+        var s = RunSession(workspaceId: "ws", title: "T")
+        s.logs = [LogEntry(kind: "system", text: toolName, activity: act)]
+        return s
     }
 
     @Test func theProjectionCarriesTheWholeCatalogueAndTheSource() throws {
         let style = StyleFixtures.bundled("ouroboros")
         let empty = panel(style)
         #expect(empty.style.id == "ouroboros" && empty.style.source == .bundled && empty.style.icon == "point.3.connected.trianglepath.dotted")
-        #expect(empty.actions.count == 9 && empty.groups.count == 1 && empty.groups[0].selected)
+        #expect(empty.actions.count == 10 && empty.groups.count == 1 && empty.groups[0].selected)
         #expect(empty.phase?.id == "goal" && empty.phase?.index == 0 && empty.phase?.count == 6)
         // The entry phase shows the start rule's buttons; the phone need not know.
         #expect(empty.next == ["interview", "auto"] && empty.actions.first(where: { $0.id == "interview" })?.prominent == true)
@@ -60,6 +71,23 @@ struct StyleProjectionTests {
         #expect(text.contains("\"source\" : \"workspace\""))
     }
 
+    @Test func jobOpenPanelShowsWhileOpenActionsAndGuidance() {
+        let style = StyleFixtures.bundled("ouroboros")
+        let openPanel = panel(style, prompts: ["/ouroboros:run"], session: jobSession(open: true))
+        // While open: only whileOpen actions in declared order; first is prominent.
+        #expect(openPanel.next == ["status", "cancel", "unstuck"])
+        #expect(openPanel.actions.first(where: { $0.id == "status" })?.prominent == true)
+        #expect(openPanel.actions.first(where: { $0.id == "evaluate" })?.prominent == false)
+        #expect(openPanel.guidance?.contains("백그라운드에서 실행 중입니다") == true)
+        // After close: normal next returns; a manifest without declaration is unaffected.
+        let closedPanel = panel(style, prompts: ["/ouroboros:run"], session: jobSession(open: false))
+        #expect(closedPanel.next.first == "evaluate")
+        #expect(closedPanel.guidance?.contains("실행 단계가 끝났습니다") == true)
+        // No session → no job open (backward-compatible default).
+        let noSession = panel(style, prompts: ["/ouroboros:run"])
+        #expect(noSession.next.first == "evaluate")
+    }
+
     @Test func theLegacyAdapterRebuildsTodaysPayloads() throws {
         let ouroboros = StyleFixtures.bundled("ouroboros")
         let seeded = panel(ouroboros, prompts: ["/ouroboros:seed"])
@@ -69,7 +97,7 @@ struct StyleProjectionTests {
         #expect(flow.phase == "seed" && flow.ready)
         #expect(flow.takesText == ["interview", "auto", "unstuck"])
         #expect(flow.next.map(\.skill) == ["run", "evaluate", "status"])
-        #expect(flow.all.count == 9 && flow.all.first?.skill == "interview" && flow.all.first?.title == "인터뷰 시작")
+        #expect(flow.all.count == 10 && flow.all.first?.skill == "interview" && flow.all.first?.title == "인터뷰 시작")
         #expect(flow.all.first?.help == "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)")
         // A phase-less pane still reports the entry phase, as today — and the
         // old `next` field is the phase map alone, which is empty at `goal`,

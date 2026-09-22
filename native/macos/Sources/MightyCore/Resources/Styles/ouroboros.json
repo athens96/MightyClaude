@@ -40,7 +40,7 @@
   ],
   "groups": [
     { "id": "flow", "title": "흐름",
-      "actions": ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck"] }
+      "actions": ["interview", "auto", "seed", "run", "evaluate", "evolve", "ralph", "status", "unstuck", "cancel"] }
   ],
   "actions": [
     { "id": "interview", "title": "인터뷰 시작", "help": "소크라테스식 질문으로 요구를 또렷하게 만듭니다 (모호도 0.2 이하까지)", "prompt": "/ouroboros:interview {text}", "takesText": true,  "foldText": "trimOnly", "requiresText": true, "phase": "interview", "icon": "questionmark.bubble" },
@@ -51,7 +51,8 @@
     { "id": "evolve",    "title": "진화",        "help": "평가를 반영해 다음 세대 시드로 수렴할 때까지 반복합니다",             "prompt": "/ouroboros:evolve",           "takesText": false, "phase": "evolve",    "icon": "arrow.triangle.2.circlepath" },
     { "id": "ralph",     "title": "랄프 루프",   "help": "수렴할 때까지 진화 단계를 계속 돌립니다",                            "prompt": "/ouroboros:ralph",            "takesText": false, "phase": "evolve",    "icon": "infinity" },
     { "id": "status",    "title": "상태",        "help": "세션 상태와 목표 이탈(drift)을 확인합니다",                          "prompt": "/ouroboros:status",           "takesText": false, "icon": "gauge.with.dots.needle.33percent" },
-    { "id": "unstuck",   "title": "막힘 풀기",   "help": "다섯 가지 관점으로 막힌 지점을 다시 봅니다",                         "prompt": "/ouroboros:unstuck {text}",   "takesText": true,  "foldText": "trimOnly", "icon": "lightbulb" }
+    { "id": "unstuck",   "title": "막힘 풀기",   "help": "다섯 가지 관점으로 막힌 지점을 다시 봅니다",                         "prompt": "/ouroboros:unstuck {text}",   "takesText": true,  "foldText": "trimOnly", "icon": "lightbulb" },
+    { "id": "cancel",    "title": "취소",        "help": "백그라운드에서 실행 중인 작업을 취소합니다",                          "prompt": "/ouroboros:cancel",           "takesText": false }
   ],
   "aliases": [
     { "name": "pm",          "phase": "interview" },
@@ -71,9 +72,9 @@
         "goal":      [],
         "interview": ["seed", "status", "unstuck"],
         "seed":      ["run", "evaluate", "status"],
-        "run":       ["evaluate", "evolve", "status", "unstuck"],
+        "run":       ["evaluate", "evolve", "run", "status", "unstuck"],
         "evaluate":  ["evolve", "run", "status", "unstuck"],
-        "evolve":    ["ralph", "evaluate", "status", "unstuck"]
+        "evolve":    ["ralph", "evaluate", "run", "status", "unstuck"]
       }
     },
     "enter": { "kind": "rewriteBareDraftTo", "action": "interview", "phase": "goal" },
@@ -100,5 +101,20 @@
     { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_ac_tree_hud" },
     { "server": "plugin_ouroboros_ouroboros", "tool": "ouroboros_session_signal_targets" }
   ],
-  "presentation": { "icon": "point.3.connected.trianglepath.dotted", "tint": "accent" }
+  "presentation": { "icon": "point.3.connected.trianglepath.dotted", "tint": "accent" },
+  "job": {
+    "open": [
+      { "tool": "ouroboros_start_execute_seed" },
+      { "tool": "ouroboros_start_auto" },
+      { "tool": "ouroboros_start_evolve_step" },
+      { "tool": "ouroboros_start_ralph" }
+    ],
+    "close": [
+      { "tool": "ouroboros_job_result" },
+      { "tool": "ouroboros_cancel_job" },
+      { "tool": "ouroboros_job_status", "notContains": "running" }
+    ],
+    "whileOpen": ["status", "cancel", "unstuck"],
+    "guidance": "백그라운드에서 실행 중입니다 · 취소하거나 상태를 확인하세요"
+  }
 }
