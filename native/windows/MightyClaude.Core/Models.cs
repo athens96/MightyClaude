@@ -151,6 +151,8 @@ public sealed record AppSnapshot
     public string? AppUpdateLastCheckedAt { get; init; }
     // User-entered manifest URL override (ignored when the build has a built-in URL).
     public string? AppUpdateManifestUrlOverride { get; init; }
+    // "system", "ko", or "en". Applied at next app start via Locale.LanguagePreference.
+    public string LanguagePreference { get; init; } = "system";
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)

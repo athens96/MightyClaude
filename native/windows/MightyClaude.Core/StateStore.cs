@@ -134,7 +134,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             if (selected is not null) selections[workspace.Id] = selected;
         }
         var trustedStatusLines = value.TrustedStatusLines?.Where(p => Wire.Identifier(p.Key) && p.Value is { Length: > 0 and <= 64 }).ToDictionary(p => p.Key, p => p.Value);
-        return value with { Workspaces = workspaces, Sessions = sessions, ActiveWorkspaceId = workspaceId, ActiveSessionId = activeSessionId, PaneLayouts = layouts, PaneLayoutModes = modes, PaneLayoutActiveSessionIds = selections, Layout = value.Layout is "grid" or "columns" or "focus" or "tabs" or "custom" ? value.Layout : "grid", Theme = value.Theme == "light" ? "light" : "dark", SidebarWidth = double.IsFinite(value.SidebarWidth) ? Math.Clamp(value.SidebarWidth, 200, 400) : 252, TrustedStatusLines = trustedStatusLines?.Count > 0 ? trustedStatusLines : null };
+        return value with { Workspaces = workspaces, Sessions = sessions, ActiveWorkspaceId = workspaceId, ActiveSessionId = activeSessionId, PaneLayouts = layouts, PaneLayoutModes = modes, PaneLayoutActiveSessionIds = selections, Layout = value.Layout is "grid" or "columns" or "focus" or "tabs" or "custom" ? value.Layout : "grid", Theme = value.Theme == "light" ? "light" : "dark", SidebarWidth = double.IsFinite(value.SidebarWidth) ? Math.Clamp(value.SidebarWidth, 200, 400) : 252, TrustedStatusLines = trustedStatusLines?.Count > 0 ? trustedStatusLines : null, LanguagePreference = value.LanguagePreference is "ko" or "en" ? value.LanguagePreference : "system" };
     }
     public static async Task AtomicWriteAsync(string path, byte[] data)
     {
