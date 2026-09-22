@@ -207,7 +207,8 @@ public enum MobileMightySupport {
     public static func blocks(_ run: MightyGraphRun, ordinal: Int) -> [MobileBlock] {
         let mainStatus = status(run.status)
         var result = [MobileBlock(id: run.id + ":main", kind: "main", title: "요청 \(ordinal)", status: mainStatus,
-                                  summary: nil, output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus))]
+                                  summary: nil, output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
+                                  nodeModelLabel: run.nodeModelLabel)]
         for agent in run.agents {
             let state = status(agent.status)
             result.append(MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),

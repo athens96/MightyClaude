@@ -273,6 +273,8 @@ export interface MobileBlock {
   /** Up to `MAX_BLOCK_OUTPUT` characters. */
   output?: string;
   durationMs?: number;
+  /** Model label projected from the Mac's request node; present only on `main` blocks. */
+  nodeModelLabel?: string;
 }
 
 export interface MobileMightyRun {

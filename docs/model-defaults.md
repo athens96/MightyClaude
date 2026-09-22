@@ -54,12 +54,67 @@ resolve(sessionModel, provider, permissionMode, workspaceDefaults, appDefaults):
 
 Priority summary: **explicit selection > workspace default > app default > CLI default**
 
+A model selected with `/model` persists across permission-mode changes. Changing the
+permission mode or the model default takes effect on the next request.
+
 ## Mode menu label
 
 `modeMenuLabel(provider, mode, workspace, app)` = `resolve("default", provider, mode, workspace, app)`
 
-The permission-mode button shows the resolved model name for that mode (or "default"
+The permission-mode button shows the resolved model name for that mode (or `"default"`
 when nothing is configured).
+
+## Graph node / phone block label
+
+```
+nodeModelLabel(cliReportedModel, configuredModel):
+  1. if cliReportedModel is non-empty  →  return cliReportedModel          (actual)
+  2. if configuredModel ≠ "default"   →  return configuredModel + " · 설정" (configured, unconfirmed)
+  3. return nil                        (no label; CLI decided, model unknown)
+```
+
+The phone block list projects the same label that the Mac attaches to the graph request
+node (`nodeModelLabel`). There is no separate phone-side model concept.
+
+## Registered name validation
+
+Before a name is saved or passed to the CLI, the following rules apply in order:
+
+1. **Trim** leading and trailing whitespace (applied silently before the checks below).
+2. **Non-empty** — reject the trimmed name if it is empty.
+3. **Not reserved** — reject the name `"default"` (case-sensitive).
+4. **Character set** — name must match `CoreValidation.model`:
+   - max 200 characters
+   - pattern: `^[a-zA-Z0-9][a-zA-Z0-9._:/@\[\]-]*$`
+5. **No provider-duplicate** — reject if another entry with the same name already exists
+   under the same provider.
+
+Registration rejects with an explicit error message; it never silently normalises or
+substitutes a different name.
+
+When a registered name is deleted:
+- Every mode row (app default, workspace override) for that provider that referenced
+  the deleted name is reverted to `"default"`.
+- The number of reverted rows is reported to the caller.
+- Open run sessions that had the name set keep it; they will see a CLI error on the
+  next run.
+
+## Effort format for registered models
+
+`RegisteredModelEntry` carries the same effort shape as a `ModelOption` from the
+catalog:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `supportsEffort` | `bool` | `false` | Whether this model accepts an effort argument. |
+| `supportedEffortLevels` | `string[]` | `[]` | Supported effort values; must be a subset of the provider's known effort levels. Empty means no effort restriction beyond `supportsEffort`. |
+
+At run time, `ProviderOptions.effortLevels` checks registered entries when the
+catalog does not contain the model name, so the registered effort shape feeds the
+same effort-validation path used by catalog models.
+
+If the CLI later adds the same model name to its catalog, the catalog entry takes
+precedence over the registered entry.
 
 ## Backward compatibility
 
@@ -67,10 +122,14 @@ when nothing is configured).
   decode with `modelDefaults = null`, meaning all modes resolve to `"default"`.
 - Same for `Workspace.modelDefaults`.
 - No existing run-session behaviour changes when `modelDefaults` is `null`.
+- `ProviderModeDefaults` fields `modeDefaults` and `registeredModels` both default to
+  empty when absent, so partial payloads are safe.
 
 ## Scope
 
 Only Claude and Codex are in scope. Gemini has no per-mode model configuration.
+Windows has no execution graph, so `nodeModelLabel` is only exercised on macOS and
+is not part of the Windows settings or snapshot contract.
 
 ## 기기 미확인 항목 (manual verification)
 

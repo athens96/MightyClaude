@@ -306,9 +306,12 @@ public struct MobileBlock: Codable, Sendable, Equatable, Identifiable {
     public var summary: String?
     public var output: String?
     public var durationMs: Double?
-    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil) {
+    /// The model label computed by the Mac and projected directly; present only on `main` blocks.
+    public var nodeModelLabel: String?
+    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil, nodeModelLabel: String? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.status = status
         self.summary = summary; self.output = output; self.durationMs = durationMs
+        self.nodeModelLabel = nodeModelLabel
     }
 }
 
