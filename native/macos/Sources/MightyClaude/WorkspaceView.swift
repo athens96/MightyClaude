@@ -233,6 +233,11 @@ struct WorkspaceView: View {
             Button { addSession(in: workspace, kind: "shell") } label: {
                 Label(workspace.remote == nil ? "새 터미널" : "새 원격 명령", systemImage: "terminal")
             }
+            Divider()
+            Button { addSession(in: workspace, kind: "browser") } label: {
+                Label(L("browser.newTab"), systemImage: "globe")
+            }
+            .accessibilityIdentifier("new-browser-tab")
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 12)

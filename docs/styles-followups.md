@@ -108,3 +108,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 - 다국어 지원의 나머지: 토대(`locales/ko.json`·`en.json`, 세 클라이언트 로더, 설정·안내 패널)는 v4에 들어갔다. 남은 하드코딩 문구 3,239개와 영어 초안 검토는 `docs/i18n.md`에 있다. 엔진 파일 안의 문구를 옮길지는 그때 정한다. Windows `LocalizationVerification`에 en→ko 되돌림 검사가 없다(평가 후속).
 - macOS CI `Check smoke result`의 수정(`docs/ci-macos-failure.md`의 후보 F)과 그 결과 기록.
 - `◆ … → next: ooo <동작>` 줄을 읽는 `recommend` 규칙(항목 6의 나머지).
+
+### 브라우저 창 1단계 (시드 `seed_browser_s1_engine`)
+
+`docs/browser-pane.md`, `docs/i18n.md`, `docs/styles-followups.md`, `locales/en.json`, `locales/ko.json`, `mobile/src/locales/en.json`, `mobile/src/locales/ko.json`, `native/macos/BrowserEngine.lock`, `native/macos/Sources/MightyClaude/AppStore.swift`, `native/macos/Sources/MightyClaude/BrowserPaneView.swift`, `native/macos/Sources/MightyClaude/PaneDockView.swift`, `native/macos/Sources/MightyClaude/WorkspaceView.swift`, `native/macos/Sources/MightyCore/BrowserEngine.swift`, `native/macos/Sources/MightyCore/Models.swift`, `native/macos/Sources/MightyCore/Resources/Locales/en.json`, `native/macos/Sources/MightyCore/Resources/Locales/ko.json`, `native/macos/Sources/MightyCore/StateRepository.swift`, `native/macos/Tests/MightyCoreTests/BrowserEngineTests.swift`, `native/macos/Tests/MightyCoreTests/BrowserSessionTests.swift`, `native/windows/MightyClaude.Core.Tests/BrowserSessionVerification.cs`, `native/windows/MightyClaude.Core.Tests/Verification.cs`, `scripts/fetch-browser-engine.sh` — v5 다섯 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
