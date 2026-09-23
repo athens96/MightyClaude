@@ -53,6 +53,7 @@ public sealed partial class MainWindow
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
+            result["modelDefaultsSmoke"] = await RunModelDefaultsSmoke();
             result["rename"] = await RunRenameSmoke();
             result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
             result[CodexPluginSmokeOutcome.ResultKey] = await RunCodexPluginSmoke();
@@ -103,6 +104,69 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
+    private async Task<Dictionary<string, object?>> RunModelDefaultsSmoke()
+    {
+        var checks = new Dictionary<string, object?>();
+        var originalDefaults = service.Snapshot.ModelDefaults;
+        const string fixtureModel = "smoke/fixture-model-v1";
+        const string fixtureProvider = "claude";
+        const string fixtureMode = "manual";
+        try
+        {
+            // Add a registered model through the Core path.
+            string? addError = null;
+            await service.UpdateAsync(s =>
+            {
+                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                addError = ModelDefaultsResolution.AddRegisteredModel(fixtureModel, fixtureProvider, ref cfg);
+                return addError is null ? s with { ModelDefaults = cfg } : s;
+            });
+            Require(addError is null, "modelDefaults smoke: AddRegisteredModel must succeed for a valid name");
+            Require(service.Snapshot.ModelDefaults?.Claude.RegisteredModels.Any(m => m.Name == fixtureModel) == true,
+                "modelDefaults smoke: registered model must appear in snapshot after add");
+            checks["modelDefaultsAdd"] = true;
+
+            // Pick: set a mode default to the registered name.
+            await service.UpdateAsync(s =>
+            {
+                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                var pd = cfg.Claude with { ModeDefaults = new Dictionary<string, string>(cfg.Claude.ModeDefaults) { [fixtureMode] = fixtureModel } };
+                return s with { ModelDefaults = cfg with { Claude = pd } };
+            });
+            Require(service.Snapshot.ModelDefaults?.Claude.ModeDefaults.TryGetValue(fixtureMode, out var picked) == true && picked == fixtureModel,
+                "modelDefaults smoke: mode default must be set to the fixture model");
+            checks["modelDefaultsPick"] = true;
+
+            // Remove: registered model is removed and the mode row is reverted to "default".
+            var reverted = 0;
+            await service.UpdateAsync(s =>
+            {
+                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                reverted = ModelDefaultsResolution.RemoveRegisteredModel(fixtureModel, fixtureProvider, ref cfg);
+                return s with { ModelDefaults = cfg };
+            });
+            Require(reverted == 1, "modelDefaults smoke: removing the fixture model must revert 1 mode row");
+            Require(service.Snapshot.ModelDefaults?.Claude.ModeDefaults.TryGetValue(fixtureMode, out var afterRemove) != true || afterRemove == "default",
+                "modelDefaults smoke: mode row must revert to 'default' after remove");
+            Require(service.Snapshot.ModelDefaults?.Claude.RegisteredModels.All(m => m.Name != fixtureModel) != false,
+                "modelDefaults smoke: fixture model must be gone from registered list after remove");
+            checks["modelDefaultsRemoveReverts"] = true;
+
+            // Section rows: verify the section model produces rows per provider/mode.
+            var rows = ModelDefaultsResolution.SectionRows(service.Snapshot.ModelDefaults);
+            Require(rows.Any(r => r.Provider == "claude"), "modelDefaults smoke: section rows must include claude rows");
+            Require(rows.Any(r => r.Provider == "codex"), "modelDefaults smoke: section rows must include codex rows");
+            checks["modelDefaultsRows"] = true;
+
+            checks["passed"] = true;
+        }
+        finally
+        {
+            await service.UpdateAsync(s => s with { ModelDefaults = originalDefaults });
+        }
+        return checks;
+    }
+
     private async Task<Dictionary<string, object?>> RunRenameSmoke()
     {
         var checks = new Dictionary<string, object?>();
