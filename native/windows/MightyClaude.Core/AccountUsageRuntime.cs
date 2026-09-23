@@ -54,7 +54,7 @@ public static class AccountUsageRuntime
                 var env = environment();
                 return await ClaudeAccountProbe.ReadAsync(env,
                     () => ClaudeCredentialFile.Read(home(), env, DateTimeOffset.UtcNow),
-                    SendAsync, () => DateTimeOffset.UtcNow, cancellation);
+                    SendAsync, () => DateTimeOffset.UtcNow, cancellation: cancellation);
             }
             case "codex":
             {

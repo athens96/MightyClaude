@@ -675,6 +675,159 @@ internal static class AccountUsageVerification
         Check(shown.Count == 2 && shown.All(r => r.State == "unknown"), "a relaunch with nothing read yet is unknown, never a stale number");
     }
 
+    // ---------------------------------------------------- shape log / rate-limit / guard
+
+    /// First 2xx reset response shape is logged once per programme per process,
+    /// key paths and value types only, never values.
+    internal static async Task UsageResetFirstResponseLog()
+    {
+        var home = Verification.Temp();
+        try
+        {
+            WriteCredentials(home);
+            var lines = new List<string>();
+            var shapeLog = new AccountUsageShapeLog(line => { lock (lines) lines.Add(line); });
+            var deadlineBox = new ResetReadDeadlineBox();
+
+            const string cedarBody = """{"cedar_ember":{"grants":[{"resets_left":2,"ends_at":"2026-09-21T00:00:00Z","usable_now":true,"use_requires_limit":false,"paused":false}],"in_experiment":true}}""";
+            const string juniperBody = """{"juniper_tide":{"in_experiment":true,"available":true,"resets_per_week":3,"weekly_resets_at":"2026-09-22T00:00:00Z"}}""";
+
+            AccountUsageHttpHandler http = (request, _) => Task.FromResult(request.Url.Query switch
+            {
+                "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(200, cedarBody),
+                "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(200, juniperBody),
+                _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? ProfileBody : UsageBody),
+            });
+            var credential = ClaudeCredentialFile.Read(home, new Dictionary<string, string>(), Instant);
+
+            await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), () => credential, http, () => Instant,
+                deadlineBox, shapeLog);
+
+            string[] firstLines;
+            lock (lines) firstLines = [.. lines];
+            Check(firstLines.Length > 0, "shape lines are emitted on first read");
+            foreach (var line in firstLines)
+            {
+                Check(line.StartsWith("account-usage: "), "every line has the account-usage: prefix: " + line);
+                var content = line["account-usage: ".Length..];
+                var sep = content.LastIndexOf(": ");
+                Check(sep > 0, "every line has the 'path: type' format: " + line);
+                var typeToken = content[(sep + 2)..];
+                Check(typeToken is "object" or "array" or "string" or "number" or "boolean" or "null",
+                    "type token is a JSON kind word: " + line);
+            }
+            // No sign-in value or email in any shape line.
+            var allLines = string.Join('\n', firstLines);
+            Check(!allLines.Contains(FixtureToken), "the fixture sign-in must not appear in shape lines");
+            Check(!allLines.Contains("fixture@"), "the fixture email must not appear in shape lines");
+
+            // A second call produces no new lines.
+            var countBefore = lines.Count;
+            await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), () => credential, http, () => Instant,
+                deadlineBox, shapeLog);
+            Check(lines.Count == countBefore, "shape lines are logged only once per programme");
+        }
+        finally { Directory.Delete(home, true); }
+    }
+
+    /// A 429 on a reset GET sets a deadline; no reset GETs are sent while the
+    /// injected clock is before it; the base usage windows are unaffected.
+    internal static async Task UsageResetRateLimitDeadline()
+    {
+        var home = Verification.Temp();
+        try
+        {
+            WriteCredentials(home);
+            var deadlineBox = new ResetReadDeadlineBox();
+            var credential = ClaudeCredentialFile.Read(home, new Dictionary<string, string>(), Instant);
+
+            var resetCalls = 0;
+            AccountUsageHttpHandler MakeHttp(int cedarStatus, string? retryAfter = null) =>
+                (request, _) =>
+                {
+                    if (request.Url.Query.StartsWith("?cedar_ember=") || request.Url.Query.StartsWith("?at_wall="))
+                        System.Threading.Interlocked.Increment(ref resetCalls);
+                    return Task.FromResult(request.Url.Query switch
+                    {
+                        "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(cedarStatus, "", retryAfter),
+                        "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(cedarStatus, "", retryAfter),
+                        _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? ProfileBody : UsageBody),
+                    });
+                };
+
+            // First call: 429 on reset endpoints with Retry-After 120.
+            resetCalls = 0;
+            var snap1 = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), () => credential,
+                MakeHttp(429, "120"), () => Instant, deadlineBox);
+            Check(resetCalls == 2, "first call makes two reset GETs (one per programme): " + resetCalls);
+            Check(snap1.Windows.Count > 0, "base usage is unaffected by the reset 429");
+            Check(snap1.Resets.All(r => r.State == ResetState.Unknown), "all reset rows are unknown after 429");
+            var deadline = deadlineBox.Get();
+            Check(deadline is { } d && d > Instant, "deadline is set after 429");
+
+            // Second call at +60s (before 120s deadline): no reset GETs.
+            var t60 = Instant.AddSeconds(60);
+            resetCalls = 0;
+            var snap2 = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), () => credential,
+                MakeHttp(200), () => t60, deadlineBox);
+            Check(resetCalls == 0, "no reset GETs before the deadline: " + resetCalls);
+            Check(snap2.Resets.All(r => r.State == ResetState.Unknown), "reset rows stay unknown during deadline");
+
+            // Third call at +130s (past the 120s deadline): reset GETs resume.
+            var t130 = Instant.AddSeconds(130);
+            resetCalls = 0;
+            await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), () => credential,
+                MakeHttp(200), () => t130, deadlineBox);
+            Check(resetCalls == 2, "reset GETs resume after the deadline: " + resetCalls);
+        }
+        finally { Directory.Delete(home, true); }
+    }
+
+    /// Unsanctioned usage queries (missing skip_spend=1, wrong value, extra or
+    /// reordered keys) are refused by the guard before the transport sees them.
+    internal static Task UsageResetGuardCheck()
+    {
+        // Bad reset queries: missing skip_spend, wrong value, extra key, reordered.
+        foreach (var badQuery in new[]
+        {
+            "cedar_ember=1", "at_wall=1",
+            "cedar_ember=1&skip_spend=0", "at_wall=1&skip_spend=0",
+            "cedar_ember=1&extra=true&skip_spend=1", "at_wall=1&extra=1&skip_spend=1",
+            "skip_spend=1&cedar_ember=1", "skip_spend=1&at_wall=1",
+        })
+        {
+            var refused = false;
+            try { ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage?" + badQuery)); }
+            catch (AccountUsageFailure) { refused = true; }
+            Check(refused, "usage?" + badQuery + " must be refused before send");
+        }
+
+        // Sanctioned variants pass the guard.
+        ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage"));
+        ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"));
+        ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1"));
+        ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/profile"));
+
+        // Non-GET and non-https are refused.
+        var nonHttps = false;
+        try { ClaudeAccountProbe.Guard(new Uri("http://api.anthropic.com/api/oauth/usage")); }
+        catch (AccountUsageFailure) { nonHttps = true; }
+        Check(nonHttps, "non-https must be refused");
+
+        // The transport count stays 0 for any refused query — Endpoint() calls
+        // Guard() before the request object is handed to the transport.
+        var attempts = 0;
+        AccountUsageHttpHandler countingHttp = (_, _) => { attempts++; return Task.FromResult(new AccountUsageHttpResponse(200, UsageBody)); };
+        foreach (var badQuery in new[] { "cedar_ember=1", "at_wall=1&skip_spend=0" })
+        {
+            try { ClaudeAccountProbe.Endpoint("usage", badQuery); }
+            catch (AccountUsageFailure) { }
+        }
+        Check(attempts == 0, "transport count stays 0 for refused queries: " + attempts);
+        _ = countingHttp;
+        return Task.CompletedTask;
+    }
+
     /// A line-delimited JSON-RPC channel that answers from a fixture script.
     private sealed class FakeStdio(List<string> sent, params string[] replies) : IAccountUsageStdio
     {

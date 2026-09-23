@@ -2,6 +2,57 @@ import Foundation
 import Security
 import CryptoKit
 import CoreFoundation
+import OSLog
+
+/// Persists the reset-read 429 deadline across calls; injectable so tests can
+/// pre-seed or inspect it. Access is lock-protected.
+public final class ResetReadDeadlineBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _deadline: Date?
+    public var deadline: Date? {
+        get { lock.lock(); defer { lock.unlock() }; return _deadline }
+        set { lock.lock(); _deadline = newValue; lock.unlock() }
+    }
+    public init() {}
+}
+
+/// Logs key paths and value types of the first 2xx reset response per programme,
+/// once per instance, through an injectable sink. Default sink: os.Logger.
+public final class AccountUsageShapeLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var logged = Set<String>()
+    private let emit: @Sendable (String) -> Void
+
+    public static let shared = AccountUsageShapeLog { line in
+        Logger(subsystem: "dev.mightyclaude.native", category: "account-usage").info("\(line, privacy: .public)")
+    }
+    public init(emit: @escaping @Sendable (String) -> Void) { self.emit = emit }
+
+    public func logShapeOnce(program: ResetProgram, body: [String: Any]) {
+        lock.lock(); let isNew = logged.insert(program.rawValue).inserted; lock.unlock()
+        guard isNew else { return }
+        for (key, value) in body.sorted(by: { $0.key < $1.key }) {
+            for line in shapeLines(of: value, path: key) { emit(line) }
+        }
+    }
+    private func shapeLines(of value: Any, path: String) -> [String] {
+        var out: [String] = []
+        switch value {
+        case let d as [String: Any]:
+            out.append("\(path): object")
+            for (k, v) in d.sorted(by: { $0.key < $1.key }) { out += shapeLines(of: v, path: "\(path).\(k)") }
+        case let a as [Any]:
+            out.append("\(path): array")
+            if let first = a.first { out += shapeLines(of: first, path: "\(path)[]") }
+        case is NSNull: out.append("\(path): null")
+        case let n as NSNumber where CFGetTypeID(n) == CFBooleanGetTypeID(): out.append("\(path): boolean")
+        case is NSNumber: out.append("\(path): number")
+        case is String: out.append("\(path): string")
+        default: out.append("\(path): unknown")
+        }
+        return out
+    }
+}
 
 struct AccountUsageHTTPResponse: Sendable {
     var status: Int
@@ -31,8 +82,10 @@ public actor AccountUsageService {
 
     public init() {
         let environment = ProviderService.runtimeEnvironment()
+        let resetDeadline = ResetReadDeadlineBox()
+        let shapeLog = AccountUsageShapeLog.shared
         probe = { provider, interactive in
-            if provider == "claude" { return try await Self.claude(environment: environment, interactive: interactive, now: { Date() }) }
+            if provider == "claude" { return try await Self.claude(environment: environment, interactive: interactive, now: { Date() }, resetDeadlineBox: resetDeadline, shapeLog: shapeLog) }
             if provider == "codex" {
                 let providers = ProviderService(environment: environment)
                 let command = await providers.command(provider: provider)
@@ -176,7 +229,9 @@ public actor AccountUsageService {
     static func claude(environment: [String: String], load: (@Sendable () throws -> ClaudeQuotaCredential?)? = nil,
                        http: @escaping @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = accountUsageHTTP,
                        interactive: Bool = false,
-                       now: @escaping @Sendable () -> Date = { Date() }) async throws -> AccountUsageSnapshot {
+                       now: @escaping @Sendable () -> Date = { Date() },
+                       resetDeadlineBox: ResetReadDeadlineBox? = nil,
+                       shapeLog: AccountUsageShapeLog? = nil) async throws -> AccountUsageSnapshot {
         // Never forward a custom provider's credentials to the production endpoint.
         for key in ["CLAUDE_CODE_CUSTOM_OAUTH_URL", "CLAUDE_LOCAL_OAUTH_API_BASE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] {
             if let value = environment[key], !value.isEmpty, !["0", "false"].contains(value.lowercased()) { throw AccountUsageFailure.unavailable("사용자 지정 인증의 계정 한도는 CLI에서 확인하세요.") }
@@ -193,19 +248,25 @@ public actor AccountUsageService {
             request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
             return request
         }
-        let response = try await http(request("usage"))
+        let guardedHttp: @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = { req in
+            try AccountUsageService.guardRequest(req)
+            return try await http(req)
+        }
+        let response = try await guardedHttp(request("usage"))
         try checkHTTP(response)
         guard let body = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else { throw AccountUsageFailure.invalidResponse }
         var profile: [String: Any] = [:]
         var retryAfter: TimeInterval?
-        if let reply = try? await http(request("profile")) {
+        if let reply = try? await guardedHttp(request("profile")) {
             if reply.status == 429 { retryAfter = retryInterval(reply.retryAfter) }
             else if (200..<300).contains(reply.status), let value = try? JSONSerialization.jsonObject(with: reply.data) as? [String: Any] { profile = value }
         }
         try Task.checkCancellation()
         var snapshot = mapClaude(body, profile: profile, plan: credentials.plan)
         snapshot.retryAfterSeconds = retryAfter
-        snapshot.resets = await resets(http: http, request: { request("usage", query: $0, timeout: 5) }, now: now())
+        let (resetRows, newDeadline) = await resets(http: guardedHttp, request: { request("usage", query: $0, timeout: 5) }, now: now(), skipUntil: resetDeadlineBox?.deadline, shapeLog: shapeLog)
+        resetDeadlineBox?.deadline = newDeadline
+        snapshot.resets = resetRows
         return snapshot
     }
 
@@ -214,14 +275,25 @@ public actor AccountUsageService {
     /// account is not in that programme; anything else this app could not read
     /// stays unknown, and the copy blames this app's connection.
     static func resets(http: @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse,
-                       request: (String) -> URLRequest, now: Date) async -> [AccountResetEntitlement] {
+                       request: (String) -> URLRequest, now: Date,
+                       skipUntil: Date? = nil,
+                       shapeLog: AccountUsageShapeLog? = nil) async -> ([AccountResetEntitlement], deadline: Date?) {
+        // While the reset-read cooldown is active, all rows read unknown and no
+        // GET is sent. The base usage read and its own cooldown are unaffected.
+        if let skipUntil, now < skipUntil {
+            return (ResetProgram.allCases.map { ClaudeResetEntitlements.unknown($0) }, skipUntil)
+        }
         var rows: [AccountResetEntitlement] = []
+        var deadline: Date? = nil
         for program in ResetProgram.allCases {
             var row = ClaudeResetEntitlements.unknown(program)
             do {
                 let reply = try await http(request(program.query))
                 if reply.status == 404 { row = ClaudeResetEntitlements.ineligible(program) }
-                else if (200..<300).contains(reply.status), reply.data.count <= 1024 * 1024,
+                else if reply.status == 429 {
+                    let d = now.addingTimeInterval(retryInterval(reply.retryAfter))
+                    if deadline == nil || d > deadline! { deadline = d }
+                } else if (200..<300).contains(reply.status), reply.data.count <= 1024 * 1024,
                         let object = try? JSONSerialization.jsonObject(with: reply.data) as? [String: Any] {
                     // A body without the block at all is an account outside the
                     // programme, not a gap in what this app can see.
@@ -229,12 +301,12 @@ public actor AccountUsageService {
                         ? ClaudeResetEntitlements.ineligible(program)
                         : (program == .cedarEmber ? ClaudeResetEntitlements.cedarEmber(object, now: now)
                                                   : ClaudeResetEntitlements.juniperTide(object, now: now))
+                    shapeLog?.logShapeOnce(program: program, body: object)
                 }
-                // A 429 or a 5xx leaves the row unknown and the base usage untouched.
             } catch { }
             rows.append(row)
         }
-        return rows
+        return (rows, deadline)
     }
     static func checkHTTP(_ response: AccountUsageHTTPResponse) throws {
         if response.status == 401 || response.status == 403 { throw AccountUsageFailure.authentication }
@@ -403,4 +475,20 @@ extension AccountUsageService {
         try await CodexAccountProbe.read(command: command, environment: environment, timeoutSeconds: timeout)
     }
     static func parseClaudeCredential(_ data: Data) -> ClaudeQuotaCredential? { ClaudeQuotaCredentials.parse(data) }
+
+    /// Pre-send guard: refuses non-GET, non-https, foreign-host and unsanctioned-query
+    /// requests before the token ever leaves. Same contract as the Windows
+    /// ClaudeAccountProbe.Guard.
+    public static func guardRequest(_ request: URLRequest) throws {
+        guard request.httpMethod == "GET",
+              let url = request.url,
+              url.scheme == "https",
+              url.host == "api.anthropic.com"
+        else { throw AccountUsageFailure.network }
+        let pq = url.path + (url.query.map { "?" + $0 } ?? "")
+        guard ["/api/oauth/usage", "/api/oauth/profile",
+               "/api/oauth/usage?cedar_ember=1&skip_spend=1",
+               "/api/oauth/usage?at_wall=1&skip_spend=1"].contains(pq)
+        else { throw AccountUsageFailure.network }
+    }
 }

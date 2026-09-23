@@ -174,6 +174,9 @@ public static class ClaudeAccountProbe
         Guard(url);
         return url;
     }
+    /// Per-process deadline for reset GETs; survives across ReadAsync calls.
+    public static readonly ResetReadDeadlineBox SharedDeadlineBox = new();
+
     /// HTTPS, exactly api.anthropic.com, and only the four allowed paths.
     /// A usage query with a reset variant must carry skip_spend=1 and no extra
     /// keys; anything else is rejected here before the token ever leaves.
@@ -230,6 +233,8 @@ public static class ClaudeAccountProbe
         Func<ClaudeQuotaCredential?> load,
         AccountUsageHttpHandler http,
         Func<DateTimeOffset> clock,
+        ResetReadDeadlineBox? resetDeadlineBox = null,
+        AccountUsageShapeLog? shapeLog = null,
         CancellationToken cancellation = default)
     {
         if (CustomAuthentication(environment)) throw new AccountUsageFailure(AccountUsageFailureKind.Unavailable, AccountUsageStrings.DetailCustomAuthentication);
@@ -269,7 +274,10 @@ public static class ClaudeAccountProbe
         // The 리셋권 read rides the same schedule; a failure of it never changes
         // the base usage windows or the status above.
         var resets = await ClaudeResetEntitlements.ReadAsync(
-            query => Request("usage", query, ResetTimeout), http, clock, cancellation);
+            query => Request("usage", query, ResetTimeout), http, clock,
+            resetDeadlineBox ?? SharedDeadlineBox,
+            shapeLog ?? AccountUsageShapeLog.Shared,
+            cancellation);
         return Map(body, profile, credential.Plan) with { RetryAfterSeconds = retryAfter, Resets = resets };
     }
 }
