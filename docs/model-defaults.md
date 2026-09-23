@@ -161,6 +161,10 @@ Only Claude and Codex are in scope. Gemini has no per-mode model configuration.
 Windows has no execution graph, so `nodeModelLabel` is only exercised on macOS and
 is not part of the Windows settings or snapshot contract.
 
+The Settings sections on both platforms edit **app-level defaults only**; workspace-level
+override editing is deferred (the `Workspace.modelDefaults` field is still resolved at
+run time).
+
 ## 기기 미확인 항목 (manual verification)
 
 The following items require human visual confirmation on a real device:
@@ -168,6 +172,8 @@ The following items require human visual confirmation on a real device:
 - **설정 화면 모델 기본값 섹션**: 앱 설정에 "모델 기본값" 섹션이 표시되고 권한 모드별로 모델을 선택할 수 있음
 - **권한 모드 메뉴 모델 이름 표시**: 권한 모드 버튼에 해당 모드의 기본 모델 이름이 함께 표시됨
 - **직접 등록 모델 이름 등록 UI**: 목록에 없는 모델 이름을 직접 입력해 등록할 수 있음
+- **등록 모델 effort 지원 토글** (macOS/Windows): 모델 등록 행에 effort 지원 스위치(macOS: Toggle, Windows: CheckBox/ToggleSwitch)가 있고, 켜면 제공자의 알려진 effort 수준 목록이 나타남
+- **등록 모델 effort 수준 선택** (macOS/Windows): effort 지원이 켜진 상태에서 수준을 하나 이상 선택해야 등록이 되고, 수준을 하나도 고르지 않으면 오류가 표시됨; effort 지원을 끄면 수준 목록 없이 저장됨
 - **CLI 거부 오류 표시**: 등록된 이름을 CLI가 거부할 때 오류 메시지가 그대로 표시됨 (조용히 대체되지 않음)
 - **그래프 노드 모델 라벨** (macOS only): 실행 그래프의 요청 노드에 실제 사용 모델 이름이 표시됨
 - **폰 블록 모델 라벨**: 폰 블록 목록에 모델 이름 라벨이 표시됨
