@@ -136,6 +136,9 @@ public sealed partial class MainWindow
             });
             Require(service.Snapshot.ModelDefaults?.Claude.ModeDefaults.TryGetValue(fixtureMode, out var picked) == true && picked == fixtureModel,
                 "modelDefaults smoke: mode default must be set to the fixture model");
+            // Confirm ModelDefaultsResolution.Resolve returns the mode default for a default-model pane.
+            var resolvedForMode = ModelDefaultsResolution.Resolve("default", fixtureProvider, fixtureMode, null, service.Snapshot.ModelDefaults);
+            Require(resolvedForMode == fixtureModel, "modelDefaults smoke: ModelDefaultsResolution.Resolve must return the mode default for a default pane");
             checks["modelDefaultsPick"] = true;
 
             // Remove: registered model is removed and the mode row is reverted to "default".
@@ -182,6 +185,28 @@ public sealed partial class MainWindow
                 ModelDefaultsResolution.RemoveRegisteredModel(effortModel, fixtureProvider, ref cfg);
                 return s with { ModelDefaults = cfg };
             });
+
+            // Effort UI: drive the real Settings controls — find the effort CheckBox and level
+            // CheckBoxes by their automation IDs, type a fixture name, press the add button,
+            // then verify the composer effort items are exactly default + the saved levels.
+            const string effortUiModel = "smoke/effort-ui-v1";
+            var effortSection = BuildModelDefaultsSection();
+            var effortUiToggle = SmokeFindById<CheckBox>(effortSection, $"modelDefaults-addEffort-{fixtureProvider}");
+            Require(effortUiToggle is not null, $"modelDefaults-addEffort-{fixtureProvider} must exist in the settings section");
+            var highBox2 = SmokeFindById<CheckBox>(effortSection, $"modelDefaults-addLevel-{fixtureProvider}-high");
+            Require(highBox2 is not null, $"modelDefaults-addLevel-{fixtureProvider}-high must exist");
+            var effortNameBox = SmokeFindById<TextBox>(effortSection, $"modelDefaults-add-{fixtureProvider}");
+            var effortAddBtn = SmokeFindById<Button>(effortSection, $"modelDefaults-addButton-{fixtureProvider}");
+            Require(effortNameBox is not null && effortAddBtn is not null, "modelDefaults name box and add button must exist in the section");
+            effortNameBox!.Text = effortUiModel;
+            effortUiToggle!.IsChecked = true;
+            highBox2!.IsChecked = true;
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(effortAddBtn!)).Invoke();
+            await WaitUI(() => service.Snapshot.ModelDefaults?.Claude.RegisteredModels.Any(m => m.Name == effortUiModel) == true);
+            var regForUi = ModelDefaultsResolution.GetProviderRegisteredModels(fixtureProvider, null, service.Snapshot.ModelDefaults);
+            var effortMenuItems = new[] { "default" }.Concat(ProviderCatalog.Efforts(fixtureProvider, effortUiModel, ProviderCatalog.Fallback(fixtureProvider), regForUi)).ToArray();
+            Require(effortMenuItems.SequenceEqual(["default", "high"]), "composer effort menu must be exactly default + saved levels for a registered model");
+            checks["modelDefaultsEffortUi"] = effortMenuItems;
 
             checks["passed"] = true;
         }
@@ -395,6 +420,13 @@ public sealed partial class MainWindow
         using var source = stream.GetInputStreamAt(0); using var output = new DataReader(source); await output.LoadAsync((uint)stream.Size); var png = new byte[(int)stream.Size]; output.ReadBytes(png); await File.WriteAllBytesAsync(path, png); return path;
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private static T? SmokeFindById<T>(UIElement root, string id) where T : UIElement
+    {
+        if (AutomationProperties.GetAutomationId(root) == id && root is T match) return match;
+        if (root is Panel p) { foreach (var child in p.Children) { var r = SmokeFindById<T>(child, id); if (r is not null) return r; } }
+        else if (root is ContentControl cc && cc.Content is UIElement ue) { var r = SmokeFindById<T>(ue, id); if (r is not null) return r; }
+        return null;
+    }
     private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "")
     {
         var deadline = DateTime.UtcNow.AddSeconds(4);

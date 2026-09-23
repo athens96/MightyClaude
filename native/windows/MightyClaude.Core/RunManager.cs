@@ -94,7 +94,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     environment["MIGHTY_CLAUDE_ACTIVITY"] = "1"; environment["MIGHTY_CLAUDE_USAGE"] = "1"; environment["MIGHTY_CLAUDE_GRAPH"] = "0";
                     if (request.Settings!.Effort != "default") environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.Settings.Effort;
                 }
-                if (request.Settings!.Effort != "default") { var runtime = await providers.GetRuntimeAsync(); token.ThrowIfCancellationRequested(); if (!ProviderCatalog.Efforts(request.Provider, request.Model, runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog).Contains(request.Settings.Effort)) throw new ArgumentException("선택한 모델의 지원 강도를 확인할 수 없습니다. Auto를 선택하세요."); }
+                if (request.Settings!.Effort != "default") { var runtime = await providers.GetRuntimeAsync(); token.ThrowIfCancellationRequested(); if (!ProviderCatalog.Efforts(request.Provider, request.Model, runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog, request.RegisteredModels).Contains(request.Settings.Effort)) throw new ArgumentException("선택한 모델의 지원 강도를 확인할 수 없습니다. Auto를 선택하세요."); }
                 if (request.Attachments is { Count: > 0 } files) { attachments = await StagedAttachments.CreateAsync(files, token); token.ThrowIfCancellationRequested(); input = attachments.InputFor(request); }
                 binary = command.Binary;
                 var providerArguments = attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory);

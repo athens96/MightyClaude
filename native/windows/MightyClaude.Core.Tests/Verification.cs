@@ -484,6 +484,11 @@ internal static class Verification
         await Test("modelDefaults old-snapshot null config yields all-default rows and safe remove", ModelDefaultsVerification.ModelDefaultsOldSnapshot);
         await Test("modelDefaults effort registration saves levels and readback via ProviderCatalog.Efforts", ModelDefaultsVerification.ModelDefaultsEffortRegistration);
         await Test("modelDefaults effort validation rejects on-without-levels and unknown level", ModelDefaultsVerification.ModelDefaultsEffortValidation);
+        await Test("modelDefaults run-path registered model with saved effort level reaches CLI", ModelDefaultsVerification.RunPathRegisteredModelEffortReachesCli);
+        await Test("modelDefaults run-path registered model without effort support rejects non-default effort", ModelDefaultsVerification.RunPathRegisteredModelWithoutEffortRejectsNonDefault);
+        await Test("modelDefaults run-path default pane resolves mode default into --model", ModelDefaultsVerification.RunPathDefaultPaneResolvesModeDefault);
+        await Test("modelDefaults run-path explicit pane model wins over mode default", ModelDefaultsVerification.RunPathExplicitModelWins);
+        await Test("modelDefaults run-path all-default config sends no --model", ModelDefaultsVerification.RunPathAllDefaultConfigSendsNoModel);
         await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
         await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
