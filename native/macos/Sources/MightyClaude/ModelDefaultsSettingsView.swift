@@ -6,7 +6,7 @@ struct ModelDefaultsSettingsSection: View {
 
     var body: some View {
         Section {
-            Text(L("settings.modelDefaults.windowsDescription"))
+            Text(L("settings.modelDefaults.description"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(L("settings.modelDefaults.configuredNote", ["configuredSuffix": L("graph.nodeModel.configuredSuffix")]))

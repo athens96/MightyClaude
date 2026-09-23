@@ -471,10 +471,10 @@ public enum CoreValidation {
     @discardableResult
     public static func validateRegistration(name: String, provider: String, existingEntries: [RegisteredModelEntry], supportsEffort: Bool = false, supportedEffortLevels: [String] = []) throws -> RegisteredModelEntry {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw MightyError("모델 이름은 비어 있을 수 없습니다.") }
-        guard trimmed != "default" else { throw MightyError("'default'는 예약된 이름이므로 사용할 수 없습니다.") }
-        guard model(trimmed) else { throw MightyError("모델 이름에 허용되지 않는 문자가 포함되어 있거나 길이가 초과되었습니다.") }
-        guard !existingEntries.contains(where: { $0.name == trimmed }) else { throw MightyError("같은 제공자에 이미 등록된 이름입니다.") }
+        guard !trimmed.isEmpty else { throw MightyError(L("settings.modelDefaults.error.empty")) }
+        guard trimmed != "default" else { throw MightyError(L("settings.modelDefaults.error.reserved")) }
+        guard model(trimmed) else { throw MightyError(L("settings.modelDefaults.error.invalid")) }
+        guard !existingEntries.contains(where: { $0.name == trimmed }) else { throw MightyError(L("settings.modelDefaults.error.duplicate")) }
         if supportsEffort && supportedEffortLevels.isEmpty {
             throw MightyError(L("settings.modelDefaults.error.effortWithoutLevels"))
         }
