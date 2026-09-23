@@ -141,11 +141,15 @@ struct MightyGraphView: View {
                         .onChange(of: geo.size) { _, new in canvasViewport = new }
                 })
                 .onChange(of: canvasViewport) { _, _ in
-                    // Core decides whether a card is fitting; a resize re-aims at it.
-                    if let fitted = layout.fittedResultID {
-                        trimSequence += 1
-                        scrollTarget = MightyGraphScrollTarget(token: "fit-resize:\(trimSequence)", nodeID: fitted, alignTop: true)
-                    }
+                    // Core decides whether a card is fitting and whether the
+                    // block the camera is on is newer work that keeps it.
+                    let resized = layout
+                    let frames = Dictionary(resized.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
+                    let requested = scrollTarget.flatMap { frames[$0.nodeID] == nil ? nil : $0 }
+                    publish(MightyGraphCamera.resizeAnchor(fittedResultID: resized.fittedResultID,
+                                                           targetID: requested?.nodeID ?? initialTarget(resized),
+                                                           targetAlignTop: requested?.alignTop ?? false,
+                                                           frames: frames))
                 }
         }
         .accessibilityElement(children: .contain)

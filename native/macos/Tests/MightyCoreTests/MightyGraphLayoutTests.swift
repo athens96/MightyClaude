@@ -321,4 +321,54 @@ struct MightyGraphLayoutTests {
         #expect(newCard.frame.size == CGSize(width: 852, height: 552))
         _ = card // suppress unused warning; the before-resize card just confirms layout ran
     }
+
+    private func frames(_ layout: MightyGraphLayout) -> [String: CGRect] {
+        Dictionary(layout.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    @Test func newRequestKeepsCameraWhenComposerResizesCanvas() {
+        // Sending shrinks the composer: the canvas grows right after the new
+        // request took the camera. The request below the fitted card keeps it.
+        let runs = [run("one"), run("two", status: "running")]
+        let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [],
+                                            viewport: CGSize(width: 1_200, height: 840))
+        let fittedID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        let requestID = MightyGraphBlockSize.nodeID(runID: "two", suffix: "request")
+        #expect(layout.fittedResultID == fittedID)
+        #expect(MightyGraphCamera.resizeAnchor(fittedResultID: layout.fittedResultID, targetID: requestID,
+                                               targetAlignTop: true, frames: frames(layout))
+                == .reaim(nodeID: requestID, alignTop: true))
+    }
+
+    @Test func draftKeepsCameraWhenComposerGrows() {
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "다음 요청", running: false, expanded: [],
+                                            viewport: CGSize(width: 1_200, height: 760))
+        #expect(MightyGraphCamera.resizeAnchor(fittedResultID: layout.fittedResultID,
+                                               targetID: MightyGraphCamera.pendingNodeID,
+                                               targetAlignTop: false, frames: frames(layout))
+                == .reaim(nodeID: MightyGraphCamera.pendingNodeID, alignTop: false))
+    }
+
+    @Test func resizeOnFittedRunBringsFittedTopBack() {
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: CGSize(width: 900, height: 600))
+        let fittedID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        let requestID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "request")
+        // The camera on the fitted run's own request, or on the card itself.
+        for target in [requestID, fittedID] {
+            #expect(MightyGraphCamera.resizeAnchor(fittedResultID: layout.fittedResultID, targetID: target,
+                                                   targetAlignTop: true, frames: frames(layout))
+                    == .reaim(nodeID: fittedID, alignTop: true))
+        }
+    }
+
+    @Test func resizeWithoutFittedCardHoldsCamera() {
+        let shared = MightyGraphBlockSize(width: 700, height: 350)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: CGSize(width: 1_200, height: 800), sharedResultSize: shared)
+        #expect(layout.fittedResultID == nil)
+        #expect(MightyGraphCamera.resizeAnchor(fittedResultID: layout.fittedResultID,
+                                               targetID: MightyGraphBlockSize.nodeID(runID: "one", suffix: "request"),
+                                               targetAlignTop: true, frames: frames(layout)) == .hold)
+    }
 }
