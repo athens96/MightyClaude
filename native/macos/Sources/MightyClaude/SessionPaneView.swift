@@ -395,9 +395,11 @@ struct SessionPaneView: View {
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                     styleTitles: styleTitles,
                     styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title,
-                    catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models) {
-                    store.selectSession(session.id)
-                }
+                    catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models,
+                    graphResultSize: session.graphResultSize,
+                    onSaveResultSize: { size in store.setGraphResultSize(session.id, size: size) }) {
+                        store.selectSession(session.id)
+                    }
             } else if session.logs.isEmpty {
                 ScrollView { emptyOutput }
             } else {

@@ -22,6 +22,8 @@ struct MightyGraphView: View {
     var stylePhase: String? = nil
     /// Model catalog for short-name resolution in all usage capsules and activity suffixes.
     var catalog: [ModelOption] = []
+    var graphResultSize: MightyGraphBlockSize? = nil
+    var onSaveResultSize: (MightyGraphBlockSize?) -> Void = { _ in }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     @ViewState private var reference: MightyGraphReference?
@@ -36,6 +38,7 @@ struct MightyGraphView: View {
     /// Counts history trims, so a second trim admits a second re-aim.
     @ViewState private var trimSequence = 0
     @StateObject private var resultFiles = MightyGraphResultFilesModel()
+    @ViewState private var canvasViewport: CGSize?
 
     /// Kept out of the view body: long concatenations of conditionals are
     /// slow for older type checkers.
@@ -61,7 +64,12 @@ struct MightyGraphView: View {
         return (title, "person.crop.square.filled.and.at.rectangle", .purple)
     }
 
-    private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID) }
+    private var latestResultNodeID: String? {
+        runs.indices.last(where: { MightyGraphLayout.finished(runs[$0]) })
+            .map { MightyGraphLayout.nodeID(runs[$0], suffix: "result") }
+    }
+
+    private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: graphResultSize) }
 
     var body: some View {
         let graph = layout
@@ -119,6 +127,17 @@ struct MightyGraphView: View {
                     publish(MightyGraphCamera.trimAnchor(previousRunIDs: previous, runIDs: current, selectedNodeID: selectedNodeID,
                                                          layoutNodeIDs: Set(graph.nodes.map(\.id))))
                 }
+                .background(GeometryReader { geo in
+                    Color.clear
+                        .onAppear { canvasViewport = geo.size }
+                        .onChange(of: geo.size) { _, new in canvasViewport = new }
+                })
+                .onChange(of: canvasViewport) { _, _ in
+                    if let fitted = layout.fittedResultID {
+                        trimSequence += 1
+                        scrollTarget = MightyGraphScrollTarget(token: "fit-resize:\(trimSequence)", nodeID: fitted, alignTop: true)
+                    }
+                }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-graph-\(sessionID)")
@@ -167,7 +186,10 @@ struct MightyGraphView: View {
     private func resize(_ id: String, _ size: CGSize, _ finished: Bool) {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
         resized[id] = value
-        if finished { onSaveBlockSize(id, value) }
+        if finished {
+            if id == latestResultNodeID { onSaveResultSize(value) }
+            else { onSaveBlockSize(id, value) }
+        }
     }
 
     private func resetSize(_ id: String) {
@@ -284,14 +306,26 @@ struct MightyGraphView: View {
                     .accessibilityLabel("결과 파일 \(resultFiles.files(for: resultFilesRunID).count)개 · 목록 토글")
                     .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
                 }
-                Button {
-                    resized.removeValue(forKey: node.id)
-                    onSaveBlockSize(node.id, nil)
-                    if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
-                } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
-                    .buttonStyle(.plain).help(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
-                    .accessibilityLabel(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
-                    .accessibilityIdentifier("mighty-expand-\(node.id)")
+                let isLatestResult = node.id == latestResultNodeID
+                let isFittedResult = isLatestResult && canvasViewport != nil && graphResultSize == nil
+                let hasSharedSize = isLatestResult && graphResultSize != nil
+                if hasSharedSize {
+                    Button(L("graph.result.fitToWindow")) { onSaveResultSize(nil) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("mighty-fit-result-\(node.id)")
+                }
+                if !isFittedResult {
+                    Button {
+                        resized.removeValue(forKey: node.id)
+                        onSaveBlockSize(node.id, nil)
+                        if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
+                    } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
+                        .buttonStyle(.plain).help(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
+                        .accessibilityLabel(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
+                        .accessibilityIdentifier("mighty-expand-\(node.id)")
+                }
             }.padding(.horizontal, 12).frame(height: 38)
             Divider()
             if !input.isEmpty {
