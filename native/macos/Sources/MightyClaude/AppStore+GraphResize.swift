@@ -10,4 +10,12 @@ extension AppStore {
             session.graphBlockSizes = sizes.isEmpty ? nil : sizes
         }
     }
+
+    /// Store the dragged size of the latest result card as the per-session shared
+    /// result size. Pass nil to clear and return to auto-fit.
+    func setGraphResultSize(_ sessionID: String, size: MightyGraphBlockSize?) {
+        updateSession(sessionID) { session in
+            session.graphResultSize = size?.normalized
+        }
+    }
 }

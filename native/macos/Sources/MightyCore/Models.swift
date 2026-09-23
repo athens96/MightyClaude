@@ -201,10 +201,13 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public var mightyStyleHash: String?
     public var graphRuns: [MightyGraphRun]?
     public var graphBlockSizes: [String: MightyGraphBlockSize]?
+    /// Per-session shared result card size set by dragging the latest result card.
+    /// When present, later latest result cards use this size instead of auto-fit.
+    public var graphResultSize: MightyGraphBlockSize?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes, graphResultSize }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); workspaceId = try c.decode(String.self, forKey: .workspaceId)
@@ -222,6 +225,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         graphRuns = try? c.decodeIfPresent([MightyGraphRun].self, forKey: .graphRuns)
         // Optional layout damage must not discard the saved conversation.
         graphBlockSizes = try? c.decodeIfPresent([String: MightyGraphBlockSize].self, forKey: .graphBlockSizes)
+        graphResultSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphResultSize)
     }
 }
 

@@ -92,6 +92,12 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 - 화면 확인에서 나온 문제: 없음. 2026-09-22 사용자가 새 빌드(안내 패널의 잡 인식, 언어 선택, 업데이트 신뢰 문구)를 확인하고 태그를 승인했다. macOS `Check smoke result`는 다섯 라운드 상한을 지켜 빨간 채로 태그했다(후보는 `docs/ci-macos-failure.md`).
 - **플러그인 저장소.** `~/Work/mighty-styles`의 고정 사본은 아직 v1(`b767328`)을 가리킨다. v4 태그 뒤에 같은 태그를 로컬로 걸고 엔진 사본·코퍼스·체크섬·기준 상수를 v4 시점으로 올린다(별도 시드).
 
+## v5 작업 경로
+
+### 결과 카드 창 맞춤 (시드 `seed_v5_09_result_card_fit`)
+
+`native/macos/Sources/MightyCore/MightyGraphLayout.swift`, `native/macos/Sources/MightyCore/Models.swift`, `native/macos/Sources/MightyCore/StateRepository.swift`, `native/macos/Sources/MightyClaude/AppStore+GraphResize.swift`, `native/macos/Sources/MightyClaude/MightyGraphView.swift`, `native/macos/Sources/MightyClaude/SessionPaneView.swift`, `native/macos/Tests/MightyCoreTests/MightyGraphLayoutTests.swift`, `locales/ko.json`, `locales/en.json`, `native/macos/Sources/MightyCore/Resources/Locales/ko.json`, `native/macos/Sources/MightyCore/Resources/Locales/en.json`, `mobile/src/locales/ko.json`, `mobile/src/locales/en.json`, `docs/i18n.md`, `docs/mighty-mode.md`, `docs/styles-followups.md`
+
 ## 다음 고정(v5)에 묶을 것
 
 검사가 저장소 전체를 보므로, 허용 목록 밖을 건드리는 작업이 main에 들어갈 때마다 새 고정이 필요하다. 예정된 것:

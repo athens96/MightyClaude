@@ -228,6 +228,7 @@
   "settings.providers.statusReady": "실행 준비됨",
   "settings.providers.windowsDescription": "로컬 Claude Code · Codex CLI · Gemini CLI를 그대로 사용합니다. 로그인과 설치는 각 CLI에서 진행하세요.",
   "graph.nodeModel.configuredSuffix": "· 설정",
+  "graph.result.fitToWindow": "창에 맞추기",
   "usage.modelUsage.sameResponse": "· 같은 응답",
   "usage.modelUsage.subagentPrefix": "하위",
   "settings.modelDefaults.sectionTitle": "모델 기본값",

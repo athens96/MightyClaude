@@ -26,6 +26,10 @@ public struct MightyGraphLayout {
     /// negative x rather than pushing the diagram. The drawn container starts
     /// here instead of at 0; the camera still works in node coordinates.
     public var originX: CGFloat = 0
+    /// The node id of the latest result card that is currently auto-fitting to
+    /// the viewport. nil when no viewport is supplied, when a shared result size
+    /// overrides the fit, or when there is no finished run yet.
+    public var fittedResultID: String? = nil
     static let siblingGap: CGFloat = 32
     static let rowGap: CGFloat = 52
 
@@ -56,8 +60,34 @@ public struct MightyGraphLayout {
         MightyGraphBlockSize.nodeID(runID: run.id, suffix: suffix)
     }
 
-    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil) -> Self {
+    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil) -> Self {
+        // The latest result card is the result of the last finished run in the list.
+        let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
+        let latestResultID = latestFinishedRunIndex.map { nodeID(runs[$0], suffix: "result") }
+
+        // The files panel reduces available width only when it is open for the latest result.
+        let filesPanelOpenForLatest: Bool = {
+            guard let idx = latestFinishedRunIndex,
+                  let panelRunID = resultFilesRunID,
+                  runs[idx].id == panelRunID,
+                  runs[idx].status == "completed" else { return false }
+            return true
+        }()
+
+        // Auto-fit size for the latest result card (no .normalized clamp applied).
+        let autoFitResultSize: CGSize? = {
+            guard let vp = viewport, latestResultID != nil else { return nil }
+            let filesOffset: CGFloat = filesPanelOpenForLatest ? 336.0 : 0.0
+            return CGSize(width: max(500, vp.width - 48 - filesOffset),
+                          height: max(200, vp.height - 48))
+        }()
+
         func size(_ id: String, width: CGFloat, height: CGFloat) -> CGSize {
+            // Latest result card: use shared or auto-fit size when viewport is active.
+            if let latestID = latestResultID, id == latestID, viewport != nil {
+                if let shared = sharedResultSize { return CGSize(width: shared.width, height: shared.height) }
+                if let autoFit = autoFitResultSize { return autoFit }
+            }
             guard let custom = blockSizes[id]?.normalized else { return CGSize(width: width, height: height) }
             return CGSize(width: custom.width, height: custom.height)
         }
@@ -176,6 +206,7 @@ public struct MightyGraphLayout {
             result.nodes.append(Node(id: panelID, content: .resultFiles(runIndex), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
         }
+        result.fittedResultID = (viewport != nil && sharedResultSize == nil) ? latestResultID : nil
         return result
     }
 }
