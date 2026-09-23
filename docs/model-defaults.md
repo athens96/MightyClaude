@@ -179,13 +179,13 @@ macOS only. The execution graph shows which models each block used and how many 
 - **Block capsule** (`ModelUsageFormat.blockCapsule`): shows the block total with the models that produced it, e.g. `"12.3K · Opus 5.5"` or `"12.3K · Opus 5.5 +1"` for multiple models. Before the first response arrives the capsule shows the configured model label (with the `graph.nodeModel.configuredSuffix` locale key).
 - **Block capsule tooltip** (`ModelUsageFormat.blockCapsuleHelp`): per-model token breakdown with input / output / cache detail.
 - **Activity line suffix** (`ModelUsageFormat.activitySuffix`): the model short name and compact token count of the response that called the activity. When one response called several activities, only the **first** activity line in that response shows the model and token count; the other lines show a locale-keyed "same response" marker (`usage.modelUsage.sameResponse`) with no numbers. Summing the numbers shown on activity lines and responses that called no activity equals the block total exactly.
-- **Task/Agent activity line**: shows the subagent block total and models instead of the calling response.
+- **Task/Agent activity line**: shows the calling response's model and tokens first (same first-line rule as any other activity line), then the subagent block total and its models, e.g. "Opus 5.5 · 150 · sub 3.0K · Sonnet 4.6".
 - **Codex responses**: use the run's configured model, marked as configured (`markedAsConfigured = true` in `GraphResponseRecord`).
 - **Re-sent response**: a response resent with the same message id replaces the prior record; tokens are never double-counted.
 
 ### Short model names
 
-Short display names come from the CLI model catalog (`ModelOption.displayName`) when the model id matches `ModelOption.value` or `ModelOption.resolvedModel`; otherwise the raw model id is used verbatim.
+Short display names come from the CLI model catalog (`ModelOption.displayName`) when the model id matches `ModelOption.value` or `ModelOption.resolvedModel`; otherwise the raw model id is used verbatim. On screen, every `ModelUsageFormat` call receives the session provider catalog (from `providerRuntime(session.provider, workspaceId:).modelCatalog.models`), so catalog short names are used wherever a model id is rendered.
 
 ### Formatter
 
@@ -206,4 +206,5 @@ The following items require human visual confirmation on a real device:
 - **블록 캡슐 모델 표시** (macOS only): 블록 헤더의 토큰 캡슐이 토큰 합계와 함께 모델 이름을 표시함 (예: "2.5K · Opus 5.5 +1")
 - **활동 줄 모델·토큰 표시** (macOS only): 각 활동 줄에 해당 응답의 모델 이름과 토큰이 표시됨
 - **같은 응답 마커** (macOS only): 같은 응답이 여러 활동을 호출한 경우, 첫 번째 활동 줄만 모델과 토큰을 표시하고 나머지는 "same response" 마커를 표시함
-- **서브에이전트 활동 줄 합계** (macOS only): Task/Agent 활동 줄은 자체 모델·토큰 대신 해당 서브에이전트 블록의 합계와 모델을 표시함
+- **서브에이전트 활동 줄** (macOS only): Task/Agent 활동 줄은 해당 응답의 모델·토큰을 먼저 표시하고, 이어서 서브에이전트 블록 합계와 모델을 표시함 (예: "Opus 5.5 · 150 · 하위 3.0K · Sonnet 4.6")
+- **화면의 모델 짧은 이름** (macOS only): 활동 줄·블록 캡슐·툴팁에 표시되는 모델 이름이 세션 제공자의 카탈로그 짧은 이름으로 나오는지 확인; 카탈로그에 없는 id는 원본 id를 그대로 표시함
