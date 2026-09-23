@@ -482,6 +482,8 @@ internal static class Verification
         await Test("modelDefaults invalid-name returns error for empty reserved and illegal characters", ModelDefaultsVerification.ModelDefaultsInvalidName);
         await Test("modelDefaults remove-reverts mode rows and leaves other models and providers intact", ModelDefaultsVerification.ModelDefaultsRemoveReverts);
         await Test("modelDefaults old-snapshot null config yields all-default rows and safe remove", ModelDefaultsVerification.ModelDefaultsOldSnapshot);
+        await Test("modelDefaults effort registration saves levels and readback via ProviderCatalog.Efforts", ModelDefaultsVerification.ModelDefaultsEffortRegistration);
+        await Test("modelDefaults effort validation rejects on-without-levels and unknown level", ModelDefaultsVerification.ModelDefaultsEffortValidation);
         await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
         await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);

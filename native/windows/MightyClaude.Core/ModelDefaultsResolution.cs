@@ -57,8 +57,9 @@ public static class ModelDefaultsResolution
     }
 
     /// Adds a registered model name to config for provider.
-    /// Returns an error string when the name is invalid or already exists, null on success.
-    public static string? AddRegisteredModel(string name, string provider, ref ModelDefaultsConfig config)
+    /// Returns an error string when the name is invalid, already exists, or effort params are invalid; null on success.
+    public static string? AddRegisteredModel(string name, string provider, ref ModelDefaultsConfig config,
+        bool supportsEffort = false, string[]? supportedEffortLevels = null)
     {
         var trimmed = name.Trim();
         if (trimmed.Length == 0) return "모델 이름은 비어 있을 수 없습니다.";
@@ -66,7 +67,13 @@ public static class ModelDefaultsResolution
         if (!Wire.Model(trimmed)) return "모델 이름에 허용되지 않는 문자가 포함되어 있거나 길이가 초과되었습니다.";
         var pd = provider == "codex" ? config.Codex : config.Claude;
         if (pd.RegisteredModels.Any(m => m.Name == trimmed)) return "같은 제공자에 이미 등록된 이름입니다.";
-        var updated = pd with { RegisteredModels = [.. pd.RegisteredModels, new(trimmed)] };
+        var levels = supportedEffortLevels ?? [];
+        if (supportsEffort && levels.Length == 0)
+            return Locale.Get("settings.modelDefaults.error.effortWithoutLevels");
+        foreach (var level in levels)
+            if (!Wire.Efforts.Contains(level))
+                return Locale.Get("settings.modelDefaults.error.unknownLevel");
+        var updated = pd with { RegisteredModels = [.. pd.RegisteredModels, new(trimmed, supportsEffort, levels.Length > 0 ? levels : null)] };
         config = provider == "codex" ? config with { Codex = updated } : config with { Claude = updated };
         return null;
     }

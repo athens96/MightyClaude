@@ -173,8 +173,8 @@ struct RegisteredModelTests {
     // MARK: - CoreValidation.validateRegistration
 
     @Test func registrationTrimsWhitespace() throws {
-        let trimmed = try CoreValidation.validateRegistration(name: "  my-model  ", provider: "claude", existingEntries: [])
-        #expect(trimmed == "my-model")
+        let entry = try CoreValidation.validateRegistration(name: "  my-model  ", provider: "claude", existingEntries: [])
+        #expect(entry.name == "my-model")
     }
 
     @Test func registrationRejectsEmpty() {
@@ -336,6 +336,49 @@ struct RegisteredModelTests {
                                       model: "acme/effort-model", provider: "claude", settings: settings,
                                       registeredModels: [RegisteredModelEntry(name: "acme/effort-model", supportsEffort: true, supportedEffortLevels: ["high", "max"])])
         try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels)
+    }
+
+    // MARK: - Registration with effort support
+
+    @Test func registrationWithEffortLevels() throws {
+        let entry = try CoreValidation.validateRegistration(
+            name: "acme/smart", provider: "claude", existingEntries: [],
+            supportsEffort: true, supportedEffortLevels: ["high", "max"])
+        #expect(entry.supportsEffort)
+        #expect(entry.supportedEffortLevels == ["high", "max"])
+        let levels = ProviderOptions.effortLevels(provider: "claude", model: "acme/smart", registeredModels: [entry])
+        #expect(levels == ["high", "max"])
+    }
+
+    @Test func registrationEffortOffSavesEmptyLevels() throws {
+        let entry = try CoreValidation.validateRegistration(
+            name: "acme/fast", provider: "claude", existingEntries: [],
+            supportsEffort: false, supportedEffortLevels: [])
+        #expect(!entry.supportsEffort)
+        #expect(entry.supportedEffortLevels.isEmpty)
+        let levels = ProviderOptions.effortLevels(provider: "claude", model: "acme/fast", registeredModels: [entry])
+        #expect(levels.isEmpty)
+    }
+
+    @Test func registrationEffortOnWithNoLevelsRejected() {
+        var threw = false
+        do { _ = try CoreValidation.validateRegistration(name: "acme/model", provider: "claude", existingEntries: [], supportsEffort: true, supportedEffortLevels: []) } catch { threw = true }
+        #expect(threw)
+    }
+
+    @Test func registrationUnknownLevelRejected() {
+        var threw = false
+        do { _ = try CoreValidation.validateRegistration(name: "acme/model", provider: "claude", existingEntries: [], supportsEffort: true, supportedEffortLevels: ["not-a-level"]) } catch { threw = true }
+        #expect(threw)
+    }
+
+    @Test func registrationEffortLevelsStoredAsGiven() throws {
+        // The view sends levels in canonical order (ProviderOptions.efforts filtered by selection)
+        let entry = try CoreValidation.validateRegistration(
+            name: "acme/ordered", provider: "claude", existingEntries: [],
+            supportsEffort: true, supportedEffortLevels: ["high", "max"])
+        let levels = ProviderOptions.effortLevels(provider: "claude", model: "acme/ordered", registeredModels: [entry])
+        #expect(levels == ["high", "max"])
     }
 
     // MARK: - Registration rejection: reason must be exposed (not just thrown)

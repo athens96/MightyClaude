@@ -465,15 +465,24 @@ public enum CoreValidation {
         if request.settings.effort != "default", !ProviderOptions.effortLevels(provider: request.provider, model: request.model, catalog: catalog, registeredModels: registeredModels).contains(request.settings.effort) { throw MightyError("선택한 모델의 추론 강도를 확인할 수 없습니다. CLI 기본값을 선택해 주세요.") }
     }
     /// Validates a model name for registration. Trims whitespace and rejects empty names,
-    /// the reserved value "default", names failing CoreValidation.model, and provider duplicates.
-    /// Returns the trimmed name on success.
+    /// the reserved value "default", names failing CoreValidation.model, provider duplicates,
+    /// effort on without levels, and unknown effort levels.
+    /// Returns a RegisteredModelEntry on success.
     @discardableResult
-    public static func validateRegistration(name: String, provider: String, existingEntries: [RegisteredModelEntry]) throws -> String {
+    public static func validateRegistration(name: String, provider: String, existingEntries: [RegisteredModelEntry], supportsEffort: Bool = false, supportedEffortLevels: [String] = []) throws -> RegisteredModelEntry {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw MightyError("모델 이름은 비어 있을 수 없습니다.") }
         guard trimmed != "default" else { throw MightyError("'default'는 예약된 이름이므로 사용할 수 없습니다.") }
         guard model(trimmed) else { throw MightyError("모델 이름에 허용되지 않는 문자가 포함되어 있거나 길이가 초과되었습니다.") }
         guard !existingEntries.contains(where: { $0.name == trimmed }) else { throw MightyError("같은 제공자에 이미 등록된 이름입니다.") }
-        return trimmed
+        if supportsEffort && supportedEffortLevels.isEmpty {
+            throw MightyError(L("settings.modelDefaults.error.effortWithoutLevels"))
+        }
+        for level in supportedEffortLevels {
+            guard ProviderOptions.efforts.contains(level) else {
+                throw MightyError(L("settings.modelDefaults.error.unknownLevel"))
+            }
+        }
+        return RegisteredModelEntry(name: trimmed, supportsEffort: supportsEffort, supportedEffortLevels: supportedEffortLevels)
     }
 }

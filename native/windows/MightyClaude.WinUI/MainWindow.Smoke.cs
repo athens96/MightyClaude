@@ -158,6 +158,30 @@ public sealed partial class MainWindow
             Require(rows.Any(r => r.Provider == "codex"), "modelDefaults smoke: section rows must include codex rows");
             checks["modelDefaultsRows"] = true;
 
+            // Effort: add a model with effort support and levels; verify readback.
+            const string effortModel = "smoke/effort-model-v1";
+            string? effortAddError = null;
+            await service.UpdateAsync(s =>
+            {
+                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                effortAddError = ModelDefaultsResolution.AddRegisteredModel(effortModel, fixtureProvider, ref cfg, supportsEffort: true, supportedEffortLevels: ["high", "max"]);
+                return effortAddError is null ? s with { ModelDefaults = cfg } : s;
+            });
+            Require(effortAddError is null, "modelDefaults smoke: AddRegisteredModel with effort must succeed");
+            var effortEntry = service.Snapshot.ModelDefaults?.Claude.RegisteredModels.FirstOrDefault(m => m.Name == effortModel);
+            Require(effortEntry is not null, "modelDefaults smoke: effort model must appear in snapshot");
+            Require(effortEntry!.SupportsEffort, "modelDefaults smoke: effort entry must carry SupportsEffort=true");
+            var effortLevels = ProviderCatalog.Efforts(fixtureProvider, effortModel, ProviderCatalog.Fallback(fixtureProvider), service.Snapshot.ModelDefaults?.Claude.RegisteredModels);
+            Require(effortLevels.SequenceEqual(["high", "max"]), "modelDefaults smoke: ProviderCatalog.Efforts must return saved levels");
+            checks["modelDefaultsEffort"] = true;
+            // Clean up effort model
+            await service.UpdateAsync(s =>
+            {
+                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                ModelDefaultsResolution.RemoveRegisteredModel(effortModel, fixtureProvider, ref cfg);
+                return s with { ModelDefaults = cfg };
+            });
+
             checks["passed"] = true;
         }
         finally

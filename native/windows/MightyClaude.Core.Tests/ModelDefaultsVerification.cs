@@ -305,6 +305,49 @@ internal static class ModelDefaultsVerification
         return Task.CompletedTask;
     }
 
+    // ── Effort support in registration ─────────────────────────────────────
+
+    internal static Task ModelDefaultsEffortRegistration()
+    {
+        var config = new ModelDefaultsConfig();
+        // Add with effort support and levels
+        var err = ModelDefaultsResolution.AddRegisteredModel("acme/smart", "claude", ref config, supportsEffort: true, supportedEffortLevels: ["high", "max"]);
+        Check(err is null, "adding with effort levels must succeed");
+        var entry = config.Claude.RegisteredModels.Single(m => m.Name == "acme/smart");
+        Check(entry.SupportsEffort, "registered entry must carry SupportsEffort=true");
+        Check(entry.SupportedEffortLevels is ["high", "max"], "registered entry must carry saved effort levels");
+        // Readback via ProviderCatalog.Efforts with registered models
+        var levels = ProviderCatalog.Efforts("claude", "acme/smart", ProviderCatalog.Fallback("claude"), config.Claude.RegisteredModels);
+        Check(levels.SequenceEqual(["high", "max"]), "ProviderCatalog.Efforts must return the saved levels for a registered model");
+        // Effort off saves empty level list
+        var config2 = new ModelDefaultsConfig();
+        var err2 = ModelDefaultsResolution.AddRegisteredModel("acme/fast", "claude", ref config2, supportsEffort: false);
+        Check(err2 is null, "effort off must succeed");
+        var entry2 = config2.Claude.RegisteredModels.Single();
+        Check(!entry2.SupportsEffort, "effort off entry must have SupportsEffort=false");
+        var levels2 = ProviderCatalog.Efforts("claude", "acme/fast", ProviderCatalog.Fallback("claude"), config2.Claude.RegisteredModels);
+        Check(levels2.Length == 0, "effort off registered model must return empty effort list");
+        return Task.CompletedTask;
+    }
+
+    internal static Task ModelDefaultsEffortValidation()
+    {
+        var config = new ModelDefaultsConfig();
+        // Effort on without levels must return an error
+        var err1 = ModelDefaultsResolution.AddRegisteredModel("acme/m1", "claude", ref config, supportsEffort: true, supportedEffortLevels: []);
+        Check(err1 is not null, "effort on without levels must return an error");
+        Check(!string.IsNullOrEmpty(err1), "effort-without-levels error must be non-empty");
+        // Unknown effort level must return an error
+        var err2 = ModelDefaultsResolution.AddRegisteredModel("acme/m2", "claude", ref config, supportsEffort: true, supportedEffortLevels: ["not-a-level"]);
+        Check(err2 is not null, "unknown effort level must return an error");
+        Check(!string.IsNullOrEmpty(err2), "unknown-level error must be non-empty");
+        // Effort off with no levels must succeed
+        var err3 = ModelDefaultsResolution.AddRegisteredModel("acme/m3", "claude", ref config, supportsEffort: false, supportedEffortLevels: []);
+        Check(err3 is null, "effort off with no levels must succeed");
+        Check(config.Claude.RegisteredModels.Single().Name == "acme/m3", "only the successful add must appear");
+        return Task.CompletedTask;
+    }
+
     internal static Task ModelDefaultsSectionIsRegistered()
     {
         var slot = SettingsSections.MacOrder.SingleOrDefault(s => s.Id == SettingsSections.ModelDefaults);

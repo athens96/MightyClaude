@@ -24,6 +24,8 @@ private struct ProviderDefaultsRows: View {
     @EnvironmentObject private var store: AppStore
     let provider: String
     @ViewState private var addName = ""
+    @ViewState private var addSupportsEffort = false
+    @ViewState private var addEffortLevels: Set<String> = []
     @ViewState private var validationError: String?
 
     private var registered: [RegisteredModelEntry] {
@@ -109,23 +111,53 @@ private struct ProviderDefaultsRows: View {
     }
 
     private var addRow: some View {
-        HStack(spacing: 6) {
-            TextField(L("settings.modelDefaults.addPlaceholder"), text: $addName)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 11, design: .monospaced))
-                .onSubmit { addModel() }
-                .accessibilityIdentifier("modelDefaults-add-\(provider)")
-            Button(L("settings.modelDefaults.addButton")) { addModel() }
-                .controlSize(.small)
-                .accessibilityIdentifier("modelDefaults-addButton-\(provider)")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                TextField(L("settings.modelDefaults.addPlaceholder"), text: $addName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .onSubmit { addModel() }
+                    .accessibilityIdentifier("modelDefaults-add-\(provider)")
+                Button(L("settings.modelDefaults.addButton")) { addModel() }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("modelDefaults-addButton-\(provider)")
+            }
+            Toggle(L("settings.modelDefaults.supportsEffortLabel"), isOn: $addSupportsEffort)
+                .font(.system(size: 11))
+                .accessibilityIdentifier("modelDefaults-addEffort-\(provider)")
+                .onChange(of: addSupportsEffort) { _, on in if !on { addEffortLevels = [] } }
+            if addSupportsEffort {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("settings.modelDefaults.effortLevelsLabel"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        ForEach(ProviderOptions.efforts, id: \.self) { level in
+                            let selected = addEffortLevels.contains(level)
+                            Button(level) {
+                                if selected { addEffortLevels.remove(level) } else { addEffortLevels.insert(level) }
+                            }
+                            .controlSize(.mini)
+                            .buttonStyle(.borderedProminent)
+                            .opacity(selected ? 1.0 : 0.4)
+                            .accessibilityIdentifier("modelDefaults-addLevel-\(provider)-\(level)")
+                        }
+                    }
+                }
+            }
         }
     }
 
     private func addModel() {
         do {
-            try CoreValidation.validateRegistration(name: addName, provider: provider, existingEntries: registered)
-            store.addRegisteredModel(provider: provider, name: addName.trimmingCharacters(in: .whitespacesAndNewlines))
+            let entry = try CoreValidation.validateRegistration(
+                name: addName, provider: provider, existingEntries: registered,
+                supportsEffort: addSupportsEffort,
+                supportedEffortLevels: ProviderOptions.efforts.filter { addEffortLevels.contains($0) }
+            )
+            store.addRegisteredModel(provider: provider, entry: entry)
             addName = ""
+            addSupportsEffort = false
+            addEffortLevels = []
             validationError = nil
         } catch {
             validationError = error.localizedDescription

@@ -39,12 +39,24 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, "codex" => new[] { "gpt-5.6-sol", "gpt-6-astra" }, _ => new[] { "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash" } }) models.Add(new(value, value, "공식 모델 이름 예시입니다. 실제 사용 가능 여부는 CLI 계정에 따라 다릅니다.", SupportsEffort: value.Contains("haiku") ? false : null));
         return new("fallback", models, "CLI 목록을 조회하지 못해 기본 이름을 표시합니다. 계정의 사용 권한은 보장하지 않습니다.");
     }
-    public static string[] Efforts(string provider, string model, ModelCatalog catalog)
+    public static string[] Efforts(string provider, string model, ModelCatalog catalog) =>
+        Efforts(provider, model, catalog, null);
+
+    public static string[] Efforts(string provider, string model, ModelCatalog catalog, IReadOnlyList<RegisteredModelEntry>? registeredModels)
     {
         if (provider == "gemini") return [];
         var row = catalog.Models.FirstOrDefault(m => m.Value == model || m.ResolvedModel == model);
         if (row?.SupportsEffort == false) return [];
         if (row?.SupportedEffortLevels is { } levels) return levels.Where(Wire.Efforts.Contains).Distinct().ToArray();
+        if (row is null && registeredModels is not null)
+        {
+            var reg = registeredModels.FirstOrDefault(r => r.Name == model);
+            if (reg is not null)
+            {
+                if (!reg.SupportsEffort) return [];
+                return (reg.SupportedEffortLevels ?? []).Where(Wire.Efforts.Contains).ToArray();
+            }
+        }
         if (provider == "codex" || model.Contains("haiku", StringComparison.OrdinalIgnoreCase)) return [];
         if (Regex.IsMatch(model, @"(opus|sonnet)[-.]4[-.]6")) return ["low", "medium", "high", "max"];
         return Regex.IsMatch(model, @"^(default|best|fable|opus|sonnet|opusplan)(\[1m\])?$|fable[-.]5|opus[-.](5|4[-.][78])|sonnet[-.]5") ? Wire.Efforts : row?.SupportsEffort == true ? ["low", "medium", "high"] : [];

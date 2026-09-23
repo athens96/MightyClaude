@@ -413,7 +413,7 @@ public sealed partial class MainWindow
         RebuildRegisteredList(registeredList, provider);
         panel.Children.Add(registeredList);
 
-        // Add row: TextBox + Button + error label.
+        // Add row: TextBox + Button + effort toggle + level picker + error label.
         var addBox = new TextBox { PlaceholderText = ModelDefaultsStrings.AddPlaceholder, FontSize = 11, MinWidth = 160 };
         AutomationProperties.SetAutomationId(addBox, $"modelDefaults-add-{provider}");
         var addButton = new Button { Content = ModelDefaultsStrings.AddButton, FontSize = 11 };
@@ -421,15 +421,47 @@ public sealed partial class MainWindow
         var errorLabel = new TextBlock { FontSize = 11, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red), Visibility = Visibility.Collapsed, TextWrapping = TextWrapping.Wrap };
         AutomationProperties.SetAutomationId(errorLabel, $"modelDefaults-error-{provider}");
 
+        var effortToggle = new CheckBox { Content = ModelDefaultsStrings.SupportsEffortLabel, FontSize = 11 };
+        AutomationProperties.SetAutomationId(effortToggle, $"modelDefaults-addEffort-{provider}");
+
+        var effortLevelsPanel = new StackPanel { Spacing = 4, Visibility = Visibility.Collapsed };
+        AutomationProperties.SetAutomationId(effortLevelsPanel, $"modelDefaults-addLevels-{provider}");
+        effortLevelsPanel.Children.Add(new TextBlock { Text = ModelDefaultsStrings.EffortLevelsLabel, FontSize = 10, Opacity = .7 });
+        var levelBoxes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var selectedLevels = new HashSet<string>();
+        foreach (var lvl in Wire.Efforts)
+        {
+            var lvlCapture = lvl;
+            var cb = new CheckBox { Content = lvl, FontSize = 10, Padding = new Microsoft.UI.Xaml.Thickness(4, 0, 4, 0) };
+            AutomationProperties.SetAutomationId(cb, $"modelDefaults-addLevel-{provider}-{lvl}");
+            cb.Checked += (_, _) => selectedLevels.Add(lvlCapture);
+            cb.Unchecked += (_, _) => selectedLevels.Remove(lvlCapture);
+            levelBoxes.Children.Add(cb);
+        }
+        effortLevelsPanel.Children.Add(levelBoxes);
+
+        effortToggle.Checked += (_, _) => effortLevelsPanel.Visibility = Visibility.Visible;
+        effortToggle.Unchecked += (_, _) => { effortLevelsPanel.Visibility = Visibility.Collapsed; selectedLevels.Clear(); foreach (var cb in levelBoxes.Children.OfType<CheckBox>()) cb.IsChecked = false; };
+
         void DoAdd()
         {
             var name = addBox.Text;
+            var supportsEffort = effortToggle.IsChecked == true;
+            var levels = Wire.Efforts.Where(selectedLevels.Contains).ToArray();
             _ = service.UpdateAsync(s =>
             {
                 var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
-                var error = ModelDefaultsResolution.AddRegisteredModel(name, provider, ref cfg);
+                var error = ModelDefaultsResolution.AddRegisteredModel(name, provider, ref cfg, supportsEffort, levels);
                 if (error is not null) { DispatcherQueue.TryEnqueue(() => { errorLabel.Text = error; errorLabel.Visibility = Visibility.Visible; }); return s; }
-                DispatcherQueue.TryEnqueue(() => { errorLabel.Visibility = Visibility.Collapsed; addBox.Text = ""; RebuildRegisteredList(registeredList, provider); });
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    errorLabel.Visibility = Visibility.Collapsed;
+                    addBox.Text = "";
+                    effortToggle.IsChecked = false;
+                    selectedLevels.Clear();
+                    foreach (var cb in levelBoxes.Children.OfType<CheckBox>()) cb.IsChecked = false;
+                    RebuildRegisteredList(registeredList, provider);
+                });
                 return s with { ModelDefaults = cfg };
             });
         }
@@ -439,7 +471,11 @@ public sealed partial class MainWindow
         var addRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         addRow.Children.Add(addBox);
         addRow.Children.Add(addButton);
-        panel.Children.Add(addRow);
+        var addControls = new StackPanel { Spacing = 4 };
+        addControls.Children.Add(addRow);
+        addControls.Children.Add(effortToggle);
+        addControls.Children.Add(effortLevelsPanel);
+        panel.Children.Add(addControls);
         panel.Children.Add(errorLabel);
         return panel;
     }
