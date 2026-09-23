@@ -228,6 +228,7 @@
   "settings.providers.statusReady": "Ready",
   "settings.providers.windowsDescription": "Uses local Claude Code, Codex CLI, and Gemini CLI as-is. Log in and install via each CLI.",
   "graph.nodeModel.configuredSuffix": "· settings",
+  "usage.modelUsage.sameResponse": "· same response",
   "settings.modelDefaults.sectionTitle": "Model Defaults",
   "settings.modelDefaults.description": "Set the default model for each provider and permission mode. Leave a mode at 'default' to use the CLI's own default.",
   "settings.modelDefaults.addButton": "Add",

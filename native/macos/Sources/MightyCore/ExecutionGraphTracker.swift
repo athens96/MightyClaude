@@ -12,6 +12,8 @@ final class ExecutionGraphTracker {
     private let mainID: String
     /// "claude" observes stream-json plus Mods; "codex" observes exec JSONL.
     let provider: String
+    /// Model the run was configured with; used for Codex response records.
+    private let configuredModel: String?
     private let emit: (ExecutionGraphNode) -> Void
     private var codexAgents: [String: String] = [:]
     private var codexRootThread: String?
@@ -31,14 +33,18 @@ final class ExecutionGraphTracker {
     private var backgroundTools = Set<String>()
     private var taskAliases: [String: String] = [:]
     private var messageUsage: [String: GraphTokenUsage] = [:]
+    private var messageModel: [String: String] = [:]
+    private var messageActivityIds: [String: [String]] = [:]
+    private var messageConfigured: [String: Bool] = [:]
+    private var nodeResponseOrder: [String: [String]] = [:]
     private var pendingSteers: [String] = []
     private var messageOrder: [String] = []
     private var unnamedUsage = 0
     private var compactions = 0
     private var finished = false
 
-    init(runID: String, input: String?, provider: String = "claude", emit: @escaping (ExecutionGraphNode) -> Void) {
-        self.runID = runID; mainID = ExecutionGraphSupport.mainNodeID(runId: runID); self.provider = provider; self.emit = emit
+    init(runID: String, input: String?, provider: String = "claude", configuredModel: String? = nil, emit: @escaping (ExecutionGraphNode) -> Void) {
+        self.runID = runID; mainID = ExecutionGraphSupport.mainNodeID(runId: runID); self.provider = provider; self.configuredModel = configuredModel; self.emit = emit
         let main = ExecutionGraphNode(id: mainID, runId: runID, kind: "main", state: "running", title: ProviderOptions.label(provider), input: input)
         if let normalized = ExecutionGraphSupport.normalized(main) {
             nodes[mainID] = normalized; order.append(mainID); emit(normalized)
@@ -175,9 +181,15 @@ final class ExecutionGraphTracker {
         let owner: Owner = .node(current)
         let type = value["type"] as? String
         if type == "assistant", let message = value["message"] as? [String: Any] {
+            let model = message["model"] as? String
+            let contentBlocks = message["content"] as? [[String: Any]] ?? []
+            let activityIds = contentBlocks.compactMap { block -> String? in
+                guard block["type"] as? String == "tool_use" else { return nil }
+                return Self.key(block["id"])
+            }
             if let usage = GraphTokenUsage.parse(message["usage"]) {
                 unnamedUsage += 1
-                recordUsage(usage, message: Self.key(message["id"]) ?? Self.key(value["uuid"]) ?? "unnamed:\(unnamedUsage)", node: current)
+                recordUsage(usage, message: Self.key(message["id"]) ?? Self.key(value["uuid"]) ?? "unnamed:\(unnamedUsage)", node: current, model: model, activityIds: activityIds)
             }
         }
         if type == "system", value["subtype"] as? String == "compact_boundary" {
@@ -308,7 +320,7 @@ final class ExecutionGraphTracker {
             guard let usage = Self.codexUsage(value["usage"]) else { return }
             // Each turn reports its own usage once; sum turns for the main block.
             unnamedUsage += 1
-            recordUsage(usage, message: "turn:\(unnamedUsage)", node: mainID)
+            recordUsage(usage, message: "turn:\(unnamedUsage)", node: mainID, model: configuredModel, markedAsConfigured: configuredModel != nil)
             return
         }
         guard ["item.started", "item.updated", "item.completed"].contains(type),
@@ -390,16 +402,32 @@ final class ExecutionGraphTracker {
 
     /// One message is streamed as several events that all carry its usage, so
     /// a block adds each message once and keeps that message's latest figure.
-    private func recordUsage(_ usage: GraphTokenUsage, message: String, node: String) {
+    /// On first observation the model and activity IDs are recorded; subsequent
+    /// events only update the usage figure (the re-sent response constraint).
+    private func recordUsage(_ usage: GraphTokenUsage, message: String, node: String, model: String? = nil, activityIds: [String] = [], markedAsConfigured: Bool = false) {
         guard nodes[node] != nil else { return }
         let previous = messageUsage[message]
         guard previous != usage else { return }
         if previous == nil {
             messageOrder.append(message)
             if messageOrder.count > 1_024 { messageUsage.removeValue(forKey: messageOrder.removeFirst()) }
+            if let m = model { messageModel[message] = m }
+            messageActivityIds[message] = activityIds
+            messageConfigured[message] = markedAsConfigured
+            if nodeResponseOrder[node] == nil { nodeResponseOrder[node] = [] }
+            nodeResponseOrder[node]!.append(message)
         }
         messageUsage[message] = usage
-        update(node) { $0.usage = ($0.usage ?? GraphTokenUsage()) - (previous ?? GraphTokenUsage()) + usage }
+        let records = buildResponseRecords(for: node)
+        update(node) { $0.usage = ($0.usage ?? GraphTokenUsage()) - (previous ?? GraphTokenUsage()) + usage; $0.responseRecords = records }
+    }
+
+    private func buildResponseRecords(for nodeId: String) -> [GraphResponseRecord] {
+        guard let order = nodeResponseOrder[nodeId] else { return [] }
+        return order.compactMap { msgId -> GraphResponseRecord? in
+            guard let usage = messageUsage[msgId] else { return nil }
+            return GraphResponseRecord(responseId: msgId, model: messageModel[msgId], usage: usage, activityIds: messageActivityIds[msgId] ?? [], markedAsConfigured: messageConfigured[msgId] ?? false)
+        }
     }
 
     /// The launch acknowledgement names the engine's task ID. Keep it so a

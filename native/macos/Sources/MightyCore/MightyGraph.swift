@@ -11,8 +11,10 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var kind: String?
     public var usage: GraphTokenUsage?
     public var activityGeneration: Int?
-    public init(id: String, parentID: String? = nil, title: String = "서브에이전트", input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil) {
-        self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration
+    /// Per-response attribution; absent in older graph events.
+    public var responseRecords: [GraphResponseRecord]?
+    public init(id: String, parentID: String? = nil, title: String = "서브에이전트", input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil) {
+        self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
     }
     public var isTask: Bool { kind == "task" }
     /// A mid-turn message the user sent to a running Claude request.
@@ -34,6 +36,8 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     public var finalOutput: String?
     /// Tokens of the main block alone; `totalUsage` adds every child block.
     public var usage: GraphTokenUsage?
+    /// Per-response attribution for the main block; absent in older graph events.
+    public var responseRecords: [GraphResponseRecord]?
     public var provider: String?
     /// The model label shown on this request node and projected to phone blocks.
     /// Computed once when the run starts and updated if the CLI later reports the actual
@@ -42,8 +46,8 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// The model the request was configured with when it started ("default" when the CLI
     /// decides). Kept so a later CLI report can recompute `nodeModelLabel`.
     public var configuredModel: String?
-    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil) {
-        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
+    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, responseRecords: [GraphResponseRecord]? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil) {
+        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.responseRecords = responseRecords; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
     }
     public var totalUsage: GraphTokenUsage? {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
@@ -311,10 +315,11 @@ extension RunSession {
             if node.kind == "main" {
                 runs[index].status = MightyGraphSupport.nextState(runs[index].status, node.state)
                 if let usage = node.usage { runs[index].usage = usage }
+                if let records = node.responseRecords { runs[index].responseRecords = records }
                 if let output = node.output, !output.isEmpty { runs[index].finalOutput = output }
             } else {
                 let parent = node.parentId == ExecutionGraphSupport.mainNodeID(runId: node.runId) ? nil : node.parentId
-                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration)
+                var agent = MightyGraphAgent(id: node.id, parentID: parent, title: node.title, input: node.input ?? "", status: node.state, entries: node.entries, kind: ["task", "steer", "compact", "question"].contains(node.kind) ? node.kind : nil, usage: node.usage, activityGeneration: node.activityGeneration, responseRecords: node.responseRecords)
                 if let output = node.output, !output.isEmpty {
                     let answerID = provider == "codex"
                         ? ExecutionGraphSupport.identifier(node.runId, node.id + ":answer:\(node.activityGeneration ?? 0)")
@@ -339,6 +344,7 @@ extension RunSession {
                     if agent.activityGeneration == nil { agent.activityGeneration = previous.activityGeneration }
                     if agent.kind == nil { agent.kind = previous.kind }
                     if agent.usage == nil { agent.usage = previous.usage }
+                    if agent.responseRecords == nil { agent.responseRecords = previous.responseRecords }
                     if !previous.input.isEmpty { agent.input = previous.input }
                     var mergedEntries = previous.entries
                     for entry in agent.entries {

@@ -27,11 +27,11 @@ public final class CLIStreamParser {
     private var lastTurn: AgentActivity?
     public private(set) var failed = false
 
-    public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil) {
+    public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil) {
         self.provider = provider; self.log = log; self.resume = resume
         self.activityNamespace = activityNamespace; self.activity = activity; self.control = control; self.result = result
         usageTracker = SessionUsageTracker(provider: provider, callback: usage)
-        graphTracker = MightyGraphSupport.providers.contains(provider) ? graph.map { ExecutionGraphTracker(runID: activityNamespace, input: graphInput, provider: provider, emit: $0) } : nil
+        graphTracker = MightyGraphSupport.providers.contains(provider) ? graph.map { ExecutionGraphTracker(runID: activityNamespace, input: graphInput, provider: provider, configuredModel: configuredModel, emit: $0) } : nil
         let origin = ContinuousClock.now
         self.activityClock = activityClock ?? {
             let elapsed = origin.duration(to: .now).components
