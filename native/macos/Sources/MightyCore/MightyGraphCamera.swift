@@ -95,6 +95,21 @@ public enum MightyGraphCamera {
         return .reaim(nodeID: newest, alignTop: true)
     }
 
+    /// Where the camera goes when the canvas changes size while a result card
+    /// is fitting the window. Sending a request shrinks the composer, so the
+    /// canvas resizes right after the new request took the camera: a block
+    /// below the fitted card — that request, the draft — is newer work and
+    /// keeps the camera, re-aimed because the fitted card above it changed
+    /// height. Otherwise the fitted card's top is brought back into view.
+    public static func resizeAnchor(fittedResultID: String?, targetID: String?, targetAlignTop: Bool,
+                                    frames: [String: CGRect]) -> Anchor {
+        guard let fittedResultID, let fitted = frames[fittedResultID] else { return .hold }
+        if let targetID, targetID != fittedResultID, let target = frames[targetID], target.minY > fitted.minY {
+            return .reaim(nodeID: targetID, alignTop: targetAlignTop)
+        }
+        return .reaim(nodeID: fittedResultID, alignTop: true)
+    }
+
     /// The run-id rule above names one cause. This one names none: after a
     /// layout pass that moved cards under a camera nobody touched, did every
     /// card leave the viewport? A user who deliberately panned into empty
