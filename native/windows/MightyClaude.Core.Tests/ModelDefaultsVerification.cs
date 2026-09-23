@@ -199,6 +199,112 @@ internal static class ModelDefaultsVerification
 
     // ── Settings section is registered ─────────────────────────────────────
 
+    // ── Section model rows ──────────────────────────────────────────────────
+
+    internal static Task ModelDefaultsRows()
+    {
+        // With null config all modes resolve to "default"
+        var nullRows = ModelDefaultsResolution.SectionRows(null);
+        Check(nullRows.All(r => r.CurrentValue == "default"), "null config must yield all 'default' rows");
+        Check(nullRows.All(r => r.Choices.Single() == "default"), "null config rows must offer only 'default' as choice");
+        // Check row counts: claude=5 modes (plan,manual,acceptEdits,auto,fullAccess), codex=3
+        var claudeRows = nullRows.Where(r => r.Provider == "claude").ToList();
+        var codexRows = nullRows.Where(r => r.Provider == "codex").ToList();
+        Check(claudeRows.Count == 5, "claude must have 5 mode rows");
+        Check(codexRows.Count == 3, "codex must have 3 mode rows");
+
+        // With config the current value reflects mode defaults
+        var config = new ModelDefaultsConfig
+        {
+            Claude = new() { ModeDefaults = new() { ["manual"] = "claude-sonnet-5" }, RegisteredModels = [new("my-claude")] },
+            Codex = new() { ModeDefaults = new() { ["acceptEdits"] = "gpt-6-astra" } }
+        };
+        var rows = ModelDefaultsResolution.SectionRows(config);
+        Check(rows.Single(r => r.Provider == "claude" && r.Mode == "manual").CurrentValue == "claude-sonnet-5", "claude manual row must reflect config");
+        Check(rows.Single(r => r.Provider == "codex" && r.Mode == "acceptEdits").CurrentValue == "gpt-6-astra", "codex acceptEdits row must reflect config");
+        // Registered model appears in choices
+        Check(rows.Where(r => r.Provider == "claude").All(r => r.Choices.Contains("my-claude")), "registered model must appear in every claude row's choices");
+        Check(rows.Where(r => r.Provider == "codex").All(r => !r.Choices.Contains("my-claude")), "claude's registered model must not appear in codex choices");
+        return Task.CompletedTask;
+    }
+
+    // ── AddRegisteredModel ─────────────────────────────────────────────────
+
+    internal static Task ModelDefaultsAdd()
+    {
+        var config = new ModelDefaultsConfig();
+        // Success: valid name
+        var err = ModelDefaultsResolution.AddRegisteredModel("acme/custom-v2", "claude", ref config);
+        Check(err is null, "adding a valid name must return null error");
+        Check(config.Claude.RegisteredModels.Any(m => m.Name == "acme/custom-v2"), "registered model must appear in config");
+        // Duplicate: same provider
+        var dupErr = ModelDefaultsResolution.AddRegisteredModel("acme/custom-v2", "claude", ref config);
+        Check(dupErr is not null, "adding a duplicate name must return an error");
+        // Codex is independent
+        var codexErr = ModelDefaultsResolution.AddRegisteredModel("acme/custom-v2", "codex", ref config);
+        Check(codexErr is null, "same name under a different provider must succeed");
+        // Whitespace is trimmed
+        var trimConfig = new ModelDefaultsConfig();
+        Check(ModelDefaultsResolution.AddRegisteredModel("  trimmed-name  ", "claude", ref trimConfig) is null, "whitespace must be trimmed before registration");
+        Check(trimConfig.Claude.RegisteredModels[0].Name == "trimmed-name", "stored name must be trimmed");
+        return Task.CompletedTask;
+    }
+
+    internal static Task ModelDefaultsInvalidName()
+    {
+        var config = new ModelDefaultsConfig();
+        Check(ModelDefaultsResolution.AddRegisteredModel("", "claude", ref config) is not null, "empty name must be rejected");
+        Check(ModelDefaultsResolution.AddRegisteredModel("   ", "claude", ref config) is not null, "whitespace-only name must be rejected");
+        Check(ModelDefaultsResolution.AddRegisteredModel("default", "claude", ref config) is not null, "'default' must be rejected as reserved");
+        Check(ModelDefaultsResolution.AddRegisteredModel(new string('a', 201), "claude", ref config) is not null, "201-char name must be rejected");
+        Check(ModelDefaultsResolution.AddRegisteredModel("bad name with spaces", "claude", ref config) is not null, "name with spaces must be rejected");
+        Check(config.Claude.RegisteredModels.Count == 0, "no name must be registered after all rejections");
+        return Task.CompletedTask;
+    }
+
+    // ── RemoveRegisteredModel ──────────────────────────────────────────────
+
+    internal static Task ModelDefaultsRemoveReverts()
+    {
+        var config = new ModelDefaultsConfig
+        {
+            Claude = new()
+            {
+                ModeDefaults = new() { ["manual"] = "my-model", ["auto"] = "my-model", ["plan"] = "claude-sonnet-5" },
+                RegisteredModels = [new("my-model"), new("other-model")]
+            }
+        };
+        var reverted = ModelDefaultsResolution.RemoveRegisteredModel("my-model", "claude", ref config);
+        Check(reverted == 2, "removing a name referenced by two modes must revert 2 rows");
+        Check(!config.Claude.RegisteredModels.Any(m => m.Name == "my-model"), "removed model must not remain in registered list");
+        Check(config.Claude.RegisteredModels.Any(m => m.Name == "other-model"), "other model must remain in registered list");
+        Check(config.Claude.ModeDefaults["manual"] == "default", "manual row must revert to 'default'");
+        Check(config.Claude.ModeDefaults["auto"] == "default", "auto row must revert to 'default'");
+        Check(config.Claude.ModeDefaults["plan"] == "claude-sonnet-5", "plan row (pointing to different model) must remain unchanged");
+        // Removing an absent name reverts 0 rows
+        var noop = ModelDefaultsResolution.RemoveRegisteredModel("nonexistent", "claude", ref config);
+        Check(noop == 0, "removing an absent name must revert 0 rows");
+        // Codex is unaffected
+        var codexConfig = new ModelDefaultsConfig { Codex = new() { ModeDefaults = new() { ["manual"] = "my-model" }, RegisteredModels = [new("my-model")] } };
+        ModelDefaultsResolution.RemoveRegisteredModel("my-model", "claude", ref codexConfig);
+        Check(codexConfig.Codex.RegisteredModels.Any(m => m.Name == "my-model"), "removing from claude must not touch codex");
+        return Task.CompletedTask;
+    }
+
+    internal static Task ModelDefaultsOldSnapshot()
+    {
+        // A snapshot without ModelDefaults must decode as null (already proven in AppSnapshotModelDefaultsRoundTrips)
+        // and SectionRows must handle null gracefully with all "default" values
+        var rows = ModelDefaultsResolution.SectionRows(null);
+        Check(rows.Count > 0, "SectionRows must return rows even for null config");
+        Check(rows.All(r => r.CurrentValue == "default"), "all rows must be 'default' for null config");
+        // Removing from null-based config must return 0 without crashing
+        var config = new ModelDefaultsConfig();
+        var reverted = ModelDefaultsResolution.RemoveRegisteredModel("ghost", "claude", ref config);
+        Check(reverted == 0, "removing from empty config must return 0");
+        return Task.CompletedTask;
+    }
+
     internal static Task ModelDefaultsSectionIsRegistered()
     {
         var slot = SettingsSections.MacOrder.SingleOrDefault(s => s.Id == SettingsSections.ModelDefaults);

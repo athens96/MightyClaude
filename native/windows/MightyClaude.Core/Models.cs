@@ -140,6 +140,8 @@ public sealed record ModelDefaultsConfig
     public ProviderModeDefaults Codex { get; init; } = new();
 }
 
+public sealed record ModelDefaultsRow(string Provider, string Mode, string CurrentValue, IReadOnlyList<string> Choices);
+
 public sealed record AppSnapshot
 {
     public int Version { get; init; } = 1;

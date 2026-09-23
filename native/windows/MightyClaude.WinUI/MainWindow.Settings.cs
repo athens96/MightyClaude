@@ -345,18 +345,131 @@ public sealed partial class MainWindow
     // Read the statuses when the section opens and after a sign-in terminal closes.
     internal Task RefreshCliAccounts() => accountsCoordinator.RefreshAsync(CliAccountProviders);
 
-    // 모델 기본값 — description only; per-mode model pickers are device-unverified UI.
+    // 모델 기본값 — per-provider per-mode pickers and registered-name management.
     private StackPanel BuildModelDefaultsSection()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        foreach (var provider in new[] { "claude", "codex" })
+            panel.Children.Add(BuildProviderDefaultsPanel(provider));
+        return panel;
+    }
+
+    private StackPanel BuildProviderDefaultsPanel(string provider)
     {
         var panel = new StackPanel { Spacing = 6 };
         panel.Children.Add(new TextBlock
         {
-            Text = ModelDefaultsStrings.WindowsDescription,
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = .7,
+            Text = ProviderCatalog.Name(provider),
             FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Opacity = .9,
         });
+
+        var config = service.Snapshot.ModelDefaults;
+        var pd = provider == "codex" ? config?.Codex : config?.Claude;
+        var registered = pd?.RegisteredModels ?? (IReadOnlyList<RegisteredModelEntry>)[];
+
+        // One ComboBox row per permission mode.
+        foreach (var mode in ProviderCatalog.PermissionModes(provider))
+        {
+            var modeCapture = mode;
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            row.Children.Add(new TextBlock
+            {
+                Text = mode,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                MinWidth = 80,
+            });
+            var current = pd?.ModeDefaults.TryGetValue(mode, out var val) == true ? val! : "default";
+            var combo = new ComboBox { FontSize = 11, MinWidth = 140 };
+            AutomationProperties.SetAutomationId(combo, $"modelDefaults-{provider}-{modeCapture}");
+            combo.Items.Add(new ComboBoxItem { Content = ModelDefaultsStrings.DefaultOption, Tag = "default" });
+            foreach (var entry in registered)
+                combo.Items.Add(new ComboBoxItem { Content = entry.Name, Tag = entry.Name, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas") });
+            combo.SelectedItem = combo.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == current) ?? combo.Items[0];
+            combo.SelectionChanged += (_, _) =>
+            {
+                if (combo.SelectedItem is ComboBoxItem { Tag: string picked })
+                    _ = service.UpdateAsync(s =>
+                    {
+                        var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                        var providerDefaults = provider == "codex" ? cfg.Codex : cfg.Claude;
+                        var newDefaults = new Dictionary<string, string>(providerDefaults.ModeDefaults) { [modeCapture] = picked };
+                        var updated = providerDefaults with { ModeDefaults = newDefaults };
+                        return s with { ModelDefaults = provider == "codex" ? cfg with { Codex = updated } : cfg with { Claude = updated } };
+                    });
+            };
+            row.Children.Add(combo);
+            panel.Children.Add(row);
+        }
+
+        // Registered names list.
+        var regHeading = new TextBlock { Text = ModelDefaultsStrings.RegisteredTitle, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Opacity = .8 };
+        panel.Children.Add(regHeading);
+
+        var registeredList = new StackPanel { Spacing = 4 };
+        AutomationProperties.SetAutomationId(registeredList, $"modelDefaults-registered-{provider}");
+        RebuildRegisteredList(registeredList, provider);
+        panel.Children.Add(registeredList);
+
+        // Add row: TextBox + Button + error label.
+        var addBox = new TextBox { PlaceholderText = ModelDefaultsStrings.AddPlaceholder, FontSize = 11, MinWidth = 160 };
+        AutomationProperties.SetAutomationId(addBox, $"modelDefaults-add-{provider}");
+        var addButton = new Button { Content = ModelDefaultsStrings.AddButton, FontSize = 11 };
+        AutomationProperties.SetAutomationId(addButton, $"modelDefaults-addButton-{provider}");
+        var errorLabel = new TextBlock { FontSize = 11, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red), Visibility = Visibility.Collapsed, TextWrapping = TextWrapping.Wrap };
+        AutomationProperties.SetAutomationId(errorLabel, $"modelDefaults-error-{provider}");
+
+        void DoAdd()
+        {
+            var name = addBox.Text;
+            _ = service.UpdateAsync(s =>
+            {
+                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                var error = ModelDefaultsResolution.AddRegisteredModel(name, provider, ref cfg);
+                if (error is not null) { DispatcherQueue.TryEnqueue(() => { errorLabel.Text = error; errorLabel.Visibility = Visibility.Visible; }); return s; }
+                DispatcherQueue.TryEnqueue(() => { errorLabel.Visibility = Visibility.Collapsed; addBox.Text = ""; RebuildRegisteredList(registeredList, provider); });
+                return s with { ModelDefaults = cfg };
+            });
+        }
+        addButton.Click += (_, _) => DoAdd();
+        addBox.KeyDown += (_, e) => { if (e.Key == Windows.System.VirtualKey.Enter) DoAdd(); };
+
+        var addRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        addRow.Children.Add(addBox);
+        addRow.Children.Add(addButton);
+        panel.Children.Add(addRow);
+        panel.Children.Add(errorLabel);
         return panel;
+    }
+
+    private void RebuildRegisteredList(StackPanel registeredList, string provider)
+    {
+        registeredList.Children.Clear();
+        var config = service.Snapshot.ModelDefaults;
+        var pd = provider == "codex" ? config?.Codex : config?.Claude;
+        var registered = pd?.RegisteredModels ?? (IReadOnlyList<RegisteredModelEntry>)[];
+        foreach (var entry in registered)
+        {
+            var entryCapture = entry.Name;
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            AutomationProperties.SetAutomationId(row, $"modelDefaults-registered-{provider}-{entryCapture}");
+            var nameBlock = new TextBlock { Text = entryCapture, FontSize = 11, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), VerticalAlignment = VerticalAlignment.Center };
+            var deleteBtn = new Button { Content = ModelDefaultsStrings.DeleteButton, FontSize = 11 };
+            AutomationProperties.SetAutomationId(deleteBtn, $"modelDefaults-delete-{provider}-{entryCapture}");
+            deleteBtn.Click += (_, _) =>
+                _ = service.UpdateAsync(s =>
+                {
+                    var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
+                    ModelDefaultsResolution.RemoveRegisteredModel(entryCapture, provider, ref cfg);
+                    DispatcherQueue.TryEnqueue(() => RebuildRegisteredList(registeredList, provider));
+                    return s with { ModelDefaults = cfg };
+                });
+            row.Children.Add(nameBlock);
+            row.Children.Add(deleteBtn);
+            registeredList.Children.Add(row);
+        }
     }
 
     // 앱 정보 — usage notes; behaviour unchanged.

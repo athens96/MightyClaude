@@ -477,6 +477,11 @@ internal static class Verification
         await Test("model defaults workspace ModelDefaults round-trips", ModelDefaultsVerification.WorkspaceModelDefaultsRoundTrips);
         await Test("model defaults old workspace without field decodes as null", ModelDefaultsVerification.OldWorkspaceWithoutModelDefaultsDecodesAsNull);
         await Test("model defaults settings section is registered", ModelDefaultsVerification.ModelDefaultsSectionIsRegistered);
+        await Test("modelDefaults rows per provider and mode with current value and choices", ModelDefaultsVerification.ModelDefaultsRows);
+        await Test("modelDefaults add registers entry and trims whitespace", ModelDefaultsVerification.ModelDefaultsAdd);
+        await Test("modelDefaults invalid-name returns error for empty reserved and illegal characters", ModelDefaultsVerification.ModelDefaultsInvalidName);
+        await Test("modelDefaults remove-reverts mode rows and leaves other models and providers intact", ModelDefaultsVerification.ModelDefaultsRemoveReverts);
+        await Test("modelDefaults old-snapshot null config yields all-default rows and safe remove", ModelDefaultsVerification.ModelDefaultsOldSnapshot);
         await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
         await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
