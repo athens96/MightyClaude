@@ -391,8 +391,9 @@ final class AppStore: ObservableObject {
     func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
         guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
         guard snapshot.sessions.count < 128 else { error = "실행 창은 최대 128개까지 만들 수 있습니다."; return nil }
-        let name = kind == "shell" ? (workspace.remote == nil ? "터미널" : "원격 명령") : ProviderOptions.label(provider)
+        let name = kind == "shell" ? (workspace.remote == nil ? "터미널" : "원격 명령") : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
         var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
+        if kind == "browser" { session.workspaceProfileKey = workspace.id }
         // Start from the most recently used pane of the same provider.
         if let template = RunSession.template(kind: kind, provider: provider, in: snapshot.sessions) { session.inheritSettings(from: template) }
         reconcilePaneLayout(workspace.id)

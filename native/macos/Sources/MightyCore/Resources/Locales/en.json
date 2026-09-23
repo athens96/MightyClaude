@@ -309,5 +309,12 @@
   "usage.reset.exhausted": "You have used every limit reset for this period.",
   "usage.reset.none": "No limit reset is available right now.",
   "usage.reset.ineligible": "This account does not currently have limit resets.",
-  "usage.reset.unknown": "This app's connection does not provide limit reset information. Check Settings > Usage on claude.ai."
+  "usage.reset.unknown": "This app's connection does not provide limit reset information. Check Settings > Usage on claude.ai.",
+  "browser.address.placeholder": "Enter address",
+  "browser.back": "Back",
+  "browser.engine.missing": "Browser engine not ready. Run scripts/fetch-browser-engine.sh to install it.",
+  "browser.forward": "Forward",
+  "browser.newTab": "New Browser Tab",
+  "browser.reload": "Reload",
+  "browser.tab.title": "Browser"
 }

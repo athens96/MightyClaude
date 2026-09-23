@@ -177,6 +177,21 @@ public struct LogEntry: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// The pane kinds Core stores. "claude" and "shell" run a CLI; "browser" is a
+/// hand-driven CEF pane that carries a workspaceProfileKey and, from stage 2,
+/// an ownerSessionId. Only agent kinds may start a run (see CoreValidation).
+public enum SessionKind {
+    public static let claude = "claude"
+    public static let shell = "shell"
+    public static let browser = "browser"
+    /// Every kind a saved state may hold.
+    public static let stored = [claude, shell, browser]
+    /// Kinds that may appear in a StartRunRequest. A browser pane never runs.
+    public static let runnable = [claude, shell]
+    public static func isStored(_ kind: String) -> Bool { stored.contains(kind) }
+    public static func isBrowser(_ kind: String) -> Bool { kind == browser }
+}
+
 public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var workspaceId: String
@@ -204,10 +219,14 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// Per-session shared result card size set by dragging the latest result card.
     /// When present, later latest result cards use this size instead of auto-fit.
     public var graphResultSize: MightyGraphBlockSize?
+    /// Present only on browser sessions: the workspace-scoped CEF profile key.
+    public var workspaceProfileKey: String?
+    /// Present only on browser sessions owned by an agent pane (stage 2+).
+    public var ownerSessionId: String?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes, graphResultSize }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes, graphResultSize, workspaceProfileKey, ownerSessionId }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); workspaceId = try c.decode(String.self, forKey: .workspaceId)
@@ -226,6 +245,8 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         // Optional layout damage must not discard the saved conversation.
         graphBlockSizes = try? c.decodeIfPresent([String: MightyGraphBlockSize].self, forKey: .graphBlockSizes)
         graphResultSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphResultSize)
+        workspaceProfileKey = try? c.decodeIfPresent(String.self, forKey: .workspaceProfileKey)
+        ownerSessionId = try? c.decodeIfPresent(String.self, forKey: .ownerSessionId)
     }
 }
 
@@ -433,7 +454,7 @@ public enum CoreValidation {
     public static func identifier(_ value: String) -> Bool { value.range(of: "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$", options: .regularExpression) != nil }
     public static func model(_ value: String) -> Bool { value.count <= 200 && value.range(of: "^[a-zA-Z0-9][a-zA-Z0-9._:/@\\[\\]-]*$", options: .regularExpression) != nil }
     public static func validate(_ request: StartRunRequest) throws {
-        guard identifier(request.sessionId), identifier(request.workspaceId), ["claude", "shell"].contains(request.kind), ProviderOptions.ids.contains(request.provider), model(request.model) else { throw MightyError("실행 요청 형식이 올바르지 않습니다.") }
+        guard identifier(request.sessionId), identifier(request.workspaceId), SessionKind.runnable.contains(request.kind), ProviderOptions.ids.contains(request.provider), model(request.model) else { throw MightyError("실행 요청 형식이 올바르지 않습니다.") }
         try AttachmentSupport.validate(request.attachments)
         if request.kind == "shell", !request.attachments.isEmpty { throw MightyError("명령 창에는 첨부 파일을 보낼 수 없습니다.") }
         guard !request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !request.attachments.isEmpty, request.input.utf8.count <= 400_000, request.input.count <= 100_000, !request.input.contains("\0") else { throw MightyError("실행 입력은 비어 있지 않은 100,000자 이하의 텍스트여야 합니다.") }

@@ -191,7 +191,7 @@ public actor StateRepository {
         // Shares are computed over the sessions that will survive, so a
         // dropped or duplicate session cannot take budget from a real one.
         let candidates = value.sessions.prefix(128).filter { session in
-            CoreValidation.identifier(session.id) && sessionIds.insert(session.id).inserted && workspaceIds.contains(session.workspaceId) && ["claude", "shell"].contains(session.kind)
+            CoreValidation.identifier(session.id) && sessionIds.insert(session.id).inserted && workspaceIds.contains(session.workspaceId) && SessionKind.isStored(session.kind)
         }
         let logShares = fairShares(demands: candidates.map { approximateLogBytes(TranscriptRetention.trimmed($0.logs)) }, total: totalLogBudget)
         let graphShares = fairShares(demands: candidates.map { approximateGraphBytes($0.graphRuns ?? []) }, total: totalGraphBudget)

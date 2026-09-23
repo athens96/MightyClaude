@@ -173,8 +173,10 @@ private struct PaneDockGroup: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 tabStrip
-                if let selected { SessionPaneView(session: selected).id(selected.id) }
-                else { Color.clear }
+                if let selected {
+                    if selected.kind == "browser" { BrowserPaneView(session: selected).id(selected.id) }
+                    else { SessionPaneView(session: selected).id(selected.id) }
+                } else { Color.clear }
             }
             .background(Palette.panel, in: RoundedRectangle(cornerRadius: 11))
             .overlay(PaneDockGroupAnchor(workspaceId: workspaceId, groupId: node.id))
@@ -222,6 +224,7 @@ private struct PaneDockTab: View {
             HStack(spacing: 6) {
                 Group {
                     if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 10)) }
+                    else if session.kind == "browser" { Image(systemName: "globe").font(.system(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
                 Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125)
