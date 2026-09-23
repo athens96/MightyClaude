@@ -430,6 +430,53 @@ internal static class AccountUsageVerification
     private static string Juniper(bool inExperiment = true, bool available = false, DateTimeOffset? next = null, int perWeek = 0, string? reason = null) =>
         $$$"""{"juniper_tide":{"in_experiment":{{{Bool(inExperiment)}}},"ineligible_reason":{{{Quoted(reason)}}},"available":{{{Bool(available)}}},"next_available_at":{{{Quoted(next is { } n ? Iso(n) : null)}}},"weekly_resets_at":{{{Quoted(Iso(Instant.AddDays(5)))}}},"resets_per_week":{{{perWeek}}},"tenure_bucket":"established","billing_path":"subscription","billing_period":"monthly","extra_usage_state":"off"}}""";
 
+    /// Runs the single named state scenario through the real probe with a fixture clock.
+    internal static Task UsageResetUnknown() => UsageResetOneState("unknown");
+    internal static Task UsageResetIneligible() => UsageResetOneState("ineligible");
+    internal static Task UsageResetNone() => UsageResetOneState("none");
+    internal static Task UsageResetExhausted() => UsageResetOneState("exhausted");
+    internal static Task UsageResetCooldown() => UsageResetOneState("cooldown");
+    internal static Task UsageResetHeld() => UsageResetOneState("held");
+    internal static Task UsageResetAvailable() => UsageResetOneState("available");
+
+    private static async Task UsageResetOneState(string stateName)
+    {
+        var future = Instant.AddDays(1);
+        var past = Instant.AddDays(-1);
+        var all = new[]
+        {
+            new ResetScenario("available", Cedar(Grant(3, future, true, false), true, null), Juniper(available: true, perWeek: 2), "available", "available"),
+            new ResetScenario("held", Cedar(Grant(2, future, false, true), false, null), Juniper(next: future, perWeek: 2), "held", "cooldown"),
+            new ResetScenario("cooldown", Cedar(Grant(1, future, false, false), true, future), Juniper(next: past, perWeek: 0), "cooldown", "none"),
+            new ResetScenario("exhausted", Cedar(Grant(0, future, false, false), true, past, """["spent"]"""), Juniper(next: past, perWeek: 3), "exhausted", "exhausted"),
+            new ResetScenario("none", Cedar(null, false, null), Juniper(perWeek: 0), "none", "none"),
+            new ResetScenario("ineligible", Cedar(null, false, null, eligible: false, reason: "not_in_experiment"), "", "ineligible", "ineligible") { JuniperStatus = 404 },
+            new ResetScenario("unknown", "", """{"juniper_tide":42}""", "unknown", "unknown") { CedarStatus = 503, Provenance = "assumed (transport failure shapes)" },
+        };
+        var scenario = all.First(s => s.Name == stateName);
+        var clock = Instant.AddSeconds(10);
+        AccountUsageHttpHandler http = (request, _) =>
+        {
+            ClaudeAccountProbe.Guard(request.Url);
+            return Task.FromResult(request.Url.Query switch
+            {
+                "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(scenario.CedarStatus, scenario.Cedar),
+                "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(scenario.JuniperStatus, scenario.Juniper),
+                _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? ProfileBody : UsageBody),
+            });
+        };
+        var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
+            () => new ClaudeQuotaCredential(FixtureToken, "max"), http, () => clock);
+        var granted = snapshot.Resets.First(r => r.Program == ResetProgram.CedarEmber);
+        var atWall = snapshot.Resets.First(r => r.Program == ResetProgram.JuniperTide);
+        Check(granted.State == scenario.CedarState, "cedar_ember state in " + stateName);
+        Check(atWall.State == scenario.JuniperState, "juniper_tide state in " + stateName);
+        foreach (var row in ClaudeResetEntitlements.Rows(snapshot, true))
+        {
+            Check(row.Text.Length > 0 && !row.Text.StartsWith("usage.reset."), "state " + stateName + " renders through a shared key that resolved");
+        }
+    }
+
     /// The seven states, named one by one: available, held, cooldown,
     /// exhausted, none, ineligible, unknown. Each row comes from the real probe
     /// reading fixture HTTP through the injected handler, with a fixture clock

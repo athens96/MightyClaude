@@ -511,6 +511,13 @@ internal static class Verification
         await Test("account usage codex is asked through its own app-server", AccountUsageVerification.CodexIsAskedThroughItsOwnAppServer);
         await Test("account usage closing the app cancels pending reads", AccountUsageVerification.ClosingTheAppCancelsPendingReads);
         await Test("usage reset renders the seven states from the shared keys", AccountUsageVerification.UsageResetRendersSevenStates);
+        await Test("usageReset unknown", AccountUsageVerification.UsageResetUnknown);
+        await Test("usageReset ineligible", AccountUsageVerification.UsageResetIneligible);
+        await Test("usageReset none", AccountUsageVerification.UsageResetNone);
+        await Test("usageReset exhausted", AccountUsageVerification.UsageResetExhausted);
+        await Test("usageReset cooldown", AccountUsageVerification.UsageResetCooldown);
+        await Test("usageReset held", AccountUsageVerification.UsageResetHeld);
+        await Test("usageReset available", AccountUsageVerification.UsageResetAvailable);
         await Test("app update ed25519 matches the RFC 8032 vectors", AppUpdateVerification.Ed25519MatchesTheRfc8032Vectors);
         await Test("app update strings match macOS", StringsVerification.AppUpdateStringsMatchMacOS);
         await Test("app update manifest accepts a fixture signature and refuses everything else", AppUpdateVerification.ManifestAcceptsAFixtureSignatureAndRefusesEverythingElse);
