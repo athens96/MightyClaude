@@ -39,8 +39,11 @@ public struct MightyGraphRun: Codable, Sendable, Equatable, Identifiable {
     /// Computed once when the run starts and updated if the CLI later reports the actual
     /// model it used. nil means no label (CLI decided and we do not know which model).
     public var nodeModelLabel: String?
-    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, provider: String? = nil, nodeModelLabel: String? = nil) {
-        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.provider = provider; self.nodeModelLabel = nodeModelLabel
+    /// The model the request was configured with when it started ("default" when the CLI
+    /// decides). Kept so a later CLI report can recompute `nodeModelLabel`.
+    public var configuredModel: String?
+    public init(id: String, input: String = "", status: String = "running", rootEntries: [LogEntry] = [], agents: [MightyGraphAgent] = [], resultEntries: [LogEntry] = [], sourceRunID: String? = nil, finalOutput: String? = nil, usage: GraphTokenUsage? = nil, provider: String? = nil, nodeModelLabel: String? = nil, configuredModel: String? = nil) {
+        self.id = id; self.input = input; self.status = status; self.rootEntries = rootEntries; self.agents = agents; self.resultEntries = resultEntries; self.sourceRunID = sourceRunID; self.finalOutput = finalOutput; self.usage = usage; self.provider = provider; self.nodeModelLabel = nodeModelLabel; self.configuredModel = configuredModel
     }
     public var totalUsage: GraphTokenUsage? {
         let sum = agents.reduce(usage ?? GraphTokenUsage()) { $0 + ($1.usage ?? GraphTokenUsage()) }
@@ -270,20 +273,33 @@ extension RunSession {
         }
     }
 
-    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString) {
+    /// `configuredModel` is the model the request resolved to before it started
+    /// (explicit choice, mode default, or "default" when the CLI decides). It has no
+    /// default value on purpose: every production caller must pass the resolution.
+    public mutating func beginGraphRun(input: String, id: String = UUID().uuidString, configuredModel: String) {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
-        graphRuns?.append(MightyGraphRun(id: id, input: input, provider: provider))
+        graphRuns?.append(MightyGraphRun(id: id, input: input, provider: provider,
+                                         nodeModelLabel: ModelDefaultsResolution.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
+                                         configuredModel: configuredModel))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
     }
 
     public mutating func recordGraph(_ event: RunEvent) {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider), event.sessionId == id else { return }
         if event.type == "log", let entry = event.entry, entry.kind == "user" {
-            beginGraphRun(input: entry.text, id: entry.id)
+            beginGraphRun(input: entry.text, id: entry.id, configuredModel: model)
             return
         }
         guard var runs = graphRuns, !runs.isEmpty else { return }
+        if event.type == "usage" {
+            // The CLI reported the model it actually used: it outranks the configured name.
+            guard let reported = event.usage?.model, !reported.isEmpty else { return }
+            let last = runs.count - 1
+            runs[last].nodeModelLabel = ModelDefaultsResolution.nodeModelLabel(cliReportedModel: reported, configuredModel: runs[last].configuredModel ?? "default")
+            graphRuns = runs
+            return
+        }
         var index = runs.count - 1
         if event.type == "graph", let node = event.graph.flatMap({ ExecutionGraphSupport.normalized($0) }) {
             if let existing = runs.firstIndex(where: { $0.sourceRunID == node.runId }) { index = existing }

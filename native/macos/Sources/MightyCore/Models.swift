@@ -404,7 +404,7 @@ public enum ProviderOptions {
     public static func fallbackRuntime(_ id: String) -> ProviderRuntime {
         ProviderRuntime(id: id, name: id == "claude" ? "Claude Code" : "\(label(id)) CLI", detail: "CLI 설치 상태를 확인해 주세요.", modelCatalog: fallbackCatalog(id), capabilities: ProviderCapabilities(effort: id != "gemini", permissionModes: permissionModes(provider: id, includeAuto: false, includeOnRequest: false), maxTurns: id == "claude", maxBudgetUsd: id == "claude", fastMode: id == "codex", webSearch: id == "codex", networkAccess: id == "codex", attachments: true))
     }
-    public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil, registeredModels: [RegisteredModelEntry] = []) -> [String] {
+    public static func effortLevels(provider: String, model: String, catalog: ModelCatalog? = nil, registeredModels: [RegisteredModelEntry]) -> [String] {
         if provider == "gemini" { return [] }
         let option = catalog?.models.first { $0.value == model || $0.resolvedModel == model }
         if option?.supportsEffort == false { return [] }
@@ -454,7 +454,7 @@ public enum CoreValidation {
     public static func isOfficialClaudeModel(_ value: String) -> Bool {
         ProviderOptions.fallbackCatalog("claude").models.contains { $0.value == value } || value.range(of: "^(?:(?:opus|sonnet|fable)\\[1m\\]|claude-(?:(?:opus|sonnet|haiku|fable)-[0-9]+(?:[-.][0-9]+)*|[0-9]+(?:-[0-9]+)*-(?:opus|sonnet|haiku|fable)(?:-[0-9]+)*)(?:\\[1m\\])?)$", options: .regularExpression) != nil
     }
-    public static func validateSelection(_ request: StartRunRequest, catalog: ModelCatalog, registeredModels: [RegisteredModelEntry] = []) throws {
+    public static func validateSelection(_ request: StartRunRequest, catalog: ModelCatalog, registeredModels: [RegisteredModelEntry]) throws {
         try validate(request)
         if request.provider == "claude" {
             let official = isOfficialClaudeModel(request.model)

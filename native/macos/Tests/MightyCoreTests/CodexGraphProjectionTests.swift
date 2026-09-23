@@ -5,7 +5,7 @@ import Testing
 struct CodexGraphProjectionTests {
     private func session() -> RunSession {
         var session = RunSession(workspaceId: "workspace", title: "Codex", provider: "codex")
-        session.beginGraphRun(input: "Review the change", id: "request")
+        session.beginGraphRun(input: "Review the change", id: "request", configuredModel: "default")
         return session
     }
     private func node(state: String = "running", generation: Int? = nil, input: String? = nil,
@@ -86,7 +86,7 @@ struct CodexGraphProjectionTests {
         #expect(session.mightyGraphRuns == before)
         receive(node(state: "completed", generation: 2, output: "New generation late answer"), into: &session)
         #expect(session.mightyGraphRuns == before)
-        session.beginGraphRun(input: "Another request", id: "request-two")
+        session.beginGraphRun(input: "Another request", id: "request-two", configuredModel: "default")
         receive(node(generation: 3), into: &session)
         #expect(session.mightyGraphRuns[0] == before[0])
         #expect(session.mightyGraphRuns[1].agents.isEmpty)

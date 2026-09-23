@@ -65,7 +65,7 @@ struct ContextCompactionTests {
 
     @Test func sessionsKeepTheCompactKindThroughProjectionAndRestore() throws {
         var session = RunSession(workspaceId: "workspace", title: "Claude")
-        session.beginGraphRun(input: "Refactor", id: "request-one")
+        session.beginGraphRun(input: "Refactor", id: "request-one", configuredModel: "default")
         let main = ExecutionGraphSupport.mainNodeID(runId: "process-one")
         session.recordGraph(RunEvent(sessionId: session.id, type: "graph", graph: ExecutionGraphNode(id: main, runId: "process-one", kind: "main", state: "running", title: "Claude")))
         let block = ExecutionGraphNode(id: "process-one-compact", runId: "process-one", parentId: main, kind: "compact", state: "completed", title: "컨텍스트 정리", input: "자동 정리 · 1,000 → 400 토큰")

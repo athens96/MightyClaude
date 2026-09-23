@@ -17,7 +17,7 @@ struct CodexSubagentFlowTests {
     @Test func parallelAgentsAndFollowupSurviveStreamingAndProfileRoundTrip() throws {
         let workspace = Workspace(id: "workspace", name: "Fixture", path: "/tmp")
         var session = RunSession(id: "session", workspaceId: workspace.id, title: "Codex", provider: "codex")
-        session.beginGraphRun(input: "모듈을 나눠 검토해 줘", id: "request")
+        session.beginGraphRun(input: "모듈을 나눠 검토해 줘", id: "request", configuredModel: "default")
         var activities: [AgentActivity] = []
         var graphEvents: [ExecutionGraphNode] = []
         let parser = CLIStreamParser(provider: "codex", log: { kind, text in

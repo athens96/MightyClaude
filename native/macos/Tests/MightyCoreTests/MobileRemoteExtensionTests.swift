@@ -415,9 +415,9 @@ struct MobileRemoteExtensionTests {
     @Test func theRunWindowIsWhatThePhaseIsReadFrom() throws {
         let flow = StyleFixtures.bundled("ouroboros")
         var session = RunSession(workspaceId: "ws", title: "Claude")
-        session.beginGraphRun(input: "/ouroboros:seed", id: "r0")
+        session.beginGraphRun(input: "/ouroboros:seed", id: "r0", configuredModel: "default")
         #expect(flow.evaluator.currentPhase(session: session)?.id == "seed")
-        for index in 1...128 { session.beginGraphRun(input: "그냥 요청 \(index)", id: "r\(index)") }
+        for index in 1...128 { session.beginGraphRun(input: "그냥 요청 \(index)", id: "r\(index)", configuredModel: "default") }
         #expect(session.graphRuns?.count == 128 && session.graphRuns?.contains { $0.id == "r0" } == false)
         #expect(flow.evaluator.currentPhase(session: session)?.id == "goal")
         // The logs are not consulted while the window still holds requests, so
