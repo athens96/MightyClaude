@@ -73,13 +73,15 @@ public enum ModelUsageFormat {
             }
             if let child = childBlock,
                let childCapsule = blockCapsule(usage: child.usage, records: child.records, nodeModelLabel: nil, catalog: catalog) {
-                return "\(callerPart) · \(L("usage.modelUsage.subagentPrefix")) \(childCapsule)"
+                let sub = L("usage.modelUsage.subagentPrefix")
+                return "\(callerPart) · \(sub) \(childCapsule)"
             }
             return callerPart
         }
         if let child = childBlock,
            let childCapsule = blockCapsule(usage: child.usage, records: child.records, nodeModelLabel: nil, catalog: catalog) {
-            return "\(L("usage.modelUsage.subagentPrefix")) \(childCapsule)"
+            let sub = L("usage.modelUsage.subagentPrefix")
+            return "\(sub) \(childCapsule)"
         }
         return nil
     }
