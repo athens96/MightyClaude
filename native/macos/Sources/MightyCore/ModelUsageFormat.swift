@@ -59,10 +59,11 @@ public enum ModelUsageFormat {
         catalog: [ModelOption] = []
     ) -> String? {
         for record in records {
-            guard let index = record.activityIds.firstIndex(of: activityId) else { continue }
+            guard record.activityIds.contains(activityId) else { continue }
             let callerPart: String
-            if index == 0 {
-                let tokenStr = GraphTokenUsage.compact(record.usage.total)
+            // The number drawn is exactly the attribution the sum rule counts.
+            if let attributed = callerAttribution(activityId: activityId, records: [record]) {
+                let tokenStr = GraphTokenUsage.compact(attributed)
                 if let model = record.model, !model.isEmpty {
                     callerPart = "\(shortName(model, catalog: catalog)) · \(tokenStr)"
                 } else {
