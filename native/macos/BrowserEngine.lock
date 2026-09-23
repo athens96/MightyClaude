@@ -1,0 +1,13 @@
+{
+  "arch": "arm64",
+  "cef": {
+    "version": "152.0.9+g07f67cd+chromium-152.0.7977.134",
+    "url": "https://cef-builds.spotifycdn.com/cef_binary_152.0.9+g07f67cd+chromium-152.0.7977.134_macosarm64_minimal.tar.bz2",
+    "sha256": "f4efc5e8447e37d3dd1a982047310f1af16d08c5e81136d33a92e6cbff2717f7"
+  },
+  "node": {
+    "version": "22.23.2",
+    "url": "https://nodejs.org/dist/v22.23.2/node-v22.23.2-darwin-arm64.tar.gz",
+    "sha256": "61130f394c1630d211dd50aecc4353d379480f36d3ac913cd85dbba1aed585c6"
+  }
+}

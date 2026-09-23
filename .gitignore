@@ -19,3 +19,7 @@ native/windows/.nuget/
 
 # swiftc output of scripts/update-manifest-sign.swift
 /.build/
+
+# Python bytecode
+__pycache__/
+*.pyc
