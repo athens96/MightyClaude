@@ -1037,7 +1037,15 @@ final class AppStore: ObservableObject {
                 } else { throw MightyError("Codex 추가 설정 팝오버가 표시되지 않았습니다.") }
                 settingsSession = nil
             }
+            // The read-only 리셋권 rows, rendered from an injected service with a
+            // fixture clock and a fake transport (GET only). A second instance is
+            // never launched on a developer Mac, so this run is observed from the
+            // macOS CI smoke artifact, exactly as Windows records it under the
+            // same usageReset key.
+            let usageReset = await AccountUsageStatusController.runUsageResetSmoke()
+            result["usageReset"] = usageReset
             result["passed"] = completedCorrectly && settingsRestored && window != nil
+                && (usageReset["passed"] as? Bool == true)
             result["status"] = snapshot.sessions.first { $0.id == sessionId }?.status ?? "missing"
         } catch {
             result["error"] = error.localizedDescription

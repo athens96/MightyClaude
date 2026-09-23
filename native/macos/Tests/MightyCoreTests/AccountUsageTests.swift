@@ -439,4 +439,26 @@ struct AccountResetEntitlementTests {
         // A relaunch with nothing read yet is unknown, never a stale number.
         #expect(AccountResetPresentation.rows(nil, directLookupEnabled: true).allSatisfy { $0.state == "unknown" })
     }
+
+    /// The smoke the macOS app runs under --usage-reset-smoke-test, driven here
+    /// through the same Core entry point: an injected AccountUsageService built
+    /// on a fixture clock and a fake transport renders the "available" and
+    /// "unknown" 리셋권 rows, every request is a GET on the allow-list with
+    /// skip_spend=1, and fakeTransportPostCount is 0.
+    @Test func usageResetSmokeRendersAvailableAndUnknownFromAnInjectedService() async throws {
+        let result = await AccountResetSmoke.run()
+        #expect(result.cedarEmberState == "available")
+        #expect(result.juniperTideState == "unknown")
+        #expect(result.fakeTransportPostCount == 0)
+        #expect(result.requests == ["GET /api/oauth/usage", "GET /api/oauth/profile",
+                                    "GET /api/oauth/usage?cedar_ember=1&skip_spend=1",
+                                    "GET /api/oauth/usage?at_wall=1&skip_spend=1"])
+        // Every rendered line resolved from a shared usage.reset.* key.
+        #expect(result.lines.count == 2)
+        #expect(result.lines.allSatisfy { !$0.isEmpty && !$0.hasPrefix("usage.reset.") })
+        #expect(result.passed)
+        // Nothing the smoke records carries a credential.
+        let encoded = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        #expect(!encoded.contains("smoke-fixture-not-a-real-token") && !encoded.contains("grant-fixture"))
+    }
 }

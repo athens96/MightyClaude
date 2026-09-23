@@ -129,9 +129,12 @@ public sealed partial class MainWindow
     /// exist at all — an empty list means the direct lookup is off. There is no
     /// reset button and no claim here; the only action is the link, and it is
     /// live in every one of the seven states.
-    private void RenderAccountUsageReset(StackPanel panel)
+    private void RenderAccountUsageReset(StackPanel panel) => RenderAccountUsageReset(panel, usage?.ResetRows() ?? []);
+
+    /// The same builder, with the rows handed in: the smoke draws the real
+    /// controls from an injected service's rows without touching the switch.
+    private void RenderAccountUsageReset(StackPanel panel, IReadOnlyList<AccountResetRow> rows)
     {
-        var rows = usage?.ResetRows() ?? [];
         if (rows.Count == 0) return;
         panel.Children.Add(new TextBlock { Text = ClaudeResetEntitlements.Title, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
         foreach (var row in rows)

@@ -273,42 +273,37 @@ public sealed partial class MainWindow
         return checks;
     }
 
-    /// Builds a fresh AccountUsageService with an injected fixture clock and a
-    /// fake HTTP handler (GET only), reads the 리셋권 rows, and verifies that
-    /// cedar_ember is available, juniper_tide is unknown, and no POST was made.
-    /// The real direct-lookup preference in the service snapshot is never touched.
+    /// Drives the 리셋권 smoke through the shared Core entry point: an injected
+    /// fixture clock and a fake transport (GET only), so the rows render from
+    /// fixture data irrespective of the direct-lookup switch. Asserts
+    /// fakeTransportPostCount is 0, the available and unknown states rendered,
+    /// and the real ClaudeDirectUsageLookupEnabled setting is unchanged.
     private async Task<Dictionary<string, object?>> RunUsageResetSmoke()
     {
         var checks = new Dictionary<string, object?>();
-        var fakeTransportPostCount = 0;
-        const string cedarAvailableBody = """{"cedar_ember":{"eligible":true,"in_experiment":true,"next_grant_id":"g1","grants":[{"id":"g1","resets_total":3,"resets_left":2,"starts_at":"2026-01-01T00:00:00Z","ends_at":"2027-01-01T00:00:00Z","usable_now":true,"use_requires_limit":false,"paused":false,"percent_used":33.3}],"at_limit":false,"cooldown_until":null,"exhausted":[]}}""";
-        const string usageBody = """{"five_hour":{"utilization":12.5,"resets_at":"2026-09-23T20:00:00Z"}}""";
-        var fixtureClock = DateTimeOffset.Parse("2026-09-23T10:00:00Z");
-        AccountUsageHttpHandler fakeHttp = (request, _) =>
-        {
-            if (request.Method != "GET") fakeTransportPostCount++;
-            return Task.FromResult(request.Url.Query switch
-            {
-                "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(200, cedarAvailableBody),
-                "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(503, ""),
-                _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? "{}" : usageBody),
-            });
-        };
         var beforeSwitch = service.Snapshot.ClaudeDirectUsageLookupEnabled;
-        var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
-            () => new ClaudeQuotaCredential("smoke-fixture", "max"), fakeHttp, () => fixtureClock);
+        var result = await ClaudeResetSmoke.RunAsync();
+        var fakeTransportPostCount = result.FakeTransportPostCount;
         Require(fakeTransportPostCount == 0, "usageReset smoke: no POST exists in this app");
-        var rows = ClaudeResetEntitlements.Rows(snapshot, true);
-        Require(rows.Count == 2, "usageReset smoke: two rows for the two programmes");
-        var cedar = rows.First(r => r.Program == ResetProgram.CedarEmber);
-        var juniper = rows.First(r => r.Program == ResetProgram.JuniperTide);
-        Require(cedar.State == "available", "usageReset smoke: cedar_ember must be available from fixture");
-        Require(juniper.State == "unknown", "usageReset smoke: juniper_tide must be unknown when the handler returns 503");
-        Require(service.Snapshot.ClaudeDirectUsageLookupEnabled == beforeSwitch, "usageReset smoke: real direct-lookup preference is unchanged");
-        checks["usageReset.cedar_ember"] = cedar.State;
-        checks["usageReset.juniper_tide"] = juniper.State;
+        Require(result.CedarEmberState == ResetState.Available, "usageReset smoke: cedar_ember must be available from fixture");
+        Require(result.JuniperTideState == ResetState.Unknown, "usageReset smoke: juniper_tide must be unknown when the handler returns 503");
+        Require(result.Requests.SequenceEqual(ClaudeResetSmoke.ExpectedRequests), "usageReset smoke: GET allow-list with skip_spend=1");
+        // Real controls: the rows and the always-enabled link are drawn with
+        // the window's own builder into a detached panel, so nothing on screen
+        // and no stored setting is changed and there is nothing to put back.
+        var panel = new StackPanel { Spacing = 4 };
+        RenderAccountUsageReset(panel, result.Rows);
+        Require(panel.Children.OfType<StackPanel>().Count() == 2, "usageReset smoke: a row per programme renders in the real panel");
+        var link = panel.Children.OfType<HyperlinkButton>().FirstOrDefault();
+        Require(link is { IsEnabled: true }, "usageReset smoke: the claude.ai 리셋 link is enabled in every state");
+        var preferenceUnchanged = service.Snapshot.ClaudeDirectUsageLookupEnabled == beforeSwitch;
+        Require(preferenceUnchanged, "usageReset smoke: real direct-lookup preference is unchanged");
+        checks["usageReset.cedar_ember"] = result.CedarEmberState;
+        checks["usageReset.juniper_tide"] = result.JuniperTideState;
+        checks["usageReset.requests"] = result.Requests;
         checks["fakeTransportPostCount"] = fakeTransportPostCount;
-        checks["passed"] = true;
+        checks["preferenceUnchanged"] = preferenceUnchanged;
+        checks["passed"] = result.Passed;
         return checks;
     }
 
