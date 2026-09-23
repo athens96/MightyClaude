@@ -22,7 +22,7 @@ struct StylesOuroborosTests {
         #expect(evaluator.currentPhase(prompts: [])?.id == "goal")
         // The pane's phase comes from its request history, which survives the log being trimmed by tool activity.
         var session = RunSession(workspaceId: "ws", title: "Claude", logs: [LogEntry(kind: "system", text: "도구 실행")])
-        session.beginGraphRun(input: "/ouroboros:interview 목표", id: "r1"); session.beginGraphRun(input: "/ouroboros:run", id: "r2")
+        session.beginGraphRun(input: "/ouroboros:interview 목표", id: "r1", configuredModel: "default"); session.beginGraphRun(input: "/ouroboros:run", id: "r2", configuredModel: "default")
         #expect(evaluator.currentPhase(session: session)?.id == "run")
         #expect(evaluator.currentPhase(session: RunSession(workspaceId: "ws", title: "Claude", logs: logs))?.id == "seed")
         let takesText = Set(style.manifest.actions.filter(\.takesText).map(\.id))

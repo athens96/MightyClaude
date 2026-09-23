@@ -410,7 +410,7 @@ struct SteeringGraphTests {
         #expect(!nodes.contains { $0.kind == "steer" })
 
         var session = RunSession(workspaceId: "workspace", title: "Claude")
-        session.beginGraphRun(input: "Refactor", id: "request-one")
+        session.beginGraphRun(input: "Refactor", id: "request-one", configuredModel: "default")
         let main = ExecutionGraphSupport.mainNodeID(runId: "process-one")
         session.recordGraph(RunEvent(sessionId: session.id, type: "graph", graph: ExecutionGraphNode(id: main, runId: "process-one", kind: "main", state: "running", title: "Claude")))
         let steer = ExecutionGraphNode(id: "process-one-steer", runId: "process-one", parentId: main, kind: "steer", state: "completed", title: "중간 요청", input: "Also tests", output: "Sure")

@@ -63,11 +63,11 @@ final class CoreTests {
         #expect(wire?["maxTurns"] is NSNull); #expect(wire?["maxBudgetUsd"] is NSNull)
         let catalog = ProviderService.normalizeCodexCatalog([["model": "company/model", "displayName": "Company", "supportedReasoningEfforts": [["reasoningEffort": "low"], ["reasoningEffort": "high"]]], ["model": "--injected"], ["model": "hidden", "hidden": true]])
         #expect((catalog.models.map(\.value)) == (["default", "company/model"]))
-        #expect((ProviderOptions.effortLevels(provider: "codex", model: "default", catalog: catalog)) == ([]))
-        #expect((ProviderOptions.effortLevels(provider: "codex", model: "company/model", catalog: catalog)) == (["low", "high"]))
+        #expect((ProviderOptions.effortLevels(provider: "codex", model: "default", catalog: catalog, registeredModels: [])) == ([]))
+        #expect((ProviderOptions.effortLevels(provider: "codex", model: "company/model", catalog: catalog, registeredModels: [])) == (["low", "high"]))
         let valid = StartRunRequest(sessionId: "run", workspaceId: "workspace", input: "Hello", model: "company/model", provider: "codex", settings: RunSettings(effort: "high"))
-        try CoreValidation.validateSelection(valid, catalog: catalog)
-        var invalid = valid; invalid.settings.effort = "max"; #expect(throws: (any Error).self) { try CoreValidation.validateSelection(invalid, catalog: catalog) }
+        try CoreValidation.validateSelection(valid, catalog: catalog, registeredModels: [])
+        var invalid = valid; invalid.settings.effort = "max"; #expect(throws: (any Error).self) { try CoreValidation.validateSelection(invalid, catalog: catalog, registeredModels: []) }
         let claude = ProviderService.normalizeClaudeCatalog([["value": "default", "displayName": "Account default", "supportedEffortLevels": ["high"]], ["value": "company/claude", "supportsEffort": true, "supportedEffortLevels": ["low", "max"]]])
         #expect((claude.models.first?.displayName) == ("Claude 설정 따름")); #expect((claude.models.first?.supportedEffortLevels) == ["high"])
     }

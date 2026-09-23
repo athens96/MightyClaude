@@ -14,7 +14,7 @@ struct MightyGraphTests {
 
     @Test func backgroundTaskBlocksKeepTheirKindThroughHistoryAndRestore() throws {
         var session = RunSession(workspaceId: "workspace", title: "Graph")
-        session.beginGraphRun(input: "Build it", id: "request-one")
+        session.beginGraphRun(input: "Build it", id: "request-one", configuredModel: "default")
         receive(node("process-one"), &session)
         var task = node("process-one", agent: "build", input: "npm run build"); task.kind = "task"; task.title = "Build the app"
         receive(task, &session)
@@ -37,7 +37,7 @@ struct MightyGraphTests {
 
     @Test func tokenUsageReachesRunAndAgentsAndTotalsAcrossTheRequest() throws {
         var session = RunSession(workspaceId: "workspace", title: "Graph")
-        session.beginGraphRun(input: "Count", id: "request-one")
+        session.beginGraphRun(input: "Count", id: "request-one", configuredModel: "default")
         var main = node("process-one"); main.usage = GraphTokenUsage(inputTokens: 2_000, outputTokens: 100)
         receive(main, &session)
         var child = node("process-one", agent: "a", input: "Inspect"); child.usage = GraphTokenUsage(inputTokens: 500, outputTokens: 50, cacheReadTokens: 200)
@@ -59,7 +59,7 @@ struct MightyGraphTests {
 
     @Test func codexSessionsKeepGraphHistoryButGeminiSessionsDoNot() {
         var codex = RunSession(workspaceId: "workspace", title: "Codex"); codex.provider = "codex"
-        codex.beginGraphRun(input: "Ship it", id: "request-one")
+        codex.beginGraphRun(input: "Ship it", id: "request-one", configuredModel: "default")
         receive(node("process-one"), &codex)
         receive(node("process-one", agent: "a", input: "Check"), &codex)
         receive(node("process-one", state: "completed", output: "Done"), &codex)
@@ -67,14 +67,14 @@ struct MightyGraphTests {
         #expect(codex.mightyGraphRuns.count == 1); #expect(codex.mightyGraphRuns[0].agents.count == 1)
         #expect(codex.mightyGraphRuns[0].resultEntries.map(\.text) == ["Done"])
         var gemini = RunSession(workspaceId: "workspace", title: "Gemini"); gemini.provider = "gemini"
-        gemini.beginGraphRun(input: "Ship it", id: "request-one")
+        gemini.beginGraphRun(input: "Ship it", id: "request-one", configuredModel: "default")
         #expect(gemini.graphRuns == nil)
         #expect(MightyGraphSupport.providers == ["claude", "codex"])
     }
 
     @Test func resultWaitsForEveryChildAndAppearsInMainAndResult() {
         var session = RunSession(workspaceId: "workspace", title: "Graph")
-        session.beginGraphRun(input: "Build this", id: "request-one")
+        session.beginGraphRun(input: "Build this", id: "request-one", configuredModel: "default")
         receive(node("process-one"), &session)
         receive(node("process-one", agent: "a", input: "Inspect API"), &session)
         receive(node("process-one", agent: "b", parent: "a", input: "Check schema"), &session)
@@ -97,9 +97,9 @@ struct MightyGraphTests {
 
     @Test func sequentialRequestsAndLateEventsStayWithTheirOriginalRun() {
         var session = RunSession(workspaceId: "workspace", title: "Graph")
-        session.beginGraphRun(input: "First", id: "request-one")
+        session.beginGraphRun(input: "First", id: "request-one", configuredModel: "default")
         receive(node("process-one", state: "completed", output: "First result"), &session)
-        session.beginGraphRun(input: "Second", id: "request-two")
+        session.beginGraphRun(input: "Second", id: "request-two", configuredModel: "default")
         receive(node("process-two"), &session)
         receive(node("process-one", agent: "late", state: "completed", output: "Old agent"), &session)
         #expect(session.mightyGraphRuns.count == 2)
@@ -115,7 +115,7 @@ struct MightyGraphTests {
 
     @Test func interruptionDoesNotInventFinalAnswerAndTerminalNodesDoNotReopen() {
         var session = RunSession(workspaceId: "workspace", title: "Graph")
-        session.beginGraphRun(input: "Request")
+        session.beginGraphRun(input: "Request", configuredModel: "default")
         receive(node("process", agent: "child", input: "Child request"), &session)
         session.recordGraph(RunEvent(sessionId: session.id, type: "status", status: "error"))
         receive(node("process", agent: "child", state: "running"), &session)
@@ -154,7 +154,7 @@ struct MightyGraphTests {
         let workspace = try await repository.approveWorkspace(Workspace(name: "Graph", path: directory.path))
         var session = RunSession(workspaceId: workspace.id, title: "Graph", status: "running")
         session.agentViewMode = "mighty"
-        session.beginGraphRun(input: "Request", id: "request")
+        session.beginGraphRun(input: "Request", id: "request", configuredModel: "default")
         receive(node("process", agent: "child", input: "Nested work"), &session)
         try await repository.save(AppSnapshot(workspaces: [workspace], sessions: [session]))
         let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()

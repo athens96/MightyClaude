@@ -668,8 +668,15 @@ final class AppStore: ObservableObject {
         let attachmentSummary = attachments.map { "첨부: \($0.name) (\(AttachmentImport.sizeLabel($0)))" }.joined(separator: "\n")
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let inputEntry = LogEntry(kind: "user", text: logText)
+        let configuredModel = ModelDefaultsResolution.resolve(
+            sessionModel: session.model,
+            provider: session.provider,
+            permissionMode: session.settings.permissionMode,
+            workspaceDefaults: workspace.modelDefaults,
+            appDefaults: snapshot.modelDefaults
+        )
         updateSession(id) {
-            $0.beginGraphRun(input: logText, id: inputEntry.id)
+            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: configuredModel)
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
         }
         startTasks[id] = Task {
