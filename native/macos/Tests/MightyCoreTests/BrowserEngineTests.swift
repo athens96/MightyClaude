@@ -16,15 +16,17 @@ struct BrowserEngineTests {
     }
 
     @Test func browserEngineLocatorReportsMissingEngine() {
-        // In the test environment there is no CEF framework bundle.
+        // A build with no engine fetched has no CEF framework in its bundle, so the
+        // locator must report missing rather than trap or hand back a bogus path.
         let status = BrowserEngineLocator.locate()
-        if case .missing = status {
-            // Expected — no engine in the test environment
+        guard case .missing(let reason) = status else {
+            Issue.record("expected .missing with no engine in the bundle, got \(status)")
+            return
         }
-        // The report uses a browser.* locale key (falls back to the key itself when
-        // the catalog is not loaded, which is fine for a build/test environment).
-        let report = BrowserEngineLocator.reportMissing()
-        #expect(!report.isEmpty)
+        // The pane shows this reason instead of crashing, so it must carry text and
+        // must be the same string the locator reports for a missing engine.
+        #expect(!reason.isEmpty)
+        #expect(reason == BrowserEngineLocator.reportMissing())
     }
 
     @Test func browserProfilePathIsPerWorkspace() {
