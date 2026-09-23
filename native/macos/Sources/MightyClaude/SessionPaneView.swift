@@ -297,11 +297,24 @@ struct SessionPaneView: View {
         .disabled(running || (effortLevels.isEmpty && session.settings.effort == "default"))
     }
 
+    private func permissionModeMenuLabel(_ mode: String) -> String {
+        let base = permissionLabel(mode, provider: session.provider)
+        let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }
+        let resolved = ModelDefaultsResolution.modeMenuLabel(
+            provider: session.provider,
+            permissionMode: mode,
+            workspaceDefaults: workspace?.modelDefaults,
+            appDefaults: store.snapshot.modelDefaults
+        )
+        guard resolved != "default" else { return base }
+        return "\(base) · \(resolved)"
+    }
+
     private var permissionOptions: some View {
         ForEach(["plan", "manual", "acceptEdits", "auto", "onRequest", "fullAccess"].filter { store.permissionModes(for: session).contains($0) }, id: \.self) { mode in
             Button { updateSettings { $0.permissionMode = mode } } label: {
-                if mode == session.settings.permissionMode { Label(permissionLabel(mode, provider: session.provider), systemImage: "checkmark") }
-                else { Text(permissionLabel(mode, provider: session.provider)) }
+                if mode == session.settings.permissionMode { Label(permissionModeMenuLabel(mode), systemImage: "checkmark") }
+                else { Text(permissionModeMenuLabel(mode)) }
             }.help(permissionDescription(mode, provider: session.provider))
         }
     }
@@ -310,11 +323,11 @@ struct SessionPaneView: View {
         Menu {
             permissionOptions
         } label: {
-            ComposerPill(title: permissionLabel(session.settings.permissionMode, provider: session.provider), systemImage: session.settings.permissionMode == "fullAccess" ? "lock.open" : "shield.lefthalf.filled", active: session.settings.permissionMode == "fullAccess", chevron: true, maximumTextWidth: 90, compact: compact)
+            ComposerPill(title: permissionModeMenuLabel(session.settings.permissionMode), systemImage: session.settings.permissionMode == "fullAccess" ? "lock.open" : "shield.lefthalf.filled", active: session.settings.permissionMode == "fullAccess", chevron: true, maximumTextWidth: 90, compact: compact)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
         .help(permissionDescription(session.settings.permissionMode, provider: session.provider))
-        .accessibilityLabel("작업 권한").accessibilityValue(permissionLabel(session.settings.permissionMode, provider: session.provider))
+        .accessibilityLabel("작업 권한").accessibilityValue(permissionModeMenuLabel(session.settings.permissionMode))
         .accessibilityIdentifier("composer-permission-\(session.id)")
     }
 
@@ -346,7 +359,7 @@ struct SessionPaneView: View {
                 Menu("사고 강도 · \(effortLabel(session.settings.effort))") { effortOptions }
                     .disabled(effortLevels.isEmpty && session.settings.effort == "default")
             }
-            Menu("작업 권한 · \(permissionLabel(session.settings.permissionMode, provider: session.provider))") { permissionOptions }
+            Menu("작업 권한 · \(permissionModeMenuLabel(session.settings.permissionMode))") { permissionOptions }
             if showsFast {
                 Button { updateSettings { $0.fastMode.toggle() } } label: {
                     Label(session.settings.fastMode ? "Fast 켜짐" : "Fast 끔", systemImage: session.settings.fastMode ? "checkmark" : "bolt")
@@ -359,7 +372,7 @@ struct SessionPaneView: View {
             ComposerPill(title: "", systemImage: "slider.horizontal.3", active: session.settings.permissionMode == "fullAccess" || session.settings.fastMode, compact: true)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
-        .accessibilityLabel("실행 옵션").accessibilityValue("\(effortLabel(session.settings.effort)), \(permissionLabel(session.settings.permissionMode, provider: session.provider))")
+        .accessibilityLabel("실행 옵션").accessibilityValue("\(effortLabel(session.settings.effort)), \(permissionModeMenuLabel(session.settings.permissionMode))")
         .accessibilityIdentifier("composer-options-\(session.id)")
         .help("사고 강도 · 작업 권한 · 추가 실행 설정")
     }

@@ -193,6 +193,7 @@ struct AppSettingsView: View {
                     Text(L("settings.remote.description"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                ModelDefaultsSettingsSection().environmentObject(store)
                 StyleSettingsSection().environmentObject(store)
                 ComponentsSettingsSection().environmentObject(store)
                 MobileRemoteSettingsSection().environmentObject(store)
