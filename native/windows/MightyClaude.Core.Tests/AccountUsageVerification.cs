@@ -493,6 +493,69 @@ internal static class AccountUsageVerification
         }
     }
 
+    private static string NativeFolder([System.Runtime.CompilerServices.CallerFilePath] string here = "") =>
+        Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(here)!)!)!;
+
+    /// The smoke exists on both platforms and is reachable from each app's own
+    /// smoke run: this is the source-level half of the evidence, the half a CI
+    /// smoke artifact confirms by actually running it. A second MightyClaude
+    /// instance is never launched on the developer's Mac, so these greps are
+    /// what this machine can check.
+    internal static Task UsageResetSmokeIsWiredIntoBothPlatforms()
+    {
+        var native = NativeFolder();
+        var smoke = File.ReadAllText(Path.Combine(native, "windows", "MightyClaude.WinUI", "MainWindow.Smoke.cs"));
+        Check(smoke.Contains("RunUsageResetSmoke()"), "the WinUI smoke run must carry the 리셋권 check");
+        Check(smoke.Contains("result[\"usageReset\"] = await RunUsageResetSmoke()"),
+            "the WinUI smoke result must record the check under usageReset");
+        Check(smoke.Contains("fakeTransportPostCount"), "the WinUI smoke must record fakeTransportPostCount");
+        Check(smoke.Contains("usageReset.cedar_ember") && smoke.Contains("usageReset.juniper_tide"),
+            "the WinUI smoke result must record the two usageReset state keys");
+        Check(smoke.Contains("ClaudeResetSmoke.RunAsync()"), "the WinUI smoke must drive the shared Core entry point");
+        Check(smoke.Contains("RenderAccountUsageReset(panel, result.Rows)"),
+            "the WinUI smoke must draw the rows with the window's own builder");
+
+        var swift = File.ReadAllText(Path.Combine(native, "macos", "Sources", "MightyClaude", "StatusBarUsage.swift"));
+        Check(swift.Contains("init(service:"), "the macOS controller must accept an injected service");
+        Check(swift.Contains("fakeTransportPostCount"), "the macOS smoke must record fakeTransportPostCount");
+        Check(swift.Contains("usageReset.cedar_ember") && swift.Contains("usageReset.juniper_tide"),
+            "the macOS smoke result must record the two usageReset state keys");
+        Check(swift.Contains("AccountResetSmoke.fixture()"), "the macOS smoke must inject the fixture clock and fake transport");
+        var appStore = File.ReadAllText(Path.Combine(native, "macos", "Sources", "MightyClaude", "AppStore.swift"));
+        Check(appStore.Contains("--usage-reset-smoke-test"), "the macOS app must dispatch the 리셋권 smoke argument");
+        Check(appStore.Contains("result[\"usageReset\"] = usageReset"),
+            "the macOS smoke result must record the 리셋권 run under the same usageReset key Windows uses");
+
+        // No POST exists anywhere on the account usage surface, on either platform.
+        foreach (var file in Directory.GetFiles(Path.Combine(native, "windows", "MightyClaude.Core"), "AccountUsage*.cs")
+                     .Concat(Directory.GetFiles(Path.Combine(native, "macos", "Sources", "MightyCore"), "AccountUsage*.swift"))
+                     .Concat(Directory.GetFiles(Path.Combine(native, "macos", "Sources", "MightyCore"), "AccountReset*.swift")))
+            Check(!File.ReadAllText(file).Contains("\"POST\""), "no POST exists on the account usage surface: " + Path.GetFileName(file));
+        return Task.CompletedTask;
+    }
+
+    /// The 리셋권 smoke the WinUI window runs, driven here through the same
+    /// Core entry point: an injected fixture clock and a fake handler that only
+    /// ever sees GET render the "available" and "unknown" rows, every request
+    /// is a GET on the allow-list carrying skip_spend=1 (compared as
+    /// Uri.PathAndQuery) and fakeTransportPostCount is 0.
+    internal static async Task UsageResetSmokeRendersAvailableAndUnknown()
+    {
+        var result = await ClaudeResetSmoke.RunAsync();
+        Check(result.CedarEmberState == ResetState.Available, "smoke: cedar_ember renders available from the fixture");
+        Check(result.JuniperTideState == ResetState.Unknown, "smoke: juniper_tide renders unknown when the handler answers 503");
+        Check(result.FakeTransportPostCount == 0, "smoke: fakeTransportPostCount must be 0 — no POST exists in this app");
+        Check(result.Requests.SequenceEqual(ClaudeResetSmoke.ExpectedRequests),
+            "smoke: GET allow-list with skip_spend=1, compared as Uri.PathAndQuery");
+        Check(result.Lines.Count == 2 && result.Lines.All(l => l.Length > 0 && !l.StartsWith("usage.reset.", StringComparison.Ordinal)),
+            "smoke: both rows render through a shared usage.reset.* key that resolved");
+        Check(result.Passed, "smoke: the result the WinUI smoke writes to JSON records passed");
+        // Nothing the smoke records carries a credential or a grant id.
+        var recorded = JsonSerializer.Serialize(result);
+        Check(!recorded.Contains(ClaudeResetSmoke.FixtureToken) && !recorded.Contains("grant-fixture"),
+            "smoke: no token or grant id reaches the smoke result");
+    }
+
     /// The seven states, named one by one: available, held, cooldown,
     /// exhausted, none, ineligible, unknown. Each row comes from the real probe
     /// reading fixture HTTP through the injected handler, with a fixture clock

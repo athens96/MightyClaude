@@ -518,6 +518,8 @@ internal static class Verification
         await Test("usageReset cooldown", AccountUsageVerification.UsageResetCooldown);
         await Test("usageReset held", AccountUsageVerification.UsageResetHeld);
         await Test("usageReset available", AccountUsageVerification.UsageResetAvailable);
+        await Test("usage reset smoke renders available and unknown", AccountUsageVerification.UsageResetSmokeRendersAvailableAndUnknown);
+        await Test("usage reset smoke is wired into both platforms", AccountUsageVerification.UsageResetSmokeIsWiredIntoBothPlatforms);
         await Test("app update ed25519 matches the RFC 8032 vectors", AppUpdateVerification.Ed25519MatchesTheRfc8032Vectors);
         await Test("app update strings match macOS", StringsVerification.AppUpdateStringsMatchMacOS);
         await Test("app update manifest accepts a fixture signature and refuses everything else", AppUpdateVerification.ManifestAcceptsAFixtureSignatureAndRefusesEverythingElse);
