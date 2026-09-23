@@ -62,11 +62,11 @@ public static class ModelDefaultsResolution
         bool supportsEffort = false, string[]? supportedEffortLevels = null)
     {
         var trimmed = name.Trim();
-        if (trimmed.Length == 0) return "모델 이름은 비어 있을 수 없습니다.";
-        if (trimmed == "default") return "'default'는 예약된 이름이므로 사용할 수 없습니다.";
-        if (!Wire.Model(trimmed)) return "모델 이름에 허용되지 않는 문자가 포함되어 있거나 길이가 초과되었습니다.";
+        if (trimmed.Length == 0) return Locale.Get("settings.modelDefaults.error.empty");
+        if (trimmed == "default") return Locale.Get("settings.modelDefaults.error.reserved");
+        if (!Wire.Model(trimmed)) return Locale.Get("settings.modelDefaults.error.invalid");
         var pd = provider == "codex" ? config.Codex : config.Claude;
-        if (pd.RegisteredModels.Any(m => m.Name == trimmed)) return "같은 제공자에 이미 등록된 이름입니다.";
+        if (pd.RegisteredModels.Any(m => m.Name == trimmed)) return Locale.Get("settings.modelDefaults.error.duplicate");
         var levels = supportedEffortLevels ?? [];
         if (supportsEffort && levels.Length == 0)
             return Locale.Get("settings.modelDefaults.error.effortWithoutLevels");
