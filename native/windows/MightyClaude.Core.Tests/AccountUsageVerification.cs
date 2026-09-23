@@ -130,6 +130,19 @@ internal static class AccountUsageVerification
         Check(ClaudeAccountProbe.Endpoint("usage").ToString() == "https://api.anthropic.com/api/oauth/usage", "the only endpoint is api.anthropic.com over HTTPS");
         Check(ClaudeAccountProbe.Timeout == TimeSpan.FromSeconds(10), "the timeout is 10 seconds");
 
+        // A usage GET with at_wall or cedar_ember but without skip_spend=1, or with
+        // extra query keys, is rejected before send (fake-transport count would be 0).
+        foreach (var badQuery in new[] { "at_wall=1", "cedar_ember=1", "at_wall=1&skip_spend=0", "cedar_ember=1&extra=true" })
+        {
+            var refused = false;
+            try { ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage?" + badQuery)); }
+            catch (AccountUsageFailure) { refused = true; }
+            Check(refused, "usage?" + badQuery + " must be refused before send (skip_spend=1 required)");
+        }
+        // The two entitlement query variants with skip_spend=1 are accepted.
+        ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1"));
+        ClaudeAccountProbe.Guard(new Uri("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"));
+
         var credential = new ClaudeQuotaCredential(FixtureToken, "max");
         // A 3xx is refused rather than followed, both by status and by a location header.
         foreach (var reply in new (int, string?)[] { (302, "https://evil.test/api/oauth/usage"), (301, null), (200, "https://evil.test/") })
@@ -455,9 +468,11 @@ internal static class AccountUsageVerification
         };
         var scenario = all.First(s => s.Name == stateName);
         var clock = Instant.AddSeconds(10);
+        var posts = 0;
         AccountUsageHttpHandler http = (request, _) =>
         {
             ClaudeAccountProbe.Guard(request.Url);
+            if (request.Method != "GET") posts++;
             return Task.FromResult(request.Url.Query switch
             {
                 "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(scenario.CedarStatus, scenario.Cedar),
@@ -467,6 +482,7 @@ internal static class AccountUsageVerification
         };
         var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
             () => new ClaudeQuotaCredential(FixtureToken, "max"), http, () => clock);
+        Check(posts == 0, "usageReset " + stateName + ": no POST exists in this app");
         var granted = snapshot.Resets.First(r => r.Program == ResetProgram.CedarEmber);
         var atWall = snapshot.Resets.First(r => r.Program == ResetProgram.JuniperTide);
         Check(granted.State == scenario.CedarState, "cedar_ember state in " + stateName);
@@ -514,6 +530,7 @@ internal static class AccountUsageVerification
             AccountUsageHttpHandler http = (request, _) =>
             {
                 ClaudeAccountProbe.Guard(request.Url);
+                if (request.Method != "GET") posts++;
                 Check(request.Headers["Authorization"] == "Bearer " + FixtureToken, "the sign-in only ever rides the Authorization header");
                 return Task.FromResult(request.Url.Query switch
                 {

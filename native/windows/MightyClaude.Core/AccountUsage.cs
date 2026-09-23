@@ -39,7 +39,11 @@ public sealed class AccountUsageFailure(AccountUsageFailureKind kind, string det
     public double RetryAfterSeconds { get; } = retryAfterSeconds;
 }
 
-public sealed record AccountUsageHttpRequest(Uri Url, IReadOnlyDictionary<string, string> Headers, TimeSpan Timeout);
+public sealed record AccountUsageHttpRequest(Uri Url, IReadOnlyDictionary<string, string> Headers, TimeSpan Timeout)
+{
+    /// Always "GET"; exposed so a test handler can assert the fake transport never sees a POST.
+    public string Method { get; init; } = "GET";
+}
 /// `RedirectLocation` is only ever set by a handler that saw a 3xx; the probe
 /// refuses it rather than following it.
 public sealed record AccountUsageHttpResponse(int Status, string Body, string? RetryAfter = null, string? RedirectLocation = null);
