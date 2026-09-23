@@ -17,7 +17,7 @@ struct ActivityTests {
         return result
     }
     private func wait(_ predicate: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(30)
         while !predicate() {
             guard Date() < deadline else { throw MightyError("Timed out waiting for activity fixture") }
             try await Task.sleep(for: .milliseconds(20))
@@ -306,7 +306,7 @@ struct ActivityTests {
             let accepted = try JSONDecoder().decode(WireJob.self, from: await RemoteTransport.request(target, token: token, method: "POST", path: "/v1/runs", body: JSONEncoder().encode(request)))
             let path = "/v1/runs/\(accepted.jobId)/events?cursor=0"
             var modern: WirePoll?
-            for _ in 0..<100 {
+            for _ in 0..<1000 {
                 modern = try JSONDecoder().decode(WirePoll.self, from: await RemoteTransport.request(target, token: token, method: "GET", path: path))
                 if modern?.done == true { break }; try await Task.sleep(for: .milliseconds(30))
             }

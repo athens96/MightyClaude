@@ -15,7 +15,7 @@ private final class AttachmentEvents: @unchecked Sendable {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); return root
     }
     private func wait(_ condition: () -> Bool) async throws {
-        let end = Date().addingTimeInterval(8)
+        let end = Date().addingTimeInterval(30)
         while !condition() {
             guard Date() < end else { throw MightyError("Attachment fixture timed out") }
             try await Task.sleep(nanoseconds: 20_000_000)

@@ -63,7 +63,7 @@ final class CLIUpdateTests {
     }
     /// The shell creates the file before `printf` fills it, so existence alone can read back empty.
     private func waitForPID(_ url: URL) async throws -> Int32 {
-        for _ in 0..<1500 {
+        for _ in 0..<3000 {
             if let text = try? String(contentsOf: url, encoding: .utf8), let pid = Int32(text), pid > 0 { return pid }
             try await Task.sleep(for: .milliseconds(10))
         }

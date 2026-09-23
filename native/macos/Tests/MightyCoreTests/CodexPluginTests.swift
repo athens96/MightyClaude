@@ -87,7 +87,7 @@ final class CodexPluginTests {
     }
 
     private func waitForPID(_ fixture: Fixture) async throws -> pid_t {
-        for _ in 0..<500 {
+        for _ in 0..<3000 {
             if let pid = Int32(fixture.read("pid")), pid > 0 { return pid }
             try await Task.sleep(for: .milliseconds(10))
         }

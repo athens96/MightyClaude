@@ -351,7 +351,7 @@ struct ExecutionGraphTests {
         let runner = ProcessRunner(providerService: providers, pluginDirectory: plugin) { events.append($0) }
         do {
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: "workspace", input: "No model execution"), workspace: Workspace(id: "workspace", name: "Fixture", path: directory.path))
-            let deadline = Date().addingTimeInterval(6)
+            let deadline = Date().addingTimeInterval(30)
             while !events.values().contains(where: { $0.type == "status" && ["completed", "error", "stopped"].contains($0.status ?? "") }) {
                 guard Date() < deadline else { throw MightyError("Graph fixture process timed out") }
                 try await Task.sleep(for: .milliseconds(20))

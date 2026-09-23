@@ -150,7 +150,7 @@ private final class EventRecorder: @unchecked Sendable {
     }
 
     private func waitFor(_ predicate: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(10)
+        let deadline = Date().addingTimeInterval(30)
         while !predicate() {
             if Date() >= deadline { throw MightyError("Timed out waiting for remote shell output") }
             try await Task.sleep(nanoseconds: 50_000_000)

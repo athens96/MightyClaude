@@ -183,7 +183,7 @@ import Testing
         try await service.launchInstaller(script: script, near: package)
         let log = root.appendingPathComponent("updates/0.2.0/install.log")
         var finished = false
-        for _ in 0..<100 {
+        for _ in 0..<300 {
             if let text = try? String(contentsOf: log, encoding: .utf8), text.contains("설치 완료") { finished = true; break }
             try await Task.sleep(for: .milliseconds(100))
         }

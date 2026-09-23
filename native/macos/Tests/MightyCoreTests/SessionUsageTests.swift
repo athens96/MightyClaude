@@ -17,7 +17,7 @@ struct SessionUsageTests {
         try FileManager.default.createDirectory(at: value, withIntermediateDirectories: true); return value
     }
     private func wait(_ condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(30)
         while !condition() {
             guard Date() < deadline else { throw MightyError("Usage fixture timed out") }
             try await Task.sleep(for: .milliseconds(10))

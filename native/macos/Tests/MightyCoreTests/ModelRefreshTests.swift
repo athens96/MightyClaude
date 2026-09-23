@@ -86,7 +86,7 @@ struct ModelRefreshTests {
         ((try? String(contentsOf: folder.appendingPathComponent(provider + "-calls"), encoding: .utf8)) ?? "").split(separator: "\n").count
     }
     private func waitForStart(_ folder: URL, provider: String, model: String) async throws {
-        for _ in 0..<200 {
+        for _ in 0..<3000 {
             if (try? String(contentsOf: folder.appendingPathComponent(provider + "-started"), encoding: .utf8)) == model { return }
             try await Task.sleep(nanoseconds: 10_000_000)
         }

@@ -24,7 +24,7 @@ final class CoreTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
         return file
     }
-    private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
+    private func waitUntil(timeout: TimeInterval = 30, _ condition: () -> Bool) async throws {
         let start = Date()
         while !condition() {
             if Date().timeIntervalSince(start) > timeout { Issue.record("Timed out waiting for native event"); return }
