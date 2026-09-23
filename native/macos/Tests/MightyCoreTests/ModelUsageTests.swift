@@ -296,6 +296,22 @@ struct ModelUsageTests {
         #expect(suffix?.contains("200") == true)
         // Inner agent total (5.0K) is shown
         #expect(suffix?.contains("5.0K") == true)
+
+        // The view's path: the MightyGraph projection's agent list, as MightyGraphView passes it.
+        var session = RunSession(workspaceId: "workspace", title: "Claude", provider: "claude")
+        session.beginGraphRun(input: "nested agents", id: "request", configuredModel: "default")
+        for node in nodes { session.recordGraph(RunEvent(sessionId: session.id, type: "graph", graph: node)) }
+        let run = try #require(session.mightyGraphRuns.first)
+        let projectedOuter = try #require(run.agents.first { $0.id == outerAgentID })
+        #expect(run.sourceRunID == runID)
+        let projectedMap = GraphChildBlocks.map(responseRecords: projectedOuter.responseRecords, agents: run.agents, runId: run.sourceRunID ?? run.id)
+        #expect(projectedMap["inner-tool"]?.usage?.total == 5000)
+        let projectedSuffix = ModelUsageFormat.activitySuffix(
+            activityId: "inner-tool",
+            records: projectedOuter.responseRecords ?? [],
+            childBlock: projectedMap["inner-tool"])
+        #expect(projectedSuffix == suffix)
+        _ = mainID
     }
 
     @Test func capsuleUsesCatalogShortName() throws {
