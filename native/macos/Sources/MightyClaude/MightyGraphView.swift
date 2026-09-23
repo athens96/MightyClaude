@@ -64,19 +64,6 @@ struct MightyGraphView: View {
         return (title, "person.crop.square.filled.and.at.rectangle", .purple)
     }
 
-    /// The result card of the last finished run - the same card Core treats as
-    /// the latest one, whether it completed, failed or stopped.
-    private var latestResultNodeID: String? {
-        runs.indices.last(where: { MightyGraphLayout.finished(runs[$0]) })
-            .map { MightyGraphLayout.nodeID(runs[$0], suffix: "result") }
-    }
-
-    /// Mirrors MightyGraphLayout.fittedResultID for the card headers. Reading it
-    /// off `layout` would rebuild the whole layout once per drawn card.
-    private var fittedResultID: String? {
-        (canvasViewport != nil && graphResultSize == nil) ? latestResultNodeID : nil
-    }
-
     private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: graphResultSize) }
 
     var body: some View {
@@ -200,7 +187,7 @@ struct MightyGraphView: View {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
         resized[id] = value
         if finished {
-            if id == latestResultNodeID { onSaveResultSize(value) }
+            if id == MightyGraphLayout.latestResultID(runs: runs) { onSaveResultSize(value) }
             else { onSaveBlockSize(id, value) }
         }
     }
@@ -319,9 +306,9 @@ struct MightyGraphView: View {
                     .accessibilityLabel("결과 파일 \(resultFiles.files(for: resultFilesRunID).count)개 · 목록 토글")
                     .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
                 }
-                let isLatestResult = node.id == latestResultNodeID
+                let isLatestResult = node.id == MightyGraphLayout.latestResultID(runs: runs)
                 // Core owns the rule; the header only reads the same answer.
-                let isFittedResult = node.id == fittedResultID
+                let isFittedResult = node.id == MightyGraphLayout.fittedResultID(runs: runs, viewport: canvasViewport, sharedResultSize: graphResultSize)
                 let hasSharedSize = isLatestResult && graphResultSize != nil
                 if hasSharedSize {
                     Button(L("graph.result.fitToWindow")) {
