@@ -191,6 +191,11 @@ public static class ClaudeAccountProbe
             throw new AccountUsageFailure(AccountUsageFailureKind.Network, AccountUsageStrings.DetailRefreshFailed);
     }
 
+    /// Wraps a handler with the pre-send guard so unsanctioned URLs are
+    /// rejected before the transport is ever called.
+    public static AccountUsageHttpHandler Guarded(AccountUsageHttpHandler handler) =>
+        (request, cancellation) => { Guard(request.Url); return handler(request, cancellation); };
+
     public static bool CustomAuthentication(IReadOnlyDictionary<string, string> environment) =>
         BlockedEnvironment.Any(key => environment.TryGetValue(key, out var value)
             && value is { Length: > 0 } && value.ToLowerInvariant() is not ("0" or "false"));
