@@ -151,4 +151,174 @@ struct MightyGraphLayoutTests {
         #expect(node(layout, requestID)?.frame.width == 1_200)
         #expect(node(layout, requestID)?.frame.minX == MightyGraphCamera.centreX - 600)
     }
+
+    // MARK: - Result card auto-fit tests
+
+    @Test func latestResultFitsViewport() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: viewport)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        // width = max(500, 1200-48) = 1152; height = max(200, 800-48) = 752
+        #expect(card.frame.width == 1_152)
+        #expect(card.frame.height == 752)
+        #expect(layout.fittedResultID == resultID)
+    }
+
+    @Test func fittedResultNeverBelowDefault() {
+        let viewport = CGSize(width: 100, height: 50)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: viewport)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        // width = max(500, 100-48) = 500; height = max(200, 50-48) = 200
+        #expect(card.frame.width == 500)
+        #expect(card.frame.height == 200)
+        #expect(layout.fittedResultID == resultID)
+    }
+
+    @Test func fittedResultLeavesRoomForFilesPanel() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            resultFilesRunID: "one", viewport: viewport)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        // files panel open: filesOffset = 336; width = max(500, 1200-48-336) = 816; height = 752
+        #expect(card.frame.width == 816)
+        #expect(card.frame.height == 752)
+        #expect(layout.fittedResultID == resultID)
+    }
+
+    @Test func previousResultShrinksWhenNewResultAppears() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let layout = MightyGraphLayout.make(runs: [run("one"), run("two")], draft: "", running: false,
+                                            expanded: [], viewport: viewport)
+        let firstID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        let secondID = MightyGraphBlockSize.nodeID(runID: "two", suffix: "result")
+        guard let first = node(layout, firstID), let second = node(layout, secondID) else {
+            Issue.record("결과 카드가 없습니다."); return
+        }
+        // Only the latest (run two) is fitted; run one uses the default 500x200
+        #expect(first.frame.width == 500)
+        #expect(first.frame.height == 200)
+        #expect(second.frame.width == 1_152)
+        #expect(second.frame.height == 752)
+        #expect(layout.fittedResultID == secondID)
+    }
+
+    @Test func runningFollowUpKeepsPreviousResultFitted() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        // run "two" is still running — no result card for it yet
+        let layout = MightyGraphLayout.make(runs: [run("one"), run("two", status: "running")],
+                                            draft: "", running: true, expanded: [], viewport: viewport)
+        let firstID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, firstID) else { Issue.record("결과 카드가 없습니다."); return }
+        // run "one" is still the latest finished; it is auto-fit
+        #expect(card.frame.width == 1_152)
+        #expect(card.frame.height == 752)
+        #expect(layout.fittedResultID == firstID)
+        // run "two" has no result node yet
+        let secondID = MightyGraphBlockSize.nodeID(runID: "two", suffix: "result")
+        #expect(node(layout, secondID) == nil)
+    }
+
+    @Test func failedResultAlsoFits() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let layout = MightyGraphLayout.make(runs: [run("one", status: "error")], draft: "", running: false,
+                                            expanded: [], viewport: viewport)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("실패 결과 카드가 없습니다."); return }
+        #expect(card.frame.width == 1_152)
+        #expect(card.frame.height == 752)
+        #expect(layout.fittedResultID == resultID)
+    }
+
+    @Test func sharedResultSizeOverridesFit() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let shared = MightyGraphBlockSize(width: 700, height: 350)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: viewport, sharedResultSize: shared)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        // shared size overrides auto-fit; shared.normalized = (700, 350) which passes the clamp
+        #expect(card.frame.width == 700)
+        #expect(card.frame.height == 350)
+        // fittedResultID is nil when shared size is active
+        #expect(layout.fittedResultID == nil)
+    }
+
+    @Test func clearingSharedSizeReturnsToFit() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: viewport, sharedResultSize: nil)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        // nil sharedResultSize → auto-fit
+        #expect(card.frame.width == 1_152)
+        #expect(card.frame.height == 752)
+        #expect(layout.fittedResultID == resultID)
+    }
+
+    @Test func olderResultKeepsPerCardSize() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let firstResultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        let perCard = [firstResultID: MightyGraphBlockSize(width: 600, height: 300)]
+        let layout = MightyGraphLayout.make(runs: [run("one"), run("two")], draft: "", running: false,
+                                            expanded: [], blockSizes: perCard, viewport: viewport)
+        guard let first = node(layout, firstResultID) else { Issue.record("첫 결과 카드가 없습니다."); return }
+        // Older result uses its per-card saved size (600x300), not auto-fit
+        #expect(first.frame.width == 600)
+        #expect(first.frame.height == 300)
+    }
+
+    @Test func nilViewportKeepsTodaysSizes() {
+        // nil viewport must keep the existing default 500x200 result card size
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [])
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        #expect(card.frame.width == 500)
+        #expect(card.frame.height == 200)
+        #expect(layout.fittedResultID == nil)
+    }
+
+    @Test func graphResultSizeRoundTripsAndOldStateLoads() throws {
+        // New state with graphResultSize encodes and decodes correctly.
+        var session = RunSession(id: "s1", workspaceId: "w1", title: "테스트")
+        session.graphResultSize = MightyGraphBlockSize(width: 700, height: 350)
+        let data = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(RunSession.self, from: data)
+        #expect(decoded.graphResultSize?.width == 700)
+        #expect(decoded.graphResultSize?.height == 350)
+
+        // Old state JSON without graphResultSize decodes without error.
+        let oldJSON = """
+        {"id":"s2","workspaceId":"w1","title":"이전","kind":"claude","provider":"claude","model":"default",
+         "status":"idle","logs":[],"settings":{"effort":"default","permissionMode":"manual"}}
+        """.data(using: .utf8)!
+        let old = try JSONDecoder().decode(RunSession.self, from: oldJSON)
+        #expect(old.graphResultSize == nil)
+    }
+
+    @Test func fittedCardTopStaysVisibleAfterResize() {
+        // After a resize the fitted card frame changes; the camera offset computed
+        // with alignTop:true must place the card's top edge exactly at y=16.
+        let viewport = CGSize(width: 1_200, height: 800)
+        let layout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                            viewport: viewport)
+        let resultID = MightyGraphBlockSize.nodeID(runID: "one", suffix: "result")
+        guard let card = node(layout, resultID) else { Issue.record("결과 카드가 없습니다."); return }
+        // Simulate a window resize to a new viewport
+        let newViewport = CGSize(width: 900, height: 600)
+        let newLayout = MightyGraphLayout.make(runs: [run("one")], draft: "", running: false, expanded: [],
+                                               viewport: newViewport)
+        guard let newCard = node(newLayout, resultID) else { Issue.record("리사이즈 후 결과 카드가 없습니다."); return }
+        // The camera placed with alignTop:true keeps the card's top edge at y=16
+        let offset = MightyGraphLayout.cameraOffset(for: newCard.frame, viewport: newViewport,
+                                                     zoom: 1.0, alignTop: true)
+        #expect(newCard.frame.minY * 1.0 + offset.y == 16)
+        // New card size fits the new viewport: max(500, 900-48)=852, max(200, 600-48)=552
+        #expect(newCard.frame.size == CGSize(width: 852, height: 552))
+        _ = card // suppress unused warning; the before-resize card just confirms layout ran
+    }
 }

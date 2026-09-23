@@ -227,6 +227,7 @@ public actor StateRepository {
                 return log
             }
             session.graphBlockSizes = session.kind == "shell" ? nil : MightyGraphBlockSize.normalized(session.graphBlockSizes, runs: session.mightyGraphRuns)
+            session.graphResultSize = session.kind == "shell" ? nil : session.graphResultSize?.normalized
             if session.kind == "shell" { session.runTiming = nil; session.sessionUsage = nil }
             else {
                 session.sessionUsage = session.sessionUsage.flatMap { $0.provider == session.provider ? SessionUsageSupport.normalized($0) : nil }

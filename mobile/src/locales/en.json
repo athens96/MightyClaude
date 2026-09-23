@@ -228,6 +228,7 @@
   "settings.providers.statusReady": "Ready",
   "settings.providers.windowsDescription": "Uses local Claude Code, Codex CLI, and Gemini CLI as-is. Log in and install via each CLI.",
   "graph.nodeModel.configuredSuffix": "· settings",
+  "graph.result.fitToWindow": "Fit to window",
   "usage.modelUsage.sameResponse": "· same response",
   "usage.modelUsage.subagentPrefix": "sub",
   "settings.modelDefaults.sectionTitle": "Model Defaults",
