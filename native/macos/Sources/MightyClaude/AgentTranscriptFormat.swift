@@ -1,6 +1,12 @@
 import AppKit
 import MightyCore
 
+/// Child block data for a Task/Agent activity line: the subagent's usage and responses.
+struct AgentChildBlock: Equatable {
+    var usage: GraphTokenUsage?
+    var records: [GraphResponseRecord]
+}
+
 /// A transcript is one attributed document. Paragraphs and messages are not
 /// separate selectable views, so the native text system can select across them.
 @MainActor
@@ -10,7 +16,8 @@ enum AgentTranscriptFormat {
 
     /// `references` turns file paths and addresses into links. Only the Mighty
     /// graph opts in; the basic transcript keeps model text as plain text.
-    static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool, references: Bool = false) -> NSAttributedString {
+    static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool, references: Bool = false,
+                      records: [GraphResponseRecord] = [], childBlocks: [String: AgentChildBlock] = [:]) -> NSAttributedString {
         let builder = Builder(references: references)
         if let activity = entry.activity {
             let live = running && ["running", "waiting"].contains(activity.state)
@@ -24,6 +31,12 @@ enum AgentTranscriptFormat {
             }
             if live { line.append(NSAttributedString(string: activity.state == "waiting" ? "  · 대기 중" : "  · 진행 중", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: accent])) }
             else if activity.state == "error" { line.append(NSAttributedString(string: "  · 실패", attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.systemRed])) }
+            if !records.isEmpty, let child = childBlocks[activity.id],
+               let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: (usage: child.usage, records: child.records)) {
+                line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+            } else if !records.isEmpty, let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: nil) {
+                line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
+            }
             if !(activity.output ?? "").isEmpty {
                 var url = URLComponents()
                 url.scheme = "mighty-transcript"; url.host = "activity"

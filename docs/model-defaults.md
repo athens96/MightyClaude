@@ -170,6 +170,27 @@ The Settings sections on both platforms edit **app-level defaults only**; worksp
 override editing is deferred (the `Workspace.modelDefaults` field is still resolved at
 run time).
 
+## Model and token display on the graph
+
+macOS only. The execution graph shows which models each block used and how many tokens.
+
+### Attribution rules
+
+- **Block capsule** (`ModelUsageFormat.blockCapsule`): shows the block total with the models that produced it, e.g. `"12.3K · Opus 5.5"` or `"12.3K · Opus 5.5 +1"` for multiple models. Before the first response arrives the capsule shows the configured model label (with the `graph.nodeModel.configuredSuffix` locale key).
+- **Block capsule tooltip** (`ModelUsageFormat.blockCapsuleHelp`): per-model token breakdown with input / output / cache detail.
+- **Activity line suffix** (`ModelUsageFormat.activitySuffix`): the model short name and compact token count of the response that called the activity. When one response called several activities, only the **first** activity line in that response shows the model and token count; the other lines show a locale-keyed "same response" marker (`usage.modelUsage.sameResponse`) with no numbers. Summing the numbers shown on activity lines and responses that called no activity equals the block total exactly.
+- **Task/Agent activity line**: shows the subagent block total and models instead of the calling response.
+- **Codex responses**: use the run's configured model, marked as configured (`markedAsConfigured = true` in `GraphResponseRecord`).
+- **Re-sent response**: a response resent with the same message id replaces the prior record; tokens are never double-counted.
+
+### Short model names
+
+Short display names come from the CLI model catalog (`ModelOption.displayName`) when the model id matches `ModelOption.value` or `ModelOption.resolvedModel`; otherwise the raw model id is used verbatim.
+
+### Formatter
+
+`ModelUsageFormat` (in `MightyCore`) is the single source of every string drawn. All user-visible copy goes through `L()` locale keys (`usage.modelUsage.*`); no Korean literals appear in `ModelUsageFormat` itself.
+
 ## 기기 미확인 항목 (manual verification)
 
 The following items require human visual confirmation on a real device:
@@ -182,3 +203,7 @@ The following items require human visual confirmation on a real device:
 - **CLI 거부 오류 표시**: 등록된 이름을 CLI가 거부할 때 오류 메시지가 그대로 표시됨 (조용히 대체되지 않음)
 - **그래프 노드 모델 라벨** (macOS only): 실행 그래프의 요청 노드에 실제 사용 모델 이름이 표시됨
 - **폰 블록 모델 라벨**: 폰 블록 목록에 모델 이름 라벨이 표시됨
+- **블록 캡슐 모델 표시** (macOS only): 블록 헤더의 토큰 캡슐이 토큰 합계와 함께 모델 이름을 표시함 (예: "2.5K · Opus 5.5 +1")
+- **활동 줄 모델·토큰 표시** (macOS only): 각 활동 줄에 해당 응답의 모델 이름과 토큰이 표시됨
+- **같은 응답 마커** (macOS only): 같은 응답이 여러 활동을 호출한 경우, 첫 번째 활동 줄만 모델과 토큰을 표시하고 나머지는 "same response" 마커를 표시함
+- **서브에이전트 활동 줄 합계** (macOS only): Task/Agent 활동 줄은 자체 모델·토큰 대신 해당 서브에이전트 블록의 합계와 모델을 표시함
