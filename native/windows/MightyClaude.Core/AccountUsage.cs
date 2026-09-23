@@ -16,6 +16,9 @@ public sealed record AccountUsageSnapshot
     public string? AccountLabel { get; init; }
     public string? Plan { get; init; }
     public IReadOnlyList<AccountUsageWindow> Windows { get; init; } = [];
+    /// The Claude limit-reset (리셋권) rows, one per programme. Empty until the
+    /// entitlement read has happened; never carries a grant id or a credential.
+    public IReadOnlyList<AccountResetEntitlement> Resets { get; init; } = [];
     public string? FetchedAt { get; init; }
     /// available, unavailable, error, stale or cancelled.
     public string Status { get; init; } = "unavailable";
@@ -158,16 +161,26 @@ public static class ClaudeAccountProbe
         "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
     ];
 
-    public static Uri Endpoint(string path)
+    /// The entitlement reads get the CLI's own 5 second budget.
+    public static readonly TimeSpan ResetTimeout = TimeSpan.FromSeconds(5);
+
+    public static Uri Endpoint(string path, string? query = null)
     {
-        var url = new Uri("https://" + Host + "/api/oauth/" + path);
+        var url = new Uri("https://" + Host + "/api/oauth/" + path + (query is { Length: > 0 } ? "?" + query : ""));
         Guard(url);
         return url;
     }
-    /// HTTPS and exactly api.anthropic.com. Anything else never receives the token.
+    /// HTTPS, exactly api.anthropic.com, and only the four allowed paths.
+    /// A usage query with a reset variant must carry skip_spend=1 and no extra
+    /// keys; anything else is rejected here before the token ever leaves.
     public static void Guard(Uri url)
     {
         if (url.Scheme != Uri.UriSchemeHttps || url.Host != Host)
+            throw new AccountUsageFailure(AccountUsageFailureKind.Network, AccountUsageStrings.DetailRefreshFailed);
+        var pq = url.PathAndQuery;
+        if (pq is not ("/api/oauth/usage" or "/api/oauth/profile"
+            or "/api/oauth/usage?cedar_ember=1&skip_spend=1"
+            or "/api/oauth/usage?at_wall=1&skip_spend=1"))
             throw new AccountUsageFailure(AccountUsageFailureKind.Network, AccountUsageStrings.DetailRefreshFailed);
     }
 
@@ -219,12 +232,13 @@ public static class ClaudeAccountProbe
         var credential = load() ?? throw new AccountUsageFailure(AccountUsageFailureKind.Authentication, AccountUsageStrings.DetailAuthentication);
         // The token exists only inside this call; it is placed in one header
         // dictionary per request and never stored, logged or returned.
-        AccountUsageHttpRequest Request(string path) => new(Endpoint(path), new Dictionary<string, string>
-        {
-            ["Authorization"] = "Bearer " + credential.Token,
-            ["Accept"] = "application/json",
-            ["anthropic-beta"] = "oauth-2025-04-20",
-        }, Timeout);
+        AccountUsageHttpRequest Request(string path, string? query = null, TimeSpan? timeout = null) =>
+            new(Endpoint(path, query), new Dictionary<string, string>
+            {
+                ["Authorization"] = "Bearer " + credential.Token,
+                ["Accept"] = "application/json",
+                ["anthropic-beta"] = "oauth-2025-04-20",
+            }, timeout ?? Timeout);
 
         var usage = await http(Request("usage"), cancellation);
         CheckResponse(usage, clock());
@@ -248,7 +262,11 @@ public static class ClaudeAccountProbe
         catch (JsonException) { }
         catch (AccountUsageFailure) { }
         cancellation.ThrowIfCancellationRequested();
-        return Map(body, profile, credential.Plan) with { RetryAfterSeconds = retryAfter };
+        // The 리셋권 read rides the same schedule; a failure of it never changes
+        // the base usage windows or the status above.
+        var resets = await ClaudeResetEntitlements.ReadAsync(
+            query => Request("usage", query, ResetTimeout), http, clock, cancellation);
+        return Map(body, profile, credential.Plan) with { RetryAfterSeconds = retryAfter, Resets = resets };
     }
 }
 

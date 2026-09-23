@@ -103,6 +103,7 @@ public sealed partial class MainWindow
             if (card.Detail is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.Detail, FontSize = 10, Opacity = .7, TextWrapping = TextWrapping.Wrap });
             if (card.Note is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.Note, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap });
             if (card.CheckedAt is { Length: > 0 }) panel.Children.Add(new TextBlock { Text = card.CheckedAt, FontSize = 9, Opacity = .55 });
+            if (card.Provider == "claude") RenderAccountUsageReset(panel);
             usageDetails.Children.Add(panel);
         }
 
@@ -122,6 +123,33 @@ public sealed partial class MainWindow
             usageDetails.Children.Add(new TextBlock { Text = AccountUsageStrings.ToggleDescription, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
         }
         usageDetails.Children.Add(new TextBlock { Text = AccountUsageStrings.SharedLimitsNote, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+    }
+
+    /// The read-only 리셋권 rows. Core decides what they say and whether they
+    /// exist at all — an empty list means the direct lookup is off. There is no
+    /// reset button and no claim here; the only action is the link, and it is
+    /// live in every one of the seven states.
+    private void RenderAccountUsageReset(StackPanel panel)
+    {
+        var rows = usage?.ResetRows() ?? [];
+        if (rows.Count == 0) return;
+        panel.Children.Add(new TextBlock { Text = ClaudeResetEntitlements.Title, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
+        foreach (var row in rows)
+        {
+            var line = new StackPanel { Spacing = 1 };
+            AutomationProperties.SetAutomationId(line, "statusbar-usage-reset-" + row.Program);
+            line.Children.Add(new TextBlock { Text = row.Label, FontSize = 10, Opacity = .65 });
+            line.Children.Add(new TextBlock { Text = row.Text, FontSize = 11, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(line);
+        }
+        var link = new HyperlinkButton
+        {
+            Content = ClaudeResetEntitlements.LinkLabel,
+            NavigateUri = new Uri(ClaudeResetEntitlements.LinkTarget),
+            FontSize = 11, Padding = new Thickness(0), IsEnabled = true,
+        };
+        AutomationProperties.SetAutomationId(link, "statusbar-usage-reset-link");
+        panel.Children.Add(link);
     }
 
     /// The read never runs on the UI thread and never runs twice at once; the

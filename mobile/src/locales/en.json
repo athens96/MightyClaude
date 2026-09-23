@@ -293,5 +293,18 @@
   "settings.styles.sectionTitle": "Mighty Styles",
   "settings.styles.unblockButton": "Unblock",
   "settings.styles.viewButton": "View Contents",
-  "settings.title": "MightyClaude Settings"
+  "settings.title": "MightyClaude Settings",
+  "usage.reset.title": "Limit resets",
+  "usage.reset.link": "Reset on claude.ai",
+  "usage.reset.program.cedarEmber": "Granted limit resets",
+  "usage.reset.program.juniperTide": "At-limit reset",
+  "usage.reset.available.cedarEmber": "{count} limit resets left · until {expiry}",
+  "usage.reset.available.juniperTide": "Reset available now",
+  "usage.reset.held": "A limit reset becomes usable once you reach your limit.",
+  "usage.reset.cooldown.cedarEmber": "Usable again from {time}.",
+  "usage.reset.cooldown.juniperTide": "Available from {time} · {count} per week",
+  "usage.reset.exhausted": "You have used every limit reset for this period.",
+  "usage.reset.none": "No limit reset is available right now.",
+  "usage.reset.ineligible": "This account does not currently have limit resets.",
+  "usage.reset.unknown": "This app's connection does not provide limit reset information. Check Settings > Usage on claude.ai."
 }

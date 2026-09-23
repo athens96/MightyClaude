@@ -26,7 +26,10 @@ private actor AccountTestHTTP {
         #expect(request.url?.host == "api.anthropic.com")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
         #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "oauth-2025-04-20")
-        let path = request.url!.path; paths.append(path)
+        let url = request.url!; let path = url.path
+        // Path plus the exact ordered query: a usage GET carries the CLI's own
+        // variant or no query at all, and never an extra key.
+        paths.append(path + (url.query.map { "?" + $0 } ?? ""))
         let body = path.hasSuffix("usage") ? #"{"five_hour":{"utilization":21.5,"resets_at":"2026-09-16T20:00:00.000Z"},"seven_day":{"utilization":60}}"# : #"{"account":{"email":"fixture@example.test"},"organization":{"rate_limit_tier":"max"}}"#
         return AccountUsageHTTPResponse(status: 200, data: Data(body.utf8))
     }
@@ -78,7 +81,12 @@ struct AccountUsageTests {
         #expect(result.windows.map(\.kind) == ["session", "weekly"])
         #expect(result.windows.first?.usedPercent == 21.5)
         #expect(result.accountLabel == "fixture@example.test" && result.plan == "max")
-        #expect(await http.paths == ["/api/oauth/usage", "/api/oauth/profile"])
+        #expect(await http.paths == ["/api/oauth/usage", "/api/oauth/profile",
+                                     "/api/oauth/usage?cedar_ember=1&skip_spend=1",
+                                     "/api/oauth/usage?at_wall=1&skip_spend=1"])
+        // This fixture answers the entitlement queries with a body that has no
+        // reset field at all — an account outside both programmes.
+        #expect(result.resets.map(\.state) == ["ineligible", "ineligible"])
         #expect(!String(decoding: try JSONEncoder().encode(result), as: UTF8.self).contains("fixture-token"))
     }
 
@@ -199,5 +207,236 @@ struct AccountUsageTests {
         }
         let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
         #expect(Darwin.kill(pid, 0) != 0)
+    }
+}
+
+// ---------------------------------------------------------------- 리셋권 rows
+
+/// One fixture pair: what each entitlement query answers and what the row must
+/// become. `provenance` records where the shape came from — every field name
+/// below is read from the installed CLI 2.1.280 binary with `strings`
+/// (`cedar_ember`/`juniper_tide` blocks, their decoders and the two query
+/// variants); only the field *values* are made up.
+private struct ResetScenario: Sendable {
+    var name: String
+    var provenance = "binary-derived (claude 2.1.280 decoder field names)"
+    var cedarStatus = 200
+    var cedar: String
+    var juniperStatus = 200
+    var juniper: String
+    var cedarState: String
+    var juniperState: String
+}
+
+private actor ResetFixtureHTTP {
+    private var scenario: ResetScenario?
+    var trace: [String] = []
+    var postCount = 0
+    private let usage = #"{"five_hour":{"utilization":21.5},"seven_day":{"utilization":60}}"#
+    private let profile = #"{"account":{"email":"fixture@example.test"},"organization":{"rate_limit_tier":"max"}}"#
+
+    func use(_ value: ResetScenario) { scenario = value }
+    func calls() -> [String] { trace }
+    func posts() -> Int { postCount }
+
+    func read(_ request: URLRequest) throws -> AccountUsageHTTPResponse {
+        // No POST exists in this app; a fake transport that ever saw one fails.
+        if request.httpMethod != "GET" { postCount += 1 }
+        #expect(request.url?.host == "api.anthropic.com")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-token")
+        let url = request.url!
+        trace.append(url.path + (url.query.map { "?" + $0 } ?? ""))
+        guard let scenario else { throw AccountUsageFailure.network }
+        switch url.query {
+        case "cedar_ember=1&skip_spend=1":
+            #expect(request.timeoutInterval == 5)
+            return AccountUsageHTTPResponse(status: scenario.cedarStatus, data: Data(scenario.cedar.utf8))
+        case "at_wall=1&skip_spend=1":
+            #expect(request.timeoutInterval == 5)
+            return AccountUsageHTTPResponse(status: scenario.juniperStatus, data: Data(scenario.juniper.utf8))
+        default:
+            return AccountUsageHTTPResponse(status: 200, data: Data((url.path.hasSuffix("profile") ? profile : usage).utf8))
+        }
+    }
+}
+
+private func iso(_ seconds: Double) -> String { AccountUsageService.timestamp(Date(timeIntervalSince1970: seconds)) }
+
+/// A cedar_ember grant, the CLI decoder's field names.
+private func grant(left: Int, ends: Double, usableNow: Bool, requiresLimit: Bool, paused: Bool = false) -> String {
+    """
+    {"id":"grant-fixture","label":"fixture","resets_total":5,"resets_left":\(left),\
+    "starts_at":"\(iso(1_799_900_000))","ends_at":"\(iso(ends))","clears":[],\
+    "paused":\(paused),"usable_now":\(usableNow),"use_requires_limit":\(requiresLimit),"percent_used":{}}
+    """
+}
+private func cedar(_ grantJSON: String?, atLimit: Bool, cooldown: Double?, exhausted: String = "[]", eligible: Bool = true, reason: String? = nil) -> String {
+    let selected = grantJSON == nil ? "null" : "\"grant-fixture\""
+    let reasonJSON = reason.map { "\"\($0)\"" } ?? "null"
+    return """
+    {"cedar_ember":{"eligible":\(eligible),"ineligible_reason":\(reasonJSON),"at_limit":\(atLimit),\
+    "exhausted":\(exhausted),"grants":[\(grantJSON ?? "")],"next_grant_id":\(selected),\
+    "weekly_resets_at":null,"cooldown_until":\(cooldown.map { "\"\(iso($0))\"" } ?? "null")}}
+    """
+}
+private func juniper(inExperiment: Bool = true, available: Bool = false, next: Double?, perWeek: Int, reason: String? = nil) -> String {
+    """
+    {"juniper_tide":{"in_experiment":\(inExperiment),"ineligible_reason":\(reason.map { "\"\($0)\"" } ?? "null"),\
+    "available":\(available),"next_available_at":\(next.map { "\"\(iso($0))\"" } ?? "null"),\
+    "weekly_resets_at":"\(iso(1_800_600_000))","resets_per_week":\(perWeek),"tenure_bucket":"established",\
+    "billing_path":"subscription","billing_period":"monthly","extra_usage_state":"off"}}
+    """
+}
+
+struct AccountResetEntitlementTests {
+    private static let origin: Double = 1_800_000_000
+    private static let future = origin + 86_400
+    private static let past = origin - 86_400
+
+    /// The seven states, named one by one: available, held, cooldown,
+    /// exhausted, none, ineligible, unknown. Every row is produced by a real
+    /// AccountUsageService instance reading fixture HTTP through its own seam,
+    /// with a fixture clock the test advances and never sleeps on.
+    @Test func usageResetRendersSevenStatesFromTheSharedKeys() async throws {
+        let clock = AccountTestClock(), http = ResetFixtureHTTP()
+        let service = AccountUsageService(now: { clock.read() }, probe: { _ in
+            try await AccountUsageService.claude(environment: [:],
+                load: { ClaudeQuotaCredential(token: "fixture-token", plan: "pro") },
+                http: { try await http.read($0) }, now: { clock.read() })
+        })
+        let origin = Self.origin, future = Self.future, past = Self.past
+
+        let scenarios: [ResetScenario] = [
+            // available: the granted reset is usable now; the at-wall reset too.
+            .init(name: "available",
+                  cedar: cedar(grant(left: 3, ends: future, usableNow: true, requiresLimit: false), atLimit: true, cooldown: nil),
+                  juniper: juniper(available: true, next: nil, perWeek: 2),
+                  cedarState: "available", juniperState: "available"),
+            // held: the grant waits for the account to reach its limit.
+            // cooldown (at-wall): a next time still ahead of the clock.
+            .init(name: "held",
+                  cedar: cedar(grant(left: 2, ends: future, usableNow: false, requiresLimit: true), atLimit: false, cooldown: nil),
+                  juniper: juniper(next: future, perWeek: 2),
+                  cedarState: "held", juniperState: "cooldown"),
+            // cooldown (granted): still cooling down from the last use.
+            // none (at-wall): this account gets none per week.
+            .init(name: "cooldown",
+                  cedar: cedar(grant(left: 1, ends: future, usableNow: false, requiresLimit: false), atLimit: true, cooldown: future),
+                  juniper: juniper(next: past, perWeek: 0),
+                  cedarState: "cooldown", juniperState: "none"),
+            // exhausted: nothing left in this period, on either programme.
+            .init(name: "exhausted",
+                  cedar: cedar(grant(left: 0, ends: future, usableNow: false, requiresLimit: false), atLimit: true, cooldown: past, exhausted: "[\"spent\"]"),
+                  juniper: juniper(next: past, perWeek: 3),
+                  cedarState: "exhausted", juniperState: "exhausted"),
+            // none: no grant is selected at all.
+            .init(name: "none",
+                  cedar: cedar(nil, atLimit: false, cooldown: nil),
+                  juniper: juniper(next: nil, perWeek: 0),
+                  cedarState: "none", juniperState: "none"),
+            // ineligible: the server named a reason, and a 404 says the same.
+            .init(name: "ineligible",
+                  cedar: cedar(nil, atLimit: false, cooldown: nil, eligible: false, reason: "not_in_experiment"),
+                  juniperStatus: 404, juniper: "",
+                  cedarState: "ineligible", juniperState: "ineligible"),
+            // unknown: a 5xx, and a block this app cannot read. The copy blames
+            // this app's connection, never Anthropic's policy.
+            .init(name: "unknown", provenance: "assumed (transport failure shapes)",
+                  cedarStatus: 503, cedar: "",
+                  juniper: #"{"juniper_tide":42}"#,
+                  cedarState: "unknown", juniperState: "unknown"),
+        ]
+
+        var seen = Set<String>()
+        for scenario in scenarios {
+            await http.use(scenario)
+            clock.advance(61)
+            let snapshot = await service.read(provider: "claude", force: true)
+            // A reset read never disturbs the base usage windows or the status.
+            #expect(snapshot.status == "available")
+            #expect(snapshot.windows.map(\.kind) == ["session", "weekly"])
+            #expect(snapshot.resets.map(\.program) == ["cedar_ember", "juniper_tide"])
+            #expect(!scenario.provenance.isEmpty)
+
+            let granted = try #require(snapshot.resets.first { $0.program == "cedar_ember" })
+            let atWall = try #require(snapshot.resets.first { $0.program == "juniper_tide" })
+            #expect(granted.state == scenario.cedarState, "cedar_ember in \(scenario.name)")
+            #expect(atWall.state == scenario.juniperState, "juniper_tide in \(scenario.name)")
+            seen.insert(granted.state); seen.insert(atWall.state)
+
+            for row in snapshot.resets {
+                // Exactly one shared usage.reset.* key per program and state,
+                // and a line that actually resolved through the catalogue.
+                #expect(row.copyKey.hasPrefix("usage.reset."))
+                #expect(row.line != row.copyKey && !row.line.isEmpty)
+                #expect(!row.label.isEmpty)
+                // The link is enabled in every one of the seven states.
+                #expect(AccountResetEntitlement.linkKey == "usage.reset.link")
+                #expect(!AccountResetEntitlement.linkLabel.isEmpty)
+                #expect(AccountResetEntitlement.linkTarget.hasPrefix("https://claude.ai/"))
+            }
+
+            switch scenario.name {
+            case "available":
+                // The granted line carries the remaining count and the expiry.
+                #expect(granted.copyKey == "usage.reset.available.cedarEmber")
+                #expect(granted.remainingCount == 3 && granted.expiresAt == iso(future))
+                #expect(granted.line.contains("3") && granted.line.contains(AccountResetEntitlement.day(granted.expiresAt)))
+                // The at-wall line says it is available now.
+                #expect(atWall.copyKey == "usage.reset.available.juniperTide")
+                #expect(atWall.resetsPerWeek == 2)
+            case "held":
+                #expect(granted.copyKey == "usage.reset.held")
+                // The at-wall line carries the next time and the weekly count.
+                #expect(atWall.copyKey == "usage.reset.cooldown.juniperTide")
+                #expect(atWall.nextAvailableAt == iso(future) && atWall.resetsPerWeek == 2)
+                #expect(atWall.line.contains("2") && atWall.line.contains(AccountResetEntitlement.moment(atWall.nextAvailableAt)))
+            case "cooldown":
+                #expect(granted.copyKey == "usage.reset.cooldown.cedarEmber")
+                #expect(granted.nextAvailableAt == iso(future))
+                #expect(atWall.copyKey == "usage.reset.none")
+            case "exhausted": #expect(granted.copyKey == "usage.reset.exhausted" && atWall.copyKey == "usage.reset.exhausted")
+            case "none": #expect(granted.copyKey == "usage.reset.none" && atWall.copyKey == "usage.reset.none")
+            case "ineligible": #expect(granted.copyKey == "usage.reset.ineligible" && atWall.copyKey == "usage.reset.ineligible")
+            default: #expect(granted.copyKey == "usage.reset.unknown" && atWall.copyKey == "usage.reset.unknown")
+            }
+        }
+        #expect(seen == ["available", "held", "cooldown", "exhausted", "none", "ineligible", "unknown"])
+
+        // The clock, not the wall time, decides when a grant window has closed.
+        let closing = clock.read().timeIntervalSince1970 + 200
+        await http.use(.init(name: "expiry",
+                             cedar: cedar(grant(left: 4, ends: closing, usableNow: true, requiresLimit: false), atLimit: true, cooldown: nil),
+                             juniper: juniper(available: true, next: nil, perWeek: 1),
+                             cedarState: "available", juniperState: "available"))
+        clock.advance(61)
+        #expect(await service.read(provider: "claude", force: true).resets.first?.state == "available")
+        clock.advance(183)
+        #expect(await service.read(provider: "claude", force: true).resets.first?.state == "none")
+
+        // Every call was a GET on the allowed paths, with the query the CLI uses.
+        #expect(await http.posts() == 0)
+        #expect(Set(await http.calls()) == ["/api/oauth/usage", "/api/oauth/profile",
+                                            "/api/oauth/usage?cedar_ember=1&skip_spend=1",
+                                            "/api/oauth/usage?at_wall=1&skip_spend=1"])
+        // No token, account or grant id reaches the presentation data.
+        let encoded = String(decoding: try JSONEncoder().encode(await service.read(provider: "claude")), as: UTF8.self)
+        #expect(!encoded.contains("fixture-token") && !encoded.contains("grant-fixture"))
+        await service.shutdown()
+    }
+
+    /// The rows do not exist while the direct-lookup switch is off, and the
+    /// switch is off out of the box.
+    @Test func usageResetRowsAreHiddenWhileDirectLookupIsOff() {
+        let snapshot = AccountUsageSnapshot(provider: "claude", windows: [.init(kind: "session", usedPercent: 10)],
+                                            resets: [AccountResetEntitlement(program: .cedarEmber, state: .available, remainingCount: 2)],
+                                            status: "available")
+        #expect(AccountResetPresentation.rows(snapshot, directLookupEnabled: false).isEmpty)
+        #expect(AccountResetPresentation.rows(nil, directLookupEnabled: false).isEmpty)
+        let shown = AccountResetPresentation.rows(snapshot, directLookupEnabled: true)
+        #expect(shown.map(\.program) == ["cedar_ember", "juniper_tide"])
+        #expect(shown[0].state == "available" && shown[1].state == "unknown")
+        // A relaunch with nothing read yet is unknown, never a stale number.
+        #expect(AccountResetPresentation.rows(nil, directLookupEnabled: true).allSatisfy { $0.state == "unknown" })
     }
 }

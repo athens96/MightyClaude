@@ -93,10 +93,13 @@ public sealed class AccountUsageStatus : IAsyncDisposable
         DirectClaudeLookupEnabled = snapshot.ClaudeDirectUsageLookupEnabled;
         lock (gate)
         {
-            foreach (var (provider, reported) in SessionReported(snapshot, now))
+            foreach (var (provider, session) in SessionReported(snapshot, now))
             {
                 if (snapshots.TryGetValue(provider, out var held) && AccountUsageSupport.Date(held.FetchedAt) is { } older
-                    && AccountUsageSupport.Date(reported.FetchedAt) is { } fresh && older >= fresh) continue;
+                    && AccountUsageSupport.Date(session.FetchedAt) is { } fresh && older >= fresh) continue;
+                // A session's rate_limit_event carries no 리셋권 data, so the
+                // rows the service read stay exactly as they were.
+                var reported = session with { Resets = held?.Resets ?? [] };
                 if (snapshots.TryGetValue(provider, out var previous) && previous == reported) continue;
                 snapshots[provider] = reported;
                 changed = true;
@@ -165,6 +168,11 @@ public sealed class AccountUsageStatus : IAsyncDisposable
         if (provider == "claude" && !DirectClaudeLookupEnabled) return new AccountUsageChip(provider, AccountUsageStrings.ChipBeforeFirstRun, false);
         return new AccountUsageChip(provider, Refreshing ? AccountUsageStrings.ChipChecking : AccountUsageStrings.ChipEmpty, false);
     }).ToList();
+
+    /// The read-only 리셋권 rows for the Claude card. Hidden entirely while the
+    /// direct-lookup switch is off; the link beside them is live in every state.
+    public IReadOnlyList<AccountResetRow> ResetRows() =>
+        ClaudeResetEntitlements.Rows(Snapshot("claude"), DirectClaudeLookupEnabled);
 
     public IReadOnlyList<AccountUsageCard> Cards() => Providers.Select(provider =>
     {
