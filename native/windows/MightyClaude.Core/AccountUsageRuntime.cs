@@ -7,11 +7,10 @@ namespace MightyClaude.Core;
 /// nothing here is ever exercised by a test or by the smoke run.
 public static class AccountUsageRuntime
 {
-    /// One ephemeral request: no cookies, no credential store, no redirect
-    /// followed, a 10 second timeout and a 1 MiB body cap. There is no retry.
-    public static async Task<AccountUsageHttpResponse> SendAsync(AccountUsageHttpRequest request, CancellationToken cancellation)
+    /// Raw HTTP send: no guard, no retry. The production path goes through
+    /// SendAsync which is Guarded(RawSendAsync).
+    private static async Task<AccountUsageHttpResponse> RawSendAsync(AccountUsageHttpRequest request, CancellationToken cancellation)
     {
-        ClaudeAccountProbe.Guard(request.Url);
         using var handler = new HttpClientHandler
         {
             AllowAutoRedirect = false,
@@ -27,6 +26,12 @@ public static class AccountUsageRuntime
         var redirect = reply.StatusCode is >= (HttpStatusCode)300 and < (HttpStatusCode)400 ? reply.Headers.Location?.ToString() ?? "refused" : null;
         return new AccountUsageHttpResponse((int)reply.StatusCode, body, reply.Headers.TryGetValues("Retry-After", out var retry) ? retry.FirstOrDefault() : null, redirect);
     }
+
+    /// One ephemeral request: no cookies, no credential store, no redirect
+    /// followed, a 10 second timeout and a 1 MiB body cap. There is no retry.
+    /// The guard runs before the raw send, so unsanctioned URLs never reach
+    /// the network — same gate the test wraps a counting handler with.
+    public static readonly AccountUsageHttpHandler SendAsync = ClaudeAccountProbe.Guarded(RawSendAsync);
 
     /// `codex app-server` over stdio. The CLI owns its own sign-in; the app
     /// never sees it, and the child dies with the probe.

@@ -528,8 +528,8 @@ internal static class Verification
         await Test("usage reset smoke is wired into both platforms", AccountUsageVerification.UsageResetSmokeIsWiredIntoBothPlatforms);
         await Test("usageReset first-response log", AccountUsageVerification.UsageResetFirstResponseLog);
         await Test("usageReset rate-limit", AccountUsageVerification.UsageResetRateLimitDeadline);
-        await Test("usageReset guard", AccountUsageVerification.UsageResetGuardCheck);
-        await Test("usageReset shape-log paths match macOS", AccountUsageVerification.UsageResetShapeLogPathsMatchMacOS);
+        await Test("usageReset guard blocks transport", AccountUsageVerification.UsageResetGuardCheck);
+        await Test("usageReset log paths match macOS", AccountUsageVerification.UsageResetShapeLogPathsMatchMacOS);
         await Test("app update ed25519 matches the RFC 8032 vectors", AppUpdateVerification.Ed25519MatchesTheRfc8032Vectors);
         await Test("app update strings match macOS", StringsVerification.AppUpdateStringsMatchMacOS);
         await Test("app update manifest accepts a fixture signature and refuses everything else", AppUpdateVerification.ManifestAcceptsAFixtureSignatureAndRefusesEverythingElse);

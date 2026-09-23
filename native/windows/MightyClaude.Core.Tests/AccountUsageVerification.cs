@@ -814,16 +814,12 @@ internal static class AccountUsageVerification
         catch (AccountUsageFailure) { nonHttps = true; }
         Check(nonHttps, "non-https must be refused");
 
-        // Non-vacuous: unsanctioned requests go through the production guard
-        // then the counting handler. Guard throws before the handler is called,
-        // so the transport count stays 0 for every refused URL.
+        // Non-vacuous: wrap a counting handler with the production guard
+        // function. Guard throws before the handler is called, so the transport
+        // count stays 0 for every refused URL.
         var attempts = 0;
         AccountUsageHttpHandler countingHttp = (_, _) => { attempts++; return Task.FromResult(new AccountUsageHttpResponse(200, UsageBody)); };
-        async Task<AccountUsageHttpResponse> GuardedHttp(Uri url)
-        {
-            ClaudeAccountProbe.Guard(url);
-            return await countingHttp(new AccountUsageHttpRequest(url, new Dictionary<string, string>(), ClaudeAccountProbe.Timeout), default);
-        }
+        var guarded = ClaudeAccountProbe.Guarded(countingHttp);
         foreach (var badUrl in new[]
         {
             "https://api.anthropic.com/api/oauth/usage?cedar_ember=1",
@@ -836,14 +832,13 @@ internal static class AccountUsageVerification
             "https://evil.test/api/oauth/usage",
         })
         {
-            try { await GuardedHttp(new Uri(badUrl)); }
+            try { await guarded(new AccountUsageHttpRequest(new Uri(badUrl), new Dictionary<string, string>(), ClaudeAccountProbe.Timeout), default); }
             catch (AccountUsageFailure) { }
         }
         Check(attempts == 0, "transport count stays 0 for refused queries: " + attempts);
-        Console.WriteLine("PASS usageReset guard blocks transport");
 
         // A sanctioned request does reach the counting transport.
-        await GuardedHttp(ClaudeAccountProbe.Endpoint("usage"));
+        await guarded(new AccountUsageHttpRequest(ClaudeAccountProbe.Endpoint("usage"), new Dictionary<string, string>(), ClaudeAccountProbe.Timeout), default);
         Check(attempts == 1, "sanctioned request reached the counting transport");
     }
 
@@ -867,7 +862,6 @@ internal static class AccountUsageVerification
             Check(!line.Contains(doubled), "path must not contain the programme name twice in a row: " + line);
         // Root path must be the body's real top-level key, not the programme name as a prefix.
         Check(emitted.Any(l => l.Contains("cedar_ember: object")), "first path token must be the body's top-level key");
-        Console.WriteLine("PASS usageReset log paths match macOS");
         return Task.CompletedTask;
     }
 
