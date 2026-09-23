@@ -248,10 +248,7 @@ public actor AccountUsageService {
             request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
             return request
         }
-        let guardedHttp: @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = { req in
-            try AccountUsageService.guardRequest(req)
-            return try await http(req)
-        }
+        let guardedHttp = AccountUsageService.guardedTransport(http)
         let response = try await guardedHttp(request("usage"))
         try checkHTTP(response)
         guard let body = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else { throw AccountUsageFailure.invalidResponse }
@@ -475,6 +472,12 @@ extension AccountUsageService {
         try await CodexAccountProbe.read(command: command, environment: environment, timeoutSeconds: timeout)
     }
     static func parseClaudeCredential(_ data: Data) -> ClaudeQuotaCredential? { ClaudeQuotaCredentials.parse(data) }
+
+    /// Returns a transport that runs guardRequest before forwarding to `http`.
+    /// Used by claude(...) and by tests that wrap a counting fake transport.
+    static func guardedTransport(_ http: @escaping @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse) -> @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse {
+        { req in try AccountUsageService.guardRequest(req); return try await http(req) }
+    }
 
     /// Pre-send guard: refuses non-GET, non-https, foreign-host and unsanctioned-query
     /// requests before the token ever leaves. Same contract as the Windows

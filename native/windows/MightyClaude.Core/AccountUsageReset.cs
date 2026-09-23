@@ -29,8 +29,10 @@ public sealed class AccountUsageShapeLog
     public void LogShapeOnce(string program, JsonElement body)
     {
         lock (gate) { if (!logged.Add(program)) return; }
-        foreach (var line in ShapeLines(body, program))
-            emit("account-usage: " + line);
+        if (body.ValueKind != JsonValueKind.Object) return;
+        foreach (var prop in body.EnumerateObject().OrderBy(p => p.Name))
+            foreach (var line in ShapeLines(prop.Value, prop.Name))
+                emit("account-usage: " + line);
     }
 
     private static IEnumerable<string> ShapeLines(JsonElement element, string path)
