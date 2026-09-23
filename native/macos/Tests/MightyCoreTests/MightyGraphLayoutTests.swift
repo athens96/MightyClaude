@@ -322,6 +322,88 @@ struct MightyGraphLayoutTests {
         _ = card // suppress unused warning; the before-resize card just confirms layout ran
     }
 
+    @Test func latestResultRuleMatchesLayout() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        func resultID(_ id: String) -> String { MightyGraphBlockSize.nodeID(runID: id, suffix: "result") }
+
+        // No runs: nil
+        let noRuns: [MightyGraphRun] = []
+        let noLayout = MightyGraphLayout.make(runs: noRuns, draft: "", running: false, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.latestResultID(runs: noRuns) == nil)
+        #expect(MightyGraphLayout.latestResultID(runs: noRuns) == noLayout.fittedResultID)
+
+        // One completed run: returns its result node id
+        let oneRuns = [run("one")]
+        let oneLayout = MightyGraphLayout.make(runs: oneRuns, draft: "", running: false, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.latestResultID(runs: oneRuns) == resultID("one"))
+        #expect(MightyGraphLayout.latestResultID(runs: oneRuns) == oneLayout.fittedResultID)
+
+        // Completed run followed by a running one: latest is still the completed run
+        let mixRuns = [run("one"), run("two", status: "running")]
+        let mixLayout = MightyGraphLayout.make(runs: mixRuns, draft: "", running: true, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.latestResultID(runs: mixRuns) == resultID("one"))
+        #expect(MightyGraphLayout.latestResultID(runs: mixRuns) == mixLayout.fittedResultID)
+
+        // Failed (status "error") last run: error is terminal, so it is the latest
+        let errorRuns = [run("one", status: "error")]
+        let errorLayout = MightyGraphLayout.make(runs: errorRuns, draft: "", running: false, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.latestResultID(runs: errorRuns) == resultID("one"))
+        #expect(MightyGraphLayout.latestResultID(runs: errorRuns) == errorLayout.fittedResultID)
+
+        // Nil viewport: latestResultID only depends on runs, unchanged
+        let nilViewportLayout = MightyGraphLayout.make(runs: oneRuns, draft: "", running: false, expanded: [])
+        #expect(MightyGraphLayout.latestResultID(runs: oneRuns) == resultID("one"))
+        #expect(nilViewportLayout.fittedResultID == nil) // viewport=nil → fittedResultID is nil
+
+        // Shared result size: latestResultID still names the run, fittedResultID is nil
+        let shared = MightyGraphBlockSize(width: 700, height: 350)
+        let sharedLayout = MightyGraphLayout.make(runs: oneRuns, draft: "", running: false, expanded: [],
+                                                   viewport: viewport, sharedResultSize: shared)
+        #expect(MightyGraphLayout.latestResultID(runs: oneRuns) == resultID("one"))
+        #expect(sharedLayout.fittedResultID == nil)
+    }
+
+    @Test func fittedResultRuleMatchesLayout() {
+        let viewport = CGSize(width: 1_200, height: 800)
+        let shared = MightyGraphBlockSize(width: 700, height: 350)
+        func resultID(_ id: String) -> String { MightyGraphBlockSize.nodeID(runID: id, suffix: "result") }
+
+        // No runs: nil regardless of viewport
+        let noRuns: [MightyGraphRun] = []
+        let noLayout = MightyGraphLayout.make(runs: noRuns, draft: "", running: false, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.fittedResultID(runs: noRuns, viewport: viewport, sharedResultSize: nil) == nil)
+        #expect(MightyGraphLayout.fittedResultID(runs: noRuns, viewport: viewport, sharedResultSize: nil) == noLayout.fittedResultID)
+
+        // One completed run with viewport: returns the result node id
+        let oneRuns = [run("one")]
+        let oneLayout = MightyGraphLayout.make(runs: oneRuns, draft: "", running: false, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.fittedResultID(runs: oneRuns, viewport: viewport, sharedResultSize: nil) == resultID("one"))
+        #expect(MightyGraphLayout.fittedResultID(runs: oneRuns, viewport: viewport, sharedResultSize: nil) == oneLayout.fittedResultID)
+
+        // Completed run followed by a running one: fitted = the completed one
+        let mixRuns = [run("one"), run("two", status: "running")]
+        let mixLayout = MightyGraphLayout.make(runs: mixRuns, draft: "", running: true, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.fittedResultID(runs: mixRuns, viewport: viewport, sharedResultSize: nil) == resultID("one"))
+        #expect(MightyGraphLayout.fittedResultID(runs: mixRuns, viewport: viewport, sharedResultSize: nil) == mixLayout.fittedResultID)
+
+        // Failed (status "error") last run: still fitted
+        let errorRuns = [run("one", status: "error")]
+        let errorLayout = MightyGraphLayout.make(runs: errorRuns, draft: "", running: false, expanded: [], viewport: viewport)
+        #expect(MightyGraphLayout.fittedResultID(runs: errorRuns, viewport: viewport, sharedResultSize: nil) == resultID("one"))
+        #expect(MightyGraphLayout.fittedResultID(runs: errorRuns, viewport: viewport, sharedResultSize: nil) == errorLayout.fittedResultID)
+
+        // Nil viewport: nil
+        let nilViewportLayout = MightyGraphLayout.make(runs: oneRuns, draft: "", running: false, expanded: [])
+        #expect(MightyGraphLayout.fittedResultID(runs: oneRuns, viewport: nil, sharedResultSize: nil) == nil)
+        #expect(MightyGraphLayout.fittedResultID(runs: oneRuns, viewport: nil, sharedResultSize: nil) == nilViewportLayout.fittedResultID)
+
+        // Shared result size overrides fit: nil
+        let sharedLayout = MightyGraphLayout.make(runs: oneRuns, draft: "", running: false, expanded: [],
+                                                   viewport: viewport, sharedResultSize: shared)
+        #expect(MightyGraphLayout.fittedResultID(runs: oneRuns, viewport: viewport, sharedResultSize: shared) == nil)
+        #expect(MightyGraphLayout.fittedResultID(runs: oneRuns, viewport: viewport, sharedResultSize: shared) == sharedLayout.fittedResultID)
+    }
+
     private func frames(_ layout: MightyGraphLayout) -> [String: CGRect] {
         Dictionary(layout.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
     }
