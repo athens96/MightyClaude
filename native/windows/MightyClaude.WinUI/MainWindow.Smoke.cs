@@ -51,6 +51,7 @@ public sealed partial class MainWindow
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
+            result["usageReset"] = await RunUsageResetSmoke();
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
             result["modelDefaultsSmoke"] = await RunModelDefaultsSmoke();
@@ -269,6 +270,45 @@ public sealed partial class MainWindow
             await service.RenameSessionAsync(fixtureSession.Id, originalTitle);
             Render();
         }
+        return checks;
+    }
+
+    /// Builds a fresh AccountUsageService with an injected fixture clock and a
+    /// fake HTTP handler (GET only), reads the 리셋권 rows, and verifies that
+    /// cedar_ember is available, juniper_tide is unknown, and no POST was made.
+    /// The real direct-lookup preference in the service snapshot is never touched.
+    private async Task<Dictionary<string, object?>> RunUsageResetSmoke()
+    {
+        var checks = new Dictionary<string, object?>();
+        var fakeTransportPostCount = 0;
+        const string cedarAvailableBody = """{"cedar_ember":{"eligible":true,"in_experiment":true,"next_grant_id":"g1","grants":[{"id":"g1","resets_total":3,"resets_left":2,"starts_at":"2026-01-01T00:00:00Z","ends_at":"2027-01-01T00:00:00Z","usable_now":true,"use_requires_limit":false,"paused":false,"percent_used":33.3}],"at_limit":false,"cooldown_until":null,"exhausted":[]}}""";
+        const string usageBody = """{"five_hour":{"utilization":12.5,"resets_at":"2026-09-23T20:00:00Z"}}""";
+        var fixtureClock = DateTimeOffset.Parse("2026-09-23T10:00:00Z");
+        AccountUsageHttpHandler fakeHttp = (request, _) =>
+        {
+            if (request.Method != "GET") fakeTransportPostCount++;
+            return Task.FromResult(request.Url.Query switch
+            {
+                "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(200, cedarAvailableBody),
+                "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(503, ""),
+                _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? "{}" : usageBody),
+            });
+        };
+        var beforeSwitch = service.Snapshot.ClaudeDirectUsageLookupEnabled;
+        var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
+            () => new ClaudeQuotaCredential("smoke-fixture", "max"), fakeHttp, () => fixtureClock);
+        Require(fakeTransportPostCount == 0, "usageReset smoke: no POST exists in this app");
+        var rows = ClaudeResetEntitlements.Rows(snapshot, true);
+        Require(rows.Count == 2, "usageReset smoke: two rows for the two programmes");
+        var cedar = rows.First(r => r.Program == ResetProgram.CedarEmber);
+        var juniper = rows.First(r => r.Program == ResetProgram.JuniperTide);
+        Require(cedar.State == "available", "usageReset smoke: cedar_ember must be available from fixture");
+        Require(juniper.State == "unknown", "usageReset smoke: juniper_tide must be unknown when the handler returns 503");
+        Require(service.Snapshot.ClaudeDirectUsageLookupEnabled == beforeSwitch, "usageReset smoke: real direct-lookup preference is unchanged");
+        checks["usageReset.cedar_ember"] = cedar.State;
+        checks["usageReset.juniper_tide"] = juniper.State;
+        checks["fakeTransportPostCount"] = fakeTransportPostCount;
+        checks["passed"] = true;
         return checks;
     }
 

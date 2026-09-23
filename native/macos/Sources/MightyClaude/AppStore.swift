@@ -235,6 +235,7 @@ final class AppStore: ObservableObject {
         else if arguments.contains("--graph-smoke-test") { Task { await runGraphSmokeTest() } }
         else if arguments.contains("--agent-smoke-test") { Task { await runAgentSmokeTest() } }
         else if arguments.contains("--layout-smoke-test") { Task { await runLayoutSmokeTest() } }
+        else if arguments.contains("--usage-reset-smoke-test") { Task { await runUsageResetSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
         else if arguments.contains("--smoke-test") { Task { await runSmokeTest() } }
     }

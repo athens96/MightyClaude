@@ -47,7 +47,7 @@ public actor AccountUsageService {
         now = { Date() }
     }
 
-    init(now: @escaping @Sendable () -> Date = { Date() }, probe: @escaping @Sendable (String) async throws -> AccountUsageSnapshot) {
+    public init(now: @escaping @Sendable () -> Date = { Date() }, probe: @escaping @Sendable (String) async throws -> AccountUsageSnapshot) {
         self.now = now; self.probe = { provider, _ in try await probe(provider) }
     }
     init(now: @escaping @Sendable () -> Date = { Date() }, interactiveProbe: @escaping @Sendable (String, Bool) async throws -> AccountUsageSnapshot) {

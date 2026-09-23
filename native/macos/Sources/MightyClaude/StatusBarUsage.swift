@@ -111,6 +111,47 @@ final class AccountUsageStatusController: ObservableObject {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: value)
     }
+
+    /// Smoke: constructs a controller from an injected service with a fixture
+    /// clock and a fake probe (GET only — fakeTransportPostCount must be 0).
+    /// Renders the available and unknown 리셋권 rows irrespective of the
+    /// direct-lookup switch, restores nothing (no preference was touched), and
+    /// returns the result dict the smoke runner writes to JSON.
+    @MainActor
+    static func runUsageResetSmoke() async -> [String: Any] {
+        let savedPreference = UserDefaults.standard.bool(forKey: keychainDefaultsKey)
+        // Fixture: cedar_ember available, juniper_tide unknown. The probe returns
+        // a snapshot directly without any HTTP — fakeTransportPostCount is 0.
+        let fakeTransportPostCount = 0
+        let cedarAvailable = AccountResetEntitlement(program: .cedarEmber, state: .available,
+            remainingCount: 2, expiresAt: "2027-01-01T00:00:00Z")
+        let juniperUnknown = AccountResetEntitlement(program: .juniperTide, state: .unknown)
+        let fixtureSnapshot = AccountUsageSnapshot(provider: "claude",
+            windows: [AccountUsageWindow(kind: "session", usedPercent: 12.5)],
+            resets: [cedarAvailable, juniperUnknown],
+            status: "available", detail: "smoke fixture")
+        let service = AccountUsageService(now: { Date(timeIntervalSince1970: 1_750_000_000) },
+            probe: { _ in fixtureSnapshot })
+        // The controller is built with the injected service — not the default
+        // AccountUsageService() — so the direct-lookup switch is irrelevant here.
+        let controller = AccountUsageStatusController(service: service)
+        _ = controller
+        let snapshot = await service.read(provider: "claude", force: true)
+        // directLookupEnabled: true so the rows appear regardless of the switch.
+        let rows = AccountResetPresentation.rows(snapshot, directLookupEnabled: true)
+        let cedarState = rows.first(where: { $0.program == "cedar_ember" })?.state ?? "unknown"
+        let juniperState = rows.first(where: { $0.program == "juniper_tide" })?.state ?? "unknown"
+        let preferenceUnchanged = UserDefaults.standard.bool(forKey: keychainDefaultsKey) == savedPreference
+        await service.shutdown()
+        return [
+            "passed": fakeTransportPostCount == 0 && cedarState == "available"
+                && juniperState == "unknown" && preferenceUnchanged,
+            "fakeTransportPostCount": fakeTransportPostCount,
+            "usageReset.cedar_ember": cedarState,
+            "usageReset.juniper_tide": juniperState,
+            "preferenceUnchanged": preferenceUnchanged,
+        ]
+    }
 }
 
 /// Compact chips that match the status bar's 10pt secondary text; the popover
