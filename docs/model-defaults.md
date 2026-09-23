@@ -116,6 +116,36 @@ same effort-validation path used by catalog models.
 If the CLI later adds the same model name to its catalog, the catalog entry takes
 precedence over the registered entry.
 
+## Where the rules are applied
+
+The following call sites in production code use the resolution logic and validation rules.
+
+### macOS (`native/macos/Sources/MightyClaude/`)
+
+| File | Location | Rule applied |
+|---|---|---|
+| `AppStore.swift` | `start(_:)` ~line 671 | `ModelDefaultsResolution.resolve` — computes the configured model for the new request from the session explicit model + workspace/app `providerModeDefaults`; result passed to `beginGraphRun(configuredModel:)` |
+| `AppStore.swift` | `start(_:)` ~line 692, 700 | `ModelDefaultsResolution.resolve` — second resolve call for the `StartRunRequest.model` field sent to the CLI; `["--model", name]` is omitted when the result is `"default"` |
+| `AppStore.swift` | `start(_:)` ~line 704 | `CoreValidation.validateSelection(request, catalog:, registeredModels:)` — validates the resolved model name, passing provider registered models so custom names pass the official-name gate |
+| `AppStore.swift` | effort-filter loop ~line 497 | `ProviderOptions.effortLevels(provider:model:catalog:registeredModels:)` — resets effort when the stored effort is no longer valid for the new model |
+| `AppStore.swift` | Codex effort probe ~line 963 | `ProviderOptions.effortLevels(provider:model:catalog:registeredModels:)` — probes effort support for the Codex default model |
+| `AppStore+ModelDefaults.swift` | `removeRegisteredModel(_:provider:)` ~line 27 | `ModelDefaultsResolution.removeRegisteredModel` — reverts all mode rows that referenced the deleted name and returns the revert count |
+| `SessionPaneView.swift` | permission-mode menu ~line 303 | `ModelDefaultsResolution.modeMenuLabel` — resolves the display model for each mode row and pill without an explicit session model |
+| `SessionPaneView.swift` | effort picker ~line 25 | `ProviderOptions.effortLevels(provider:model:catalog:registeredModels:)` — feeds the effort picker with valid levels for the selected model including registered custom names |
+
+### macOS (`native/macos/Sources/MightyCore/`)
+
+| File | Location | Rule applied |
+|---|---|---|
+| `MightyGraph.swift` | `beginGraphRun(input:id:configuredModel:)` ~line 283 | `ModelDefaultsResolution.nodeModelLabel(cliReportedModel: nil, configured:)` — sets the initial graph node label from the configured (resolved) model |
+| `MightyGraph.swift` | `recordGraph(_:)` ~line 299 | `ModelDefaultsResolution.nodeModelLabel(cliReportedModel: reported, configured:)` — updates the label with the model name the CLI actually reports |
+| `ProcessRunner.swift` | run loop ~line 281 | `CoreValidation.validateSelection(request, catalog:, registeredModels:)` — validates on the real run path so registered custom names are accepted by the runner |
+| `Remote/MobileRemoteSupport.swift` | phone block projection ~line 211 | `run.nodeModelLabel` — projects the graph node label to the phone block list |
+
+### Windows (`native/windows/MightyClaude.Core/`)
+
+The Windows Core resolves defaults via the same `ModelDefaultsResolution` type and exposes section rows and mutation methods through the section model; WinUI renders them in `BuildModelDefaultsSection`.
+
 ## Backward compatibility
 
 - `AppSnapshot.version` stays `1`. Old snapshots without the `modelDefaults` field
