@@ -154,17 +154,17 @@ struct ModelUsageTests {
         let agentNode = try #require(latest(nodes, agentID))
 
         let mainRecords = try #require(mainNode.responseRecords)
-        let childBlock = (usage: agentNode.usage, records: agentNode.responseRecords ?? [])
+        let childBlock = GraphChildBlock(usage: agentNode.usage, records: agentNode.responseRecords ?? [])
 
-        // The activity suffix for "agent-tool" in the main block should show the child total
+        // The activity suffix for "agent-tool" in the main block should show the child total.
         let suffix = ModelUsageFormat.activitySuffix(activityId: "agent-tool", records: mainRecords, childBlock: childBlock)
         #expect(suffix != nil)
-        // Child block total is 3000 → "3.0K" (compact uses %.1fK for < 10K)
+        // Child block total is 3000 → "3.0K"
         #expect(agentNode.usage?.total == 3000)
         #expect(suffix?.contains("3.0K") == true)
-        // The calling response's own 150 tokens are not what the Task line shows.
+        // The calling response's own 150 tokens are now shown alongside the child total.
         #expect(mainNode.usage?.total == 150)
-        #expect(suffix?.contains("150") == false)
+        #expect(suffix?.contains("150") == true)
 
         // The same records reach the view through the MightyGraph projection.
         var session = RunSession(workspaceId: "workspace", title: "Claude", provider: "claude")
@@ -177,8 +177,144 @@ struct ModelUsageTests {
         let projectedSuffix = ModelUsageFormat.activitySuffix(
             activityId: "agent-tool",
             records: run.responseRecords ?? [],
-            childBlock: (usage: projectedAgent.usage, records: projectedAgent.responseRecords ?? []))
+            childBlock: GraphChildBlock(usage: projectedAgent.usage, records: projectedAgent.responseRecords ?? []))
         #expect(projectedSuffix == suffix)
+    }
+
+    @Test func taskLineShowsCallerAndChildTotal() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-task1", graph: { nodes.append($0) })
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: "run-task1")
+        let agentID = ExecutionGraphSupport.agentNodeID(runId: "run-task1", toolUseId: "task-tool")
+
+        // Main response: Opus, 150 tokens, calls task-tool
+        try send(assistantMsg(id: "r1", model: "claude-opus-4-5", inputTokens: 100, outputTokens: 50, toolUseIds: ["task-tool"]), to: parser)
+        // Subagent block: Sonnet, 3000 tokens
+        try send(assistantMsg(id: "r-sub", model: "claude-sonnet-4-5", inputTokens: 2500, outputTokens: 500, parent: "task-tool"), to: parser)
+
+        let mainNode = try #require(latest(nodes, mainID))
+        let agentNode = try #require(latest(nodes, agentID))
+        let mainRecords = try #require(mainNode.responseRecords)
+        let childBlock = GraphChildBlock(usage: agentNode.usage, records: agentNode.responseRecords ?? [])
+
+        let suffix = ModelUsageFormat.activitySuffix(activityId: "task-tool", records: mainRecords, childBlock: childBlock)
+        #expect(suffix != nil)
+        // Caller (Opus, 150) is shown
+        #expect(suffix?.contains("150") == true)
+        // Child total (3.0K, Sonnet) is shown
+        #expect(suffix?.contains("3.0K") == true)
+        // Both parts are present in a single suffix string
+        let suffixStr = try #require(suffix)
+        let callerIdx = suffixStr.range(of: "150")
+        let childIdx = suffixStr.range(of: "3.0K")
+        #expect(callerIdx != nil && childIdx != nil)
+        // Caller comes before child in the string
+        #expect(callerIdx!.lowerBound < childIdx!.lowerBound)
+    }
+
+    @Test func renderedActivityNumbersSumToBlockTotal() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-sum1", graph: { nodes.append($0) })
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: "run-sum1")
+        let agentID = ExecutionGraphSupport.agentNodeID(runId: "run-sum1", toolUseId: "t-task")
+
+        // R1: shared response — T1 + T2, 1000 tokens
+        try send(assistantMsg(id: "r1", model: "claude-opus-4-5", inputTokens: 800, outputTokens: 200, toolUseIds: ["t1", "t2"]), to: parser)
+        // R2: Task line — "t-task", 500 tokens (caller); subagent has 4000 tokens
+        try send(assistantMsg(id: "r2", model: "claude-opus-4-5", inputTokens: 400, outputTokens: 100, toolUseIds: ["t-task"]), to: parser)
+        try send(assistantMsg(id: "r-sub", model: "claude-sonnet-4-5", inputTokens: 3500, outputTokens: 500, parent: "t-task"), to: parser)
+        // R3: no activities, 200 tokens
+        try send(assistantMsg(id: "r3", model: "claude-opus-4-5", inputTokens: 150, outputTokens: 50), to: parser)
+
+        let mainNode = try #require(latest(nodes, mainID))
+        let agentNode = try #require(latest(nodes, agentID))
+        let mainRecords = try #require(mainNode.responseRecords)
+
+        // Block total covers only main-block responses (R1 + R2 + R3 = 1000 + 500 + 200 = 1700).
+        // The subagent block (R-sub, 4000) is a separate block; it does NOT contribute to mainNode.usage.
+        #expect(mainNode.usage?.total == 1700)
+
+        // Sum of caller attributions: T1=1000, T2=nil (same-response), t-task=500
+        // Plus no-activity response: R3=200
+        // Total: 1000 + 500 + 200 = 1700
+        let allActivityIds = mainRecords.flatMap(\.activityIds)
+        let attributedSum = allActivityIds.reduce(0) { sum, actId in
+            sum + (ModelUsageFormat.callerAttribution(activityId: actId, records: mainRecords) ?? 0)
+        }
+        let noActivitySum = mainRecords.filter { $0.activityIds.isEmpty }.reduce(0) { $0 + $1.usage.total }
+        #expect(attributedSum + noActivitySum == mainNode.usage?.total ?? 0)
+
+        // The activity suffix for "t-task" (a Task line) includes both caller tokens (500)
+        // and child total (4.0K), but callerAttribution counts only 500 toward the sum.
+        let taskSuffix = ModelUsageFormat.activitySuffix(
+            activityId: "t-task",
+            records: mainRecords,
+            childBlock: GraphChildBlock(usage: agentNode.usage, records: agentNode.responseRecords ?? []))
+        #expect(taskSuffix?.contains("500") == true)
+        #expect(taskSuffix?.contains("4.0K") == true)
+        // callerAttribution for t-task is 500, not 4000
+        #expect(ModelUsageFormat.callerAttribution(activityId: "t-task", records: mainRecords) == 500)
+    }
+
+    @Test func nestedAgentTaskLineShowsChildTotal() throws {
+        var nodes: [ExecutionGraphNode] = []
+        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-nest1", graph: { nodes.append($0) })
+        let mainID = ExecutionGraphSupport.mainNodeID(runId: "run-nest1")
+        let outerAgentID = ExecutionGraphSupport.agentNodeID(runId: "run-nest1", toolUseId: "outer-tool")
+        let innerAgentID = ExecutionGraphSupport.agentNodeID(runId: "run-nest1", toolUseId: "inner-tool")
+
+        // Main response: calls outer-tool (150 tokens)
+        try send(assistantMsg(id: "r-main", model: "claude-opus-4-5", inputTokens: 100, outputTokens: 50, toolUseIds: ["outer-tool"]), to: parser)
+        // Outer agent response: calls inner-tool (200 tokens)
+        try send(assistantMsg(id: "r-outer", model: "claude-opus-4-5", inputTokens: 150, outputTokens: 50, toolUseIds: ["inner-tool"], parent: "outer-tool"), to: parser)
+        // Inner agent response: 5000 tokens
+        try send(assistantMsg(id: "r-inner", model: "claude-sonnet-4-5", inputTokens: 4500, outputTokens: 500, parent: "inner-tool"), to: parser)
+
+        let outerAgentNode = try #require(latest(nodes, outerAgentID))
+        let innerAgentNode = try #require(latest(nodes, innerAgentID))
+        let outerRecords = try #require(outerAgentNode.responseRecords)
+
+        // The outer agent's records contain r-outer which calls inner-tool.
+        // GraphChildBlocks.map should find inner-tool → innerAgentNode.
+        let runID = "run-nest1"
+        let childMap = GraphChildBlocks.map(responseRecords: outerAgentNode.responseRecords, agents: [outerAgentNode, innerAgentNode].map { node in
+            // Reconstruct MightyGraphAgent from ExecutionGraphNode for testing
+            MightyGraphAgent(id: node.id, usage: node.usage, responseRecords: node.responseRecords)
+        }, runId: runID)
+
+        let innerChild = childMap["inner-tool"]
+        #expect(innerChild != nil)
+        #expect(innerChild?.usage?.total == 5000)
+
+        // Activity suffix for "inner-tool" in outer agent's records
+        let suffix = ModelUsageFormat.activitySuffix(
+            activityId: "inner-tool",
+            records: outerRecords,
+            childBlock: innerChild)
+        #expect(suffix != nil)
+        // Caller (outer agent's response, 200 tokens) is shown
+        #expect(suffix?.contains("200") == true)
+        // Inner agent total (5.0K) is shown
+        #expect(suffix?.contains("5.0K") == true)
+    }
+
+    @Test func capsuleUsesCatalogShortName() throws {
+        let catalog = [ModelOption(value: "claude-opus-4-5", displayName: "Opus 4.5")]
+        let record = GraphResponseRecord(responseId: "r1", model: "claude-opus-4-5", usage: GraphTokenUsage(inputTokens: 1000, outputTokens: 200), activityIds: ["t1"])
+        let usage = GraphTokenUsage(inputTokens: 1000, outputTokens: 200)
+
+        // blockCapsule uses short name from catalog
+        let capsule = ModelUsageFormat.blockCapsule(usage: usage, records: [record], nodeModelLabel: nil, catalog: catalog)
+        #expect(capsule?.contains("Opus 4.5") == true)
+        #expect(capsule?.contains("claude-opus-4-5") == false)
+
+        // activitySuffix uses short name from catalog
+        let suffix = ModelUsageFormat.activitySuffix(activityId: "t1", records: [record], childBlock: nil, catalog: catalog)
+        #expect(suffix?.contains("Opus 4.5") == true)
+        #expect(suffix?.contains("claude-opus-4-5") == false)
+
+        // shortName falls back to raw id for unknown models
+        #expect(ModelUsageFormat.shortName("unknown-model-xyz", catalog: catalog) == "unknown-model-xyz")
     }
 
     /// The per-model totals partition the block: their sum is the block total even

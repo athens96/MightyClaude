@@ -394,7 +394,8 @@ struct SessionPaneView: View {
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                     styleTitles: styleTitles,
-                    styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title) {
+                    styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title,
+                    catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models) {
                     store.selectSession(session.id)
                 }
             } else if session.logs.isEmpty {

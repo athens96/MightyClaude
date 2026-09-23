@@ -47,29 +47,50 @@ public enum ModelUsageFormat {
     }
 
     /// Suffix appended to an activity line.
-    /// - Task/Agent line: the child block's capsule text (total + models).
+    /// - Task/Agent line: caller model and tokens (first-line rule) followed by
+    ///   the subagent prefix and the child block's capsule text.
     /// - First activity of a response: "ModelName · tokens".
     /// - Later activity of the same response: the "same response" locale marker.
     /// - Not found in any response: nil.
     public static func activitySuffix(
         activityId: String,
         records: [GraphResponseRecord],
-        childBlock: (usage: GraphTokenUsage?, records: [GraphResponseRecord])?,
+        childBlock: GraphChildBlock?,
         catalog: [ModelOption] = []
     ) -> String? {
-        if let child = childBlock {
-            return blockCapsule(usage: child.usage, records: child.records, nodeModelLabel: nil, catalog: catalog)
-        }
         for record in records {
             guard let index = record.activityIds.firstIndex(of: activityId) else { continue }
+            let callerPart: String
             if index == 0 {
                 let tokenStr = GraphTokenUsage.compact(record.usage.total)
                 if let model = record.model, !model.isEmpty {
-                    return "\(shortName(model, catalog: catalog)) · \(tokenStr)"
+                    callerPart = "\(shortName(model, catalog: catalog)) · \(tokenStr)"
+                } else {
+                    callerPart = tokenStr
                 }
-                return tokenStr
+            } else {
+                callerPart = L("usage.modelUsage.sameResponse")
             }
-            return L("usage.modelUsage.sameResponse")
+            if let child = childBlock,
+               let childCapsule = blockCapsule(usage: child.usage, records: child.records, nodeModelLabel: nil, catalog: catalog) {
+                return "\(callerPart) · \(L("usage.modelUsage.subagentPrefix")) \(childCapsule)"
+            }
+            return callerPart
+        }
+        if let child = childBlock,
+           let childCapsule = blockCapsule(usage: child.usage, records: child.records, nodeModelLabel: nil, catalog: catalog) {
+            return "\(L("usage.modelUsage.subagentPrefix")) \(childCapsule)"
+        }
+        return nil
+    }
+
+    /// The tokens the calling response attributes to this activity line —
+    /// the caller's own response total when this is the first activity of that
+    /// response, nil for same-response lines and unknown activity IDs.
+    public static func callerAttribution(activityId: String, records: [GraphResponseRecord]) -> Int? {
+        for record in records {
+            guard let index = record.activityIds.firstIndex(of: activityId) else { continue }
+            return index == 0 ? record.usage.total : nil
         }
         return nil
     }
