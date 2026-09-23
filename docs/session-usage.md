@@ -21,6 +21,37 @@
 
 CLI가 전달하는 계정 한도와 세션 사용량 데이터의 수집·보존은 유지한다. 원격 세션에는 해당 컴퓨터에서 전달한 값을 사용하며, 이 Mac의 계정 한도로 대체하지 않는다. 누적 토큰을 현재 컨텍스트 점유율이나 계정 잔여량으로 환산하지 않는다.
 
+## 리셋권 (한도 리셋 자격)
+
+팝오버 하단에 리셋권 행을 표시한다. 앱은 두 프로그램의 자격을 조회하고 일곱 상태 중 하나를 렌더링한다. **앱은 리셋을 실행하지 않는다.** 사용자가 claude.ai에서 리셋하도록 항상 활성화된 "claude.ai에서 리셋" 링크만 제공한다.
+
+### 읽기 전용 원칙
+
+토큰은 GET 요청에만 쓰인다: `GET /api/oauth/usage?at_wall=1&skip_spend=1`(juniper_tide)과 `GET /api/oauth/usage?cedar_ember=1&skip_spend=1`(cedar_ember). POST는 앱 어디에도 없다. 자격 증명은 Authorization 헤더에만 머물고, 기록·복사·전달되지 않는다. 재설정·청구·토큰 새로고침은 앱이 하지 않는다.
+
+### 두 프로그램
+
+- **cedar_ember**: 지급된 리셋권, 부여 횟수와 만료일 포함
+- **juniper_tide**: 한도 도달 리셋, 다음 가능 시각과 주간 횟수 포함
+
+### 일곱 상태 (우선순위 순)
+
+| 상태 | 문구 키 |
+|---|---|
+| available | `usage.reset.available.{program}` |
+| held | `usage.reset.held` |
+| cooldown | `usage.reset.cooldown.{program}` |
+| exhausted | `usage.reset.exhausted` |
+| none | `usage.reset.none` |
+| ineligible | `usage.reset.ineligible` |
+| unknown | `usage.reset.unknown` |
+
+unknown 문구는 이 앱의 연결 방식 탓으로 돌리며 Anthropic 정책을 언급하지 않는다. 리셋권 GET 실패(네트워크·5xx)는 unknown이 되고, 기본 사용량 창에 영향을 주지 않는다.
+
+### 직접 조회 스위치
+
+리셋권 행은 직접 조회 스위치가 꺼져 있으면 숨겨진다. 재실행 후 상태는 unknown이며, 첫 조회 전까지 기본값이다.
+
 ## 검증
 
 모의 CLI·HTTP 응답으로 사용량 파싱, 인증 오류, 갱신 제한과 취소를 검사한다. 격리 프로필의 `--agent-smoke-test`는 실제 SwiftUI 창에서 컨텍스트 버튼의 정렬과 상세 창 갱신을 확인한다. 이 진단은 실제 계정 인증 정보를 읽거나 모델·사용량 API를 호출하지 않는다.
