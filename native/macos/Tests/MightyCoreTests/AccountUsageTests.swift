@@ -575,6 +575,39 @@ struct AccountResetEntitlementTests {
         #expect(fakeTransportCount == 0, "guard prevents unsanctioned queries from reaching transport")
     }
 
+    /// guardedTransport wraps a counting fake transport: unsanctioned requests
+    /// (POST, http, foreign host, bad queries) never reach it while a
+    /// sanctioned request does.
+    @Test func usageResetGuardBlocksTransportThroughService() async throws {
+        actor Counter { var count = 0; func increment() { count += 1 } }
+        let counter = Counter()
+        let fake: @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = { _ in
+            await counter.increment()
+            return AccountUsageHTTPResponse(status: 200, data: Data())
+        }
+        let guarded = AccountUsageService.guardedTransport(fake)
+        func req(_ url: String, method: String = "GET") -> URLRequest {
+            var r = URLRequest(url: URL(string: url)!); r.httpMethod = method; return r
+        }
+        let unsanctioned = [
+            req("https://api.anthropic.com/api/oauth/usage", method: "POST"),
+            req("http://api.anthropic.com/api/oauth/usage"),
+            req("https://evil.test/api/oauth/usage"),
+            req("https://api.anthropic.com/api/oauth/usage?cedar_ember=1"),
+            req("https://api.anthropic.com/api/oauth/usage?at_wall=1"),
+            req("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=0"),
+            req("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&extra=1&skip_spend=1"),
+            req("https://api.anthropic.com/api/oauth/usage?skip_spend=1&at_wall=1"),
+        ]
+        for r in unsanctioned { _ = try? await guarded(r) }
+        let blocked = await counter.count
+        #expect(blocked == 0, "unsanctioned requests must not reach the counting transport; saw \(blocked)")
+        // A sanctioned request does reach the transport.
+        _ = try? await guarded(req("https://api.anthropic.com/api/oauth/usage"))
+        let reached = await counter.count
+        #expect(reached == 1, "a sanctioned request must reach the counting transport")
+    }
+
     /// The smoke the macOS app runs under --usage-reset-smoke-test, driven here
     /// through the same Core entry point: an injected AccountUsageService built
     /// on a fixture clock and a fake transport renders the "available" and
