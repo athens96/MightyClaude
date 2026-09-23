@@ -12,7 +12,8 @@ struct AgentTranscriptView: NSViewRepresentable {
     /// file references are delivered here instead of being opened by AppKit.
     var onReference: ((String, Int?) -> Void)? = nil
     var records: [GraphResponseRecord] = []
-    var childBlocks: [String: AgentChildBlock] = [:]
+    var childBlocks: [String: GraphChildBlock] = [:]
+    var catalog: [ModelOption] = []
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> AgentTranscriptCoordinator { AgentTranscriptCoordinator() }
@@ -22,7 +23,7 @@ struct AgentTranscriptView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.textView?.onFocus = onFocus
         context.coordinator.onReference = onReference
-        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks)
+        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog)
     }
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: AgentTranscriptCoordinator) {
         coordinator.onReference = nil
@@ -99,7 +100,8 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var dark: Bool
         var references: Bool
         var records: [GraphResponseRecord]
-        var childBlocks: [String: AgentChildBlock]
+        var childBlocks: [String: GraphChildBlock]
+        var catalog: [ModelOption]
     }
     private struct Cached {
         let entry: LogEntry
@@ -109,7 +111,8 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let expanded: Bool
         let references: Bool
         let records: [GraphResponseRecord]
-        let childBlocks: [String: AgentChildBlock]
+        let childBlocks: [String: GraphChildBlock]
+        let catalog: [ModelOption]
         let value: NSAttributedString
     }
     var onReference: ((String, Int?) -> Void)?
@@ -152,8 +155,8 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func update(entries: [LogEntry], provider: String, running: Bool, dark: Bool, references: Bool = false,
-                records: [GraphResponseRecord] = [], childBlocks: [String: AgentChildBlock] = [:]) {
-        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks)
+                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = []) {
+        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog)
         applyLatest()
     }
 
@@ -170,10 +173,11 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
             let value: NSAttributedString
             if let old = cache[entry.id], old.entry == entry, old.provider == input.provider,
                old.running == input.running, old.dark == input.dark, old.expanded == isExpanded, old.references == input.references,
-               old.records == input.records, old.childBlocks == input.childBlocks { value = old.value }
+               old.records == input.records, old.childBlocks == input.childBlocks,
+               old.catalog == input.catalog { value = old.value }
             else {
-                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks)
-                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, value: value)
+                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog)
+                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, value: value)
             }
             segments.append(.init(id: entry.id, range: NSRange(location: output.length, length: value.length), value: value))
             output.append(value)
