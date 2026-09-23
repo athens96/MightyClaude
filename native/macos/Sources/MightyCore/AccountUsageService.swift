@@ -32,7 +32,7 @@ public actor AccountUsageService {
     public init() {
         let environment = ProviderService.runtimeEnvironment()
         probe = { provider, interactive in
-            if provider == "claude" { return try await Self.claude(environment: environment, interactive: interactive) }
+            if provider == "claude" { return try await Self.claude(environment: environment, interactive: interactive, now: { Date() }) }
             if provider == "codex" {
                 let providers = ProviderService(environment: environment)
                 let command = await providers.command(provider: provider)
@@ -171,16 +171,22 @@ public actor AccountUsageService {
         return AccountUsageSnapshot(provider: "claude", accountLabel: text(account?["email"]), plan: text(organization?["rate_limit_tier"]) ?? text(plan), windows: windows, status: windows.isEmpty ? "unavailable" : "available", detail: windows.isEmpty ? "이 Claude 계정에서 구독 한도를 제공하지 않습니다." : "Claude 계정 한도")
     }
 
+    /// The 리셋권 read runs on this same schedule — no extra polling — and a
+    /// failure of it never changes the base usage windows or status.
     static func claude(environment: [String: String], load: (@Sendable () throws -> ClaudeQuotaCredential?)? = nil,
                        http: @escaping @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = accountUsageHTTP,
-                       interactive: Bool = false) async throws -> AccountUsageSnapshot {
+                       interactive: Bool = false,
+                       now: @escaping @Sendable () -> Date = { Date() }) async throws -> AccountUsageSnapshot {
         // Never forward a custom provider's credentials to the production endpoint.
         for key in ["CLAUDE_CODE_CUSTOM_OAUTH_URL", "CLAUDE_LOCAL_OAUTH_API_BASE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] {
             if let value = environment[key], !value.isEmpty, !["0", "false"].contains(value.lowercased()) { throw AccountUsageFailure.unavailable("사용자 지정 인증의 계정 한도는 CLI에서 확인하세요.") }
         }
         guard let credentials = try (load ?? { try ClaudeQuotaCredentials.read(environment: environment, interactive: interactive) })() else { throw AccountUsageFailure.authentication }
-        func request(_ path: String) -> URLRequest {
-            var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/" + path)!, timeoutInterval: 10)
+        // The CLI gives the entitlement reads a 5 second budget; the base
+        // usage and profile reads keep their own.
+        func request(_ path: String, query: String? = nil, timeout: TimeInterval = 10) -> URLRequest {
+            let text = "https://api.anthropic.com/api/oauth/" + path + (query.map { "?" + $0 } ?? "")
+            var request = URLRequest(url: URL(string: text)!, timeoutInterval: timeout)
             request.httpMethod = "GET"
             request.setValue("Bearer " + credentials.token, forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -199,7 +205,36 @@ public actor AccountUsageService {
         try Task.checkCancellation()
         var snapshot = mapClaude(body, profile: profile, plan: credentials.plan)
         snapshot.retryAfterSeconds = retryAfter
+        snapshot.resets = await resets(http: http, request: { request("usage", query: $0, timeout: 5) }, now: now())
         return snapshot
+    }
+
+    /// One GET per entitlement programme, the two query variants the installed
+    /// CLI uses. A 404 or a 200 whose body carries no reset field means the
+    /// account is not in that programme; anything else this app could not read
+    /// stays unknown, and the copy blames this app's connection.
+    static func resets(http: @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse,
+                       request: (String) -> URLRequest, now: Date) async -> [AccountResetEntitlement] {
+        var rows: [AccountResetEntitlement] = []
+        for program in ResetProgram.allCases {
+            var row = ClaudeResetEntitlements.unknown(program)
+            do {
+                let reply = try await http(request(program.query))
+                if reply.status == 404 { row = ClaudeResetEntitlements.ineligible(program) }
+                else if (200..<300).contains(reply.status), reply.data.count <= 1024 * 1024,
+                        let object = try? JSONSerialization.jsonObject(with: reply.data) as? [String: Any] {
+                    // A body without the block at all is an account outside the
+                    // programme, not a gap in what this app can see.
+                    row = object[program.bodyKey] == nil
+                        ? ClaudeResetEntitlements.ineligible(program)
+                        : (program == .cedarEmber ? ClaudeResetEntitlements.cedarEmber(object, now: now)
+                                                  : ClaudeResetEntitlements.juniperTide(object, now: now))
+                }
+                // A 429 or a 5xx leaves the row unknown and the base usage untouched.
+            } catch { }
+            rows.append(row)
+        }
+        return rows
     }
     static func checkHTTP(_ response: AccountUsageHTTPResponse) throws {
         if response.status == 401 || response.status == 403 { throw AccountUsageFailure.authentication }

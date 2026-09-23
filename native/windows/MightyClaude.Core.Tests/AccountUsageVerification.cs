@@ -70,7 +70,8 @@ internal static class AccountUsageVerification
             Check(credential?.Token == FixtureToken, "the fixture credential must be read from the file");
 
             var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), () => credential, http, () => Instant);
-            Check(seenHeaders.Count == 2 && seenHeaders.All(h => h == "Bearer " + FixtureToken), "the bearer header carries the sign-in for the request only");
+            // Four GETs: usage, profile and the two entitlement query variants.
+            Check(seenHeaders.Count == 4 && seenHeaders.All(h => h == "Bearer " + FixtureToken), "the bearer header carries the sign-in for the request only");
 
             // The snapshot, its serialized form and the log all stay clean.
             var text = JsonSerializer.Serialize(snapshot, Wire.Json);
@@ -250,13 +251,22 @@ internal static class AccountUsageVerification
             var urls = new List<string>();
             AccountUsageHttpHandler http = (request, _) =>
             {
-                urls.Add(request.Url.AbsolutePath);
-                Check(request.Timeout == ClaudeAccountProbe.Timeout, "every request uses the 10 second timeout");
+                // Method plus path plus the exact ordered query, as on macOS.
+                urls.Add(request.Url.PathAndQuery);
+                Check(request.Timeout == (request.Url.Query.Length > 0 ? ClaudeAccountProbe.ResetTimeout : ClaudeAccountProbe.Timeout),
+                    "the usage and profile reads take 10 seconds, the entitlement reads the CLI's 5");
                 return Task.FromResult(new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("usage") ? UsageBody : ProfileBody));
             };
             var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
                 () => ClaudeCredentialFile.Read(home, new Dictionary<string, string>(), Instant), http, () => Instant);
-            Check(urls.SequenceEqual(new[] { "/api/oauth/usage", "/api/oauth/profile" }), "only the quota and profile endpoints are asked");
+            Check(urls.SequenceEqual(new[]
+            {
+                "/api/oauth/usage", "/api/oauth/profile",
+                "/api/oauth/usage?cedar_ember=1&skip_spend=1", "/api/oauth/usage?at_wall=1&skip_spend=1",
+            }), "only the quota, profile and the two entitlement queries are asked");
+            // This fixture answers the entitlement queries with a body that has
+            // no reset field at all — an account outside both programmes.
+            Check(snapshot.Resets.Select(r => r.State).SequenceEqual(new[] { "ineligible", "ineligible" }), "a body without reset fields is ineligible, never a number");
             Check(snapshot.Status == "available" && snapshot.Windows.Count == 2, "the quota windows are mapped");
             Check(snapshot.Windows[0].Kind == "session" && Math.Abs(snapshot.Windows[0].UsedPercent - 42.5) < 0.001, "the five hour window");
             Check(snapshot.Windows[1].Kind == "weekly" && snapshot.Windows[1].WindowMinutes == 10080, "the seven day window");
@@ -390,6 +400,152 @@ internal static class AccountUsageVerification
         var afterClose = await service.ReadAsync("codex");
         Check(afterClose.Status == "cancelled" && service.Cached("codex") is null, "nothing is read or kept after the app closes");
         release.TrySetResult();
+    }
+
+
+    // ------------------------------------------------------------- 리셋권 rows
+
+    /// One fixture pair: what each entitlement query answers and what the row
+    /// must become. `Provenance` records where the shape came from — every
+    /// field name below is read from the installed CLI 2.1.280 binary with
+    /// `strings`; only the field values are made up.
+    private sealed record ResetScenario(string Name, string Cedar, string Juniper, string CedarState, string JuniperState)
+    {
+        public int CedarStatus { get; init; } = 200;
+        public int JuniperStatus { get; init; } = 200;
+        public string Provenance { get; init; } = "binary-derived (claude 2.1.280 decoder field names)";
+    }
+
+    private static string Iso(DateTimeOffset value) => value.ToUniversalTime().ToString("O");
+
+    private static string Bool(bool value) => value ? "true" : "false";
+    private static string Quoted(string? value) => value is null ? "null" : "\"" + value + "\"";
+
+    private static string Grant(int left, DateTimeOffset ends, bool usableNow, bool requiresLimit, bool paused = false) =>
+        $$$"""{"id":"grant-fixture","label":"fixture","resets_total":5,"resets_left":{{{left}}},"starts_at":{{{Quoted(Iso(Instant.AddDays(-1)))}}},"ends_at":{{{Quoted(Iso(ends))}}},"clears":[],"paused":{{{Bool(paused)}}},"usable_now":{{{Bool(usableNow)}}},"use_requires_limit":{{{Bool(requiresLimit)}}},"percent_used":{}}""";
+
+    private static string Cedar(string? grant, bool atLimit, DateTimeOffset? cooldown, string exhausted = "[]", bool eligible = true, string? reason = null) =>
+        $$$"""{"cedar_ember":{"eligible":{{{Bool(eligible)}}},"ineligible_reason":{{{Quoted(reason)}}},"at_limit":{{{Bool(atLimit)}}},"exhausted":{{{exhausted}}},"grants":[{{{grant ?? ""}}}],"next_grant_id":{{{Quoted(grant is null ? null : "grant-fixture")}}},"weekly_resets_at":null,"cooldown_until":{{{Quoted(cooldown is { } c ? Iso(c) : null)}}}}}""";
+
+    private static string Juniper(bool inExperiment = true, bool available = false, DateTimeOffset? next = null, int perWeek = 0, string? reason = null) =>
+        $$$"""{"juniper_tide":{"in_experiment":{{{Bool(inExperiment)}}},"ineligible_reason":{{{Quoted(reason)}}},"available":{{{Bool(available)}}},"next_available_at":{{{Quoted(next is { } n ? Iso(n) : null)}}},"weekly_resets_at":{{{Quoted(Iso(Instant.AddDays(5)))}}},"resets_per_week":{{{perWeek}}},"tenure_bucket":"established","billing_path":"subscription","billing_period":"monthly","extra_usage_state":"off"}}""";
+
+    /// The seven states, named one by one: available, held, cooldown,
+    /// exhausted, none, ineligible, unknown. Each row comes from the real probe
+    /// reading fixture HTTP through the injected handler, with a fixture clock
+    /// the check advances and never sleeps on, and each renders from the same
+    /// shared usage.reset.* key the Mac uses.
+    internal static async Task UsageResetRendersSevenStates()
+    {
+        var future = Instant.AddDays(1);
+        var past = Instant.AddDays(-1);
+        var scenarios = new[]
+        {
+            // available on both programmes.
+            new ResetScenario("available", Cedar(Grant(3, future, true, false), true, null), Juniper(available: true, perWeek: 2), "available", "available"),
+            // held (granted) and cooldown (at-wall).
+            new ResetScenario("held", Cedar(Grant(2, future, false, true), false, null), Juniper(next: future, perWeek: 2), "held", "cooldown"),
+            // cooldown (granted) and none (at-wall).
+            new ResetScenario("cooldown", Cedar(Grant(1, future, false, false), true, future), Juniper(next: past, perWeek: 0), "cooldown", "none"),
+            // exhausted on both.
+            new ResetScenario("exhausted", Cedar(Grant(0, future, false, false), true, past, """["spent"]"""), Juniper(next: past, perWeek: 3), "exhausted", "exhausted"),
+            // none: no grant is selected at all.
+            new ResetScenario("none", Cedar(null, false, null), Juniper(perWeek: 0), "none", "none"),
+            // ineligible: a named reason, and a 404 saying the same.
+            new ResetScenario("ineligible", Cedar(null, false, null, eligible: false, reason: "not_in_experiment"), "", "ineligible", "ineligible") { JuniperStatus = 404 },
+            // unknown: a 5xx, and a block this app cannot read.
+            new ResetScenario("unknown", "", """{"juniper_tide":42}""", "unknown", "unknown")
+            { CedarStatus = 503, Provenance = "assumed (transport failure shapes)" },
+        };
+
+        var seen = new HashSet<string>();
+        var posts = 0;
+        var clock = Instant;
+        foreach (var scenario in scenarios)
+        {
+            Check(scenario.Provenance.Length > 0, "every fixture carries a provenance label");
+            AccountUsageHttpHandler http = (request, _) =>
+            {
+                ClaudeAccountProbe.Guard(request.Url);
+                Check(request.Headers["Authorization"] == "Bearer " + FixtureToken, "the sign-in only ever rides the Authorization header");
+                return Task.FromResult(request.Url.Query switch
+                {
+                    "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(scenario.CedarStatus, scenario.Cedar),
+                    "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(scenario.JuniperStatus, scenario.Juniper),
+                    _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? ProfileBody : UsageBody),
+                });
+            };
+            // The clock the comparisons read is this one, advanced by hand.
+            clock = clock.AddSeconds(61);
+            var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
+                () => new ClaudeQuotaCredential(FixtureToken, "max"), http, () => clock);
+
+            // A reset read never disturbs the base usage windows or the status.
+            Check(snapshot.Status == "available" && snapshot.Windows.Count == 2, "the base usage windows are untouched by the entitlement read");
+            Check(snapshot.Resets.Select(r => r.Program).SequenceEqual(ResetProgram.All), "one row per programme, in order");
+            var granted = snapshot.Resets.First(r => r.Program == ResetProgram.CedarEmber);
+            var atWall = snapshot.Resets.First(r => r.Program == ResetProgram.JuniperTide);
+            Check(granted.State == scenario.CedarState, "cedar_ember must be " + scenario.CedarState + " in " + scenario.Name);
+            Check(atWall.State == scenario.JuniperState, "juniper_tide must be " + scenario.JuniperState + " in " + scenario.Name);
+            seen.Add(granted.State); seen.Add(atWall.State);
+
+            foreach (var row in ClaudeResetEntitlements.Rows(snapshot, true))
+            {
+                Check(row.Text.Length > 0 && !row.Text.StartsWith("usage.reset."), "every state renders through a shared key that resolved");
+                Check(row.Label.Length > 0, "every programme carries its own name");
+            }
+            // The link is enabled in every one of the seven states.
+            Check(ClaudeResetEntitlements.LinkKey == "usage.reset.link" && ClaudeResetEntitlements.LinkLabel.Length > 0, "the claude.ai link exists in every state");
+            Check(ClaudeResetEntitlements.LinkTarget.StartsWith("https://claude.ai/"), "the link goes to claude.ai Settings > Usage");
+
+            if (scenario.Name == "available")
+            {
+                // The granted line carries the remaining count and the expiry.
+                Check(granted.CopyKey == "usage.reset.available.cedarEmber", "the granted available line has its own key");
+                Check(granted.RemainingCount == 3 && granted.ExpiresAt is { Length: > 0 }, "the granted line carries the count and the expiry");
+                Check(ClaudeResetEntitlements.Line(granted).Contains('3'), "the remaining count is shown");
+                // The at-wall line says it is available now.
+                Check(atWall.CopyKey == "usage.reset.available.juniperTide" && atWall.ResetsPerWeek == 2, "the at-wall available line");
+            }
+            if (scenario.Name == "held")
+            {
+                Check(granted.CopyKey == "usage.reset.held", "the held sentence");
+                // The at-wall line carries the next time and the weekly count.
+                Check(atWall.CopyKey == "usage.reset.cooldown.juniperTide" && atWall.NextAvailableAt is { Length: > 0 } && atWall.ResetsPerWeek == 2, "the at-wall cooldown line");
+                Check(ClaudeResetEntitlements.Line(atWall).Contains('2'), "the weekly count is shown");
+            }
+            if (scenario.Name == "cooldown") Check(granted.CopyKey == "usage.reset.cooldown.cedarEmber" && atWall.CopyKey == "usage.reset.none", "the granted cooldown sentence");
+            if (scenario.Name == "exhausted") Check(granted.CopyKey == "usage.reset.exhausted" && atWall.CopyKey == "usage.reset.exhausted", "the exhausted sentence");
+            if (scenario.Name == "none") Check(granted.CopyKey == "usage.reset.none" && atWall.CopyKey == "usage.reset.none", "the none sentence");
+            if (scenario.Name == "ineligible") Check(granted.CopyKey == "usage.reset.ineligible" && atWall.CopyKey == "usage.reset.ineligible", "the ineligible sentence");
+            if (scenario.Name == "unknown") Check(granted.CopyKey == "usage.reset.unknown" && atWall.CopyKey == "usage.reset.unknown", "the unknown sentence blames this app's connection");
+
+            var text = JsonSerializer.Serialize(snapshot);
+            Check(!text.Contains(FixtureToken) && !text.Contains("grant-fixture"), "no sign-in and no grant id reaches the presentation data");
+        }
+        Check(seen.SetEquals(ResetState.All), "all seven states are covered: " + string.Join(", ", ResetState.All));
+        Check(posts == 0, "no POST exists in this app");
+
+        // The clock, not the wall time, decides when a grant window has closed.
+        var closing = clock.AddSeconds(200);
+        AccountUsageHttpHandler expiring = (request, _) => Task.FromResult(request.Url.Query switch
+        {
+            "?cedar_ember=1&skip_spend=1" => new AccountUsageHttpResponse(200, Cedar(Grant(4, closing, true, false), true, null)),
+            "?at_wall=1&skip_spend=1" => new AccountUsageHttpResponse(200, Juniper(available: true, perWeek: 1)),
+            _ => new AccountUsageHttpResponse(200, request.Url.AbsolutePath.EndsWith("profile") ? ProfileBody : UsageBody),
+        });
+        ClaudeQuotaCredential? Load() => new(FixtureToken, "max");
+        var before = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), Load, expiring, () => clock);
+        Check(before.Resets[0].State == "available", "the grant is usable while its window is open");
+        clock = clock.AddSeconds(300);
+        var after = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(), Load, expiring, () => clock);
+        Check(after.Resets[0].State == "none", "the injected clock, not the wall clock, closes the grant window");
+
+        // The rows do not exist while the direct-lookup switch is off.
+        Check(ClaudeResetEntitlements.Rows(before, false).Count == 0, "the 리셋권 rows are hidden while the direct lookup is off");
+        Check(ClaudeResetEntitlements.Rows(null, false).Count == 0, "nothing is teased before the switch is on");
+        var shown = ClaudeResetEntitlements.Rows(null, true);
+        Check(shown.Count == 2 && shown.All(r => r.State == "unknown"), "a relaunch with nothing read yet is unknown, never a stale number");
     }
 
     /// A line-delimited JSON-RPC channel that answers from a fixture script.

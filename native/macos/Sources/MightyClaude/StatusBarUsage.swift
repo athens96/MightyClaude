@@ -22,7 +22,10 @@ final class AccountUsageStatusController: ObservableObject {
         }
     }
     static let keychainDefaultsKey = "usage.claudeKeychain"
-    private let service = AccountUsageService()
+    private let service: AccountUsageService
+    /// The default is the app's own service. A smoke run injects one built on a
+    /// fixture clock and a fake transport, so the rows render from fixture data.
+    init(service: AccountUsageService = AccountUsageService()) { self.service = service }
     private weak var store: AppStore?
     private var subscriptions = Set<AnyCancellable>()
     private var pollTask: Task<Void, Never>?
@@ -65,7 +68,10 @@ final class AccountUsageStatusController: ObservableObject {
             guard !windows.isEmpty, let date = Self.date(clean.rateLimitsUpdatedAt),
                   date > (Self.date(snapshots[session.provider]?.fetchedAt) ?? .distantPast) else { continue }
             let stale = Date().timeIntervalSince(date) > 300
-            snapshots[session.provider] = AccountUsageSnapshot(provider: session.provider, windows: windows, fetchedAt: clean.rateLimitsUpdatedAt,
+            // A session's rate_limit_event carries no 리셋권 data, so the rows
+            // the service read stay exactly as they were.
+            snapshots[session.provider] = AccountUsageSnapshot(provider: session.provider, windows: windows,
+                resets: snapshots[session.provider]?.resets ?? [], fetchedAt: clean.rateLimitsUpdatedAt,
                 status: stale ? "stale" : "available", detail: stale ? "세션에서 마지막으로 받은 계정 한도입니다." : "실행 중인 세션에서 받은 계정 한도입니다.")
         }
         if !added.isEmpty, !testing { refresh() }
@@ -226,6 +232,7 @@ struct StatusBarUsageDetails: View {
                         .controlSize(.small).disabled(controller.refreshing)
                         .accessibilityIdentifier("statusbar-usage-keychain-\(provider)")
                 }
+                resetSection(provider: provider, usage: usage)
                 if let fetched = usage.fetchedAt, let date = AccountUsageStatusController.date(fetched) {
                     Text("\(["error", "stale"].contains(usage.status) ? "마지막 확인값 · " : "")\(date.formatted(date: .omitted, time: .shortened)) 확인")
                         .font(.system(size: 9)).foregroundStyle(.tertiary)
@@ -238,5 +245,34 @@ struct StatusBarUsageDetails: View {
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    /// The read-only 리셋권 rows. There is no reset button and no claim: the
+    /// only action is the link, and it is live in every one of the seven states.
+    @ViewBuilder
+    private func resetSection(provider: String, usage: AccountUsageSnapshot?) -> some View {
+        // Core decides whether there is anything to draw; an empty list means
+        // the direct lookup is off and the section does not exist at all.
+        let rows = provider == "claude"
+            ? AccountResetPresentation.rows(usage, directLookupEnabled: controller.claudeKeychainEnabled)
+            : []
+        if !rows.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("usage.reset.title")).font(.system(size: 11, weight: .medium))
+                ForEach(rows) { row in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.label).font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(row.line).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityIdentifier("statusbar-usage-reset-\(row.program)")
+                }
+                // There is no reset button: the only action is this link, and
+                // it is live in every one of the seven states.
+                Link(AccountResetEntitlement.linkLabel, destination: URL(string: AccountResetEntitlement.linkTarget)!)
+                    .font(.system(size: 11))
+                    .accessibilityIdentifier("statusbar-usage-reset-link")
+            }
+        }
     }
 }

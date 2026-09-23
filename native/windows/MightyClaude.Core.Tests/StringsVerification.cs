@@ -292,6 +292,20 @@ internal static class StringsVerification
         ["DetailClaude"] = "Claude 계정 한도",
         ["DetailSessionReportedStale"] = "세션에서 마지막으로 받은 계정 한도입니다.",
         ["DetailSessionReported"] = "실행 중인 세션에서 받은 계정 한도입니다.",
+        // 리셋권 rows — shared usage.reset.* locale keys.
+        ["ResetTitle"] = "리셋권",
+        ["ResetLink"] = "claude.ai에서 리셋",
+        ["ResetProgramCedarEmber"] = "지급된 리셋권",
+        ["ResetProgramJuniperTide"] = "한도 도달 리셋",
+        ["ResetAvailableCedarEmber"] = "남은 리셋권 {count}회 · {expiry}까지",
+        ["ResetAvailableJuniperTide"] = "지금 리셋 가능",
+        ["ResetHeld"] = "리셋권은 한도에 도달했을 때 쓸 수 있습니다.",
+        ["ResetCooldownCedarEmber"] = "{time}부터 다시 쓸 수 있습니다.",
+        ["ResetCooldownJuniperTide"] = "{time}부터 가능 · 주 {count}회",
+        ["ResetExhausted"] = "이번 기간의 리셋권을 모두 썼습니다.",
+        ["ResetNone"] = "현재 사용 가능한 리셋권이 없습니다.",
+        ["ResetIneligible"] = "이 계정에는 현재 리셋권이 제공되지 않습니다.",
+        ["ResetUnknown"] = "이 앱의 연결 방식에서는 리셋권 정보를 제공하지 않습니다. claude.ai 설정 > 사용량에서 확인하세요.",
     };
 
     /// The account usage copy is the macOS copy apart from the recorded
