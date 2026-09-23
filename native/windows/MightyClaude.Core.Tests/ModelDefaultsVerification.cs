@@ -349,6 +349,16 @@ internal static class ModelDefaultsVerification
         return Task.CompletedTask;
     }
 
+    // ── Required RegisteredModels: JSON without the field deserializes to empty list ──
+
+    internal static Task RequiredRegisteredDeserializesToEmptyList()
+    {
+        var json = """{"sessionId":"s1","workspaceId":"w1","kind":"claude","input":"hello"}""";
+        var request = System.Text.Json.JsonSerializer.Deserialize<StartRunRequest>(json, Wire.Json)!;
+        Check(request.RegisteredModels.Count == 0, "RegisteredModels must be empty list when field is absent");
+        return Task.CompletedTask;
+    }
+
     // ── Run-path: registered model effort goes through RunManager ─────────────
 
     internal static async Task RunPathRegisteredModelEffortReachesCli()
@@ -362,8 +372,8 @@ internal static class ModelDefaultsVerification
             await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
             await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
             var registeredModels = new List<RegisteredModelEntry> { new("acme/smart", true, ["high"]) };
-            await manager.StartAsync(new("runpath-effort", workspace.Id, "claude", "test", "acme/smart", "codex",
-                new RunSettings(Effort: "high"), RegisteredModels: registeredModels));
+            await manager.StartAsync(new("runpath-effort", workspace.Id, "claude", "test", registeredModels, "acme/smart", "codex",
+                new RunSettings(Effort: "high")));
             await Verification.Until(() => events.Any(e => e.SessionId == "runpath-effort" && e.Status is "completed" or "error"));
             Check(events.Any(e => e.SessionId == "runpath-effort" && e.Status == "completed"),
                 "registered model with saved effort must complete the run");
@@ -385,8 +395,8 @@ internal static class ModelDefaultsVerification
             await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
             await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
             var registeredModels = new List<RegisteredModelEntry> { new("acme/fast", false) };
-            await manager.StartAsync(new("runpath-reject", workspace.Id, "claude", "test", "acme/fast", "codex",
-                new RunSettings(Effort: "high"), RegisteredModels: registeredModels));
+            await manager.StartAsync(new("runpath-reject", workspace.Id, "claude", "test", registeredModels, "acme/fast", "codex",
+                new RunSettings(Effort: "high")));
             await Verification.Until(() => events.Any(e => e.SessionId == "runpath-reject" && e.Status is "completed" or "error"));
             Check(events.Any(e => e.SessionId == "runpath-reject" && e.Status == "error"),
                 "registered model without effort support must reject a non-default effort");

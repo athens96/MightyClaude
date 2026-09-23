@@ -143,7 +143,7 @@ internal static class ActivityUsageVerification
             var state=await client.ConnectAsync(new("fixture",host.Address,host.Token)).WaitAsync(TimeSpan.FromSeconds(20)); var connection=state.Connections.Single();
             var imported=workspace with { Id="imported",Remote=new(connection.Id,workspace.Id,"fixture") };
             Console.WriteLine("TRACE structured remote: start and events");
-            await client.StartRunAsync(new("local-pane",imported.Id,"claude","fixture without model"),imported); await Until(()=>delivered.Any(e=>e.Status=="completed"));
+            await client.StartRunAsync(new("local-pane",imported.Id,"claude","fixture without model",[]),imported); await Until(()=>delivered.Any(e=>e.Status=="completed"));
             Check(delivered.All(e=>e.SessionId=="local-pane") && delivered.Any(e=>e.Activity?.DurationMs==125) && delivered.Any(e=>e.Usage?.ContextPercent==1) && delivered.Any(e=>e.Entry?.Activity?.Output=="fixture output"),"New remote client must opt in and preserve structured Mac-compatible DTOs");
             Console.WriteLine("TRACE structured remote: legacy poll");
             using var http=new HttpClient { Timeout=TimeSpan.FromSeconds(10) }; using var request=new HttpRequestMessage(HttpMethod.Get,host.Address+$"/v1/runs/{manager!.Job}/events?cursor=0"); request.Headers.Add("Authorization","Bearer "+host.Token); request.Headers.Add(RemoteNetwork.VersionHeader,"1");

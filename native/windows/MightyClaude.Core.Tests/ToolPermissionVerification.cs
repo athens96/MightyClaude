@@ -248,7 +248,7 @@ internal static class ToolPermissionVerification
         return Task.CompletedTask;
     }
 
-    private static StartRunRequest Claude(string id) => new(id, "workspace-fixture", "claude", "fixture prompt");
+    private static StartRunRequest Claude(string id) => new(id, "workspace-fixture", "claude", "fixture prompt", []);
 
     /// <summary>
     /// launch_arguments: the bar's own path gets host prompts over stdio; every
@@ -305,7 +305,7 @@ internal static class ToolPermissionVerification
             });
             await using (manager)
             {
-                await manager.StartAsync(new("hosted", workspace.Id, "claude", "fixture prompt"));
+                await manager.StartAsync(new("hosted", workspace.Id, "claude", "fixture prompt", []));
                 await Verification.Until(() => !manager.IsRunning("hosted"), 20000);
             }
 

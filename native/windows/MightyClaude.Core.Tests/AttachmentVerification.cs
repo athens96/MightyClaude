@@ -12,7 +12,7 @@ internal static class AttachmentVerification
         var image = AttachmentSupport.Make("../picture.txt", Png); var text = AttachmentSupport.Make("source😀.cs", Encoding.UTF8.GetBytes("\uFEFFa\u200Db")); var pdf = AttachmentSupport.Make("file.pdf", "%PDF-1.7\nfixture"u8.ToArray());
         Check(image.Name == "picture.txt" && image.MediaType == "image/png", "Image type must come from bytes."); Check(text.MediaType == "text/plain", "BOM and ZWJ text must match Swift sniffing.");
         var longName = AttachmentSupport.Make(new string('a', 179) + "😀.txt", "text"u8.ToArray()); Check(longName.Name.Length <= 180 && !char.IsSurrogate(longName.Name[^1]), "Name truncation split a surrogate pair.");
-        var request = new StartRunRequest("attachment-run", "workspace", "claude", "", Provider: "codex", Attachments: [image, text, pdf]).Validate();
+        var request = new StartRunRequest("attachment-run", "workspace", "claude", "", [], Provider: "codex", Attachments: [image, text, pdf]).Validate();
         var restored = Wire.Clone(request); Check(restored.Attachments!.SequenceEqual(request.Attachments!), "Attachment bytes/Unicode changed on wire.");
         var plusBytes = Enumerable.Range(0, 600000).Select(i => new byte[] { 251, 239, 190 }[i % 3]).ToArray(); var plusAttachment = AttachmentSupport.Make("binary.bin", plusBytes);
         Check(JsonSerializer.SerializeToUtf8Bytes(request with { Attachments = [plusAttachment] }, Wire.Json).Length < 850000, "Base64 escaping inflated the negotiated upload limit.");

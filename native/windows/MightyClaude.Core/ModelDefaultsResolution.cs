@@ -111,21 +111,21 @@ public static class ModelDefaultsResolution
             pane.Provider, workspace.ModelDefaults, appDefaults);
         return new StartRunRequest(
             pane.Id, pane.WorkspaceId, pane.Kind, input,
-            resolvedModel, pane.Provider, pane.Settings, pane.ResumeId,
-            attachments, registeredModels);
+            registeredModels, resolvedModel, pane.Provider, pane.Settings, pane.ResumeId,
+            attachments);
     }
 
     /// Returns the combined registered model entries for a provider from
     /// workspace and app config. Workspace entries come first; app entries
-    /// with duplicate names are skipped. Returns null when both are empty.
-    public static IReadOnlyList<RegisteredModelEntry>? GetProviderRegisteredModels(
+    /// with duplicate names are skipped. Returns an empty list when both are empty.
+    public static IReadOnlyList<RegisteredModelEntry> GetProviderRegisteredModels(
         string provider,
         ModelDefaultsConfig? workspaceDefaults,
         ModelDefaultsConfig? appDefaults)
     {
         var list1 = ProviderRegisteredList(provider, workspaceDefaults);
         var list2 = ProviderRegisteredList(provider, appDefaults);
-        if (list1.Count == 0 && list2.Count == 0) return null;
+        if (list1.Count == 0 && list2.Count == 0) return [];
         if (list2.Count == 0) return list1;
         if (list1.Count == 0) return list2;
         var names = list1.Select(r => r.Name).ToHashSet();

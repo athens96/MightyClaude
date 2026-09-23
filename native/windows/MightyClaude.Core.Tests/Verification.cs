@@ -21,7 +21,7 @@ internal static class Verification
         var binary = Environment.ProcessPath ?? throw new InvalidOperationException("Executable unavailable"); return new(binary, Path.GetFileNameWithoutExtension(binary).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? new[] { Assembly.GetExecutingAssembly().Location }.Concat(args).ToArray() : args, "2.1.271");
     }
     private static ProviderCatalog Absent() => new((_, _) => Task.FromResult<CliCommand?>(null));
-    private static StartRunRequest Shell(string id, Workspace workspace, string text) => new(id, workspace.Id, "shell", text);
+    private static StartRunRequest Shell(string id, Workspace workspace, string text) => new(id, workspace.Id, "shell", text, []);
     private static string LongCommand(string pidFile) { var self = Self("--long-child", pidFile); return OperatingSystem.IsWindows() ? string.Join(" ", new[] { self.Binary }.Concat(self.Prefix).Select(ChildProcess.QuoteWindows)) : string.Join(" ", new[] { self.Binary }.Concat(self.Prefix).Select(v => "'" + v.Replace("'", "'\"'\"'") + "'")); }
     private static string AttachmentReferencePath(string prompt, string name)
     {
@@ -126,9 +126,9 @@ internal static class Verification
         await Test("wire settings include explicit nullable limits; provider validation", async () =>
         {
             var json = JsonSerializer.Serialize(new RunSettings(), Wire.Json); Check(json.Contains("\"maxTurns\":null") && json.Contains("\"maxBudgetUsd\":null"));
-            await Reject(() => Task.FromResult(new StartRunRequest("p", "w", "claude", "x", Provider: "gemini", Settings: new("high")).Validate()));
-            await Reject(() => Task.FromResult(new StartRunRequest("p", "w", "claude", "x", Provider: "codex", Settings: new(PermissionMode: "plan")).Validate()));
-            Check(ProviderCatalog.Arguments(new("p", "w", "claude", "secret", "sonnet", "claude", new("high", "manual", 3, 1.5)), "/plugin").Contains("--effort"));
+            await Reject(() => Task.FromResult(new StartRunRequest("p", "w", "claude", "x", [], Provider: "gemini", Settings: new("high")).Validate()));
+            await Reject(() => Task.FromResult(new StartRunRequest("p", "w", "claude", "x", [], Provider: "codex", Settings: new(PermissionMode: "plan")).Validate()));
+            Check(ProviderCatalog.Arguments(new("p", "w", "claude", "secret", [], "sonnet", "claude", new("high", "manual", 3, 1.5)), "/plugin").Contains("--effort"));
             Check(ProviderCatalog.Efforts("codex", "default", ProviderCatalog.Fallback("codex")).Length == 0); Check(!ProviderCatalog.SupportsMods("2.1.263")); Check(ProviderCatalog.SupportsMods("2.1.271 (Claude Code)"));
         });
         await Test("native profile imports a copy, preserves settings, remote identity and drafts", async () =>
@@ -180,7 +180,7 @@ internal static class Verification
             await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
             try
             {
-                var prompt = "stdin only ` & $() 한글"; await manager.StartAsync(new("provider", workspace.Id, "claude", prompt, Provider: "codex")); await Until(() => events.Any(e => e.SessionId == "provider" && e.Status == "completed")); Check(await File.ReadAllTextAsync(record + ".prompt") == prompt); Check(!(await File.ReadAllTextAsync(record + ".args")).Contains(prompt));
+                var prompt = "stdin only ` & $() 한글"; await manager.StartAsync(new("provider", workspace.Id, "claude", prompt, [], Provider: "codex")); await Until(() => events.Any(e => e.SessionId == "provider" && e.Status == "completed")); Check(await File.ReadAllTextAsync(record + ".prompt") == prompt); Check(!(await File.ReadAllTextAsync(record + ".args")).Contains(prompt));
                 await manager.StartAsync(Shell("echo", workspace, "echo MIGHTY_NATIVE_OK")); await Until(() => events.Any(e => e.SessionId == "echo" && e.Status == "completed")); Check(events.Any(e => e.SessionId == "echo" && e.Entry?.Text.Contains("MIGHTY_NATIVE_OK") == true));
                 var pid = Path.Combine(directory, "pid"); await manager.StartAsync(Shell("long", workspace, LongCommand(pid))); await Until(() => File.Exists(pid)); var processId = int.Parse(await File.ReadAllTextAsync(pid)); await manager.StopAsync("long"); Check(events.Any(e => e.SessionId == "long" && e.Status == "stopped")); await Until(() => !Alive(processId));
             }
@@ -195,7 +195,7 @@ internal static class Verification
                 foreach (var provider in Wire.Providers)
                 {
                     var record = Path.Combine(directory, provider); await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Self("--fake-cli", provider, record, "--verify-attachments"))); await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue);
-                    await manager.StartAsync(new(provider, workspace.Id, "claude", "", Provider: provider, Attachments: files)); await Until(() => !manager.IsRunning(provider));
+                    await manager.StartAsync(new(provider, workspace.Id, "claude", "", [], Provider: provider, Attachments: files)); await Until(() => !manager.IsRunning(provider));
                     Check(events.Any(e => e.SessionId == provider && e.Status == "completed"), provider + " attachment run did not complete");
                     var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
                     var flag = provider == "claude" ? "--add-dir" : provider == "codex" ? "--image" : "--include-directories";
@@ -223,13 +223,13 @@ internal static class Verification
                 foreach (var behavior in new[] { "--hold-run", "--fail-run" })
                 {
                     var record = Path.Combine(directory, behavior); await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Self("--fake-cli", "codex", record, behavior))); await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, events.Enqueue); var id = Wire.Id();
-                    await manager.StartAsync(new(id, workspace.Id, "claude", "", Provider: "codex", Attachments: files)); await Until(() => File.Exists(record + ".prompt")); var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!; var stage = Path.GetDirectoryName(args[Array.IndexOf(args, "--image") + 1])!;
+                    await manager.StartAsync(new(id, workspace.Id, "claude", "", [], Provider: "codex", Attachments: files)); await Until(() => File.Exists(record + ".prompt")); var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!; var stage = Path.GetDirectoryName(args[Array.IndexOf(args, "--image") + 1])!;
                     if (behavior == "--hold-run") { Check(Directory.Exists(stage)); await manager.StopAsync(id); } else await Until(() => !manager.IsRunning(id));
                     Check(!Directory.Exists(stage)); Check(events.Any(e => e.SessionId == id && e.Status == (behavior == "--hold-run" ? "stopped" : "error")));
                 }
                 await using var absent = Absent(); await using var unavailable = new RunManager(_ => Task.FromResult(workspace), absent, plugin, events.Enqueue);
-                await Reject(() => unavailable.StartAsync(new("no-cli", workspace.Id, "claude", "", Provider: "codex", Attachments: files))); Check(!unavailable.IsRunning("no-cli"));
-                var pending = new TaskCompletionSource<Workspace>(TaskCreationOptions.RunContinuationsAsynchronously); var cancelled = new RunManager(_ => pending.Task, absent, plugin, events.Enqueue); var start = cancelled.StartAsync(new("cancel-attach", workspace.Id, "claude", "", Provider: "codex", Attachments: files)); var closing = cancelled.DisposeAsync().AsTask(); pending.SetResult(workspace); await Reject(() => start); await closing;
+                await Reject(() => unavailable.StartAsync(new("no-cli", workspace.Id, "claude", "", [], Provider: "codex", Attachments: files))); Check(!unavailable.IsRunning("no-cli"));
+                var pending = new TaskCompletionSource<Workspace>(TaskCreationOptions.RunContinuationsAsynchronously); var cancelled = new RunManager(_ => pending.Task, absent, plugin, events.Enqueue); var start = cancelled.StartAsync(new("cancel-attach", workspace.Id, "claude", "", [], Provider: "codex", Attachments: files)); var closing = cancelled.DisposeAsync().AsTask(); pending.SetResult(workspace); await Reject(() => start); await closing;
             }
             finally { Directory.Delete(directory, true); }
         });
@@ -300,11 +300,11 @@ internal static class Verification
             {
                 var connected = await client.ConnectAsync(new("Settings host", server.Address.GetLeftPart(UriPartial.Authority), RemoteNetwork.Token())); var connection = connected.Connections.Single(); var imported = workspace with { Id = "imported-settings", Remote = new(connection.Id, workspace.Id, "Settings host") };
                 var selected = new[] { new RunSettings(FastMode: true), new RunSettings(WebSearch: "live"), new RunSettings(PermissionMode: "acceptEdits", NetworkAccess: true), new RunSettings(PermissionMode: "fullAccess") };
-                foreach (var settings in selected) await Reject(() => client.StartRunAsync(new(Wire.Id(), imported.Id, "claude", "fixture metadata only", Provider: "codex", Settings: settings), imported));
+                foreach (var settings in selected) await Reject(() => client.StartRunAsync(new(Wire.Id(), imported.Id, "claude", "fixture metadata only", [], Provider: "codex", Settings: settings), imported));
                 Check(posted.Count == 0, "Unsupported settings reached a legacy host."); Check((await client.GetStateAsync()).Connections.Single().Status == "connected");
-                await client.StartRunAsync(new("legacy-default", imported.Id, "claude", "fixture metadata only", Provider: "codex"), imported); await Until(() => events.Any(e => e.SessionId == "legacy-default" && e.Status == "completed")); Check(bodies.Single().EnumerateObject().Count() == 4);
+                await client.StartRunAsync(new("legacy-default", imported.Id, "claude", "fixture metadata only", [], Provider: "codex"), imported); await Until(() => events.Any(e => e.SessionId == "legacy-default" && e.Status == "completed")); Check(bodies.Single().EnumerateObject().Count() == 4);
                 modern = true; await client.RefreshAsync(connection.Id);
-                foreach (var settings in selected) { var id = Wire.Id(); await client.StartRunAsync(new(id, imported.Id, "claude", "fixture metadata only", Provider: "codex", Settings: settings), imported); await Until(() => events.Any(e => e.SessionId == id && e.Status == "completed")); }
+                foreach (var settings in selected) { var id = Wire.Id(); await client.StartRunAsync(new(id, imported.Id, "claude", "fixture metadata only", [], Provider: "codex", Settings: settings), imported); await Until(() => events.Any(e => e.SessionId == id && e.Status == "completed")); }
                 Check(posted.Skip(1).Select(r => r.Settings).SequenceEqual(selected)); Check(posted.All(r => r.WorkspaceId == workspace.Id));
                 foreach (var json in new[] { "{\"fastMode\":\"true\"}", "{\"networkAccess\":1}", "{\"webSearch\":null}" }) await Reject(() => Task.FromResult(JsonSerializer.Deserialize<RunSettings>(json, Wire.Json)));
             }
@@ -319,7 +319,7 @@ internal static class Verification
             try
             {
                 await host.StartAsync(IPAddress.Loopback, 0); var state = await client.ConnectAsync(new("Attachments", host.Address, host.Token)); var connection = state.Connections.Single(); var imported = workspace with { Id = "attachment-workspace", Remote = new(connection.Id, workspace.Id, "Attachments") };
-                var file = AttachmentSupport.Make("large.txt", Enumerable.Repeat((byte)'Z', 600000).ToArray()); var request = new StartRunRequest("large-attachment", imported.Id, "claude", "", Provider: "codex", Attachments: [file]);
+                var file = AttachmentSupport.Make("large.txt", Enumerable.Repeat((byte)'Z', 600000).ToArray()); var request = new StartRunRequest("large-attachment", imported.Id, "claude", "", [], Provider: "codex", Attachments: [file]);
                 await Reject(() => client.StartRunAsync(request, imported)); Check(manager!.Started.IsEmpty, "Unsupported attachment reached host.");
                 modern = true; await client.RefreshAsync(connection.Id); await client.StartRunAsync(request, imported); await Until(() => manager.Started.Count == 1); Check(manager.Started.Single().Attachments!.Single() == file); Check(manager.Started.Single().WorkspaceId == workspace.Id); await client.StopRunAsync(request.SessionId);
                 var target = new PinnedRemote(new(host.Address), IPAddress.Loopback);
@@ -484,6 +484,7 @@ internal static class Verification
         await Test("modelDefaults old-snapshot null config yields all-default rows and safe remove", ModelDefaultsVerification.ModelDefaultsOldSnapshot);
         await Test("modelDefaults effort registration saves levels and readback via ProviderCatalog.Efforts", ModelDefaultsVerification.ModelDefaultsEffortRegistration);
         await Test("modelDefaults effort validation rejects on-without-levels and unknown level", ModelDefaultsVerification.ModelDefaultsEffortValidation);
+        await Test("modelDefaults required-registered JSON without field deserializes to empty list", ModelDefaultsVerification.RequiredRegisteredDeserializesToEmptyList);
         await Test("modelDefaults run-path registered model with saved effort level reaches CLI", ModelDefaultsVerification.RunPathRegisteredModelEffortReachesCli);
         await Test("modelDefaults run-path registered model without effort support rejects non-default effort", ModelDefaultsVerification.RunPathRegisteredModelWithoutEffortRejectsNonDefault);
         await Test("modelDefaults run-path default pane resolves mode default into --model", ModelDefaultsVerification.RunPathDefaultPaneResolvesModeDefault);

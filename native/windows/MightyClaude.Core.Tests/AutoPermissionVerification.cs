@@ -8,7 +8,7 @@ internal static class AutoPermissionVerification
     internal static async Task Run()
     {
         var selected = new RunSettings(PermissionMode: "auto");
-        var request = new StartRunRequest("pane", "workspace", "claude", "metadata fixture only", Settings: selected);
+        var request = new StartRunRequest("pane", "workspace", "claude", "metadata fixture only", [], Settings: selected);
         request.Validate();
         Check(new RunSettings().PermissionMode == "manual", "The safe default changed.");
         Check(ProviderCatalog.NormalizeSettings("claude", selected) == selected, "Saved Auto was lost before discovery.");
