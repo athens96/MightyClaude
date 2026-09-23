@@ -58,6 +58,26 @@ public struct GraphTokenUsage: Codable, Sendable, Equatable {
     }
 }
 
+/// Per-response attribution record for a graph node. Carries the model that
+/// produced the response, the tokens it used, and the tool_use IDs it called.
+public struct GraphResponseRecord: Codable, Sendable, Equatable {
+    public var responseId: String
+    /// The model the CLI reported for this response; nil when the message
+    /// carried no "model" field (e.g. Codex turn items).
+    public var model: String?
+    public var usage: GraphTokenUsage
+    /// tool_use block IDs from this response's content, in order.
+    public var activityIds: [String]
+    /// True when the model comes from the run's configured default rather than
+    /// a real CLI report (Codex turn-completed items).
+    public var markedAsConfigured: Bool
+
+    public init(responseId: String, model: String? = nil, usage: GraphTokenUsage, activityIds: [String] = [], markedAsConfigured: Bool = false) {
+        self.responseId = responseId; self.model = model; self.usage = usage
+        self.activityIds = activityIds; self.markedAsConfigured = markedAsConfigured
+    }
+}
+
 /// A request-scoped node snapshot. Missing input/output means the engine did
 /// not report it; display code must not manufacture a prompt or final answer.
 public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
@@ -74,11 +94,13 @@ public struct ExecutionGraphNode: Codable, Sendable, Equatable, Identifiable {
     public var usage: GraphTokenUsage?
     /// Explicit new work on the same agent; absent in older graph events.
     public var activityGeneration: Int?
+    /// Per-response attribution; absent in older graph events and graph saves.
+    public var responseRecords: [GraphResponseRecord]?
 
     public init(id: String, runId: String, parentId: String? = nil, kind: String, state: String, title: String,
-                input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil) {
+                input: String? = nil, output: String? = nil, entries: [LogEntry] = [], updatedAt: String = mightyTimestamp(), usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil) {
         self.id = id; self.runId = runId; self.parentId = parentId; self.kind = kind; self.state = state
-        self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration
+        self.title = title; self.input = input; self.output = output; self.entries = entries; self.updatedAt = updatedAt; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
     }
 }
 
@@ -115,6 +137,7 @@ public enum ExecutionGraphSupport {
         result.output = node.output.map { ActivitySupport.clean($0, maximumBytes: maximumOutputBytes) }
         result.usage = node.usage?.normalized
         result.activityGeneration = normalizedGeneration(node.activityGeneration)
+        result.responseRecords = node.responseRecords
         if restoring && !terminal(result.state) { result.state = "stopped" }
         if node.kind == "main" { result.entries = []; return result }
 
