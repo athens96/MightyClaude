@@ -219,17 +219,23 @@ struct MightyGraphView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
             let run = runs[index]
-            // Hoisted out of the call: the older type checker is slow on
-            // optional maps written inline in an argument list.
             let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: index + 1,
                                                  providerLabel: ProviderOptions.label(provider))
             let icon = styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
+            let runID = run.sourceRunID ?? run.id
+            let runChildBlocks = Dictionary(uniqueKeysWithValues: (run.responseRecords ?? []).flatMap(\.activityIds).compactMap { actId -> (String, AgentChildBlock)? in
+                let nodeId = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: actId)
+                guard let agent = run.agents.first(where: { $0.id == nodeId }) else { return nil }
+                return (actId, AgentChildBlock(usage: agent.usage, records: agent.responseRecords ?? []))
+            })
             transcriptCard(node, title: title, icon: icon, status: run.status,
-                           input: run.input, entries: run.rootEntries, tint: Palette.tint(styleTitles.tint(run.input)), usage: run.usage)
+                           input: run.input, entries: run.rootEntries, tint: Palette.tint(styleTitles.tint(run.input)), usage: run.usage,
+                           records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks)
         case .agent(let runIndex, let agentIndex):
             let agent = runs[runIndex].agents[agentIndex]
             let look = Self.agentPresentation(agent)
-            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.input, entries: agent.entries, tint: look.tint, usage: agent.usage)
+            transcriptCard(node, title: look.title, icon: look.icon, status: agent.status, input: agent.input, entries: agent.entries, tint: look.tint, usage: agent.usage,
+                           records: agent.responseRecords ?? [])
         case .result(let index):
             let run = runs[index]
             let failed = ["error", "failed"].contains(run.status)
@@ -245,7 +251,9 @@ struct MightyGraphView: View {
     }
 
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
-                                usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil) -> some View {
+                                usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil,
+                                records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
+                                childBlocks: [String: AgentChildBlock] = [:]) -> some View {
         let content = entries.filter { $0.kind != "user" }
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
@@ -255,11 +263,12 @@ struct MightyGraphView: View {
                 if selectedNodeID == node.id { blockScrollLabel(node.id) }
                 MightyGraphActivityIndicator(status: status, tint: tint)
                 Text(statusLabel(status)).font(.system(size: 10)).foregroundStyle(.secondary)
-                if let usage, !usage.isEmpty {
-                    Text(usage.summary).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel) {
+                    let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records)
+                    Text(capsuleText).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.subtle, in: Capsule())
-                        .help(usageLabel + " · " + usage.detail)
-                        .accessibilityLabel(usageLabel + " " + usage.detail)
+                        .help(helpText)
+                        .accessibilityLabel(helpText)
                         .accessibilityIdentifier("mighty-tokens-\(node.id)")
                 }
                 if let resultFilesRunID, !resultFiles.files(for: resultFilesRunID).isEmpty {
@@ -297,7 +306,8 @@ struct MightyGraphView: View {
             } else {
                 AgentTranscriptView(sessionId: "graph-\(sessionID)-\(node.id)", provider: provider,
                     running: !MightyGraphLayout.terminal(status), entries: content, onFocus: onFocus,
-                    onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) })
+                    onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) },
+                    records: records, childBlocks: childBlocks)
             }
         }
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
