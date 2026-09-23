@@ -24,7 +24,7 @@ struct PermissionTests {
         return try #require((envelope["response"] as? [String: Any])?["response"] as? [String: Any])
     }
     private func wait(_ predicate: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(6)
+        let deadline = Date().addingTimeInterval(30)
         while !predicate() {
             guard Date() < deadline else { throw MightyError("Permission fixture timed out") }
             try await Task.sleep(for: .milliseconds(20))

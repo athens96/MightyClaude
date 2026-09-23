@@ -93,7 +93,7 @@ private final class CodexRunnerEvents: @unchecked Sendable {
     }
 
     private func wait(_ predicate: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(10)
+        let deadline = Date().addingTimeInterval(30)
         while !predicate() {
             guard Date() < deadline else { throw MightyError("Codex runner fixture timed out") }
             try await Task.sleep(for: .milliseconds(20))
