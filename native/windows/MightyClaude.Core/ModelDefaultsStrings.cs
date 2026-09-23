@@ -10,4 +10,7 @@ public static class ModelDefaultsStrings
     public static readonly string DeleteButton = Locale.Get("settings.modelDefaults.deleteButton");
     public static readonly string RegisteredTitle = Locale.Get("settings.modelDefaults.registeredTitle");
     public static readonly string SupportsEffortLabel = Locale.Get("settings.modelDefaults.supportsEffortLabel");
+    public static readonly string EffortLevelsLabel = Locale.Get("settings.modelDefaults.effortLevelsLabel");
+    public static readonly string EffortWithoutLevels = Locale.Get("settings.modelDefaults.error.effortWithoutLevels");
+    public static readonly string UnknownLevel = Locale.Get("settings.modelDefaults.error.unknownLevel");
 }

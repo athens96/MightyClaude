@@ -9,14 +9,13 @@ extension AppStore {
         snapshot.modelDefaults = config
     }
 
-    func addRegisteredModel(provider: String, name: String) {
+    func addRegisteredModel(provider: String, entry: RegisteredModelEntry) {
         var config = snapshot.modelDefaults ?? ModelDefaultsConfig()
-        let entry = RegisteredModelEntry(name: name)
         if provider == "codex" {
-            guard !config.codex.registeredModels.contains(where: { $0.name == name }) else { return }
+            guard !config.codex.registeredModels.contains(where: { $0.name == entry.name }) else { return }
             config.codex.registeredModels.append(entry)
         } else {
-            guard !config.claude.registeredModels.contains(where: { $0.name == name }) else { return }
+            guard !config.claude.registeredModels.contains(where: { $0.name == entry.name }) else { return }
             config.claude.registeredModels.append(entry)
         }
         snapshot.modelDefaults = config
