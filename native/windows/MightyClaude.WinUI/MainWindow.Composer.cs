@@ -38,11 +38,12 @@ public sealed partial class MainWindow
             if (caps.Effort || pane.Settings.Effort != "default")
             {
                 var strengths = new MenuFlyoutSubItem { Text = "추론 강도" };
-                foreach (var value in new[] { "default" }.Concat(ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog))) strengths.Items.Add(Item(value == "default" ? "Auto · CLI 기본값" : value, () => ChangeSettings(s => s with { Effort = value }), value == pane.Settings.Effort));
+                var registeredModels = ModelDefaultsResolution.GetProviderRegisteredModels(pane.Provider, Workspace.ModelDefaults, owner.service.Snapshot.ModelDefaults);
+                foreach (var value in new[] { "default" }.Concat(ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels))) strengths.Items.Add(Item(value == "default" ? "Auto · CLI 기본값" : value, () => ChangeSettings(s => s with { Effort = value }), value == pane.Settings.Effort));
                 menu.Items.Add(strengths);
             }
             var permissions = new MenuFlyoutSubItem { Text = "권한" };
-            foreach (var value in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, value), () => ChangeSettings(s => s with { PermissionMode = value, NetworkAccess = pane.Provider == "codex" && value == "acceptEdits" && s.NetworkAccess }), pane.Settings.PermissionMode == value, PermissionHelp(pane.Provider, value)));
+            foreach (var value in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(ModeMenuLabel(pane.Provider, value, Workspace.ModelDefaults, owner.service.Snapshot.ModelDefaults), () => ChangeSettings(s => s with { PermissionMode = value, NetworkAccess = pane.Provider == "codex" && value == "acceptEdits" && s.NetworkAccess }), pane.Settings.PermissionMode == value, PermissionHelp(pane.Provider, value)));
             menu.Items.Add(permissions);
             if (pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode)) menu.Items.Add(Item("Fast", () => ChangeSettings(s => s with { FastMode = !s.FastMode && caps.FastMode }), pane.Settings.FastMode));
             menu.Items.Add(new MenuFlyoutSeparator());

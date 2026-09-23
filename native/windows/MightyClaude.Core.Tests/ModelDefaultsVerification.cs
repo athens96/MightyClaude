@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using MightyClaude.Core;
 
@@ -346,6 +347,127 @@ internal static class ModelDefaultsVerification
         Check(err3 is null, "effort off with no levels must succeed");
         Check(config.Claude.RegisteredModels.Single().Name == "acme/m3", "only the successful add must appear");
         return Task.CompletedTask;
+    }
+
+    // ── Run-path: registered model effort goes through RunManager ─────────────
+
+    internal static async Task RunPathRegisteredModelEffortReachesCli()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var record = Path.Combine(directory, "codex-run");
+            var events = new ConcurrentQueue<RunEvent>();
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
+            await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
+            var registeredModels = new List<RegisteredModelEntry> { new("acme/smart", true, ["high"]) };
+            await manager.StartAsync(new("runpath-effort", workspace.Id, "claude", "test", "acme/smart", "codex",
+                new RunSettings(Effort: "high"), RegisteredModels: registeredModels));
+            await Verification.Until(() => events.Any(e => e.SessionId == "runpath-effort" && e.Status is "completed" or "error"));
+            Check(events.Any(e => e.SessionId == "runpath-effort" && e.Status == "completed"),
+                "registered model with saved effort must complete the run");
+            var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+            Check(args.Contains("-c") && args.Contains("model_reasoning_effort=\"high\""),
+                "effort must reach the codex CLI argument");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    internal static async Task RunPathRegisteredModelWithoutEffortRejectsNonDefault()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var record = Path.Combine(directory, "codex-reject");
+            var events = new ConcurrentQueue<RunEvent>();
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
+            await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
+            var registeredModels = new List<RegisteredModelEntry> { new("acme/fast", false) };
+            await manager.StartAsync(new("runpath-reject", workspace.Id, "claude", "test", "acme/fast", "codex",
+                new RunSettings(Effort: "high"), RegisteredModels: registeredModels));
+            await Verification.Until(() => events.Any(e => e.SessionId == "runpath-reject" && e.Status is "completed" or "error"));
+            Check(events.Any(e => e.SessionId == "runpath-reject" && e.Status == "error"),
+                "registered model without effort support must reject a non-default effort");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    internal static async Task RunPathDefaultPaneResolvesModeDefault()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var record = Path.Combine(directory, "rp-mode-default");
+            var events = new ConcurrentQueue<RunEvent>();
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
+            await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
+            var appDefaults = new ModelDefaultsConfig { Codex = new() { ModeDefaults = new() { ["manual"] = "gpt-6-astra" } } };
+            var pane = new RunSession { Id = "rp-mode-default", WorkspaceId = workspace.Id, Kind = "claude", Provider = "codex", Settings = new RunSettings(PermissionMode: "manual") };
+            var request = ModelDefaultsResolution.BuildPaneRequest(pane, workspace, appDefaults, "test");
+            Check(request.Model == "gpt-6-astra", "BuildPaneRequest must resolve the mode default");
+            await manager.StartAsync(request);
+            await Verification.Until(() => events.Any(e => e.SessionId == "rp-mode-default" && e.Status is "completed" or "error"));
+            Check(events.Any(e => e.SessionId == "rp-mode-default" && e.Status == "completed"),
+                "default pane with mode default must complete the run");
+            var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+            var modelIdx = Array.IndexOf(args, "--model");
+            Check(modelIdx >= 0 && modelIdx + 1 < args.Length && args[modelIdx + 1] == "gpt-6-astra",
+                "resolved mode default must reach the CLI as --model gpt-6-astra");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    internal static async Task RunPathExplicitModelWins()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var record = Path.Combine(directory, "rp-explicit-wins");
+            var events = new ConcurrentQueue<RunEvent>();
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
+            await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
+            var appDefaults = new ModelDefaultsConfig { Codex = new() { ModeDefaults = new() { ["manual"] = "gpt-6-astra" } } };
+            var pane = new RunSession { Id = "rp-explicit-wins", WorkspaceId = workspace.Id, Kind = "claude", Provider = "codex", Model = "gpt-5-explicit", Settings = new RunSettings(PermissionMode: "manual") };
+            var request = ModelDefaultsResolution.BuildPaneRequest(pane, workspace, appDefaults, "test");
+            Check(request.Model == "gpt-5-explicit", "BuildPaneRequest must preserve the explicit pane model");
+            await manager.StartAsync(request);
+            await Verification.Until(() => events.Any(e => e.SessionId == "rp-explicit-wins" && e.Status is "completed" or "error"));
+            Check(events.Any(e => e.SessionId == "rp-explicit-wins" && e.Status == "completed"),
+                "explicit pane model must complete the run");
+            var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+            var modelIdx = Array.IndexOf(args, "--model");
+            Check(modelIdx >= 0 && modelIdx + 1 < args.Length && args[modelIdx + 1] == "gpt-5-explicit",
+                "explicit pane model must reach the CLI as --model gpt-5-explicit");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    internal static async Task RunPathAllDefaultConfigSendsNoModel()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var record = Path.Combine(directory, "rp-no-model");
+            var events = new ConcurrentQueue<RunEvent>();
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "codex", record)));
+            await using var manager = new RunManager(_ => Task.FromResult(workspace), catalog, "", events.Enqueue);
+            var pane = new RunSession { Id = "rp-no-model", WorkspaceId = workspace.Id, Kind = "claude", Provider = "codex" };
+            var request = ModelDefaultsResolution.BuildPaneRequest(pane, workspace, null, "test");
+            Check(request.Model == "default", "all-default config must keep model as 'default'");
+            await manager.StartAsync(request);
+            await Verification.Until(() => events.Any(e => e.SessionId == "rp-no-model" && e.Status is "completed" or "error"));
+            Check(events.Any(e => e.SessionId == "rp-no-model" && e.Status == "completed"),
+                "all-default config must complete the run");
+            var args = JsonSerializer.Deserialize<string[]>(await File.ReadAllTextAsync(record + ".args"), Wire.Json)!;
+            Check(!args.Contains("--model"),
+                "all-default config must not send --model to the CLI");
+        }
+        finally { Directory.Delete(directory, true); }
     }
 
     internal static Task ModelDefaultsSectionIsRegistered()

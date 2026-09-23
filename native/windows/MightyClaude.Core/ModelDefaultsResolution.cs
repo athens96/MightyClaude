@@ -95,6 +95,52 @@ public static class ModelDefaultsResolution
         return reverted;
     }
 
+    /// Builds a StartRunRequest for a pane run: resolves the effective model and
+    /// attaches the provider's registered models from workspace and app config.
+    public static StartRunRequest BuildPaneRequest(
+        RunSession pane,
+        Workspace workspace,
+        ModelDefaultsConfig? appDefaults,
+        string input,
+        IReadOnlyList<RunAttachment>? attachments = null)
+    {
+        var resolvedModel = Resolve(
+            pane.Model, pane.Provider, pane.Settings.PermissionMode,
+            workspace.ModelDefaults, appDefaults);
+        var registeredModels = GetProviderRegisteredModels(
+            pane.Provider, workspace.ModelDefaults, appDefaults);
+        return new StartRunRequest(
+            pane.Id, pane.WorkspaceId, pane.Kind, input,
+            resolvedModel, pane.Provider, pane.Settings, pane.ResumeId,
+            attachments, registeredModels);
+    }
+
+    /// Returns the combined registered model entries for a provider from
+    /// workspace and app config. Workspace entries come first; app entries
+    /// with duplicate names are skipped. Returns null when both are empty.
+    public static IReadOnlyList<RegisteredModelEntry>? GetProviderRegisteredModels(
+        string provider,
+        ModelDefaultsConfig? workspaceDefaults,
+        ModelDefaultsConfig? appDefaults)
+    {
+        var list1 = ProviderRegisteredList(provider, workspaceDefaults);
+        var list2 = ProviderRegisteredList(provider, appDefaults);
+        if (list1.Count == 0 && list2.Count == 0) return null;
+        if (list2.Count == 0) return list1;
+        if (list1.Count == 0) return list2;
+        var names = list1.Select(r => r.Name).ToHashSet();
+        var combined = list1.ToList();
+        foreach (var e in list2) if (!names.Contains(e.Name)) combined.Add(e);
+        return combined.AsReadOnly();
+    }
+
+    private static IReadOnlyList<RegisteredModelEntry> ProviderRegisteredList(
+        string provider, ModelDefaultsConfig? config)
+    {
+        if (config is null) return [];
+        return provider == "codex" ? config.Codex.RegisteredModels : config.Claude.RegisteredModels;
+    }
+
     private static string? ModeLookup(ModelDefaultsConfig? config, string provider, string mode)
     {
         if (config is null) return null;

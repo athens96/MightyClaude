@@ -144,7 +144,12 @@ The following call sites in production code use the resolution logic and validat
 
 ### Windows (`native/windows/MightyClaude.Core/`)
 
-The Windows Core resolves defaults via the same `ModelDefaultsResolution` type and exposes section rows and mutation methods through the section model; WinUI renders them in `BuildModelDefaultsSection`.
+| File | Location | Rule applied |
+|---|---|---|
+| `ModelDefaultsResolution.cs` | `BuildPaneRequest(pane, workspace, appDefaults, input)` | Resolves the effective model from `pane.Model`, provider, permission mode, workspace and app defaults; attaches the provider's registered models to `StartRunRequest.RegisteredModels` |
+| `RunManager.cs` | `ExecuteAsync` effort check | `ProviderCatalog.Efforts(provider, model, catalog, request.RegisteredModels)` — validates the effort setting against the catalog or a registered entry's saved levels |
+| `MainWindow.Composer.cs` | `AddOverflowSettings` 추론 강도 submenu | `ProviderCatalog.Efforts(provider, model, catalog, registeredModels)` — feeds the overflow effort submenu with valid levels including registered custom names |
+| `MainWindow.cs` | `RefreshMenus` 권한 submenu and current-mode text | `ModelDefaultsResolution.ModeMenuLabel` — each mode item shows `"<label> · <model>"` when the mode resolves to a non-default model |
 
 ## Backward compatibility
 
