@@ -64,7 +64,7 @@ public static class ClaudeResetSmoke
             });
         };
         var snapshot = await ClaudeAccountProbe.ReadAsync(new Dictionary<string, string>(),
-            () => new ClaudeQuotaCredential(FixtureToken, "max"), http, () => FixtureClock, cancellation);
+            () => new ClaudeQuotaCredential(FixtureToken, "max"), http, () => FixtureClock, cancellation: cancellation);
         // directLookupEnabled is true because this service is injected: the rows
         // render without the switch, and the switch itself is never touched.
         var rows = ClaudeResetEntitlements.Rows(snapshot, true);

@@ -48,6 +48,20 @@ CLI가 전달하는 계정 한도와 세션 사용량 데이터의 수집·보�
 
 unknown 문구는 이 앱의 연결 방식 탓으로 돌리며 Anthropic 정책을 언급하지 않는다. 리셋권 GET 실패(네트워크·5xx)는 unknown이 되고, 기본 사용량 창에 영향을 주지 않는다.
 
+### 첫 응답 형태 로그
+
+각 프로그램의 첫 번째 성공한(2xx) JSON 응답은 **앱 프로세스당 한 번** 로그에 기록된다. 키 경로와 값 유형(예: `cedar_ember.grants[].resets_left: number`)만 기록하며 실제 값은 절대 포함하지 않는다. 토큰·이메일·org uuid·grant id·숫자 값은 나타나지 않는다.
+
+로그 채널:
+- **macOS**: `os.Logger(subsystem: "dev.mightyclaude.native", category: "account-usage")` — 각 줄은 `info` 수준으로 전송된다.
+- **Windows**: `System.Diagnostics.Trace.WriteLine` — 각 줄에 `account-usage: ` 접두사가 붙는다.
+
+로그는 주입 가능한 싱크(macOS `AccountUsageShapeLog`, Windows `AccountUsageShapeLog`)를 통해 출력되므로 테스트에서 캡처할 수 있다. 설치 간에는 유지되지 않는다(인메모리 플래그).
+
+### 리셋권 GET 429 처리
+
+리셋권 GET에서 429 응답이 오면 **리셋 읽기 마감 시각**이 설정된다: `현재 시각 + clamp(Retry-After, 60..86400초)`. 이 마감 시각이 지나기 전까지 리셋 GET은 전송되지 않으며, 두 프로그램 행은 unknown으로 표시된다. 기본 사용량 읽기와 그 자체의 쿨다운은 영향을 받지 않는다. 마감 시각이 지나면 리셋 GET이 자동으로 재개된다.
+
 ### 직접 조회 스위치
 
 리셋권 행은 직접 조회 스위치가 꺼져 있으면 숨겨진다. 재실행 후 상태는 unknown이며, 첫 조회 전까지 기본값이다.

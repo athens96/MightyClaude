@@ -526,6 +526,9 @@ internal static class Verification
         await Test("usageReset available", AccountUsageVerification.UsageResetAvailable);
         await Test("usage reset smoke renders available and unknown", AccountUsageVerification.UsageResetSmokeRendersAvailableAndUnknown);
         await Test("usage reset smoke is wired into both platforms", AccountUsageVerification.UsageResetSmokeIsWiredIntoBothPlatforms);
+        await Test("usageReset first-response log", AccountUsageVerification.UsageResetFirstResponseLog);
+        await Test("usageReset rate-limit", AccountUsageVerification.UsageResetRateLimitDeadline);
+        await Test("usageReset guard", AccountUsageVerification.UsageResetGuardCheck);
         await Test("app update ed25519 matches the RFC 8032 vectors", AppUpdateVerification.Ed25519MatchesTheRfc8032Vectors);
         await Test("app update strings match macOS", StringsVerification.AppUpdateStringsMatchMacOS);
         await Test("app update manifest accepts a fixture signature and refuses everything else", AppUpdateVerification.ManifestAcceptsAFixtureSignatureAndRefusesEverythingElse);

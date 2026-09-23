@@ -440,6 +440,141 @@ struct AccountResetEntitlementTests {
         #expect(AccountResetPresentation.rows(nil, directLookupEnabled: true).allSatisfy { $0.state == "unknown" })
     }
 
+    /// The first successful 2xx response for each programme is logged once per
+    /// instance through the injectable sink, key paths and types only, never
+    /// any value (token, email, grant id or number).
+    @Test func usageResetFirstResponseLogRecordsShapeOnce() async throws {
+        var lines: [String] = []
+        let log = AccountUsageShapeLog { lines.append($0) }
+        let clock = AccountTestClock()
+        let http = ResetFixtureHTTP()
+        let box = ResetReadDeadlineBox()
+        await http.use(.init(name: "available",
+                             cedar: cedar(grant(left: 3, ends: Self.future, usableNow: true, requiresLimit: false), atLimit: true, cooldown: nil),
+                             juniper: juniper(available: true, next: nil, perWeek: 2),
+                             cedarState: "available", juniperState: "available"))
+
+        _ = try await AccountUsageService.claude(environment: [:],
+                load: { ClaudeQuotaCredential(token: "fixture-token", plan: "pro") },
+                http: { try await http.read($0) }, now: { clock.read() },
+                resetDeadlineBox: box, shapeLog: log)
+
+        let firstCount = lines.count
+        #expect(firstCount > 0, "shape lines are emitted on the first read")
+        let typeNames = ["object", "array", "number", "string", "boolean", "null", "unknown"]
+        for line in lines {
+            #expect(line.contains(": "), "each line has a path and a type: \(line)")
+            // The type part after the last ': ' is one of the known type names.
+            let typePart = line.components(separatedBy: ": ").last ?? ""
+            #expect(typeNames.contains(typePart), "type part is a known type name: \(line)")
+            // No token, email, grant id or number value appears.
+            #expect(!line.contains("fixture-token"), "token absent: \(line)")
+            #expect(!line.contains("fixture@example.test"), "email absent: \(line)")
+            #expect(!line.contains("grant-fixture"), "grant id absent: \(line)")
+        }
+
+        // Second read with the same log instance: no new lines (already logged once).
+        clock.advance(61)
+        _ = try await AccountUsageService.claude(environment: [:],
+                load: { ClaudeQuotaCredential(token: "fixture-token", plan: "pro") },
+                http: { try await http.read($0) }, now: { clock.read() },
+                resetDeadlineBox: box, shapeLog: log)
+        #expect(lines.count == firstCount, "shape not re-logged on second read — once per instance")
+    }
+
+    /// A 429 on a reset GET sets a deadline from the clamped Retry-After.
+    /// Until the injected clock passes it the service makes no reset GETs and
+    /// returns unknown rows; the base usage read and its cooldown are unaffected.
+    @Test func usageResetRateLimitWaitsForRetryAfter() async throws {
+        let clock = AccountTestClock()
+        let box = ResetReadDeadlineBox()
+
+        final class Counter: @unchecked Sendable {
+            private let lock = NSLock(); var n = 0
+            func inc() { lock.lock(); n += 1; lock.unlock() }
+            func get() -> Int { lock.lock(); defer { lock.unlock() }; return n }
+        }
+        let resetGETs = Counter()
+
+        let http: @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = { req in
+            guard let url = req.url else { throw AccountUsageFailure.network }
+            let q = url.query ?? ""
+            if q == "cedar_ember=1&skip_spend=1" || q == "at_wall=1&skip_spend=1" { resetGETs.inc() }
+            if q == "cedar_ember=1&skip_spend=1" {
+                return AccountUsageHTTPResponse(status: 429, data: Data(), retryAfter: "120")
+            }
+            if q == "at_wall=1&skip_spend=1" {
+                return AccountUsageHTTPResponse(status: 503, data: Data())
+            }
+            let body = url.path.hasSuffix("profile")
+                ? #"{"account":{"email":"fixture@example.test"}}"#
+                : #"{"five_hour":{"utilization":50}}"#
+            return AccountUsageHTTPResponse(status: 200, data: Data(body.utf8))
+        }
+
+        // First read: cedar returns 429 (Retry-After: 120), juniper returns 503.
+        let r1 = try await AccountUsageService.claude(environment: [:],
+                load: { ClaudeQuotaCredential(token: "fixture-token", plan: "pro") },
+                http: http, now: { clock.read() }, resetDeadlineBox: box)
+        #expect(r1.resets.map(\.state) == ["unknown", "unknown"], "both rows unknown after 429/503")
+        #expect(box.deadline != nil, "deadline set from cedar_ember 429")
+        let countAfterFirst = resetGETs.get()
+        #expect(countAfterFirst == 2, "both reset GETs attempted on first call")
+
+        // Second read within the 120 s deadline (advance 60 s).
+        clock.advance(60)
+        let r2 = try await AccountUsageService.claude(environment: [:],
+                load: { ClaudeQuotaCredential(token: "fixture-token", plan: "pro") },
+                http: http, now: { clock.read() }, resetDeadlineBox: box)
+        #expect(r2.resets.map(\.state) == ["unknown", "unknown"], "rows stay unknown within deadline")
+        #expect(resetGETs.get() == countAfterFirst, "no reset GETs while inside deadline")
+        #expect(r2.windows.first?.usedPercent == 50, "base usage read is unaffected by the reset deadline")
+
+        // Third read after the deadline (advance 70 more s, total 130 s > 120 s).
+        clock.advance(70)
+        _ = try await AccountUsageService.claude(environment: [:],
+                load: { ClaudeQuotaCredential(token: "fixture-token", plan: "pro") },
+                http: http, now: { clock.read() }, resetDeadlineBox: box)
+        #expect(resetGETs.get() > countAfterFirst, "reset GETs resume after the deadline")
+    }
+
+    /// The macOS Core guard refuses non-GET, non-https, foreign-host and
+    /// unsanctioned-query requests before the transport sees them.
+    @Test func usageResetGuardRefusesUnsanctionedQueries() throws {
+        func req(_ url: String, method: String = "GET") -> URLRequest {
+            var r = URLRequest(url: URL(string: url)!); r.httpMethod = method; return r
+        }
+        // The four sanctioned variants pass.
+        try AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/usage"))
+        try AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/profile"))
+        try AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1"))
+        try AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1"))
+
+        // Non-GET is refused.
+        #expect(throws: AccountUsageFailure.self) {
+            try AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/usage", method: "POST"))
+        }
+        // Wrong scheme or host.
+        for bad in ["http://api.anthropic.com/api/oauth/usage", "https://evil.test/api/oauth/usage"] {
+            #expect(throws: AccountUsageFailure.self) { try AccountUsageService.guardRequest(req(bad)) }
+        }
+        // Unsanctioned queries: missing skip_spend=1, skip_spend=0, extra key, reordered.
+        for badQuery in ["cedar_ember=1", "at_wall=1", "cedar_ember=1&skip_spend=0",
+                         "cedar_ember=1&skip_spend=1&extra=1", "skip_spend=1&cedar_ember=1"] {
+            #expect(throws: AccountUsageFailure.self, "\(badQuery) must be refused") {
+                try AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/usage?" + badQuery))
+            }
+        }
+        // The guard blocks the transport: fake count stays 0 for refused queries.
+        var fakeTransportCount = 0
+        for badQuery in ["cedar_ember=1", "at_wall=1", "cedar_ember=1&skip_spend=0", "skip_spend=1&at_wall=1"] {
+            if (try? AccountUsageService.guardRequest(req("https://api.anthropic.com/api/oauth/usage?" + badQuery))) != nil {
+                fakeTransportCount += 1
+            }
+        }
+        #expect(fakeTransportCount == 0, "guard prevents unsanctioned queries from reaching transport")
+    }
+
     /// The smoke the macOS app runs under --usage-reset-smoke-test, driven here
     /// through the same Core entry point: an injected AccountUsageService built
     /// on a fixture clock and a fake transport renders the "available" and

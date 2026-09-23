@@ -1,6 +1,61 @@
 using System.Text.Json;
+using System.Diagnostics;
 
 namespace MightyClaude.Core;
+
+/// Persists the reset-read 429 deadline across calls; injectable so tests can
+/// pre-seed or inspect it. Access is lock-protected.
+public sealed class ResetReadDeadlineBox
+{
+    private DateTimeOffset? _deadline;
+    private readonly object gate = new();
+    public DateTimeOffset? Get() { lock (gate) return _deadline; }
+    public void Set(DateTimeOffset? value) { lock (gate) _deadline = value; }
+}
+
+/// Logs key paths and value types of the first 2xx reset response per programme,
+/// once per instance, through an injectable sink.
+/// Default sink: System.Diagnostics.Trace with "account-usage:" prefix.
+public sealed class AccountUsageShapeLog
+{
+    private readonly Action<string> emit;
+    private readonly HashSet<string> logged = [];
+    private readonly object gate = new();
+
+    public static readonly AccountUsageShapeLog Shared = new(line => Trace.WriteLine(line));
+
+    public AccountUsageShapeLog(Action<string> emit) => this.emit = emit;
+
+    public void LogShapeOnce(string program, JsonElement body)
+    {
+        lock (gate) { if (!logged.Add(program)) return; }
+        foreach (var line in ShapeLines(body, program))
+            emit("account-usage: " + line);
+    }
+
+    private static IEnumerable<string> ShapeLines(JsonElement element, string path)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                yield return path + ": object";
+                foreach (var prop in element.EnumerateObject().OrderBy(p => p.Name))
+                    foreach (var line in ShapeLines(prop.Value, path + "." + prop.Name))
+                        yield return line;
+                break;
+            case JsonValueKind.Array:
+                yield return path + ": array";
+                if (element.GetArrayLength() > 0)
+                    foreach (var line in ShapeLines(element[0], path + "[]"))
+                        yield return line;
+                break;
+            case JsonValueKind.True or JsonValueKind.False: yield return path + ": boolean"; break;
+            case JsonValueKind.Number: yield return path + ": number"; break;
+            case JsonValueKind.String: yield return path + ": string"; break;
+            case JsonValueKind.Null: yield return path + ": null"; break;
+        }
+    }
+}
 
 /// The Claude limit-reset (리셋권) entitlement, read only. Mirrors
 /// AccountResetEntitlement.swift — the same two programmes, the same seven
@@ -177,11 +232,20 @@ public static class ClaudeResetEntitlements
     /// carries no reset field means the account is not in that programme;
     /// anything else this app could not read stays unknown. A failure here
     /// never changes the base usage windows or status.
+    /// A 429 sets a reset-read deadline via `deadlineBox`; while the clock is
+    /// before it no reset GETs are sent and all rows read unknown.
     public static async Task<IReadOnlyList<AccountResetEntitlement>> ReadAsync(
         Func<string, AccountUsageHttpRequest> request, AccountUsageHttpHandler http,
-        Func<DateTimeOffset> clock, CancellationToken cancellation = default)
+        Func<DateTimeOffset> clock, ResetReadDeadlineBox? deadlineBox = null,
+        AccountUsageShapeLog? shapeLog = null, CancellationToken cancellation = default)
     {
+        var now = clock();
+        // While the reset-read cooldown is active, all rows read unknown.
+        if (deadlineBox?.Get() is { } skipUntil && now < skipUntil)
+            return ResetProgram.All.Select(Unknown).ToList();
+
         var rows = new List<AccountResetEntitlement>();
+        DateTimeOffset? newDeadline = null;
         foreach (var program in ResetProgram.All)
         {
             var row = Unknown(program);
@@ -189,6 +253,11 @@ public static class ClaudeResetEntitlements
             {
                 var reply = await http(request(ResetProgram.Query(program)), cancellation);
                 if (reply.Status == 404) row = Ineligible(program);
+                else if (reply.Status == 429)
+                {
+                    var d = now.AddSeconds(AccountUsageSupport.RetryInterval(reply.RetryAfter, now));
+                    if (newDeadline is null || d > newDeadline) newDeadline = d;
+                }
                 else if (reply.Status is >= 200 and < 300 && reply.RedirectLocation is null
                          && System.Text.Encoding.UTF8.GetByteCount(reply.Body) <= AccountUsageSupport.MaximumBodyBytes)
                 {
@@ -199,13 +268,15 @@ public static class ClaudeResetEntitlements
                     row = body.ValueKind == JsonValueKind.Object && MetadataJson.Property(body, program).ValueKind == JsonValueKind.Undefined
                         ? Ineligible(program)
                         : program == ResetProgram.CedarEmber ? CedarEmber(body, clock()) : JuniperTide(body, clock());
+                    shapeLog?.LogShapeOnce(program, body);
                 }
-                // A 429 or a 5xx leaves the row unknown and the base usage untouched.
+                // A 5xx leaves the row unknown and the base usage untouched.
             }
             catch (JsonException) { }
             catch (AccountUsageFailure) { }
             rows.Add(row);
         }
+        deadlineBox?.Set(newDeadline);
         return rows;
     }
 
