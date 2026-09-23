@@ -60,10 +60,18 @@ public struct MightyGraphLayout {
         MightyGraphBlockSize.nodeID(runID: run.id, suffix: suffix)
     }
 
+    public static func latestResultID(runs: [MightyGraphRun]) -> String? {
+        runs.indices.last(where: { finished(runs[$0]) }).map { nodeID(runs[$0], suffix: "result") }
+    }
+
+    public static func fittedResultID(runs: [MightyGraphRun], viewport: CGSize?, sharedResultSize: MightyGraphBlockSize?) -> String? {
+        (viewport != nil && sharedResultSize == nil) ? latestResultID(runs: runs) : nil
+    }
+
     public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil) -> Self {
         // The latest result card is the result of the last finished run in the list.
         let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
-        let latestResultID = latestFinishedRunIndex.map { nodeID(runs[$0], suffix: "result") }
+        let latestResultID = Self.latestResultID(runs: runs)
 
         // The files panel reduces available width only when it is open for the latest result.
         let filesPanelOpenForLatest: Bool = {
@@ -206,7 +214,7 @@ public struct MightyGraphLayout {
             result.nodes.append(Node(id: panelID, content: .resultFiles(runIndex), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
         }
-        result.fittedResultID = (viewport != nil && sharedResultSize == nil) ? latestResultID : nil
+        result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)
         return result
     }
 }
