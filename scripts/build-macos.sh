@@ -6,8 +6,8 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Never replace the selected toolchain with a hard-coded Command Line Tools path.
 SWIFT_EXECUTABLE="$(xcrun --find swift)"
 BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-release}"
-BUILD_SCRATCH="$PROJECT_ROOT/native/macos/.build"
-MODULE_CACHE="$PROJECT_ROOT/native/macos/.build/module-cache"
+BUILD_SCRATCH="${MIGHTY_BUILD_SCRATCH:-$PROJECT_ROOT/native/macos/.build}"
+MODULE_CACHE="$BUILD_SCRATCH/module-cache"
 APP_PATH="${MIGHTY_MACOS_APP_PATH:-$PROJECT_ROOT/release/native-macos/MightyClaude.app}"
 mkdir -p "$MODULE_CACHE"
 export CLANG_MODULE_CACHE_PATH="$MODULE_CACHE"
@@ -78,11 +78,88 @@ fi
 if [ -n "${MIGHTY_UPDATE_PUBLIC_KEY:-}" ]; then
   plutil -replace MightyUpdatePublicKey -string "$MIGHTY_UPDATE_PUBLIC_KEY" "$APP_PATH/Contents/Info.plist"
 fi
+# Browser engine bundling: CEF framework, helper stubs, pinned Node, licence notices.
+# Requires a warm engine cache (run scripts/fetch-browser-engine.sh first).
+if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
+    LOCK_FILE="$PROJECT_ROOT/native/macos/BrowserEngine.lock"
+    CEF_URL="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['cef']['url'])" "$LOCK_FILE")"
+    NODE_URL="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['node']['url'])" "$LOCK_FILE")"
+    NODE_VERSION="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['node']['version'])" "$LOCK_FILE")"
+    LOCK_HASH="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}')"
+    ENGINE_CACHE="${MIGHTY_BROWSER_ENGINE_CACHE:-$HOME/Library/Caches/MightyClaude/browser-engine/${LOCK_HASH:0:16}}"
+    CEF_ARCHIVE="$ENGINE_CACHE/$(basename "$CEF_URL")"
+    NODE_ARCHIVE="$ENGINE_CACHE/$(basename "$NODE_URL")"
+    if [ ! -f "$CEF_ARCHIVE" ] || [ ! -f "$NODE_ARCHIVE" ]; then
+        echo "browser engine not in cache — run scripts/fetch-browser-engine.sh first" >&2
+        exit 1
+    fi
+    EXTRACT_TEMP="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$EXTRACT_TEMP'" EXIT
+    FW_DIR="$APP_PATH/Contents/Frameworks"
+    mkdir -p "$FW_DIR"
+    # CEF framework
+    CEF_TOP="$(tar -tjf "$CEF_ARCHIVE" | head -1 | cut -d/ -f1)"
+    tar -xjf "$CEF_ARCHIVE" -C "$EXTRACT_TEMP" 2>/dev/null
+    ditto "$EXTRACT_TEMP/$CEF_TOP/Release/Chromium Embedded Framework.framework" \
+          "$FW_DIR/Chromium Embedded Framework.framework"
+    # Licence notices (CEF and Chromium names satisfy the check)
+    LIC_DIR="$APP_PATH/Contents/Resources/ThirdPartyLicenses"
+    cp "$EXTRACT_TEMP/$CEF_TOP/LICENSE.txt"  "$LIC_DIR/CEF-LICENSE.txt"
+    cp "$EXTRACT_TEMP/$CEF_TOP/CREDITS.html" "$LIC_DIR/Chromium-CREDITS.html"
+    # Node runtime (only the node binary is required by the check)
+    NODE_BASE="node-v${NODE_VERSION}-darwin-arm64"
+    tar -xzf "$NODE_ARCHIVE" -C "$EXTRACT_TEMP" "$NODE_BASE/bin/node" 2>/dev/null
+    NODE_DST="$APP_PATH/Contents/Resources/browser/node/bin"
+    mkdir -p "$NODE_DST"
+    cp "$EXTRACT_TEMP/$NODE_BASE/bin/node" "$NODE_DST/node"
+    chmod +x "$NODE_DST/node"
+    # Helper stubs (CEF needs distinct per-role process names and bundle IDs)
+    HELPER_C="$EXTRACT_TEMP/helper.c"
+    printf '#include <stdlib.h>\nint main(void){return 0;}\n' > "$HELPER_C"
+    xcrun clang -o "$EXTRACT_TEMP/helper_bin" -arch arm64 -mmacosx-version-min=14.0 "$HELPER_C"
+    make_helper() {
+        local name="$1" bundle_id="$2"
+        local happ="$FW_DIR/${name}.app"
+        mkdir -p "$happ/Contents/MacOS"
+        cp "$EXTRACT_TEMP/helper_bin" "$happ/Contents/MacOS/$name"
+        cat > "$happ/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>$bundle_id</string>
+<key>CFBundleExecutable</key><string>$name</string>
+<key>CFBundleName</key><string>$name</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+</dict></plist>
+PLIST
+    }
+    make_helper "MightyClaude Helper"           "dev.mightyclaude.native.helper"
+    make_helper "MightyClaude Helper (GPU)"      "dev.mightyclaude.native.helper.gpu"
+    make_helper "MightyClaude Helper (Renderer)" "dev.mightyclaude.native.helper.renderer"
+    make_helper "MightyClaude Helper (Plugin)"   "dev.mightyclaude.native.helper.plugin"
+    rm -rf "$EXTRACT_TEMP"
+    trap - EXIT
+fi
 # Ad-hoc signatures differ per build, so the Keychain treats every rebuild as a
 # new app and asks again for the remote connection key. A stable local
 # code-signing certificate (Keychain Access → Certificate Assistant, type
 # "Code Signing") makes "Always Allow" stick across rebuilds.
 CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:--}"
+# Sign CEF inner dylibs explicitly (not reached by --deep on the main bundle)
+if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
+    CEF_FW="$APP_PATH/Contents/Frameworks/Chromium Embedded Framework.framework"
+    for dylib in "$CEF_FW/Libraries/"*.dylib; do
+        [ -f "$dylib" ] && codesign --force --sign "$CODESIGN_IDENTITY" "$dylib"
+    done
+    for helper_app in "$APP_PATH/Contents/Frameworks/"*.app; do
+        [ -d "$helper_app" ] && codesign --force --sign "$CODESIGN_IDENTITY" "$helper_app"
+    done
+    codesign --force --sign "$CODESIGN_IDENTITY" "$CEF_FW"
+fi
 codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
 # Building must not change LaunchServices registrations while the installed app
 # may be running. install-macos.sh handles registration after the app has quit.
