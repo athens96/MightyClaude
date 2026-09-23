@@ -64,9 +64,17 @@ struct MightyGraphView: View {
         return (title, "person.crop.square.filled.and.at.rectangle", .purple)
     }
 
+    /// The result card of the last finished run - the same card Core treats as
+    /// the latest one, whether it completed, failed or stopped.
     private var latestResultNodeID: String? {
         runs.indices.last(where: { MightyGraphLayout.finished(runs[$0]) })
             .map { MightyGraphLayout.nodeID(runs[$0], suffix: "result") }
+    }
+
+    /// Mirrors MightyGraphLayout.fittedResultID for the card headers. Reading it
+    /// off `layout` would rebuild the whole layout once per drawn card.
+    private var fittedResultID: String? {
+        (canvasViewport != nil && graphResultSize == nil) ? latestResultNodeID : nil
     }
 
     private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: graphResultSize) }
@@ -133,6 +141,7 @@ struct MightyGraphView: View {
                         .onChange(of: geo.size) { _, new in canvasViewport = new }
                 })
                 .onChange(of: canvasViewport) { _, _ in
+                    // Core decides whether a card is fitting; a resize re-aims at it.
                     if let fitted = layout.fittedResultID {
                         trimSequence += 1
                         scrollTarget = MightyGraphScrollTarget(token: "fit-resize:\(trimSequence)", nodeID: fitted, alignTop: true)
@@ -307,10 +316,14 @@ struct MightyGraphView: View {
                     .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
                 }
                 let isLatestResult = node.id == latestResultNodeID
-                let isFittedResult = isLatestResult && canvasViewport != nil && graphResultSize == nil
+                // Core owns the rule; the header only reads the same answer.
+                let isFittedResult = node.id == fittedResultID
                 let hasSharedSize = isLatestResult && graphResultSize != nil
                 if hasSharedSize {
-                    Button(L("graph.result.fitToWindow")) { onSaveResultSize(nil) }
+                    Button(L("graph.result.fitToWindow")) {
+                        resized.removeValue(forKey: node.id)
+                        onSaveResultSize(nil)
+                    }
                         .buttonStyle(.plain)
                         .font(.system(size: 10))
                         .foregroundStyle(Palette.accent)
