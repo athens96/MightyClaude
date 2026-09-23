@@ -34,7 +34,7 @@ internal static class SettingsVerification
             Check(ProviderCatalog.RemoteSettingsProblem(settings, ProviderCatalog.Capabilities("codex")) is null, "Modern Codex capabilities rejected a supported option.");
         }
 
-        var request = new StartRunRequest("pane", "workspace", "claude", "argument fixture only", Provider: "codex");
+        var request = new StartRunRequest("pane", "workspace", "claude", "argument fixture only", [], Provider: "codex");
         var defaults = ProviderCatalog.Arguments(request, "/fixture-plugin");
         Check(defaults.Contains("service_tier=\"default\"") && defaults.Contains("features.fast_mode=false"), "Fast off must override a global Fast preference.");
         Check(defaults.Contains("sandbox_mode=\"read-only\"") && defaults.Contains("sandbox_workspace_write.network_access=false"), "Default permissions became more permissive.");

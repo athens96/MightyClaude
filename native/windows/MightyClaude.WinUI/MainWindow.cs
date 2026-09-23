@@ -542,7 +542,7 @@ public sealed partial class MainWindow : Window
                 try
                 {
                     int? maxTurns = caps.MaxTurns && turns.Text.Trim() != "" ? int.Parse(turns.Text, CultureInfo.InvariantCulture) : null; double? maxBudget = caps.MaxBudgetUsd && budget.Text.Trim() != "" ? double.Parse(budget.Text, CultureInfo.InvariantCulture) : null;
-                    var setting = Session.Settings with { MaxTurns = maxTurns, MaxBudgetUsd = maxBudget }; _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, "validation", pane.Model, pane.Provider, setting).Validate(); await Change(p => p with { Settings = setting });
+                    var setting = Session.Settings with { MaxTurns = maxTurns, MaxBudgetUsd = maxBudget }; _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, "validation", [], pane.Model, pane.Provider, setting).Validate(); await Change(p => p with { Settings = setting });
                 }
                 catch (Exception ex) { args.Cancel = true; validation.Text = ex.Message; }
                 finally { deferral.Complete(); }
