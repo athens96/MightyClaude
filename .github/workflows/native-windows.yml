@@ -20,9 +20,16 @@ jobs:
             runner: windows-11-arm
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Locale gate — missing keys and touched-file Korean check
+        shell: pwsh
+        run: |
+          $sha = (Get-Content scripts/locale-touched-baseline).Trim()
+          node scripts/check-locales.js --check --touched-since $sha
       - name: Test core and publish self-contained WinUI folder and ZIP
         shell: pwsh
         run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// 용법: node scripts/check-locales.js            # 검사하고 docs/i18n.md를 새로 쓴다
-//       node scripts/check-locales.js --check    # 검사만 한다 (docs/i18n.md가 어긋나면 실패)
+// 용법: node scripts/check-locales.js                               # 검사하고 docs/i18n.md를 새로 쓴다
+//       node scripts/check-locales.js --check                       # 검사만 한다 (docs/i18n.md가 어긋나면 실패)
+//       node scripts/check-locales.js --root <dir>                  # 주어진 뿌리로 검사한다 (픽스처 테스트용)
+//       node scripts/check-locales.js --touched-since <sha>         # 기준 SHA 이후 접촉된 Windows 파일도 검사한다
 //
 // locales/ko.json과 locales/en.json이 이 저장소의 단 하나의 원본이고, 세 클라이언트는
 // 그 사본을 담는다(docs/i18n.md). 이 검사는 plain node만 쓴다 — 의존성이 없다.
@@ -14,16 +16,31 @@
 // 그리고 클라이언트마다 남아 있는 한국어 하드코딩 문구의 수를 세어 보고서를 찍고
 // docs/i18n.md에 같은 내용을 쓴다. 검사 하나라도 깨지면 종료 코드가 0이 아니다.
 // 남은 문구가 몇 개든 그 자체는 실패가 아니다 — 세는 것이지 막는 것이 아니다.
+//
+// --touched-since <sha>를 넘기면 그 SHA 이후 접촉된(커밋 또는 미커밋) Windows Core·WinUI
+// 소스 파일에 한국어 하드코딩 문구가 남아 있으면 실패한다.
+// MainWindow.Smoke.cs는 검사 진단용이므로 제외한다.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { execFileSync } from 'node:child_process';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
+// ── CLI 인수 파싱 ─────────────────────────────────────────────────────────────
+const argv = process.argv.slice(2);
+const CHECK_ONLY = argv.includes('--check');
+
+const rootIdx = argv.indexOf('--root');
+const ROOT = rootIdx >= 0
+  ? path.resolve(argv[rootIdx + 1])
+  : path.resolve(import.meta.dirname, '..');
+
+const touchedSinceIdx = argv.indexOf('--touched-since');
+const TOUCHED_SINCE = touchedSinceIdx >= 0 ? argv[touchedSinceIdx + 1] : null;
 const LANGUAGES = ['ko', 'en'];
 const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
-// `t("key")` / `t('key')`, 어느 언어에서나 같은 모양으로 부른다.
-const REFERENCE = /\bt\(\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)["']/g;
+// `t("key")` / `t('key')` (공통), `L("key")` (Swift), `Locale.Get("key")` (C#)
+const REFERENCE = /\b(?:t|L|Locale\.Get)\(\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)["']/g;
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
 /// 다섯 클라이언트. `sources`는 문구를 세고 키 참조를 찾는 곳이고,
@@ -307,6 +324,57 @@ for (const key of koKeys) {
   }
 }
 
+// ── 접촉된 Windows 파일 검사 (--touched-since) ────────────────────────────────
+if (TOUCHED_SINCE) {
+  const SMOKE_EXEMPT = 'native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs';
+  const windowsClients = CLIENTS.filter(
+    (c) => c.label === 'Windows Core' || c.label === 'Windows WinUI',
+  );
+
+  const touchedSet = new Set();
+  function addDiffLines(output) {
+    for (const line of output.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed) touchedSet.add(trimmed);
+    }
+  }
+  try {
+    addDiffLines(
+      execFileSync('git', ['-C', ROOT, 'diff', '--name-only', TOUCHED_SINCE, 'HEAD'], {
+        encoding: 'utf8',
+      }),
+    );
+  } catch {}
+  try {
+    addDiffLines(
+      execFileSync('git', ['-C', ROOT, 'diff', '--name-only', '--cached'], {
+        encoding: 'utf8',
+      }),
+    );
+  } catch {}
+  try {
+    addDiffLines(
+      execFileSync('git', ['-C', ROOT, 'diff', '--name-only'], { encoding: 'utf8' }),
+    );
+  } catch {}
+
+  for (const client of windowsClients) {
+    for (const root of client.roots) {
+      for (const relative of walk(root, client.extensions, [])) {
+        if (relative === SMOKE_EXEMPT) continue;
+        if (!touchedSet.has(relative)) continue;
+        const source = readText(relative);
+        const count = countLiterals(relative, source);
+        if (count > 0) {
+          fail(
+            `${client.label}: ${relative}에 한국어 하드코딩 문구가 ${count}개 남아 있습니다.`,
+          );
+        }
+      }
+    }
+  }
+}
+
 // ── 보고서 ─────────────────────────────────────────────────────────────────────
 const lines = [];
 lines.push('클라이언트별 남은 한국어 하드코딩 문구');
@@ -389,9 +457,10 @@ function documentation() {
 const DOC = 'docs/i18n.md';
 const generated = documentation();
 const current = exists(DOC) ? readText(DOC) : null;
-if (process.argv.includes('--check')) {
+if (CHECK_ONLY) {
   if (current !== generated) fail(`${DOC}가 생성한 내용과 다릅니다. \`node scripts/check-locales.js\`를 다시 돌리세요.`);
 } else if (current !== generated) {
+  fs.mkdirSync(path.join(ROOT, path.dirname(DOC)), { recursive: true });
   fs.writeFileSync(path.join(ROOT, DOC), generated);
   console.log(`\n${DOC}를 새로 썼습니다.`);
 }
