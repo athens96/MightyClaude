@@ -209,3 +209,25 @@ test('접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다', () 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ── 검사 7: CRLF로 받은 docs/i18n.md도 --check를 통과한다 ─────────────────────
+// Windows 러너는 autocrlf로 저장소를 받는다. 보고서는 늘 LF로 만들므로 줄끝만
+// 달라진 사본을 어긋난 것으로 보면 CI가 이 한 가지로만 붉어진다.
+test('CRLF로 받은 docs/i18n.md도 --check를 통과한다', () => {
+  const dir = tmpDir();
+  try {
+    setupWindows(dir);
+    const written = run(['--root', dir]);
+    assert.equal(written.status, 0, `보고서를 먼저 써야 한다\nstderr: ${written.stderr}`);
+
+    const doc = path.join(dir, 'docs', 'i18n.md');
+    const lf = fs.readFileSync(doc, 'utf8');
+    assert.ok(!lf.includes('\r\n'), '생성한 보고서는 LF여야 한다');
+    fs.writeFileSync(doc, lf.replace(/\n/g, '\r\n'));
+
+    const r = run(['--root', dir, '--check']);
+    assert.equal(r.status, 0, `CRLF 사본은 통과해야 한다\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
