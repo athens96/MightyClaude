@@ -378,6 +378,10 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let plan1 = await runner.plan()
         let setupItem1 = plan1.first { $0.entry.entryId == "setup" }
         #expect(setupItem1 != nil)
+        // The fake executor clones nothing, so put the checked-out script in place.
+        let clone = appData.appendingPathComponent("toolkit-clones/\(fakeSHA)")
+        try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: clone.appendingPathComponent("install.sh"))
         // Run with exit 0 for all steps → runner writes marker → probe sees it
         let executor = FakeRunnerExecutor(default: .success)
         let results = await runner.run(plan: plan1, executor: executor)
@@ -386,6 +390,44 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         // Second plan: entry is now installed → not in plan
         let plan2 = await runner.plan()
         #expect(plan2.allSatisfy { $0.entry.entryId != "setup" })
+    }
+
+    // MARK: – repoScript safety
+
+    private func approvedRepoScript(_ label: String, scriptPath: String = "install.sh") async throws -> (URL, URL, ToolkitRunner) {
+        let dir = tempDir(label)
+        let appData = dir.appendingPathComponent("appdata")
+        let store = ToolkitStore(directory: dir.appendingPathComponent("data"))
+        try await store.addEntry(ToolkitEntry(entryId: "setup", displayName: "Setup", source: .user,
+            install: .repoScript(url: "https://github.com/x/setup.git", ref: fakeSHA, scriptPath: scriptPath)))
+        try await store.approve(entryId: "setup", executor: FakeToolkitExecutor(responses: []))
+        let runner = ToolkitRunner(store: store, probeContext: ToolkitProbeContext(home: dir.appendingPathComponent("home"), environment: [:], appDataDir: appData))
+        return (dir, appData.appendingPathComponent("toolkit-clones/\(fakeSHA)"), runner)
+    }
+
+    @Test func repoScriptSymlinkLeavingTheCloneIsNotRun() async throws {
+        let (dir, clone, runner) = try await approvedRepoScript("run-escape")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let outside = dir.appendingPathComponent("outside.sh")
+        try Data("#!/bin/sh\n".utf8).write(to: outside)
+        try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: clone.appendingPathComponent("install.sh"), withDestinationURL: outside)
+        let executor = FakeRunnerExecutor(default: .success)
+        let results = await runner.run(plan: await runner.plan(), executor: executor)
+        #expect(!executor.calls.contains { $0.first?.hasSuffix("install.sh") == true })
+        #expect(results.first { $0.entryId == "setup" }?.verdict == .failed)
+    }
+
+    @Test func repoScriptStopsAfterAFailedCheckout() async throws {
+        let (dir, clone, runner) = try await approvedRepoScript("run-checkout-fail")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: clone, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: clone.appendingPathComponent("install.sh"))
+        let executor = FakeRunnerExecutor(responses: [.success, .failure(output: "fatal: reference is not a tree")], default: .success)
+        let plan = await runner.plan().filter { $0.entry.entryId == "setup" }
+        let results = await runner.run(plan: plan, executor: executor)
+        #expect(executor.calls.count == 2)
+        #expect(results.first { $0.entryId == "setup" }?.verdict == .failed)
     }
 
     // MARK: – isFetchStep classification
@@ -432,7 +474,7 @@ private func networkOutput(_ detail: String = "") -> ToolkitCommandOutput {
         let items = await runner.plan()
         let item = items.first { $0.entry.entryId == "my-plugin" }!
         if case .run(let cmds) = item.action {
-            #expect(cmds[0] == ["claude", "plugin", "marketplace", "add", "owner/repo", "--name", "repo"])
+            #expect(cmds[0] == ["claude", "plugin", "marketplace", "add", "--scope", "user", "owner/repo"])
             #expect(cmds[1] == ["claude", "plugin", "install", "my-plugin@repo", "--scope", "user", "--json"])
         } else {
             Issue.record("Expected .run for plugin entry")

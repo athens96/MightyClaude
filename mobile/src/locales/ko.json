@@ -354,5 +354,7 @@
   "browser.forward": "앞으로",
   "browser.newTab": "새 브라우저 탭",
   "browser.reload": "새로 고침",
-  "browser.tab.title": "브라우저"
+  "browser.tab.title": "브라우저",
+  "settings.toolkit.errorEntryFileTemplate": "도구 파일은 JSON 객체 하나여야 합니다: {name}",
+  "settings.toolkit.errorExecutableTemplate": "실행 파일을 찾을 수 없습니다: {name}"
 }

@@ -42,7 +42,7 @@ extension AppStore {
             do {
                 let data = try Data(contentsOf: url)
                 guard var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                    throw MightyError("도구 파일은 JSON 객체 하나여야 합니다: \(url.lastPathComponent)")
+                    throw MightyError(L("settings.toolkit.errorEntryFileTemplate", ["name": url.lastPathComponent]))
                 }
                 object.removeValue(forKey: "approval")
                 let entry = try ToolkitEntryDecoder.decode(object)
@@ -139,7 +139,7 @@ private struct LiveToolkitCommandExecutor: ToolkitCommandExecutor {
     func run(_ argv: [String]) throws -> String {
         guard let name = argv.first else { return "" }
         guard let exeURL = resolveExecutable(name) else {
-            throw MightyError("실행 파일을 찾을 수 없습니다: \(name)")
+            throw MightyError(L("settings.toolkit.errorExecutableTemplate", ["name": name]))
         }
         let process = Process()
         process.executableURL = exeURL

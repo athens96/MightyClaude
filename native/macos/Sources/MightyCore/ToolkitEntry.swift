@@ -12,35 +12,6 @@ public enum ToolkitInstallSpec: Sendable, Equatable {
     case skill(url: String)
     case package(manager: ToolkitPackageManager, name: String)
     case repoScript(url: String, ref: String, scriptPath: String)
-
-    /// Returns argv arrays for the install commands.
-    /// All returned executables are from the safe set {claude, git, brew, npm}.
-    /// repoScript: returns git commands only; the script execution is a
-    /// separate step performed after the clone succeeds.
-    public func buildInstallCommands() -> [[String]] {
-        switch self {
-        case .plugin(let source, let pluginID):
-            let marketplace = pluginID.split(separator: "@").last.map(String.init) ?? pluginID
-            return [
-                ["claude", "plugin", "marketplace", "add", source, "--name", marketplace],
-                ["claude", "plugin", "install", pluginID, "--scope", "user", "--json"],
-            ]
-        case .mcp(let name, let executable, let args):
-            return [["claude", "mcp", "add", "--scope", "user", name, "--"] + [executable] + args]
-        case .skill(let url):
-            return [["git", "clone", url]]
-        case .package(let manager, let name):
-            switch manager {
-            case .brew: return [["brew", "install", name]]
-            case .npm: return [["npm", "install", "-g", name]]
-            }
-        case .repoScript(let url, let ref, _):
-            return [
-                ["git", "clone", "--no-checkout", url],
-                ["git", "checkout", ref],
-            ]
-        }
-    }
 }
 
 public struct ToolkitEntry: Sendable, Equatable {
