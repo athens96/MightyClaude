@@ -161,21 +161,57 @@ CSRC
 
     # CEF engine bridge dylib: the app target loads this at runtime so that
     # cef_initialize and cef_browser_host_create_browser are reachable without
-    # linking the Swift package against CEF headers at build time.
+    # linking the Swift package against CEF headers at build time.  The CEF C
+    # API headers come from the extracted, pinned SDK, and every CEF entry
+    # point is still resolved with dlsym, so the dylib has no link-time
+    # dependency on the framework.
     BRIDGE_C="$EXTRACT_TEMP/cef_bridge.c"
     cat > "$BRIDGE_C" <<'CSRC'
 #include <dlfcn.h>
+#include <libgen.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "include/capi/cef_app_capi.h"
+#include "include/capi/cef_browser_capi.h"
+#include "include/capi/cef_client_capi.h"
+#include "include/capi/cef_life_span_handler_capi.h"
+#include "include/capi/cef_request_context_capi.h"
 
 static const char k_cef_initialize[]                  = "cef_initialize";
 static const char k_cef_browser_host_create_browser[] = "cef_browser_host_create_browser";
+
 static void* g_cef = NULL;
+static char  g_frameworks[4096] = {0};   /* .../Contents/Frameworks          */
+static char  g_framework[4096]  = {0};   /* .../Chromium Embedded Framework  */
+static int   g_initialized = 0;
+
+/* CEF entry points, resolved lazily from the framework. */
+typedef int  (*fn_initialize_t)(const cef_main_args_t*, const cef_settings_t*,
+                                cef_app_t*, void*);
+typedef int  (*fn_create_browser_t)(const cef_window_info_t*, cef_client_t*,
+                                    const cef_string_t*, const cef_browser_settings_t*,
+                                    cef_dictionary_value_t*, cef_request_context_t*);
+typedef cef_request_context_t* (*fn_create_context_t)(
+    const cef_request_context_settings_t*, cef_request_context_handler_t*);
+typedef int  (*fn_utf8_to_utf16_t)(const char*, size_t, cef_string_utf16_t*);
+typedef void (*fn_do_work_t)(void);
+typedef void (*fn_shutdown_t)(void);
 
 __attribute__((visibility("default")))
 int mighty_cef_load(const char* fw_path) {
     if (g_cef) return 1;
     g_cef = dlopen(fw_path, RTLD_NOW | RTLD_GLOBAL);
-    return g_cef != NULL;
+    if (!g_cef) return 0;
+    snprintf(g_framework, sizeof(g_framework), "%s", fw_path);
+    /* fw_path is <Frameworks>/Chromium Embedded Framework.framework/Chromium
+     * Embedded Framework: two levels up is the app's Frameworks directory. */
+    char copy[4096];
+    snprintf(copy, sizeof(copy), "%s", fw_path);
+    snprintf(g_frameworks, sizeof(g_frameworks), "%s", dirname(dirname(copy)));
+    return 1;
 }
 
 __attribute__((visibility("default")))
@@ -187,9 +223,217 @@ __attribute__((visibility("default")))
 void* mighty_cef_create_browser_sym(void) {
     return g_cef ? dlsym(g_cef, k_cef_browser_host_create_browser) : NULL;
 }
+
+/* ── strings ───────────────────────────────────────────────────────────── */
+
+static int cef_str(cef_string_t* out, const char* utf8) {
+    fn_utf8_to_utf16_t f = (fn_utf8_to_utf16_t)dlsym(g_cef, "cef_string_utf8_to_utf16");
+    if (!f || !utf8) return 0;
+    return f(utf8, strlen(utf8), out);
+}
+
+/* ── ref-counting ──────────────────────────────────────────────────────── */
+
+/* The handlers below are process-lifetime globals, so reference counting is a
+ * no-op: nothing CEF holds on to can outlive the app process. */
+static void stub_add_ref(struct _cef_base_ref_counted_t* b)              { (void)b; }
+static int  stub_release(struct _cef_base_ref_counted_t* b)              { (void)b; return 0; }
+static int  stub_has_one_ref(struct _cef_base_ref_counted_t* b)          { (void)b; return 1; }
+static int  stub_has_at_least_one_ref(struct _cef_base_ref_counted_t* b) { (void)b; return 1; }
+
+#define BASE_INIT(ptr) do { \
+    (ptr)->base.size                 = sizeof(*(ptr)); \
+    (ptr)->base.add_ref              = stub_add_ref; \
+    (ptr)->base.release              = stub_release; \
+    (ptr)->base.has_one_ref          = stub_has_one_ref; \
+    (ptr)->base.has_at_least_one_ref = stub_has_at_least_one_ref; \
+} while (0)
+
+/* ── one browser per pane, keyed by the pane's NSView ──────────────────── */
+
+#define MAX_PANES 32
+typedef struct {
+    void*            parent_view;
+    cef_browser_t*   browser;
+    cef_request_context_t* context;
+} pane_t;
+
+static pane_t g_panes[MAX_PANES];
+static int    g_pane_count = 0;
+static void*  g_pending_parent = NULL;
+
+static pane_t* pane_for(void* parent_view) {
+    for (int i = 0; i < g_pane_count; i++) {
+        if (g_panes[i].parent_view == parent_view) return &g_panes[i];
+    }
+    return NULL;
+}
+
+static cef_app_t            g_app;
+static cef_client_t         g_client;
+static cef_life_span_handler_t g_life_span;
+
+static void on_after_created(struct _cef_life_span_handler_t* self,
+                             cef_browser_t* browser) {
+    (void)self;
+    pane_t* p = pane_for(g_pending_parent);
+    if (p && !p->browser) p->browser = browser;
+}
+
+static cef_life_span_handler_t* client_get_life_span(struct _cef_client_t* s) {
+    (void)s;
+    return &g_life_span;
+}
+
+static void init_handlers(void) {
+    memset(&g_app, 0, sizeof(g_app));
+    memset(&g_client, 0, sizeof(g_client));
+    memset(&g_life_span, 0, sizeof(g_life_span));
+    BASE_INIT(&g_app);
+    BASE_INIT(&g_client);
+    BASE_INIT(&g_life_span);
+    g_life_span.on_after_created   = on_after_created;
+    g_client.get_life_span_handler = client_get_life_span;
+}
+
+/* ── engine lifecycle ──────────────────────────────────────────────────── */
+
+/* Starts CEF once per app process, lazily, the first time a pane needs it.
+ * |root_cache| is the browser-profiles root that every workspace profile lives
+ * under; the helper that runs cef_execute_process sits next to this dylib. */
+static int ensure_initialized(const char* root_cache) {
+    if (g_initialized) return 1;
+    if (!g_cef) return 0;
+    fn_initialize_t initialize = (fn_initialize_t)dlsym(g_cef, k_cef_initialize);
+    if (!initialize) return 0;
+
+    init_handlers();
+
+    cef_settings_t settings;
+    memset(&settings, 0, sizeof(settings));
+    settings.size = sizeof(settings);
+    settings.no_sandbox = 1;
+    settings.log_severity = LOGSEVERITY_ERROR;
+
+    char buf[4608];
+    snprintf(buf, sizeof(buf), "%s/Chromium Embedded Framework.framework", g_frameworks);
+    cef_str(&settings.framework_dir_path, buf);
+    snprintf(buf, sizeof(buf), "%s/Chromium Embedded Framework.framework/Resources", g_frameworks);
+    cef_str(&settings.resources_dir_path, buf);
+    cef_str(&settings.locales_dir_path, buf);
+    snprintf(buf, sizeof(buf),
+             "%s/MightyClaude Helper.app/Contents/MacOS/MightyClaude Helper", g_frameworks);
+    cef_str(&settings.browser_subprocess_path, buf);
+    cef_str(&settings.root_cache_path, root_cache);
+
+    cef_main_args_t args;
+    memset(&args, 0, sizeof(args));
+    if (!initialize(&args, &settings, &g_app, NULL)) return 0;
+    g_initialized = 1;
+    return 1;
+}
+
+/* Pumped from the app's main run loop so SwiftUI is never blocked. */
+__attribute__((visibility("default")))
+void mighty_cef_work(void) {
+    if (!g_initialized) return;
+    fn_do_work_t work = (fn_do_work_t)dlsym(g_cef, "cef_do_message_loop_work");
+    if (work) work();
+}
+
+__attribute__((visibility("default")))
+void mighty_cef_shutdown(void) {
+    if (!g_initialized) return;
+    fn_shutdown_t shutdown = (fn_shutdown_t)dlsym(g_cef, "cef_shutdown");
+    if (shutdown) shutdown();
+    g_initialized = 0;
+}
+
+/* ── the pane's single entry point ─────────────────────────────────────── */
+
+/* Shows |url| inside |parent_view|. The first call for a view starts the
+ * engine if needed, creates this workspace's request context on |cache_path|
+ * and a windowed browser parented to the view; later calls navigate the
+ * browser that is already there. Returns 1 when the page was handed to CEF. */
+__attribute__((visibility("default")))
+int mighty_cef_show(void* parent_view, int width, int height,
+                    const char* cache_path, const char* url) {
+    if (!parent_view || !cache_path || !url) return 0;
+
+    char root[4096];
+    snprintf(root, sizeof(root), "%s", cache_path);
+    char* parent_dir = dirname(root);
+    if (!ensure_initialized(parent_dir)) return 0;
+
+    pane_t* pane = pane_for(parent_view);
+    if (pane && pane->browser) {
+        cef_frame_t* frame = pane->browser->get_main_frame(pane->browser);
+        if (!frame) return 0;
+        cef_string_t target = {0};
+        cef_str(&target, url);
+        frame->load_url(frame, &target);
+        return 1;
+    }
+    if (g_pane_count >= MAX_PANES) return 0;
+
+    /* Each workspace gets its own request context so its cookies and logins
+     * live in its own profile directory under the root cache. */
+    fn_create_context_t create_context =
+        (fn_create_context_t)dlsym(g_cef, "cef_request_context_create_context");
+    if (!create_context) return 0;
+    cef_request_context_settings_t rc;
+    memset(&rc, 0, sizeof(rc));
+    rc.size = sizeof(rc);
+    rc.persist_session_cookies = 1;
+    cef_str(&rc.cache_path, cache_path);
+    cef_request_context_t* context = create_context(&rc, NULL);
+    if (!context) return 0;
+
+    fn_create_browser_t create_browser =
+        (fn_create_browser_t)dlsym(g_cef, k_cef_browser_host_create_browser);
+    if (!create_browser) return 0;
+
+    cef_window_info_t wi;
+    memset(&wi, 0, sizeof(wi));
+    wi.size = sizeof(wi);
+    wi.parent_view = (cef_window_handle_t)parent_view;
+    wi.bounds.x = 0;
+    wi.bounds.y = 0;
+    wi.bounds.width = width > 0 ? width : 1;
+    wi.bounds.height = height > 0 ? height : 1;
+
+    cef_browser_settings_t bs;
+    memset(&bs, 0, sizeof(bs));
+    bs.size = sizeof(bs);
+
+    cef_string_t target = {0};
+    cef_str(&target, url);
+
+    pane_t* slot = &g_panes[g_pane_count++];
+    slot->parent_view = parent_view;
+    slot->browser = NULL;
+    slot->context = context;
+    g_pending_parent = parent_view;
+
+    int ok = create_browser(&wi, &g_client, &target, &bs, NULL, context);
+    if (!ok) g_pane_count--;
+    return ok;
+}
+
+/* Closes the browser hosted in |parent_view| when its tab goes away. */
+__attribute__((visibility("default")))
+void mighty_cef_close(void* parent_view) {
+    pane_t* pane = pane_for(parent_view);
+    if (!pane || !pane->browser) return;
+    cef_browser_host_t* host = pane->browser->get_host(pane->browser);
+    if (host) host->close_browser(host, 1);
+    pane->browser = NULL;
+    pane->parent_view = NULL;
+}
 CSRC
     xcrun clang -dynamiclib -o "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib" \
         -arch arm64 -mmacosx-version-min=14.0 \
+        -I "$EXTRACT_TEMP/$CEF_TOP" \
         -install_name "@rpath/MightyCEFBridge.dylib" \
         "$BRIDGE_C"
 
