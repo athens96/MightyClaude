@@ -286,8 +286,11 @@ public enum StylePrerequisiteProbe {
             let registry = home.appendingPathComponent(".claude/plugins/installed_plugins.json")
             guard let data = CLIAccountSupport.boundedData(registry, maximumBytes: 4 * 1024 * 1024),
                   let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let entries = object["plugins"] as? [String: Any] else { return false }
-            return entries.keys.contains { $0.hasPrefix(prefix) }
+                  let plugins = object["plugins"] as? [String: Any] else { return false }
+            return plugins.contains { key, value in
+                key.hasPrefix(prefix) &&
+                (value as? [[String: Any]])?.contains { $0["scope"] as? String == "user" } == true
+            }
         case .executable(let name, _, _, _):
             return (environment["PATH"] ?? "").split(separator: ":").contains { FileManager.default.isExecutableFile(atPath: String($0) + "/" + name) }
         case .skill(let name, let scopes, _, _, _):
