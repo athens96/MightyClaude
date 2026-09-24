@@ -128,3 +128,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 ### 버전 올림 (2026-09-24)
 
 `README.md`, `VERSION`, `docs/styles-followups.md`, `mobile/app.json`, `mobile/package-lock.json`, `mobile/package.json`, `native/macos/Sources/MightyClaude/AppStore+AppUpdate.swift`, `native/macos/Sources/MightyClaude/AppStore+MobileRemote.swift`, `native/macos/Sources/MightyClaude/AppStore.swift`, `native/macos/Sources/MightyClaude/SettingsViews.swift`, `native/macos/Sources/MightyCore/Models.swift`, `native/macos/Sources/MightyCore/Remote/MobileRemoteService.swift`, `native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj`, `package-lock.json`, `package.json`, `relay/package-lock.json`, `relay/package.json` — 앱 0.1.0 → 0.2.0, 폰 1.0.0 → 1.1.0(빌드 2), relay 1.0.0 → 1.1.0. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
+
+### 로케일 게이트 (시드 `ac_7b50eb6621dd602d`)
+
+`.github/workflows/native-windows.yml`, `docs/styles-followups.md`, `scripts/check-locales.js`, `scripts/locale-touched-baseline`, `scripts/tests/check-locales.test.mjs` — v5 아홉 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
