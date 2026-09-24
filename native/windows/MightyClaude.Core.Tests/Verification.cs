@@ -467,6 +467,8 @@ internal static class Verification
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
         await Test("settings sections smoke flips the CLI auto-update switch and restores it", SettingsSectionsVerification.SmokeFlipsTheAutoUpdateSwitchAndRestoresIt);
         await Test("settings sections smoke shows every fixture status and rejects a wrong screen", SettingsSectionsVerification.SmokeShowsEveryFixtureStatusAndRejectsAWrongScreen);
+        await Test("locale key leak detector flags exact keys", LocalizationVerification.LocaleKeyLeakDetectorFlagsExactKeys);
+        await Test("locale key leak detector ignores non-key text", LocalizationVerification.LocaleKeyLeakDetectorIgnoresNonKeyText);
         await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);
         await Test("locale English file loads from shared locales path", LocalizationVerification.EnglishLocaleLoadsFromSharedFile);
         await Test("locale key absent from both catalogs returns the key itself", LocalizationVerification.MissingKeyInChosenLanguageFallsBackToKorean);

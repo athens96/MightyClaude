@@ -100,6 +100,46 @@ internal static class LocalizationVerification
         return Task.CompletedTask;
     }
 
+    // Exact locale keys in visible strings are returned; non-key dotted text is ignored.
+    internal static Task LocaleKeyLeakDetectorFlagsExactKeys()
+    {
+        var keys = Locale.Catalogue("ko").Keys;
+        // Pick two real keys and add surrounding whitespace to exercise trimming.
+        var realKey1 = "settings.cliUpdate.sectionTitle";
+        var realKey2 = "settings.appUpdate.sectionTitle";
+        Check(keys.Contains(realKey1), "test key1 must exist in ko.json");
+        Check(keys.Contains(realKey2), "test key2 must exist in ko.json");
+
+        var visible = new[] { "  " + realKey1 + " ", realKey2, "정상 번역 텍스트", "일반 문자열" };
+        var leaks = LocaleKeyLeak.Detect(visible, keys.ToList());
+        Check(leaks.Count == 2, "must find exactly 2 leaks, got: " + leaks.Count);
+        Check(leaks.Any(l => l.Trim() == realKey1), "key1 must be flagged");
+        Check(leaks.Any(l => l.Trim() == realKey2), "key2 must be flagged");
+        return Task.CompletedTask;
+    }
+
+    // Dotted strings, model IDs and package specs that are not actual keys are never flagged.
+    internal static Task LocaleKeyLeakDetectorIgnoresNonKeyText()
+    {
+        var keys = Locale.Catalogue("ko").Keys;
+        var nonKeys = new[]
+        {
+            "toolkit.json",
+            "config.yaml",
+            "gpt-5.1-codex",
+            "mighty-styles@mighty-styles",
+            "some.dotted.but.not.a.key",
+            "",
+            "   ",
+        };
+        foreach (var s in nonKeys)
+            Check(!keys.Contains(s.Trim()), "test string must not be a real key: " + s);
+
+        var leaks = LocaleKeyLeak.Detect(nonKeys, keys.ToList());
+        Check(leaks.Count == 0, "no non-key strings must be flagged, got: " + leaks.Count);
+        return Task.CompletedTask;
+    }
+
     // AppSnapshot.LanguagePreference defaults to "system" and round-trips.
     internal static Task LanguagePreferencePersistsInSnapshot()
     {
