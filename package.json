@@ -1,6 +1,6 @@
 {
   "name": "mighty-claude",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A desktop workspace for Claude Code, Codex and Gemini, with Tailscale remote execution.",
   "private": true,
   "type": "module",

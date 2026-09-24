@@ -461,7 +461,7 @@ public struct RuntimeInfo: Codable, Sendable, Equatable {
     public var modelCatalog: ModelCatalog?
     public var providers: [ProviderRuntime]?
     public var mods: ModsRuntime?
-    public init(platform: String = "darwin", appVersion: String = "0.1.0", claudeAvailable: Bool = false, claudeVersion: String? = nil, modelCatalog: ModelCatalog? = nil, providers: [ProviderRuntime]? = nil, mods: ModsRuntime? = nil) { self.platform = platform; self.appVersion = appVersion; self.claudeAvailable = claudeAvailable; self.claudeVersion = claudeVersion; self.modelCatalog = modelCatalog; self.providers = providers; self.mods = mods }
+    public init(platform: String = "darwin", appVersion: String = "0.2.0", claudeAvailable: Bool = false, claudeVersion: String? = nil, modelCatalog: ModelCatalog? = nil, providers: [ProviderRuntime]? = nil, mods: ModsRuntime? = nil) { self.platform = platform; self.appVersion = appVersion; self.claudeAvailable = claudeAvailable; self.claudeVersion = claudeVersion; self.modelCatalog = modelCatalog; self.providers = providers; self.mods = mods }
 }
 
 public enum ProviderOptions {

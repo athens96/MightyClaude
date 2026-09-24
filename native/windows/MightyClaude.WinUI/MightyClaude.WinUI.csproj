@@ -21,7 +21,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../../assets/icons/MightyClaude.ico</ApplicationIcon>
     <AssemblyName>MightyClaude</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <RootNamespace>MightyClaude.WinUI</RootNamespace>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
