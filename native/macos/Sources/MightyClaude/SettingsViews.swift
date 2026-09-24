@@ -207,6 +207,7 @@ struct AppSettingsView: View {
                 PhaseModelSettingsSection().environmentObject(store)
                 StyleSettingsSection().environmentObject(store)
                 ComponentsSettingsSection().environmentObject(store)
+                ToolkitSettingsSection().environmentObject(store)
                 MobileRemoteSettingsSection().environmentObject(store)
                 CLIUpdateSettingsSection().environmentObject(store)
                 CompanionSettingsSection(companion: store.companion)
