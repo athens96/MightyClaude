@@ -44,9 +44,21 @@ final class CefBrowserEngine: NSObject, BrowserEngine, ObservableObject, @unchec
         return BrowserProfileSupport.profilePath(workspaceProfileKey: "")
     }
 
+    /// Chromium runs inside the app process, so a Chromium crash takes every
+    /// agent session down with it. It only starts when the user opted in.
+    static let enabledDefaultsKey = "browser.engineEnabled"
+    static var isEnabledInSettings: Bool {
+        get { UserDefaults.standard.bool(forKey: enabledDefaultsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: enabledDefaultsKey) }
+    }
+    /// Read once at launch: CEF can only initialize before the run loop starts.
+    private(set) static var enabledAtLaunch = false
+
     /// Must run before App.main(), never on first browser pane creation.
     static func bootstrapRuntime() {
-        guard case .available(let frameworkPath) = BrowserEngineLocator.locate(),
+        enabledAtLaunch = isEnabledInSettings || ProcessInfo.processInfo.arguments.contains("--browser-smoke-test")
+        guard enabledAtLaunch,
+              case .available(let frameworkPath) = BrowserEngineLocator.locate(),
               let frameworks = Bundle.main.privateFrameworksPath else { return }
         let cacheRoot = browserProfilesRoot()
         do {
@@ -133,6 +145,10 @@ final class CefBrowserEngine: NSObject, BrowserEngine, ObservableObject, @unchec
     }
 
     private func openBridge() {
+        guard Self.enabledAtLaunch else {
+            failureReason = L("browser.engine.disabled")
+            return
+        }
         switch BrowserEngineLocator.locate() {
         case .missing(let reason):
             failureReason = reason
