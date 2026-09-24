@@ -118,6 +118,39 @@ internal static class LocalizationVerification
         return Task.CompletedTask;
     }
 
+    // Invisible surrounding characters (U+00A0, U+200B) are stripped before comparison.
+    // Empty and whitespace-only strings are never flagged regardless of the key set.
+    // Membership in the supplied key set decides; shape alone does not.
+    internal static Task LocaleKeyLeakDetectorTrimsInvisibleCharacters()
+    {
+        var keys = Locale.Catalogue("ko").Keys;
+        var realKey = "settings.cliUpdate.sectionTitle";
+        Check(keys.Contains(realKey), "test key must exist in ko.json");
+
+        // U+00A0 (NBSP) and U+200B (zero-width space) surrounding a key must be flagged.
+        var withNbsp = " " + realKey + " ";
+        var withZwsp = "​" + realKey + "​";
+        var trimLeaks = LocaleKeyLeak.Detect([withNbsp, withZwsp], keys.ToList());
+        Check(trimLeaks.Count == 2, "invisible-char-surrounded keys must be flagged: " + trimLeaks.Count);
+        Check(trimLeaks.Any(l => l == withNbsp), "U+00A0-surrounded key must be flagged");
+        Check(trimLeaks.Any(l => l == withZwsp), "U+200B-surrounded key must be flagged");
+
+        // Empty and whitespace-only strings are never flagged, even when the key set
+        // explicitly contains the trimmed forms (e.g. "" is a key).
+        var syntheticKeys = keys.Concat(["", " ", "​"]).ToList();
+        var blanks = new[] { "", "   ", " ", "​", "   ​ " };
+        var blankLeaks = LocaleKeyLeak.Detect(blanks, syntheticKeys);
+        Check(blankLeaks.Count == 0, "blank strings must never be flagged: " + blankLeaks.Count);
+
+        // A dotted string IS flagged when present in the supplied key set.
+        var dottedKeys = new[] { "toolkit.json", realKey };
+        var dottedLeaks = LocaleKeyLeak.Detect(["toolkit.json", "not.in.set"], dottedKeys);
+        Check(dottedLeaks.Count == 1, "toolkit.json in key set must produce exactly 1 leak: " + dottedLeaks.Count);
+        Check(dottedLeaks[0] == "toolkit.json", "toolkit.json must be in the leak list");
+
+        return Task.CompletedTask;
+    }
+
     // Dotted strings, model IDs and package specs that are not actual keys are never flagged.
     internal static Task LocaleKeyLeakDetectorIgnoresNonKeyText()
     {
