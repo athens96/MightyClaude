@@ -70,6 +70,23 @@ repoScript는 태그를 git ls-remote로 해석해 40-hex 커밋 SHA를 함께 �
 | package (npm) | `<npm bin>/../lib/node_modules/<name>` 존재 여부 |
 | repoScript | 승인된 SHA의 완료 마커 파일 존재 여부 |
 
+## 화면 조작 (설정 → 구성 요소)
+
+`ComponentsSettingsView.swift`의 `ToolkitSettingsSection`이 그린다.
+접근성 ID는 모두 `settings-toolkit`으로 시작한다.
+
+| 조작 | 접근성 ID | 하는 일 |
+|------|-----------|---------|
+| 추가 | `settings-toolkit-add` | JSON 파일 하나를 읽어 항목을 미승인 상태로 등록 |
+| 삭제 | `settings-toolkit-remove-<entryId>` | 목록에서만 지움(설치물은 그대로) |
+| 승인 | `settings-toolkit-approve-<entryId>` | 내용 해시를 승인(repoScript는 태그를 SHA로 고정) |
+| 내보내기 | `settings-toolkit-export` | 승인 정보 없는 항목 배열을 파일로 저장 |
+| 가져오기 | `settings-toolkit-import` | 배열을 읽어 모두 미승인으로 추가 |
+| 설치 | `settings-toolkit-install` | 확인 시트를 연다 |
+| 확인 시트 | `settings-toolkit-confirm` / `settings-toolkit-cancel` | 실행 / 취소 |
+| 항목 행 | `settings-toolkit-entry-<entryId>` | 이름·상태(준비됨/설치 필요)·배지 |
+| 결과 표 | `settings-toolkit-results` | 실행 뒤 항목별 설치됨/실패/미승인 |
+
 ## 설치 실행
 
 1. "설치" 버튼을 누르면 계획을 세운다(누락되고 승인된 항목만).

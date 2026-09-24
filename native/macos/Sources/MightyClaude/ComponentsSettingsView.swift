@@ -1,5 +1,7 @@
+import AppKit
 import MightyCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Settings section listing what the app needs on this Mac and offering the
 /// next step for each item (install, launch, login, update).
@@ -116,14 +118,23 @@ struct ToolkitSettingsSection: View {
             if let results = store.toolkitRunResults {
                 toolkitResultTable(results)
             }
-            HStack {
+            HStack(spacing: 6) {
                 Text(L("settings.toolkit.sectionDescription")).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
+                Button(L("settings.toolkit.addButton")) { addEntryFromFile() }
+                    .controlSize(.small).disabled(store.toolkitRunning)
+                    .accessibilityIdentifier("settings-toolkit-add")
+                Button(L("settings.toolkit.exportButton")) { exportEntriesToFile() }
+                    .controlSize(.small).disabled(store.toolkitRunning)
+                    .accessibilityIdentifier("settings-toolkit-export")
+                Button(L("settings.toolkit.importButton")) { importEntriesFromFile() }
+                    .controlSize(.small).disabled(store.toolkitRunning)
+                    .accessibilityIdentifier("settings-toolkit-import")
                 Button(store.toolkitRunning ? L("settings.toolkit.installingButton") : L("settings.toolkit.installButton")) {
                     store.planToolkitInstall()
                 }
                 .disabled(store.toolkitRunning)
-                .accessibilityIdentifier("toolkit-install")
+                .accessibilityIdentifier("settings-toolkit-install")
             }
         } header: { Text(L("settings.toolkit.sectionTitle")) }
         .sheet(isPresented: $store.toolkitShowConfirmation) {
@@ -149,20 +160,29 @@ struct ToolkitSettingsSection: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(isInstalled ? Color.green : Color.orange)
             }
-            if entry.source == .user && approval == nil {
+            if entry.source == .user {
                 HStack(spacing: 6) {
-                    Text(L("settings.toolkit.needsApproval")).font(.system(size: 11)).foregroundStyle(.secondary)
-                    Button(L("settings.toolkit.approveButton")) {
-                        store.approveToolkitEntry(entry.entryId)
+                    if approval == nil {
+                        Text(L("settings.toolkit.needsApproval")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Button(L("settings.toolkit.approveButton")) {
+                            store.approveToolkitEntry(entry.entryId)
+                        }
+                        .controlSize(.mini).buttonStyle(.bordered)
+                        .disabled(store.toolkitRunning)
+                        .accessibilityIdentifier("settings-toolkit-approve-\(entry.entryId)")
+                    }
+                    // Removing only delists the entry: nothing is uninstalled or deleted on disk.
+                    Button(L("settings.toolkit.removeButton")) {
+                        store.removeToolkitEntry(entry.entryId)
                     }
                     .controlSize(.mini).buttonStyle(.bordered)
                     .disabled(store.toolkitRunning)
-                    .accessibilityIdentifier("toolkit-approve-\(entry.entryId)")
+                    .accessibilityIdentifier("settings-toolkit-remove-\(entry.entryId)")
                 }
             }
         }
         .padding(.vertical, 2)
-        .accessibilityIdentifier("toolkit-entry-\(entry.entryId)")
+        .accessibilityIdentifier("settings-toolkit-entry-\(entry.entryId)")
     }
 
     private func isEntryInstalled(_ entry: ToolkitEntry) -> Bool {
@@ -188,6 +208,8 @@ struct ToolkitSettingsSection: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings-toolkit-results")
     }
 
     private func toolkitConfirmationSheet() -> some View {
@@ -206,8 +228,10 @@ struct ToolkitSettingsSection: View {
                 Spacer()
                 Button(L("settings.toolkit.cancelButton")) { store.toolkitShowConfirmation = false }
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("settings-toolkit-cancel")
                 Button(L("settings.toolkit.confirmInstall")) { store.runToolkitInstall() }
                     .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("settings-toolkit-confirm")
             }
         }
         .padding(20)
@@ -251,5 +275,37 @@ struct ToolkitSettingsSection: View {
         case .failed: .red
         case .skipped: .secondary
         }
+    }
+
+    // MARK: - File panels
+
+    /// Adds one entry from a JSON file.  The closed decoder rejects anything
+    /// that is not one of the five templates, so no free-form string gets in.
+    private func addEntryFromFile() {
+        guard let url = openJSONPanel(title: L("settings.toolkit.addButton")) else { return }
+        store.addToolkitEntry(fromFile: url)
+    }
+
+    private func importEntriesFromFile() {
+        guard let url = openJSONPanel(title: L("settings.toolkit.importButton")) else { return }
+        store.importToolkit(from: url)
+    }
+
+    private func exportEntriesToFile() {
+        let panel = NSSavePanel()
+        panel.title = L("settings.toolkit.exportButton")
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "toolkit.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        store.exportToolkit(to: url)
+    }
+
+    private func openJSONPanel(title: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        return panel.runModal() == .OK ? panel.url : nil
     }
 }
