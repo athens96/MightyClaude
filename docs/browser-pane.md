@@ -122,7 +122,25 @@ MightyClaude.app/Contents/
 | 같은 워크스페이스 공유 | 같은 워크스페이스에서 브라우저 탭을 둘 열면 쿠키·로그인을 함께 쓴다 | 기기 미확인 |
 | 잠금 파일 복구 | 엔진이 비정상 종료한 뒤 다시 열어도 프로필 데이터를 잃지 않고 열린다 | 기기 미확인 |
 
-## 7. 이 단계 밖
+## 7. CEF 실행 모델 (1b단계)
+
+### 애플리케이션 클래스
+
+CEF는 macOS에서 `NSApplication` 서브클래스를 요구한다. `MightyApplication`이 그 역할이며 `isHandlingSendEvent`·`setHandlingSendEvent`를 구현한다. `Info.plist`의 `NSPrincipalClass`는 `MightyApplication`을 가리킨다.
+
+### 헬퍼 프로세스
+
+Chromium은 GPU·렌더러·플러그인·유틸리티 서브프로세스를 낳는다. 번들의 네 헬퍼 앱은 각자 `cef_execute_process`를 호출해 해당 서브프로세스 역할을 맡는다. CEF 프레임워크는 `dlopen`으로 불러오므로 Swift 패키지는 CEF 헤더 없이 빌드된다.
+
+### 엔진 수명 주기
+
+엔진은 첫 브라우저 탭이 열릴 때 지연 초기화된다. `browser_subprocess_path`는 메인 헬퍼를 가리키고, `root_cache_path`는 `~/Library/Application Support/MightyClaude/browser-profiles`다. 메시지 루프는 main run loop에서 구동한다. 앱이 종료하면 CEF도 정상 종료한다.
+
+### 워크스페이스별 request context
+
+브라우저 탭은 `BrowserProfileSupport.profilePath(workspaceProfileKey:)`가 반환하는 경로를 cache path로 삼는 CEF request context를 쓴다. 같은 워크스페이스의 탭들은 context를 공유하고, 다른 워크스페이스와 격리된다. 엔진 시작 직전에 `BrowserProfileSupport.clearStaleLock(at:)`이 `SingletonLock`·`SingletonSocket`·`SingletonCookie`만 지운다. 나머지 프로필 데이터는 보존된다.
+
+## 8. 이 단계 밖
 
 - 에이전트의 브라우저 제어, CDP 프록시, Playwright MCP — 2·3단계.
 - Intel(x86_64) 엔진.

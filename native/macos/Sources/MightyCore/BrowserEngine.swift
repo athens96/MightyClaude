@@ -62,6 +62,14 @@ public struct BrowserProfileSupport: Sendable {
         }
         return support.appendingPathComponent("MightyClaude/browser-profiles/\(workspaceProfileKey)")
     }
+
+    // Removes only the Chromium singleton lock files left by a crash.
+    // All other profile data (Cookies, History, etc.) is preserved.
+    public static func clearStaleLock(at profilePath: URL) {
+        for name in ["SingletonLock", "SingletonSocket", "SingletonCookie"] {
+            try? FileManager.default.removeItem(at: profilePath.appendingPathComponent(name))
+        }
+    }
 }
 
 public protocol BrowserEngine: AnyObject, Sendable {
