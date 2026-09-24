@@ -587,6 +587,10 @@ internal static class Verification
         await Test("plugin marketplace copy matches macOS", PluginMarketplaceVerification.CopyMatchesMacOS);
         await Test("plugin marketplace window is wired into the running app and the smoke run", PluginMarketplaceVerification.WindowIsWiredIntoTheRunningAppAndTheSmokeRun);
         await Test("plugin marketplace the running app owns the operations object", PluginMarketplaceVerification.TheRunningAppOwnsTheOperationsObject);
+        await Test("toolkit file parses", ToolkitFileVerification.ToolkitFileParsesAllFiveTemplates);
+        await Test("toolkit file refuses version mismatch", ToolkitFileVerification.ToolkitFileRefusesVersionMismatch);
+        await Test("toolkit file skips unknown install kinds", ToolkitFileVerification.ToolkitFileSkipsUnknownKinds);
+        await Test("toolkit file npm package name is accepted", ToolkitFileVerification.NpmPackageNameIsAccepted);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
