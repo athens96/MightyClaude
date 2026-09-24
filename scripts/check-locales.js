@@ -287,7 +287,7 @@ for (const client of CLIENTS) {
   let literals = 0;
   let files = 0;
   const keys = new Set();
-  const called = new Set();
+  const calledFrom = new Map(); // key -> first file path that references it
   for (const root of client.roots) {
     for (const relative of walk(root, client.extensions, [])) {
       const source = readText(relative);
@@ -296,7 +296,7 @@ for (const client of CLIENTS) {
       const stripped = stripComments(source);
       for (const match of stripped.matchAll(REFERENCE)) {
         keys.add(match[1]);
-        called.add(match[1]);
+        if (!calledFrom.has(match[1])) calledFrom.set(match[1], relative);
       }
       // 키를 표에 담아 간접으로 부르는 자리도 참조다: 내용이 키와 정확히 같은
       // 문자열 리터럴을 쓰인 것으로 센다.
@@ -310,9 +310,9 @@ for (const client of CLIENTS) {
     if (!referenced.has(key)) referenced.set(key, new Set());
     referenced.get(key).add(client.label);
   }
-  for (const key of called) {
+  for (const [key, filePath] of calledFrom) {
     if (!knownKeys.has(key)) {
-      fail(`${client.label}이 부르는 ${key}가 locales/ko.json에 없습니다.`);
+      fail(`${client.label}: ${filePath}에서 부르는 ${key}가 locales/ko.json에 없습니다.`);
     }
   }
   report.push({ label: client.label, literals, files, moved: keys.size });
