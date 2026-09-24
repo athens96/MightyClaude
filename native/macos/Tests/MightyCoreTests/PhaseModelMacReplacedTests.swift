@@ -41,12 +41,12 @@ struct PhaseModelMacReplacedTests {
     }
 
     @Test func nodeModelLabelRemainsAccessible() {
-        let label = ModelDefaultsResolution.nodeModelLabel(cliReportedModel: "claude-sonnet-5", configuredModel: "default")
+        let label = GraphModelLabel.nodeModelLabel(cliReportedModel: "claude-sonnet-5", configuredModel: "default")
         #expect(label == "claude-sonnet-5")
     }
 
     @Test func nodeModelLabelUsesConfiguredWhenNoCliReport() {
-        let label = ModelDefaultsResolution.nodeModelLabel(cliReportedModel: nil, configuredModel: "claude-opus-5-5")
+        let label = GraphModelLabel.nodeModelLabel(cliReportedModel: nil, configuredModel: "claude-opus-5-5")
         // The suffix is localized, so only the prefix and the presence of a suffix are asserted.
         #expect(label?.hasPrefix("claude-opus-5-5 ") == true)
         #expect((label?.count ?? 0) > "claude-opus-5-5 ".count)

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ModelDefaultsResolution {
+public enum GraphModelLabel {
     /// The model label for a graph request node or phone block.
     ///
     /// Priority:
