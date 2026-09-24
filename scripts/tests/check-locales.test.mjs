@@ -265,6 +265,72 @@ test('--root는 git 질의를 픽스처로 제한한다 — 실제 저장소가 
   }
 });
 
+// ── MESSAGE_OK 검사: 누락된 키 진단 메시지에 클라이언트명·파일경로·키·한글이 있다 ──────
+// L(), Locale.Get(), t() 세 호출 형식 각각에 대해 확인한다.
+
+test('MESSAGE_OK — L()로 부른 없는 키: 진단에 클라이언트명·파일경로·키·한글이 있다', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, {
+      files: {
+        'native/macos/Sources/MightyClaude/View.swift': 'L("msg.l.gone")\n',
+        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+      },
+    });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0);
+    const out = r.stderr + r.stdout;
+    assert.match(out, /macOS app/, '클라이언트명이 출력에 없다');
+    assert.match(out, /native\/macos\/Sources\/MightyClaude\/View\.swift/, '파일 경로가 출력에 없다');
+    assert.match(out, /msg\.l\.gone/, '누락된 키가 출력에 없다');
+    assert.ok(/[가-힣]/.test(out), '한글 문자가 출력에 없다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('MESSAGE_OK — Locale.Get()로 부른 없는 키: 진단에 클라이언트명·파일경로·키·한글이 있다', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, {
+      files: {
+        'native/windows/MightyClaude.Core/MyClass.cs': 'Locale.Get("win.get.gone");\n',
+        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+      },
+    });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0);
+    const out = r.stderr + r.stdout;
+    assert.match(out, /Windows Core/, '클라이언트명이 출력에 없다');
+    assert.match(out, /native\/windows\/MightyClaude\.Core\/MyClass\.cs/, '파일 경로가 출력에 없다');
+    assert.match(out, /win\.get\.gone/, '누락된 키가 출력에 없다');
+    assert.ok(/[가-힣]/.test(out), '한글 문자가 출력에 없다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('MESSAGE_OK — t()로 부른 없는 키: 진단에 클라이언트명·파일경로·키·한글이 있다', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, {
+      files: {
+        'mobile/src/App.tsx': 't("app.t.gone")\n',
+        'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+      },
+    });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0);
+    const out = r.stderr + r.stdout;
+    assert.match(out, /phone/, '클라이언트명이 출력에 없다');
+    assert.match(out, /mobile\/src\/App\.tsx/, '파일 경로가 출력에 없다');
+    assert.match(out, /app\.t\.gone/, '누락된 키가 출력에 없다');
+    assert.ok(/[가-힣]/.test(out), '한글 문자가 출력에 없다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── 검사 9: CRLF로 받은 docs/i18n.md도 --check를 통과한다 ─────────────────────
 // Windows 러너는 autocrlf로 저장소를 받는다. 보고서는 늘 LF로 만들므로 줄끝만
 // 달라진 사본을 어긋난 것으로 보면 CI가 이 한 가지로만 붉어진다.
