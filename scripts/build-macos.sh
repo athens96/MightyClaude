@@ -60,7 +60,7 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSPrincipalClass</key><string>MightyApplication</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict></plist>
@@ -114,10 +114,85 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     mkdir -p "$NODE_DST"
     cp "$EXTRACT_TEMP/$NODE_BASE/bin/node" "$NODE_DST/node"
     chmod +x "$NODE_DST/node"
-    # Helper stubs (CEF needs distinct per-role process names and bundle IDs)
+    # Real CEF helpers: call cef_execute_process via dlopen/dlsym so the Swift
+    # package builds without CEF headers.  Each helper resolves the framework
+    # relative to its own executable path at runtime.
     HELPER_C="$EXTRACT_TEMP/helper.c"
-    printf '#include <stdlib.h>\nint main(void){return 0;}\n' > "$HELPER_C"
+    cat > "$HELPER_C" <<'CSRC'
+#include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+
+typedef struct { int argc; char** argv; } cef_main_args_t;
+typedef int (*cef_execute_process_fn)(const cef_main_args_t*, void*, void*);
+
+static void strip_last_component(char* buf) {
+    char* s = strrchr(buf, '/');
+    if (s) *s = '\0';
+}
+
+int main(int argc, char* argv[]) {
+    char buf[4096];
+    uint32_t sz = (uint32_t)sizeof(buf);
+    if (_NSGetExecutablePath(buf, &sz) != 0) return 1;
+    /* Helper exe is at: .../Contents/Frameworks/Name.app/Contents/MacOS/Name */
+    /* Strip: executable name, MacOS, Contents, Name.app */
+    /* Result:            .../Contents/Frameworks */
+    strip_last_component(buf);
+    strip_last_component(buf);
+    strip_last_component(buf);
+    strip_last_component(buf);
+    char fw[4096];
+    snprintf(fw, sizeof(fw),
+        "%s/Chromium Embedded Framework.framework/Chromium Embedded Framework",
+        buf);
+    void* cef = dlopen(fw, RTLD_NOW | RTLD_GLOBAL);
+    if (!cef) return 0;
+    cef_execute_process_fn fn =
+        (cef_execute_process_fn)dlsym(cef, "cef_execute_process");
+    if (!fn) return 0;
+    cef_main_args_t args = { argc, argv };
+    return fn(&args, NULL, NULL);
+}
+CSRC
     xcrun clang -o "$EXTRACT_TEMP/helper_bin" -arch arm64 -mmacosx-version-min=14.0 "$HELPER_C"
+
+    # CEF engine bridge dylib: the app target loads this at runtime so that
+    # cef_initialize and cef_browser_host_create_browser are reachable without
+    # linking the Swift package against CEF headers at build time.
+    BRIDGE_C="$EXTRACT_TEMP/cef_bridge.c"
+    cat > "$BRIDGE_C" <<'CSRC'
+#include <dlfcn.h>
+#include <stddef.h>
+
+static const char k_cef_initialize[]                  = "cef_initialize";
+static const char k_cef_browser_host_create_browser[] = "cef_browser_host_create_browser";
+static void* g_cef = NULL;
+
+__attribute__((visibility("default")))
+int mighty_cef_load(const char* fw_path) {
+    if (g_cef) return 1;
+    g_cef = dlopen(fw_path, RTLD_NOW | RTLD_GLOBAL);
+    return g_cef != NULL;
+}
+
+__attribute__((visibility("default")))
+void* mighty_cef_initialize_sym(void) {
+    return g_cef ? dlsym(g_cef, k_cef_initialize) : NULL;
+}
+
+__attribute__((visibility("default")))
+void* mighty_cef_create_browser_sym(void) {
+    return g_cef ? dlsym(g_cef, k_cef_browser_host_create_browser) : NULL;
+}
+CSRC
+    xcrun clang -dynamiclib -o "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib" \
+        -arch arm64 -mmacosx-version-min=14.0 \
+        -install_name "@rpath/MightyCEFBridge.dylib" \
+        "$BRIDGE_C"
+
     make_helper() {
         local name="$1" bundle_id="$2"
         local happ="$FW_DIR/${name}.app"
@@ -158,6 +233,9 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     for helper_app in "$APP_PATH/Contents/Frameworks/"*.app; do
         [ -d "$helper_app" ] && codesign --force --sign "$CODESIGN_IDENTITY" "$helper_app"
     done
+    [ -f "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib" ] && \
+        codesign --force --sign "$CODESIGN_IDENTITY" \
+            "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib"
     codesign --force --sign "$CODESIGN_IDENTITY" "$CEF_FW"
 fi
 codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
