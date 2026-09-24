@@ -671,15 +671,8 @@ final class AppStore: ObservableObject {
         let attachmentSummary = attachments.map { "첨부: \($0.name) (\(AttachmentImport.sizeLabel($0)))" }.joined(separator: "\n")
         let logText = [input, attachmentSummary].filter { !$0.isEmpty }.joined(separator: "\n\n")
         let inputEntry = LogEntry(kind: "user", text: logText)
-        let configuredModel = ModelDefaultsResolution.resolve(
-            sessionModel: session.model,
-            provider: session.provider,
-            permissionMode: session.settings.permissionMode,
-            workspaceDefaults: workspace.modelDefaults,
-            appDefaults: snapshot.modelDefaults
-        )
         updateSession(id) {
-            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: configuredModel)
+            $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model)
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
         }
         startTasks[id] = Task {
@@ -692,15 +685,8 @@ final class AppStore: ObservableObject {
                       let currentWorkspace = snapshot.workspaces.first(where: { $0.id == workspace.id }),
                       currentWorkspace.path == workspace.path, currentWorkspace.remote == workspace.remote else { throw CancellationError() }
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
-                let resolvedModel = ModelDefaultsResolution.resolve(
-                    sessionModel: current.model,
-                    provider: current.provider,
-                    permissionMode: current.settings.permissionMode,
-                    workspaceDefaults: currentWorkspace.modelDefaults,
-                    appDefaults: snapshot.modelDefaults
-                )
                 let registered = providerRegisteredModels(current.provider)
-                let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: resolvedModel, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
+                let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
                     let provider = providerRuntime(current.provider, workspaceId: workspace.id)
