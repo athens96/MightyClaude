@@ -198,7 +198,7 @@ public actor ProviderService {
         for key in keys { await invalidateModelCatalog(provider: provider, workspacePath: key.workspacePath) }
     }
 
-    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false) throws -> [String] {
+    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig = PhaseModelConfig()) throws -> [String] {
         try CoreValidation.validate(request)
         let s = request.settings
         switch request.provider {
@@ -206,12 +206,22 @@ public actor ProviderService {
             let mode = s.permissionMode == "fullAccess" ? "bypassPermissions" : s.permissionMode
             var args = ["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", allowPermissionPrompts ? "host" : "none", "--plugin-dir", pluginDirectory.path, "--permission-mode", mode]
             if allowPermissionPrompts { args += ["--input-format", "stream-json", "--permission-prompt-tool", "stdio"] }
+            // Session-level model selection wins over phase-level config.
             // An omitted model restores the resumed conversation's saved ID.
             // Explicit default clears that override using the current CLI setup.
-            if request.model != "default" || request.resumeId != nil { args += ["--model", request.model] }
-            if s.effort != "default" {
-                let data = try JSONSerialization.data(withJSONObject: ["env": ["CLAUDE_CODE_EFFORT_LEVEL": s.effort]], options: [.sortedKeys])
-                args += ["--effort", s.effort, "--settings", String(decoding: data, as: UTF8.self)]
+            let effectiveModel = request.model != "default" ? request.model : phaseModels.claudeMain
+            if effectiveModel != "default" || request.resumeId != nil { args += ["--model", effectiveModel] }
+            // Build --settings env JSON: effort + phase model alias pins.
+            var envVars: [String: String] = [:]
+            if s.effort != "default" { envVars["CLAUDE_CODE_EFFORT_LEVEL"] = s.effort }
+            if phaseModels.claudeOpusAlias != "default" { envVars["ANTHROPIC_DEFAULT_OPUS_MODEL"] = phaseModels.claudeOpusAlias }
+            if phaseModels.claudeSonnetAlias != "default" { envVars["ANTHROPIC_DEFAULT_SONNET_MODEL"] = phaseModels.claudeSonnetAlias }
+            if phaseModels.claudeHaikuAlias != "default" { envVars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = phaseModels.claudeHaikuAlias }
+            if phaseModels.claudeSubagentDefault != "default" { envVars["CLAUDE_CODE_SUBAGENT_MODEL"] = phaseModels.claudeSubagentDefault }
+            if !envVars.isEmpty {
+                if s.effort != "default" { args += ["--effort", s.effort] }
+                let data = try JSONSerialization.data(withJSONObject: ["env": envVars], options: [.sortedKeys])
+                args += ["--settings", String(decoding: data, as: UTF8.self)]
             }
             if let turns = s.maxTurns { args += ["--max-turns", String(turns)] }
             if let budget = s.maxBudgetUsd { args += ["--max-budget-usd", String(budget)] }
@@ -223,6 +233,10 @@ public actor ProviderService {
             let sandbox = s.permissionMode == "fullAccess" ? "danger-full-access" : ["acceptEdits", "onRequest"].contains(s.permissionMode) ? "workspace-write" : "read-only"
             var args = ["-c", "approval_policy=\"\(asks ? "on-request" : "never")\"", "-c", "sandbox_mode=\"\(sandbox)\"", "-c", "sandbox_workspace_write.network_access=\(s.networkAccess)", "-c", "features.fast_mode=\(s.fastMode)", "-c", "service_tier=\"\(s.fastMode ? "fast" : "default")\""]
             if s.webSearch != "default" { args += ["-c", "web_search=\"\(s.webSearch)\""] }
+            // Phase model knobs: review_model, agents.default_subagent_model, plan_mode_reasoning_effort.
+            if phaseModels.codexReviewModel != "default" { args += ["-c", "review_model=\"\(phaseModels.codexReviewModel)\""] }
+            if phaseModels.codexSubagentDefault != "default" { args += ["-c", "agents.default_subagent_model=\"\(phaseModels.codexSubagentDefault)\""] }
+            if phaseModels.codexPlanModeReasoningEffort != "default" { args += ["-c", "plan_mode_reasoning_effort=\"\(phaseModels.codexPlanModeReasoningEffort)\""] }
             if asks {
                 // Never inherit delegated automatic approval from a user profile.
                 args += ["-c", "approvals_reviewer=\"user\""]
