@@ -263,7 +263,7 @@ final class AppStore: ObservableObject {
         guard !ending else { return }
         if let task = runtimeTask { _ = await task.value; return }
         isRefreshingRuntime = true
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0"
         let task = Task { [weak self] in
             guard let self else { return }
             let value = await self.providers.runtimeInfo(appVersion: version)

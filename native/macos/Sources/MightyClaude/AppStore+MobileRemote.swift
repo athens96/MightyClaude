@@ -160,7 +160,7 @@ extension AppStore {
         guard mobileBridge == nil else { return }
         let bridge = MobileRemoteBridge(store: self)
         mobileBridge = bridge
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0"
         // @Published fires before the property is assigned, so observe the
         // incoming values rather than re-reading the (still old) properties.
         $snapshot.sink { [weak self] value in self?.mobileObserve(snapshot: value) }.store(in: &mobileSubscriptions)

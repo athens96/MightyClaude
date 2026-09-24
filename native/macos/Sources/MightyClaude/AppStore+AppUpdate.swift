@@ -25,7 +25,7 @@ extension AppStore {
     static let appUpdateCheckInterval: TimeInterval = 24 * 60 * 60
     static let appBundleIdentifier = "dev.mightyclaude.native"
 
-    var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0" }
+    var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0" }
     /// The address baked into the build, for the placeholder and the reset.
     var builtInUpdateManifestURL: String? {
         (Bundle.main.infoDictionary?["MightyUpdateManifestURL"] as? String).flatMap { $0.isEmpty ? nil : $0 }

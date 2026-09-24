@@ -84,7 +84,7 @@ public actor MobileRemoteService {
     /// filesystem halfway through. Never set outside tests.
     var keyRotationFailure: String?
 
-    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.1.0") {
+    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.2.0") {
         self.dataDirectory = dataDirectory; self.hostName = hostName; self.appVersion = appVersion
         hostId = Self.stableHostId(dataDirectory)
         uploads = MobileUploadStore(directory: dataDirectory.appendingPathComponent("uploads", isDirectory: true))
