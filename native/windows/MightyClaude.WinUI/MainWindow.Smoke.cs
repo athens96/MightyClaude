@@ -54,7 +54,6 @@ public sealed partial class MainWindow
             result["usageReset"] = await RunUsageResetSmoke();
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
-            result["modelDefaultsSmoke"] = await RunModelDefaultsSmoke();
             result["rename"] = await RunRenameSmoke();
             result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
             result[CodexPluginSmokeOutcome.ResultKey] = await RunCodexPluginSmoke();
@@ -105,118 +104,6 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
-    private async Task<Dictionary<string, object?>> RunModelDefaultsSmoke()
-    {
-        var checks = new Dictionary<string, object?>();
-        var originalDefaults = service.Snapshot.ModelDefaults;
-        const string fixtureModel = "smoke/fixture-model-v1";
-        const string fixtureProvider = "claude";
-        const string fixtureMode = "manual";
-        try
-        {
-            // Add a registered model through the Core path.
-            string? addError = null;
-            await service.UpdateAsync(s =>
-            {
-                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
-                addError = ModelDefaultsResolution.AddRegisteredModel(fixtureModel, fixtureProvider, ref cfg);
-                return addError is null ? s with { ModelDefaults = cfg } : s;
-            });
-            Require(addError is null, "modelDefaults smoke: AddRegisteredModel must succeed for a valid name");
-            Require(service.Snapshot.ModelDefaults?.Claude.RegisteredModels.Any(m => m.Name == fixtureModel) == true,
-                "modelDefaults smoke: registered model must appear in snapshot after add");
-            checks["modelDefaultsAdd"] = true;
-
-            // Pick: set a mode default to the registered name.
-            await service.UpdateAsync(s =>
-            {
-                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
-                var pd = cfg.Claude with { ModeDefaults = new Dictionary<string, string>(cfg.Claude.ModeDefaults) { [fixtureMode] = fixtureModel } };
-                return s with { ModelDefaults = cfg with { Claude = pd } };
-            });
-            Require(service.Snapshot.ModelDefaults?.Claude.ModeDefaults.TryGetValue(fixtureMode, out var picked) == true && picked == fixtureModel,
-                "modelDefaults smoke: mode default must be set to the fixture model");
-            // Confirm ModelDefaultsResolution.Resolve returns the mode default for a default-model pane.
-            var resolvedForMode = ModelDefaultsResolution.Resolve("default", fixtureProvider, fixtureMode, null, service.Snapshot.ModelDefaults);
-            Require(resolvedForMode == fixtureModel, "modelDefaults smoke: ModelDefaultsResolution.Resolve must return the mode default for a default pane");
-            checks["modelDefaultsPick"] = true;
-
-            // Remove: registered model is removed and the mode row is reverted to "default".
-            var reverted = 0;
-            await service.UpdateAsync(s =>
-            {
-                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
-                reverted = ModelDefaultsResolution.RemoveRegisteredModel(fixtureModel, fixtureProvider, ref cfg);
-                return s with { ModelDefaults = cfg };
-            });
-            Require(reverted == 1, "modelDefaults smoke: removing the fixture model must revert 1 mode row");
-            Require(service.Snapshot.ModelDefaults?.Claude.ModeDefaults.TryGetValue(fixtureMode, out var afterRemove) != true || afterRemove == "default",
-                "modelDefaults smoke: mode row must revert to 'default' after remove");
-            Require(service.Snapshot.ModelDefaults?.Claude.RegisteredModels.All(m => m.Name != fixtureModel) != false,
-                "modelDefaults smoke: fixture model must be gone from registered list after remove");
-            checks["modelDefaultsRemoveReverts"] = true;
-
-            // Section rows: verify the section model produces rows per provider/mode.
-            var rows = ModelDefaultsResolution.SectionRows(service.Snapshot.ModelDefaults);
-            Require(rows.Any(r => r.Provider == "claude"), "modelDefaults smoke: section rows must include claude rows");
-            Require(rows.Any(r => r.Provider == "codex"), "modelDefaults smoke: section rows must include codex rows");
-            checks["modelDefaultsRows"] = true;
-
-            // Effort: add a model with effort support and levels; verify readback.
-            const string effortModel = "smoke/effort-model-v1";
-            string? effortAddError = null;
-            await service.UpdateAsync(s =>
-            {
-                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
-                effortAddError = ModelDefaultsResolution.AddRegisteredModel(effortModel, fixtureProvider, ref cfg, supportsEffort: true, supportedEffortLevels: ["high", "max"]);
-                return effortAddError is null ? s with { ModelDefaults = cfg } : s;
-            });
-            Require(effortAddError is null, "modelDefaults smoke: AddRegisteredModel with effort must succeed");
-            var effortEntry = service.Snapshot.ModelDefaults?.Claude.RegisteredModels.FirstOrDefault(m => m.Name == effortModel);
-            Require(effortEntry is not null, "modelDefaults smoke: effort model must appear in snapshot");
-            Require(effortEntry!.SupportsEffort, "modelDefaults smoke: effort entry must carry SupportsEffort=true");
-            var effortLevels = ProviderCatalog.Efforts(fixtureProvider, effortModel, ProviderCatalog.Fallback(fixtureProvider), service.Snapshot.ModelDefaults?.Claude.RegisteredModels);
-            Require(effortLevels.SequenceEqual(["high", "max"]), "modelDefaults smoke: ProviderCatalog.Efforts must return saved levels");
-            checks["modelDefaultsEffort"] = true;
-            // Clean up effort model
-            await service.UpdateAsync(s =>
-            {
-                var cfg = s.ModelDefaults ?? new ModelDefaultsConfig();
-                ModelDefaultsResolution.RemoveRegisteredModel(effortModel, fixtureProvider, ref cfg);
-                return s with { ModelDefaults = cfg };
-            });
-
-            // Effort UI: drive the real Settings controls — find the effort CheckBox and level
-            // CheckBoxes by their automation IDs, type a fixture name, press the add button,
-            // then verify the composer effort items are exactly default + the saved levels.
-            const string effortUiModel = "smoke/effort-ui-v1";
-            var effortSection = BuildModelDefaultsSection();
-            var effortUiToggle = SmokeFindById<CheckBox>(effortSection, $"modelDefaults-addEffort-{fixtureProvider}");
-            Require(effortUiToggle is not null, $"modelDefaults-addEffort-{fixtureProvider} must exist in the settings section");
-            var highBox2 = SmokeFindById<CheckBox>(effortSection, $"modelDefaults-addLevel-{fixtureProvider}-high");
-            Require(highBox2 is not null, $"modelDefaults-addLevel-{fixtureProvider}-high must exist");
-            var effortNameBox = SmokeFindById<TextBox>(effortSection, $"modelDefaults-add-{fixtureProvider}");
-            var effortAddBtn = SmokeFindById<Button>(effortSection, $"modelDefaults-addButton-{fixtureProvider}");
-            Require(effortNameBox is not null && effortAddBtn is not null, "modelDefaults name box and add button must exist in the section");
-            effortNameBox!.Text = effortUiModel;
-            effortUiToggle!.IsChecked = true;
-            highBox2!.IsChecked = true;
-            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(effortAddBtn!)).Invoke();
-            await WaitUI(() => service.Snapshot.ModelDefaults?.Claude.RegisteredModels.Any(m => m.Name == effortUiModel) == true);
-            var regForUi = ModelDefaultsResolution.GetProviderRegisteredModels(fixtureProvider, null, service.Snapshot.ModelDefaults);
-            var effortMenuItems = new[] { "default" }.Concat(ProviderCatalog.Efforts(fixtureProvider, effortUiModel, ProviderCatalog.Fallback(fixtureProvider), regForUi)).ToArray();
-            Require(effortMenuItems.SequenceEqual(["default", "high"]), "composer effort menu must be exactly default + saved levels for a registered model");
-            checks["modelDefaultsEffortUi"] = effortMenuItems;
-
-            checks["passed"] = true;
-        }
-        finally
-        {
-            await service.UpdateAsync(s => s with { ModelDefaults = originalDefaults });
-        }
-        return checks;
-    }
-
     private async Task<Dictionary<string, object?>> RunRenameSmoke()
     {
         var checks = new Dictionary<string, object?>();
@@ -420,13 +307,6 @@ public sealed partial class MainWindow
         using var source = stream.GetInputStreamAt(0); using var output = new DataReader(source); await output.LoadAsync((uint)stream.Size); var png = new byte[(int)stream.Size]; output.ReadBytes(png); await File.WriteAllBytesAsync(path, png); return path;
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-    private static T? SmokeFindById<T>(UIElement root, string id) where T : UIElement
-    {
-        if (AutomationProperties.GetAutomationId(root) == id && root is T match) return match;
-        if (root is Panel p) { foreach (var child in p.Children) { var r = SmokeFindById<T>(child, id); if (r is not null) return r; } }
-        else if (root is ContentControl cc && cc.Content is UIElement ue) { var r = SmokeFindById<T>(ue, id); if (r is not null) return r; }
-        return null;
-    }
     private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "")
     {
         var deadline = DateTime.UtcNow.AddSeconds(4);

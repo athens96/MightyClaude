@@ -347,7 +347,10 @@ public sealed partial class MainWindow : Window
             try
             {
             var pane = Session; var submitted = input.Text; var files = pendingAttachments.ToArray();
-            await owner.StartFromComposer(ModelDefaultsResolution.BuildPaneRequest(pane, Workspace, owner.service.Snapshot.ModelDefaults, submitted, files));
+            await owner.StartFromComposer(new StartRunRequest(
+                pane.Id, pane.WorkspaceId, pane.Kind, submitted,
+                RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot),
+                pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files));
             if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
             var consumed = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => consumed.Contains(file.Id)); RefreshAttachments();
             // Only consume the submitted draft. A newer draft typed while start
@@ -366,7 +369,7 @@ public sealed partial class MainWindow : Window
             var pane = Session; var busy = pane.Status == "running" || starting; var runtime = owner.Runtime(pane.Provider, pane.WorkspaceId); var workspace = Workspace;
             var connection = workspace.Remote is { } reference ? owner.remote?.Connections.FirstOrDefault(c => c.Id == reference.ConnectionId) : null;
             var connected = workspace.Remote is null || connection?.Status == "connected"; var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            var registeredModels = ModelDefaultsResolution.GetProviderRegisteredModels(pane.Provider, workspace.ModelDefaults, owner.service.Snapshot.ModelDefaults);
+            var registeredModels = RegisteredModelsFor(pane.Provider, workspace, owner.service.Snapshot);
             var unsupportedEffort = pane.Kind == "claude" && pane.Settings.Effort != "default" && !ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels).Contains(pane.Settings.Effort);
             var unsupportedSettings = pane.Kind == "claude" && workspace.Remote is not null ? ProviderCatalog.RemoteSettingsProblem(pane.Settings, runtime?.Capabilities) : null;
             if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI 또는 원격 앱을 업데이트하거나 다른 권한을 선택하세요.";
@@ -437,14 +440,31 @@ public sealed partial class MainWindow : Window
         });
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });
-        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException("모델 이름이 올바르지 않습니다."); var pane = Session; var catalog = owner.Runtime(pane.Provider, pane.WorkspaceId)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = ModelDefaultsResolution.GetProviderRegisteredModels(pane.Provider, Workspace.ModelDefaults, owner.service.Snapshot.ModelDefaults); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
+        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException("모델 이름이 올바르지 않습니다."); var pane = Session; var catalog = owner.Runtime(pane.Provider, pane.WorkspaceId)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
         private static MenuFlyoutItem Item(string text, Func<Task> action, bool selected = false, string? help = null)
         {
             var item = new MenuFlyoutItem { Text = (selected ? "✓  " : "") + text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
         }
         private static string PermissionLabel(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용" : "기본 권한", "plan" => "계획", "acceptEdits" => provider == "codex" ? "프로젝트 수정" : "파일 수정 허용", "auto" => "Auto mode", "fullAccess" => "전체 권한", _ => mode };
         private static string PermissionHelp(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용 샌드박스에서 실행하며 추가 승인은 요청하지 않습니다." : "CLI 기본 권한을 사용합니다. 승인이 필요한 작업은 거부되며 읽기 전용 샌드박스를 뜻하지 않습니다.", "plan" => "변경 전에 계획을 세웁니다.", "acceptEdits" => provider == "codex" ? "프로젝트 파일을 수정합니다. 명령의 네트워크 접근은 더 보기에서 별도로 허용합니다." : "파일 수정은 자동으로 허용하고 다른 작업에는 CLI 권한 정책을 적용합니다.", "auto" => "Claude가 작업 위험을 자동 판단합니다. 모델·제공자·관리자 정책이 적용됩니다. 이 Windows 실행기는 추가 확인이 필요한 작업은 거부합니다.", "fullAccess" => "프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다. 원격 실행은 호스트 계정의 권한을 사용합니다.", _ => "" };
-        private static string ModeMenuLabel(string provider, string mode, ModelDefaultsConfig? workspaceDefaults, ModelDefaultsConfig? appDefaults) { var label = PermissionLabel(provider, mode); var model = ModelDefaultsResolution.ModeMenuLabel(provider, mode, workspaceDefaults, appDefaults); return model == "default" ? label : label + " · " + model; }
+        /// Model names registered in saved state, for the effort list. Workspace
+        /// entries come first and an app entry whose name is already present is
+        /// skipped. Nothing here resolves a model — the pane's own model is used
+        /// as-is, and "default" means the CLI decides.
+        private static IReadOnlyList<RegisteredModelEntry> RegisteredModelsFor(string provider, Workspace workspace, AppSnapshot snapshot)
+        {
+            static IReadOnlyList<RegisteredModelEntry> Entries(string kind, ModelDefaultsConfig? config)
+            {
+                if (config is null) return Array.Empty<RegisteredModelEntry>();
+                return kind == "codex" ? config.Codex.RegisteredModels : config.Claude.RegisteredModels;
+            }
+            var fromWorkspace = Entries(provider, workspace.ModelDefaults);
+            var fromApp = Entries(provider, snapshot.ModelDefaults);
+            if (fromApp.Count == 0) return fromWorkspace;
+            if (fromWorkspace.Count == 0) return fromApp;
+            var names = fromWorkspace.Select(entry => entry.Name).ToHashSet();
+            return fromWorkspace.Concat(fromApp.Where(entry => !names.Contains(entry.Name))).ToList().AsReadOnly();
+        }
         private void RefreshMenus(RunSession pane, ModelCatalog catalog)
         {
             var caps = Capabilities;
@@ -454,14 +474,13 @@ public sealed partial class MainWindow : Window
             var models = new MenuFlyout(); foreach (var row in catalog.Models) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
             if (!catalog.Models.Any(m => m.Value == pane.Model)) models.Items.Add(Item(pane.Model, () => ChangeModel(pane.Model), true));
             if (pane.Provider != "gemini") { models.Items.Add(new MenuFlyoutSeparator()); models.Items.Add(Item("모델 ID 입력…", CustomModel)); } model.Flyout = models;
-            var registeredModels2 = ModelDefaultsResolution.GetProviderRegisteredModels(pane.Provider, Workspace.ModelDefaults, owner.service.Snapshot.ModelDefaults);
+            var registeredModels2 = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot);
             var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels2); var knownEffort = pane.Settings.Effort == "default" || levels.Contains(pane.Settings.Effort);
             Label(effort, (pane.Settings.Effort == "default" ? "Auto" : pane.Settings.Effort) + (knownEffort ? " ⌄" : " · 확인 필요"), "추론 강도"); var efforts = new MenuFlyout();
             foreach (var value in new[] { "default" }.Concat(levels)) efforts.Items.Add(Item(value == "default" ? "Auto · CLI 기본값" : value, () => ChangeSettings(s => s with { Effort = value }), pane.Settings.Effort == value)); effort.Flyout = efforts;
             effort.Visibility = caps.Effort || pane.Settings.Effort != "default" ? Visibility.Visible : Visibility.Collapsed;
-            var workspaceDefaults = Workspace.ModelDefaults; var appDefaults = owner.service.Snapshot.ModelDefaults;
-            Label(permission, ModeMenuLabel(pane.Provider, pane.Settings.PermissionMode, workspaceDefaults, appDefaults) + " ⌄", "권한"); ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode)); var permissions = new MenuFlyout();
-            foreach (var mode in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(ModeMenuLabel(pane.Provider, mode, workspaceDefaults, appDefaults), () => ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode == "acceptEdits" && s.NetworkAccess }), pane.Settings.PermissionMode == mode, PermissionHelp(pane.Provider, mode)));
+            Label(permission, PermissionLabel(pane.Provider, pane.Settings.PermissionMode) + " ⌄", "권한"); ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode)); var permissions = new MenuFlyout();
+            foreach (var mode in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, mode), () => ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode == "acceptEdits" && s.NetworkAccess }), pane.Settings.PermissionMode == mode, PermissionHelp(pane.Provider, mode)));
             permission.Flyout = permissions;
             fast.IsChecked = pane.Settings.FastMode; fast.Visibility = pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode) ? Visibility.Visible : Visibility.Collapsed;
             Label(more, "···", "더 보기"); more.Flyout = MoreMenu(pane, caps);

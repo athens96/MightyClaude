@@ -32,7 +32,6 @@ public static class SettingsSections
     public const string Companion = "companion";
     public const string Providers = "providers";
     public const string CliAccounts = "cliAccounts";
-    public const string ModelDefaults = "modelDefaults";
     public const string ClaudeMods = "claudeMods";
     public const string AppUpdate = "appUpdate";
     public const string AppInfo = "appInfo";
@@ -55,7 +54,6 @@ public static class SettingsSections
         new(CliUpdate, CliUpdateStrings.SectionTitle),
         new(Companion, null),
         new(Providers, ProvidersTitle),
-        new(ModelDefaults, null),
         new(CliAccounts, CliAccountStrings.SectionTitle),
         new(ClaudeMods, null),
         new(AppUpdate, AppUpdateStrings.SectionTitle),
