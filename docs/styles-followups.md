@@ -129,10 +129,6 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 
 `README.md`, `VERSION`, `docs/styles-followups.md`, `mobile/app.json`, `mobile/package-lock.json`, `mobile/package.json`, `native/macos/Sources/MightyClaude/AppStore+AppUpdate.swift`, `native/macos/Sources/MightyClaude/AppStore+MobileRemote.swift`, `native/macos/Sources/MightyClaude/AppStore.swift`, `native/macos/Sources/MightyClaude/SettingsViews.swift`, `native/macos/Sources/MightyCore/Models.swift`, `native/macos/Sources/MightyCore/Remote/MobileRemoteService.swift`, `native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj`, `package-lock.json`, `package.json`, `relay/package-lock.json`, `relay/package.json` — 앱 0.1.0 → 0.2.0, 폰 1.0.0 → 1.1.0(빌드 2), relay 1.0.0 → 1.1.0. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
 
-### 로케일 게이트 (시드 `ac_7b50eb6621dd602d`)
+### Windows 2차 1단계: 로케일 게이트와 화면 키 검사 (시드 `seed_windows_b2_s1_locale_gate`)
 
-`.github/workflows/native-windows.yml`, `docs/styles-followups.md`, `scripts/check-locales.js`, `scripts/locale-touched-baseline`, `scripts/tests/check-locales.test.mjs` — v5 아홉 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
-
-### 로케일 누수 감지 및 스모크 게이트 (시드 `ac_4900a9d3a5146435`)
-
-`docs/styles-followups.md`, `native/windows/MightyClaude.Core/LocaleKeyLeak.cs`, `native/windows/MightyClaude.Core.Tests/LocalizationVerification.cs`, `native/windows/MightyClaude.Core.Tests/Verification.cs`, `native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs`, `scripts/test-native-windows.ps1` — v5 열 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
+`.github/workflows/native-windows.yml`, `docs/i18n.md`, `docs/styles-followups.md`, `native/windows/MightyClaude.Core.Tests/LocalizationVerification.cs`, `native/windows/MightyClaude.Core.Tests/Verification.cs`, `native/windows/MightyClaude.Core/LocaleKeyLeak.cs`, `native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs`, `scripts/check-locales.js`, `scripts/locale-touched-baseline`, `scripts/test-native-windows.ps1`, `scripts/tests/check-locales.test.mjs` — v5 아홉 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
