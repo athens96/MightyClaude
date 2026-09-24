@@ -210,7 +210,62 @@ test('접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다', () 
   }
 });
 
-// ── 검사 7: CRLF로 받은 docs/i18n.md도 --check를 통과한다 ─────────────────────
+// ── 검사 7: 커밋 없이 staged만 있는 Korean 파일도 실패한다 (touched set 합집합 증명) ──
+// git diff --name-only 는 unstaged, git diff --name-only --cached 는 staged를 잡는다.
+// 이 검사는 staged(커밋 안 된 인덱스) 변경이 touched set에 포함됨을 증명한다.
+test('staged 미커밋 Korean 파일이 실패한다 — touched set은 커밋과 미커밋의 합집합이다', () => {
+  const dir = tmpDir();
+  try {
+    setupWindows(dir, {
+      'native/windows/MightyClaude.Core/MyClass.cs': '// clean\n',
+    });
+    const g = gitInit(dir);
+    const sha = gitCommit(g, 'baseline');
+
+    // 베이스라인 이후 한국어 추가 — git add로 스테이지만 하고 커밋하지 않는다
+    fs.writeFileSync(
+      path.join(dir, 'native/windows/MightyClaude.Core/MyClass.cs'),
+      'string msg = "안녕하세요";\n',
+    );
+    execFileSync('git', ['-C', dir, 'add', 'native/windows/MightyClaude.Core/MyClass.cs'], {
+      encoding: 'utf8',
+    });
+
+    const r = run(['--root', dir, '--touched-since', sha]);
+    assert.notEqual(r.status, 0, '스테이지된 Korean 파일은 실패해야 한다');
+    assert.match(r.stderr + r.stdout, /MyClass\.cs/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── 검사 8: --root는 git 질의를 픽스처로 제한한다 ────────────────────────────────
+// --root 없이 실행하면 현재 디렉터리(실제 저장소)의 git을 쓴다.
+// --root <픽스처>를 쓰면 모든 git -C ROOT 호출이 픽스처에 묶인다.
+// 실제 저장소 작업 트리가 더럽더라도 깨끗한 픽스처는 항상 통과한다.
+test('--root는 git 질의를 픽스처로 제한한다 — 실제 저장소가 더럽더라도 픽스처가 통과한다', () => {
+  const dir = tmpDir();
+  try {
+    // 픽스처에는 Korean 파일도 없고 없는 키도 없다
+    setupWindows(dir);
+    const g = gitInit(dir);
+    const sha = gitCommit(g, 'baseline');
+
+    // 실제 저장소(process.cwd())는 이 시점에 더럽거나 커밋이 있을 수 있다.
+    // --root <픽스처>로 실행하면 checker는 픽스처 내부만 걷고
+    // git -C <픽스처> 로 diff를 구하므로 실제 저장소 상태는 무관하다.
+    const r = run(['--root', dir, '--touched-since', sha]);
+    assert.equal(
+      r.status,
+      0,
+      `깨끗한 픽스처는 실제 저장소 상태와 무관하게 통과해야 한다\nstderr: ${r.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── 검사 9: CRLF로 받은 docs/i18n.md도 --check를 통과한다 ─────────────────────
 // Windows 러너는 autocrlf로 저장소를 받는다. 보고서는 늘 LF로 만들므로 줄끝만
 // 달라진 사본을 어긋난 것으로 보면 CI가 이 한 가지로만 붉어진다.
 test('CRLF로 받은 docs/i18n.md도 --check를 통과한다', () => {
