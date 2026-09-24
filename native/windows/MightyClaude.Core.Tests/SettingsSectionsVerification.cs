@@ -15,7 +15,6 @@ internal static class SettingsSectionsVerification
             "화면",
             CliUpdateStrings.SectionTitle,
             "이 PC의 CLI",
-            ModelDefaultsStrings.SectionTitle,
             CliAccountStrings.SectionTitle,
             AppUpdateStrings.SectionTitle,
             "앱 정보",
@@ -46,6 +45,7 @@ internal static class SettingsSectionsVerification
             SettingsSections.Components,
             SettingsSections.MobileRemote,
             SettingsSections.Companion,
+            SettingsSections.ModelDefaults,
             SettingsSections.ClaudeMods,
         };
         foreach (var id in absent)
