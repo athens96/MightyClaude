@@ -7,6 +7,13 @@ struct BrowserPaneView: View {
 
     @ViewState private var addressText = ""
     @ViewState private var engineStatus: BrowserEngineStatus = BrowserEngineLocator.locate()
+    @StateObject private var engine: CefBrowserEngine
+
+    init(session: RunSession) {
+        self.session = session
+        let profileKey = session.workspaceProfileKey ?? session.workspaceId
+        self._engine = StateObject(wrappedValue: CefBrowserEngine(profileKey: profileKey))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,24 +26,27 @@ struct BrowserPaneView: View {
     private var navigationBar: some View {
         HStack(spacing: 6) {
             Button {
+                engine.goBack()
             } label: {
                 Image(systemName: "chevron.left").font(.system(size: 12))
             }
             .buttonStyle(.plain)
-            .disabled(true)
+            .disabled(!engine.canGoBack)
             .help(L("browser.back"))
             .accessibilityLabel(L("browser.back"))
 
             Button {
+                engine.goForward()
             } label: {
                 Image(systemName: "chevron.right").font(.system(size: 12))
             }
             .buttonStyle(.plain)
-            .disabled(true)
+            .disabled(!engine.canGoForward)
             .help(L("browser.forward"))
             .accessibilityLabel(L("browser.forward"))
 
             Button {
+                engine.reload()
             } label: {
                 Image(systemName: "arrow.clockwise").font(.system(size: 12))
             }
@@ -48,6 +58,10 @@ struct BrowserPaneView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
                 .accessibilityLabel(L("browser.address.placeholder"))
+                .onSubmit {
+                    guard let url = BrowserAddress.resolve(addressText) else { return }
+                    engine.loadURL(url)
+                }
 
             Spacer(minLength: 0)
         }
@@ -60,7 +74,7 @@ struct BrowserPaneView: View {
     private var contentArea: some View {
         switch engineStatus {
         case .available:
-            Color.clear
+            BrowserContainerView(engine: engine)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .missing(let reason):
             VStack(spacing: 12) {
