@@ -45,7 +45,6 @@ internal static class SettingsSectionsVerification
             SettingsSections.Components,
             SettingsSections.MobileRemote,
             SettingsSections.Companion,
-            SettingsSections.ModelDefaults,
             SettingsSections.ClaudeMods,
         };
         foreach (var id in absent)
