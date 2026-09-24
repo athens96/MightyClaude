@@ -19,33 +19,49 @@ struct BrowserAddressTests {
     }
 
     @Test func browserNavigationStateFollowsHistory() {
-        var state = BrowserNavigationState()
-        #expect(!state.canGoBack)
-        #expect(!state.canGoForward)
-        #expect(!state.isLoading)
-        #expect(state.url == nil)
+        let a = URL(string: "https://example.com")!
+        let b = URL(string: "https://example.com/second")!
+        let c = URL(string: "https://example.com/third")!
 
-        // Page starts loading
-        state.isLoading = true
-        state.url = URL(string: "https://example.com")
+        var history = BrowserHistory()
+        #expect(history.state() == BrowserNavigationState())
+
+        history.visit(a)
+        var state = history.state(isLoading: true)
+        #expect(state.url == a)
         #expect(state.isLoading)
-        #expect(state.url != nil)
-
-        // Page finishes loading; no back/forward history yet
-        state.isLoading = false
-        #expect(!state.isLoading)
         #expect(!state.canGoBack)
         #expect(!state.canGoForward)
 
-        // Navigate to a second page: back becomes available
-        state.canGoBack = true
+        // Re-visiting the page on screen is a reload, not a new history entry.
+        history.visit(a)
+        #expect(!history.canGoBack)
+
+        history.visit(b)
+        state = history.state()
+        #expect(state.url == b)
         #expect(state.canGoBack)
         #expect(!state.canGoForward)
+        #expect(!state.isLoading)
 
-        // Go back: back gone, forward available
-        state.canGoBack = false
-        state.canGoForward = true
+        #expect(history.goBack() == a)
+        state = history.state()
+        #expect(state.url == a)
         #expect(!state.canGoBack)
         #expect(state.canGoForward)
+
+        #expect(history.goForward() == b)
+        #expect(history.state().url == b)
+        #expect(history.goForward() == nil)
+
+        // Navigating away from a back entry drops the forward tail.
+        #expect(history.goBack() == a)
+        history.visit(c)
+        state = history.state()
+        #expect(state.url == c)
+        #expect(state.canGoBack)
+        #expect(!state.canGoForward)
+        #expect(history.goBack() == a)
+        #expect(history.goBack() == nil)
     }
 }
