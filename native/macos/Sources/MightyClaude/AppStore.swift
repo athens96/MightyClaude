@@ -230,6 +230,7 @@ final class AppStore: ObservableObject {
             }
         }
         if arguments.contains("--plugin-smoke-test") { Task { await runPluginSmokeTest() } }
+        else if arguments.contains("--browser-smoke-test") { Task { await runBrowserSmokeTest() } }
         else if arguments.contains("--cli-update-smoke-test") { Task { await runCLIUpdateSmokeTest() } }
         else if arguments.contains("--question-smoke-test") { Task { await runQuestionnaireSmokeTest() } }
         else if arguments.contains("--graph-smoke-test") { Task { await runGraphSmokeTest() } }
@@ -857,6 +858,7 @@ final class AppStore: ObservableObject {
 
     func shutdown() async {
         ending = true
+        CefBrowserRuntime.shared.shutDown()
         await claudePlugins.shutdown()
         await codexPlugins.shutdown()
         await pluginBrowser?.shutdown()

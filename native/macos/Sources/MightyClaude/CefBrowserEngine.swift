@@ -2,50 +2,78 @@ import AppKit
 import Darwin
 import MightyCore
 
-// BrowserEngine implementation for a browser pane.
-//
-// The pane keeps the rules on the Swift side: this type owns the workspace
-// profile directory and its stale-lock recovery, the back/forward history and
-// the BrowserNavigationState the navigation bar reads, and the NSView the CEF
-// browser is parented to. The CEF browser itself is created and driven by
-// MightyCEFBridge.dylib, which a MIGHTY_BROWSER_ENGINE=1 build ships next to
-// the Chromium Embedded Framework. The bridge is opened with dlopen at
-// runtime, so the Swift package still builds and tests with no engine
-// downloaded; without it the pane shows browser.engine.missing.
+// One pane owns its host view and navigation state. The process runtime owns
+// the loaded bridge, CEF initialization, message pump, and asynchronous closes.
 final class CefBrowserEngine: NSObject, BrowserEngine, ObservableObject, @unchecked Sendable {
     @Published private(set) var navState = BrowserNavigationState()
+    @Published private(set) var failureReason: String?
 
     let profilePath: URL
-
-    private let _containerView: NSView
+    private let hostView: BrowserHostView
+    private let runtime = CefBrowserRuntime.shared
     private var history = BrowserHistory()
-    private var bridge: UnsafeMutableRawPointer?
     private var engineReady = false
+    private var pendingNavigation = false
 
-    init(profileKey: String) {
-        _containerView = BrowserHostView(frame: .zero)
-        // Every workspace keeps its own persistent CEF profile; a lock left
-        // behind by a crash is cleared before anything opens the directory.
-        profilePath = BrowserProfileSupport.profilePath(workspaceProfileKey: profileKey)
-        try? FileManager.default.createDirectory(at: profilePath, withIntermediateDirectories: true)
-        BrowserProfileSupport.clearStaleLock(at: profilePath)
+    init(profileKey: String, profileDirectory: URL? = nil) {
+        hostView = BrowserHostView(frame: .zero)
+        profilePath = Self.browserProfilesRoot(profileDirectory: profileDirectory)
+            .appendingPathComponent(profileKey, isDirectory: true)
         super.init()
+        do {
+            try FileManager.default.createDirectory(at: profilePath, withIntermediateDirectories: true)
+        } catch {
+            failureReason = L("browser.engine.failed")
+            return
+        }
+        // Never delete Chromium locks here: another tab can be using this same
+        // workspace profile. Chromium handles genuine stale locks itself.
         openBridge()
+        hostView.onAttached = { [weak self] in self?.presentWhenAttached() }
+        runtime.observe(view: hostView) { [weak self] in self?.refreshLoadingState() }
+    }
+
+    static func browserProfilesRoot(profileDirectory: URL? = nil) -> URL {
+        let arguments = ProcessInfo.processInfo.arguments
+        let profileArgument = arguments.firstIndex(of: "--profile").flatMap {
+            arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+        }
+        if let directory = profileDirectory ?? profileArgument.map({ URL(fileURLWithPath: $0) }) {
+            return directory.appendingPathComponent("browser-profiles", isDirectory: true)
+        }
+        return BrowserProfileSupport.profilePath(workspaceProfileKey: "")
+    }
+
+    /// Must run before App.main(), never on first browser pane creation.
+    static func bootstrapRuntime() {
+        guard case .available(let frameworkPath) = BrowserEngineLocator.locate(),
+              let frameworks = Bundle.main.privateFrameworksPath else { return }
+        let cacheRoot = browserProfilesRoot()
+        do {
+            try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        } catch { return }
+        let runtime = CefBrowserRuntime.shared
+        guard runtime.load(
+            frameworkBinary: frameworkPath.appendingPathComponent("Chromium Embedded Framework"),
+            bridgePath: "\(frameworks)/MightyCEFBridge.dylib"
+        ) else { return }
+        _ = runtime.initialize(cacheRoot: cacheRoot)
     }
 
     deinit {
-        // Closing the tab closes that browser.
-        if let bridge, let closeSym = dlsym(bridge, "mighty_cef_close") {
-            typealias CloseFn = @convention(c) (UnsafeMutableRawPointer) -> Void
-            unsafeBitCast(closeSym, to: CloseFn.self)(Unmanaged.passUnretained(_containerView).toOpaque())
+        let view = hostView
+        // SwiftUI can release state off the main thread. Keep the host alive
+        // while dispatching close; the runtime then retains it through CEF's
+        // asynchronous OnBeforeClose callback.
+        if Thread.isMainThread {
+            runtime.close(view: view)
+        } else {
+            DispatchQueue.main.async { CefBrowserRuntime.shared.close(view: view) }
         }
-        if let bridge { dlclose(bridge) }
     }
 
-    var containerView: NSView { _containerView }
-
-    // MARK: - BrowserEngine
-
+    var containerView: NSView { hostView }
+    var hasLiveBrowser: Bool { runtime.hasLiveBrowser(in: hostView) }
     var isAvailable: Bool { engineReady }
     var canGoBack: Bool { navState.canGoBack }
     var canGoForward: Bool { navState.canGoForward }
@@ -65,75 +93,52 @@ final class CefBrowserEngine: NSObject, BrowserEngine, ObservableObject, @unchec
         present(history.goForward())
     }
 
-    func reload() {
-        present(history.current)
+    func reload() { present(history.current) }
+
+    private func presentWhenAttached() {
+        guard engineReady, hostView.window != nil else { return }
+        if history.current == nil {
+            history.visit(URL(string: "about:blank")!)
+        }
+        // A layout/tab remount should not reload an already running browser.
+        if pendingNavigation || !hasLiveBrowser { present(history.current) }
     }
 
-    // MARK: - Internals
-
-    // Single actuation point: the history decides which page the pane shows,
-    // the state the navigation bar reads is refreshed from it, and the bridge
-    // puts that page on screen inside `containerView`.
     private func present(_ url: URL?) {
         guard let url else { return }
         navState = history.state(isLoading: true)
-        if !show(url) { navState = history.state(isLoading: false) }
-    }
-
-    private func openBridge() {
-        guard case .available(let frameworkPath) = BrowserEngineLocator.locate(),
-              let frameworks = Bundle.main.privateFrameworksPath,
-              let handle = dlopen("\(frameworks)/MightyCEFBridge.dylib", RTLD_NOW | RTLD_LOCAL) else { return }
-        bridge = handle
-        // The bridge opens the pinned framework and resolves the CEF entry
-        // points; both have to answer before the pane claims an engine.
-        typealias LoadFn = @convention(c) (UnsafePointer<CChar>) -> Int32
-        typealias SymFn = @convention(c) () -> UnsafeMutableRawPointer?
-        guard let loadSym = dlsym(handle, "mighty_cef_load"),
-              let initSym = dlsym(handle, "mighty_cef_initialize_sym"),
-              let createSym = dlsym(handle, "mighty_cef_create_browser_sym") else { return }
-        let binary = frameworkPath.appendingPathComponent("Chromium Embedded Framework").path
-        guard binary.withCString({ unsafeBitCast(loadSym, to: LoadFn.self)($0) }) != 0 else { return }
-        engineReady = unsafeBitCast(initSym, to: SymFn.self)() != nil
-            && unsafeBitCast(createSym, to: SymFn.self)() != nil
-        if engineReady { CefBrowserEngine.startMessagePump(handle) }
-    }
-
-    @discardableResult
-    private func show(_ url: URL) -> Bool {
-        guard engineReady, let bridge, let showSym = dlsym(bridge, "mighty_cef_show") else { return false }
-        typealias ShowFn = @convention(c) (UnsafeMutableRawPointer, Int32, Int32,
-                                           UnsafePointer<CChar>, UnsafePointer<CChar>) -> Int32
-        let show = unsafeBitCast(showSym, to: ShowFn.self)
-        let parent = Unmanaged.passUnretained(_containerView).toOpaque()
-        let bounds = _containerView.bounds
-        return profilePath.path.withCString { cache in
-            url.absoluteString.withCString { address in
-                show(parent, Int32(bounds.width), Int32(bounds.height), cache, address) != 0
-            }
+        guard engineReady else {
+            navState = history.state(isLoading: false)
+            return
+        }
+        // CEF needs an attached parent view. Keep early navigation in history
+        // and submit it when AppKit attaches the host to a window.
+        guard hostView.window != nil else {
+            pendingNavigation = true
+            return
+        }
+        pendingNavigation = false
+        if runtime.show(in: hostView, profile: profilePath, url: url) {
+            failureReason = nil
+        } else {
+            failureReason = L("browser.engine.failed")
+            navState = history.state(isLoading: false)
         }
     }
 
-    // MARK: - Engine lifecycle
+    private func refreshLoadingState() {
+        guard hasLiveBrowser else { return }
+        let next = history.state(isLoading: runtime.browserIsLoading(in: hostView))
+        if next != navState { navState = next }
+    }
 
-    private static var pumpTimer: Timer?
-
-    // CEF's message loop is pumped from the app's main run loop so SwiftUI is
-    // never blocked, and the engine is shut down cleanly when the app quits.
-    private static func startMessagePump(_ handle: UnsafeMutableRawPointer) {
-        guard pumpTimer == nil, let workSym = dlsym(handle, "mighty_cef_work") else { return }
-        typealias VoidFn = @convention(c) () -> Void
-        let work = unsafeBitCast(workSym, to: VoidFn.self)
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in work() }
-        RunLoop.main.add(timer, forMode: .common)
-        pumpTimer = timer
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
-                                               object: nil, queue: .main) { _ in
-            pumpTimer?.invalidate()
-            pumpTimer = nil
-            if let shutdownSym = dlsym(handle, "mighty_cef_shutdown") {
-                unsafeBitCast(shutdownSym, to: VoidFn.self)()
-            }
+    private func openBridge() {
+        switch BrowserEngineLocator.locate() {
+        case .missing(let reason):
+            failureReason = reason
+        case .available:
+            engineReady = runtime.isAvailable && runtime.isInitializedNow
+            if !engineReady { failureReason = L("browser.engine.failed") }
         }
     }
 }
@@ -141,6 +146,20 @@ final class CefBrowserEngine: NSObject, BrowserEngine, ObservableObject, @unchec
 // Resizing the pane resizes the browser: CEF parents its own NSView here, so
 // the host keeps every child filling its bounds.
 final class BrowserHostView: NSView {
+    var onAttached: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            // Finish the AppKit/SwiftUI mounting transaction before CEF inserts
+            // its child view or publishes observable navigation state.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil else { return }
+                self.onAttached?()
+            }
+        }
+    }
+
     override var isFlipped: Bool { true }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) {

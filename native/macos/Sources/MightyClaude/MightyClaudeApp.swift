@@ -3,6 +3,18 @@ import SwiftUI
 import MightyCore
 
 @main
+enum MightyClaudeLauncher {
+    @MainActor
+    static func main() {
+        // SwiftUI creates its own AppKitApplication if NSApp does not exist.
+        // NSPrincipalClass alone is ignored by App.main(), so establish our
+        // CEF-compatible singleton before handing scene management to SwiftUI.
+        _ = MightyApplication.shared
+        CefBrowserEngine.bootstrapRuntime()
+        MightyClaudeApp.main()
+    }
+}
+
 struct MightyClaudeApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     @StateObject private var store = AppStore.shared

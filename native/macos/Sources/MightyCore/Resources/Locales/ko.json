@@ -313,6 +313,7 @@
   "browser.address.placeholder": "주소 입력",
   "browser.back": "뒤로",
   "browser.engine.missing": "브라우저 엔진이 준비되지 않았습니다. scripts/fetch-browser-engine.sh로 설치하세요.",
+  "browser.engine.failed": "브라우저 엔진을 시작하지 못했습니다. 앱을 다시 실행해 주세요.",
   "browser.forward": "앞으로",
   "browser.newTab": "새 브라우저 탭",
   "browser.reload": "새로 고침",

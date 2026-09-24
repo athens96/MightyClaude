@@ -1,8 +1,9 @@
 import AppKit
 
 // NSApplication subclass that satisfies CEF's CefAppProtocol requirement on macOS.
-// NSPrincipalClass in Info.plist names this class so NSApplicationMain instantiates
-// it as NSApp; CEF checks isHandlingSendEvent/setHandlingSendEvent via the ObjC runtime.
+// MightyClaudeLauncher creates the singleton before SwiftUI's App.main(), which
+// otherwise ignores NSPrincipalClass and creates SwiftUI.AppKitApplication.
+// CEF checks isHandlingSendEvent/setHandlingSendEvent via the ObjC runtime.
 @objc(MightyApplication)
 final class MightyApplication: NSApplication {
     private var _handlingSendEvent = false
@@ -14,12 +15,9 @@ final class MightyApplication: NSApplication {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if _handlingSendEvent {
-            super.sendEvent(event)
-            return
-        }
+        let previous = _handlingSendEvent
         _handlingSendEvent = true
+        defer { _handlingSendEvent = previous }
         super.sendEvent(event)
-        _handlingSendEvent = false
     }
 }
