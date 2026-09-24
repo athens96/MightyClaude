@@ -42,7 +42,6 @@ public static class SettingsSections
     public static readonly string ProvidersTitle = Locale.Get("settings.providers.sectionTitleWindows");
     public static readonly string DisplayTitle = Locale.Get("settings.display.sectionTitle");
     public static readonly string AppInfoTitle = Locale.Get("settings.appInfo.sectionTitle");
-    public static readonly string ModelDefaultsTitle = ModelDefaultsStrings.SectionTitle;
 
     /// Every macOS slot, in the macOS order. A null title marks a feature that
     /// Windows does not have yet.
@@ -56,7 +55,7 @@ public static class SettingsSections
         new(CliUpdate, CliUpdateStrings.SectionTitle),
         new(Companion, null),
         new(Providers, ProvidersTitle),
-        new(ModelDefaults, ModelDefaultsTitle),
+        new(ModelDefaults, null),
         new(CliAccounts, CliAccountStrings.SectionTitle),
         new(ClaudeMods, null),
         new(AppUpdate, AppUpdateStrings.SectionTitle),
