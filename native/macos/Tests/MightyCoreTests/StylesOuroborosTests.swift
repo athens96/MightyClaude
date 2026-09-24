@@ -70,7 +70,7 @@ struct StylesOuroborosTests {
         #expect(!empty.ready && empty.missing == ["Ouroboros 플러그인이 설치되어 있지 않습니다"] && empty.canInstall)
         #expect(empty.hint?.contains("Enter는 직접 누르세요.") == true)
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".claude/plugins"), withIntermediateDirectories: true)
-        try Data(#"{"version":2,"plugins":{"ouroboros@ouroboros":[{"installPath":"/x"}]}}"#.utf8).write(to: home.appendingPathComponent(".claude/plugins/installed_plugins.json"))
+        try Data(#"{"version":2,"plugins":{"ouroboros@ouroboros":[{"installPath":"/x","scope":"user"}]}}"#.utf8).write(to: home.appendingPathComponent(".claude/plugins/installed_plugins.json"))
         let noUvx = result(bin.path)
         #expect(!noUvx.ready && noUvx.missing == ["uvx가 필요합니다 (Ouroboros MCP 서버 실행용)"] && !noUvx.canInstall)
         let uvx = bin.appendingPathComponent("uvx"); try Data("#!/bin/sh\n".utf8).write(to: uvx)

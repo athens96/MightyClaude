@@ -58,7 +58,7 @@ struct StylesPaperthinTests {
             StylePrerequisiteProbe.evaluate(manifest.prerequisites, install: manifest.install, home: home, workspacePath: workspacePath, environment: [:]).ready
         }
         #expect(!ready(home))
-        try write(#"{"version":2,"plugins":{"paperthin@somewhere":[{"installPath":"/x"}]}}"#, home.appendingPathComponent(".claude/plugins/installed_plugins.json"))
+        try write(#"{"version":2,"plugins":{"paperthin@somewhere":[{"installPath":"/x","scope":"user"}]}}"#, home.appendingPathComponent(".claude/plugins/installed_plugins.json"))
         #expect(ready(home))
         let skillsHome = root.appendingPathComponent("home2")
         try write("---\nname: nba\n---\n", skillsHome.appendingPathComponent(".claude/skills/nba/SKILL.md"))

@@ -167,7 +167,7 @@ struct StylesThirdPartyOhMyClaudecodeTests {
         // The key this machine actually holds: `<plugin>@<marketplace>`, and the
         // probe prefix `oh-my-claudecode@` is what makes `plugin_oh-my-claudecode_t`
         // this style's own server under the ownership rule (§1.9).
-        try Data(#"{"version":1,"plugins":{"oh-my-claudecode@omc":[{"installPath":"/x"}]}}"#.utf8).write(to: registry)
+        try Data(#"{"version":1,"plugins":{"oh-my-claudecode@omc":[{"installPath":"/x","scope":"user"}]}}"#.utf8).write(to: registry)
         #expect(result().ready)
         #expect(manifest.prerequisites.probes.compactMap(\.pluginName) == ["oh-my-claudecode"])
         #expect(manifest.install?.command.hasPrefix("claude plugin marketplace add ") == true)
