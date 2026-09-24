@@ -184,16 +184,13 @@ import Testing
 
     @Test func repoScriptWithBranchRefIsRejected() {
         // refs with slashes (like origin/main) are not a valid 40-hex SHA or simple tag
-        for badRef in ["", "origin/main", "refs/heads/main", "HEAD", "  "] {
-            let shouldFail = badRef.isEmpty || badRef.contains("/") || badRef.trimmingCharacters(in: .whitespaces).isEmpty
-            if shouldFail {
-                let result = try? ToolkitEntryDecoder.decode([
-                    "id": "bad", "displayName": "Bad",
-                    "install": ["kind": "repoScript", "url": "https://github.com/x/y.git",
-                                "ref": badRef, "scriptPath": "install.sh"] as [String: Any],
-                ])
-                #expect(result == nil, "ref '\(badRef)' should be rejected")
-            }
+        for badRef in ["", "origin/main", "refs/heads/main", "  "] {
+            let result = try? ToolkitEntryDecoder.decode([
+                "id": "bad", "displayName": "Bad",
+                "install": ["kind": "repoScript", "url": "https://github.com/x/y.git",
+                            "ref": badRef, "scriptPath": "install.sh"] as [String: Any],
+            ])
+            #expect(result == nil, "ref '\(badRef)' should be rejected")
         }
     }
 
@@ -212,6 +209,14 @@ import Testing
 
     // MARK: - Build commands have valid executables
 
+    /// Commands exactly as the runner builds them. A repoScript gets an approval
+    /// so it builds; its last command is the script inside the clone.
+    private func commands(for spec: ToolkitInstallSpec, sha: String) -> [[String]] {
+        let entry = ToolkitEntry(entryId: "e", displayName: "E", source: .user, install: spec)
+        let context = ToolkitProbeContext(home: URL(fileURLWithPath: "/tmp/toolkit-home"), appDataDir: URL(fileURLWithPath: "/tmp/toolkit-data"))
+        return ToolkitRunner.installCommands(for: entry, approval: ToolkitApproval(contentHash: "h", resolvedCommit: sha), context: context)
+    }
+
     @Test func buildCommandsHaveValidExecutables() throws {
         let sha = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
         let specs: [ToolkitInstallSpec] = [
@@ -224,13 +229,17 @@ import Testing
         ]
         let allowed: Set<String> = ["claude", "git", "brew", "npm"]
         for spec in specs {
-            let commands = spec.buildInstallCommands()
+            let commands = commands(for: spec, sha: sha)
             #expect(!commands.isEmpty, "\(spec) produced no commands")
-            for argv in commands {
+            for (index, argv) in commands.enumerated() {
                 #expect(!argv.isEmpty, "Empty argv in \(spec)")
                 let executable = argv[0]
-                #expect(allowed.contains(executable),
-                    "Executable '\(executable)' not in allowed set for \(spec)")
+                if case .repoScript = spec, index == commands.count - 1 {
+                    #expect(executable == "/tmp/toolkit-data/toolkit-clones/\(sha)/scripts/run.sh")
+                } else {
+                    #expect(allowed.contains(executable),
+                        "Executable '\(executable)' not in allowed set for \(spec)")
+                }
             }
         }
     }
@@ -247,13 +256,21 @@ import Testing
         ]
         let shellMetachars = CharacterSet(charactersIn: ";|&$`'\"\\<>()")
         for spec in specs {
-            for argv in spec.buildInstallCommands() {
+            for argv in commands(for: spec, sha: sha) {
                 for element in argv {
                     #expect(element.unicodeScalars.allSatisfy { !shellMetachars.contains($0) } || element.hasPrefix("/"),
                         "Shell metachar found in argv element '\(element)' for \(spec)")
                 }
             }
         }
+    }
+
+    @Test func pluginCommandsMatchTheClaudeCLI() {
+        let commands = commands(for: .plugin(source: "athens96/mighty-styles", pluginID: "mighty-styles@mighty-styles"), sha: "")
+        #expect(commands == [
+            ["claude", "plugin", "marketplace", "add", "--scope", "user", "athens96/mighty-styles"],
+            ["claude", "plugin", "install", "mighty-styles@mighty-styles", "--scope", "user", "--json"],
+        ])
     }
 
     // MARK: - Bundled list

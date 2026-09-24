@@ -73,7 +73,7 @@ public actor ToolkitRunner {
             if entry.source == .user && approval == nil {
                 items.append(ToolkitPlanItem(entry: entry, action: .skip))
             } else {
-                let commands = buildCommands(for: entry, approval: approval)
+                let commands = Self.installCommands(for: entry, approval: approval, context: probeContext)
                 guard !commands.isEmpty else { continue }
                 items.append(ToolkitPlanItem(entry: entry, action: .run(commands: commands)))
             }
@@ -120,6 +120,8 @@ public actor ToolkitRunner {
         }
 
         for (index, cmd) in commands.enumerated() {
+            // The script step runs only if its resolved path stays inside the clone.
+            if isRepoScript && index == commands.count - 1 && !Self.scriptStaysInClone(cmd.first ?? "", commands: commands) { return }
             let isFetch = Self.isFetchStep(cmd)
             var result = executor.run(cmd)
             // Retry fetch steps once on network-pattern errors
@@ -134,18 +136,33 @@ public actor ToolkitRunner {
                     try? Data().write(to: marker)
                 }
             }
-            // Continue to next command regardless of exit code
+            // A repoScript never runs its script on a failed clone or checkout;
+            // other kinds go on (e.g. install after an already-known marketplace).
+            if isRepoScript && result.exitCode != 0 { return }
         }
+    }
+
+    /// The clone directory is the last argument of the first (clone) command.
+    static func scriptStaysInClone(_ script: String, commands: [[String]]) -> Bool {
+        guard let cloneDir = commands.first?.last else { return false }
+        let root = URL(fileURLWithPath: cloneDir).resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = URL(fileURLWithPath: script).resolvingSymlinksInPath().standardizedFileURL.path
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolved, isDirectory: &isDirectory), !isDirectory.boolValue else { return false }
+        return resolved.hasPrefix(root + "/")
     }
 
     // MARK: - Command building
 
-    private func buildCommands(for entry: ToolkitEntry, approval: ToolkitApproval?) -> [[String]] {
+    /// The one place that turns an entry into argv arrays. A repoScript entry
+    /// needs its approval (the resolved commit); without it nothing is built.
+    public static func installCommands(for entry: ToolkitEntry, approval: ToolkitApproval?, context probeContext: ToolkitProbeContext) -> [[String]] {
         switch entry.install {
         case .plugin(let source, let pluginID):
-            let marketplace = pluginID.split(separator: "@").last.map(String.init) ?? pluginID
+            // `marketplace add` has no name option: the marketplace names itself
+            // from its own manifest, which the plugin ID's suffix must match.
             return [
-                ["claude", "plugin", "marketplace", "add", source, "--name", marketplace],
+                ["claude", "plugin", "marketplace", "add", "--scope", "user", source],
                 ["claude", "plugin", "install", pluginID, "--scope", "user", "--json"],
             ]
         case .mcp(let name, let executable, let args):

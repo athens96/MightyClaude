@@ -354,5 +354,7 @@
   "browser.forward": "Forward",
   "browser.newTab": "New Browser Tab",
   "browser.reload": "Reload",
-  "browser.tab.title": "Browser"
+  "browser.tab.title": "Browser",
+  "settings.toolkit.errorEntryFileTemplate": "A tool file must hold exactly one JSON object: {name}",
+  "settings.toolkit.errorExecutableTemplate": "Executable not found: {name}"
 }

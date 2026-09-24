@@ -95,6 +95,18 @@ repoScript는 태그를 git ls-remote로 해석해 40-hex 커밋 SHA를 함께 �
 4. 네트워크 오류 패턴이 감지되면 fetch 단계를 한 번 재시도한다.
 5. 각 항목을 다시 프로브해 결과 표를 표시한다.
 
+항목 종류별 명령(`ToolkitRunner.installCommands` 한 곳에서만 만든다):
+
+| 종류 | 명령 |
+|------|------|
+| plugin | `claude plugin marketplace add --scope user <source>` → `claude plugin install <pluginID> --scope user --json`. 마켓플레이스 이름은 그 저장소의 매니페스트가 정하므로 pluginID의 `@` 뒤와 같아야 한다. 이미 등록된 마켓플레이스라 첫 명령이 실패해도 설치는 이어서 시도한다. |
+| mcp | `claude mcp add --scope user <name> -- <executable> <args…>` |
+| skill | `git clone <url> ~/.claude/skills/<이름>` |
+| package | `brew install <name>` 또는 `npm install -g <name>` |
+| repoScript | `git clone --no-checkout <url> <앱 데이터>/toolkit-clones/<SHA>` → `git -C … checkout <SHA>` → 스크립트. 한 단계라도 실패하면 그 항목은 거기서 멈춘다. 스크립트는 심볼릭 링크를 풀어도 클론 안에 있는 일반 파일일 때만 실행한다. |
+
+plugin 명령은 `ClaudePluginService`를 거치지 않고 같은 `claude` 실행 파일을 argv로 직접 부른다. 설치 범위는 늘 `user`다.
+
 ## auto-run 예외
 
 `docs/mighty-styles.md` 1.5·4.4·4.6의 auto-run 금지 규칙은 스타일 매니페스트에 적용된다.

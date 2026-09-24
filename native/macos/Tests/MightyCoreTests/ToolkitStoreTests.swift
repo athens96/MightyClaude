@@ -303,20 +303,6 @@ private let fakeSHA2 = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
         #expect(!entries.contains { $0.entryId == "my-plugin" })
     }
 
-    @Test func removeEntryRunsNoCommand() async throws {
-        let dir = tempDir("toolkit-remove-noexec")
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let store = ToolkitStore(directory: dir)
-        try await store.addEntry(samplePlugin())
-
-        let executor = FakeToolkitExecutor()
-        // removeEntry does not accept an executor; just verify no side-effects.
-        try await store.removeEntry(id: "my-plugin")
-
-        // Executor was never called because removeEntry takes no executor at all.
-        #expect(executor.calls.isEmpty)
-    }
-
     @Test func removeEntryOnlyModifiesToolkitJson() async throws {
         let dir = tempDir("toolkit-remove-only-json")
         defer { try? FileManager.default.removeItem(at: dir) }
