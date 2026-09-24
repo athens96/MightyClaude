@@ -132,3 +132,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 ### 로케일 게이트 (시드 `ac_7b50eb6621dd602d`)
 
 `.github/workflows/native-windows.yml`, `docs/styles-followups.md`, `scripts/check-locales.js`, `scripts/locale-touched-baseline`, `scripts/tests/check-locales.test.mjs` — v5 아홉 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
+
+### 로케일 누수 감지 및 스모크 게이트 (시드 `ac_4900a9d3a5146435`)
+
+`docs/styles-followups.md`, `native/windows/MightyClaude.Core/LocaleKeyLeak.cs`, `native/windows/MightyClaude.Core.Tests/LocalizationVerification.cs`, `native/windows/MightyClaude.Core.Tests/Verification.cs`, `native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs`, `scripts/test-native-windows.ps1` — v5 열 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.

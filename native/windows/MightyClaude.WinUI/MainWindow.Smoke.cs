@@ -93,6 +93,18 @@ public sealed partial class MainWindow
             }
             finally { await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
+            var leakStrings = new List<string>();
+            CollectVisibleStrings(root, leakStrings);
+            var settingsSectionsForLeak = GetSettingsSections();
+            var settingsPanelForLeak = new StackPanel { Spacing = 0, MinWidth = 420, MaxWidth = 540 };
+            foreach (var sec in settingsSectionsForLeak)
+                settingsPanelForLeak.Children.Add(BuildSectionContainer(sec.Title, sec.Build()));
+            CollectVisibleStrings(settingsPanelForLeak, leakStrings);
+            var koKeys = Locale.Catalogue("ko").Keys.ToList();
+            var keyLeaks = LocaleKeyLeak.Detect(leakStrings, koKeys);
+            result["localeKeyLeakScanned"] = leakStrings.Count;
+            result["localeKeyLeaks"] = keyLeaks;
+            Require(keyLeaks.Count == 0, "로케일 키가 화면에 그대로 노출됩니다: " + string.Join(", ", keyLeaks));
             result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png"));
             result["passed"] = true; passed = true;
         }
@@ -305,6 +317,33 @@ public sealed partial class MainWindow
         using var stream = new InMemoryRandomAccessStream(); var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels); await encoder.FlushAsync();
         using var source = stream.GetInputStreamAt(0); using var output = new DataReader(source); await output.LoadAsync((uint)stream.Size); var png = new byte[(int)stream.Size]; output.ReadBytes(png); await File.WriteAllBytesAsync(path, png); return path;
+    }
+    private static void CollectVisibleStrings(DependencyObject element, List<string> strings)
+    {
+        switch (element)
+        {
+            case TextBlock tb:
+                if (!string.IsNullOrEmpty(tb.Text)) strings.Add(tb.Text);
+                foreach (var inline in tb.Inlines)
+                    if (inline is Microsoft.UI.Xaml.Documents.Run run && !string.IsNullOrEmpty(run.Text))
+                        strings.Add(run.Text);
+                break;
+            case TextBox txb:
+                if (!string.IsNullOrEmpty(txb.Text)) strings.Add(txb.Text);
+                break;
+            case ContentControl cc when cc.Content is string cs && !string.IsNullOrEmpty(cs):
+                strings.Add(cs);
+                break;
+        }
+        if (element is UIElement uie)
+        {
+            var tip = ToolTipService.GetToolTip(uie);
+            var tipText = tip is ToolTip tt ? tt.Content as string : tip as string;
+            if (!string.IsNullOrEmpty(tipText)) strings.Add(tipText);
+        }
+        var childCount = VisualTreeHelper.GetChildrenCount(element);
+        for (var i = 0; i < childCount; i++)
+            CollectVisibleStrings(VisualTreeHelper.GetChild(element, i), strings);
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "")

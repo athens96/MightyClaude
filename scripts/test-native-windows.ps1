@@ -60,6 +60,16 @@ try {
     }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
+    $scanned = $result.localeKeyLeakScanned
+    if ($null -eq $scanned -or ($scanned -isnot [int] -and $scanned -isnot [long]) -or [int]$scanned -lt 50) {
+        $msg = "로케일 키 누수 검사가 실행되지 않았거나 검사 수가 너무 적습니다: localeKeyLeakScanned=$scanned"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    $leaks = $result.localeKeyLeaks
+    if ($leaks -and @($leaks).Count -gt 0) {
+        $msg = "로케일 키가 화면에 그대로 노출됩니다: $($leaks -join ', ')"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     # Outcomes that are neither pass nor fail (a check that had to be skipped on
     # this runner) are published as a notice so they can be read without the log.
     $outcomes = @($result.PSObject.Properties | Where-Object { $_.Value -is [pscustomobject] -and $_.Value.status -is [string] } |
