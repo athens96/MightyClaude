@@ -9,11 +9,19 @@ extension AppStore {
         snapshot.phaseModels = config
     }
 
-    /// Applies `value` to every Claude single-model knob mapped to `phase`.
+    /// Applies `value` to every Claude single-model knob mapped to `phase`,
+    /// and also writes the change to omc config.jsonc and Ouroboros config.yaml
+    /// when those tools are installed.
     func applyClaudePhaseRow(_ phase: PhaseModelRouting.Phase, value: String) {
+        let omcAgents = try? fileStore.loadOmcAgents()
+        let ouroborosKeys = try? fileStore.loadOuroborosKeys()
         var h = snapshot.phaseModels ?? PhaseModelHardcodedConfig()
-        var c = h.toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
+        var c = h.toPhaseModelConfig(omcAgents: omcAgents, ouroborosKeys: ouroborosKeys)
         PhaseModelRouting.applyClaudeRow(phase: phase, value: value, to: &c)
+        PhaseModelRouting.applyOmcRow(phase: phase, value: value, to: &c)
+        PhaseModelRouting.applyOuroborosRow(phase: phase, value: value, to: &c)
+        if let omc = c.omcAgents { try? fileStore.saveOmcAgents(omc) }
+        if let ouro = c.ouroborosKeys { try? fileStore.saveOuroborosKeys(ouro) }
         h.claudeMain = c.claudeMain
         h.claudeOpusAlias = c.claudeOpusAlias
         h.claudeSonnetAlias = c.claudeSonnetAlias
@@ -22,14 +30,31 @@ extension AppStore {
         snapshot.phaseModels = h
     }
 
-    /// Applies `value` to every Codex single-model knob mapped to `phase`.
+    /// Applies `value` to every Codex single-model knob mapped to `phase`,
+    /// and also writes the change to omc config.jsonc and Ouroboros config.yaml
+    /// when those tools are installed.
     func applyCodexPhaseRow(_ phase: PhaseModelRouting.Phase, value: String) {
+        let omcAgents = try? fileStore.loadOmcAgents()
+        let ouroborosKeys = try? fileStore.loadOuroborosKeys()
         var h = snapshot.phaseModels ?? PhaseModelHardcodedConfig()
-        var c = h.toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
+        var c = h.toPhaseModelConfig(omcAgents: omcAgents, ouroborosKeys: ouroborosKeys)
         PhaseModelRouting.applyCodexRow(phase: phase, value: value, to: &c)
+        PhaseModelRouting.applyOmcRow(phase: phase, value: value, to: &c)
+        PhaseModelRouting.applyOuroborosRow(phase: phase, value: value, to: &c)
+        if let omc = c.omcAgents { try? fileStore.saveOmcAgents(omc) }
+        if let ouro = c.ouroborosKeys { try? fileStore.saveOuroborosKeys(ouro) }
         h.codexReviewModel = c.codexReviewModel
         h.codexSubagentDefault = c.codexSubagentDefault
         snapshot.phaseModels = h
+    }
+
+    /// Returns a PhaseModelConfig with live omc and Ouroboros values loaded from disk.
+    func currentPhaseModelConfig() -> PhaseModelConfig {
+        let h = snapshot.phaseModels ?? PhaseModelHardcodedConfig()
+        return h.toPhaseModelConfig(
+            omcAgents: try? fileStore.loadOmcAgents(),
+            ouroborosKeys: try? fileStore.loadOuroborosKeys()
+        )
     }
 
     func addRegisteredModel(provider: String, entry: RegisteredModelEntry) {

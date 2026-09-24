@@ -143,6 +143,7 @@ final class AppStore: ObservableObject {
 
     let dataDirectory: URL
     let repository: StateRepository
+    let fileStore = ModelSettingsFileStore()
     let providers = ProviderService()
     let pluginDirectory: URL
     private var loading = false
