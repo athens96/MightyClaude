@@ -456,7 +456,9 @@ function documentation() {
 
 const DOC = 'docs/i18n.md';
 const generated = documentation();
-const current = exists(DOC) ? readText(DOC) : null;
+// Windows 검사기는 autocrlf로 받은 사본을 읽을 수 있다. 보고서는 늘 LF로 만들므로
+// 줄끝만 맞춘 뒤 견준다.
+const current = exists(DOC) ? readText(DOC).replace(/\r\n/g, '\n') : null;
 if (CHECK_ONLY) {
   if (current !== generated) fail(`${DOC}가 생성한 내용과 다릅니다. \`node scripts/check-locales.js\`를 다시 돌리세요.`);
 } else if (current !== generated) {
