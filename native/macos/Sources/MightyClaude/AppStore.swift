@@ -57,6 +57,15 @@ final class AppStore: ObservableObject {
     @Published var componentAction: String?
     @Published var componentMessage: String?
     @Published var componentMessageIsError = false
+    /// Settings → 구성 요소 → 내 작업 도구 모음 (AppStore+Toolkit.swift).
+    @Published var toolkitEntries: [ToolkitEntry] = []
+    @Published var toolkitFileError: String?
+    @Published var toolkitApprovals: [String: ToolkitApproval] = [:]
+    @Published var toolkitPlan: [ToolkitPlanItem] = []
+    @Published var toolkitShowConfirmation = false
+    @Published var toolkitRunResults: [ToolkitRunItem]? = nil
+    @Published var toolkitRunning = false
+    lazy var toolkitStore: ToolkitStore = ToolkitStore(directory: dataDirectory)
     /// Slash-command completion (AppStore+SlashCommands.swift).
     @Published var slashCatalogs: [String: SlashCatalogEntry] = [:]
     @Published var statusLines: [String: StatusLineState] = [:]
