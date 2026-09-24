@@ -286,6 +286,30 @@ public struct ModelSettingsFileStore: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Phase-level helpers
+
+    /// Loads omc agents from config.jsonc, applies a phase row change, and saves back.
+    /// No-op when config.jsonc does not exist. Throws (file byte-identical) on parse error.
+    public func applyAndSaveOmcPhaseRow(_ phase: PhaseModelRouting.Phase, value: String) throws {
+        guard let agents = try loadOmcAgents() else { return }
+        var config = PhaseModelConfig(omcAgents: agents)
+        PhaseModelRouting.applyOmcRow(phase: phase, value: value, to: &config)
+        if let updated = config.omcAgents {
+            try saveOmcAgents(updated)
+        }
+    }
+
+    /// Loads Ouroboros keys from config.yaml, applies a phase row change, and saves back.
+    /// No-op when config.yaml does not exist. Throws on UTF-8 failure.
+    public func applyAndSaveOuroborosPhaseRow(_ phase: PhaseModelRouting.Phase, value: String) throws {
+        guard let keys = try loadOuroborosKeys() else { return }
+        var config = PhaseModelConfig(ouroborosKeys: keys)
+        PhaseModelRouting.applyOuroborosRow(phase: phase, value: value, to: &config)
+        if let updated = config.ouroborosKeys {
+            try saveOuroborosKeys(updated)
+        }
+    }
+
     // MARK: - File I/O helpers
 
     private func writeBackup(data: Data, to url: URL) throws {

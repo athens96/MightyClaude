@@ -132,3 +132,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 ### Windows 2차 1단계: 로케일 게이트와 화면 키 검사 (시드 `seed_windows_b2_s1_locale_gate`)
 
 `.github/workflows/native-windows.yml`, `docs/i18n.md`, `docs/styles-followups.md`, `native/windows/MightyClaude.Core.Tests/LocalizationVerification.cs`, `native/windows/MightyClaude.Core.Tests/Verification.cs`, `native/windows/MightyClaude.Core/LocaleKeyLeak.cs`, `native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs`, `scripts/check-locales.js`, `scripts/locale-touched-baseline`, `scripts/test-native-windows.ps1`, `scripts/tests/check-locales.test.mjs` — v5 아홉 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
+
+### 페이즈 모델 설정 macOS 배선 (시드 `ac_d8e67195fffc5132`)
+
+`docs/styles-followups.md`, `native/macos/Sources/MightyCore/ModelSettingsFileStore.swift`, `native/macos/Sources/MightyCore/OmcAgentCatalog.swift`, `native/macos/Sources/MightyClaude/AppStore.swift`, `native/macos/Sources/MightyClaude/AppStore+PhaseModels.swift`, `native/macos/Sources/MightyClaude/PhaseModelSettingsView.swift`, `native/macos/Tests/MightyCoreTests/OmcAgentCatalogTests.swift`, `native/macos/Tests/MightyCoreTests/PhaseModelSaveTests.swift` — v5 열 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.

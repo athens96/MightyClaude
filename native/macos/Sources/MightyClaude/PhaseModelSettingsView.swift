@@ -77,7 +77,7 @@ private struct PhaseModelProviderBlock: View {
     }
 
     private func claudeRowValue(_ phase: PhaseModelRouting.Phase) -> String {
-        let c = phaseConfig.toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
+        let c = store.currentPhaseModelConfig()
         switch PhaseModelRouting.claudeRowState(phase: phase, config: c) {
         case .uniform(let v): return v
         case .mixed: return mixedSentinel
@@ -99,7 +99,7 @@ private struct PhaseModelProviderBlock: View {
     }
 
     private func codexRowValue(_ phase: PhaseModelRouting.Phase) -> String {
-        let c = phaseConfig.toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
+        let c = store.currentPhaseModelConfig()
         switch PhaseModelRouting.codexRowState(phase: phase, config: c) {
         case .uniform(let v): return v
         case .mixed: return mixedSentinel
