@@ -6,7 +6,6 @@ struct BrowserPaneView: View {
     let session: RunSession
 
     @ViewState private var addressText = ""
-    @ViewState private var engineStatus: BrowserEngineStatus = BrowserEngineLocator.locate()
     @StateObject private var engine: CefBrowserEngine
 
     init(session: RunSession) {
@@ -51,6 +50,7 @@ struct BrowserPaneView: View {
                 Image(systemName: "arrow.clockwise").font(.system(size: 12))
             }
             .buttonStyle(.plain)
+            .disabled(!engine.isAvailable)
             .help(L("browser.reload"))
             .accessibilityLabel(L("browser.reload"))
 
@@ -58,6 +58,7 @@ struct BrowserPaneView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
                 .accessibilityLabel(L("browser.address.placeholder"))
+                .disabled(!engine.isAvailable)
                 .onSubmit {
                     guard let url = BrowserAddress.resolve(addressText) else { return }
                     engine.loadURL(url)
@@ -72,21 +73,24 @@ struct BrowserPaneView: View {
 
     @ViewBuilder
     private var contentArea: some View {
-        switch engineStatus {
-        case .available:
+        ZStack {
             BrowserContainerView(engine: engine)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .missing(let reason):
-            VStack(spacing: 12) {
-                Image(systemName: "globe.slash").font(.system(size: 36)).foregroundStyle(.secondary)
-                Text(reason)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
+
+            if let reason = engine.failureReason {
+                VStack(spacing: 12) {
+                    Image(systemName: "globe.slash").font(.system(size: 36)).foregroundStyle(.secondary)
+                    Text(reason)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 380)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Palette.canvas)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("browser-engine-error")
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.canvas)
         }
     }
 }

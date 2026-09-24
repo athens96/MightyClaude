@@ -313,6 +313,7 @@
   "browser.address.placeholder": "Enter address",
   "browser.back": "Back",
   "browser.engine.missing": "Browser engine not ready. Run scripts/fetch-browser-engine.sh to install it.",
+  "browser.engine.failed": "Could not start the browser engine. Please restart the app.",
   "browser.forward": "Forward",
   "browser.newTab": "New Browser Tab",
   "browser.reload": "Reload",

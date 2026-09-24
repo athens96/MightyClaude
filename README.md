@@ -8,7 +8,7 @@
 
 - **macOS:** Swift + SwiftUI/AppKit
 - **Windows:** C# + .NET 10 + WinUI 3, x64·ARM64
-- 데스크톱 앱에 Electron·웹 렌더러·Node 서버를 포함하지 않습니다. 각 AI CLI를 직접 실행하고 구조화된 이벤트를 화면에 표시합니다.
+- 앱 UI는 네이티브로 구현하며 각 AI CLI를 직접 실행하고 구조화된 이벤트를 표시합니다. macOS의 브라우저 옵션 빌드에는 CEF 렌더러와 고정한 Node 런타임을 추가로 포함합니다.
 - 워크스페이스마다 탭·분할 배치와 대화 기록을 유지합니다. Tailscale로 연결한 다른 컴퓨터에서도 작업을 실행하고 제어할 수 있습니다.
 
 현재는 **0.1.0 개발 버전**입니다. 작업을 실행할 컴퓨터에 사용할 CLI를 별도로 설치하고 로그인하세요. CLI가 필요로 하는 Node.js 등의 런타임은 해당 CLI의 설치 안내를 따릅니다.
@@ -63,6 +63,15 @@ bash scripts/test-native-macos.sh
 bash scripts/build-macos.sh
 open release/native-macos/MightyClaude.app
 ```
+
+Apple Silicon Mac에서 내장 브라우저를 포함하려면 엔진을 준비한 뒤 옵션을 켜서 빌드합니다.
+
+```sh
+bash scripts/fetch-browser-engine.sh
+MIGHTY_BROWSER_ENGINE=1 bash scripts/build-macos.sh
+```
+
+워크스페이스의 **+ → 새 브라우저 탭**에서 열고 주소 입력·뒤로·앞으로·새로 고침을 사용합니다. CEF는 앱 시작 시 초기화되며, 탭별 종료가 다른 브라우저나 앱 창을 닫지 않습니다. 엔진을 포함하지 않은 빌드는 안내를 표시합니다. 프로필·키체인과 실행 검증은 [브라우저 문서](docs/browser-pane.md)를 참고하세요.
 
 입력창에 `/`를 치면 그 실행기의 스킬·사용자 명령·플러그인 명령이 목록으로 나타나고 ↑↓·Enter·Tab으로 고를 수 있다([docs/slash-commands.md](docs/slash-commands.md)). 실행 중인 창에도 계속 입력할 수 있다. 이 Mac의 Claude 창은 보낸 글을 진행 중인 턴에 바로 전달하고 마이티 모드에 **중간 요청** 블록으로 표시하며, Codex·Gemini·원격·셸 창은 현재 요청이 끝난 뒤 순서대로 실행하는 대기열에 넣는다. 자세한 동작은 [docs/mighty-mode.md](docs/mighty-mode.md)를 참고한다.
 
@@ -131,6 +140,7 @@ Mac의 로컬 Claude가 `AskUserQuestion`을 요청하면 JSON 대신 질문 카
 | 세션 컨텍스트·사용량 상세 | 지원 | 지원 |
 | Tailscale 원격 실행·중지 | 지원 | 지원 |
 | 로컬 터미널 | Ghostty + PTY | 요청별 명령 실행 |
+| 내장 브라우저 | Apple Silicon, CEF 옵션 빌드 | 미지원 |
 | Claude 추가 권한 요청의 앱 내 승인 (실행 창·펫 말풍선) | 로컬 세션 지원 | 미지원 |
 | 마이티 그래프·플러그인 마켓플레이스 (Claude·Codex) | 지원 | 미지원 |
 | CLI 자동 업데이트 설정 | 지원 | 미지원 |
