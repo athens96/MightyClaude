@@ -33,6 +33,65 @@ extension AppStore {
         }
     }
 
+    // MARK: - Add / remove / export / import
+
+    /// Adds one entry read from a JSON file.  The entry lands unapproved.
+    func addToolkitEntry(fromFile url: URL) {
+        guard !toolkitRunning else { return }
+        Task {
+            do {
+                let data = try Data(contentsOf: url)
+                guard var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    throw MightyError("도구 파일은 JSON 객체 하나여야 합니다: \(url.lastPathComponent)")
+                }
+                object.removeValue(forKey: "approval")
+                let entry = try ToolkitEntryDecoder.decode(object)
+                try await toolkitStore.addEntry(entry)
+                await refreshToolkit()
+            } catch {
+                toolkitFileError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Delists a user entry.  Nothing is uninstalled or deleted on disk.
+    func removeToolkitEntry(_ id: String) {
+        guard !toolkitRunning else { return }
+        Task {
+            do {
+                try await toolkitStore.removeEntry(id: id)
+                await refreshToolkit()
+            } catch {
+                toolkitFileError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Writes the user entries as a plain array with no approval data.
+    func exportToolkit(to url: URL) {
+        Task {
+            do {
+                let data = try await toolkitStore.exportData()
+                try data.write(to: url, options: .atomic)
+            } catch {
+                toolkitFileError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Adds every entry of an exported array as unapproved.
+    func importToolkit(from url: URL) {
+        guard !toolkitRunning else { return }
+        Task {
+            do {
+                try await toolkitStore.importData(try Data(contentsOf: url))
+                await refreshToolkit()
+            } catch {
+                toolkitFileError = error.localizedDescription
+            }
+        }
+    }
+
     // MARK: - Install plan
 
     func planToolkitInstall() {
