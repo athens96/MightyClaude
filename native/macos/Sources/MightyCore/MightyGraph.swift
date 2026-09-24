@@ -284,7 +284,7 @@ extension RunSession {
         guard kind == "claude", MightyGraphSupport.providers.contains(provider) else { return }
         if graphRuns == nil { graphRuns = MightyGraphSupport.legacyRuns(self) }
         graphRuns?.append(MightyGraphRun(id: id, input: input, provider: provider,
-                                         nodeModelLabel: ModelDefaultsResolution.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
+                                         nodeModelLabel: GraphModelLabel.nodeModelLabel(cliReportedModel: nil, configuredModel: configuredModel),
                                          configuredModel: configuredModel))
         graphRuns = graphRuns.map { MightyGraphSupport.boundedLiveHistory(Array($0.suffix(128))) }
     }
@@ -300,7 +300,7 @@ extension RunSession {
             // The CLI reported the model it actually used: it outranks the configured name.
             guard let reported = event.usage?.model, !reported.isEmpty else { return }
             let last = runs.count - 1
-            runs[last].nodeModelLabel = ModelDefaultsResolution.nodeModelLabel(cliReportedModel: reported, configuredModel: runs[last].configuredModel ?? "default")
+            runs[last].nodeModelLabel = GraphModelLabel.nodeModelLabel(cliReportedModel: reported, configuredModel: runs[last].configuredModel ?? "default")
             graphRuns = runs
             return
         }
