@@ -298,16 +298,7 @@ struct SessionPaneView: View {
     }
 
     private func permissionModeMenuLabel(_ mode: String) -> String {
-        let base = permissionLabel(mode, provider: session.provider)
-        let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }
-        let resolved = ModelDefaultsResolution.modeMenuLabel(
-            provider: session.provider,
-            permissionMode: mode,
-            workspaceDefaults: workspace?.modelDefaults,
-            appDefaults: store.snapshot.modelDefaults
-        )
-        guard resolved != "default" else { return base }
-        return "\(base) · \(resolved)"
+        permissionLabel(mode, provider: session.provider)
     }
 
     private var permissionOptions: some View {

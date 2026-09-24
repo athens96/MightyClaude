@@ -50,6 +50,8 @@ public struct ProviderModeDefaults: Codable, Sendable, Equatable {
 }
 
 /// App-level (or workspace-level) model defaults for Claude and Codex.
+/// The `modeDefaults` dicts are no longer read or written by the macOS app;
+/// they are preserved so that older builds and Windows still load them.
 public struct ModelDefaultsConfig: Codable, Sendable, Equatable {
     public var claude: ProviderModeDefaults
     public var codex: ProviderModeDefaults
@@ -61,6 +63,55 @@ public struct ModelDefaultsConfig: Codable, Sendable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         claude = try c.decodeIfPresent(ProviderModeDefaults.self, forKey: .claude) ?? .init()
         codex = try c.decodeIfPresent(ProviderModeDefaults.self, forKey: .codex) ?? .init()
+    }
+}
+
+/// Machine-wide per-run Claude and Codex model knobs set from the Phase Model settings screen.
+/// A value of "default" adds no flag or env key when launching a CLI run.
+public struct PhaseModelHardcodedConfig: Codable, Sendable, Equatable {
+    public var claudeMain: String
+    public var claudeOpusAlias: String
+    public var claudeSonnetAlias: String
+    public var claudeHaikuAlias: String
+    public var claudeSubagentDefault: String
+    public var codexReviewModel: String
+    public var codexSubagentDefault: String
+    public var codexPlanModeReasoningEffort: String
+
+    public init(
+        claudeMain: String = "default",
+        claudeOpusAlias: String = "default",
+        claudeSonnetAlias: String = "default",
+        claudeHaikuAlias: String = "default",
+        claudeSubagentDefault: String = "default",
+        codexReviewModel: String = "default",
+        codexSubagentDefault: String = "default",
+        codexPlanModeReasoningEffort: String = "default"
+    ) {
+        self.claudeMain = claudeMain
+        self.claudeOpusAlias = claudeOpusAlias
+        self.claudeSonnetAlias = claudeSonnetAlias
+        self.claudeHaikuAlias = claudeHaikuAlias
+        self.claudeSubagentDefault = claudeSubagentDefault
+        self.codexReviewModel = codexReviewModel
+        self.codexSubagentDefault = codexSubagentDefault
+        self.codexPlanModeReasoningEffort = codexPlanModeReasoningEffort
+    }
+
+    /// Builds a PhaseModelConfig for launching a run, merging in scanned file knobs.
+    public func toPhaseModelConfig(omcAgents: [String: String]?, ouroborosKeys: [String: String]?) -> PhaseModelConfig {
+        PhaseModelConfig(
+            claudeMain: claudeMain,
+            claudeOpusAlias: claudeOpusAlias,
+            claudeSonnetAlias: claudeSonnetAlias,
+            claudeHaikuAlias: claudeHaikuAlias,
+            claudeSubagentDefault: claudeSubagentDefault,
+            codexReviewModel: codexReviewModel,
+            codexSubagentDefault: codexSubagentDefault,
+            codexPlanModeReasoningEffort: codexPlanModeReasoningEffort,
+            omcAgents: omcAgents,
+            ouroborosKeys: ouroborosKeys
+        )
     }
 }
 
@@ -269,13 +320,17 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     /// Phone access over Tailscale; nil means never enabled.
     public var mobileRemote: MobileRemoteSettings?
     /// App-level per-provider per-mode model defaults; nil means all modes use "default".
+    /// The modeDefaults dicts are no longer written by macOS but are preserved for backwards compat.
     public var modelDefaults: ModelDefaultsConfig?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil) {
+    /// Machine-wide per-phase / per-run Claude and Codex model knobs; nil means all phases use CLI defaults.
+    public var phaseModels: PhaseModelHardcodedConfig?
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil) {
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds
         self.autoUpdateCLIs = autoUpdateCLIs; self.expandedWorkspaceIds = expandedWorkspaceIds; self.mobileRemote = mobileRemote
         self.modelDefaults = modelDefaults
+        self.phaseModels = phaseModels
     }
 }
 
