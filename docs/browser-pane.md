@@ -136,6 +136,8 @@ Chromium은 GPU·렌더러·플러그인·유틸리티 서브프로세스를 낳
 
 엔진을 포함한 빌드는 `MightyClaudeLauncher`에서 SwiftUI의 이벤트 루프가 시작되기 전에 CEF를 초기화한다. 이미 실행 중인 CFRunLoop 안에서 초기화하면 Chromium이 루프 진입 이벤트를 놓치고 종료 시 내부 스택을 잘못 비우므로 탭 생성 시점으로 초기화를 늦추지 않는다. `browser_subprocess_path`는 메인 헬퍼를 가리키고, `root_cache_path`는 `~/Library/Application Support/MightyClaude/browser-profiles`다. 메시지 루프는 초기화 성공 후 main run loop에서 시작한다. `CefBrowserRuntime`이 브리지와 타이머를 프로세스 전체에서 소유한다. 탭이 사라져도 브리지를 `dlclose`하지 않으며, 비동기 `on_before_close`가 끝날 때까지 부모 뷰를 유지한다. 앱 종료 시 타이머를 중단하고 모든 브라우저의 종료 콜백을 처리한 후 CEF를 종료한다. 기본 CEF 종료 동작은 부모 창 전체를 대상으로 하므로 사용자 `do_close`에서 해당 브라우저의 자식 뷰만 제거한다. C API 경계를 넘는 참조 인자는 SDK의 전달 소유권 규칙에 맞춰 유지·해제한다.
 
+Chromium은 앱과 같은 프로세스에서 돌기 때문에 Chromium이 죽으면 모든 에이전트 세션도 함께 종료된다. 그래서 CEF는 설정 → 표시의 ‘브라우저 창 사용 (실험)’(`browser.engineEnabled`, 기본값 꺼짐)이 켜져 있을 때만 시작하며, 값은 실행 시 한 번만 읽으므로 바꾼 뒤 앱을 다시 시작해야 적용된다. 꺼져 있으면 브라우저 탭은 켜는 방법을 안내하는 문구만 보여 준다. `--browser-smoke-test` 실행은 설정과 관계없이 엔진을 시작한다. 메시지 펌프 타이머는 공통 run loop 모드에서 돌기 때문에 Chromium이 직접 돌리는 중첩 루프 안에서도 실행될 수 있으므로, `mighty_cef_work`는 `cef_do_message_loop_work`에 재진입하지 않도록 막는다.
+
 네이티브 CEF 코드는 `native/macos/BrowserBridge/`에서 빌드한다. 메인 프로세스와 헬퍼 모두 고정 SDK의 `CEF_API_VERSION`과 API 해시를 먼저 확인한다. 실제 `cef_initialize`가 실패하면 프로세스를 다시 시작하기 전까지 초기화를 재시도하지 않는다.
 
 ### 워크스페이스별 request context

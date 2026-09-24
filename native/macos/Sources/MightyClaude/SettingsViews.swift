@@ -184,6 +184,17 @@ struct AppSettingsView: View {
                         }
                     }
                     .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
+                    Toggle(isOn: Binding(
+                        get: { CefBrowserEngine.isEnabledInSettings },
+                        set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L("settings.display.browserToggle"))
+                            Text(L("settings.display.browserDescription"))
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch).accessibilityIdentifier("settings-browser-engine")
                 }
                 Section(L("settings.remote.sectionTitle")) {
                     Button { store.settingsShowsRemote = true } label: {

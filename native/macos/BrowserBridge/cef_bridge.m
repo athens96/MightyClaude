@@ -267,9 +267,16 @@ EXPORT int mighty_cef_initialize(const char *root_cache) {
     return root_cache && root_cache[0] && ensure_initialized(root_cache);
 }
 EXPORT void mighty_cef_work(void) {
-    if (!g_initialized) return;
+    /* The pump timer runs in the common run-loop modes, so it also fires inside
+     * nested loops that Chromium itself spins (menus, drags, modal panels).
+     * cef_do_message_loop_work must never re-enter itself. */
+    static int in_work;
+    if (!g_initialized || in_work) return;
     void (*work)(void) = (void (*)(void))dlsym(g_cef, "cef_do_message_loop_work");
-    if (work) { @autoreleasepool { work(); } }
+    if (!work) return;
+    in_work = 1;
+    @autoreleasepool { work(); }
+    in_work = 0;
 }
 EXPORT void mighty_cef_close(void *parent) {
     pane_t *p = find_pane(parent);
