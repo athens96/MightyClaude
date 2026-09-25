@@ -162,6 +162,27 @@
 - [ ] (기기 미확인) 권한 모드 메뉴의 각 항목에 해당 모드의 기본 모델 이름이 "· 모델" 형식으로 함께 표시되고, 기본값이 'default'이면 추가 텍스트 없이 모드 이름만 보인다
 - [ ] (기기 미확인) effort 지원이 켜진 직접 등록 이름으로 실행 창 모델을 설정하면 추론 강도 메뉴에 저장된 수준 항목만 표시된다
 
+### 단계별 모델 (`docs/phase-model-routing.md`, 시드 `seed_windows_b2_s2_phase_models`)
+
+<!-- 기기 미확인 -->
+
+**Windows 기기 확인 항목 (한국어)**
+
+- [ ] (기기 미확인) 설정에 "페이즈별 모델" 칸이 "화면" 다음, "CLI 업데이트" 앞에 보인다
+- [ ] (기기 미확인) 계획·실행·검토·서브에이전트 네 줄이 Claude·Codex 자세히 줄 위에 있고, 날 키(`settings.phaseModels.…`)가 하나도 보이지 않는다
+- [ ] (기기 미확인) omc가 설치되어 있으면 omc 묶음에 에이전트 이름과 "(기본: opus)" 같은 설치본 기본 모델이 보이고, 설치되어 있지 않으면 묶음이 없다
+- [ ] (기기 미확인) `%USERPROFILE%\.ouroboros\config.yaml`이 있으면 Ouroboros 묶음에 `*_model` 키가 보이고, 없으면 묶음이 없다
+- [ ] (기기 미확인) 계획 = Opus를 고르면 `%USERPROFILE%\.config\claude-omc\config.jsonc`의 planner·architect·critic과 `config.yaml`의 `clarification.default_model`이 바뀌고, 다른 에이전트는 config.jsonc에 새로 생기지 않는다
+- [ ] (기기 미확인) 쓴 뒤에도 `config.yaml`의 `orchestrator.cli_path`가 그대로이고, 옆에 `config.mighty-backup-…` 백업이 생긴다
+- [ ] (기기 미확인) 매인 값이 서로 다른 줄은 "혼합"으로 보인다
+- [ ] (기기 미확인) `config.jsonc`를 일부러 깨뜨리면 붉은 오류 문장("설정 파일을 읽을 수 없어 아무것도 쓰지 않았습니다: …")이 보이고 파일은 그대로다
+
+**Windows 기기 확인 항목 (English)**
+
+- [ ] (not checked on device) With English selected, the section reads "Phase Models" with Planning / Execution / Review / Subagents rows and no raw keys
+- [ ] (not checked on device) omc agent rows show the install default as "(default: opus)"; tool headings read omc and Ouroboros
+- [ ] (not checked on device) A broken `config.jsonc` shows the English file error sentence and the file stays unchanged
+
 ---
 
 ### Claude 추가 권한 요청의 앱 내 승인
