@@ -683,13 +683,10 @@ public sealed partial class MainWindow
     private async Task RunToolkitInstall(ToolkitStore store)
     {
         if (toolkitRunning) return;
-        var probeCtx = options.SmokeTest ? new ToolkitProbeContext
-        {
-            HomeDirectory = StateDirectory,
-            PathDirectories = [],
-            LocalAppData = StateDirectory,
-        } : LiveProbeContext();
-        var runner = new ToolkitRunner(store, probeCtx);
+        // Never show or await a modal and never run a real install in smoke mode:
+        // the smoke drives ToolkitRunner directly with a fake executor.
+        if (options.SmokeTest) return;
+        var runner = new ToolkitRunner(store, LiveProbeContext());
         var plan = runner.Plan();
         if (plan.Count == 0) return;
 
@@ -722,9 +719,6 @@ public sealed partial class MainWindow
             XamlRoot = root.XamlRoot,
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
-
-        // Never run real installs in smoke mode.
-        if (options.SmokeTest) return;
 
         toolkitRunning = true;
         if (toolkitInstallButton is not null)
@@ -778,7 +772,7 @@ public sealed partial class MainWindow
         if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
     }
 
-    // Exports all entries (without approvals) to a file the user picks.
+    // Exports every entry, other-OS ones included, without approvals.
     private async Task ExportToolkit(ToolkitStore store)
     {
         var picker = new FileSavePicker();
@@ -791,7 +785,8 @@ public sealed partial class MainWindow
         await Windows.Storage.FileIO.WriteTextAsync(file, export);
     }
 
-    // Imports entries from a file and merges them into the store.
+    // Imports an exported array (macOS or Windows) and merges it into the store;
+    // entries for the other OS are kept in the file and stay hidden.
     private async Task ImportToolkit(ToolkitStore store)
     {
         var picker = new FileOpenPicker();
@@ -800,9 +795,7 @@ public sealed partial class MainWindow
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
         var json = await Windows.Storage.FileIO.ReadTextAsync(file);
-        var parsed = ToolkitFileReader.Parse(json);
-        foreach (var entry in parsed.Entries)
-            store.Add(entry);
+        store.Import(json);
         var (reloaded, _) = store.List();
         if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
     }

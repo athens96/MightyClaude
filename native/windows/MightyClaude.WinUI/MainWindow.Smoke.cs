@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Runtime.CompilerServices;
 using MightyClaude.Core;
 using Microsoft.UI.Text;
@@ -51,6 +52,8 @@ public sealed partial class MainWindow
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
             result["phaseModelsSection"] = RunPhaseModelsSectionSmoke();
+            var componentsLeakStrings = new List<string>();
+            result["componentsSection"] = RunComponentsSectionSmoke(result, componentsLeakStrings);
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             result["usageReset"] = await RunUsageResetSmoke();
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
@@ -103,6 +106,8 @@ public sealed partial class MainWindow
             CollectVisibleStrings(settingsPanelForLeak, leakStrings);
             // 페이즈별 모델 칸의 ComboBox 머리글과 항목은 화면 나무에 바로 보이지 않으므로 따로 넣는다.
             leakStrings.AddRange(PhaseModelSectionTexts(BuildPhaseModelsSection(new(), PhaseModelSection.SmokeFixtureTools)));
+            // 구성 요소 칸은 임시 toolkit.json과 실행 결과 표까지 채운 모습으로 넣는다.
+            leakStrings.AddRange(componentsLeakStrings);
             var koKeys = Locale.Catalogue("ko").Keys.ToList();
             var keyLeaks = LocaleKeyLeak.Detect(leakStrings, koKeys);
             result["localeKeyLeakScanned"] = leakStrings.Count;
@@ -137,6 +142,121 @@ public sealed partial class MainWindow
         var execution = phaseRows.Single(box => AutomationProperties.GetAutomationId(box) == PhaseRowIdPrefix + Phase.Execution);
         Require(execution.SelectedItem is ComboBoxItem { Tag: string tag } && tag == PhaseModelSection.MixedSentinel, "값이 다른 실행 줄이 혼합으로 보이지 않습니다.");
         return true;
+    }
+
+    // 구성 요소 칸을 임시 폴더의 toolkit.json으로 짓는다. 픽스처에는 plugin·npm·winget
+    // (이 PC 항목)과 brew·repoScript(macOS 전용 항목)가 하나씩 있다. 목록에는 이 PC
+    // 항목만 보이고, 설치 계획은 가짜 실행기로만 돌리며(실제 프로세스 없음), 저장이
+    // 일어난 뒤에도 macOS 전용 두 객체가 파일에 그대로 남아야 한다. 실제 사용자
+    // 파일은 읽지도 쓰지도 않는다.
+    private const string ComponentsSmokeFixture = """
+        {
+          "version": 1,
+          "entries": [
+            { "id": "smoke-plugin", "displayName": "Smoke plugin", "install": { "kind": "plugin", "source": "athens96/smoke-plugin", "pluginID": "smoke-plugin@smoke-market" } },
+            { "id": "smoke-npm", "displayName": "Smoke npm", "install": { "kind": "package", "manager": "npm", "name": "smoke-npm" } },
+            { "id": "smoke-winget", "displayName": "Smoke winget", "install": { "kind": "package", "manager": "winget", "name": "Smoke.Tool", "executable": "smoke-tool.exe" } },
+            { "id": "smoke-brew", "displayName": "Smoke brew", "install": { "kind": "package", "manager": "brew", "name": "smoke-brew" }, "approval": { "contentHash": "0000000000000000000000000000000000000000000000000000000000000000" } },
+            { "id": "smoke-repo-script", "displayName": "Smoke script", "install": { "kind": "repoScript", "url": "https://github.com/athens96/smoke-script.git", "ref": "v1", "scriptPath": "install.sh" } }
+          ]
+        }
+        """;
+    private static readonly string[] ComponentsSmokeVisible = ["smoke-plugin", "smoke-npm", "smoke-winget"];
+    private static readonly string[] ComponentsSmokeOtherOs = ["smoke-brew", "smoke-repo-script"];
+
+    private bool RunComponentsSectionSmoke(Dictionary<string, object?> result, List<string> leakStrings)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "mighty-components-smoke-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var previousStore = toolkitStore;
+        try
+        {
+            var toolkitPath = Path.Combine(folder, "toolkit.json");
+            File.WriteAllText(toolkitPath, ComponentsSmokeFixture);
+            var store = new ToolkitStore(folder);
+            toolkitStore = store;
+            // 승인은 파일을 다시 쓴다 — 이 저장 뒤에도 macOS 전용 객체가 남아야 한다.
+            foreach (var id in ComponentsSmokeVisible) store.Approve(id);
+
+            var panel = BuildComponentsSection();
+            const string rowPrefix = "toolkit-entry-";
+            var visibleIds = toolkitListPanel!.Children.OfType<FrameworkElement>()
+                .Select(AutomationProperties.GetAutomationId)
+                .Where(id => id.StartsWith(rowPrefix, StringComparison.Ordinal))
+                .Select(id => id[rowPrefix.Length..])
+                .ToList();
+            result["toolkitVisibleIds"] = visibleIds;
+            foreach (var id in ComponentsSmokeVisible)
+                Require(visibleIds.Contains(id), "구성 요소 칸에 이 PC 항목이 보이지 않습니다: " + id);
+            foreach (var id in ComponentsSmokeOtherOs)
+                Require(!visibleIds.Contains(id), "구성 요소 칸에 macOS 전용 항목이 보입니다: " + id);
+            Require(panel.Children.OfType<FrameworkElement>().Any(), "구성 요소 칸이 비어 있습니다.");
+
+            var probe = new ToolkitProbeContext
+            {
+                HomeDirectory = Path.Combine(folder, "home"),
+                PathDirectories = [],
+                LocalAppData = Path.Combine(folder, "local"),
+            };
+            var executor = new SmokeToolkitExecutor(probe.LocalAppData);
+            var runner = new ToolkitRunner(store, probe);
+            var runs = runner.Run(runner.Plan(), executor);
+            FillToolkitResults(toolkitResultsPanel!, runs);
+            result["toolkitRunResults"] = runs.Select(run => new Dictionary<string, object?>
+            {
+                ["id"] = run.EntryId,
+                ["verdict"] = run.RunVerdict.ToString(),
+                ["steps"] = run.Steps.Select(step => string.Join(" ", step.Argv) + " => " + step.Outcome).ToList(),
+            }).ToList();
+            var runIds = runs.Select(run => run.EntryId).ToList();
+            foreach (var id in ComponentsSmokeVisible)
+                Require(runIds.Contains(id), "승인된 이 PC 항목이 설치 계획에 없습니다: " + id);
+            foreach (var id in ComponentsSmokeOtherOs)
+                Require(!runIds.Contains(id), "macOS 전용 항목이 설치 계획에 들어갔습니다: " + id);
+            Require(executor.Commands.Count > 0 && executor.Commands.All(argv => argv[0] is "claude" or "npm" or "winget"),
+                "가짜 실행기가 이 PC 명령 밖의 명령을 받았습니다: " + string.Join(" | ", executor.Commands.Select(argv => string.Join(" ", argv))));
+            Require(runs.Single(run => run.EntryId == "smoke-winget").RunVerdict == ToolkitRunItem.Verdict.Installed,
+                "winget 항목이 다시 조사한 결과 설치됨으로 보이지 않습니다.");
+
+            // 설치 결과 표까지 채운 칸의 글자가 로케일 키 누수 검사에 들어간다.
+            CollectVisibleStrings(panel, leakStrings);
+
+            using var before = JsonDocument.Parse(ComponentsSmokeFixture);
+            using var after = JsonDocument.Parse(File.ReadAllText(toolkitPath));
+            foreach (var id in ComponentsSmokeOtherOs)
+            {
+                var original = before.RootElement.GetProperty("entries").EnumerateArray().Single(e => e.GetProperty("id").GetString() == id);
+                var kept = after.RootElement.GetProperty("entries").EnumerateArray().Where(e => e.GetProperty("id").GetString() == id).ToList();
+                Require(kept.Count == 1 && JsonNode.DeepEquals(JsonNode.Parse(original.GetRawText()), JsonNode.Parse(kept[0].GetRawText())),
+                    "macOS 전용 항목이 toolkit.json에서 사라졌거나 바뀌었습니다: " + id);
+            }
+            return true;
+        }
+        finally
+        {
+            toolkitStore = previousStore;
+            try { Directory.Delete(folder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    // 설치 명령을 기록만 하는 가짜 실행기. 프로세스를 띄우지 않는다. winget 명령은
+    // 임시 LocalAppData의 WinGet\Links에 실행 파일을 만들어, 다시 조사하는 단계가
+    // 파일만 보고 설치됨을 판정하는지 확인하게 한다.
+    private sealed class SmokeToolkitExecutor(string localAppData) : IToolkitRunnerExecutor
+    {
+        public List<IReadOnlyList<string>> Commands { get; } = [];
+
+        public ToolkitCommandOutput Run(IReadOnlyList<string> argv)
+        {
+            Commands.Add(argv);
+            if (argv.Count > 4 && argv[0] == "winget" && argv[1] == "install")
+            {
+                var links = Path.Combine(localAppData, "Microsoft", "WinGet", "Links");
+                Directory.CreateDirectory(links);
+                File.WriteAllText(Path.Combine(links, "smoke-tool.exe"), "");
+            }
+            return ToolkitCommandOutput.Success;
+        }
     }
 
     private async Task<Dictionary<string, object?>> RunRenameSmoke()
