@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ToolkitFileEntry = MightyClaude.Core.ToolkitFileReader.ToolkitFileEntry;
 
 namespace MightyClaude.Core;
@@ -77,22 +78,77 @@ public sealed class ToolkitStore
     }
 
     /// Adds or replaces a user entry (always unapproved after this call).
+    /// An entry for another OS (brew, repoScript) is written to the file but
+    /// stays out of the list and the plan, like one read from the file.
     public void Add(ToolkitFileEntry entry)
     {
         RequireLoaded();
-        thisOsEntries.RemoveAll(e => e.Id == entry.Id);
-        approvals.Remove(entry.Id);
-        touchedEntryIds.Add(entry.Id);
-        thisOsEntries.Add(entry with { Approval = null, Source = ToolkitFileReader.ToolkitEntrySource.User });
+        Put(entry);
         Persist();
     }
 
-    /// Serialises user entries (without approvals) to a toolkit.json string for export.
+    /// Adds every entry of an export (a JSON array, as both platforms write it)
+    /// or of a toolkit.json object as unapproved; an existing id is replaced.
+    /// Other-OS entries are accepted and kept hidden. One invalid entry rejects
+    /// the whole import and leaves the file untouched.
+    public void Import(string json)
+    {
+        RequireLoaded();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        JsonElement items;
+        if (root.ValueKind == JsonValueKind.Array) items = root;
+        else if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("entries", out var entriesEl) && entriesEl.ValueKind == JsonValueKind.Array) items = entriesEl;
+        else throw new InvalidDataException("Import data must be a JSON array of toolkit entries");
+        var parsed = new List<ToolkitFileEntry>();
+        foreach (var item in items.EnumerateArray())
+            parsed.Add((item.ValueKind == JsonValueKind.Object ? ToolkitFileReader.ParseEntry(item) : null)
+                ?? throw new InvalidDataException("Import data holds an entry that is not a valid toolkit entry"));
+        foreach (var entry in parsed) Put(entry);
+        Persist();
+    }
+
+    /// Serialises every user entry, other-OS ones included, as a JSON array
+    /// without approvals (the same shape macOS exports and imports).
     public string Export()
     {
         DoLoad();
-        var parts = thisOsEntries.Select(EntryToJson).ToList();
-        return $"{{\"version\":1,\"entries\":[{string.Join(",", parts)}]}}";
+        var parts = new List<string>();
+        foreach (var id in allEntryIds)
+        {
+            if (otherOsIds.Contains(id))
+            {
+                if (allEntryRawText.TryGetValue(id, out var raw)) parts.Add(WithoutApproval(raw));
+            }
+            else if (thisOsEntries.FirstOrDefault(e => e.Id == id) is { } entry)
+                parts.Add(EntryToJson(entry));
+        }
+        foreach (var entry in thisOsEntries)
+            if (!allEntryIds.Contains(entry.Id)) parts.Add(EntryToJson(entry));
+        return "[" + string.Join(",", parts) + "]";
+    }
+
+    private void Put(ToolkitFileEntry entry)
+    {
+        thisOsEntries.RemoveAll(e => e.Id == entry.Id);
+        approvals.Remove(entry.Id);
+        touchedEntryIds.Add(entry.Id);
+        if (ToolkitFileReader.IsMacOSOnly(entry))
+        {
+            otherOsIds.Add(entry.Id);
+            allEntryRawText[entry.Id] = EntryToJson(entry);
+            if (!allEntryIds.Contains(entry.Id)) allEntryIds.Add(entry.Id);
+            return;
+        }
+        otherOsIds.Remove(entry.Id);
+        thisOsEntries.Add(entry with { Approval = null, Source = ToolkitFileReader.ToolkitEntrySource.User });
+    }
+
+    private static string WithoutApproval(string raw)
+    {
+        var node = JsonNode.Parse(raw)!.AsObject();
+        node.Remove("approval");
+        return node.ToJsonString();
     }
 
     /// Removes a user entry. No command is executed.

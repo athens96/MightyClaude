@@ -606,7 +606,7 @@ internal static class Verification
         await Test("toolkit platform rule matches macOS", ToolkitVerification.ToolkitPlatformRuleMatchesMacOS);
         await Test("toolkit winget template decodes and builds its command", ToolkitVerification.ToolkitWingetTemplateDecodesAndBuildsItsCommand);
         await Test("toolkit store keeps other-OS entries", ToolkitVerification.ToolkitStoreKeepsOtherOsEntries);
-        await Test("toolkit approval binds to canonical content hash", ToolkitVerification.ToolkitApprovalBindsToContentHash);
+        await Test("toolkit approval binds to content hash", ToolkitVerification.ToolkitApprovalBindsToContentHash);
         await Test("toolkit plan runs only missing approved entries", ToolkitVerification.ToolkitPlanRunsOnlyMissingApprovedEntries);
         await Test("toolkit probes are file-only and run twice and decide the result table", ToolkitVerification.ToolkitProbesAreFileOnly);
         await Test("toolkit plan is a step list", ToolkitVerification.ToolkitInstallIsAnOrderedStepList);

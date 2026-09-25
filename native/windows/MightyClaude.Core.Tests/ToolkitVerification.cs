@@ -93,6 +93,15 @@ internal static class ToolkitVerification
             """;
         var noExeFile = ToolkitFileReader.Parse(noExe);
         Check(noExeFile.Entries.Count == 0, "winget without executable is skipped");
+
+        // brew and npm with an executable field are rejected, as on macOS.
+        foreach (var manager in new[] { "brew", "npm" })
+        {
+            var withExe = ToolkitFileReader.Parse(
+                "{\"version\":1,\"entries\":[{\"id\":\"x\",\"displayName\":\"X\",\"install\":{\"kind\":\"package\",\"manager\":\""
+                + manager + "\",\"name\":\"x\",\"executable\":\"x.exe\"}}]}");
+            Check(withExe.Entries.Count == 0, manager + " with an executable field is rejected");
+        }
         return Task.CompletedTask;
     }
 
@@ -158,6 +167,35 @@ internal static class ToolkitVerification
             Check(!ids3.Contains("ripgrep"), "brew still hidden after remove");
             var fileText3 = File.ReadAllText(Path.Combine(dir, "toolkit.json"));
             Check(fileText3.Contains("ripgrep"), "brew entry byte-identical after remove");
+
+            // Import (the array both platforms export) accepts other-OS entries,
+            // keeps them in the file and out of the list and the plan.
+            var store4 = new ToolkitStore(dir);
+            store4.Import("""
+                [
+                  { "displayName": "fd", "id": "fd", "install": { "kind": "package", "manager": "brew", "name": "fd" } },
+                  { "displayName": "Setup", "id": "setup", "install": { "kind": "repoScript", "url": "https://github.com/x/y.git", "ref": "v1", "scriptPath": "install.sh" } },
+                  { "displayName": "Prettier", "id": "prettier", "install": { "kind": "package", "manager": "npm", "name": "prettier" } }
+                ]
+                """);
+            var store5 = new ToolkitStore(dir);
+            var ids5 = store5.List().Entries.Select(e => e.Id).ToArray();
+            Check(ids5.Contains("prettier"), "imported npm entry listed");
+            Check(!ids5.Contains("fd") && !ids5.Contains("setup"), "imported brew and repoScript entries hidden");
+            var fileText5 = File.ReadAllText(Path.Combine(dir, "toolkit.json"));
+            Check(fileText5.Contains("\"fd\"") && fileText5.Contains("\"setup\"") && fileText5.Contains("ripgrep"),
+                "imported other-OS entries written to the file");
+            var plan5 = new ToolkitRunner(store5, FakeContext()).Plan().Select(i => i.Entry.Id).ToArray();
+            Check(!plan5.Contains("fd") && !plan5.Contains("setup") && !plan5.Contains("ripgrep"), "other-OS entries never planned");
+
+            // Export includes every entry, other-OS ones too, without approval.
+            store5.Approve("prettier");
+            using var exported = JsonDocument.Parse(store5.Export());
+            Check(exported.RootElement.ValueKind == JsonValueKind.Array, "export is a JSON array like macOS");
+            var exportedIds = exported.RootElement.EnumerateArray().Select(e => e.GetProperty("id").GetString()).ToArray();
+            foreach (var id in new[] { "ripgrep", "fd", "setup", "prettier", "nodejs" })
+                Check(exportedIds.Contains(id), "export includes " + id);
+            Check(exported.RootElement.EnumerateArray().All(e => !e.TryGetProperty("approval", out _)), "export carries no approval");
         }
         finally { Directory.Delete(dir, true); }
         return Task.CompletedTask;
@@ -1217,9 +1255,14 @@ internal static class ToolkitVerification
         try
         {
             // brew is macOS-only; on Windows it must not appear in the plan or results.
-            var storeE = new ToolkitStore(dirE);
+            // An approved brew entry written on the Mac: hidden on Windows, so it
+            // cannot be approved here, and its stored approval must not plan it.
             var brew = MakeEntry("macos-only-brew", new ToolkitFileReader.PackageSpec("brew", "ripgrep"));
-            storeE.Add(brew); storeE.Approve("macos-only-brew");
+            File.WriteAllText(Path.Combine(dirE, "toolkit.json"),
+                "{\"version\":1,\"entries\":[{\"approval\":{\"contentHash\":\"" + ToolkitStore.CanonicalHash(brew)
+                + "\"},\"displayName\":\"macos-only-brew\",\"id\":\"macos-only-brew\",\"install\":{\"kind\":\"package\",\"manager\":\"brew\",\"name\":\"ripgrep\"}}]}");
+            var storeE = new ToolkitStore(dirE);
+            Check(!storeE.List().Entries.Any(e => e.Id == "macos-only-brew"), "(e): brew hidden from the list on Windows");
             var runnerE = new ToolkitRunner(storeE, FakeContext());
             var planE = runnerE.Plan();
             // (e1) brew entry is absent from plan on Windows
