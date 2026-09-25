@@ -2,6 +2,7 @@ using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Windows.Storage.Pickers;
 
 namespace MightyClaude.WinUI;
 
@@ -462,7 +463,7 @@ public sealed partial class MainWindow
         var checkingLabel = Locale.Get("settings.components.checkingButton");
         var recheckBtn = new Button { Content = recheckLabel };
         AutomationProperties.SetAutomationId(recheckBtn, "components-refresh");
-        recheckBtn.Click += (_, _) => Act(async () =>
+        recheckBtn.Click += async (_, _) => await Act(async () =>
         {
             recheckBtn.Content = checkingLabel;
             recheckBtn.IsEnabled = false;
@@ -516,16 +517,16 @@ public sealed partial class MainWindow
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         var addBtn = new Button { Content = Locale.Get("settings.toolkit.addButton") };
         AutomationProperties.SetAutomationId(addBtn, "settings-toolkit-add");
-        addBtn.Click += (_, _) => Act(() => AddToolkitEntry(store));
+        addBtn.Click += async (_, _) => await Act(() => AddToolkitEntry(store));
         var exportBtn = new Button { Content = Locale.Get("settings.toolkit.exportButton") };
         AutomationProperties.SetAutomationId(exportBtn, "settings-toolkit-export");
-        exportBtn.Click += (_, _) => Act(() => ExportToolkit(store));
+        exportBtn.Click += async (_, _) => await Act(() => ExportToolkit(store));
         var importBtn = new Button { Content = Locale.Get("settings.toolkit.importButton") };
         AutomationProperties.SetAutomationId(importBtn, "settings-toolkit-import");
-        importBtn.Click += (_, _) => Act(() => ImportToolkit(store));
+        importBtn.Click += async (_, _) => await Act(() => ImportToolkit(store));
         toolkitInstallButton = new Button { Content = Locale.Get("settings.toolkit.installButton"), IsEnabled = !toolkitRunning };
         AutomationProperties.SetAutomationId(toolkitInstallButton, "settings-toolkit-install");
-        toolkitInstallButton.Click += (_, _) => Act(() => RunToolkitInstall(store));
+        toolkitInstallButton.Click += async (_, _) => await Act(() => RunToolkitInstall(store));
         btnRow.Children.Add(addBtn);
         btnRow.Children.Add(exportBtn);
         btnRow.Children.Add(importBtn);
@@ -578,12 +579,7 @@ public sealed partial class MainWindow
                     var btn = new Button { Content = action.Title };
                     AutomationProperties.SetAutomationId(btn, "component-" + row.Id + "-" + actionId);
                     if (actionId == "copy-command" && ComponentSection.InstallCommand(row.Id) is { } cmd)
-                        btn.Click += (_, _) =>
-                        {
-                            var data = new DataPackage();
-                            data.SetText(cmd);
-                            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
-                        };
+                        btn.Click += (_, _) => Copy(cmd);
                     actionsPanel.Children.Add(btn);
                 }
                 rowPanel.Children.Add(actionsPanel);
@@ -637,7 +633,7 @@ public sealed partial class MainWindow
                     var entryId = entry.Id;
                     var approveBtn = new Button { Content = Locale.Get("settings.toolkit.approveButton"), Padding = new Thickness(8, 4, 8, 4) };
                     AutomationProperties.SetAutomationId(approveBtn, "toolkit-approve-" + entryId);
-                    approveBtn.Click += (_, _) => Act(async () =>
+                    approveBtn.Click += async (_, _) => await Act(async () =>
                     {
                         store.Approve(entryId);
                         var (reloaded, _) = store.List();
@@ -649,7 +645,7 @@ public sealed partial class MainWindow
                 var removeEntryId = entry.Id;
                 var removeBtn = new Button { Content = Locale.Get("settings.toolkit.removeButton"), Padding = new Thickness(8, 4, 8, 4) };
                 AutomationProperties.SetAutomationId(removeBtn, "toolkit-remove-" + removeEntryId);
-                removeBtn.Click += (_, _) => Act(async () =>
+                removeBtn.Click += async (_, _) => await Act(async () =>
                 {
                     store.Remove(removeEntryId);
                     var (reloaded, _) = store.List();
