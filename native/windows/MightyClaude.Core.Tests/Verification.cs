@@ -462,6 +462,12 @@ internal static class Verification
         await Test("settings preferences explicit on and off persist across state store reloads", SettingsPreferencesVerification.ExplicitOnAndOffPersistAcrossReloads);
         await Test("settings preferences only JSON booleans enable the setting and malformed values keep sessions", SettingsPreferencesVerification.OnlyJsonBooleansEnableSettingAndMalformedValuesKeepSessions);
         await Test("phase models legacy per-mode keys load", ModelDefaultsVerification.LegacyPerModeKeysLoad);
+        await Test("phase models row rule matches macOS", PhaseModelVerification.RowRuleMatchesMacOS);
+        await Test("phase models file store keeps unrelated keys", PhaseModelVerification.FileStoreKeepsUnrelatedKeys);
+        await Test("phase models refuse unparseable file", PhaseModelVerification.RefuseUnparseableFile);
+        await Test("phase models omc agent catalog", PhaseModelVerification.OmcAgentCatalog);
+        await Test("phase models launch args merge one settings json", PhaseModelVerification.LaunchArgsMergeOneSettingsJson);
+        await Test("phase models snapshot shares macOS field names", PhaseModelVerification.SnapshotSharesMacOSFieldNames);
         await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
         await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);

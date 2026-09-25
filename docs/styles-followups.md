@@ -136,3 +136,7 @@ docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표
 ### 페이즈 모델 설정 macOS 배선 (시드 `ac_d8e67195fffc5132`)
 
 `docs/styles-followups.md`, `native/macos/Sources/MightyCore/ModelSettingsFileStore.swift`, `native/macos/Sources/MightyCore/OmcAgentCatalog.swift`, `native/macos/Sources/MightyClaude/AppStore.swift`, `native/macos/Sources/MightyClaude/AppStore+PhaseModels.swift`, `native/macos/Sources/MightyClaude/PhaseModelSettingsView.swift`, `native/macos/Tests/MightyCoreTests/OmcAgentCatalogTests.swift`, `native/macos/Tests/MightyCoreTests/PhaseModelSaveTests.swift` — v5 열 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
+
+### Windows 2차 2단계: 페이즈 모델 Core (시드 `interview_20260924_153901`)
+
+`docs/styles-followups.md`, `locales/en.json`, `locales/ko.json`, `mobile/src/locales/en.json`, `mobile/src/locales/ko.json`, `native/macos/Sources/MightyCore/Resources/Locales/en.json`, `native/macos/Sources/MightyCore/Resources/Locales/ko.json`, `native/windows/MightyClaude.Core.Tests/PhaseModelVerification.cs`, `native/windows/MightyClaude.Core.Tests/Verification.cs`, `native/windows/MightyClaude.Core/ModelSettingsFileStore.cs`, `native/windows/MightyClaude.Core/Models.cs`, `native/windows/MightyClaude.Core/PhaseModelRouting.cs`, `native/windows/MightyClaude.Core/ProviderCatalog.cs` — v5 열한 번째 항목. 이 경로들도 v5 태그 전까지 `scripts/check-style-freeze.sh`의 exit 1에 포함되는 것이 정상이다.
