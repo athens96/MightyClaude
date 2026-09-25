@@ -225,3 +225,45 @@ functionality, and saved permission settings never imply blanket approval.
 Snapshots also retain optional `paneLayoutModes` and `paneLayoutActiveSessionIds`
 dictionaries, keyed by workspace ID, so each workspace keeps its display mode
 and selected tab independently.
+
+## Execution graph vectors (`graph-vectors.json`)
+
+`graph-vectors.json` is the shared execution-graph contract: one file that both
+platforms read, in the same pattern as `toolkit-hash-parity.json`. Every case
+carries authored `inputs` and the `expected` macOS output. The groups, and the
+minimum number of cases each must hold, are:
+
+| Group | Minimum | What one case describes |
+| --- | --- | --- |
+| `claudeStream` | 6 | Ordered Claude stream-json frames (plus `steer`/`finish` steps) driving the tracker |
+| `codexStream` | 4 | Ordered `codex exec --json` items driving the tracker |
+| `mods` | 3 | Mods `agent.spawn` / `turn.complete` metadata and tool activity |
+| `bounds` | 3 | Saved runs through `MightyGraphSupport.normalized` / `boundedLiveHistory` |
+| `layout` | 8 | Runs, draft, running, expanded and viewport through `MightyGraphLayout.make` |
+| `camera` | 6 | One `MightyGraphCamera` (or `cameraOffset`) rule with its arguments |
+| `capsule` | 8 | One model/usage/title formatting rule with its arguments |
+| `resultFiles` | 4 | Final result texts plus a listed workspace tree |
+
+A tracker case is `{ runId, input, provider, configuredModel, steps[] }`; a step
+is `frame`, `mod`, `steer`, `activity` or `finish`. Its expectation is the latest
+snapshot of every emitted node, in first-emission order. Wall-clock fields
+(`updatedAt`, entry `timestamp`) are never part of an expectation. Frames compare
+within 0.001 and result paths compare with forward slashes.
+
+Expectations are never written by hand. `GraphParityVectorTests` (macOS) derives
+each one from the committed inputs by running the Swift implementation, so the
+file is macOS truth. To regenerate after a deliberate behaviour change:
+
+```
+DEVELOPER_DIR=/Library/Developer/CommandLineTools MIGHTY_GRAPH_VECTORS_WRITE=1 \
+  bash scripts/test-native-macos.sh --scratch-path /tmp/graph-vectors \
+  --filter GraphParityVectorTests
+```
+
+That run rewrites every `expected` and leaves the authored inputs alone; review
+the diff before committing. It is never part of verification — a normal test run
+compares instead of writing.
+
+Display text in the expectations is the Korean copy. The Windows port takes that
+text from `locales/ko.json` / `en.json` and compares against these vectors with
+the `ko` locale selected.
