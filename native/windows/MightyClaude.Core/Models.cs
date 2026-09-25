@@ -81,6 +81,8 @@ public sealed record RunSession
     public AgentRunTiming? RunTiming { get; init; }
     public SessionUsage? SessionUsage { get; init; }
     [JsonIgnore] public AgentActivity? CurrentActivity { get; init; }
+    [JsonPropertyName("agentViewMode")] public string? AgentViewMode { get; init; }
+    [JsonPropertyName("graphRuns")] public List<MightyGraphRun>? GraphRuns { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {
@@ -105,6 +107,16 @@ public sealed record RunSession
             var logs = value.Logs.ToList(); var index = logs.FindIndex(l => l.Id == entry.Id);
             if (index >= 0) logs[index] = entry; else logs.Add(entry);
             return value with { Logs = logs.TakeLast(300).ToList() };
+        }
+        // The run pipeline hands the finished execution graph of one request to
+        // its own session; Gemini and shell panes never produce one.
+        if (ev.Type == "graph_run" && ev.GraphRun is { } newRun && Kind == "claude" && MightyGraphSupport.Providers.Contains(Provider))
+        {
+            var runs = (GraphRuns ?? []).Select(r => r.Copy()).ToList();
+            var at = runs.FindIndex(r => r.Id == newRun.Id);
+            if (at >= 0) runs[at] = newRun; else runs.Add(newRun);
+            var bounded = MightyGraphSupport.BoundedLiveHistory([.. runs.TakeLast(128)]);
+            return value with { GraphRuns = bounded.Count > 0 ? bounded : null };
         }
         return value;
     }
@@ -210,11 +222,11 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         return this with { Settings = settings, Attachments = files };
     }
 }
-public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null)
+public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null)
 {
     public static RunEvent Log(string id, string kind, string text, string? provider = null) => new(id, "log", new(Wire.Id(), kind, ActivitySupport.Clean(text, kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Wire.Now(), provider));
     public static RunEvent State(string id, string state) => new(id, "status", Status: state);
-    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && Entry.Kind is "user" or "assistant" or "system" or "output" or "error" && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage");
+    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && Entry.Kind is "user" or "assistant" or "system" or "output" or "error" && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id));
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);
 public sealed record ModelCatalog(string Source, List<ModelOption> Models, string Detail);

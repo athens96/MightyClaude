@@ -624,6 +624,9 @@ internal static class Verification
         await Test("hash parity stale platforms key excluded from hash surface", ToolkitVerification.HashParityStalePlatformsKeyExcluded);
         await Test("hash parity changing a hashed field changes the digest", ToolkitVerification.HashParityChangingFieldChangesHash);
         await Test("hash parity round-trip with stale platforms key is byte-identical", ToolkitVerification.HashParityRoundTripWithStalePlatformsKey);
+        await Test("graph-parity-vectors-ok", GraphParityVerification.RunAsync);
+        await Test("graph session field names match macOS JSON keys", GraphParityVerification.SessionFieldNames);
+        await Test("graph runs recorded by wiring tracker through AppSnapshot", GraphParityVerification.RunsRecorded);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {

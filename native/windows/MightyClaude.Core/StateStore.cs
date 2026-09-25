@@ -20,14 +20,14 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             if (!File.Exists(StatePath) && legacyDirectory is not null)
             {
                 var original = Path.Combine(legacyDirectory, "workspace-state.json");
-                if (File.Exists(original)) { if (new FileInfo(original).Length > 8 * 1024 * 1024) throw new InvalidDataException("기존 저장 파일이 8MB를 넘어 가져오지 못했습니다. 원본은 유지됩니다."); File.Copy(original, StatePath, false); }
+                if (File.Exists(original)) { if (new FileInfo(original).Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.legacyFileTooLarge")); File.Copy(original, StatePath, false); }
             }
             if (File.Exists(StatePath))
             {
-                if (new FileInfo(StatePath).Length > 8 * 1024 * 1024) throw new InvalidDataException("저장 파일 크기 제한을 초과했습니다.");
+                if (new FileInfo(StatePath).Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.fileTooLarge"));
                 using var json = JsonDocument.Parse(await File.ReadAllTextAsync(StatePath));
-                if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number) || number != 1 || !json.RootElement.TryGetProperty("workspaces", out var workspaces) || workspaces.ValueKind != JsonValueKind.Array || !json.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) throw new InvalidDataException("저장 파일 형식이 올바르지 않습니다. 원본은 유지됩니다.");
-                Snapshot = Normalize(json.RootElement.Deserialize<AppSnapshot>(Wire.Json) ?? throw new InvalidDataException("저장 상태가 없습니다."), true);
+                if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number) || number != 1 || !json.RootElement.TryGetProperty("workspaces", out var workspaces) || workspaces.ValueKind != JsonValueKind.Array || !json.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) throw new InvalidDataException(Locale.Get("store.error.invalidFormat"));
+                Snapshot = Normalize(json.RootElement.Deserialize<AppSnapshot>(Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot")), true);
             }
             approved.Clear();
             foreach (var workspace in Snapshot.Workspaces) approved[workspace.Id] = workspace;
@@ -39,7 +39,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     public Workspace ApproveLocal(string path)
     {
         path = Path.GetFullPath(path);
-        if (!Directory.Exists(path)) throw new DirectoryNotFoundException("프로젝트 폴더를 찾을 수 없습니다.");
+        if (!Directory.Exists(path)) throw new DirectoryNotFoundException(Locale.Get("store.error.projectFolderNotFound"));
         lock (approved)
         {
             var existing = approved.Values.FirstOrDefault(w => w.Remote is null && w.Path == path);
@@ -51,7 +51,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     }
     public Workspace ApproveRemote(string connectionId, Workspace peer, string hostName)
     {
-        if (!Wire.Identifier(connectionId) || !ValidWorkspace(peer) || peer.Remote is not null) throw new ArgumentException("원격 워크스페이스가 올바르지 않습니다.");
+        if (!Wire.Identifier(connectionId) || !ValidWorkspace(peer) || peer.Remote is not null) throw new ArgumentException(Locale.Get("store.error.invalidRemoteWorkspace"));
         lock (approved)
         {
             var existing = approved.Values.FirstOrDefault(w => w.Remote?.ConnectionId == connectionId && w.Remote.WorkspaceId == peer.Id);
@@ -63,13 +63,13 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     }
     public Workspace GetWorkspace(string id)
     {
-        lock (approved) return approved.TryGetValue(id, out var workspace) ? workspace : throw new ArgumentException("승인된 작업 폴더가 아닙니다.");
+        lock (approved) return approved.TryGetValue(id, out var workspace) ? workspace : throw new ArgumentException(Locale.Get("store.error.notApproved"));
     }
     public Task<Workspace> ResolveLocalAsync(string id)
     {
         var workspace = GetWorkspace(id);
-        if (workspace.Remote is not null) throw new ArgumentException("원격 폴더를 로컬에서 실행할 수 없습니다.");
-        if (!Directory.Exists(workspace.Path)) throw new DirectoryNotFoundException("작업 폴더를 찾을 수 없습니다.");
+        if (workspace.Remote is not null) throw new ArgumentException(Locale.Get("store.error.remoteNotLocal"));
+        if (!Directory.Exists(workspace.Path)) throw new DirectoryNotFoundException(Locale.Get("store.error.workspaceFolderNotFound"));
         return Task.FromResult(workspace);
     }
     public async Task SaveAsync(AppSnapshot snapshot)
@@ -77,13 +77,13 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         await gate.WaitAsync();
         try
         {
-            if (!loaded) throw new InvalidOperationException("저장 상태를 먼저 정상적으로 불러와야 합니다.");
+            if (!loaded) throw new InvalidOperationException(Locale.Get("store.error.notLoaded"));
             snapshot = Normalize(snapshot, false);
             lock (approved)
                 foreach (var workspace in snapshot.Workspaces)
-                    if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path || workspace.Remote != original.Remote) throw new InvalidOperationException("폴더 선택 또는 원격 가져오기로 승인한 경로만 저장할 수 있습니다.");
+                    if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path || workspace.Remote != original.Remote) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
             var encoded = JsonSerializer.SerializeToUtf8Bytes(snapshot, Wire.Json);
-            if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException("저장 상태 크기 제한을 초과했습니다.");
+            if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.stateTooLarge"));
             await AtomicWriteAsync(StatePath, encoded);
             Snapshot = Wire.Clone(snapshot);
         }
@@ -110,7 +110,11 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             var timing = s.Kind == "shell" ? null : s.RunTiming is { IsValid: true } ? s.RunTiming : AgentRunTiming.Infer(logs);
             if (timing is not null) timing = restoring ? timing.Interrupt() : s.Status == "running" ? timing.Observe() : timing;
             var usage = s.Kind == "claude" && s.SessionUsage?.Provider == provider ? SessionUsageSupport.Normalize(s.SessionUsage) : null;
-            return s with { Title = RenameSupport.ClampTitle(s.Title), Draft = Bounded(s.Draft, 100000), Provider = provider, Model = Wire.Model(s.Model) ? s.Model : "default", Settings = ProviderCatalog.NormalizeSettings(provider, s.Settings), ResumeId = Wire.Identifier(s.ResumeId) ? s.ResumeId : null, Status = restoring && s.Status == "running" ? "stopped" : s.Status is "idle" or "running" or "completed" or "error" or "stopped" ? s.Status : "idle", Logs = logs, RunTiming = timing, SessionUsage = usage, CurrentActivity = restoring ? null : ActivitySupport.Normalize(s.CurrentActivity) };
+            var viewMode = s.AgentViewMode is "default" or "mighty" ? s.AgentViewMode : null;
+            var graphBudget = MightyGraphSupport.LiveHistoryLimit;
+            var graphRuns = s.GraphRuns is { Count: > 0 } ? MightyGraphSupport.Normalized(s.GraphRuns, restoring: true, budget: ref graphBudget) : null;
+            if (graphRuns is { Count: 0 }) graphRuns = null;
+            return s with { Title = RenameSupport.ClampTitle(s.Title), Draft = Bounded(s.Draft, 100000), Provider = provider, Model = Wire.Model(s.Model) ? s.Model : "default", Settings = ProviderCatalog.NormalizeSettings(provider, s.Settings), ResumeId = Wire.Identifier(s.ResumeId) ? s.ResumeId : null, Status = restoring && s.Status == "running" ? "stopped" : s.Status is "idle" or "running" or "completed" or "error" or "stopped" ? s.Status : "idle", Logs = logs, RunTiming = timing, SessionUsage = usage, CurrentActivity = restoring ? null : ActivitySupport.Normalize(s.CurrentActivity), AgentViewMode = viewMode, GraphRuns = graphRuns };
         }
         var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && s.Kind is "claude" or "shell").DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
         var workspaceId = ids.Contains(value.ActiveWorkspaceId ?? "") ? value.ActiveWorkspaceId : workspaces.FirstOrDefault()?.Id;
