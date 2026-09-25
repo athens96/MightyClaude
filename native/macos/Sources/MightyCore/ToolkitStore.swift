@@ -53,9 +53,12 @@ public actor ToolkitStore {
 
     /// Bundled entries are always first.  If toolkit.json is invalid, user
     /// entries are empty and the error is non-nil; the file is left untouched.
+    /// Other-OS entries (e.g. winget on macOS) are kept in storage but omitted
+    /// from the returned list.
     public func list() -> (entries: [ToolkitEntry], error: (any Error)?) {
         doLoad()
-        return (ToolkitBundled.entries + userEntries, fileError)
+        let visible = userEntries.filter { $0.install.platforms.contains(.macOS) }
+        return (ToolkitBundled.entries + visible, fileError)
     }
 
     // MARK: - Approval
@@ -208,8 +211,10 @@ public actor ToolkitStore {
             return ["kind": "mcp", "name": name, "executable": executable, "args": args]
         case .skill(let url):
             return ["kind": "skill", "url": url]
-        case .package(let manager, let name):
-            return ["kind": "package", "manager": manager.rawValue, "name": name]
+        case .package(let manager, let name, let executable):
+            var obj: [String: Any] = ["kind": "package", "manager": manager.rawValue, "name": name]
+            if let exe = executable { obj["executable"] = exe }
+            return obj
         case .repoScript(let url, let ref, let scriptPath):
             return ["kind": "repoScript", "url": url, "ref": ref, "scriptPath": scriptPath]
         }

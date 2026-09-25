@@ -173,10 +173,14 @@ public actor ToolkitRunner {
             guard !component.isEmpty else { return [] }
             let dest = probeContext.home.appendingPathComponent(".claude/skills/\(component)").path
             return [["git", "clone", url, dest]]
-        case .package(let manager, let name):
+        case .package(let manager, let name, _):
             switch manager {
             case .brew: return [["brew", "install", name]]
             case .npm: return [["npm", "install", "-g", name]]
+            case .winget: return [["winget", "install", "--exact", "--id", name,
+                                   "--source", "winget", "--scope", "user",
+                                   "--accept-source-agreements", "--accept-package-agreements",
+                                   "--disable-interactivity"]]
             }
         case .repoScript(let url, _, let scriptPath):
             guard let sha = approval?.resolvedCommit else { return [] }

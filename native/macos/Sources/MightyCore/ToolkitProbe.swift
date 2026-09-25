@@ -32,7 +32,7 @@ public enum ToolkitProbe {
             return probeMcp(name: name, home: context.home)
         case .skill(let url):
             return probeSkill(url: url, home: context.home)
-        case .package(let manager, let name):
+        case .package(let manager, let name, _):
             return probePackage(manager: manager, name: name, environment: context.environment,
                                 brewPrefixes: context.brewPrefixes)
         case .repoScript:
@@ -95,6 +95,8 @@ public enum ToolkitProbe {
                     .appendingPathComponent("lib/node_modules/\(name)")
                 if FileManager.default.fileExists(atPath: moduleDir.path) { return .installed }
             }
+            return .missing
+        case .winget:
             return .missing
         }
     }

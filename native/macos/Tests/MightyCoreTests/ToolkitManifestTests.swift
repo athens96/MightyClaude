@@ -60,7 +60,7 @@ import Testing
             "id": "my-brew", "displayName": "My Brew Package",
             "install": ["kind": "package", "manager": "brew", "name": "ripgrep"] as [String: Any],
         ])
-        guard case .package(let manager, let name) = entry.install else { Issue.record("Expected package"); return }
+        guard case .package(let manager, let name, _) = entry.install else { Issue.record("Expected package"); return }
         #expect(manager == .brew)
         #expect(name == "ripgrep")
     }
@@ -70,7 +70,7 @@ import Testing
             "id": "my-npm", "displayName": "My npm Package",
             "install": ["kind": "package", "manager": "npm", "name": "typescript"] as [String: Any],
         ])
-        guard case .package(let manager, let name) = entry.install else { Issue.record("Expected package"); return }
+        guard case .package(let manager, let name, _) = entry.install else { Issue.record("Expected package"); return }
         #expect(manager == .npm)
         #expect(name == "typescript")
     }
