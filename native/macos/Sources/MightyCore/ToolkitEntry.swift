@@ -1,7 +1,11 @@
 import Foundation
 
+public enum ToolkitPlatform: String, Sendable, Equatable, CaseIterable {
+    case macOS, windows
+}
+
 public enum ToolkitPackageManager: String, Sendable, Equatable, CaseIterable {
-    case brew, npm
+    case brew, npm, winget
 }
 
 public enum ToolkitEntrySource: String, Sendable, Equatable { case bundled, user }
@@ -10,8 +14,22 @@ public enum ToolkitInstallSpec: Sendable, Equatable {
     case plugin(source: String, pluginID: String)
     case mcp(name: String, executable: String, args: [String])
     case skill(url: String)
-    case package(manager: ToolkitPackageManager, name: String)
+    case package(manager: ToolkitPackageManager, name: String, executable: String? = nil)
     case repoScript(url: String, ref: String, scriptPath: String)
+
+    /// The set of platforms on which this entry is listed and run.
+    public var platforms: Set<ToolkitPlatform> {
+        switch self {
+        case .plugin, .mcp, .skill: return [.macOS, .windows]
+        case .package(let manager, _, _):
+            switch manager {
+            case .brew: return [.macOS]
+            case .npm: return [.macOS, .windows]
+            case .winget: return [.windows]
+            }
+        case .repoScript: return [.macOS]
+        }
+    }
 }
 
 public struct ToolkitEntry: Sendable, Equatable {
@@ -119,15 +137,27 @@ public enum ToolkitEntryDecoder {
     }
 
     private static func decodePackage(_ object: [String: Any]) throws -> ToolkitInstallSpec {
-        let allowed: Set<String> = ["kind", "manager", "name"]
-        for key in object.keys where !allowed.contains(key) { throw ToolkitDecodeFailure("Unknown field in package spec: \(key)") }
         guard let managerStr = object["manager"] as? String, let manager = ToolkitPackageManager(rawValue: managerStr) else {
-            throw ToolkitDecodeFailure("Invalid or missing 'manager' (must be brew or npm)")
+            throw ToolkitDecodeFailure("Invalid or missing 'manager' (must be brew, npm, or winget)")
         }
-        guard let name = object["name"] as? String, validPackageName(name) else {
-            throw ToolkitDecodeFailure("Invalid or missing package 'name'")
+        let allowed: Set<String> = manager == .winget
+            ? ["kind", "manager", "name", "executable"]
+            : ["kind", "manager", "name"]
+        for key in object.keys where !allowed.contains(key) { throw ToolkitDecodeFailure("Unknown field in package spec: \(key)") }
+        if manager == .winget {
+            guard let name = object["name"] as? String, validWingetName(name) else {
+                throw ToolkitDecodeFailure("Invalid or missing package 'name' for winget")
+            }
+            guard let executable = object["executable"] as? String, validWingetExecutable(executable) else {
+                throw ToolkitDecodeFailure("Missing or invalid 'executable' for winget (required bare filename)")
+            }
+            return .package(manager: .winget, name: name, executable: executable)
+        } else {
+            guard let name = object["name"] as? String, validPackageName(name) else {
+                throw ToolkitDecodeFailure("Invalid or missing package 'name'")
+            }
+            return .package(manager: manager, name: name)
         }
-        return .package(manager: manager, name: name)
     }
 
     private static func decodeRepoScript(_ object: [String: Any]) throws -> ToolkitInstallSpec {
@@ -179,6 +209,16 @@ public enum ToolkitEntryDecoder {
             return value.range(of: #"\A@[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*\z"#, options: .regularExpression) != nil
         }
         return value.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._-]*\z"#, options: .regularExpression) != nil
+    }
+
+    static func validWingetName(_ value: String) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= 128 else { return false }
+        return value.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._+\-]*\z"#, options: .regularExpression) != nil
+    }
+
+    static func validWingetExecutable(_ value: String) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= 128 else { return false }
+        return value.range(of: #"\A[A-Za-z0-9][A-Za-z0-9._\-]*\z"#, options: .regularExpression) != nil
     }
 
     static func validHttpsURL(_ value: String) -> Bool {
