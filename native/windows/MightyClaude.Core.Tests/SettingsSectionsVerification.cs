@@ -14,6 +14,7 @@ internal static class SettingsSectionsVerification
         {
             "화면",
             PhaseModelSection.SectionTitle,
+            ComponentSection.SectionTitle,
             CliUpdateStrings.SectionTitle,
             "이 PC의 CLI",
             CliAccountStrings.SectionTitle,
@@ -43,7 +44,6 @@ internal static class SettingsSectionsVerification
         {
             SettingsSections.RemoteConnection,
             SettingsSections.Styles,
-            SettingsSections.Components,
             SettingsSections.MobileRemote,
             SettingsSections.Companion,
             SettingsSections.ClaudeMods,

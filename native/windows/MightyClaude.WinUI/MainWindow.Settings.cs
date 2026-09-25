@@ -34,6 +34,7 @@ public sealed partial class MainWindow
     {
         SettingsSections.Display => BuildDisplaySection,
         SettingsSections.PhaseModels => BuildPhaseModelsSection,
+        SettingsSections.Components => BuildComponentsSection,
         SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
         SettingsSections.Providers => BuildProvidersSection,
         SettingsSections.CliAccounts => BuildCliAccountsSectionFromState,
@@ -410,6 +411,421 @@ public sealed partial class MainWindow
     internal const string ResultRowIdPrefix = "cli-update-result-";
     private static string ResultRowAutomationId(CliUpdateResult result) =>
         ResultRowIdPrefix + result.Provider + "-" + result.Status;
+
+    // 구성 요소 — CLI rows (claude/codex/gemini) then the toolkit sub-section.
+    // Layout mirrors ComponentsSettingsSection + ToolkitSettingsSection on macOS.
+    // No Korean literal is typed here — all copy comes from the locale catalogue.
+
+    private ToolkitStore? toolkitStore;
+    private bool toolkitRunning;
+    private IReadOnlyList<ToolkitRunItem>? toolkitRunResults;
+    private StackPanel? componentsCliPanel;
+    private StackPanel? toolkitListPanel;
+    private StackPanel? toolkitResultsPanel;
+    private Button? toolkitInstallButton;
+
+    private string StateDirectory =>
+        options.ProfileDirectory ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "MightyClaudeNative");
+
+    private ToolkitStore GetToolkitStore() =>
+        toolkitStore ??= new ToolkitStore(StateDirectory);
+
+    private static ToolkitProbeContext LiveProbeContext() => new()
+    {
+        HomeDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        PathDirectories = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries),
+        LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    };
+
+    private StackPanel BuildComponentsSection()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = Locale.Get("settings.components.sectionDescription"),
+            FontSize = 12,
+            Opacity = .8,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        // CLI rows — re-filled by the recheck button.
+        componentsCliPanel = new StackPanel { Spacing = 6 };
+        FillComponentCliRows(componentsCliPanel);
+        panel.Children.Add(componentsCliPanel);
+
+        // Recheck button — re-probes the runtime without closing the dialog.
+        var recheckLabel = Locale.Get("settings.components.recheckButton");
+        var checkingLabel = Locale.Get("settings.components.checkingButton");
+        var recheckBtn = new Button { Content = recheckLabel };
+        AutomationProperties.SetAutomationId(recheckBtn, "components-refresh");
+        recheckBtn.Click += (_, _) => Act(async () =>
+        {
+            recheckBtn.Content = checkingLabel;
+            recheckBtn.IsEnabled = false;
+            await RefreshRuntime();
+            FillComponentCliRows(componentsCliPanel);
+            recheckBtn.Content = recheckLabel;
+            recheckBtn.IsEnabled = true;
+        });
+        panel.Children.Add(recheckBtn);
+
+        // Toolkit heading
+        panel.Children.Add(new TextBlock
+        {
+            Text = Locale.Get("settings.toolkit.sectionTitle"),
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Opacity = .85,
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = Locale.Get("settings.toolkit.sectionDescription"),
+            FontSize = 12,
+            Opacity = .8,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        // Toolkit list — error banner + entry rows.
+        var store = GetToolkitStore();
+        var (entries, fileError) = store.List();
+
+        if (fileError is not null)
+            panel.Children.Add(new TextBlock
+            {
+                Text = Locale.Get("settings.toolkit.errorBanner"),
+                FontSize = 12,
+                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange),
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+        toolkitListPanel = new StackPanel { Spacing = 4 };
+        FillToolkitList(toolkitListPanel, store, entries);
+        panel.Children.Add(toolkitListPanel);
+
+        // Results from the last install run.
+        toolkitResultsPanel = new StackPanel { Spacing = 4 };
+        if (toolkitRunResults is not null) FillToolkitResults(toolkitResultsPanel, toolkitRunResults);
+        panel.Children.Add(toolkitResultsPanel);
+
+        // Action buttons row.
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var addBtn = new Button { Content = Locale.Get("settings.toolkit.addButton") };
+        AutomationProperties.SetAutomationId(addBtn, "settings-toolkit-add");
+        addBtn.Click += (_, _) => Act(() => AddToolkitEntry(store));
+        var exportBtn = new Button { Content = Locale.Get("settings.toolkit.exportButton") };
+        AutomationProperties.SetAutomationId(exportBtn, "settings-toolkit-export");
+        exportBtn.Click += (_, _) => Act(() => ExportToolkit(store));
+        var importBtn = new Button { Content = Locale.Get("settings.toolkit.importButton") };
+        AutomationProperties.SetAutomationId(importBtn, "settings-toolkit-import");
+        importBtn.Click += (_, _) => Act(() => ImportToolkit(store));
+        toolkitInstallButton = new Button { Content = Locale.Get("settings.toolkit.installButton"), IsEnabled = !toolkitRunning };
+        AutomationProperties.SetAutomationId(toolkitInstallButton, "settings-toolkit-install");
+        toolkitInstallButton.Click += (_, _) => Act(() => RunToolkitInstall(store));
+        btnRow.Children.Add(addBtn);
+        btnRow.Children.Add(exportBtn);
+        btnRow.Children.Add(importBtn);
+        btnRow.Children.Add(toolkitInstallButton);
+        panel.Children.Add(btnRow);
+
+        return panel;
+    }
+
+    // Renders one row per CLI provider (claude/codex/gemini).
+    private void FillComponentCliRows(StackPanel panel)
+    {
+        panel.Children.Clear();
+        var rt = runtime ?? new RuntimeInfo("win32", "0.0.0", false, null, null, [], null);
+        foreach (var row in ComponentSection.SectionRows(rt))
+        {
+            var rowPanel = new StackPanel { Spacing = 4 };
+            AutomationProperties.SetAutomationId(rowPanel, "component-" + row.Id);
+
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            header.Children.Add(new TextBlock
+            {
+                Text = row.Title,
+                FontSize = 13,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            if (row.Version is { } ver)
+                header.Children.Add(new TextBlock { Text = ver, FontSize = 10, Opacity = .6 });
+            header.Children.Add(new TextBlock
+            {
+                Text = ComponentStateLabel(row.State),
+                FontSize = 10,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            });
+            rowPanel.Children.Add(header);
+            rowPanel.Children.Add(new TextBlock
+            {
+                Text = row.Detail,
+                FontSize = 11,
+                Opacity = .7,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            if (row.Actions.Count > 0)
+            {
+                var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                foreach (var action in row.Actions)
+                {
+                    var actionId = action.Id;
+                    var btn = new Button { Content = action.Title };
+                    AutomationProperties.SetAutomationId(btn, "component-" + row.Id + "-" + actionId);
+                    if (actionId == "copy-command" && ComponentSection.InstallCommand(row.Id) is { } cmd)
+                        btn.Click += (_, _) =>
+                        {
+                            var data = new DataPackage();
+                            data.SetText(cmd);
+                            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+                        };
+                    actionsPanel.Children.Add(btn);
+                }
+                rowPanel.Children.Add(actionsPanel);
+            }
+            panel.Children.Add(rowPanel);
+        }
+    }
+
+    private static string ComponentStateLabel(string state) => state switch
+    {
+        "installed" => Locale.Get("settings.components.statusInstalled"),
+        "missing" => Locale.Get("settings.components.statusMissing"),
+        "attention" => Locale.Get("settings.components.statusAttention"),
+        "unsupported" => Locale.Get("settings.components.statusUnsupported"),
+        _ => Locale.Get("settings.components.statusChecking"),
+    };
+
+    // Fills the toolkit list with bundled + user entries.
+    private void FillToolkitList(StackPanel panel, ToolkitStore store, IReadOnlyList<ToolkitFileReader.ToolkitFileEntry> entries)
+    {
+        panel.Children.Clear();
+        foreach (var entry in entries)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
+            AutomationProperties.SetAutomationId(row, "toolkit-entry-" + entry.Id);
+
+            var isBundled = entry.Source == ToolkitFileReader.ToolkitEntrySource.Bundled;
+            var approval = isBundled ? null : store.GetApproval(entry);
+            var badge = isBundled
+                ? Locale.Get("settings.toolkit.bundledBadge")
+                : (approval is not null ? Locale.Get("settings.toolkit.approvedBadge") : Locale.Get("settings.toolkit.needsApproval"));
+
+            row.Children.Add(new TextBlock
+            {
+                Text = entry.DisplayName,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            row.Children.Add(new TextBlock
+            {
+                Text = badge,
+                FontSize = 10,
+                Opacity = .7,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            if (!isBundled)
+            {
+                if (approval is null)
+                {
+                    var entryId = entry.Id;
+                    var approveBtn = new Button { Content = Locale.Get("settings.toolkit.approveButton"), Padding = new Thickness(8, 4, 8, 4) };
+                    AutomationProperties.SetAutomationId(approveBtn, "toolkit-approve-" + entryId);
+                    approveBtn.Click += (_, _) => Act(async () =>
+                    {
+                        store.Approve(entryId);
+                        var (reloaded, _) = store.List();
+                        FillToolkitList(toolkitListPanel!, store, reloaded);
+                        await Task.CompletedTask;
+                    });
+                    row.Children.Add(approveBtn);
+                }
+                var removeEntryId = entry.Id;
+                var removeBtn = new Button { Content = Locale.Get("settings.toolkit.removeButton"), Padding = new Thickness(8, 4, 8, 4) };
+                AutomationProperties.SetAutomationId(removeBtn, "toolkit-remove-" + removeEntryId);
+                removeBtn.Click += (_, _) => Act(async () =>
+                {
+                    store.Remove(removeEntryId);
+                    var (reloaded, _) = store.List();
+                    FillToolkitList(toolkitListPanel!, store, reloaded);
+                    await Task.CompletedTask;
+                });
+                row.Children.Add(removeBtn);
+            }
+            panel.Children.Add(row);
+        }
+    }
+
+    // Fills the result table after a run.
+    private void FillToolkitResults(StackPanel panel, IReadOnlyList<ToolkitRunItem> results)
+    {
+        panel.Children.Clear();
+        foreach (var item in results)
+        {
+            var label = item.RunVerdict switch
+            {
+                ToolkitRunItem.Verdict.Installed => Locale.Get("settings.toolkit.verdictInstalled"),
+                ToolkitRunItem.Verdict.Failed => Locale.Get("settings.toolkit.verdictFailed"),
+                _ => Locale.Get("settings.toolkit.verdictSkipped"),
+            };
+            panel.Children.Add(new TextBlock
+            {
+                Text = item.EntryId + " — " + label,
+                FontSize = 11,
+                Opacity = .8,
+            });
+        }
+    }
+
+    // One confirm view that lists every argv before anything runs.
+    private async Task RunToolkitInstall(ToolkitStore store)
+    {
+        if (toolkitRunning) return;
+        var probeCtx = options.SmokeTest ? new ToolkitProbeContext
+        {
+            HomeDirectory = StateDirectory,
+            PathDirectories = [],
+            LocalAppData = StateDirectory,
+        } : LiveProbeContext();
+        var runner = new ToolkitRunner(store, probeCtx);
+        var plan = runner.Plan();
+        if (plan.Count == 0) return;
+
+        // Show confirm dialog: list every argv before running anything.
+        var argsList = new StackPanel { Spacing = 4 };
+        argsList.Children.Add(new TextBlock
+        {
+            Text = Locale.Get("settings.toolkit.confirmDescription"),
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+        foreach (var item in plan.Where(i => i.Action == ToolkitPlanItem.PlanAction.Run))
+            foreach (var argv in item.Commands)
+                argsList.Children.Add(new TextBlock
+                {
+                    Text = string.Join(" ", argv),
+                    FontSize = 11,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = .85,
+                });
+
+        var confirm = new ContentDialog
+        {
+            Title = Locale.Get("settings.toolkit.confirmTitle"),
+            Content = new ScrollViewer { Content = argsList, MaxHeight = 240 },
+            PrimaryButtonText = Locale.Get("settings.toolkit.confirmInstall"),
+            CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
+            XamlRoot = root.XamlRoot,
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+
+        // Never run real installs in smoke mode.
+        if (options.SmokeTest) return;
+
+        toolkitRunning = true;
+        if (toolkitInstallButton is not null)
+        {
+            toolkitInstallButton.Content = Locale.Get("settings.toolkit.installingButton");
+            toolkitInstallButton.IsEnabled = false;
+        }
+        try
+        {
+            var results = await Task.Run(() => runner.Run(plan, new CliToolkitExecutor()));
+            toolkitRunResults = results;
+            if (toolkitResultsPanel is not null) FillToolkitResults(toolkitResultsPanel, results);
+            var (reloaded, _) = store.List();
+            if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
+        }
+        finally
+        {
+            toolkitRunning = false;
+            if (toolkitInstallButton is not null)
+            {
+                toolkitInstallButton.Content = Locale.Get("settings.toolkit.installButton");
+                toolkitInstallButton.IsEnabled = true;
+            }
+        }
+    }
+
+    // Adds one entry from a JSON file the user picks.
+    private async Task AddToolkitEntry(ToolkitStore store)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".json");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        var json = await Windows.Storage.FileIO.ReadTextAsync(file);
+        var parsed = ToolkitFileReader.Parse(json);
+        if (parsed.Entries.Count == 0)
+        {
+            await new ContentDialog
+            {
+                Title = "toolkit",
+                Content = new TextBlock { Text = Locale.Get("settings.toolkit.errorEntryFileTemplate").Replace("{name}", file.Name), TextWrapping = TextWrapping.Wrap },
+                CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
+                XamlRoot = root.XamlRoot,
+            }.ShowAsync();
+            return;
+        }
+        foreach (var entry in parsed.Entries)
+            store.Add(entry);
+        var (reloaded, _) = store.List();
+        if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
+    }
+
+    // Exports all entries (without approvals) to a file the user picks.
+    private async Task ExportToolkit(ToolkitStore store)
+    {
+        var picker = new FileSavePicker();
+        picker.FileTypeChoices.Add("JSON", [".json"]);
+        picker.SuggestedFileName = "toolkit";
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null) return;
+        var export = store.Export();
+        await Windows.Storage.FileIO.WriteTextAsync(file, export);
+    }
+
+    // Imports entries from a file and merges them into the store.
+    private async Task ImportToolkit(ToolkitStore store)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".json");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        var json = await Windows.Storage.FileIO.ReadTextAsync(file);
+        var parsed = ToolkitFileReader.Parse(json);
+        foreach (var entry in parsed.Entries)
+            store.Add(entry);
+        var (reloaded, _) = store.List();
+        if (toolkitListPanel is not null) FillToolkitList(toolkitListPanel, store, reloaded);
+    }
+
+    // Runs one toolkit argv synchronously; called from a background thread by ToolkitRunner.Run.
+    private sealed class CliToolkitExecutor : IToolkitRunnerExecutor
+    {
+        private readonly ICliRunner runner = new CliRunner();
+
+        public ToolkitCommandOutput Run(IReadOnlyList<string> argv)
+        {
+            if (argv.Count == 0) return ToolkitCommandOutput.Success;
+            var (binary, args) = (argv[0], argv.Skip(1).ToArray());
+            var result = runner.RunAsync(binary, args, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
+            return result.ExitCode == 0
+                ? ToolkitCommandOutput.Success
+                : ToolkitCommandOutput.Failure(result.Output + result.ErrorOutput, result.ExitCode);
+        }
+    }
 
     // 이 PC의 CLI — provider list and refresh button; behaviour unchanged.
     private StackPanel BuildProvidersSection()

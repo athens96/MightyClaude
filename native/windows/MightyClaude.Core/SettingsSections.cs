@@ -53,7 +53,7 @@ public static class SettingsSections
         new(RemoteConnection, null),
         new(PhaseModels, PhaseModelsTitle),
         new(Styles, null),
-        new(Components, null),
+        new(Components, ComponentSection.SectionTitle),
         new(MobileRemote, null),
         new(CliUpdate, CliUpdateStrings.SectionTitle),
         new(Companion, null),
