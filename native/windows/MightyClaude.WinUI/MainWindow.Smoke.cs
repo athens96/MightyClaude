@@ -50,6 +50,7 @@ public sealed partial class MainWindow
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
+            result["phaseModelsSection"] = RunPhaseModelsSectionSmoke();
             result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
             result["usageReset"] = await RunUsageResetSmoke();
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
@@ -100,6 +101,8 @@ public sealed partial class MainWindow
             foreach (var sec in settingsSectionsForLeak)
                 settingsPanelForLeak.Children.Add(BuildSectionContainer(sec.Title, sec.Build()));
             CollectVisibleStrings(settingsPanelForLeak, leakStrings);
+            // 페이즈별 모델 칸의 ComboBox 머리글과 항목은 화면 나무에 바로 보이지 않으므로 따로 넣는다.
+            leakStrings.AddRange(PhaseModelSectionTexts(BuildPhaseModelsSection(new(), PhaseModelSection.SmokeFixtureTools)));
             var koKeys = Locale.Catalogue("ko").Keys.ToList();
             var keyLeaks = LocaleKeyLeak.Detect(leakStrings, koKeys);
             result["localeKeyLeakScanned"] = leakStrings.Count;
@@ -116,6 +119,26 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
+    // 페이즈별 모델 칸을 붙박이 도구 값으로 짓는다. 실제 사용자의 ~/.config나
+    // ~/.ouroboros는 읽지도 쓰지도 않는다. 네 페이즈 줄과 네 도구 묶음이 있어야 하고,
+    // 매인 손잡이들이 다른 실행 줄은 혼합으로 보여야 한다.
+    private bool RunPhaseModelsSectionSmoke()
+    {
+        var panel = BuildPhaseModelsSection(new PhaseModelsSnapshot { ClaudeMain = "fixture-main" }, PhaseModelSection.SmokeFixtureTools);
+        var phaseRows = panel.Children.OfType<ComboBox>()
+            .Where(box => AutomationProperties.GetAutomationId(box).StartsWith(PhaseRowIdPrefix, StringComparison.Ordinal))
+            .ToList();
+        Require(phaseRows.Count >= 4, "페이즈별 모델 칸에 페이즈 줄 넷이 없습니다: " + phaseRows.Count);
+        foreach (var phase in PhaseModelSection.Phases)
+            Require(phaseRows.Any(box => AutomationProperties.GetAutomationId(box) == PhaseRowIdPrefix + phase), "페이즈 줄이 없습니다: " + phase);
+        var headings = panel.Children.OfType<TextBlock>().Select(text => text.Text).ToList();
+        foreach (var tool in new[] { PhaseModelSection.ClaudeTool, PhaseModelSection.CodexTool, PhaseModelSection.OmcTool, PhaseModelSection.OuroborosTool })
+            Require(headings.Contains(PhaseModelSection.ToolLabel(tool)), "도구 묶음이 없습니다: " + tool);
+        var execution = phaseRows.Single(box => AutomationProperties.GetAutomationId(box) == PhaseRowIdPrefix + Phase.Execution);
+        Require(execution.SelectedItem is ComboBoxItem { Tag: string tag } && tag == PhaseModelSection.MixedSentinel, "값이 다른 실행 줄이 혼합으로 보이지 않습니다.");
+        return true;
+    }
+
     private async Task<Dictionary<string, object?>> RunRenameSmoke()
     {
         var checks = new Dictionary<string, object?>();

@@ -202,6 +202,106 @@ internal static class PhaseModelVerification
             var after = store.LoadOmcAgents()!;
             Check(!after.ContainsKey("planner"), "default removes model key");
             Check(after["executor"] == "sonnet", "executor unchanged after partial save");
+
+            // OmcAgentCatalog against a fixture install
+            var catalog = new MightyClaude.Core.OmcAgentCatalog(dir);
+            Check(catalog.Scan() is null, "no installed_plugins.json → omc not installed");
+            var pluginsDirectory = Path.Combine(dir, ".claude", "plugins");
+            Directory.CreateDirectory(pluginsDirectory);
+            var install = Path.Combine(dir, "cache", "omc", "oh-my-claudecode", "5.4.0");
+            var projectInstall = Path.Combine(dir, "project-omc");
+            Directory.CreateDirectory(Path.Combine(projectInstall, "agents"));
+            File.WriteAllText(Path.Combine(projectInstall, "agents", "planner.md"), "---\nmodel: haiku\n---\n");
+            void WriteInstalled(string records) => File.WriteAllText(catalog.InstalledPluginsPath,
+                "{\"version\":2,\"plugins\":{\"other@x\":[],\"oh-my-claudecode@omc\":[" + records + "]}}");
+            string Record(string scope, string path) =>
+                "{\"scope\":\"" + scope + "\",\"installPath\":" + JsonSerializer.Serialize(path) + "}";
+
+            WriteInstalled(Record("project", projectInstall));
+            Check(catalog.Scan() is null, "a project-scope record alone is not an install");
+            WriteInstalled(Record("user", install));
+            Check(catalog.Scan() is null, "a user record without agents/*.md is not an install");
+
+            Directory.CreateDirectory(Path.Combine(install, "agents"));
+            File.WriteAllText(Path.Combine(install, "agents", "code-reviewer.md"), "---\nname: code-reviewer\nmodel: opus\n---\nmodel: ignored\n");
+            File.WriteAllText(Path.Combine(install, "agents", "security-reviewer.md"), "---\nmodel: sonnet\n---\n");
+            File.WriteAllText(Path.Combine(install, "agents", "verifier.md"), "---\nmodel: sonnet\n---\n");
+            File.WriteAllText(Path.Combine(install, "agents", "git-master.md"), "no frontmatter\n");
+            File.WriteAllText(Path.Combine(install, "agents", "README.txt"), "not an agent");
+            WriteInstalled(Record("project", projectInstall) + "," + Record("user", install));
+            var scanned = catalog.Scan();
+            Check(scanned is not null, "user record with agents/*.md → omc installed");
+            scanned ??= [];
+            Check(scanned.Keys.OrderBy(key => key, StringComparer.Ordinal)
+                    .SequenceEqual(new[] { "codeReviewer", "gitMaster", "securityReviewer", "verifier" }),
+                "agent keys are the file names in omc camelCase: " + string.Join(",", scanned.Keys));
+            Check(scanned["codeReviewer"] == "opus", "frontmatter model read, body ignored");
+            Check(scanned["verifier"] == "sonnet", "single-word name unchanged");
+            Check(scanned["gitMaster"] == "default", "no frontmatter → default");
+            Check(MightyClaude.Core.OmcAgentCatalog.KebabToCamelCase("document-specialist") == "documentSpecialist", "kebab → camelCase");
+        }
+        finally { Directory.Delete(dir, true); }
+        return Task.CompletedTask;
+    }
+
+    // 4b. A pick writes only the agents it changed; frontmatter defaults never reach config.jsonc
+    internal static Task OmcSaveWritesOnlyChangedAgents()
+    {
+        var dir = Temp();
+        try
+        {
+            var install = Path.Combine(dir, "omc-install");
+            Directory.CreateDirectory(Path.Combine(install, "agents"));
+            foreach (var (file, model) in new[] { ("planner", "opus"), ("architect", "opus"), ("executor", "sonnet"), ("code-reviewer", "opus"), ("verifier", "sonnet") })
+                File.WriteAllText(Path.Combine(install, "agents", file + ".md"), "---\nmodel: " + model + "\n---\n");
+            Directory.CreateDirectory(Path.Combine(dir, ".claude", "plugins"));
+            File.WriteAllText(Path.Combine(dir, ".claude", "plugins", "installed_plugins.json"),
+                "{\"plugins\":{\"oh-my-claudecode@omc\":[{\"scope\":\"user\",\"installPath\":" + JsonSerializer.Serialize(install) + "}]}}");
+
+            var store = new ModelSettingsFileStore(dir);
+            Directory.CreateDirectory(Path.GetDirectoryName(store.OmcConfigPath)!);
+            File.WriteAllText(store.OmcConfigPath, """
+                {
+                  // user file
+                  "theme": "dark",
+                  "agents": { "executor": { "model": "haiku", "prompt": "keep" } }
+                }
+                """);
+
+            var tools = PhaseModelSection.LoadTools(dir);
+            Check(tools.OmcAgents!["executor"] == "haiku", "a configured agent shows its config.jsonc value");
+            Check(tools.OmcAgents["planner"] == "default", "an unconfigured agent shows default, not its frontmatter model");
+
+            var saved = PhaseModelSection.SaveTools(tools, PhaseModelSection.ApplyPhaseRow(Phase.Planning, "fable", new(), tools), dir);
+            Check(saved.Error is null, "save succeeds");
+            var written = store.LoadOmcAgents()!;
+            Check(written.Keys.OrderBy(key => key, StringComparer.Ordinal).SequenceEqual(new[] { "architect", "executor", "planner" }),
+                "only the changed planning agents were added to config.jsonc: " + string.Join(",", written.Keys));
+            Check(written["planner"] == "fable" && written["architect"] == "fable", "planning agents written");
+            Check(written["executor"] == "haiku", "an untouched agent keeps its value");
+            Check(!written.ContainsKey("codeReviewer") && !written.ContainsKey("verifier"),
+                "frontmatter defaults of untouched agents never reach config.jsonc");
+            using (var written2 = JsonDocument.Parse(File.ReadAllBytes(store.OmcConfigPath)))
+            {
+                var root = written2.RootElement;
+                Check(root.GetProperty("theme").GetString() == "dark", "unrelated keys survive");
+                Check(root.GetProperty("agents").GetProperty("executor").GetProperty("prompt").GetString() == "keep",
+                    "unrelated agent fields survive");
+            }
+
+            // Picking the value an agent already has writes nothing at all.
+            var bytes = File.ReadAllBytes(store.OmcConfigPath);
+            var backups = Directory.GetFiles(Path.GetDirectoryName(store.OmcConfigPath)!, "config.mighty-backup-*").Length;
+            var same = PhaseModelSection.SaveTools(saved, PhaseModelSection.ApplyKnob("omc.agent.executor", "haiku", new(), saved), dir);
+            Check(same.Error is null, "a no-op pick is not an error");
+            Check(File.ReadAllBytes(store.OmcConfigPath).SequenceEqual(bytes), "a no-op pick leaves config.jsonc byte-identical");
+            Check(Directory.GetFiles(Path.GetDirectoryName(store.OmcConfigPath)!, "config.mighty-backup-*").Length == backups,
+                "a no-op pick makes no backup");
+
+            // Changed() is the rule: only keys whose value differs.
+            var changed = PhaseModelSection.Changed(
+                new() { ["a"] = "x", ["b"] = "y" }, new() { ["a"] = "x", ["b"] = "z", ["c"] = "w" });
+            Check(changed.Count == 2 && changed["b"] == "z" && changed["c"] == "w", "Changed keeps only differing keys");
         }
         finally { Directory.Delete(dir, true); }
         return Task.CompletedTask;
@@ -315,6 +415,157 @@ internal static class PhaseModelVerification
         Check(snap2.Version == 1, "version stays 1");
         Check(rt.Version == 1, "version stays 1 after round-trip");
 
+        return Task.CompletedTask;
+    }
+
+    // 7. 화면 등록: phaseModels 칸이 macOS 차례 그대로 remoteConnection과 styles 사이에 있다
+    internal static Task SectionRegisteredInMacOrder()
+    {
+        var ids = SettingsSections.MacOrder.Select(slot => slot.Id).ToArray();
+        var index = Array.IndexOf(ids, SettingsSections.PhaseModels);
+        Check(index > 0, "phaseModels slot is registered");
+        Check(ids[index - 1] == SettingsSections.RemoteConnection, "phaseModels sits after remoteConnection");
+        Check(ids[index + 1] == SettingsSections.Styles, "phaseModels sits before styles");
+
+        var slot = SettingsSections.MacOrder[index];
+        Check(slot.OnWindows, "phaseModels is shown on Windows");
+        Check(slot.WindowsTitle == Locale.Get("settings.phaseModels.sectionTitle"),
+            "phaseModels uses the same locale key as macOS");
+        Check(SettingsSections.WindowsTitles.Contains(slot.WindowsTitle!),
+            "the smoke order includes the phase model heading");
+
+        // 화면 글은 모두 열쇠말에서 온다 — 날 열쇠말이 그대로 보이지 않는다.
+        foreach (var text in new[]
+                 {
+                     PhaseModelSection.SectionTitle, PhaseModelSection.Description,
+                     PhaseModelSection.DefaultOption, PhaseModelSection.MixedLabel,
+                     PhaseModelSection.PhaseLabel(Phase.Planning), PhaseModelSection.PhaseLabel(Phase.Execution),
+                     PhaseModelSection.PhaseLabel(Phase.Review), PhaseModelSection.PhaseLabel(Phase.Subagents),
+                     PhaseModelSection.ToolLabel(PhaseModelSection.OmcTool),
+                     PhaseModelSection.ToolLabel(PhaseModelSection.OuroborosTool),
+                 })
+            Check(text.Length > 0 && !text.StartsWith("settings.", StringComparison.Ordinal),
+                "screen copy comes from the locale catalogue: " + text);
+        return Task.CompletedTask;
+    }
+
+    // 8. 화면이 그리는 줄: 네 페이즈 줄, 도구별 자세히 묶음, 설치되지 않은 도구는 빠짐
+    internal static Task SectionRowsFollowInstalledTools()
+    {
+        var dir = Temp();
+        try
+        {
+            // 아무것도 설치되지 않았을 때: omc·Ouroboros 묶음이 없다
+            var bare = PhaseModelSection.LoadTools(dir);
+            Check(bare.OmcAgents is null, "omc absent → null");
+            Check(bare.OuroborosKeys is null, "Ouroboros absent → null");
+            Check(bare.Error is null, "nothing to read is not an error");
+            var bareBlocks = PhaseModelSection.ToolBlocks(new(), bare);
+            Check(bareBlocks.Count == 2, "only Claude and Codex blocks without the other tools");
+            Check(bareBlocks.All(block => block.Tool is PhaseModelSection.ClaudeTool or PhaseModelSection.CodexTool),
+                "the two blocks are Claude and Codex");
+
+            // omc 설치를 흉내 낸다: installed_plugins.json + agents/*.md frontmatter
+            var install = Path.Combine(dir, "cache", "omc", "oh-my-claudecode", "5.4.0");
+            Directory.CreateDirectory(Path.Combine(install, "agents"));
+            File.WriteAllText(Path.Combine(install, "agents", "code-reviewer.md"), "---\nmodel: opus\n---\nbody\n");
+            File.WriteAllText(Path.Combine(install, "agents", "planner.md"), "---\nmodel: fable\n---\nbody\n");
+            File.WriteAllText(Path.Combine(install, "agents", "executor.md"), "---\nname: executor\n---\nbody\n");
+            var pluginsDirectory = Path.Combine(dir, ".claude", "plugins");
+            Directory.CreateDirectory(pluginsDirectory);
+            File.WriteAllText(Path.Combine(pluginsDirectory, "installed_plugins.json"),
+                "{\"plugins\":{\"oh-my-claudecode@omc\":[{\"scope\":\"user\",\"installPath\":" +
+                JsonSerializer.Serialize(install) + "}]}}");
+
+            // Ouroboros 설치를 흉내 낸다
+            var ouroborosDirectory = Path.Combine(dir, ".ouroboros");
+            Directory.CreateDirectory(ouroborosDirectory);
+            File.WriteAllText(Path.Combine(ouroborosDirectory, "config.yaml"),
+                "orchestrator:\n  cli_path: /usr/local/bin/claude-nested\nclarification:\n  default_model: sonnet\nconsensus:\n  judge_model: sonnet\n");
+
+            var tools = PhaseModelSection.LoadTools(dir);
+            Check(tools.OmcAgents is not null, "omc installed → agent list");
+            Check(tools.OmcAgents!["codeReviewer"] == "default", "without config.jsonc the value is default, not the frontmatter model");
+            Check(tools.OmcAgents["executor"] == "default", "an agent without frontmatter model shows default");
+            Check(tools.OmcDefaults!["codeReviewer"] == "opus", "file name → camelCase key, frontmatter model kept as the displayed default");
+            Check(tools.OuroborosKeys is not null, "Ouroboros installed → key list");
+            Check(tools.OuroborosKeys!["clarification.default_model"] == "sonnet", "Ouroboros value read");
+            Check(!tools.OuroborosKeys.ContainsKey("orchestrator.cli_path"), "only *_model keys are owned");
+
+            var blocks = PhaseModelSection.ToolBlocks(new(), tools);
+            Check(blocks.Count == 4, "four blocks when both tools are installed");
+            Check(blocks[2].Tool == PhaseModelSection.OmcTool && blocks[3].Tool == PhaseModelSection.OuroborosTool,
+                "omc and Ouroboros come after Claude and Codex");
+            var reviewerKnob = blocks[2].Knobs.Single(knob => knob.KnobId == "omc.agent.codeReviewer");
+            Check(reviewerKnob.Value == "default" && reviewerKnob.Label.Contains("codeReviewer") && reviewerKnob.Label.Contains("opus"),
+                "the omc detail row shows the frontmatter model only in its label");
+            Check(blocks[2].Knobs.Single(knob => knob.KnobId == "omc.agent.executor").Label == "executor",
+                "an agent without frontmatter model is labelled by its key alone");
+            Check(blocks[3].Knobs.Any(knob => knob.KnobId == "ouroboros.consensus.judge_model"),
+                "the Ouroboros knob id is its dotted key");
+            Check(blocks[1].Knobs.Single(knob => knob.KnobId == "codex.codexPlanModeReasoningEffort").IsEffort,
+                "plan mode reasoning effort is an effort knob, edited in details only");
+
+            // 페이즈 줄: 모두 default면 한 값, 하나만 다르면 혼합
+            var rows = PhaseModelSection.SummaryRows(new(), tools);
+            Check(rows.Count == 4, "four phase rows");
+            Check(rows.Select(row => row.Phase).SequenceEqual(new[] { Phase.Planning, Phase.Execution, Phase.Review, Phase.Subagents }),
+                "phase row order matches macOS");
+            Check(!rows.Single(row => row.Phase == Phase.Execution).Mixed && !rows.Single(row => row.Phase == Phase.Subagents).Mixed,
+                "rows whose knobs are all default are not mixed");
+            Check(rows.Single(row => row.Phase == Phase.Execution).Value == "default", "an all-default row shows default");
+            Check(rows.Single(row => row.Phase == Phase.Planning).Mixed,
+                "Ouroboros sonnet against Claude default makes the planning row mixed across tools");
+
+            var mixedRows = PhaseModelSection.SummaryRows(new() { ClaudeMain = "a" }, tools);
+            Check(mixedRows.Single(row => row.Phase == Phase.Execution).Mixed, "execution row is mixed");
+            Check(mixedRows.Single(row => row.Phase == Phase.Execution).Value == PhaseModelSection.MixedSentinel,
+                "a mixed row carries the mixed sentinel, never a model name");
+            Check(!mixedRows.Single(row => row.Phase == Phase.Subagents).Mixed, "the subagents row is untouched");
+
+            // 페이즈 줄 하나가 네 도구를 모두 건드린다
+            var edit = PhaseModelSection.ApplyPhaseRow(Phase.Planning, "fable", new(), tools);
+            Check(edit.Config.ClaudeOpusAlias == "fable", "planning → claude opus alias");
+            Check(edit.Config.ClaudeMain == "default", "planning does not touch the main model");
+            Check(edit.OmcAgents!["planner"] == "fable", "planning → omc planner");
+            Check(edit.OmcAgents["codeReviewer"] == "default", "a review agent is untouched by the planning row");
+            Check(!edit.OmcAgents.ContainsKey("architect") && !edit.OmcAgents.ContainsKey("critic"),
+                "a phase row never adds an agent the install does not have");
+            Check(edit.OuroborosKeys!["clarification.default_model"] == "fable", "planning → Ouroboros clarification");
+            Check(edit.OuroborosKeys["consensus.judge_model"] == "sonnet", "a review key is untouched by the planning row");
+
+            var reloaded = PhaseModelSection.SaveTools(tools, edit, dir);
+            Check(reloaded.Error is null, "writing the two files reports no error");
+            Check(reloaded.OmcAgents!["planner"] == "fable", "omc value survives the write");
+            Check(reloaded.OuroborosKeys!["clarification.default_model"] == "fable", "Ouroboros value survives the write");
+            Check(File.ReadAllText(Path.Combine(ouroborosDirectory, "config.yaml")).Contains("cli_path: /usr/local/bin/claude-nested"),
+                "orchestrator.cli_path survives");
+
+            // 자세히 줄 하나만 바꾸기
+            var knobEdit = PhaseModelSection.ApplyKnob("omc.agent.codeReviewer", "haiku", new(), reloaded);
+            Check(knobEdit.OmcAgents!["codeReviewer"] == "haiku", "a detail row changes one agent");
+            Check(knobEdit.OmcAgents["planner"] == "fable", "the other agents are untouched");
+            var afterKnob = PhaseModelSection.SaveTools(reloaded, knobEdit, dir);
+            Check(afterKnob.OmcAgents!["codeReviewer"] == "haiku" && afterKnob.OmcAgents["planner"] == "fable",
+                "a detail row change reaches config.jsonc and reloads");
+            var effortEdit = PhaseModelSection.ApplyKnob("codex.codexPlanModeReasoningEffort", "high", new(), reloaded);
+            Check(effortEdit.Config.CodexPlanModeReasoningEffort == "high", "the effort knob is edited in details");
+
+            // 읽을 수 없는 파일: 보여 줄 수 있는 말, 파일은 그대로
+            var store = new ModelSettingsFileStore(dir);
+            File.WriteAllText(store.OmcConfigPath, "{ not json");
+            var brokenBytes = File.ReadAllBytes(store.OmcConfigPath);
+            var broken = PhaseModelSection.LoadTools(dir);
+            Check(broken.Error is not null && broken.Error.Contains(store.OmcConfigPath), "unreadable file → visible error with its path");
+            Check(!broken.Error!.StartsWith("settings.", StringComparison.Ordinal), "the error is localized copy, not a raw key");
+
+            // 고른 값을 쓰려 해도 파일은 한 바이트도 바뀌지 않고 오류가 보인다.
+            var refused = PhaseModelSection.SaveTools(broken,
+                PhaseModelSection.ApplyPhaseRow(Phase.Review, "opus", new(), broken), dir);
+            Check(refused.Error is not null && refused.Error.Contains(store.OmcConfigPath), "a refused write shows the localized error");
+            Check(File.ReadAllBytes(store.OmcConfigPath).SequenceEqual(brokenBytes), "the unparseable file stays byte-identical");
+        }
+        finally { Directory.Delete(dir, true); }
         return Task.CompletedTask;
     }
 }

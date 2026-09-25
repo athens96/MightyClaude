@@ -25,6 +25,7 @@ public static class SettingsSections
     // Slot ids, in the macOS order. Ids are stable; titles are not.
     public const string Display = "display";
     public const string RemoteConnection = "remoteConnection";
+    public const string PhaseModels = "phaseModels";
     public const string Styles = "styles";
     public const string Components = "components";
     public const string MobileRemote = "mobileRemote";
@@ -41,6 +42,8 @@ public static class SettingsSections
     public static readonly string ProvidersTitle = Locale.Get("settings.providers.sectionTitleWindows");
     public static readonly string DisplayTitle = Locale.Get("settings.display.sectionTitle");
     public static readonly string AppInfoTitle = Locale.Get("settings.appInfo.sectionTitle");
+    // 페이즈별 모델은 macOS와 같은 열쇠말을 쓴다 — 두 화면의 제목이 한 곳에서 온다.
+    public static readonly string PhaseModelsTitle = PhaseModelSection.SectionTitle;
 
     /// Every macOS slot, in the macOS order. A null title marks a feature that
     /// Windows does not have yet.
@@ -48,6 +51,7 @@ public static class SettingsSections
     [
         new(Display, DisplayTitle),
         new(RemoteConnection, null),
+        new(PhaseModels, PhaseModelsTitle),
         new(Styles, null),
         new(Components, null),
         new(MobileRemote, null),
