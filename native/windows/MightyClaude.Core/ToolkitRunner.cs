@@ -15,12 +15,20 @@ public sealed class ToolkitPlanItem
 
 // ── Run result ───────────────────────────────────────────────────────────────
 
+public sealed class ToolkitStepResult
+{
+    public enum StepOutcome { Ok, Failed, Skipped }
+    public required IReadOnlyList<string> Argv { get; init; }
+    public required StepOutcome Outcome { get; init; }
+}
+
 public sealed class ToolkitRunItem
 {
     public enum Verdict { Installed, Failed, Skipped }
 
     public required string EntryId { get; init; }
     public required Verdict RunVerdict { get; init; }
+    public IReadOnlyList<ToolkitStepResult> Steps { get; init; } = [];
 }
 
 // ── Executor ─────────────────────────────────────────────────────────────────
@@ -86,29 +94,47 @@ public sealed class ToolkitRunner(ToolkitStore store, ToolkitProbeContext probeC
                 results.Add(new ToolkitRunItem { EntryId = item.Entry.Id, RunVerdict = ToolkitRunItem.Verdict.Skipped });
                 continue;
             }
-            ExecuteEntry(item, executor);
+            var steps = ExecuteEntry(item, executor);
             var approval = store.GetApproval(item.Entry);
             var probeResult = ToolkitProbe.Probe(item.Entry, approval, probeContext);
             results.Add(new ToolkitRunItem
             {
                 EntryId = item.Entry.Id,
                 RunVerdict = probeResult == ToolkitProbe.Result.Installed ? ToolkitRunItem.Verdict.Installed : ToolkitRunItem.Verdict.Failed,
+                Steps = steps,
             });
         }
         return results;
     }
 
-    private void ExecuteEntry(ToolkitPlanItem item, IToolkitRunnerExecutor executor)
+    private IReadOnlyList<ToolkitStepResult> ExecuteEntry(ToolkitPlanItem item, IToolkitRunnerExecutor executor)
     {
         var commands = item.Commands;
+        var steps = new List<ToolkitStepResult>();
+        var entryFailed = false;
         for (var i = 0; i < commands.Count; i++)
         {
             var cmd = commands[i];
+            if (entryFailed)
+            {
+                steps.Add(new ToolkitStepResult { Argv = cmd, Outcome = ToolkitStepResult.StepOutcome.Skipped });
+                continue;
+            }
             var isFetch = IsFetchStep(cmd);
             var result = executor.Run(cmd);
             if (result.ExitCode != 0 && isFetch && IsNetworkError(result.Output))
                 result = executor.Run(cmd);
+            if (result.ExitCode != 0)
+            {
+                entryFailed = true;
+                steps.Add(new ToolkitStepResult { Argv = cmd, Outcome = ToolkitStepResult.StepOutcome.Failed });
+            }
+            else
+            {
+                steps.Add(new ToolkitStepResult { Argv = cmd, Outcome = ToolkitStepResult.StepOutcome.Ok });
+            }
         }
+        return steps;
     }
 
     // ── Command building ─────────────────────────────────────────────────────
@@ -168,6 +194,7 @@ public sealed class ToolkitRunner(ToolkitStore store, ToolkitProbeContext probeC
         {
             "git" => argv.Count > 1 && argv[1] is "clone" or "ls-remote",
             "npm" => argv.Count > 1 && argv[1] == "install",
+            "winget" => argv.Count > 1 && argv[1] == "install",
             "claude" when argv.Count > 2 && argv[1] == "plugin" && argv[2] is "marketplace" => true,
             "claude" when argv.Count > 2 && argv[1] == "plugin" && argv[2] == "install" => true,
             _ => false,

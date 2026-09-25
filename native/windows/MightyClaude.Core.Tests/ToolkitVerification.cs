@@ -258,7 +258,7 @@ internal static class ToolkitVerification
         return Task.CompletedTask;
     }
 
-    // ── 6: toolkit probes are file-only ──────────────────────────────────────
+    // ── 6: toolkit probes are file-only and run twice and decide the result table ──
 
     internal static Task ToolkitProbesAreFileOnly()
     {
@@ -321,6 +321,35 @@ internal static class ToolkitVerification
             Directory.Delete(home, true);
             Directory.Delete(localAppData, true);
         }
+
+        // "Run twice": Plan() uses a pre_plan probe; Run() uses a separate post_run probe.
+        // Verify by creating the probe file after Plan() but before Run() — the post_run probe
+        // sees it installed and reports Installed even though the executor did nothing.
+        var dir2 = TempDir();
+        var home2 = TempDir();
+        try
+        {
+            var ctx2 = new ToolkitProbeContext { HomeDirectory = home2, PathDirectories = [], LocalAppData = home2 };
+            var store2 = new ToolkitStore(dir2);
+            var se = MakeEntry("probe-skill", new ToolkitFileReader.SkillSpec("https://github.com/example/probe-skill.git"));
+            store2.Add(se);
+            store2.Approve("probe-skill");
+            var runner2 = new ToolkitRunner(store2, ctx2);
+            var plan2 = runner2.Plan();
+            Check(plan2.Any(i => i.Entry.Id == "probe-skill" && i.Action == ToolkitPlanItem.PlanAction.Run),
+                "entry appears in plan: pre_plan probe says missing");
+            // Simulate the install completing between Plan and Run.
+            var sd = Path.Combine(home2, ".claude", "skills", "probe-skill");
+            Directory.CreateDirectory(sd);
+            File.WriteAllText(Path.Combine(sd, "SKILL.md"), "# Probe Skill");
+            // Run with no-op executor: post_run probe (file-only) sees the SKILL.md → Installed.
+            var noopLog = new List<IReadOnlyList<string>>();
+            var results2 = runner2.Run(plan2, new FakeExecutor(noopLog));
+            var r = results2.FirstOrDefault(x => x.EntryId == "probe-skill");
+            Check(r?.RunVerdict == ToolkitRunItem.Verdict.Installed,
+                "post_run probe decides Installed even when executor ran nothing (two separate probe phases)");
+        }
+        finally { Directory.Delete(dir2, true); Directory.Delete(home2, true); }
         return Task.CompletedTask;
     }
 
@@ -369,6 +398,36 @@ internal static class ToolkitVerification
                 Check(cmd.Count > 1, "each step is a full argv, not a single string");
         }
         finally { Directory.Delete(dir, true); }
+
+        // One failing step stops later steps of the SAME entry; later entries still run.
+        // Use a distinct source token so the executor can target exactly this entry's step.
+        const string stepSrc = "org/step-plugin-test";
+        var stepPlugin = MakeEntry("step-plugin", new ToolkitFileReader.PluginSpec(stepSrc, "step@step"));
+        var stepDir = TempDir();
+        try
+        {
+            var stepStore = new ToolkitStore(stepDir);
+            stepStore.Add(stepPlugin);
+            stepStore.Approve("step-plugin");
+            var secondEntry = MakeEntry("second-npm", new ToolkitFileReader.PackageSpec("npm", "eslint"));
+            stepStore.Add(secondEntry);
+            stepStore.Approve("second-npm");
+            var stepRunner = new ToolkitRunner(stepStore, ctx);
+            var stepPlan = stepRunner.Plan();
+            var callLog = new List<IReadOnlyList<string>>();
+            // Fail only the command that carries the step-plugin source token.
+            var results = stepRunner.Run(stepPlan, new SpecificFailExecutor(callLog, stepSrc));
+            // step-plugin: step 0 (marketplace add) failed → step 1 (install) skipped
+            var pluginResult = results.FirstOrDefault(r => r.EntryId == "step-plugin");
+            Check(pluginResult is not null, "step-plugin entry has a result");
+            Check(pluginResult!.Steps.Count == 2, "step-plugin has 2 step results");
+            Check(pluginResult.Steps[0].Outcome == ToolkitStepResult.StepOutcome.Failed, "plugin step 0 is Failed");
+            Check(pluginResult.Steps[1].Outcome == ToolkitStepResult.StepOutcome.Skipped, "plugin step 1 is Skipped after failure");
+            // npm entry still ran despite the plugin entry failing
+            Check(callLog.Any(cmd => cmd.Any(a => a.Contains("eslint") || a == "npm")),
+                "second entry ran despite first entry step failure");
+        }
+        finally { Directory.Delete(stepDir, true); }
 
         return Task.CompletedTask;
     }
@@ -765,6 +824,89 @@ internal static class ToolkitVerification
         finally { Directory.Delete(dir, true); }
     }
 
+    // ── 12: toolkit file round-trip is a fixed point ──────────────────────────
+
+    internal static Task ToolkitFileRoundTripIsAFixedPoint()
+    {
+        // Canonical file: sorted top-level keys (entries < version), 2-space indent,
+        // LF line endings, one trailing newline. Entry uses sorted keys (displayName < id < install).
+        var canonical = "{\n  \"entries\": [\n    {\"displayName\":\"TypeScript\",\"id\":\"npm-fp\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"typescript\"}}\n  ],\n  \"version\": 1\n}\n";
+        var dir = TempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "toolkit.json"), canonical, System.Text.Encoding.UTF8);
+            // Force a save: add+remove dummy (original entry stays untouched → raw bytes re-emitted).
+            var store = new ToolkitStore(dir);
+            var dummy = MakeEntry("_fp_dummy_", new ToolkitFileReader.SkillSpec("https://github.com/x/dummy.git"));
+            store.Add(dummy);
+            store.Remove("_fp_dummy_");
+            var result = File.ReadAllText(Path.Combine(dir, "toolkit.json"), System.Text.Encoding.UTF8);
+            Check(result == canonical,
+                "canonical file is a fixed point of save.\n  Expected: " + canonical.Replace("\n", "\\n") +
+                "\n  Got:      " + result.Replace("\n", "\\n"));
+        }
+        finally { Directory.Delete(dir, true); }
+        return Task.CompletedTask;
+    }
+
+    // ── 13: step fetch eligibility is derived ─────────────────────────────────
+
+    internal static Task StepFetchEligibilityIsDerived()
+    {
+        // Fetch steps (eligible for network-error retry, no stored flag — derived from argv).
+        Check(ToolkitRunner.IsFetchStep(["git", "clone", "url", "dest"]), "git clone is a fetch step");
+        Check(ToolkitRunner.IsFetchStep(["git", "ls-remote", "url", "ref"]), "git ls-remote is a fetch step");
+        Check(ToolkitRunner.IsFetchStep(["npm", "install", "-g", "pkg"]), "npm install is a fetch step");
+        Check(ToolkitRunner.IsFetchStep(["claude", "plugin", "marketplace", "add", "--scope", "user", "src"]), "claude plugin marketplace add is a fetch step");
+        Check(ToolkitRunner.IsFetchStep(["claude", "plugin", "install", "id", "--scope", "user", "--json"]), "claude plugin install is a fetch step");
+        Check(ToolkitRunner.IsFetchStep(["winget", "install", "--exact", "--id", "Pkg.Id"]), "winget install is a fetch step");
+
+        // Non-fetch steps (never retried).
+        Check(!ToolkitRunner.IsFetchStep(["claude", "mcp", "add", "--scope", "user", "n", "--", "/bin/node"]), "mcp add is not a fetch step");
+        Check(!ToolkitRunner.IsFetchStep(["git", "status"]), "git status is not a fetch step");
+        Check(!ToolkitRunner.IsFetchStep([]), "empty argv is not a fetch step");
+
+        // A fetch step matching the network-error pattern is retried exactly once.
+        var dir = TempDir();
+        try
+        {
+            var store = new ToolkitStore(dir);
+            var npmEntry = MakeEntry("retry-npm", new ToolkitFileReader.PackageSpec("npm", "retry-pkg"));
+            store.Add(npmEntry);
+            store.Approve("retry-npm");
+            var ctx = FakeContext();
+            var runner = new ToolkitRunner(store, ctx);
+            var plan = runner.Plan();
+            var counts = new Dictionary<string, int>();
+            runner.Run(plan, new NetworkFailExecutor(counts));
+            // npm install is a fetch step → retried once → called 2 times total
+            Check(counts.GetValueOrDefault("npm install", 0) == 2,
+                "fetch step retried exactly once (called 2 times), got " + counts.GetValueOrDefault("npm install", 0));
+        }
+        finally { Directory.Delete(dir, true); }
+
+        // A non-fetch step is never retried even when the output matches the network-error pattern.
+        var dir2 = TempDir();
+        try
+        {
+            var store2 = new ToolkitStore(dir2);
+            var mcpEntry = MakeEntry("retry-mcp", new ToolkitFileReader.McpSpec("mymcp", "/bin/node", []));
+            store2.Add(mcpEntry);
+            store2.Approve("retry-mcp");
+            var ctx2 = FakeContext();
+            var runner2 = new ToolkitRunner(store2, ctx2);
+            var plan2 = runner2.Plan();
+            var counts2 = new Dictionary<string, int>();
+            runner2.Run(plan2, new NetworkFailExecutor(counts2));
+            // "claude mcp" is not a fetch step → never retried → called exactly 1 time
+            Check(counts2.GetValueOrDefault("claude mcp", 0) == 1,
+                "non-fetch step never retried (called 1 time), got " + counts2.GetValueOrDefault("claude mcp", 0));
+        }
+        finally { Directory.Delete(dir2, true); }
+
+        return Task.CompletedTask;
+    }
+
     internal static Task SharedFormatPlatformTable()
     {
         // Build the same three entries as in the fixture — same (kind, manager) pairs as the macOS test.
@@ -839,6 +981,29 @@ internal static class ToolkitVerification
     private sealed class FakeExecutor(List<IReadOnlyList<string>> log) : IToolkitRunnerExecutor
     {
         public ToolkitCommandOutput Run(IReadOnlyList<string> argv) { log.Add(argv); return ToolkitCommandOutput.Success; }
+    }
+
+    // Fails any command whose argv contains the given token.
+    private sealed class SpecificFailExecutor(List<IReadOnlyList<string>> log, string failToken) : IToolkitRunnerExecutor
+    {
+        public ToolkitCommandOutput Run(IReadOnlyList<string> argv)
+        {
+            log.Add(argv);
+            return argv.Contains(failToken)
+                ? ToolkitCommandOutput.Failure("not a network error", 1)
+                : ToolkitCommandOutput.Success;
+        }
+    }
+
+    // Always fails with a network-error message; counts calls per "binary subcmd" key.
+    private sealed class NetworkFailExecutor(Dictionary<string, int> counts) : IToolkitRunnerExecutor
+    {
+        public ToolkitCommandOutput Run(IReadOnlyList<string> argv)
+        {
+            var key = argv.Count > 1 ? argv[0] + " " + argv[1] : (argv.Count > 0 ? argv[0] : "");
+            counts[key] = counts.GetValueOrDefault(key, 0) + 1;
+            return ToolkitCommandOutput.Failure("could not resolve host npmjs.com", 1);
+        }
     }
 
     // Fake executor that simulates a successful git clone by creating SKILL.md at the destination.

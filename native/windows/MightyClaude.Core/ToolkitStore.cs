@@ -20,11 +20,17 @@ public sealed class ToolkitStore
 
     private bool loaded;
     private List<ToolkitFileEntry> thisOsEntries = [];
-    // Other-OS entries kept as raw JSON elements (clone from the document) including
-    // any approval they already carry — written back unchanged on every persist.
-    private List<JsonElement> otherOsRaw = [];
     private Dictionary<string, ToolkitFileReader.ToolkitApproval> approvals = [];
     private string? fileError;
+    // Ordered list of all entry IDs as read from the file (both platforms).
+    private List<string> allEntryIds = [];
+    // Raw JSON text for each entry, keyed by id (preserves unknown keys like `platforms`).
+    private Dictionary<string, string> allEntryRawText = [];
+    // IDs of entries that are other-OS (brew/repoScript on Windows).
+    private HashSet<string> otherOsIds = [];
+    // IDs of entries added, edited, approved or removed this session.
+    // Touched entries are written canonically; untouched entries emit original bytes.
+    private HashSet<string> touchedEntryIds = [];
 
     public ToolkitStore(string directory) => this.directory = directory;
 
@@ -66,6 +72,7 @@ public sealed class ToolkitStore
         var entry = thisOsEntries.FirstOrDefault(e => e.Id == id)
             ?? throw new InvalidOperationException("Entry not found: " + id);
         approvals[id] = new ToolkitFileReader.ToolkitApproval(CanonicalHash(entry), resolvedCommit);
+        touchedEntryIds.Add(id);
         Persist();
     }
 
@@ -75,6 +82,7 @@ public sealed class ToolkitStore
         RequireLoaded();
         thisOsEntries.RemoveAll(e => e.Id == entry.Id);
         approvals.Remove(entry.Id);
+        touchedEntryIds.Add(entry.Id);
         thisOsEntries.Add(entry with { Approval = null, Source = ToolkitFileReader.ToolkitEntrySource.User });
         Persist();
     }
@@ -93,6 +101,7 @@ public sealed class ToolkitStore
         RequireLoaded();
         thisOsEntries.RemoveAll(e => e.Id == id);
         approvals.Remove(id);
+        touchedEntryIds.Add(id);
         Persist();
     }
 
@@ -116,10 +125,14 @@ public sealed class ToolkitStore
             foreach (var item in entriesEl.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object) continue;
+                if (!item.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.String) continue;
+                var itemId = idProp.GetString() ?? "";
+                if (itemId.Length == 0) continue;
+                allEntryIds.Add(itemId);
+                allEntryRawText[itemId] = item.GetRawText();
                 if (IsOtherOsItem(item))
                 {
-                    // Clone the entire element (including any approval) to keep it byte-identical on save.
-                    otherOsRaw.Add(item.Clone());
+                    otherOsIds.Add(itemId);
                     continue;
                 }
                 // Strip the approval field before decoding (store manages it separately).
@@ -152,34 +165,62 @@ public sealed class ToolkitStore
     {
         var dir = directory;
         Directory.CreateDirectory(dir);
-        var entries = new List<string>();
+        var thisOsIds = new HashSet<string>(thisOsEntries.Select(e => e.Id));
+        var entryLines = new List<string>();
 
-        // This-OS entries serialized to JSON
-        foreach (var entry in thisOsEntries)
+        // Emit entries in file order; untouched entries use original bytes.
+        foreach (var id in allEntryIds)
         {
-            var obj = EntryToJson(entry);
-            if (approvals.TryGetValue(entry.Id, out var approval))
+            if (otherOsIds.Contains(id))
             {
-                var a = approval.ResolvedCommit is null
-                    ? $"\"contentHash\":{Jstr(approval.ContentHash)}"
-                    : $"\"contentHash\":{Jstr(approval.ContentHash)},\"resolvedCommit\":{Jstr(approval.ResolvedCommit)}";
-                obj = obj[..^1] + $",\"approval\":{{{a}}}}}";
+                if (allEntryRawText.TryGetValue(id, out var rawText)) entryLines.Add(rawText);
             }
-            entries.Add(obj);
+            else if (touchedEntryIds.Contains(id))
+            {
+                if (thisOsIds.Contains(id))
+                    entryLines.Add(BuildEntryLine(thisOsEntries.First(e => e.Id == id)));
+                // else: removed — skip
+            }
+            else
+            {
+                // Untouched thisOS entry: emit original bytes if still present.
+                if (thisOsIds.Contains(id) && allEntryRawText.TryGetValue(id, out var rawText))
+                    entryLines.Add(rawText);
+            }
         }
 
-        // Other-OS entries written back unchanged
-        foreach (var raw in otherOsRaw)
-            entries.Add(raw.GetRawText());
+        // New entries added this session (not in the original file).
+        foreach (var entry in thisOsEntries)
+            if (!allEntryIds.Contains(entry.Id))
+                entryLines.Add(BuildEntryLine(entry));
 
-        var json = $"{{\"entries\":[{string.Join(",", entries)}],\"version\":1}}";
+        // Canonical file form: sorted top-level keys, 2-space indent, LF, one trailing newline.
+        var body = entryLines.Count > 0
+            ? "\n    " + string.Join(",\n    ", entryLines) + "\n  "
+            : "";
+        var json = "{\n  \"entries\": [" + body + "],\n  \"version\": 1\n}\n";
         var tmpPath = FilePath + "." + Path.GetRandomFileName() + ".tmp";
         try
         {
-            File.WriteAllText(tmpPath, json);
+            File.WriteAllText(tmpPath, json, Encoding.UTF8);
             File.Move(tmpPath, FilePath, overwrite: true);
         }
         finally { if (File.Exists(tmpPath)) try { File.Delete(tmpPath); } catch { } }
+    }
+
+    // Builds one entry line for Persist(): canonical form with sorted keys, approval first.
+    private string BuildEntryLine(ToolkitFileEntry entry)
+    {
+        var install = BuildInstallJson(entry);
+        if (approvals.TryGetValue(entry.Id, out var approval))
+        {
+            var a = approval.ResolvedCommit is null
+                ? $"\"contentHash\":{Jstr(approval.ContentHash)}"
+                : $"\"contentHash\":{Jstr(approval.ContentHash)},\"resolvedCommit\":{Jstr(approval.ResolvedCommit)}";
+            // Keys sorted: approval < displayName < id < install
+            return $"{{\"approval\":{{{a}}},\"displayName\":{Jstr(entry.DisplayName)},\"id\":{Jstr(entry.Id)},\"install\":{install}}}";
+        }
+        return $"{{\"displayName\":{Jstr(entry.DisplayName)},\"id\":{Jstr(entry.Id)},\"install\":{install}}}";
     }
 
     // ── Canonical hash ────────────────────────────────────────────────────────
