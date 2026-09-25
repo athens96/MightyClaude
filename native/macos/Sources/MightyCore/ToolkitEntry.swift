@@ -62,8 +62,12 @@ public struct ToolkitDecodeFailure: Error, Sendable {
 
 public enum ToolkitEntryDecoder {
     public static func decode(_ object: [String: Any]) throws -> ToolkitEntry {
-        // Unknown root-level keys (e.g. a stale `platforms` key) are ignored
-        // semantically; they are never re-emitted for touched entries.
+        // A stale `platforms` key is tolerated and ignored (never re-emitted for
+        // touched entries); any other unknown root-level key rejects the entry.
+        let allowedRoot: Set<String> = ["id", "displayName", "install", "platforms"]
+        for key in object.keys where !allowedRoot.contains(key) {
+            throw ToolkitDecodeFailure("Unknown field: \(key)")
+        }
         guard let id = object["id"] as? String, !id.isEmpty, id.utf8.count <= 128, validIdentifier(id) else {
             throw ToolkitDecodeFailure("Invalid or missing 'id'")
         }
