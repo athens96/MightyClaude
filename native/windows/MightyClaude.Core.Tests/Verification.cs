@@ -612,12 +612,18 @@ internal static class Verification
         await Test("toolkit plan is a step list", ToolkitVerification.ToolkitInstallIsAnOrderedStepList);
         await Test("bundled entry sorts first and survives an unreadable store", ToolkitVerification.BundledEntrySortsFirstAndSurvivesAnUnreadableStore);
         await Test("result table separates not attempted, failed and succeeded", ToolkitVerification.ResultTableSeparatesNotAttemptedFailedAndSucceeded);
+        await Test("result truth is authoritative: probe decides verdict, steps are explanation", ToolkitVerification.ResultTruthIsAuthoritative);
         await Test("components rows follow installed CLIs", ToolkitVerification.ComponentsRowsFollowInstalledCLIs);
         await Test("components screen is live in the running app", ToolkitVerification.ComponentsScreenIsLiveInTheRunningApp);
         await Test("toolkit file round-trip is a fixed point", ToolkitVerification.ToolkitFileRoundTripIsAFixedPoint);
         await Test("step fetch eligibility is derived", ToolkitVerification.StepFetchEligibilityIsDerived);
         await Test("shared-format fixture round-trip", ToolkitVerification.SharedFormatFixtureRoundTrip);
         await Test("shared-format platform table", ToolkitVerification.SharedFormatPlatformTable);
+        await Test("hash parity canonical bytes match fixture", ToolkitVerification.HashParityCanonicalBytes);
+        await Test("hash parity sha256 digests match fixture", ToolkitVerification.HashParityDigests);
+        await Test("hash parity stale platforms key excluded from hash surface", ToolkitVerification.HashParityStalePlatformsKeyExcluded);
+        await Test("hash parity changing a hashed field changes the digest", ToolkitVerification.HashParityChangingFieldChangesHash);
+        await Test("hash parity round-trip with stale platforms key is byte-identical", ToolkitVerification.HashParityRoundTripWithStalePlatformsKey);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {

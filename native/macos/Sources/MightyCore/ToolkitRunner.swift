@@ -15,15 +15,27 @@ public struct ToolkitPlanItem: Sendable, Equatable {
     }
 }
 
+// MARK: - Step result
+
+public struct ToolkitStepResult: Sendable, Equatable {
+    public enum Outcome: String, Sendable, Equatable { case ok, failed, skipped }
+    public let argv: [String]
+    public let outcome: Outcome
+    public init(argv: [String], outcome: Outcome) {
+        self.argv = argv; self.outcome = outcome
+    }
+}
+
 // MARK: - Run result
 
 public struct ToolkitRunItem: Sendable, Equatable {
     public enum Verdict: String, Sendable, Equatable { case installed, failed, skipped }
     public let entryId: String
     public let verdict: Verdict
+    public let steps: [ToolkitStepResult]
 
-    public init(entryId: String, verdict: Verdict) {
-        self.entryId = entryId; self.verdict = verdict
+    public init(entryId: String, verdict: Verdict, steps: [ToolkitStepResult] = []) {
+        self.entryId = entryId; self.verdict = verdict; self.steps = steps
     }
 }
 
@@ -86,6 +98,7 @@ public actor ToolkitRunner {
     /// Executes a plan built by `plan()`. Items run in order; failure never stops the run.
     /// Fetch steps are retried once when the output matches a network-error pattern.
     /// Verdict is decided by re-probing, not by exit codes.
+    /// Step outcomes are recorded alongside the verdict so the UI can show the explanation.
     public func run(plan items: [ToolkitPlanItem], executor: any ToolkitRunnerExecutor) async -> [ToolkitRunItem] {
         var results: [ToolkitRunItem] = []
         for item in items {
@@ -93,11 +106,11 @@ public actor ToolkitRunner {
             case .skip:
                 results.append(ToolkitRunItem(entryId: item.entry.entryId, verdict: .skipped))
             case .run(let commands):
-                await executeEntry(entry: item.entry, commands: commands, executor: executor)
+                let steps = await executeEntry(entry: item.entry, commands: commands, executor: executor)
                 let approval = await store.approval(for: item.entry)
                 let probeResult = ToolkitProbe.probe(entry: item.entry, approval: approval, context: probeContext)
                 let verdict: ToolkitRunItem.Verdict = probeResult == .installed ? .installed : .failed
-                results.append(ToolkitRunItem(entryId: item.entry.entryId, verdict: verdict))
+                results.append(ToolkitRunItem(entryId: item.entry.entryId, verdict: verdict, steps: steps))
             }
         }
         return results
@@ -105,7 +118,13 @@ public actor ToolkitRunner {
 
     // MARK: - Execution
 
-    private func executeEntry(entry: ToolkitEntry, commands: [[String]], executor: any ToolkitRunnerExecutor) async {
+    /// Runs every step in order, tracking per-step outcomes.
+    /// A failed step marks the entry as failed; all later steps of the SAME entry are
+    /// recorded as .skipped and never passed to the executor.
+    /// The post-run probe (not the step outcomes) decides the final verdict.
+    @discardableResult
+    private func executeEntry(entry: ToolkitEntry, commands: [[String]], executor: any ToolkitRunnerExecutor) async -> [ToolkitStepResult] {
+        var steps: [ToolkitStepResult] = []
         var scriptMarker: URL? = nil
         let isRepoScript: Bool
         if case .repoScript = entry.install {
@@ -119,27 +138,41 @@ public actor ToolkitRunner {
             isRepoScript = false
         }
 
+        var entryFailed = false
         for (index, cmd) in commands.enumerated() {
+            if entryFailed {
+                steps.append(ToolkitStepResult(argv: cmd, outcome: .skipped))
+                continue
+            }
             // The script step runs only if its resolved path stays inside the clone.
-            if isRepoScript && index == commands.count - 1 && !Self.scriptStaysInClone(cmd.first ?? "", commands: commands) { return }
+            if isRepoScript && index == commands.count - 1 &&
+               !Self.scriptStaysInClone(cmd.first ?? "", commands: commands) {
+                entryFailed = true
+                steps.append(ToolkitStepResult(argv: cmd, outcome: .skipped))
+                continue
+            }
             let isFetch = Self.isFetchStep(cmd)
             var result = executor.run(cmd)
             // Retry fetch steps once on network-pattern errors
             if result.exitCode != 0 && isFetch && Self.isNetworkError(result.output) {
                 result = executor.run(cmd)
             }
-            // RepoScript: write completion marker when script step (last command) exits 0
-            if isRepoScript && index == commands.count - 1 && result.exitCode == 0 {
-                if let marker = scriptMarker {
-                    try? FileManager.default.createDirectory(
-                        at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try? Data().write(to: marker)
+            if result.exitCode != 0 {
+                entryFailed = true
+                steps.append(ToolkitStepResult(argv: cmd, outcome: .failed))
+            } else {
+                // RepoScript: write completion marker when script step (last command) exits 0
+                if isRepoScript && index == commands.count - 1 {
+                    if let marker = scriptMarker {
+                        try? FileManager.default.createDirectory(
+                            at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try? Data().write(to: marker)
+                    }
                 }
+                steps.append(ToolkitStepResult(argv: cmd, outcome: .ok))
             }
-            // A repoScript never runs its script on a failed clone or checkout;
-            // other kinds go on (e.g. install after an already-known marketplace).
-            if isRepoScript && result.exitCode != 0 { return }
         }
+        return steps
     }
 
     /// The clone directory is the last argument of the first (clone) command.

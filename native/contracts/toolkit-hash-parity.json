@@ -1,0 +1,34 @@
+{
+  "description": "Hash parity fixture. Both Swift (macOS) and C# (Windows) implementations must compute these exact canonical bytes and SHA-256 digests. The winget entry carries a stale platforms key that is excluded from the hash surface — an entry whose only difference is that key must hash to the same digest.",
+  "entries": [
+    {
+      "id": "shared-brew",
+      "displayName": "ripgrep",
+      "install": {"kind": "package", "manager": "brew", "name": "ripgrep"},
+      "canonicalBytes": "{\"displayName\":\"ripgrep\",\"id\":\"shared-brew\",\"install\":{\"kind\":\"package\",\"manager\":\"brew\",\"name\":\"ripgrep\"}}",
+      "sha256": "60c2f1ee819f3e586e7b4edbc21e33f042f578dbf07e1d4a2b50c8ae81d38c4d"
+    },
+    {
+      "id": "shared-npm",
+      "displayName": "TypeScript",
+      "install": {"kind": "package", "manager": "npm", "name": "typescript"},
+      "canonicalBytes": "{\"displayName\":\"TypeScript\",\"id\":\"shared-npm\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"typescript\"}}",
+      "sha256": "6ed516dbfd00a154262de7a15ad2d96460ce255b15d4bfd25935909d1db1bdae"
+    },
+    {
+      "id": "shared-winget",
+      "displayName": "Node.js",
+      "install": {"kind": "package", "manager": "winget", "name": "OpenJS.NodeJS", "executable": "node.exe"},
+      "platforms": ["windows"],
+      "canonicalBytes": "{\"displayName\":\"Node.js\",\"id\":\"shared-winget\",\"install\":{\"executable\":\"node.exe\",\"kind\":\"package\",\"manager\":\"winget\",\"name\":\"OpenJS.NodeJS\"}}",
+      "sha256": "17bb3a3b5145260f6a69293472356d16f24c5769c57c22cff177ac8e090f4764"
+    },
+    {
+      "id": "shared-plugin",
+      "displayName": "My Plugin",
+      "install": {"kind": "plugin", "source": "owner/repo", "pluginID": "myplugin@marketplace"},
+      "canonicalBytes": "{\"displayName\":\"My Plugin\",\"id\":\"shared-plugin\",\"install\":{\"kind\":\"plugin\",\"pluginID\":\"myplugin@marketplace\",\"source\":\"owner/repo\"}}",
+      "sha256": "8b7b568e58fa4ecfad28cda421b8ba26a4943493892ddae27cef78da4453919f"
+    }
+  ]
+}

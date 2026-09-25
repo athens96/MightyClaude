@@ -234,7 +234,7 @@ public sealed class ToolkitStore
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static string BuildCanonicalJson(ToolkitFileEntry entry)
+    public static string BuildCanonicalJson(ToolkitFileEntry entry)
     {
         // Alphabetical key order: displayName, id, install
         return $"{{\"displayName\":{Jstr(entry.DisplayName)},\"id\":{Jstr(entry.Id)},\"install\":{BuildInstallJson(entry)}}}";

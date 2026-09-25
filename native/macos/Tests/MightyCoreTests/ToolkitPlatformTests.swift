@@ -418,6 +418,127 @@ private func sampleWinget(id: String = "wt", name: String = "Microsoft.WindowsTe
         #expect(!items.contains { $0.entry.entryId == "wt" })
     }
 
+    // MARK: – Hash parity (fixture: native/contracts/toolkit-hash-parity.json)
+    //
+    // Canonical bytes = compact JSON of {displayName, id, install} with sorted keys,
+    // no whitespace, NFC UTF-8; approval and unknown keys (e.g. stale `platforms`)
+    // excluded.  Matches BuildCanonicalJson / CanonicalHash in Windows Core.
+
+    private static let parityBrew    = ToolkitEntry(entryId: "shared-brew",   displayName: "ripgrep",    source: .user, install: .package(manager: .brew,   name: "ripgrep"))
+    private static let parityNpm     = ToolkitEntry(entryId: "shared-npm",    displayName: "TypeScript", source: .user, install: .package(manager: .npm,    name: "typescript"))
+    private static let parityWinget  = ToolkitEntry(entryId: "shared-winget", displayName: "Node.js",    source: .user, install: .package(manager: .winget, name: "OpenJS.NodeJS", executable: "node.exe"))
+    private static let parityPlugin  = ToolkitEntry(entryId: "shared-plugin", displayName: "My Plugin",  source: .user, install: .plugin(source: "owner/repo", pluginID: "myplugin@marketplace"))
+
+    private static let parityBrewBytes   = "{\"displayName\":\"ripgrep\",\"id\":\"shared-brew\",\"install\":{\"kind\":\"package\",\"manager\":\"brew\",\"name\":\"ripgrep\"}}"
+    private static let parityNpmBytes    = "{\"displayName\":\"TypeScript\",\"id\":\"shared-npm\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"typescript\"}}"
+    private static let parityWingetBytes = "{\"displayName\":\"Node.js\",\"id\":\"shared-winget\",\"install\":{\"executable\":\"node.exe\",\"kind\":\"package\",\"manager\":\"winget\",\"name\":\"OpenJS.NodeJS\"}}"
+    private static let parityPluginBytes = "{\"displayName\":\"My Plugin\",\"id\":\"shared-plugin\",\"install\":{\"kind\":\"plugin\",\"pluginID\":\"myplugin@marketplace\",\"source\":\"owner/repo\"}}"
+
+    private static let parityBrewSha256   = "60c2f1ee819f3e586e7b4edbc21e33f042f578dbf07e1d4a2b50c8ae81d38c4d"
+    private static let parityNpmSha256    = "6ed516dbfd00a154262de7a15ad2d96460ce255b15d4bfd25935909d1db1bdae"
+    private static let parityWingetSha256 = "17bb3a3b5145260f6a69293472356d16f24c5769c57c22cff177ac8e090f4764"
+    private static let parityPluginSha256 = "8b7b568e58fa4ecfad28cda421b8ba26a4943493892ddae27cef78da4453919f"
+
+    @Test func hashParityCanonicalBytes() {
+        #expect(ToolkitStore.canonicalJson(Self.parityBrew)   == Self.parityBrewBytes,   "brew canonical bytes")
+        #expect(ToolkitStore.canonicalJson(Self.parityNpm)    == Self.parityNpmBytes,    "npm canonical bytes")
+        #expect(ToolkitStore.canonicalJson(Self.parityWinget) == Self.parityWingetBytes, "winget canonical bytes")
+        #expect(ToolkitStore.canonicalJson(Self.parityPlugin) == Self.parityPluginBytes, "plugin canonical bytes")
+    }
+
+    @Test func hashParityDigests() {
+        #expect(ToolkitStore.canonicalHash(Self.parityBrew)   == Self.parityBrewSha256,   "brew sha256")
+        #expect(ToolkitStore.canonicalHash(Self.parityNpm)    == Self.parityNpmSha256,    "npm sha256")
+        #expect(ToolkitStore.canonicalHash(Self.parityWinget) == Self.parityWingetSha256, "winget sha256")
+        #expect(ToolkitStore.canonicalHash(Self.parityPlugin) == Self.parityPluginSha256, "plugin sha256")
+    }
+
+    @Test func hashParityStalePlatformsKeyExcluded() {
+        // The winget entry with stale `platforms` key must hash identically to
+        // the same entry without it, because unknown keys are excluded from the
+        // hash surface.
+        let withPlatforms = Self.parityWinget   // platforms is not part of ToolkitEntry
+        let withoutPlatforms = ToolkitEntry(entryId: "shared-winget", displayName: "Node.js",
+                                            source: .user,
+                                            install: .package(manager: .winget, name: "OpenJS.NodeJS", executable: "node.exe"))
+        #expect(ToolkitStore.canonicalHash(withPlatforms) == ToolkitStore.canonicalHash(withoutPlatforms),
+                "stale platforms key must not change the hash")
+        #expect(ToolkitStore.canonicalHash(withPlatforms) == Self.parityWingetSha256,
+                "hash matches fixture digest even for entry loaded from a file with stale platforms")
+    }
+
+    @Test func hashParityChangingFieldChangesHash() {
+        // Changing any hashed field must produce a different digest.
+        let original  = Self.parityWinget
+        let modified  = ToolkitEntry(entryId: "shared-winget", displayName: "Node.js",
+                                     source: .user,
+                                     install: .package(manager: .winget, name: "OpenJS.NodeJS.LTS", executable: "node.exe"))
+        #expect(ToolkitStore.canonicalHash(original) != ToolkitStore.canonicalHash(modified),
+                "changing the winget name must change the digest")
+    }
+
+    @Test func hashParityRoundTripCanonicalFile() async throws {
+        // Write 4 parity entries to a store (creates a canonical file), then
+        // trigger a save via add+remove dummy and assert the whole file is
+        // byte-for-byte identical.
+        let dir = tempDir("hp-roundtrip-canonical")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let jsonURL = dir.appendingPathComponent("toolkit.json")
+        let store1 = ToolkitStore(directory: dir)
+        try await store1.addEntry(Self.parityBrew)
+        try await store1.addEntry(Self.parityNpm)
+        try await store1.addEntry(Self.parityWinget)
+        try await store1.addEntry(Self.parityPlugin)
+        let canonicalBytes = try Data(contentsOf: jsonURL)
+
+        let store2 = ToolkitStore(directory: dir)
+        let dummy = ToolkitEntry(entryId: "_hp_dummy_", displayName: "D", source: .user,
+                                  install: .skill(url: "https://github.com/x/hp-dummy.git"))
+        try await store2.addEntry(dummy)
+        try await store2.removeEntry(id: "_hp_dummy_")
+        let roundTripBytes = try Data(contentsOf: jsonURL)
+        #expect(canonicalBytes == roundTripBytes,
+                "canonical file with 4 parity entries must be a fixed point of save")
+    }
+
+    @Test func hashParityRoundTripWithStalePlatformsKey() async throws {
+        // Write a file whose winget entry carries a stale `platforms` key (using
+        // JSONSerialization so the format is Foundation-canonical), trigger a save,
+        // and assert the whole file is byte-for-byte identical — proving that
+        // untouched entries are emitted as their original bytes (unknown key preserved).
+        let dir = tempDir("hp-roundtrip-stale")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let jsonURL = dir.appendingPathComponent("toolkit.json")
+
+        let initial: [String: Any] = [
+            "version": 1,
+            "entries": [
+                [
+                    "id": "shared-winget",
+                    "displayName": "Node.js",
+                    "install": [
+                        "kind": "package", "manager": "winget",
+                        "name": "OpenJS.NodeJS", "executable": "node.exe",
+                    ] as [String: Any],
+                    "platforms": ["windows"],
+                ] as [String: Any],
+            ],
+        ]
+        var originalData = try JSONSerialization.data(
+            withJSONObject: initial, options: [.sortedKeys, .prettyPrinted])
+        if originalData.last != UInt8(ascii: "\n") { originalData.append(UInt8(ascii: "\n")) }
+        try originalData.write(to: jsonURL)
+
+        let store = ToolkitStore(directory: dir)
+        let dummy = ToolkitEntry(entryId: "_hp_stale_dummy_", displayName: "D", source: .user,
+                                  install: .skill(url: "https://github.com/x/hp-stale.git"))
+        try await store.addEntry(dummy)
+        try await store.removeEntry(id: "_hp_stale_dummy_")
+        let savedData = try Data(contentsOf: jsonURL)
+        #expect(originalData == savedData,
+                "file with stale platforms key must be byte-identical after a save that does not touch the winget entry")
+    }
+
     // MARK: – Anti-vacuity marker
 
     @Test func markerToolkitPlatformOK() {

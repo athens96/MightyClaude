@@ -995,6 +995,247 @@ internal static class ToolkitVerification
         }
     }
 
+    // ── 15: hash parity (fixture: native/contracts/toolkit-hash-parity.json) ─────
+    //
+    // Canonical bytes = compact JSON of {displayName, id, install} with sorted keys,
+    // no whitespace, NFC UTF-8; approval and unknown keys (e.g. stale `platforms`)
+    // excluded.  Matches ToolkitStore.canonicalJson / canonicalHash on macOS.
+
+    private static ToolkitFileEntry ParityEntry(string id, string displayName, ToolkitFileReader.ToolkitInstallSpec install)
+        => new(id, displayName, "package", install, null);
+
+    internal static Task HashParityCanonicalBytes()
+    {
+        // Four entries covering every kind in the fixture.
+        var brew   = ParityEntry("shared-brew",   "ripgrep",    new ToolkitFileReader.PackageSpec("brew",   "ripgrep"));
+        var npm    = ParityEntry("shared-npm",    "TypeScript", new ToolkitFileReader.PackageSpec("npm",    "typescript"));
+        var winget = ParityEntry("shared-winget", "Node.js",    new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+        var plugin = new ToolkitFileEntry("shared-plugin", "My Plugin", "plugin",
+                         new ToolkitFileReader.PluginSpec("owner/repo", "myplugin@marketplace"), null);
+
+        Check(ToolkitStore.BuildCanonicalJson(brew)   == "{\"displayName\":\"ripgrep\",\"id\":\"shared-brew\",\"install\":{\"kind\":\"package\",\"manager\":\"brew\",\"name\":\"ripgrep\"}}",
+              "brew canonical bytes");
+        Check(ToolkitStore.BuildCanonicalJson(npm)    == "{\"displayName\":\"TypeScript\",\"id\":\"shared-npm\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"typescript\"}}",
+              "npm canonical bytes");
+        Check(ToolkitStore.BuildCanonicalJson(winget) == "{\"displayName\":\"Node.js\",\"id\":\"shared-winget\",\"install\":{\"executable\":\"node.exe\",\"kind\":\"package\",\"manager\":\"winget\",\"name\":\"OpenJS.NodeJS\"}}",
+              "winget canonical bytes");
+        Check(ToolkitStore.BuildCanonicalJson(plugin) == "{\"displayName\":\"My Plugin\",\"id\":\"shared-plugin\",\"install\":{\"kind\":\"plugin\",\"pluginID\":\"myplugin@marketplace\",\"source\":\"owner/repo\"}}",
+              "plugin canonical bytes");
+        return Task.CompletedTask;
+    }
+
+    internal static Task HashParityDigests()
+    {
+        var brew   = ParityEntry("shared-brew",   "ripgrep",    new ToolkitFileReader.PackageSpec("brew",   "ripgrep"));
+        var npm    = ParityEntry("shared-npm",    "TypeScript", new ToolkitFileReader.PackageSpec("npm",    "typescript"));
+        var winget = ParityEntry("shared-winget", "Node.js",    new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+        var plugin = new ToolkitFileEntry("shared-plugin", "My Plugin", "plugin",
+                         new ToolkitFileReader.PluginSpec("owner/repo", "myplugin@marketplace"), null);
+
+        Check(ToolkitStore.CanonicalHash(brew)   == "60c2f1ee819f3e586e7b4edbc21e33f042f578dbf07e1d4a2b50c8ae81d38c4d", "brew sha256");
+        Check(ToolkitStore.CanonicalHash(npm)    == "6ed516dbfd00a154262de7a15ad2d96460ce255b15d4bfd25935909d1db1bdae", "npm sha256");
+        Check(ToolkitStore.CanonicalHash(winget) == "17bb3a3b5145260f6a69293472356d16f24c5769c57c22cff177ac8e090f4764", "winget sha256");
+        Check(ToolkitStore.CanonicalHash(plugin) == "8b7b568e58fa4ecfad28cda421b8ba26a4943493892ddae27cef78da4453919f", "plugin sha256");
+        return Task.CompletedTask;
+    }
+
+    internal static Task HashParityStalePlatformsKeyExcluded()
+    {
+        // A winget entry loaded from a file that carries a stale `platforms` key
+        // must hash identically to the same entry without it.
+        var withoutPlatforms = ParityEntry("shared-winget", "Node.js", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+        // Load an entry from a JSON string that includes a stale `platforms` key.
+        var json = "{\"displayName\":\"Node.js\",\"id\":\"shared-winget\",\"install\":{\"executable\":\"node.exe\",\"kind\":\"package\",\"manager\":\"winget\",\"name\":\"OpenJS.NodeJS\"},\"platforms\":[\"windows\"]}";
+        using var doc = JsonDocument.Parse(json);
+        var decoded = ToolkitFileReader.ParseEntry(doc.RootElement);
+        var withPlatforms = decoded ?? throw new InvalidOperationException("ParseEntry returned null");
+        Check(ToolkitStore.CanonicalHash(withPlatforms) == ToolkitStore.CanonicalHash(withoutPlatforms),
+              "stale platforms key must not change the hash");
+        Check(ToolkitStore.CanonicalHash(withPlatforms) == "17bb3a3b5145260f6a69293472356d16f24c5769c57c22cff177ac8e090f4764",
+              "hash matches fixture digest even for entry loaded from a file with stale platforms");
+        return Task.CompletedTask;
+    }
+
+    internal static Task HashParityChangingFieldChangesHash()
+    {
+        var original = ParityEntry("shared-winget", "Node.js", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+        var modified = ParityEntry("shared-winget", "Node.js", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS.LTS", "node.exe"));
+        Check(ToolkitStore.CanonicalHash(original) != ToolkitStore.CanonicalHash(modified),
+              "changing the winget name must change the digest");
+        return Task.CompletedTask;
+    }
+
+    // Round-trip: Windows canonical file (single-line entries) with a stale platforms
+    // key on the winget entry → add+remove dummy → whole file bytes identical.
+    internal static Task HashParityRoundTripWithStalePlatformsKey()
+    {
+        // Fixture file in Windows canonical format: 4 entries, winget carries stale platforms.
+        // Entry order matches allEntryIds order; each entry line is compact JSON.
+        var fixture =
+            "{\n  \"entries\": [\n" +
+            "    {\"displayName\":\"ripgrep\",\"id\":\"shared-brew\",\"install\":{\"kind\":\"package\",\"manager\":\"brew\",\"name\":\"ripgrep\"}},\n" +
+            "    {\"displayName\":\"TypeScript\",\"id\":\"shared-npm\",\"install\":{\"kind\":\"package\",\"manager\":\"npm\",\"name\":\"typescript\"}},\n" +
+            "    {\"displayName\":\"Node.js\",\"id\":\"shared-winget\",\"install\":{\"executable\":\"node.exe\",\"kind\":\"package\",\"manager\":\"winget\",\"name\":\"OpenJS.NodeJS\"},\"platforms\":[\"windows\"]},\n" +
+            "    {\"displayName\":\"My Plugin\",\"id\":\"shared-plugin\",\"install\":{\"kind\":\"plugin\",\"pluginID\":\"myplugin@marketplace\",\"source\":\"owner/repo\"}}\n" +
+            "  ],\n  \"version\": 1\n}\n";
+        var dir = TempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "toolkit.json"), fixture, System.Text.Encoding.UTF8);
+            var store = new ToolkitStore(dir);
+            var dummy = MakeEntry("_hp_stale_dummy_", new ToolkitFileReader.SkillSpec("https://github.com/x/dummy.git"));
+            store.Add(dummy);
+            store.Remove("_hp_stale_dummy_");
+            var result = File.ReadAllText(Path.Combine(dir, "toolkit.json"), System.Text.Encoding.UTF8);
+            Check(result == fixture,
+                "file with stale platforms key must be byte-identical after a save that does not touch original entries.\n  Expected: " +
+                fixture.Replace("\n", "\\n") + "\n  Got:      " + result.Replace("\n", "\\n"));
+        }
+        finally { Directory.Delete(dir, true); }
+        return Task.CompletedTask;
+    }
+
+    // ── 14: probe is authoritative for the result table ──────────────────────────
+
+    internal static Task ResultTruthIsAuthoritative()
+    {
+        // ── Case 1: all steps ok + probe finds the file → Installed ──────────────
+        var dir1 = TempDir(); var home1 = TempDir();
+        try
+        {
+            var ctx1 = new ToolkitProbeContext { HomeDirectory = home1, PathDirectories = [], LocalAppData = home1 };
+            var store1 = new ToolkitStore(dir1);
+            var plugin1 = MakeEntry("truth-plugin", new ToolkitFileReader.PluginSpec("org/repo", "truth@repo"));
+            store1.Add(plugin1); store1.Approve("truth-plugin");
+            // Pre-create the probe file so the post-run probe reports Installed.
+            var pluginDir1 = Path.Combine(home1, ".claude", "plugins");
+            Directory.CreateDirectory(pluginDir1);
+            File.WriteAllText(Path.Combine(pluginDir1, "installed_plugins.json"),
+                """{"plugins":{"truth@repo":[{"scope":"user"}]}}""");
+            var runner1 = new ToolkitRunner(store1, ctx1);
+            var cmds1 = ToolkitRunner.InstallCommands(plugin1, null, ctx1);
+            var plan1 = new[] { new ToolkitPlanItem { Entry = plugin1, Action = ToolkitPlanItem.PlanAction.Run, Commands = cmds1 } };
+            var log1 = new List<IReadOnlyList<string>>();
+            var results1 = runner1.Run(plan1, new FakeExecutor(log1));
+            var r1 = results1.FirstOrDefault(r => r.EntryId == "truth-plugin");
+            Check(r1 is not null, "case1: result present");
+            // (a) verdict from post-run probe, not from step outcomes
+            Check(r1!.RunVerdict == ToolkitRunItem.Verdict.Installed, "case1: verdict Installed from probe");
+            // (b) step outcomes stored as explanation (both ok)
+            Check(r1.Steps.Count == 2, "case1: two steps");
+            Check(r1.Steps[0].Outcome == ToolkitStepResult.StepOutcome.Ok, "case1: step0 Ok");
+            Check(r1.Steps[1].Outcome == ToolkitStepResult.StepOutcome.Ok, "case1: step1 Ok");
+        }
+        finally { Directory.Delete(dir1, true); Directory.Delete(home1, true); }
+
+        // ── Case 2: all steps ok + probe finds nothing → Failed, steps still ok ─
+        var dir2 = TempDir(); var home2 = TempDir();
+        try
+        {
+            var ctx2 = new ToolkitProbeContext { HomeDirectory = home2, PathDirectories = [], LocalAppData = home2 };
+            var store2 = new ToolkitStore(dir2);
+            var plugin2 = MakeEntry("truth-plugin", new ToolkitFileReader.PluginSpec("org/repo", "truth@repo"));
+            store2.Add(plugin2); store2.Approve("truth-plugin");
+            // No installed_plugins.json → probe reports Missing.
+            var runner2 = new ToolkitRunner(store2, ctx2);
+            var cmds2 = ToolkitRunner.InstallCommands(plugin2, null, ctx2);
+            var plan2 = new[] { new ToolkitPlanItem { Entry = plugin2, Action = ToolkitPlanItem.PlanAction.Run, Commands = cmds2 } };
+            var log2 = new List<IReadOnlyList<string>>();
+            var results2 = runner2.Run(plan2, new FakeExecutor(log2));
+            var r2 = results2.FirstOrDefault(r => r.EntryId == "truth-plugin");
+            Check(r2 is not null, "case2: result present");
+            // (a) verdict from probe (Missing → Failed), not from step outcomes (all ok)
+            Check(r2!.RunVerdict == ToolkitRunItem.Verdict.Failed, "case2: verdict Failed from probe");
+            // (b) steps are ok — explanation, not the verdict
+            Check(r2.Steps.Count == 2, "case2: two steps");
+            Check(r2.Steps[0].Outcome == ToolkitStepResult.StepOutcome.Ok, "case2: step0 Ok");
+            Check(r2.Steps[1].Outcome == ToolkitStepResult.StepOutcome.Ok, "case2: step1 Ok");
+        }
+        finally { Directory.Delete(dir2, true); Directory.Delete(home2, true); }
+
+        // ── Case 3: step 0 fails → step 1 is skipped; next entry still runs ─────
+        var dir3 = TempDir(); var home3 = TempDir();
+        try
+        {
+            var ctx3 = new ToolkitProbeContext { HomeDirectory = home3, PathDirectories = [], LocalAppData = home3 };
+            var store3 = new ToolkitStore(dir3);
+            const string failSrc3 = "org/truth-fail-step0";
+            var plugin3 = MakeEntry("truth-plugin", new ToolkitFileReader.PluginSpec(failSrc3, "truth@repo"));
+            var npm3 = MakeEntry("truth-npm", new ToolkitFileReader.PackageSpec("npm", "typescript"));
+            store3.Add(plugin3); store3.Add(npm3);
+            store3.Approve("truth-plugin"); store3.Approve("truth-npm");
+            var runner3 = new ToolkitRunner(store3, ctx3);
+            var plan3 = runner3.Plan().Where(i => i.Entry.Id is "truth-plugin" or "truth-npm").ToList();
+            var log3 = new List<IReadOnlyList<string>>();
+            var results3 = runner3.Run(plan3, new SpecificFailExecutor(log3, failSrc3));
+            var pr3 = results3.FirstOrDefault(r => r.EntryId == "truth-plugin");
+            Check(pr3 is not null, "case3: plugin result present");
+            // (a) verdict from probe (no file → Failed)
+            Check(pr3!.RunVerdict == ToolkitRunItem.Verdict.Failed, "case3: verdict Failed from probe");
+            Check(pr3.Steps.Count == 2, "case3: plugin has 2 steps");
+            // (c) step 0 Failed; step 1 is Skipped — never Failed
+            Check(pr3.Steps[0].Outcome == ToolkitStepResult.StepOutcome.Failed, "case3: step0 Failed");
+            Check(pr3.Steps[1].Outcome == ToolkitStepResult.StepOutcome.Skipped, "case3: step1 Skipped");
+            // (d) failing entry did not stop the npm entry
+            var nr3 = results3.FirstOrDefault(r => r.EntryId == "truth-npm");
+            Check(nr3 is not null, "case3: npm result present — next entry ran (d)");
+            Check(log3.Any(cmd => cmd.Any(a => a == "npm")), "case3: npm commands called (d)");
+        }
+        finally { Directory.Delete(dir3, true); Directory.Delete(home3, true); }
+
+        // ── Case 4: step 0 ok / step 1 fails; next entry still runs ─────────────
+        var dir4 = TempDir(); var home4 = TempDir();
+        try
+        {
+            var ctx4 = new ToolkitProbeContext { HomeDirectory = home4, PathDirectories = [], LocalAppData = home4 };
+            var store4 = new ToolkitStore(dir4);
+            const string failID4 = "truth@fail-step1";
+            var plugin4 = MakeEntry("truth-plugin", new ToolkitFileReader.PluginSpec("org/repo", failID4));
+            var npm4 = MakeEntry("truth-npm", new ToolkitFileReader.PackageSpec("npm", "typescript"));
+            store4.Add(plugin4); store4.Add(npm4);
+            store4.Approve("truth-plugin"); store4.Approve("truth-npm");
+            var runner4 = new ToolkitRunner(store4, ctx4);
+            var plan4 = runner4.Plan().Where(i => i.Entry.Id is "truth-plugin" or "truth-npm").ToList();
+            var log4 = new List<IReadOnlyList<string>>();
+            var results4 = runner4.Run(plan4, new SpecificFailExecutor(log4, failID4));
+            var pr4 = results4.FirstOrDefault(r => r.EntryId == "truth-plugin");
+            Check(pr4 is not null, "case4: plugin result present");
+            // (a) verdict from probe (no file → Failed)
+            Check(pr4!.RunVerdict == ToolkitRunItem.Verdict.Failed, "case4: verdict Failed from probe");
+            Check(pr4.Steps.Count == 2, "case4: plugin has 2 steps");
+            Check(pr4.Steps[0].Outcome == ToolkitStepResult.StepOutcome.Ok, "case4: step0 Ok");
+            Check(pr4.Steps[1].Outcome == ToolkitStepResult.StepOutcome.Failed, "case4: step1 Failed");
+            // (d) failing entry did not stop the npm entry
+            var nr4 = results4.FirstOrDefault(r => r.EntryId == "truth-npm");
+            Check(nr4 is not null, "case4: npm result present — next entry ran (d)");
+            Check(log4.Any(cmd => cmd.Any(a => a == "npm")), "case4: npm commands called (d)");
+        }
+        finally { Directory.Delete(dir4, true); Directory.Delete(home4, true); }
+
+        // ── (e) macOS-only entry absent from plan and from the missing count ──────
+        var dirE = TempDir();
+        try
+        {
+            // brew is macOS-only; on Windows it must not appear in the plan or results.
+            var storeE = new ToolkitStore(dirE);
+            var brew = MakeEntry("macos-only-brew", new ToolkitFileReader.PackageSpec("brew", "ripgrep"));
+            storeE.Add(brew); storeE.Approve("macos-only-brew");
+            var runnerE = new ToolkitRunner(storeE, FakeContext());
+            var planE = runnerE.Plan();
+            // (e1) brew entry is absent from plan on Windows
+            Check(!planE.Any(i => i.Entry.Id == "macos-only-brew"), "(e): brew absent from plan on Windows");
+            // (e2) running the plan produces no result row for the brew entry
+            var logE = new List<IReadOnlyList<string>>();
+            var resultsE = runnerE.Run(planE, new FakeExecutor(logE));
+            Check(!resultsE.Any(r => r.EntryId == "macos-only-brew"), "(e): brew absent from results on Windows");
+            // (e3) brew command is never sent to the executor
+            Check(!logE.Any(cmd => cmd.Any(a => a == "brew")), "(e): brew command never called");
+        }
+        finally { Directory.Delete(dirE, true); }
+
+        return Task.CompletedTask;
+    }
+
     // Always fails with a network-error message; counts calls per "binary subcmd" key.
     private sealed class NetworkFailExecutor(Dictionary<string, int> counts) : IToolkitRunnerExecutor
     {
