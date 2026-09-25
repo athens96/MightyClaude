@@ -26,18 +26,18 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     }
     public static string? RemoteSettingsProblem(RunSettings settings, ProviderCapabilities? capabilities)
     {
-        if (settings.PermissionMode == "auto" && capabilities?.PermissionModes?.Contains("auto") != true) return "원격 호스트의 Auto mode 지원을 확인하지 못했습니다. 다른 권한을 선택하거나 호스트를 업데이트하세요.";
-        if (settings.PermissionMode == "fullAccess" && capabilities?.PermissionModes?.Contains("fullAccess") != true) return "원격 호스트가 전체 권한을 지원하는지 확인하지 못했습니다. 다른 권한을 선택하거나 호스트를 업데이트하세요.";
-        if (settings.FastMode && capabilities?.FastMode != true) return "원격 호스트가 Fast를 지원하지 않습니다. Fast를 끄거나 호스트를 업데이트하세요.";
-        if (settings.WebSearch != "default" && capabilities?.WebSearch != true) return "원격 호스트가 웹 검색 설정을 지원하지 않습니다. CLI 기본값을 선택하거나 호스트를 업데이트하세요.";
-        if (settings.NetworkAccess && capabilities?.NetworkAccess != true) return "원격 호스트가 명령 네트워크 설정을 지원하지 않습니다. 설정을 끄거나 호스트를 업데이트하세요.";
+        if (settings.PermissionMode == "auto" && capabilities?.PermissionModes?.Contains("auto") != true) return Locale.Get("provider.remote.autoModeUnsupported");
+        if (settings.PermissionMode == "fullAccess" && capabilities?.PermissionModes?.Contains("fullAccess") != true) return Locale.Get("provider.remote.fullAccessUnsupported");
+        if (settings.FastMode && capabilities?.FastMode != true) return Locale.Get("provider.remote.fastModeUnsupported");
+        if (settings.WebSearch != "default" && capabilities?.WebSearch != true) return Locale.Get("provider.remote.webSearchUnsupported");
+        if (settings.NetworkAccess && capabilities?.NetworkAccess != true) return Locale.Get("provider.remote.networkAccessUnsupported");
         return null;
     }
     public static ModelCatalog Fallback(string provider)
     {
-        var models = new List<ModelOption> { new("default", $"{Name(provider)} 설정 따름", "CLI 설정 또는 재개한 대화의 모델을 사용합니다.") };
-        foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, "codex" => new[] { "gpt-5.6-sol", "gpt-6-astra" }, _ => new[] { "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash" } }) models.Add(new(value, value, "공식 모델 이름 예시입니다. 실제 사용 가능 여부는 CLI 계정에 따라 다릅니다.", SupportsEffort: value.Contains("haiku") ? false : null));
-        return new("fallback", models, "CLI 목록을 조회하지 못해 기본 이름을 표시합니다. 계정의 사용 권한은 보장하지 않습니다.");
+        var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = Name(provider) }), Locale.Get("provider.fallback.defaultDescription")) };
+        foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, "codex" => new[] { "gpt-5.6-sol", "gpt-6-astra" }, _ => new[] { "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
+        return new("fallback", models, Locale.Get("provider.fallback.source"));
     }
     public static string[] Efforts(string provider, string model, ModelCatalog catalog) =>
         Efforts(provider, model, catalog, null);
@@ -83,7 +83,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             {
                 var command = await FindAsync(id, closing.Token);
                 var catalog = command is not null && id != "gemini" ? await ReadModelsAsync(id, command, closing.Token) : Fallback(id);
-                providers.Add(new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? "CLI 설치·로그인을 확인하세요." : id == "claude" && !SupportsMods(command.Version) ? "Mods 연결 기준은 Claude Code 2.1.271입니다. 이 버전에서는 실행할 수 없습니다." : "실행 컴퓨터의 CLI 로그인과 권한 설정을 사용합니다.", catalog, Capabilities(id, command?.Version)));
+                providers.Add(new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version)));
             }
             var claude = providers[0];
             cached = new(OperatingSystem.IsWindows() ? "win32" : OperatingSystem.IsMacOS() ? "darwin" : "linux", "0.1.0", claude.Version is not null, claude.Version, claude.ModelCatalog, providers, new(claude.Available ? "available" : claude.Version is null ? "unavailable" : "unsupported", "2.1.271", claude.Detail));
@@ -124,7 +124,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     public static async Task<string> ReadBoundedAsync(StreamReader reader, int limit, CancellationToken token)
     {
         var result = new System.Text.StringBuilder(); var buffer = new char[4096]; int count;
-        while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) > 0) { result.Append(buffer, 0, count); if (result.Length > limit) throw new InvalidDataException("CLI 출력 크기 제한을 초과했습니다."); }
+        while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) > 0) { result.Append(buffer, 0, count); if (result.Length > limit) throw new InvalidDataException(Locale.Get("provider.cliOutputLimit")); }
         return result.ToString();
     }
     public static async Task DrainAsync(StreamReader reader, CancellationToken token) { var buffer = new char[4096]; while (await reader.ReadAsync(buffer.AsMemory(), token) > 0) { } }
@@ -150,7 +150,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 {
                     if (root.Text("type") != "control_response" || !root.TryGetProperty("response", out var response) || response.Text("request_id") != requestId || !response.TryGetProperty("response", out var payload) || !payload.TryGetProperty("models", out var rows)) continue;
                     foreach (var row in rows.EnumerateArray().Take(128)) if (ReadModel(row, provider) is { } model && model.Value != "default") models.Add(model);
-                    return new("cli", models.DistinctBy(m => m.Value).ToList(), "설치된 Claude CLI 초기화 메타데이터입니다. 사용자 메시지는 전송하지 않았습니다.");
+                    return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.claudeCliSource"));
                 }
                 if (!root.TryGetProperty("id", out var id) || !id.TryGetInt32(out var number) || number != expected) continue;
                 if (root.TryGetProperty("error", out _)) break;
@@ -163,7 +163,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 {
                     foreach (var row in data.EnumerateArray().Take(128 - models.Count)) if (ReadModel(row, provider) is { } model) models.Add(model);
                     if (++pages < 4 && models.Count < 128 && result.Text("nextCursor") is { Length: > 0 and < 4096 } cursor) await child.Input.WriteLineAsync(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false, cursor } }, Wire.Json));
-                    else return new("cli", models.DistinctBy(m => m.Value).ToList(), "설치된 Codex의 model/list 메타데이터입니다. 사용자 턴을 만들지 않았습니다.");
+                    else return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.codexCliSource"));
                 }
             }
         }
@@ -180,13 +180,26 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         if (value!.Contains("haiku")) { support = false; efforts = []; }
         return new(value, Wire.Clean(row.Text("displayName") ?? value, 160), Wire.Clean(row.Text("description"), 2400), Wire.Model(row.Text("resolvedModel")) ? row.Text("resolvedModel") : null, support, efforts);
     }
-    public static List<string> Arguments(StartRunRequest value, string pluginDirectory)
+    public static List<string> Arguments(StartRunRequest value, string pluginDirectory, PhaseModelsSnapshot? phaseModels = null)
     {
         var request = value.Validate(); var settings = request.Settings!; var args = new List<string>();
         if (request.Provider == "claude")
         {
             args.AddRange(["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", "none", "--permission-mode", settings.PermissionMode == "fullAccess" ? "bypassPermissions" : settings.PermissionMode, "--plugin-dir", pluginDirectory]);
-            if (settings.Effort != "default") args.AddRange(["--effort", settings.Effort, "--settings", JsonSerializer.Serialize(new { env = new { CLAUDE_CODE_EFFORT_LEVEL = settings.Effort } }, Wire.Json)]);
+            // Build a single --settings env JSON merging effort + phase model aliases.
+            var env = new Dictionary<string, string?>();
+            if (settings.Effort != "default") { args.AddRange(["--effort", settings.Effort]); env["CLAUDE_CODE_EFFORT_LEVEL"] = settings.Effort; }
+            if (phaseModels is not null)
+            {
+                if (phaseModels.ClaudeOpusAlias != "default") env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = phaseModels.ClaudeOpusAlias;
+                if (phaseModels.ClaudeSonnetAlias != "default") env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = phaseModels.ClaudeSonnetAlias;
+                if (phaseModels.ClaudeHaikuAlias != "default") env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = phaseModels.ClaudeHaikuAlias;
+                if (phaseModels.ClaudeSubagentDefault != "default") env["CLAUDE_CODE_SUBAGENT_MODEL"] = phaseModels.ClaudeSubagentDefault;
+            }
+            if (env.Count > 0) args.AddRange(["--settings", JsonSerializer.Serialize(new { env }, Wire.Json)]);
+            // When the session model is default and claudeMain is set, override with --model.
+            if (request.Model == "default" && phaseModels?.ClaudeMain is { } claudeMain && claudeMain != "default")
+                args.AddRange(["--model", claudeMain]);
             if (settings.MaxTurns is int turns) args.AddRange(["--max-turns", turns.ToString(CultureInfo.InvariantCulture)]);
             if (settings.MaxBudgetUsd is double budget) args.AddRange(["--max-budget-usd", budget.ToString(CultureInfo.InvariantCulture)]);
         }
@@ -199,6 +212,12 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             if (request.ResumeId is not null) args.AddRange(["resume", request.ResumeId]);
             args.AddRange(["--json", "--skip-git-repo-check"]);
             if (settings.Effort != "default") args.AddRange(["-c", $"model_reasoning_effort=\"{settings.Effort}\""]);
+            if (phaseModels is not null)
+            {
+                if (phaseModels.CodexReviewModel != "default") args.AddRange(["-c", $"review_model=\"{phaseModels.CodexReviewModel}\""]);
+                if (phaseModels.CodexSubagentDefault != "default") args.AddRange(["-c", $"agents.default_subagent_model=\"{phaseModels.CodexSubagentDefault}\""]);
+                if (phaseModels.CodexPlanModeReasoningEffort != "default") args.AddRange(["-c", $"plan_mode_reasoning_effort=\"{phaseModels.CodexPlanModeReasoningEffort}\""]);
+            }
         }
         else args.AddRange(["--output-format", "stream-json", "--approval-mode", settings.PermissionMode == "fullAccess" ? "yolo" : settings.PermissionMode == "acceptEdits" ? "auto_edit" : settings.PermissionMode == "plan" ? "plan" : "default"]);
         if (request.Model != "default") args.AddRange(["--model", request.Model]);

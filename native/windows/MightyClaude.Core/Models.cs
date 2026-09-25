@@ -38,19 +38,19 @@ public sealed class RunSettingsJsonConverter : JsonConverter<RunSettings>
     public override RunSettings Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         using var document = JsonDocument.ParseValue(ref reader); var value = document.RootElement;
-        if (value.ValueKind != JsonValueKind.Object) throw new JsonException("실행 설정은 객체여야 합니다.");
+        if (value.ValueKind != JsonValueKind.Object) throw new JsonException(Locale.Get("wire.runSettings.notObject"));
         try
         {
             return new(
-                value.TryGetProperty("effort", out var effort) ? effort.GetString() ?? throw new JsonException("추론 강도가 올바르지 않습니다.") : "default",
-                value.TryGetProperty("permissionMode", out var mode) ? mode.GetString() ?? throw new JsonException("권한이 올바르지 않습니다.") : "manual",
+                value.TryGetProperty("effort", out var effort) ? effort.GetString() ?? throw new JsonException(Locale.Get("wire.runSettings.invalidEffort")) : "default",
+                value.TryGetProperty("permissionMode", out var mode) ? mode.GetString() ?? throw new JsonException(Locale.Get("wire.runSettings.invalidPermission")) : "manual",
                 value.TryGetProperty("maxTurns", out var turns) && turns.ValueKind != JsonValueKind.Null ? turns.GetInt32() : null,
                 value.TryGetProperty("maxBudgetUsd", out var budget) && budget.ValueKind != JsonValueKind.Null ? budget.GetDouble() : null,
                 value.TryGetProperty("fastMode", out var fast) && fast.GetBoolean(),
-                value.TryGetProperty("webSearch", out var web) ? web.GetString() ?? throw new JsonException("웹 검색 설정이 올바르지 않습니다.") : "default",
+                value.TryGetProperty("webSearch", out var web) ? web.GetString() ?? throw new JsonException(Locale.Get("wire.runSettings.invalidWebSearch")) : "default",
                 value.TryGetProperty("networkAccess", out var network) && network.GetBoolean());
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException) { throw new JsonException("실행 설정의 값 형식이 올바르지 않습니다.", ex); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException) { throw new JsonException(Locale.Get("wire.runSettings.invalidValueType"), ex); }
     }
     public override void Write(Utf8JsonWriter writer, RunSettings value, JsonSerializerOptions options)
     {
@@ -141,6 +141,18 @@ public sealed record ModelDefaultsConfig
 }
 
 
+public sealed record PhaseModelsSnapshot
+{
+    [JsonPropertyName("claudeMain")] public string ClaudeMain { get; init; } = "default";
+    [JsonPropertyName("claudeOpusAlias")] public string ClaudeOpusAlias { get; init; } = "default";
+    [JsonPropertyName("claudeSonnetAlias")] public string ClaudeSonnetAlias { get; init; } = "default";
+    [JsonPropertyName("claudeHaikuAlias")] public string ClaudeHaikuAlias { get; init; } = "default";
+    [JsonPropertyName("claudeSubagentDefault")] public string ClaudeSubagentDefault { get; init; } = "default";
+    [JsonPropertyName("codexReviewModel")] public string CodexReviewModel { get; init; } = "default";
+    [JsonPropertyName("codexSubagentDefault")] public string CodexSubagentDefault { get; init; } = "default";
+    [JsonPropertyName("codexPlanModeReasoningEffort")] public string CodexPlanModeReasoningEffort { get; init; } = "default";
+}
+
 public sealed record AppSnapshot
 {
     public int Version { get; init; } = 1;
@@ -173,6 +185,10 @@ public sealed record AppSnapshot
     // App-level per-provider per-mode model defaults; null means all modes use "default".
     // Additive with a default (null) so Version stays 1.
     public ModelDefaultsConfig? ModelDefaults { get; init; }
+    // Per-phase model knobs (Claude + Codex). omc/Ouroboros knobs live in their own files.
+    // Additive with a default (null = all "default") so Version stays 1.
+    [JsonPropertyName("phaseModels")]
+    public PhaseModelsSnapshot? PhaseModels { get; init; }
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, IReadOnlyList<RegisteredModelEntry> RegisteredModels, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)
@@ -184,13 +200,13 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     {
         var settings = Settings ?? new();
         var files = AttachmentSupport.Validate(Attachments);
-        if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException("실행 요청의 형식이 올바르지 않습니다.");
-        if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException("실행 내용을 입력하거나 첨부 파일을 선택하세요. 입력은 100,000자 이하여야 합니다.");
-        if (Kind == "shell" && files is not null) throw new ArgumentException("첨부 파일은 AI 실행 창에서만 사용할 수 있습니다.");
-        if (settings.Effort != "default" && !Wire.Efforts.Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException("실행 설정이 올바르지 않습니다.");
-        if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException("Auto mode는 Claude 실행 창에서만 사용할 수 있습니다.");
-        if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode != "acceptEdits") throw new ArgumentException("Fast·웹 검색은 Codex 전용이며 명령 네트워크는 Codex의 프로젝트 수정 권한에서만 설정할 수 있습니다.");
-        if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default" || Provider == "claude" && Model.Contains("haiku", StringComparison.OrdinalIgnoreCase) && settings.Effort != "default")) throw new ArgumentException("실행기가 지원하지 않는 설정입니다.");
+        if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
+        if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
+        if (Kind == "shell" && files is not null) throw new ArgumentException(Locale.Get("wire.startRun.attachmentAiOnly"));
+        if (settings.Effort != "default" && !Wire.Efforts.Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
+        if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
+        if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode != "acceptEdits") throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
+        if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default" || Provider == "claude" && Model.Contains("haiku", StringComparison.OrdinalIgnoreCase) && settings.Effort != "default")) throw new ArgumentException(Locale.Get("wire.startRun.unsupportedSettings"));
         return this with { Settings = settings, Attachments = files };
     }
 }
