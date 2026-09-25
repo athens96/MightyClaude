@@ -106,7 +106,7 @@ public sealed class ModelSettingsFileStore
         if (!File.Exists(path)) return null;
         var bytes = File.ReadAllBytes(path);
         if (Encoding.UTF8.GetString(bytes) is not { } content)
-            throw new InvalidDataException("config.yaml에 UTF-8로 디코딩할 수 없는 바이트가 있습니다.");
+            throw new InvalidDataException(Locale.Get("settings.phaseModels.error.yamlNotUtf8"));
         var all = ParseYAMLScalars(content);
         return all.Where(kv => kv.Key.EndsWith("_model", StringComparison.Ordinal))
                   .ToDictionary(kv => kv.Key, kv => kv.Value);
@@ -132,18 +132,18 @@ public sealed class ModelSettingsFileStore
     {
         string source;
         try { source = Encoding.UTF8.GetString(data); }
-        catch { throw new InvalidDataException("config.jsonc이 유효한 UTF-8이 아닙니다."); }
+        catch { throw new InvalidDataException(Locale.Get("settings.phaseModels.error.jsoncNotUtf8")); }
         var stripped = StripJSONCComments(source);
         try
         {
             using var doc = JsonDocument.Parse(stripped);
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("config.jsonc의 루트 값이 JSON 객체가 아닙니다.");
+                throw new InvalidDataException(Locale.Get("settings.phaseModels.error.jsoncNotObject"));
             return ElementToDict(doc.RootElement);
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException("config.jsonc를 파싱할 수 없습니다.", ex);
+            throw new InvalidDataException(Locale.Get("settings.phaseModels.error.jsoncUnparseable"), ex);
         }
     }
 

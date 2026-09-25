@@ -466,8 +466,11 @@ internal static class Verification
         await Test("phase models file store keeps unrelated keys", PhaseModelVerification.FileStoreKeepsUnrelatedKeys);
         await Test("phase models refuse unparseable file", PhaseModelVerification.RefuseUnparseableFile);
         await Test("phase models omc agent catalog", PhaseModelVerification.OmcAgentCatalog);
+        await Test("phase models omc save writes only changed agents", PhaseModelVerification.OmcSaveWritesOnlyChangedAgents);
         await Test("phase models launch args merge one settings json", PhaseModelVerification.LaunchArgsMergeOneSettingsJson);
         await Test("phase models snapshot shares macOS field names", PhaseModelVerification.SnapshotSharesMacOSFieldNames);
+        await Test("phase models section registered in the macOS order", PhaseModelVerification.SectionRegisteredInMacOrder);
+        await Test("phase models section rows follow installed tools", PhaseModelVerification.SectionRowsFollowInstalledTools);
         await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
         await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
