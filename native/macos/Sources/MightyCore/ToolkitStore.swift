@@ -225,7 +225,7 @@ public actor ToolkitStore {
 
     nonisolated static func canonicalHash(_ entry: ToolkitEntry) -> String {
         let obj = entryToObject(entry)
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]) else { return "" }
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]) else { return "" }
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -234,7 +234,7 @@ public actor ToolkitStore {
     /// Matches BuildCanonicalJson on Windows.
     nonisolated public static func canonicalJson(_ entry: ToolkitEntry) -> String {
         let obj = entryToObject(entry)
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]),
               let json = String(data: data, encoding: .utf8) else { return "" }
         return json
     }
