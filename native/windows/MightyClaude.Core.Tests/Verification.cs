@@ -614,6 +614,8 @@ internal static class Verification
         await Test("result table separates not attempted, failed and succeeded", ToolkitVerification.ResultTableSeparatesNotAttemptedFailedAndSucceeded);
         await Test("components rows follow installed CLIs", ToolkitVerification.ComponentsRowsFollowInstalledCLIs);
         await Test("components screen is live in the running app", ToolkitVerification.ComponentsScreenIsLiveInTheRunningApp);
+        await Test("shared-format fixture round-trip", ToolkitVerification.SharedFormatFixtureRoundTrip);
+        await Test("shared-format platform table", ToolkitVerification.SharedFormatPlatformTable);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
