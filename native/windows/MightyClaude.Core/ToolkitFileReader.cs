@@ -157,8 +157,9 @@ public static class ToolkitFileReader
             return new PackageSpec(manager, name, executable);
         }
 
-        // brew and npm: executable field is not used (ignored)
+        // brew and npm: an executable field is rejected, as on macOS
         if (manager is not ("brew" or "npm")) return null;
+        if (el.TryGetProperty("executable", out _)) return null;
         return ValidPackageName(name) ? new PackageSpec(manager, name) : null;
     }
 
