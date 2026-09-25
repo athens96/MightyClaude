@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MightyClaude.Core;
 using ToolkitFileEntry = MightyClaude.Core.ToolkitFileReader.ToolkitFileEntry;
 
@@ -362,6 +363,154 @@ internal static class ToolkitVerification
         Check(ComponentSection.InstallCommand("claude")?.Contains("@anthropic-ai/claude-code") == true, "claude install command is correct");
         Check(ComponentSection.InstallCommand("codex")?.Contains("@openai/codex") == true, "codex install command is correct");
         Check(ComponentSection.InstallCommand("gemini")?.Contains("@google/gemini-cli") == true, "gemini install command is correct");
+
+        return Task.CompletedTask;
+    }
+
+    // ── 8: the Components screen is live in the running app ───────────────────
+
+    /// AC 3 (DELIVERED_OK). The Components section is not just Core logic: the
+    /// running Windows app registers the slot, draws the CLI rows and the toolkit
+    /// list, offers add/remove/approve/export/import/install, shows one confirm
+    /// view holding every argv before anything runs, and renders the result
+    /// table. Read from the WinUI source the same way the plugin-marketplace
+    /// wiring test does, because WinUI itself cannot be built on this machine.
+    internal static Task ComponentsScreenIsLiveInTheRunningApp()
+    {
+        var winui = ClaudePluginVerification.WinUISource();
+        Check(Directory.Exists(winui), "the WinUI project folder is missing: " + winui);
+        var file = Path.Combine(winui, "MainWindow.Settings.cs");
+        Check(File.Exists(file), "MainWindow.Settings.cs draws the settings sections and must exist");
+        var source = File.ReadAllText(file);
+
+        // The slot is registered, titled from Core, and kept in the macOS order.
+        var slots = SettingsSections.MacOrder;
+        var components = slots.FirstOrDefault(slot => slot.Id == SettingsSections.Components);
+        Check(components is not null, "the Components slot must exist in the macOS order");
+        Check(components!.OnWindows, "the Components slot must be shown on Windows");
+        Check(components.WindowsTitle == ComponentSection.SectionTitle,
+            "the Components heading must come from ComponentSection.SectionTitle");
+        Check(ComponentSection.SectionTitle == Locale.Get("settings.components.sectionTitle"),
+            "ComponentSection.SectionTitle must read settings.components.sectionTitle");
+        Check(SettingsSections.WindowsTitles.Contains(ComponentSection.SectionTitle),
+            "the smoke run's expected headings must include the Components heading");
+        var order = slots.Select(slot => slot.Id).ToList();
+        Check(order.IndexOf(SettingsSections.Components) > order.IndexOf(SettingsSections.PhaseModels)
+            && order.IndexOf(SettingsSections.Components) < order.IndexOf(SettingsSections.CliUpdate),
+            "Components must sit between the phase models and the CLI update sections, as on macOS");
+
+        // WinUI supplies the builder for that slot, so opening Settings draws it.
+        Check(source.Contains("SettingsSections.Components => BuildComponentsSection"),
+            "WinUI must map the Components slot to BuildComponentsSection");
+        Check(source.Contains("private StackPanel BuildComponentsSection()"),
+            "BuildComponentsSection must exist in WinUI");
+
+        // Every control the section promises, by the automation id it carries.
+        foreach (var id in new[]
+                 {
+                     "components-refresh", "settings-toolkit-add", "settings-toolkit-export",
+                     "settings-toolkit-import", "settings-toolkit-install",
+                 })
+            Check(source.Contains("\"" + id + "\""), "the section must draw the control " + id);
+        foreach (var prefix in new[] { "\"component-\" + row.Id", "\"toolkit-entry-\" + entry.Id", "\"toolkit-approve-\" + entryId", "\"toolkit-remove-\" + removeEntryId" })
+            Check(source.Contains(prefix), "each row must carry its own id: " + prefix);
+
+        // The CLI rows come from Core, one per provider, with Core's own labels
+        // and Core's install command — never a decision made in the view.
+        Check(source.Contains("ComponentSection.SectionRows(rt)"),
+            "the CLI rows must come from ComponentSection.SectionRows");
+        Check(source.Contains("ComponentSection.InstallCommand(row.Id)"),
+            "the copy-install-command action must use ComponentSection.InstallCommand");
+        Check(source.Contains("actionId == \"copy-command\""),
+            "the missing state's action must be the copy-install-command action");
+
+        // The toolkit list, approval, removal and export all go through the store.
+        foreach (var call in new[]
+                 {
+                     "new ToolkitStore(StateDirectory)", "store.List()", "store.Approve(entryId)",
+                     "store.Remove(removeEntryId)", "store.Add(entry)", "store.Export()",
+                     "store.GetApproval(entry)",
+                 })
+            Check(source.Contains(call), "the section must ask Core: " + call);
+        Check(source.Contains("options.ProfileDirectory ??"),
+            "toolkit.json must sit in the StateStore folder, which follows --profile");
+
+        // One confirm view lists every argv, and nothing runs unless it is
+        // accepted. The plan itself is Core's, and only approved+missing entries
+        // are in it.
+        Check(source.Contains("var plan = runner.Plan();"), "the plan must come from ToolkitRunner.Plan");
+        Check(source.Contains("if (plan.Count == 0) return;"), "an empty plan must run nothing");
+        Check(source.Contains("string.Join(\" \", argv)"), "the confirm view must list every argv");
+        Check(source.Contains("item.Commands"), "the confirm view must read the argv list from the plan item");
+        Check(source.Contains("new ContentDialog") && source.Contains("settings.toolkit.confirmTitle"),
+            "the confirm view must be one dialog titled settings.toolkit.confirmTitle");
+        Check(source.Contains("if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;"),
+            "cancelling the confirm view must run nothing");
+        Check(source.Contains("if (options.SmokeTest) return;"),
+            "the smoke run must never reach a real install");
+        Check(source.Contains("runner.Run(plan, new CliToolkitExecutor())"),
+            "the run must go through ToolkitRunner.Run with the argv executor");
+
+        // The result table is rendered from Core's verdicts, and the list is
+        // probed again afterwards.
+        foreach (var verdict in new[] { "ToolkitRunItem.Verdict.Installed", "ToolkitRunItem.Verdict.Failed" })
+            Check(source.Contains(verdict), "the result table must read " + verdict);
+        Check(source.Contains("FillToolkitResults(toolkitResultsPanel, results)"),
+            "the result table must be filled from the run results");
+        Check(source.Contains("FillToolkitList(toolkitListPanel, store, reloaded)"),
+            "the list must be rebuilt from a fresh probe after the run");
+
+        // Commands are argv arrays through the existing launcher, never a shell
+        // string.
+        Check(source.Contains("runner.RunAsync(binary, args, TimeSpan.FromMinutes(5))"),
+            "each toolkit command must start from an argv array through ICliRunner");
+        Check(!source.Contains("/bin/sh") && !source.Contains("cmd.exe /c"),
+            "no toolkit command may be joined into a shell string");
+
+        // Every visible word is a locale key that both catalogues answer, so the
+        // smoke leak scan cannot find a raw key in this section.
+        var keys = Regex.Matches(source, "Locale\\.Get\\(\"((?:settings\\.components|settings\\.toolkit)\\.[^\"]+)\"")
+            .Select(m => m.Groups[1].Value).Distinct().ToList();
+        Check(keys.Count >= 20, "the section must read its copy from the locale catalogue, found " + keys.Count + " keys");
+        var ko = Locale.Catalogue("ko");
+        var en = Locale.Catalogue("en");
+        foreach (var key in keys)
+        {
+            Check(ko.ContainsKey(key), "locales/ko.json is missing " + key);
+            Check(en.ContainsKey(key), "locales/en.json is missing " + key);
+            Check(!string.IsNullOrWhiteSpace(ko[key]) && !string.IsNullOrWhiteSpace(en[key]),
+                "the copy for " + key + " must not be empty");
+        }
+        foreach (var required in new[]
+                 {
+                     "settings.components.sectionDescription", "settings.components.recheckButton",
+                     "settings.toolkit.sectionTitle", "settings.toolkit.addButton",
+                     "settings.toolkit.removeButton", "settings.toolkit.approveButton",
+                     "settings.toolkit.exportButton", "settings.toolkit.importButton",
+                     "settings.toolkit.installButton", "settings.toolkit.confirmTitle",
+                     "settings.toolkit.cancelButton", "settings.toolkit.errorBanner",
+                     "settings.toolkit.verdictInstalled", "settings.toolkit.verdictFailed",
+                     "settings.toolkit.verdictSkipped",
+                 })
+            Check(keys.Contains(required), "the section must show " + required);
+
+        // No Korean of its own: the section types no Hangul literal.
+        var start = source.IndexOf("private StackPanel BuildComponentsSection()", StringComparison.Ordinal);
+        var end = source.IndexOf("private StackPanel BuildProvidersSection()", StringComparison.Ordinal);
+        Check(start > 0 && end > start, "the Components section must sit before the providers section");
+        foreach (var literal in Regex.Matches(source[start..end], "\"([^\"\\n]*)\"").Select(m => m.Groups[1].Value))
+            Check(!Regex.IsMatch(literal, "[\\uAC00-\\uD7A3]"),
+                "a Korean sentence is typed into the Components section instead of read from the catalogue: " + literal);
+
+        // The smoke leak scan builds every registered section, so it now covers
+        // this one without a second registration.
+        var smoke = File.ReadAllText(Path.Combine(winui, "MainWindow.Smoke.cs"));
+        Check(smoke.Contains("var settingsSectionsForLeak = GetSettingsSections();"),
+            "the leak scan must build the sections the app registers");
+        Check(smoke.Contains("settingsPanelForLeak.Children.Add(BuildSectionContainer(sec.Title, sec.Build()));"),
+            "the leak scan must build each registered section's controls");
+        Check(smoke.Contains("result[\"localeKeyLeaks\"] = keyLeaks;"),
+            "the leak scan must report under localeKeyLeaks");
 
         return Task.CompletedTask;
     }
