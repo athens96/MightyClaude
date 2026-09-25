@@ -65,6 +65,10 @@ try {
         $msg = "로케일 키 누수 검사가 실행되지 않았거나 검사 수가 너무 적습니다: localeKeyLeakScanned=$scanned"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    if ($result.componentsSection -ne $true) {
+        $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     $leaks = $result.localeKeyLeaks
     if ($leaks -and @($leaks).Count -gt 0) {
         $msg = "로케일 키가 화면에 그대로 노출됩니다: $($leaks -join ', ')"
