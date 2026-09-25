@@ -670,6 +670,123 @@ internal static class ToolkitVerification
         return Task.CompletedTask;
     }
 
+    // ── 11: shared toolkit.json format is decoded and round-tripped on both platforms ──
+
+    // This constant is reproduced verbatim in macOS
+    // MightyCoreTests/ToolkitSharedFormatTests.swift (sharedFixtureJSON).
+    // Any edit here must be reflected there, and vice-versa.
+    internal const string SharedFormatFixture = """
+        {
+          "version": 1,
+          "entries": [
+            {
+              "id": "shared-brew",
+              "displayName": "ripgrep",
+              "install": {"kind": "package", "manager": "brew", "name": "ripgrep"},
+              "approval": {"contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+            },
+            {
+              "id": "shared-npm",
+              "displayName": "TypeScript",
+              "install": {"kind": "package", "manager": "npm", "name": "typescript"},
+              "approval": {"contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+            },
+            {
+              "id": "shared-winget",
+              "displayName": "Node.js",
+              "install": {"kind": "package", "manager": "winget", "name": "OpenJS.NodeJS", "executable": "node.exe"},
+              "approval": {"contentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+            }
+          ]
+        }
+        """;
+
+    internal static Task SharedFormatFixtureRoundTrip()
+    {
+        var dir = TempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "toolkit.json"), SharedFormatFixture);
+
+            // Force a persist cycle: Add creates the lazy-load; Remove triggers a second persist.
+            var store = new ToolkitStore(dir);
+            var dummy = MakeEntry("tmp-dummy", new ToolkitFileReader.SkillSpec("https://github.com/x/tmp.git"));
+            store.Add(dummy);
+            store.Remove("tmp-dummy");
+
+            // Re-read the saved JSON and verify every entry, field and approval value.
+            using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "toolkit.json")));
+            var entries = doc.RootElement.GetProperty("entries");
+
+            JsonElement? FindEntry(string id)
+            {
+                foreach (var e in entries.EnumerateArray())
+                    if (e.GetProperty("id").GetString() == id) return e;
+                return null;
+            }
+
+            string? InstallField(JsonElement e, string key) =>
+                e.GetProperty("install").TryGetProperty(key, out var v) ? v.GetString() : null;
+
+            string? ApprovalHash(JsonElement e) =>
+                e.TryGetProperty("approval", out var a) && a.TryGetProperty("contentHash", out var h)
+                    ? h.GetString() : null;
+
+            // brew (macOS-only → stored as raw element, written back unchanged)
+            var brew = FindEntry("shared-brew") ?? throw new InvalidOperationException("shared-brew missing from saved file");
+            Check(brew.GetProperty("displayName").GetString() == "ripgrep", "brew displayName preserved");
+            Check(InstallField(brew, "kind") == "package",  "brew install.kind preserved");
+            Check(InstallField(brew, "manager") == "brew",  "brew install.manager preserved");
+            Check(InstallField(brew, "name") == "ripgrep",  "brew install.name preserved");
+            Check(ApprovalHash(brew) == new string('a', 64), "brew approval.contentHash preserved");
+
+            // npm (both platforms → re-serialised by Persist)
+            var npm = FindEntry("shared-npm") ?? throw new InvalidOperationException("shared-npm missing from saved file");
+            Check(npm.GetProperty("displayName").GetString() == "TypeScript", "npm displayName preserved");
+            Check(InstallField(npm, "kind") == "package",       "npm install.kind preserved");
+            Check(InstallField(npm, "manager") == "npm",        "npm install.manager preserved");
+            Check(InstallField(npm, "name") == "typescript",    "npm install.name preserved");
+            Check(ApprovalHash(npm) == new string('b', 64),     "npm approval.contentHash preserved");
+
+            // winget (Windows-only → re-serialised by Persist)
+            var winget = FindEntry("shared-winget") ?? throw new InvalidOperationException("shared-winget missing from saved file");
+            Check(winget.GetProperty("displayName").GetString() == "Node.js", "winget displayName preserved");
+            Check(InstallField(winget, "kind") == "package",         "winget install.kind preserved");
+            Check(InstallField(winget, "manager") == "winget",       "winget install.manager preserved");
+            Check(InstallField(winget, "name") == "OpenJS.NodeJS",   "winget install.name preserved");
+            Check(InstallField(winget, "executable") == "node.exe",  "winget install.executable preserved");
+            Check(ApprovalHash(winget) == new string('c', 64),       "winget approval.contentHash preserved");
+
+            // The removed dummy must not appear.
+            Check(FindEntry("tmp-dummy") is null, "removed dummy entry must not be in saved file");
+
+            return Task.CompletedTask;
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    internal static Task SharedFormatPlatformTable()
+    {
+        // Build the same three entries as in the fixture — same (kind, manager) pairs as the macOS test.
+        var brew   = MakeEntry("shared-brew",   new ToolkitFileReader.PackageSpec("brew",   "ripgrep"));
+        var npm    = MakeEntry("shared-npm",    new ToolkitFileReader.PackageSpec("npm",    "typescript"));
+        var winget = MakeEntry("shared-winget", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+
+        // (package, brew) is macOS-only.
+        Check(ToolkitFileReader.IsMacOSOnly(brew),        "brew is macOS-only");
+        Check(!ToolkitFileReader.IsWindowsPlatform(brew), "brew is not Windows");
+
+        // (package, npm) is both platforms.
+        Check(!ToolkitFileReader.IsMacOSOnly(npm),       "npm is not macOS-only");
+        Check(ToolkitFileReader.IsWindowsPlatform(npm),  "npm is Windows (both)");
+
+        // (package, winget) is Windows-only.
+        Check(!ToolkitFileReader.IsMacOSOnly(winget),      "winget is not macOS-only");
+        Check(ToolkitFileReader.IsWindowsPlatform(winget), "winget is Windows");
+
+        return Task.CompletedTask;
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static ToolkitFileEntry MakeEntry(string id, ToolkitFileReader.ToolkitInstallSpec install) =>
