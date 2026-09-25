@@ -1,4 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><ProjectReference Include="../MightyClaude.Core/MightyClaude.Core.csproj" /></ItemGroup>
+  <!-- The shared execution-graph vectors themselves, embedded straight from the
+       repository root: the checks read the same bytes the macOS suite asserts
+       against, so the two platforms cannot drift apart. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyClaude.Core.Tests.GraphVectors.json" />
+  </ItemGroup>
 </Project>
