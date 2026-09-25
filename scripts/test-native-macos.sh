@@ -11,7 +11,7 @@ if [[ -f "$TESTING_PLUGIN" ]]; then
   TEST_ARGUMENTS+=(-Xswiftc -load-plugin-library -Xswiftc "$TESTING_PLUGIN")
 fi
 
-LOGFILE="$(mktemp /tmp/swift-test-XXXXXX.log)"
+LOGFILE="$(mktemp /tmp/swift-test.XXXXXX)"
 set +e
 "$SWIFT_EXECUTABLE" test "${TEST_ARGUMENTS[@]}" "$@" 2>&1 | tee "$LOGFILE"
 SWIFT_EXIT=${PIPESTATUS[0]}
