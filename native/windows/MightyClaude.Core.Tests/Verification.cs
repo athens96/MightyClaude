@@ -603,6 +603,13 @@ internal static class Verification
         await Test("toolkit file refuses version mismatch", ToolkitFileVerification.ToolkitFileRefusesVersionMismatch);
         await Test("toolkit file skips unknown install kinds", ToolkitFileVerification.ToolkitFileSkipsUnknownKinds);
         await Test("toolkit file npm package name is accepted", ToolkitFileVerification.NpmPackageNameIsAccepted);
+        await Test("toolkit platform rule matches macOS", ToolkitVerification.ToolkitPlatformRuleMatchesMacOS);
+        await Test("toolkit winget template decodes and builds its command", ToolkitVerification.ToolkitWingetTemplateDecodesAndBuildsItsCommand);
+        await Test("toolkit store keeps other-OS entries", ToolkitVerification.ToolkitStoreKeepsOtherOsEntries);
+        await Test("toolkit approval binds to content hash", ToolkitVerification.ToolkitApprovalBindsToContentHash);
+        await Test("toolkit plan runs only missing approved entries", ToolkitVerification.ToolkitPlanRunsOnlyMissingApprovedEntries);
+        await Test("toolkit probes are file-only", ToolkitVerification.ToolkitProbesAreFileOnly);
+        await Test("components rows follow installed CLIs", ToolkitVerification.ComponentsRowsFollowInstalledCLIs);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {

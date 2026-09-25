@@ -1,0 +1,422 @@
+using System.Text.Json;
+using MightyClaude.Core;
+using ToolkitFileEntry = MightyClaude.Core.ToolkitFileReader.ToolkitFileEntry;
+
+/// Tests for AC 2 (WIN_CORE_OK): toolkit store, runner, probe, approval and components.
+/// Every test uses temp directories; no real user paths, no real installs.
+internal static class ToolkitVerification
+{
+    private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+
+    // ── 1: toolkit platform rule matches macOS ────────────────────────────────
+
+    internal static Task ToolkitPlatformRuleMatchesMacOS()
+    {
+        // brew and repoScript are macOS-only (not Windows).
+        var brewEntry = MakeEntry("brew-pkg", new ToolkitFileReader.PackageSpec("brew", "ripgrep"));
+        var repoEntry = MakeEntry("my-script", new ToolkitFileReader.RepoScriptSpec("https://github.com/x/y.git", "abc123", "install.sh"));
+        Check(ToolkitFileReader.IsMacOSOnly(brewEntry), "brew is macOS-only");
+        Check(ToolkitFileReader.IsMacOSOnly(repoEntry), "repoScript is macOS-only");
+        Check(!ToolkitFileReader.IsWindowsPlatform(brewEntry), "brew is not Windows");
+        Check(!ToolkitFileReader.IsWindowsPlatform(repoEntry), "repoScript is not Windows");
+
+        // plugin, mcp, skill, npm, winget are both platforms.
+        var pluginEntry = MakeEntry("p", new ToolkitFileReader.PluginSpec("org/repo", "repo@repo"));
+        var mcpEntry = MakeEntry("m", new ToolkitFileReader.McpSpec("my-mcp", "/usr/bin/node", []));
+        var skillEntry = MakeEntry("s", new ToolkitFileReader.SkillSpec("https://github.com/x/y.git"));
+        var npmEntry = MakeEntry("n", new ToolkitFileReader.PackageSpec("npm", "typescript"));
+        var wingetEntry = MakeEntry("w", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+
+        foreach (var e in new[] { pluginEntry, mcpEntry, skillEntry, npmEntry, wingetEntry })
+        {
+            Check(!ToolkitFileReader.IsMacOSOnly(e), e.Id + " should not be macOS-only");
+            Check(ToolkitFileReader.IsWindowsPlatform(e), e.Id + " should be Windows platform");
+        }
+        return Task.CompletedTask;
+    }
+
+    // ── 2: toolkit winget template decodes and builds its command ─────────────
+
+    internal static Task ToolkitWingetTemplateDecodesAndBuildsItsCommand()
+    {
+        const string json = """
+            {
+              "version": 1,
+              "entries": [
+                {
+                  "id": "nodejs",
+                  "displayName": "Node.js",
+                  "install": {
+                    "kind": "package",
+                    "manager": "winget",
+                    "name": "OpenJS.NodeJS",
+                    "executable": "node.exe"
+                  }
+                }
+              ]
+            }
+            """;
+        var file = ToolkitFileReader.Parse(json);
+        Check(file.Entries.Count == 1, "winget entry parsed");
+        var entry = file.Entries[0];
+        Check(entry.Install is ToolkitFileReader.PackageSpec { Manager: "winget", Name: "OpenJS.NodeJS", Executable: "node.exe" }, "winget spec fields");
+
+        var ctx = FakeContext();
+        var commands = ToolkitRunner.InstallCommands(entry, null, ctx);
+        Check(commands.Count == 1, "winget produces one command");
+        var cmd = commands[0];
+        Check(cmd[0] == "winget", "first arg is winget");
+        Check(cmd.Contains("--exact"), "has --exact");
+        Check(cmd.Contains("--id"), "has --id");
+        Check(cmd.Contains("OpenJS.NodeJS"), "has package name");
+        Check(cmd.Contains("--source"), "has --source");
+        Check(cmd.Contains("winget"), "has source winget");
+        Check(cmd.Contains("--scope"), "has --scope");
+        Check(cmd.Contains("user"), "has scope user");
+        Check(cmd.Contains("--accept-source-agreements"), "has --accept-source-agreements");
+        Check(cmd.Contains("--accept-package-agreements"), "has --accept-package-agreements");
+        Check(cmd.Contains("--disable-interactivity"), "has --disable-interactivity");
+
+        // winget without executable should be rejected at parse time.
+        const string noExe = """
+            {
+              "version": 1,
+              "entries": [
+                {
+                  "id": "bad-winget",
+                  "displayName": "Bad",
+                  "install": { "kind": "package", "manager": "winget", "name": "Some.Package" }
+                }
+              ]
+            }
+            """;
+        var noExeFile = ToolkitFileReader.Parse(noExe);
+        Check(noExeFile.Entries.Count == 0, "winget without executable is skipped");
+        return Task.CompletedTask;
+    }
+
+    // ── 3: toolkit store keeps other-OS entries ───────────────────────────────
+
+    internal static Task ToolkitStoreKeepsOtherOsEntries()
+    {
+        var dir = TempDir();
+        try
+        {
+            // Write a toolkit.json that has one Windows-compatible npm entry
+            // and one macOS-only brew entry.
+            var json = """
+                {
+                  "version": 1,
+                  "entries": [
+                    {
+                      "displayName": "TypeScript",
+                      "id": "typescript",
+                      "install": { "kind": "package", "manager": "npm", "name": "typescript" }
+                    },
+                    {
+                      "displayName": "ripgrep",
+                      "id": "ripgrep",
+                      "install": { "kind": "package", "manager": "brew", "name": "ripgrep" }
+                    }
+                  ]
+                }
+                """;
+            File.WriteAllText(Path.Combine(dir, "toolkit.json"), json);
+
+            var store = new ToolkitStore(dir);
+            var (entries, error) = store.List();
+            Check(error is null, "no error");
+
+            // Bundled + typescript; ripgrep (brew) should not appear.
+            var ids = entries.Select(e => e.Id).ToArray();
+            Check(ids.Contains("typescript"), "npm entry visible");
+            Check(!ids.Contains("ripgrep"), "brew entry hidden from list");
+
+            // Add a new Windows entry and persist, then reload.
+            var winget = MakeEntry("nodejs", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+            store.Add(winget);
+
+            var store2 = new ToolkitStore(dir);
+            var (entries2, _) = store2.List();
+            var ids2 = entries2.Select(e => e.Id).ToArray();
+            Check(ids2.Contains("typescript"), "npm still there after reload");
+            Check(ids2.Contains("nodejs"), "winget added after reload");
+            Check(!ids2.Contains("ripgrep"), "brew still hidden after reload");
+
+            // The raw file must still contain ripgrep.
+            var fileText = File.ReadAllText(Path.Combine(dir, "toolkit.json"));
+            Check(fileText.Contains("ripgrep"), "brew entry preserved in file bytes");
+            Check(fileText.Contains("brew"), "brew manager preserved in file bytes");
+
+            // Remove the npm entry; brew must still survive.
+            store2.Remove("typescript");
+            var store3 = new ToolkitStore(dir);
+            var (entries3, _) = store3.List();
+            var ids3 = entries3.Select(e => e.Id).ToArray();
+            Check(!ids3.Contains("typescript"), "removed npm entry gone");
+            Check(!ids3.Contains("ripgrep"), "brew still hidden after remove");
+            var fileText3 = File.ReadAllText(Path.Combine(dir, "toolkit.json"));
+            Check(fileText3.Contains("ripgrep"), "brew entry byte-identical after remove");
+        }
+        finally { Directory.Delete(dir, true); }
+        return Task.CompletedTask;
+    }
+
+    // ── 4: toolkit approval binds to content hash ─────────────────────────────
+
+    internal static Task ToolkitApprovalBindsToContentHash()
+    {
+        var dir = TempDir();
+        try
+        {
+            var store = new ToolkitStore(dir);
+            var entry = MakeEntry("my-npm", new ToolkitFileReader.PackageSpec("npm", "typescript"));
+            store.Add(entry);
+            Check(store.GetApproval(entry) is null, "unapproved is null");
+
+            store.Approve("my-npm");
+            var approval = store.GetApproval(entry);
+            Check(approval is not null, "approval set after Approve");
+            Check(approval!.ContentHash.Length == 64, "SHA-256 is 64 hex chars");
+
+            // Changing the entry invalidates the approval.
+            var changed = entry with { DisplayName = "TypeScript (changed)" };
+            Check(store.GetApproval(changed) is null, "approval invalid after entry change");
+
+            // Add (replace) the entry with changed content: approval clears.
+            store.Add(changed);
+            Check(store.GetApproval(changed) is null, "approval cleared after re-add");
+
+            // Approve again and verify hash is updated.
+            store.Approve("my-npm");
+            var newApproval = store.GetApproval(changed);
+            Check(newApproval is not null, "re-approved");
+            Check(newApproval!.ContentHash != approval.ContentHash, "new hash differs after content change");
+
+            // Bundled entry always returns null from GetApproval.
+            var bundled = ToolkitStore.Bundled[0];
+            Check(store.GetApproval(bundled) is null, "bundled entry approval is always null");
+
+            // Cross-load: approval survives serialise/deserialise cycle.
+            var store2 = new ToolkitStore(dir);
+            var (entries, _) = store2.List();
+            var loaded = entries.FirstOrDefault(e => e.Id == "my-npm");
+            Check(loaded is not null, "entry reloaded");
+            var reloaded = store2.GetApproval(loaded!);
+            Check(reloaded?.ContentHash == newApproval.ContentHash, "approval hash survives reload");
+        }
+        finally { Directory.Delete(dir, true); }
+        return Task.CompletedTask;
+    }
+
+    // ── 5: toolkit plan runs only missing approved entries ────────────────────
+
+    internal static Task ToolkitPlanRunsOnlyMissingApprovedEntries()
+    {
+        var dir = TempDir();
+        try
+        {
+            var store = new ToolkitStore(dir);
+
+            var approved = MakeEntry("approved-npm", new ToolkitFileReader.PackageSpec("npm", "typescript"));
+            var unapproved = MakeEntry("unapproved-npm", new ToolkitFileReader.PackageSpec("npm", "eslint"));
+
+            store.Add(approved);
+            store.Add(unapproved);
+            store.Approve("approved-npm");
+
+            // All missing: approved → Run, unapproved → Skip.
+            var ctx = FakeContext();
+            var runner = new ToolkitRunner(store, ctx);
+            var plan = runner.Plan();
+
+            var approvedItem = plan.FirstOrDefault(i => i.Entry.Id == "approved-npm");
+            var unapprovedItem = plan.FirstOrDefault(i => i.Entry.Id == "unapproved-npm");
+            Check(approvedItem is not null, "approved entry is in plan");
+            Check(approvedItem!.Action == ToolkitPlanItem.PlanAction.Run, "approved gets Run action");
+            Check(unapprovedItem is not null, "unapproved entry is in plan");
+            Check(unapprovedItem!.Action == ToolkitPlanItem.PlanAction.Skip, "unapproved gets Skip action");
+
+            // Bundled entry is always in the plan as Run when missing.
+            var bundledItem = plan.FirstOrDefault(i => i.Entry.Id == "mighty-styles");
+            Check(bundledItem is not null, "bundled entry in plan when missing");
+            Check(bundledItem!.Action == ToolkitPlanItem.PlanAction.Run, "bundled gets Run action");
+
+            // Run returns all skipped for unapproved; fake executor tracks calls.
+            var executed = new List<IReadOnlyList<string>>();
+            var fakeExec = new FakeExecutor(executed);
+            var results = runner.Run(plan, fakeExec);
+
+            var unapprovedResult = results.FirstOrDefault(r => r.EntryId == "unapproved-npm");
+            Check(unapprovedResult?.RunVerdict == ToolkitRunItem.Verdict.Skipped, "unapproved entry result is Skipped");
+
+            // Approved commands were executed (even though probe still returns Missing after fake executor).
+            Check(executed.Any(cmd => cmd.Contains("typescript") || cmd.Any(a => a.Contains("npm"))), "approved entry commands ran");
+        }
+        finally { Directory.Delete(dir, true); }
+        return Task.CompletedTask;
+    }
+
+    // ── 6: toolkit probes are file-only ──────────────────────────────────────
+
+    internal static Task ToolkitProbesAreFileOnly()
+    {
+        var home = TempDir();
+        var localAppData = TempDir();
+        try
+        {
+            var ctx = new ToolkitProbeContext
+            {
+                HomeDirectory = home,
+                PathDirectories = [],
+                LocalAppData = localAppData,
+            };
+
+            // Plugin: missing when installed_plugins.json absent.
+            var pluginEntry = MakeEntry("my-plugin", new ToolkitFileReader.PluginSpec("org/repo", "repo@repo"));
+            Check(ToolkitProbe.Probe(pluginEntry, null, ctx) == ToolkitProbe.Result.Missing, "plugin missing when no file");
+
+            // Create installed_plugins.json with user scope.
+            var pluginDir = Path.Combine(home, ".claude", "plugins");
+            Directory.CreateDirectory(pluginDir);
+            File.WriteAllText(Path.Combine(pluginDir, "installed_plugins.json"),
+                """{"plugins":{"repo@repo":[{"scope":"user"}]}}""");
+            Check(ToolkitProbe.Probe(pluginEntry, null, ctx) == ToolkitProbe.Result.Installed, "plugin installed when user-scope record present");
+
+            // MCP: missing when .claude.json absent.
+            var mcpEntry = MakeEntry("my-mcp", new ToolkitFileReader.McpSpec("my-mcp", "/bin/node", []));
+            Check(ToolkitProbe.Probe(mcpEntry, null, ctx) == ToolkitProbe.Result.Missing, "mcp missing when no file");
+
+            File.WriteAllText(Path.Combine(home, ".claude.json"),
+                """{"mcpServers":{"my-mcp":{}}}""");
+            Check(ToolkitProbe.Probe(mcpEntry, null, ctx) == ToolkitProbe.Result.Installed, "mcp installed when key present");
+
+            // Skill: missing when SKILL.md absent.
+            var skillEntry = MakeEntry("my-skill", new ToolkitFileReader.SkillSpec("https://github.com/example/my-skill.git"));
+            Check(ToolkitProbe.Probe(skillEntry, null, ctx) == ToolkitProbe.Result.Missing, "skill missing when no SKILL.md");
+
+            var skillDir = Path.Combine(home, ".claude", "skills", "my-skill");
+            Directory.CreateDirectory(skillDir);
+            File.WriteAllText(Path.Combine(skillDir, "SKILL.md"), "# My Skill");
+            Check(ToolkitProbe.Probe(skillEntry, null, ctx) == ToolkitProbe.Result.Installed, "skill installed when SKILL.md present");
+
+            // winget: probe via %LOCALAPPDATA%\Microsoft\WinGet\Links.
+            var wingetEntry = MakeEntry("nodejs", new ToolkitFileReader.PackageSpec("winget", "OpenJS.NodeJS", "node.exe"));
+            Check(ToolkitProbe.Probe(wingetEntry, null, ctx) == ToolkitProbe.Result.Missing, "winget missing when executable absent");
+
+            var linksDir = Path.Combine(localAppData, "Microsoft", "WinGet", "Links");
+            Directory.CreateDirectory(linksDir);
+            File.WriteAllText(Path.Combine(linksDir, "node.exe"), "");
+            Check(ToolkitProbe.Probe(wingetEntry, null, ctx) == ToolkitProbe.Result.Installed, "winget installed when executable in Links dir");
+
+            // brew and repoScript are always Missing on Windows (macOS-only).
+            var brewEntry = MakeEntry("ripgrep", new ToolkitFileReader.PackageSpec("brew", "ripgrep"));
+            var repoEntry = MakeEntry("my-script", new ToolkitFileReader.RepoScriptSpec("https://github.com/x/y.git", "abc123", "install.sh"));
+            Check(ToolkitProbe.Probe(brewEntry, null, ctx) == ToolkitProbe.Result.Missing, "brew always missing on Windows");
+            Check(ToolkitProbe.Probe(repoEntry, null, ctx) == ToolkitProbe.Result.Missing, "repoScript always missing on Windows");
+        }
+        finally
+        {
+            Directory.Delete(home, true);
+            Directory.Delete(localAppData, true);
+        }
+        return Task.CompletedTask;
+    }
+
+    // ── 7: components rows follow installed CLIs ──────────────────────────────
+
+    internal static Task ComponentsRowsFollowInstalledCLIs()
+    {
+        // All three providers missing.
+        var runtime = MakeRuntime([]);
+        var rows = ComponentSection.SectionRows(runtime);
+        Check(rows.Count == 3, "3 rows always");
+        foreach (var row in rows)
+            Check(row.State == "missing", row.Id + " missing when not in runtime");
+
+        // All three installed.
+        var fullRuntime = MakeRuntime(["claude", "codex", "gemini"]);
+        var fullRows = ComponentSection.SectionRows(fullRuntime);
+        Check(fullRows.All(r => r.State == "installed"), "all installed when all available");
+
+        // Claude below Mods minimum → attention.
+        var oldClaude = MakeProviderRuntime("claude", available: true, version: "2.1.263");
+        var rtOld = MakeRuntime([], extraProviders: [oldClaude]);
+        var oldRows = ComponentSection.SectionRows(rtOld);
+        var claudeRow = oldRows.First(r => r.Id == "claude");
+        Check(claudeRow.State == "attention", "claude below Mods minimum → attention");
+        Check(claudeRow.Actions.Any(a => a.Id == "update"), "claude attention has update action");
+
+        // Claude at exactly 2.1.271 → installed.
+        var minClaude = MakeProviderRuntime("claude", available: true, version: "2.1.271");
+        var rtMin = MakeRuntime(["codex", "gemini"], extraProviders: [minClaude]);
+        var minRows = ComponentSection.SectionRows(rtMin);
+        Check(minRows.First(r => r.Id == "claude").State == "installed", "claude at 2.1.271 is installed");
+
+        // Section title comes from the locale key.
+        Check(ComponentSection.SectionTitle == Locale.Get("settings.components.sectionTitle"), "SectionTitle uses locale");
+
+        // Missing provider has a copy-command action with the npm install string.
+        var missingRow = rows.First(r => r.Id == "claude");
+        Check(missingRow.Actions.Any(a => a.Id == "copy-command"), "missing claude has copy-command action");
+        Check(ComponentSection.InstallCommand("claude")?.Contains("@anthropic-ai/claude-code") == true, "claude install command is correct");
+        Check(ComponentSection.InstallCommand("codex")?.Contains("@openai/codex") == true, "codex install command is correct");
+        Check(ComponentSection.InstallCommand("gemini")?.Contains("@google/gemini-cli") == true, "gemini install command is correct");
+
+        return Task.CompletedTask;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private static ToolkitFileEntry MakeEntry(string id, ToolkitFileReader.ToolkitInstallSpec install) =>
+        new(id, id, KindFor(install), install, null, ToolkitFileReader.ToolkitEntrySource.User);
+
+    private static string KindFor(ToolkitFileReader.ToolkitInstallSpec install) => install switch
+    {
+        ToolkitFileReader.PluginSpec => "plugin",
+        ToolkitFileReader.McpSpec => "mcp",
+        ToolkitFileReader.SkillSpec => "skill",
+        ToolkitFileReader.PackageSpec => "package",
+        ToolkitFileReader.RepoScriptSpec => "repoScript",
+        _ => "unknown",
+    };
+
+    private static ToolkitProbeContext FakeContext()
+    {
+        var tmp = Path.GetTempPath();
+        return new ToolkitProbeContext
+        {
+            HomeDirectory = tmp,
+            PathDirectories = [],
+            LocalAppData = tmp,
+        };
+    }
+
+    private static string TempDir()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "mighty-toolkit-test-" + Wire.Id());
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static RuntimeInfo MakeRuntime(string[] availableIds, ProviderRuntime[]? extraProviders = null)
+    {
+        var providers = new List<ProviderRuntime>();
+        foreach (var id in Wire.Providers)
+        {
+            if (availableIds.Contains(id))
+                providers.Add(MakeProviderRuntime(id, available: true, version: "2.1.271"));
+        }
+        if (extraProviders is not null) providers.AddRange(extraProviders);
+        return new RuntimeInfo("win32", "1.0.0", providers.Any(p => p.Id == "claude" && p.Available), null, null, providers, null);
+    }
+
+    private static ProviderRuntime MakeProviderRuntime(string id, bool available, string? version) =>
+        new(id, id, available, version, available ? Locale.Get("provider.available") : Locale.Get("provider.notInstalled"),
+            new ModelCatalog("cli", [], ""), new ProviderCapabilities(true, [], true, true, true));
+
+    private sealed class FakeExecutor(List<IReadOnlyList<string>> log) : IToolkitRunnerExecutor
+    {
+        public ToolkitCommandOutput Run(IReadOnlyList<string> argv) { log.Add(argv); return ToolkitCommandOutput.Success; }
+    }
+}
