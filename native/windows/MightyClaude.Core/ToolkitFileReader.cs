@@ -11,19 +11,31 @@ public static class ToolkitFileReader
 {
     public sealed record ToolkitApproval(string ContentHash, string? ResolvedCommit = null);
 
+    /// Source of a toolkit entry: bundled with the app or added by the user.
+    public enum ToolkitEntrySource { Bundled, User }
+
     public sealed record ToolkitFileEntry(
         string Id,
         string DisplayName,
         string InstallKind,
         ToolkitInstallSpec Install,
-        ToolkitApproval? Approval);
+        ToolkitApproval? Approval,
+        ToolkitEntrySource Source = ToolkitEntrySource.User);
 
     public abstract record ToolkitInstallSpec;
     public sealed record PluginSpec(string Source, string PluginId) : ToolkitInstallSpec;
     public sealed record McpSpec(string Name, string Executable, IReadOnlyList<string> Args) : ToolkitInstallSpec;
     public sealed record SkillSpec(string Url) : ToolkitInstallSpec;
-    public sealed record PackageSpec(string Manager, string Name) : ToolkitInstallSpec;
+    /// Executable is required for winget and null for brew/npm.
+    public sealed record PackageSpec(string Manager, string Name, string? Executable = null) : ToolkitInstallSpec;
     public sealed record RepoScriptSpec(string Url, string Ref, string ScriptPath) : ToolkitInstallSpec;
+
+    // ── Platform table (mirrors ToolkitInstallSpec.platforms in Swift) ──────
+    // plugin/mcp/skill/npm → both; brew/repoScript → macOS only; winget → Windows only.
+    public static bool IsWindowsPlatform(ToolkitFileEntry e) => !IsMacOSOnly(e);
+    public static bool IsMacOSOnly(ToolkitFileEntry e) =>
+        e.InstallKind == "repoScript" ||
+        (e.InstallKind == "package" && e.Install is PackageSpec { Manager: "brew" });
 
     public sealed record ToolkitFile(IReadOnlyList<ToolkitFileEntry> Entries);
 
@@ -48,7 +60,7 @@ public static class ToolkitFileReader
         return new ToolkitFile(entries);
     }
 
-    private static ToolkitFileEntry? ParseEntry(JsonElement item)
+    internal static ToolkitFileEntry? ParseEntry(JsonElement item)
     {
         if (!item.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String) return null;
         var id = idEl.GetString() ?? "";
@@ -134,6 +146,18 @@ public static class ToolkitFileReader
         if (!el.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String) return null;
         var manager = mgrEl.GetString() ?? "";
         var name = nameEl.GetString() ?? "";
+
+        if (manager == "winget")
+        {
+            // executable is required for winget; must be a bare filename, no path
+            if (!ValidWingetName(name)) return null;
+            if (!el.TryGetProperty("executable", out var exEl) || exEl.ValueKind != JsonValueKind.String) return null;
+            var executable = exEl.GetString() ?? "";
+            if (!ValidWingetExecutable(executable)) return null;
+            return new PackageSpec(manager, name, executable);
+        }
+
+        // brew and npm: executable field is not used (ignored)
         if (manager is not ("brew" or "npm")) return null;
         return ValidPackageName(name) ? new PackageSpec(manager, name) : null;
     }
@@ -182,6 +206,20 @@ public static class ToolkitFileReader
         if (value.Length == 0 || System.Text.Encoding.UTF8.GetByteCount(value) > 128) return false;
         if (value.StartsWith('@'))
             return Regex.IsMatch(value, @"^@[A-Za-z0-9][A-Za-z0-9._\-]*/[A-Za-z0-9][A-Za-z0-9._\-]*$");
+        return Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._\-]*$");
+    }
+
+    // winget name: ^[A-Za-z0-9][A-Za-z0-9._+-]*$ max 128 bytes
+    private static bool ValidWingetName(string value)
+    {
+        if (value.Length == 0 || System.Text.Encoding.UTF8.GetByteCount(value) > 128) return false;
+        return Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._+\-]*$");
+    }
+
+    // winget executable: bare filename, ^[A-Za-z0-9][A-Za-z0-9._-]*$ max 128 bytes
+    private static bool ValidWingetExecutable(string value)
+    {
+        if (value.Length == 0 || System.Text.Encoding.UTF8.GetByteCount(value) > 128) return false;
         return Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._\-]*$");
     }
 
