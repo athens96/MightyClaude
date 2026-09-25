@@ -81,7 +81,11 @@ public sealed record RunSession
     public AgentRunTiming? RunTiming { get; init; }
     public SessionUsage? SessionUsage { get; init; }
     [JsonIgnore] public AgentActivity? CurrentActivity { get; init; }
-    [JsonPropertyName("agentViewMode")] public string? AgentViewMode { get; init; }
+    // "default" or "mighty"; anything else — another string, a number, a bool —
+    // loads as no choice at all (macOS RunSession.agentViewMode).
+    [JsonPropertyName("agentViewMode")]
+    [JsonConverter(typeof(AgentViewModeConverter))]
+    public string? AgentViewMode { get; init; }
     [JsonPropertyName("graphRuns")] public List<MightyGraphRun>? GraphRuns { get; init; }
 
     internal RunSession Apply(RunEvent ev)
@@ -119,6 +123,26 @@ public sealed record RunSession
             return value with { GraphRuns = bounded.Count > 0 ? bounded : null };
         }
         return value;
+    }
+}
+// Reads "default"/"mighty" only; any other JSON token loads as null, so a saved
+// file written by a newer or malformed writer still loads cleanly.
+internal sealed class AgentViewModeConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var value = reader.GetString();
+            if (value is "default" or "mighty") return value;
+            return null;
+        }
+        reader.Skip();
+        return null;
+    }
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is "default" or "mighty") writer.WriteStringValue(value); else writer.WriteNullValue();
     }
 }
 // Reads true/false only; any other JSON token (number, string, array, object, null) returns null.

@@ -479,6 +479,18 @@ internal static class Verification
         await Test("locale key leak detector flags exact keys", LocalizationVerification.LocaleKeyLeakDetectorFlagsExactKeys);
         await Test("locale key leak detector ignores non-key text", LocalizationVerification.LocaleKeyLeakDetectorIgnoresNonKeyText);
         await Test("locale key leak detector trims invisible characters", LocalizationVerification.LocaleKeyLeakDetectorTrimsInvisibleCharacters);
+        // native/contracts/graph-vectors.json is macOS truth; every group must
+        // reproduce on Windows exactly as the Swift implementation produces it.
+        await Test("graph vectors match macOS claude stream", GraphVectorVerification.ClaudeStream);
+        await Test("graph vectors match macOS codex stream", GraphVectorVerification.CodexStream);
+        await Test("graph vectors match macOS mods events", GraphVectorVerification.Mods);
+        await Test("graph history bounds and restore match macOS", GraphVectorVerification.Bounds);
+        await Test("graph layout matches macOS frames", GraphVectorVerification.Layout);
+        await Test("graph camera anchors match macOS", GraphVectorVerification.Camera);
+        await Test("graph capsule text matches macOS", GraphVectorVerification.Capsule);
+        await Test("graph result files match macOS", GraphVectorVerification.Files);
+        await Test("graph session fields share macOS names", GraphVectorVerification.SessionFields);
+        await Test("graph runs recorded from a Windows run", GraphVectorVerification.RecordedFromARun);
         await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);
         await Test("locale English file loads from shared locales path", LocalizationVerification.EnglishLocaleLoadsFromSharedFile);
         await Test("locale key absent from both catalogs returns the key itself", LocalizationVerification.MissingKeyInChosenLanguageFallsBackToKorean);
@@ -624,19 +636,6 @@ internal static class Verification
         await Test("hash parity stale platforms key excluded from hash surface", ToolkitVerification.HashParityStalePlatformsKeyExcluded);
         await Test("hash parity changing a hashed field changes the digest", ToolkitVerification.HashParityChangingFieldChangesHash);
         await Test("hash parity round-trip with stale platforms key is byte-identical", ToolkitVerification.HashParityRoundTripWithStalePlatformsKey);
-        await Test("graph-parity-vectors-ok", GraphParityVerification.RunAsync);
-        await Test("graph session field names match macOS JSON keys", GraphParityVerification.SessionFieldNames);
-        await Test("graph runs recorded by wiring tracker through AppSnapshot", GraphParityVerification.RunsRecorded);
-        await Test("graph vectors match macOS claude stream", GraphVerification.ClaudeStream);
-        await Test("graph vectors match macOS codex stream", GraphVerification.CodexStream);
-        await Test("graph vectors match macOS mods events", GraphVerification.ModsEvents);
-        await Test("graph history bounds and restore match macOS", GraphVerification.BoundsAndRestore);
-        await Test("graph layout matches macOS frames", GraphVerification.LayoutFrames);
-        await Test("graph camera anchors match macOS", GraphVerification.CameraAnchors);
-        await Test("graph capsule text matches macOS", GraphVerification.CapsuleText);
-        await Test("graph result files match macOS", GraphVerification.ResultFilesList);
-        await Test("graph session fields share macOS names", GraphVerification.SessionFieldNames);
-        await Test("graph runs recorded from a Windows run", GraphVerification.RunsRecorded);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
