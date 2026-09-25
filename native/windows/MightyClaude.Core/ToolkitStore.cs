@@ -79,6 +79,14 @@ public sealed class ToolkitStore
         Persist();
     }
 
+    /// Serialises user entries (without approvals) to a toolkit.json string for export.
+    public string Export()
+    {
+        DoLoad();
+        var parts = thisOsEntries.Select(EntryToJson).ToList();
+        return $"{{\"version\":1,\"entries\":[{string.Join(",", parts)}]}}";
+    }
+
     /// Removes a user entry. No command is executed.
     public void Remove(string id)
     {
