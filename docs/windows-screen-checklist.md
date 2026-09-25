@@ -257,9 +257,23 @@
 - [ ] 노드와 엣지가 렌더링된다
 - [ ] 노드 선택 시 세부 정보가 표시된다
 
-### 컴포넌트 (설치 대시보드)
-- [ ] 컴포넌트 설정 화면에서 설치된 컴포넌트 목록이 보인다
-- [ ] 컴포넌트 상태(설치됨/미설치/업데이트 가능)가 표시된다
+### 컴포넌트 (설치 대시보드) (`docs/toolkit.md`, 시드 `seed_windows_b2_s3_components_toolkit`)
+
+<!-- 기기 미확인 -->
+
+**Windows 기기 확인 항목 (한국어)** — x64 PC, CI ZIP
+
+- [ ] (기기 미확인) 설정 → "구성 요소"에 Claude·Codex·Gemini CLI 줄과 "내 작업 도구 모음" 목록이 보이고, 날 키(`settings.components.…`, `settings.toolkit.…`)가 하나도 보이지 않는다
+- [ ] (기기 미확인) 설치되지 않은 CLI 줄은 상태가 "설치 필요"이고, 그 줄의 "설치 필요" 단추를 누르면 `npm install -g …` 설치 명령이 클립보드에 복사된다
+- [ ] (기기 미확인) 승인한 winget 항목이 "설치"를 누르면 확인 창에 `winget install --exact --id … --scope user …` argv 그대로 보이고, 확인하면 설치된 뒤 결과 표에 "설치됨"이 보인다
+- [ ] (기기 미확인) Mac에서 추가한 brew 항목이 든 `toolkit.json`(또는 Mac 내보내기 파일 가져오기)은 목록에 brew 항목을 보이지 않지만, 승인·삭제·저장 뒤에도 `%APPDATA%\MightyClaudeNative\toolkit.json`에 그 항목이 그대로 남는다
+
+**Windows 기기 확인 항목 (English)**
+
+- [ ] (not checked on device) With English selected, Settings → Components shows the Claude / Codex / Gemini CLI rows and the toolkit list with no raw keys
+- [ ] (not checked on device) A missing CLI row reads "Install required", and its "Install required" button copies the `npm install -g …` install command
+- [ ] (not checked on device) An approved winget entry installs after the confirm view listing its argv and then shows "Installed" in the result table
+- [ ] (not checked on device) A brew entry added on the Mac stays in `toolkit.json` but is not listed on Windows
 
 ### 워크스페이스 Git 정보
 - [ ] Git 저장소 워크스페이스에서 현재 브랜치와 상태가 표시된다
