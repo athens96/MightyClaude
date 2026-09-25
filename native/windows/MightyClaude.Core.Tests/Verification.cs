@@ -609,6 +609,9 @@ internal static class Verification
         await Test("toolkit approval binds to content hash", ToolkitVerification.ToolkitApprovalBindsToContentHash);
         await Test("toolkit plan runs only missing approved entries", ToolkitVerification.ToolkitPlanRunsOnlyMissingApprovedEntries);
         await Test("toolkit probes are file-only", ToolkitVerification.ToolkitProbesAreFileOnly);
+        await Test("toolkit install is an ordered step list", ToolkitVerification.ToolkitInstallIsAnOrderedStepList);
+        await Test("bundled entry sorts first and survives an unreadable store", ToolkitVerification.BundledEntrySortsFirstAndSurvivesAnUnreadableStore);
+        await Test("result table separates not attempted, failed and succeeded", ToolkitVerification.ResultTableSeparatesNotAttemptedFailedAndSucceeded);
         await Test("components rows follow installed CLIs", ToolkitVerification.ComponentsRowsFollowInstalledCLIs);
         await Test("components screen is live in the running app", ToolkitVerification.ComponentsScreenIsLiveInTheRunningApp);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);

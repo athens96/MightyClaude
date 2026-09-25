@@ -324,7 +324,162 @@ internal static class ToolkitVerification
         return Task.CompletedTask;
     }
 
-    // ── 7: components rows follow installed CLIs ──────────────────────────────
+    // ── 7: toolkit install is an ordered step list ────────────────────────────
+
+    internal static Task ToolkitInstallIsAnOrderedStepList()
+    {
+        // A plugin entry must produce exactly two steps: marketplace add first, install second.
+        var plugin = MakeEntry("my-plugin", new ToolkitFileReader.PluginSpec("athens96/mighty-styles", "mighty-styles@mighty-styles"));
+        var ctx = FakeContext();
+        var commands = ToolkitRunner.InstallCommands(plugin, null, ctx);
+        Check(commands.Count == 2, "plugin entry produces two install steps");
+
+        // Step 1: claude plugin marketplace add --scope user <source>
+        var step1 = commands[0];
+        Check(step1[0] == "claude", "step 1 binary is claude");
+        Check(step1.Contains("marketplace"), "step 1 is a marketplace command");
+        Check(step1.Contains("add"), "step 1 is an add command");
+        Check(step1.Contains("athens96/mighty-styles"), "step 1 carries the source");
+        Check(step1.Contains("--scope"), "step 1 has --scope");
+        Check(step1.Contains("user"), "step 1 scope is user");
+
+        // Step 2: claude plugin install <pluginID> --scope user --json
+        var step2 = commands[1];
+        Check(step2[0] == "claude", "step 2 binary is claude");
+        Check(step2.Contains("install"), "step 2 is install");
+        Check(step2.Contains("mighty-styles@mighty-styles"), "step 2 carries the pluginID");
+        Check(step2.Contains("--scope"), "step 2 has --scope");
+        Check(step2.Contains("user"), "step 2 scope is user");
+        Check(step2.Contains("--json"), "step 2 has --json");
+
+        // The confirm view enumerates every step argv (checked via the plan item's Commands property).
+        var dir = TempDir();
+        try
+        {
+            var store = new ToolkitStore(dir);
+            store.Add(plugin);
+            store.Approve("my-plugin");
+            var runner = new ToolkitRunner(store, ctx);
+            var plan = runner.Plan();
+            var planItem = plan.FirstOrDefault(i => i.Entry.Id == "my-plugin");
+            Check(planItem is not null, "plugin entry is in the plan");
+            Check(planItem!.Commands.Count == 2, "plan item carries both steps");
+            // Each step is a full argv (not a shell string).
+            foreach (var cmd in planItem.Commands)
+                Check(cmd.Count > 1, "each step is a full argv, not a single string");
+        }
+        finally { Directory.Delete(dir, true); }
+
+        return Task.CompletedTask;
+    }
+
+    // ── 8: bundled entry sorts first and survives an unreadable store ─────────
+
+    internal static Task BundledEntrySortsFirstAndSurvivesAnUnreadableStore()
+    {
+        var dir = TempDir();
+        try
+        {
+            var filePath = Path.Combine(dir, "toolkit.json");
+            File.WriteAllText(filePath, "not-json{{{");
+            var originalBytes = File.ReadAllBytes(filePath);
+
+            var store = new ToolkitStore(dir);
+            var (entries, error) = store.List();
+
+            // Error must be set.
+            Check(error is not null, "error is non-null when toolkit.json is unreadable");
+            Check(error == Locale.Get("settings.toolkit.errorBanner"), "error uses the errorBanner locale key");
+
+            // Bundled entry is present and is first.
+            Check(entries.Count == 1, "only the bundled row when the file is unreadable");
+            Check(entries[0].Id == "mighty-styles", "bundled mighty-styles row is present");
+            Check(entries[0].Source == ToolkitFileReader.ToolkitEntrySource.Bundled, "the bundled row has Bundled source");
+
+            // File is byte-identical (never written by the load path).
+            var currentBytes = File.ReadAllBytes(filePath);
+            Check(currentBytes.Length == originalBytes.Length && currentBytes.SequenceEqual(originalBytes),
+                "toolkit.json is byte-identical after an unreadable load");
+
+            return Task.CompletedTask;
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    // ── 9: result table separates not attempted, failed and succeeded ─────────
+
+    internal static Task ResultTableSeparatesNotAttemptedFailedAndSucceeded()
+    {
+        var dir = TempDir();
+        var home = TempDir();
+        try
+        {
+            var ctx = new ToolkitProbeContext
+            {
+                HomeDirectory = home,
+                PathDirectories = [],
+                LocalAppData = home,
+            };
+
+            var store = new ToolkitStore(dir);
+
+            // Entry 1: unapproved → not attempted (Skipped).
+            var notAttemptedEntry = MakeEntry("unapproved-skill",
+                new ToolkitFileReader.SkillSpec("https://github.com/x/unapproved.git"));
+            store.Add(notAttemptedEntry);
+
+            // Entry 2: approved, but executor does nothing → probe stays Missing (Failed).
+            var failingEntry = MakeEntry("failing-mcp",
+                new ToolkitFileReader.McpSpec("failing-mcp", "/bin/node", []));
+            store.Add(failingEntry);
+            store.Approve("failing-mcp");
+
+            // Entry 3: approved, executor creates SKILL.md → probe returns Installed (Installed/succeeded).
+            var succeedingEntry = MakeEntry("succeeding",
+                new ToolkitFileReader.SkillSpec("https://github.com/x/succeeding.git"));
+            store.Add(succeedingEntry);
+            store.Approve("succeeding");
+
+            var runner = new ToolkitRunner(store, ctx);
+            var plan = runner.Plan();
+
+            var executed = new List<IReadOnlyList<string>>();
+            IToolkitRunnerExecutor fakeExec = new SkillCreatingExecutor(executed);
+            var results = runner.Run(plan, fakeExec);
+
+            // Unapproved entry → Skipped (not attempted).
+            var notAttempted = results.FirstOrDefault(r => r.EntryId == "unapproved-skill");
+            Check(notAttempted is not null, "unapproved entry has a result row");
+            Check(notAttempted!.RunVerdict == ToolkitRunItem.Verdict.Skipped,
+                "unapproved entry verdict is Skipped (not attempted)");
+
+            // MCP failed (no .claude.json created) → Failed.
+            var failed = results.FirstOrDefault(r => r.EntryId == "failing-mcp");
+            Check(failed is not null, "failing entry has a result row");
+            Check(failed!.RunVerdict == ToolkitRunItem.Verdict.Failed,
+                "failing entry verdict is Failed");
+
+            // Skill succeeded (SKILL.md was created) → Installed.
+            var succeeded = results.FirstOrDefault(r => r.EntryId == "succeeding");
+            Check(succeeded is not null, "succeeding entry has a result row");
+            Check(succeeded!.RunVerdict == ToolkitRunItem.Verdict.Installed,
+                "succeeding entry verdict is Installed (succeeded)");
+
+            // All three are distinct.
+            Check(notAttempted.RunVerdict != failed.RunVerdict, "not-attempted differs from failed");
+            Check(failed.RunVerdict != succeeded.RunVerdict, "failed differs from succeeded");
+            Check(notAttempted.RunVerdict != succeeded.RunVerdict, "not-attempted differs from succeeded");
+
+            return Task.CompletedTask;
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+            Directory.Delete(home, true);
+        }
+    }
+
+    // ── 10: components rows follow installed CLIs ──────────────────────────────
 
     internal static Task ComponentsRowsFollowInstalledCLIs()
     {
@@ -567,5 +722,22 @@ internal static class ToolkitVerification
     private sealed class FakeExecutor(List<IReadOnlyList<string>> log) : IToolkitRunnerExecutor
     {
         public ToolkitCommandOutput Run(IReadOnlyList<string> argv) { log.Add(argv); return ToolkitCommandOutput.Success; }
+    }
+
+    // Fake executor that simulates a successful git clone by creating SKILL.md at the destination.
+    private sealed class SkillCreatingExecutor(List<IReadOnlyList<string>> log) : IToolkitRunnerExecutor
+    {
+        public ToolkitCommandOutput Run(IReadOnlyList<string> argv)
+        {
+            log.Add(argv);
+            // git clone <url> <dest>  → create SKILL.md at dest so the probe returns Installed.
+            if (argv.Count >= 4 && argv[0] == "git" && argv[1] == "clone")
+            {
+                var dest = argv[^1];
+                Directory.CreateDirectory(dest);
+                File.WriteAllText(Path.Combine(dest, "SKILL.md"), "# Test Skill");
+            }
+            return ToolkitCommandOutput.Success;
+        }
     }
 }
