@@ -627,6 +627,16 @@ internal static class Verification
         await Test("graph-parity-vectors-ok", GraphParityVerification.RunAsync);
         await Test("graph session field names match macOS JSON keys", GraphParityVerification.SessionFieldNames);
         await Test("graph runs recorded by wiring tracker through AppSnapshot", GraphParityVerification.RunsRecorded);
+        await Test("graph vectors match macOS claude stream", GraphVerification.ClaudeStream);
+        await Test("graph vectors match macOS codex stream", GraphVerification.CodexStream);
+        await Test("graph vectors match macOS mods events", GraphVerification.ModsEvents);
+        await Test("graph history bounds and restore match macOS", GraphVerification.BoundsAndRestore);
+        await Test("graph layout matches macOS frames", GraphVerification.LayoutFrames);
+        await Test("graph camera anchors match macOS", GraphVerification.CameraAnchors);
+        await Test("graph capsule text matches macOS", GraphVerification.CapsuleText);
+        await Test("graph result files match macOS", GraphVerification.ResultFilesList);
+        await Test("graph session fields share macOS names", GraphVerification.SessionFieldNames);
+        await Test("graph runs recorded from a Windows run", GraphVerification.RunsRecorded);
         await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
