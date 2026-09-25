@@ -44,6 +44,12 @@ public actor ToolkitStore {
     private var userEntries: [ToolkitEntry] = []
     private var approvals: [String: ToolkitApproval] = [:]
     private var fileError: (any Error)?
+    // Raw entry dicts (including unknown keys like a stale `platforms`) for
+    // entries that were loaded from disk and have not been mutated this session.
+    private var rawEntryDicts: [String: [String: Any]] = [:]
+    // IDs of entries added, removed, edited, approved or imported this session.
+    // Those entries are written in canonical form; untouched entries use rawEntryDicts.
+    private var touchedEntryIds: Set<String> = []
 
     public init(directory: URL) {
         self.fileURL = directory.appendingPathComponent("toolkit.json")
@@ -90,6 +96,8 @@ public actor ToolkitStore {
             }
         }
         approvals[entryId] = ToolkitApproval(contentHash: hash, resolvedCommit: resolvedCommit)
+        rawEntryDicts.removeValue(forKey: entryId)
+        touchedEntryIds.insert(entryId)
         try persist()
     }
 
@@ -100,6 +108,8 @@ public actor ToolkitStore {
         try requireLoaded()
         userEntries.removeAll { $0.entryId == entry.entryId }
         approvals.removeValue(forKey: entry.entryId)
+        rawEntryDicts.removeValue(forKey: entry.entryId)
+        touchedEntryIds.insert(entry.entryId)
         var e = entry; e.source = .user
         userEntries.append(e)
         try persist()
@@ -111,6 +121,8 @@ public actor ToolkitStore {
         try requireLoaded()
         userEntries.removeAll { $0.entryId == id }
         approvals.removeValue(forKey: id)
+        rawEntryDicts.removeValue(forKey: id)
+        touchedEntryIds.insert(id)
         try persist()
     }
 
@@ -136,6 +148,8 @@ public actor ToolkitStore {
             let entry = try ToolkitEntryDecoder.decode(stripped)
             userEntries.removeAll { $0.entryId == entry.entryId }
             approvals.removeValue(forKey: entry.entryId)
+            rawEntryDicts.removeValue(forKey: entry.entryId)
+            touchedEntryIds.insert(entry.entryId)
             userEntries.append(entry)
         }
         try persist()
@@ -153,7 +167,13 @@ public actor ToolkitStore {
             fileError = ToolkitStoreError("toolkit.json을 읽을 수 없습니다. 원본 파일은 변경하지 않았습니다.")
             return
         }
-        for var raw in (object["entries"] as? [[String: Any]]) ?? [] {
+        for rawEntry in (object["entries"] as? [[String: Any]]) ?? [] {
+            // Store the complete raw dict (including unknown keys like a stale
+            // `platforms` and the existing approval) before any stripping.
+            if let entryId = rawEntry["id"] as? String, !entryId.isEmpty {
+                rawEntryDicts[entryId] = rawEntry
+            }
+            var raw = rawEntry
             let rawApproval = raw.removeValue(forKey: "approval") as? [String: Any]
             guard let entry = try? ToolkitEntryDecoder.decode(raw) else { continue }
             userEntries.append(entry)
@@ -172,16 +192,27 @@ public actor ToolkitStore {
     private func persist() throws {
         var objects: [[String: Any]] = []
         for entry in userEntries {
-            var obj = Self.entryToObject(entry)
-            if let approval = approvals[entry.entryId] {
-                var a: [String: Any] = ["contentHash": approval.contentHash]
-                if let sha = approval.resolvedCommit { a["resolvedCommit"] = sha }
-                obj["approval"] = a
+            if !touchedEntryIds.contains(entry.entryId),
+               let rawDict = rawEntryDicts[entry.entryId] {
+                // Untouched entry: emit original dict verbatim (preserves unknown
+                // keys such as a stale `platforms` and the stored approval).
+                objects.append(rawDict)
+            } else {
+                // Touched entry: emit canonical form with current approval.
+                var obj = Self.entryToObject(entry)
+                if let approval = approvals[entry.entryId] {
+                    var a: [String: Any] = ["contentHash": approval.contentHash]
+                    if let sha = approval.resolvedCommit { a["resolvedCommit"] = sha }
+                    obj["approval"] = a
+                }
+                objects.append(obj)
             }
-            objects.append(obj)
         }
         let fileObject: [String: Any] = ["version": 1, "entries": objects]
-        let payload = try JSONSerialization.data(withJSONObject: fileObject, options: [.sortedKeys])
+        // Canonical file form: sorted keys, 2-space indentation, LF, trailing newline.
+        var payload = try JSONSerialization.data(
+            withJSONObject: fileObject, options: [.sortedKeys, .prettyPrinted])
+        if payload.last != UInt8(ascii: "\n") { payload.append(UInt8(ascii: "\n")) }
         let dir = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let tmp = dir.appendingPathComponent("toolkit-" + UUID().uuidString + ".tmp")

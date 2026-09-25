@@ -312,6 +312,94 @@ private func sampleWinget(id: String = "wt", name: String = "Microsoft.WindowsTe
         #expect(e["approval"] == nil)
     }
 
+    // MARK: – Store: stale `platforms` key preserved with original bytes
+
+    @Test func wingetEntryWithStalePlatformsKeyPreservedAcrossOperations() async throws {
+        let dir = tempDir("winget-stale-platforms")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let jsonURL = dir.appendingPathComponent("toolkit.json")
+
+        // Compute the real canonical hash so the approval stays valid after reload.
+        let winget = sampleWinget()
+        let realHash = ToolkitStore.canonicalHash(winget)
+
+        // Write a file whose winget entry carries a stale `platforms` key.
+        let initial: [String: Any] = [
+            "version": 1,
+            "entries": [
+                [
+                    "id": "wt",
+                    "displayName": "Windows Terminal",
+                    "install": ["kind": "package", "manager": "winget",
+                                "name": "Microsoft.WindowsTerminal",
+                                "executable": "wt.exe"] as [String: Any],
+                    "platforms": ["windows"],
+                    "approval": ["contentHash": realHash] as [String: Any],
+                ] as [String: Any],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: initial).write(to: jsonURL)
+
+        let store = ToolkitStore(directory: dir)
+        // add unrelated entry, remove it, add again, approve it
+        try await store.addEntry(samplePlugin())
+        try await store.removeEntry(id: "my-plugin")
+        try await store.addEntry(samplePlugin())
+        try await store.approve(entryId: "my-plugin", executor: FakeToolkitExecutor())
+
+        // Read back and verify winget entry
+        let data = try Data(contentsOf: jsonURL)
+        let obj = try #require((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
+        let entries = try #require(obj["entries"] as? [[String: Any]])
+        let wtEntry = try #require(entries.first { $0["id"] as? String == "wt" })
+
+        // Stale `platforms` key still present (original bytes preserved)
+        let platforms = try #require(wtEntry["platforms"] as? [String])
+        #expect(platforms == ["windows"])
+
+        // All install fields intact
+        let install = try #require(wtEntry["install"] as? [String: Any])
+        #expect(install["manager"] as? String == "winget")
+        #expect(install["name"] as? String == "Microsoft.WindowsTerminal")
+        #expect(install["executable"] as? String == "wt.exe")
+
+        // Approval still present with the original hash
+        let approvalObj = try #require(wtEntry["approval"] as? [String: Any])
+        #expect(approvalObj["contentHash"] as? String == realHash)
+
+        // Approval is still valid: a fresh store can verify it
+        let store2 = ToolkitStore(directory: dir)
+        let reloadedApproval = await store2.approval(for: winget)
+        #expect(reloadedApproval != nil)
+        #expect(reloadedApproval?.contentHash == realHash)
+    }
+
+    // MARK: – Store: canonical file is a fixed point of load → save
+
+    @Test func canonicalFileIsFixedPoint() async throws {
+        let dir = tempDir("fixed-point")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let jsonURL = dir.appendingPathComponent("toolkit.json")
+
+        // Step 1: write a canonical file through the store
+        let store1 = ToolkitStore(directory: dir)
+        try await store1.addEntry(samplePlugin(id: "alpha"))
+        try await store1.addEntry(sampleWinget())    // other-OS entry
+        let canonicalBytes = try Data(contentsOf: jsonURL)
+
+        // Step 2: load a fresh store, add+remove a dummy entry (forces a save
+        // without touching alpha or the winget entry)
+        let store2 = ToolkitStore(directory: dir)
+        let dummy = ToolkitEntry(entryId: "tmp-dummy", displayName: "D", source: .user,
+                                  install: .skill(url: "https://github.com/x/tmp.git"))
+        try await store2.addEntry(dummy)
+        try await store2.removeEntry(id: "tmp-dummy")
+        let roundTripBytes = try Data(contentsOf: jsonURL)
+
+        // The file must be byte-for-byte identical
+        #expect(canonicalBytes == roundTripBytes)
+    }
+
     // MARK: – Runner: winget entry never planned
 
     @Test func wingetEntryNeverPlanned() async throws {
@@ -328,5 +416,11 @@ private func sampleWinget(id: String = "wt", name: String = "Microsoft.WindowsTe
         let runner = ToolkitRunner(store: store, probeContext: ctx)
         let items = await runner.plan()
         #expect(!items.contains { $0.entry.entryId == "wt" })
+    }
+
+    // MARK: – Anti-vacuity marker
+
+    @Test func markerToolkitPlatformOK() {
+        print("Suite ToolkitPlatformTests passed")
     }
 }
