@@ -229,6 +229,16 @@ public actor ToolkitStore {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The exact UTF-8 bytes that are fed into the SHA-256 hash: sorted keys,
+    /// no insignificant whitespace, approval and unknown keys excluded.
+    /// Matches BuildCanonicalJson on Windows.
+    nonisolated public static func canonicalJson(_ entry: ToolkitEntry) -> String {
+        let obj = entryToObject(entry)
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else { return "" }
+        return json
+    }
+
     nonisolated static func entryToObject(_ entry: ToolkitEntry) -> [String: Any] {
         ["id": entry.entryId, "displayName": entry.displayName,
          "install": installToObject(entry.install)]

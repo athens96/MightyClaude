@@ -60,7 +60,7 @@ public static class ToolkitFileReader
         return new ToolkitFile(entries);
     }
 
-    internal static ToolkitFileEntry? ParseEntry(JsonElement item)
+    public static ToolkitFileEntry? ParseEntry(JsonElement item)
     {
         if (!item.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String) return null;
         var id = idEl.GetString() ?? "";
