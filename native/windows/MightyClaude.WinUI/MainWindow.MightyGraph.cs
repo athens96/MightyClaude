@@ -272,7 +272,7 @@ public sealed partial class MainWindow
             };
             AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
             AutomationProperties.SetName(card, block.Title);
-            card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); args.Handled = true; };
+            card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
 
             if (block.Kind == "resultFiles") { card.Child = BuildResultFilesPanel(block, files); return card; }
 
@@ -437,6 +437,8 @@ public sealed partial class MainWindow
         {
             // Only the empty background reaches here: a card handles its own press.
             ClearGraphSelection();
+            // Take keyboard focus so Esc clears a selection after a mouse click.
+            graphViewport?.Focus(FocusState.Pointer);
             graphDragging = true; graphDragOrigin = args.GetCurrentPoint(graphViewport).Position;
             graphDragPanX = graphPan.X; graphDragPanY = graphPan.Y;
             graphViewport?.CapturePointer(args.Pointer);
