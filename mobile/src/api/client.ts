@@ -167,6 +167,8 @@ export interface EntriesOptions {
 export interface MobileClient {
   /** Fires when the host says a scope changed, so pending polls can re-issue. */
   onNotify(listener: (event: RelayNotification) => void): () => void;
+  /** Follows the tunnel's state, so a screen can ask again once a lost one is back. */
+  onStateChange(listener: (state: RelayState) => void): () => void;
   info(signal?: AbortSignal): Promise<HostInfo>;
   state(options?: PollOptions): Promise<MobileState>;
   session(sessionId: string, options?: PollOptions): Promise<MobileSessionDetail>;
@@ -278,6 +280,8 @@ export function createClient(channel: RelayChannel): MobileClient {
 
   return {
     onNotify: (listener) => channel.onNotify(listener),
+
+    onStateChange: (listener) => channel.onStateChange?.(listener) ?? (() => undefined),
 
     info: (signal) => request<HostInfo>('GET', '/m1/info', undefined, signal),
 

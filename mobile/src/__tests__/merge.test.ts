@@ -69,6 +69,12 @@ describe('mergeState', () => {
     expect(mergeState(current, state(6))).toBe(current);
     expect(mergeState(current, state(4))).toBe(current);
   });
+
+  it('takes a fresh read whatever its revision, so a host that restarted is heard', () => {
+    const current = state(40, [session({ status: 'running' })]);
+    const restarted = state(2, [session({ status: 'idle' })]);
+    expect(mergeState(current, restarted, true)).toBe(restarted);
+  });
 });
 
 describe('mergeSessionDetail', () => {
@@ -94,6 +100,14 @@ describe('mergeSessionDetail', () => {
     const previous = detail(3, '최신');
     expect(mergeSessionDetail(previous, detail(3, '동일'))).toBe(previous);
     expect(mergeSessionDetail(previous, detail(2, '과거'))).toBe(previous);
+  });
+
+  it('takes a fresh read even at a lower or equal revision', () => {
+    const previous = detail(30, '실행 중');
+    const restarted = detail(1, '끝남');
+    expect(mergeSessionDetail(previous, restarted, true)).toBe(restarted);
+    const reread = detail(30, '다시 읽음');
+    expect(mergeSessionDetail(previous, reread, true)).toBe(reread);
   });
 });
 

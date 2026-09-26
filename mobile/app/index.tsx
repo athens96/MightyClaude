@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { appForeground } from '@/api/relay/foreground';
 import { Badge, Button, Card, EmptyState } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost, type Reachability } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
@@ -103,6 +104,12 @@ export default function HostsScreen() {
     await refreshAll();
     setRefreshing(false);
   }, [refreshAll]);
+
+  // What the list says about each host was true when the app went away; ask again
+  // when it comes back, as a pull would.
+  useFocusEffect(
+    useCallback(() => appForeground.subscribe(() => void refreshAll()), [refreshAll]),
+  );
 
   return (
     <View style={styles.screen}>

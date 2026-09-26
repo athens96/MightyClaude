@@ -86,13 +86,15 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         guard let accepted = effect.accepted else { throw MobileHostError.conflict(MobileRemoteSupport.droppedMessage) }
         return accepted
     }
-    func mobileStop(sessionId: String) async throws {
-        let store = try await MainActor.run { () -> AppStore in
+    func mobileStop(sessionId: String) async throws -> Bool {
+        let (store, running) = try await MainActor.run { () -> (AppStore, Bool) in
             let store = try self.store.orClosing()
             try store.mobileValidateCommand(sessionId)
-            return store
+            return (store, store.mobileHasRun(sessionId))
         }
+        guard running else { return false }
         await store.stop(sessionId)
+        return true
     }
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws {
         let (store, request) = try await MainActor.run { () -> (AppStore, ToolPermissionRequest) in
@@ -688,6 +690,12 @@ extension AppStore {
     func mobileValidateCommand(_ id: String) throws {
         guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창은 휴대폰에서 제어할 수 없습니다.") }
+    }
+
+    /// The same test `stop` applies before it does anything: a run in motion,
+    /// or one still being started.
+    func mobileHasRun(_ id: String) -> Bool {
+        snapshot.sessions.first(where: { $0.id == id })?.status == "running" || pendingRuns.contains(id)
     }
 
     func mobilePendingRequest(sessionId: String, requestId: String, runId: String) throws -> ToolPermissionRequest {

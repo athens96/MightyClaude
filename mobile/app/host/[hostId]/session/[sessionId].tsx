@@ -15,7 +15,7 @@ import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError, isNotFound } from '@/api/client';
-import { describeRepairNeeded } from '@/api/relay/transport';
+import { describeRepairNeeded, type RelayState } from '@/api/relay/transport';
 import {
   ENTRY_PAGE_SIZE,
   type LogEntry,
@@ -54,7 +54,9 @@ import {
   prependOlderPage,
   retainDropped,
 } from '@/lib/history';
+import { t } from '@/lib/i18n';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
+import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
 import { useForgetRefusedSecret } from '@/store/hosts';
@@ -144,6 +146,8 @@ export default function SessionScreen() {
   const [closed, setClosed] = useState(false);
   const closedRef = useRef(false);
   const commandRunning = useRef(false);
+  /** The detail revision the host has since said was not running (see `composerRunning`). */
+  const [settledRevision, setSettledRevision] = useState<number | undefined>(undefined);
 
   // History paged in with `entries?before=`; kept apart from the long-poll window so an
   // entry arriving while a page loads can neither duplicate nor reorder what is shown.
@@ -197,8 +201,8 @@ export default function SessionScreen() {
   );
 
   const onData = useCallback(
-    (data: MobileSessionDetail) => {
-      if (hostId && sessionId) applyDetail(hostId, sessionId, data);
+    (data: MobileSessionDetail, fresh: boolean) => {
+      if (hostId && sessionId) applyDetail(hostId, sessionId, data, fresh);
     },
     [applyDetail, hostId, sessionId],
   );
@@ -214,12 +218,18 @@ export default function SessionScreen() {
     [client, sessionId],
   );
 
+  const watchLink = useCallback(
+    (listener: (state: RelayState) => void) => client?.onStateChange(listener) ?? (() => undefined),
+    [client],
+  );
+
   const poll = useLongPoll<MobileSessionDetail>({
     enabled: Boolean(client && sessionId) && !closed,
     fetchPage,
     revisionOf: (data) => data.revision,
     onData,
     subscribe,
+    watchLink,
   });
 
   // A refused secret is never presented again: it is dropped the moment the host says so.
@@ -240,6 +250,7 @@ export default function SessionScreen() {
     previousLive.current = NO_ENTRIES;
     closedRef.current = false;
     setClosed(false);
+    setSettledRevision(undefined);
     setChosenView(undefined);
     setText('');
   }, [sessionId]);
@@ -365,18 +376,28 @@ export default function SessionScreen() {
     [attachFiles.length, clearAttachments, client, followNewest, poll, sessionId, uploadAttachments],
   );
 
+  // 중지 can be pressed on a picture of the pane that is out of date — the run ended
+  // while the phone was away. The pane is read again whatever the answer, and "nothing
+  // was running" retires the picture the button was drawn from straight away.
+  const detailRevision = detail?.revision;
   const stop = useCallback(() => {
     if (!client || !sessionId) return;
+    const drawnFrom = detailRevision;
     void (async () => {
+      let verdict: StopVerdict;
       try {
-        await client.stop(sessionId);
-        showToast('중지 요청됨');
-        poll.refresh();
+        verdict = stopVerdict(await client.stop(sessionId));
       } catch (error) {
-        showToast(describeError(error), 'error');
+        verdict = stopVerdict({ failure: describeError(error) });
       }
+      if (verdict.kind === 'requested') showToast('중지 요청됨');
+      else if (verdict.kind === 'notRunning') {
+        setSettledRevision(drawnFrom);
+        showToast(t('phone.session.stopNotRunning'));
+      } else showToast(verdict.message, 'error');
+      poll.refresh();
     })();
-  }, [client, poll, sessionId]);
+  }, [client, detailRevision, poll, sessionId]);
 
   const decide = useCallback(
     async (requestId: string, runId: string, allow: boolean) => {
@@ -580,7 +601,7 @@ export default function SessionScreen() {
     [openPicker, runHostCommand],
   );
 
-  const running = session?.status === 'running';
+  const running = composerRunning(session?.status, detail?.revision, settledRevision);
 
   // The host sends `mighty` only for a pane in Mighty view; an unknown shape is dropped
   // rather than trusted, so nothing here can be fed a field we cannot draw.

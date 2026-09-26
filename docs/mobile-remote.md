@@ -22,7 +22,7 @@ PC에서 실행 중인 MightyClaude에 휴대폰으로 접속해 워크스페이
 | GET | `/m1/state?since=<rev>&wait=<0..10>` | | `MobileState` — `revision`이 `since`보다 커질 때까지 최대 `wait`초 기다렸다가 응답. 시간 안에 변화가 없으면 같은 `revision`으로 현재 상태를 돌려준다 |
 | GET | `/m1/sessions/{id}?since=<rev>&wait=<0..10>` | | `MobileSessionDetail` — 세션 단위 `revision`으로 같은 방식 |
 | POST | `/m1/sessions/{id}/submit` | `{ text }` | 202 `{ protocol, accepted: "started" \| "steered" \| "queued" }` · 실행할 수 없으면 409 |
-| POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped: true }` |
+| POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow }` | `{ protocol, ok: true }` |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
 | POST | `/m1/workspaces/{id}/sessions` | `{ kind: "claude" \| "shell", provider?: "claude" \| "codex" \| "gemini" }` | 201 `{ protocol, sessionId }` |

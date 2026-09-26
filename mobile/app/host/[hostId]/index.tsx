@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError } from '@/api/client';
-import { describeRepairNeeded } from '@/api/relay/transport';
+import { describeRepairNeeded, type RelayState } from '@/api/relay/transport';
 import type { MobileState } from '@/api/types';
 import { Button, EmptyState, ErrorBanner } from '@/components/ui';
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
@@ -36,8 +36,8 @@ export default function HostScreen() {
   );
 
   const onData = useCallback(
-    (data: MobileState) => {
-      if (hostId) applyState(hostId, data);
+    (data: MobileState, fresh: boolean) => {
+      if (hostId) applyState(hostId, data, fresh);
     },
     [applyState, hostId],
   );
@@ -52,12 +52,18 @@ export default function HostScreen() {
     [client],
   );
 
+  const watchLink = useCallback(
+    (listener: (state: RelayState) => void) => client?.onStateChange(listener) ?? (() => undefined),
+    [client],
+  );
+
   const poll = useLongPoll<MobileState>({
     enabled: Boolean(client && hostId),
     fetchPage,
     revisionOf: (data) => data.revision,
     onData,
     subscribe,
+    watchLink,
   });
 
   // A refused secret is never presented again: it is dropped the moment the host says so.

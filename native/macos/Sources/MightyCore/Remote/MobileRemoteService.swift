@@ -14,7 +14,10 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// Sends a guided style's prompt through the very same path, so `accepted`
     /// means the same thing it does for `submit`.
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String
-    func mobileStop(sessionId: String) async throws
+    /// Stops the pane's run and answers whether one was in motion at all: a
+    /// phone that slept through the end of a run still shows 중지, and must be
+    /// told there was nothing left to stop rather than "중지 요청됨".
+    func mobileStop(sessionId: String) async throws -> Bool
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
@@ -611,8 +614,9 @@ public actor MobileRemoteService {
                     let ticket = try await perform { try await uploads.begin(sessionId: id, deviceId: deviceId, name: request.name, size: request.size, mimeType: request.mimeType) }
                     return reply(201, ticket)
                 case "stop":
-                    do { try await delegate.mobileStop(sessionId: id) } catch let failure as MightyError { throw Failure(409, failure.message) }
-                    return reply(200, MobileStopped())
+                    let stopped: Bool
+                    do { stopped = try await delegate.mobileStop(sessionId: id) } catch let failure as MightyError { throw Failure(409, failure.message) }
+                    return reply(200, MobileStopped(stopped: stopped))
                 case "permission":
                     let request = try decode(body, as: MobilePermissionAnswer.self)
                     guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId) else { throw Failure(400, "권한 요청 식별자가 올바르지 않습니다.") }

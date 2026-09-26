@@ -149,6 +149,7 @@
   "phone.pair.permissionChecking": "Checking camera permission…",
   "phone.pair.permissionNeeded": "Camera access is required to read the pairing QR code.",
   "phone.pair.qrHint": "Show the QR code in Settings → Mobile Remote on Mac and align it with the frame.",
+  "phone.session.stopNotRunning": "That request had already finished; nothing to stop",
   "provider.available": "Uses the CLI login and permission settings on this machine.",
   "provider.claudeCliSource": "Claude CLI initialisation metadata. No user messages were sent.",
   "provider.cliOutputLimit": "CLI output exceeded the size limit.",
