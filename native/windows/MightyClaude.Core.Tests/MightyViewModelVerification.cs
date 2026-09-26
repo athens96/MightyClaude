@@ -285,9 +285,9 @@ internal static class MightyViewModelVerification
         return Task.CompletedTask;
     }
 
-    // ── WIN_VIEW_MODEL_OK: complete public API surface for WinUI ─────────────
+    // ── The complete public API surface WinUI binds to ─────────────
 
-    internal static Task ViewModelOK()
+    internal static Task ExposesWinUiSurface()
     {
         // Zoom constants
         Check(MightyGraphViewModel.ZoomMin == 0.5, "ZoomMin must be 0.5");
@@ -317,9 +317,9 @@ internal static class MightyViewModelVerification
         return Task.CompletedTask;
     }
 
-    // ── DELIVERED_OK: canvas layout verified end-to-end ──────────────────────
+    // ── Canvas layout verified end-to-end ──────────────────────
 
-    internal static Task DeliveredOK()
+    internal static Task LaysOutNestedDelegationRun()
     {
         // Build a 3-node run matching the nested-delegation-three-levels vector case.
         var run = new MightyGraphRun
