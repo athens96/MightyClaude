@@ -396,6 +396,14 @@ internal static class MightyViewModelVerification
             Check(files.Count == 1 && files[0].Path == "docs/note.md",
                 "only the workspace file may be listed; got " + string.Join(", ", files.Select(f => f.Path)));
             Check(MightyGraphBlockModel.LatestCompletedRun([filed])?.Id == "delivered-files", "the newest completed run must be found");
+
+            // The open result-files panel is a layout node too, and it must draw.
+            var panelLayout = MightyGraphViewModel.CanvasLayout([filed], draft: "", running: false,
+                new HashSet<string>(), resultFilesRunID: filed.Id, viewport: (1200, 800));
+            var panelBlocks = MightyGraphBlockModel.Blocks(panelLayout, [filed], "", "Claude", true);
+            Check(panelBlocks.Count == panelLayout.Nodes.Count, "every layout node must become a block, the files panel included");
+            Check(panelBlocks.Any(b => b.Kind == "resultFiles" && b.Title == "결과에 나온 파일"),
+                "the open panel must draw as a 결과에 나온 파일 block");
         }
         finally { Directory.Delete(root, true); }
 
