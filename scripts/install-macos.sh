@@ -34,7 +34,7 @@ codesign --verify --deep --strict "$SOURCE"
 
 # Guard: verify that the source bundle resolves its resources before touching
 # the installed app. A broken bundle must never replace a working installation.
-VERIFY_OUT="$("$SOURCE/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+VERIFY_OUT="$(cd /tmp && "$SOURCE/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
 VERIFY_EXIT=$?
 echo "$VERIFY_OUT"
 if [ "$VERIFY_EXIT" -ne 0 ]; then
