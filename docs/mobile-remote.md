@@ -132,7 +132,13 @@ MobileCommand { name, description, source, argumentHint?, action? }
 MobileMighty {
   style: "cli" | "ouroboros" | "paperthin",
   styleId: string,                                                       // 아래 "스타일" 절
-  runs: [{ id, input, title?, status, blocks: [MobileBlock] }],          // 최근 20개 요청, 시간순
+  runs: [{ id, input, title?, status, blocks: [MobileBlock], result? }], // 최근 20개 요청, 시간순
+                                             // result(선택, 추가 필드)는 그 요청의 최종 결과(run.finalOutput)를 블록 output과 같은 규칙으로
+                                             //   정리해 20 000자까지 담는다. 창의 **가장 최근 요청 하나**가 끝났을 때(completed·error·stopped)만,
+                                             //   결과가 비어 있지 않을 때만 실린다 — 롱 폴 페이로드를 작게 두려는 것이다. 그 밖의 요청은
+                                             //   main 블록의 output(2 000자)을 쓴다. 롱 폴을 깨우는 mighty 요약값에는 이 요청이 끝난 뒤
+                                             //   결과 길이도 들어가므로 상태가 바뀐 뒤 늦게 도착한 결과도 휴대폰을 깨운다.
+                                             //   구버전 휴대폰은 무시하고, 신버전 휴대폰은 없으면 main 블록 output으로 "최종 결과" 카드를 그린다.
   panel?: MobileStylePanel,                                              // 아래 "스타일" 절
   ouroboros?: { phase, ready: boolean, takesText: [skill], next: [{ skill, title, help }], all: [{ skill, title, help }] },
   paperthin?: { installed: boolean, recommended?: skill,

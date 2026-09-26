@@ -17,6 +17,8 @@ export const MAX_STATUS_LINES = 6;
 
 /** Longest `output` the contract lets a Mighty block carry. */
 export const MAX_BLOCK_OUTPUT = 2000;
+/** Longest `result` the newest settled Mighty run carries. */
+export const MAX_RUN_RESULT = 20_000;
 /** Longest `summary`, and longest `activity` line, a Mighty block carries. */
 export const MAX_BLOCK_SUMMARY = 1000;
 /** Most `activity` lines a Mighty block carries. */
@@ -294,6 +296,11 @@ export interface MobileMightyRun {
   title?: string;
   status: string;
   blocks: MobileBlock[];
+  /**
+   * The run's final answer, up to `MAX_RUN_RESULT` characters. Only the newest run
+   * carries it, once it has settled; absent on older runs and on a Mac that predates it.
+   */
+  result?: string;
   /** Older blocks the phone dropped to keep the list drawable; absent when none were. */
   omittedBlocks?: number;
 }

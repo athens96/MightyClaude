@@ -79,6 +79,8 @@ public enum MobileWire {
     public static let blockStatuses = ["running", "waiting", "completed", "error", "stopped"]
     /// The contract's ceiling on a block's `output`, counted in characters.
     public static let maximumBlockOutput = 2_000
+    /// The ceiling on the newest settled run's `result`, counted in characters.
+    public static let maximumRunResult = 20_000
     /// A block's own prompt, bounded like an activity summary.
     public static let maximumBlockSummary = 1_000
     /// How many recent step lines a block still in motion carries.
@@ -338,8 +340,12 @@ public struct MobileMightyRun: Codable, Sendable, Equatable, Identifiable {
     public var title: String?
     public var status: String
     public var blocks: [MobileBlock]
-    public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock]) {
-        self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks
+    /// The run's final answer at the larger `maximumRunResult` ceiling; carried
+    /// only by the newest run once it has settled, so older runs lean on their
+    /// `main` block's shorter output and the long poll stays small.
+    public var result: String?
+    public init(id: String, input: String, title: String? = nil, status: String, blocks: [MobileBlock], result: String? = nil) {
+        self.id = id; self.input = input; self.title = title; self.status = status; self.blocks = blocks; self.result = result
     }
 }
 

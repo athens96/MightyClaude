@@ -172,12 +172,14 @@ public enum MobileMightySupport {
 
     /// `output` is bounded in characters, cut on a character boundary so a
     /// multi-byte glyph is never split in half.
-    public static func output(_ raw: String?) -> String? {
+    public static func output(_ raw: String?, maximum: Int = MobileWire.maximumBlockOutput) -> String? {
         guard let raw else { return nil }
-        let clean = ActivitySupport.clean(raw, maximumBytes: 4 * MobileWire.maximumBlockOutput)
+        let clean = ActivitySupport.clean(raw, maximumBytes: 4 * maximum)
         guard !clean.isEmpty else { return nil }
-        return String(clean.prefix(MobileWire.maximumBlockOutput))
+        return String(clean.prefix(maximum))
     }
+
+    static func settled(_ status: String) -> Bool { status == "completed" || status == "error" || status == "stopped" }
 
     private static func summary(_ raw: String) -> String? {
         let clean = ActivitySupport.clean(raw, maximumBytes: MobileWire.maximumBlockSummary, singleLine: true)
@@ -252,9 +254,13 @@ public enum MobileMightySupport {
         let window = values.suffix(MobileWire.mightyRuns)
         let offset = values.count - window.count
         return window.enumerated().map { index, run in
-            MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
-                            title: title(run.input),
-                            status: status(run.status), blocks: blocks(run, ordinal: offset + index + 1))
+            let state = status(run.status)
+            // Only the newest run carries its full result, and only once it has settled.
+            let newest = index == window.count - 1 && settled(state)
+            return MobileMightyRun(id: run.id, input: ActivitySupport.clean(run.input, maximumBytes: MobileWire.maximumText),
+                                   title: title(run.input),
+                                   status: state, blocks: blocks(run, ordinal: offset + index + 1),
+                                   result: newest ? output(run.finalOutput, maximum: MobileWire.maximumRunResult) : nil)
         }
     }
 
@@ -263,12 +269,16 @@ public enum MobileMightySupport {
     /// the newest one's id — a new step is what moves a running block's
     /// activity lines, and the id still moves once a list is at its cap.
     /// Streaming text is deliberately absent — hashing it would wake every
-    /// long poll on every token.
+    /// long poll on every token. The one exception is the newest settled run's
+    /// final answer length: that run carries `result`, and an answer landing
+    /// after its status has already moved must still wake the phone.
     /// Hashed rather than joined: this runs on every snapshot publish, which
     /// during a stream is every token, so it must allocate nothing.
     public static func digest(_ values: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
-        for run in values.suffix(MobileWire.mightyRuns) {
+        let window = values.suffix(MobileWire.mightyRuns)
+        if let newest = window.last, settled(status(newest.status)) { hasher.combine(newest.finalOutput?.utf8.count) }
+        for run in window {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
             hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)
             for agent in run.agents {
@@ -286,7 +296,20 @@ public enum MobileMightySupport {
     public static func digest(session: RunSession) -> Int {
         if let saved = session.graphRuns { return digest(saved) }
         var hasher = Hasher()
-        for run in legacyRunIdentities(session) {
+        let identities = legacyRunIdentities(session)
+        if let newest = identities.last, settled(status(newest.status)) {
+            // The newest legacy run's result is its last reply, read the way
+            // `legacyRuns` reads it: only a completed run has one.
+            var length: Int?
+            if newest.status == "completed" {
+                for entry in session.logs.reversed() {
+                    if entry.kind == "user" { break }
+                    if entry.kind == "assistant" { length = entry.text.utf8.count; break }
+                }
+            }
+            hasher.combine(length)
+        }
+        for run in identities {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(0)
             hasher.combine(run.entries); hasher.combine(run.lastEntry)
         }
