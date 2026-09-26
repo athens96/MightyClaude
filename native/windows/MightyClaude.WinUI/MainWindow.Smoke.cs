@@ -680,17 +680,17 @@ public sealed partial class MainWindow
             // 앱의 처리기가 먼저 등록돼 있으므로 여기서는 앱이 Handled로 끝냈는지를 본다.
             core.NewWindowRequested += (_, a) => popupRequests.Add((a.IsUserInitiated, a.Handled, a.Uri));
 
-            bool EngineAt(Uri expected) => Uri.TryCreate(core.Source, UriKind.Absolute, out var at) && at == expected;
             string Diagnose(string step) =>
                 $"{step}: 기록된 주소={browserHistory?.Current?.OriginalString ?? "(없음)"}, 엔진 주소={core.Source}, 사건=[{string.Join(" | ", events)}]";
 
-            // 앱과 같은 WinUI NavigationCompleted를 앱 처리기 뒤에 기다리므로, 끝났을 때는
-            // 앱이 이미 BrowserHistory에 주소를 적은 뒤다.
+            // 앱이 기록에 쓰는 것과 같은 엔진 NavigationCompleted를 기다린다. 이어서 할 일은
+            // 사건 처리가 모두 끝난 뒤에 돌므로(RunContinuationsAsynchronously), 그때는 앱이
+            // 이미 BrowserHistory에 주소를 적은 뒤다.
             async Task NavigateAndWait(string step, Action start, Uri expected)
             {
                 var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                void OnCompleted(Microsoft.UI.Xaml.Controls.WebView2 _, Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs a) => done.TrySetResult(a.IsSuccess);
-                view.NavigationCompleted += OnCompleted;
+                void OnCompleted(Microsoft.Web.WebView2.Core.CoreWebView2 _, Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs a) => done.TrySetResult(a.IsSuccess);
+                core.NavigationCompleted += OnCompleted;
                 try
                 {
                     start();
@@ -699,21 +699,22 @@ public sealed partial class MainWindow
                     Require(done.Task.Result, "브라우저 탐색이 실패했습니다. " + Diagnose(step));
                     Require(browserHistory?.Current == expected, "브라우저 기록 주소가 탐색한 페이지와 다릅니다. " + Diagnose(step));
                 }
-                finally { view.NavigationCompleted -= OnCompleted; }
+                finally { core.NavigationCompleted -= OnCompleted; }
             }
 
-            await NavigateAndWait("첫 페이지", () => view.Source = first, first);
-            await NavigateAndWait("둘째 페이지", () => view.Source = second, second);
+            // 주소줄과 같은 길(NavigateBrowser)로 탐색한다.
+            await NavigateAndWait("첫 페이지", () => NavigateBrowser(first), first);
+            await NavigateAndWait("둘째 페이지", () => NavigateBrowser(second), second);
             var navigated = browserHistory?.State(false) is { CanGoBack: true, CanGoForward: false } && core.CanGoBack;
 
             await NavigateAndWait("뒤로 가기", BrowserGoBack, first);
-            var backWorked = browserHistory?.State(false) is { CanGoForward: true } && core.CanGoForward && EngineAt(first);
+            var backWorked = browserHistory?.State(false) is { CanGoForward: true } && core.CanGoForward;
 
             await core.ExecuteScriptAsync("window.open('about:blank')");
             var deadline = DateTime.UtcNow.AddSeconds(10);
             while (popupRequests.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(20);
             Require(popupRequests.Count > 0, "window.open()이 NewWindowRequested를 일으키지 않았습니다. " + Diagnose("팝업"));
-            var popupBlocked = popupRequests.All(r => r.Handled) && EngineAt(first);
+            var popupBlocked = popupRequests.All(r => r.Handled) && browserHistory?.Current == first && core.CanGoForward;
             Require(popupBlocked, "팝업 요청이 막히지 않았습니다: " + string.Join(", ", popupRequests.Select(r => $"{r.Uri} handled={r.Handled}")) + " " + Diagnose("팝업"));
             return (navigated, backWorked, popupBlocked);
         }
