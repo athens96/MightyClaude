@@ -491,6 +491,14 @@ internal static class Verification
         await Test("graph result files match macOS", GraphVectorVerification.Files);
         await Test("graph session fields share macOS names", GraphVectorVerification.SessionFields);
         await Test("graph runs recorded from a Windows run", GraphVectorVerification.RecordedFromARun);
+        await Test("mighty switch shows only on claude and codex panes", MightyViewModelVerification.ShowsOnlyOnClaudeAndCodexPanes);
+        await Test("mighty switch keeps run and draft", MightyViewModelVerification.SwitchKeepsRunAndDraft);
+        await Test("mighty canvas blocks follow the layout", MightyViewModelVerification.CanvasBlocksFollowTheLayout);
+        await Test("mighty capsule and tooltip match macOS", MightyViewModelVerification.CapsuleAndTooltipMatchMacOS);
+        await Test("mighty zoom steps match macOS", MightyViewModelVerification.ZoomStepsMatchMacOS);
+        await Test("mighty selection routes the wheel", MightyViewModelVerification.SelectionRoutesTheWheel);
+        await Test("mighty result files panel rules match macOS", MightyViewModelVerification.ResultFilesPanelRulesMatchMacOS);
+        await Test("mighty indicators respect animations off", MightyViewModelVerification.IndicatorsRespectAnimationsOff);
         await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);
         await Test("locale English file loads from shared locales path", LocalizationVerification.EnglishLocaleLoadsFromSharedFile);
         await Test("locale key absent from both catalogs returns the key itself", LocalizationVerification.MissingKeyInChosenLanguageFallsBackToKorean);
