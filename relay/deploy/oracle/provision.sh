@@ -95,24 +95,39 @@ fi
 INSTANCE="$(q compute instance list --compartment-id "$C" --display-name "${NAME}" --query "data[?\"lifecycle-state\"!='TERMINATED' && \"lifecycle-state\"!='TERMINATING'] | [0].id")"
 if [ -z "${INSTANCE}" ]; then
     ADS="$(q iam availability-domain list --compartment-id "$C" --query 'join(`" "`, data[].name)')"
-    for SHAPE in VM.Standard.A1.Flex VM.Standard.E2.1.Micro; do
-        IMAGE="$(q compute image list --compartment-id "$C" --operating-system "Canonical Ubuntu" --operating-system-version "24.04" --shape "${SHAPE}" --sort-by TIMECREATED --sort-order DESC --query 'data[0].id')"
-        [ -n "${IMAGE}" ] || continue
-        SHAPE_ARGS=()
-        [ "${SHAPE}" = "VM.Standard.A1.Flex" ] && SHAPE_ARGS=(--shape-config '{"ocpus":1,"memoryInGBs":6}')
-        for AD in ${ADS}; do
-            say "인스턴스를 만듭니다: ${SHAPE} (${AD})"
-            if INSTANCE="$("${OCI[@]}" compute instance launch --compartment-id "$C" --availability-domain "${AD}" \
-                    --shape "${SHAPE}" ${SHAPE_ARGS[@]+"${SHAPE_ARGS[@]}"} --image-id "${IMAGE}" --subnet-id "${SUBNET}" \
-                    --assign-public-ip false --display-name "${NAME}" --ssh-authorized-keys-file "${SSH_KEY}.pub" \
-                    --wait-for-state RUNNING --query data.id --raw-output 2>"${ERR}")"; then
-                break 2
-            fi
-            INSTANCE=""
-            if grep -qi "capacity" "${ERR}"; then echo "  용량이 없습니다. 다음 선택지로 넘어갑니다."; else cat "${ERR}" >&2; fail "인스턴스를 만들지 못했습니다."; fi
+    IMAGE_A1="$(q compute image list --compartment-id "$C" --operating-system "Canonical Ubuntu" --operating-system-version "24.04" --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC --query 'data[0].id')"
+    IMAGE_E2="$(q compute image list --compartment-id "$C" --operating-system "Canonical Ubuntu" --operating-system-version "24.04" --shape VM.Standard.E2.1.Micro --sort-by TIMECREATED --sort-order DESC --query 'data[0].id')"
+    # 무료 인스턴스는 자주 "용량 없음"(Out of host capacity)이고, 연달아 시도하면
+    # Oracle이 잠시 막는다(429 TooManyRequests). 둘 다 멈출 이유가 아니라 기다렸다
+    # 다시 할 이유다. 라운드마다 A1 → E2.1.Micro 순으로 시도한다.
+    PAUSE="${PROVISION_PAUSE:-1}"   # 시험용 배율(0이면 기다리지 않는다)
+    ROUNDS="${PROVISION_ROUNDS:-12}"
+    for ROUND in $(seq 1 "${ROUNDS}"); do
+        for SHAPE in VM.Standard.A1.Flex VM.Standard.E2.1.Micro; do
+            if [ "${SHAPE}" = "VM.Standard.A1.Flex" ]; then IMAGE="${IMAGE_A1}"; SHAPE_ARGS=(--shape-config '{"ocpus":1,"memoryInGBs":6}')
+            else IMAGE="${IMAGE_E2}"; SHAPE_ARGS=(); fi
+            [ -n "${IMAGE}" ] || continue
+            for AD in ${ADS}; do
+                say "인스턴스를 만듭니다: ${SHAPE} (${AD}) — ${ROUND}/${ROUNDS}회차"
+                if INSTANCE="$("${OCI[@]}" compute instance launch --compartment-id "$C" --availability-domain "${AD}" \
+                        --shape "${SHAPE}" ${SHAPE_ARGS[@]+"${SHAPE_ARGS[@]}"} --image-id "${IMAGE}" --subnet-id "${SUBNET}" \
+                        --assign-public-ip false --display-name "${NAME}" --ssh-authorized-keys-file "${SSH_KEY}.pub" \
+                        --wait-for-state RUNNING --query data.id --raw-output 2>"${ERR}")"; then
+                    break 3
+                fi
+                INSTANCE=""
+                if grep -qiE "TooManyRequests|\"status\": 429" "${ERR}"; then
+                    echo "  요청이 너무 잦다고 Oracle이 잠시 막았습니다. 90초 쉬고 이어 갑니다."; sleep $((90 * PAUSE))
+                elif grep -qi "capacity" "${ERR}"; then
+                    echo "  지금 이 종류는 용량이 없습니다."; sleep $((20 * PAUSE))
+                else
+                    cat "${ERR}" >&2; fail "인스턴스를 만들지 못했습니다."
+                fi
+            done
         done
+        [ "${ROUND}" -lt "${ROUNDS}" ] && { echo "  2분 뒤 다시 시도합니다 (Ctrl+C로 멈춰도 다음에 이어집니다)."; sleep $((120 * PAUSE)); }
     done
-    [ -n "${INSTANCE}" ] || fail "A1과 E2.1.Micro 모두 지금 용량이 없습니다. 잠시 뒤 다시 돌리세요."
+    [ -n "${INSTANCE}" ] || fail "이 리전의 무료 인스턴스에 지금 자리가 나지 않습니다. 몇 시간 뒤 같은 명령을 다시 돌리세요(만든 네트워크는 그대로 이어 씁니다)."
 else
     say "이미 있는 인스턴스를 씁니다"
 fi
