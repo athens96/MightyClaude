@@ -117,16 +117,18 @@ Mac의 릴레이 주소 기본값이 비어 있었고, 저장소에는 릴레이
   두고, `MobileRemoteService`의 연결·재연결·페어링 QR과 설정 화면의 안내 문구가 모두 이
   값을 읽도록 바꿨습니다. 그래서 상수 한 줄만 채우면 실제로 그 릴레이로 연결됩니다.
   기본값이 비어 있는 지금은 동작이 이전과 같습니다.
-- `relay/deploy/oracle/` — Oracle Cloud Always Free(arm64)용 배포 묶음.
-  `compose.yaml`은 기존 `relay/Dockerfile`을 linux/arm64로 빌드하고 Caddy로 앞을 막아
-  DuckDNS 이름에 자동 HTTPS를 붙입니다. `Caddyfile`, `setup.sh`(Docker 설치, OS
-  방화벽 80·443 개방, 스택 시작) 포함. 릴레이 코드와 프로토콜은 바꾸지 않았습니다.
+- `relay/deploy/oracle/` — Oracle Cloud Always Free용 배포 묶음(Ampere arm64와 AMD
+  micro 모두). `compose.yaml`은 기존 `relay/Dockerfile`을 서버 CPU에 맞게 빌드하고
+  공식 `caddy:2-alpine`으로 앞을 막아 DuckDNS 이름에 Let's Encrypt 인증서를 80·443으로
+  직접 받습니다(토큰 없음). `setup.sh <이름>.duckdns.org` 한 줄이 Docker 설치, OS
+  방화벽(Ubuntu iptables·Oracle Linux firewalld) 80·443 개방, 스택 시작, `healthz`
+  확인까지 합니다. 릴레이 코드와 프로토콜은 바꾸지 않았습니다.
 - `docs/relay-oracle.md` — 가입부터 `https://<이름>.duckdns.org/healthz`가 `ok`를
   돌려줄 때까지의 한국어 단계별 안내. 계정 id, 키, 토큰, IP는 저장소에 없습니다.
 
 ### 어떤 검사가 증명하나
 `cd relay/deploy/oracle && RELAY_DOMAIN=example.duckdns.org docker compose -f compose.yaml config -q`,
-`cd relay && docker build --platform linux/arm64 -t mightyclaude-relay:check . && npm test`,
+`cd relay && docker build --platform linux/arm64 -t mightyclaude-relay:check . && npm test`(amd64도 같은 이미지가 빌드된다), 로컬에서 `RELAY_DOMAIN=localhost`로 띄운 스택의 `https://localhost/healthz`가 `ok`,
 그리고 `MobileRemote` Swift 테스트의 `effectiveRelay` 확인(사용자 값 우선, 없으면 기본값,
 둘 다 없으면 연결 안 함). 모바일 데이터 연결은 배포 뒤 체크리스트 7번.
 

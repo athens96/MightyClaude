@@ -1,6 +1,3 @@
 {$RELAY_DOMAIN} {
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
-    }
     reverse_proxy relay:8787
 }
