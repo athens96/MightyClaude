@@ -9,6 +9,27 @@ MightyClaude 릴레이(`relay/`)를 Oracle Cloud Always Free 인스턴스에 올
 - **홈 리전**: 무료 인스턴스는 가입할 때 고른 홈 리전에만 만들 수 있고 홈 리전은 바꿀 수 없습니다. 한국에서 쓰기에는 싱가포르(`ap-singapore-1`)나 도쿄·오사카도 충분히 빠릅니다(릴레이는 짧은 암호문만 오갑니다).
 - **유휴 회수 막기(권장)**: 무료 계정의 인스턴스는 7일 동안 CPU·네트워크·메모리 사용이 아주 낮으면 Oracle이 회수할 수 있고, 릴레이는 대부분의 시간에 거의 놉니다. 콘솔의 **청구 및 비용 관리 → 결제 방법/업그레이드**에서 **Pay As You Go**로 올리면 회수 대상에서 빠지고, Always Free 한도 안에서는 여전히 0원입니다. 올린 뒤 **예산(Budgets)**에 1달러 알림을 걸어 두세요.
 
+## CLI로 한 번에 (권장)
+
+아래 1~5단계를 Mac에서 명령 하나로 대신합니다. 먼저 [duckdns.org](https://www.duckdns.org)에서 이름을 하나 등록해 두세요(예: `mighty-young-relay` → `mighty-young-relay.duckdns.org`). 이름은 먼저 등록한 사람의 것이라 남의 이름이나 등록하지 않은 이름으로는 인증서를 받지 못합니다.
+
+```bash
+brew install oci-cli
+oci session authenticate --region ap-singapore-1 --profile-name mighty   # 브라우저로 로그인. 리전은 가입한 홈 리전
+git clone --depth 1 https://github.com/athens96/MightyClaude.git && cd MightyClaude
+bash relay/deploy/oracle/provision.sh --profile mighty --domain mighty-young-relay.duckdns.org
+```
+
+`provision.sh`가 하는 일:
+- 전용 VCN·인터넷 게이트웨이·보안 규칙(22/80/443)·서브넷을 만듭니다.
+- Ubuntu 24.04 인스턴스를 A1 1 OCPU/6 GB로 만들고, 용량이 없으면 E2.1.Micro로 다시 시도합니다.
+- 예약 공인 IP를 붙인 뒤, 그 IP를 보여 주고 DuckDNS에 넣을 때까지 기다립니다.
+- SSH로 접속해 `setup.sh`를 돌리고, 끝에 `wss://…` 주소를 알려 줍니다.
+
+같은 이름의 자원은 다시 만들지 않으니 중간에 멈춰도 다시 돌리면 됩니다. SSH 키는 `~/.ssh/mightyclaude-relay`에 새로 만들어지고, 로그인 세션(약 1시간)이 끝났다면 `oci session authenticate`를 다시 하면 됩니다. Pay As You Go 업그레이드와 DuckDNS의 IP 입력만 웹에서 합니다.
+
+아래는 같은 일을 콘솔에서 손으로 하는 순서입니다.
+
 ## 1. 인스턴스 만들기
 
 1. 콘솔에서 **Compute → Instances → Create instance**.
