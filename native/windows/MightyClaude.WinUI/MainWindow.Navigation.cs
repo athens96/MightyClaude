@@ -11,7 +11,14 @@ public sealed partial class MainWindow
 {
     private readonly Dictionary<string, (ProgressRing Ring, TextBlock Status, TextBlock Time)> sessionIndicators = [];
     private readonly Dictionary<string, (ProgressRing Ring, TextBlock Status, TextBlock Time)> tabIndicators = [];
-    private static string StateLabel(string state) => state switch { "running" => "실행 중", "completed" => "완료", "error" => "오류", "stopped" => "중지됨", _ => "준비" };
+    private static string StateLabel(string state) => Locale.Get(state switch
+    {
+        "running" => "session.state.running",
+        "completed" => "session.state.completed",
+        "error" => "session.state.error",
+        "stopped" => "session.state.stopped",
+        _ => "session.state.idle",
+    });
     private FrameworkElement SessionIndicator(RunSession session, bool tab = false)
     {
         var row = new Grid { ColumnSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
@@ -57,7 +64,8 @@ public sealed partial class MainWindow
     {
         var menu = new MenuFlyout();
         foreach (var provider in Wire.Providers) menu.Items.Add(MenuItem(ProviderCatalog.Name(provider), () => AddPane("claude", provider, groupId)));
-        menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem("명령 실행 창", () => AddPane("shell", groupId: groupId)));
+        menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem(Locale.Get("session.newTab.shell"), () => AddPane("shell", groupId: groupId)));
+        menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem(Locale.Get("browser.newTab"), () => AddBrowserPane(groupId)));
         return menu;
     }
     private MenuFlyout WorkspaceMenu(string id)
@@ -67,7 +75,7 @@ public sealed partial class MainWindow
         var menu = new MenuFlyout();
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
-        menu.Items.Add(MenuItem("목록에서 제거", () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); })));
+        menu.Items.Add(MenuItem(Locale.Get("workspace.menu.remove"), () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); })));
         return menu;
     }
     private MenuFlyout SessionMenu(string id)
@@ -77,8 +85,8 @@ public sealed partial class MainWindow
         var menu = new MenuFlyout();
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
-        menu.Items.Add(MenuItem("집중 보기 / 돌아가기", () => Act(async () => { await SelectLayoutSession(id); await ApplyLayoutPreset(LayoutMode(service.Snapshot, service.Snapshot.ActiveWorkspaceId) == "focus" ? "custom" : "focus"); })));
-        menu.Items.Add(MenuItem("닫기", () => CloseSession(id)));
+        menu.Items.Add(MenuItem(Locale.Get("session.menu.focus"), () => Act(async () => { await SelectLayoutSession(id); await ApplyLayoutPreset(LayoutMode(service.Snapshot, service.Snapshot.ActiveWorkspaceId) == "focus" ? "custom" : "focus"); })));
+        menu.Items.Add(MenuItem(Locale.Get("session.menu.close"), () => CloseSession(id)));
         return menu;
     }
     private Task CloseSession(string id) => Act(async () => { await service.StopAsync(id); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() }); Render(); });

@@ -276,6 +276,14 @@
   "settings.components.statusInstalled": "준비됨",
   "settings.components.statusMissing": "설치 필요",
   "settings.components.statusUnsupported": "미지원",
+  "session.menu.close": "닫기",
+  "session.menu.focus": "집중 보기 / 돌아가기",
+  "session.newTab.shell": "명령 실행 창",
+  "session.state.completed": "완료",
+  "session.state.error": "오류",
+  "session.state.idle": "준비",
+  "session.state.running": "실행 중",
+  "session.state.stopped": "중지됨",
   "settings.display.browserDescription": "켜면 앱을 시작할 때 크로미움을 함께 띄웁니다. 바꾼 뒤 앱을 다시 시작해야 적용됩니다. 크로미움이 멈추면 앱 전체가 종료될 수 있습니다.",
   "settings.display.browserToggle": "브라우저 창 사용 (실험)",
   "settings.display.languageEnglish": "English",
@@ -482,5 +490,6 @@
   "wire.startRun.emptyInput": "실행 내용을 입력하거나 첨부 파일을 선택하세요. 입력은 100,000자 이하여야 합니다.",
   "wire.startRun.invalidFormat": "실행 요청의 형식이 올바르지 않습니다.",
   "wire.startRun.invalidSettings": "실행 설정이 올바르지 않습니다.",
-  "wire.startRun.unsupportedSettings": "실행기가 지원하지 않는 설정입니다."
+  "wire.startRun.unsupportedSettings": "실행기가 지원하지 않는 설정입니다.",
+  "workspace.menu.remove": "목록에서 제거"
 }

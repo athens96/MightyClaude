@@ -68,6 +68,10 @@ public sealed partial class MainWindow
             // built here and loads with the pane, so it is the anchor the view
             // waits on (MainWindow.MightyGraph.cs).
             AttachMightyView(host);
+            // The browser view needs the same anchor: a browser pane replaces the pane's
+            // transcript and composer once the pane is in the visual tree
+            // (MainWindow.Browser.cs).
+            AttachBrowserView(host);
         }
 
         /// <summary>The catalogue key this pane scans under, mirroring slashCatalogKey.</summary>

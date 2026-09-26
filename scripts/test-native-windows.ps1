@@ -69,6 +69,18 @@ try {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    $bp = $result.browserPane
+    if ($null -eq $bp) {
+        $msg = "browserPane 스모크가 실행되지 않았습니다: browserPane 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in @('runtimeVersion', 'navigated', 'backWorked', 'profileUnderTemp', 'popupBlocked')) {
+        $val = $bp.$key
+        if (-not $val) {
+            $msg = "browserPane.$key 값이 없거나 false입니다: $val"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
     $mg = $result.mightyGraph
     if ($null -eq $mg) {
         $msg = "mighty 그래프 스모크가 실행되지 않았습니다: mightyGraph 키가 없습니다"

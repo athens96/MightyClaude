@@ -64,6 +64,8 @@ public sealed partial class MainWindow
             result[PluginMarketplaceSmokeOutcome.ResultKey] = await RunPluginMarketplaceSmoke();
             var mightyLeakStrings = new List<string>();
             result["mightyGraph"] = await RunMightyGraphSmoke(pane, workspace, mightyLeakStrings);
+            var browserLeakStrings = new List<string>();
+            result["browserPane"] = await RunBrowserPaneSmoke(workspace, browserLeakStrings);
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -112,6 +114,7 @@ public sealed partial class MainWindow
             leakStrings.AddRange(componentsLeakStrings);
             // mighty 그래프 캔버스의 글자도 로케일 키 누수 검사에 넣는다.
             leakStrings.AddRange(mightyLeakStrings);
+            leakStrings.AddRange(browserLeakStrings);
             var koKeys = Locale.Catalogue("ko").Keys.ToList();
             var keyLeaks = LocaleKeyLeak.Detect(leakStrings, koKeys);
             result["localeKeyLeakScanned"] = leakStrings.Count;
@@ -128,6 +131,48 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
+    // 브라우저 창 스모크: 임시 --profile 안에서 실제 WebView2로 local data: 페이지를
+    // 두 번 탐색하고, 뒤로 가기와 window.open() 차단, 워크스페이스별 프로필 폴더를
+    // 확인한다. 망은 건드리지 않는다. 런타임이 없는 실행기는 실패로 본다.
+    private async Task<Dictionary<string, object?>> RunBrowserPaneSmoke(Workspace workspace, List<string> leakStrings)
+    {
+        // 이 스모크 한 번만 설정을 켠 것으로 본다.
+        ForceBrowserEngineForSmoke();
+
+        await AddBrowserPane();
+        var session = service.Snapshot.Sessions.Last(s => s.Kind == "browser" && s.WorkspaceId == workspace.Id);
+        await WaitUI(() => views.ContainsKey(session.Id));
+        var view = views[session.Id];
+        view.EnsureBrowserView();
+        await view.BrowserReady;
+
+        if (string.IsNullOrEmpty(view.BrowserRuntimeVersion))
+            throw new InvalidOperationException("이 실행기에 WebView2 Evergreen 런타임이 없습니다. 런타임을 설치한 뒤 다시 실행하세요.");
+        Require(view.BrowserControlLive, "WebView2 컨트롤이 만들어지지 않았습니다.");
+
+        var (navigated, backWorked, popupBlocked) = await view.DriveBrowserSmokeAsync(predicate => WaitUI(predicate));
+
+        // 프로필 폴더는 임시 --profile 아래의 상태 폴더 안에 있어야 한다.
+        var profile = BrowserProfile.ProfileFolder(StateDirectory, session.WorkspaceProfileKey ?? session.WorkspaceId);
+        var profileUnderTemp = profile.StartsWith(StateDirectory, StringComparison.OrdinalIgnoreCase)
+            && profile.Contains(session.WorkspaceId, StringComparison.Ordinal);
+
+        // 주소줄·단추 문구와 런타임 없음 알림·꺼짐 알림도 로케일 키 누수 검사에 넣는다.
+        leakStrings.AddRange(view.BrowserVisibleStrings());
+        CollectVisibleStrings(BuildBrowserMissingNotice(), leakStrings);
+        CollectVisibleStrings(BuildBrowserDisabledNotice(), leakStrings);
+
+        await CloseSession(session.Id);
+        return new Dictionary<string, object?>
+        {
+            ["runtimeVersion"] = view.BrowserRuntimeVersion,
+            ["navigated"] = navigated,
+            ["backWorked"] = backWorked,
+            ["profileUnderTemp"] = profileUnderTemp,
+            ["popupBlocked"] = popupBlocked,
+        };
+    }
+
     // 페이즈별 모델 칸을 붙박이 도구 값으로 짓는다. 실제 사용자의 ~/.config나
     // ~/.ouroboros는 읽지도 쓰지도 않는다. 네 페이즈 줄과 네 도구 묶음이 있어야 하고,
     // 매인 손잡이들이 다른 실행 줄은 혼합으로 보여야 한다.
