@@ -1,8 +1,11 @@
-import type { MobileBlock, MobileMightyRun } from '@/api/types';
+import { MAX_BLOCK_ACTIVITY, MAX_BLOCK_SUMMARY, type MobileBlock, type MobileMightyRun } from '@/api/types';
 import {
   MAX_BLOCKS_PER_RUN,
   MAX_INPUT_PREVIEW,
+  blockActivity,
+  blockGist,
   blockKindLabel,
+  blockPrompt,
   blockKindMark,
   blockTitle,
   defaultView,
@@ -431,5 +434,52 @@ describe('block labels keyed by what the host sent', () => {
       expect({ key, label: blockKindLabel(key) }).toEqual({ key, label: key });
       expect({ key, mark: blockKindMark(key) }).toEqual({ key, mark: blockKindMark('hologram') });
     }
+  });
+});
+
+describe('what a block says folded and open', () => {
+  it('shows the latest step while running, then the first line of the result, then the prompt', () => {
+    const running = block({ summary: '버그 찾기', activity: ['a.swift 읽기', 'grep foo'], output: '중간' });
+    expect(blockGist(running, '')).toBe('grep foo');
+    const waiting = block({ status: 'waiting', activity: ['질문 대기'] });
+    expect(blockGist(waiting, '')).toBe('질문 대기');
+    // Settled: stale steps no longer speak, the result does.
+    const done = block({ status: 'completed', summary: '버그 찾기', activity: ['grep foo'], output: '\n\n  고쳤습니다\n자세히' });
+    expect(blockGist(done, '')).toBe('고쳤습니다');
+    expect(blockGist(block({ status: 'completed', summary: '버그 찾기' }), '')).toBe('버그 찾기');
+    expect(blockGist(block({ summary: '버그 찾기' }), '')).toBe('버그 찾기');
+    expect(blockGist(block(), '')).toBe('');
+  });
+
+  it('reads the request block from the run input, even from a Mac that sends no summary', () => {
+    const main = block({ kind: 'main', status: 'completed' });
+    expect(blockPrompt(main, '  첫 줄\n둘째 줄  ')).toBe('첫 줄\n둘째 줄');
+    expect(blockGist(main, '첫 줄\n둘째 줄')).toBe('첫 줄 둘째 줄');
+    expect(blockPrompt(block({ kind: 'main', summary: '요약' }), '')).toBe('요약');
+    // A child block's prompt is its own summary, never the run's request.
+    expect(blockPrompt(block({ summary: '찾아 줘' }), '고쳐 줘')).toBe('찾아 줘');
+    const long = 'ㄱ'.repeat(MAX_INPUT_PREVIEW + 5);
+    expect(blockGist(block({ activity: [long] }), '')).toHaveLength(MAX_INPUT_PREVIEW + 1);
+  });
+
+  it('lists steps only while the block is in motion', () => {
+    expect(blockActivity(block({ activity: ['a', 'b'] }))).toEqual(['a', 'b']);
+    expect(blockActivity(block({ status: 'completed', activity: ['a'] }))).toEqual([]);
+    expect(blockActivity(block())).toEqual([]);
+  });
+
+  it('parses activity lines defensively and keeps the newest', () => {
+    const lines = Array.from({ length: MAX_BLOCK_ACTIVITY + 3 }, (_, index) => `단계 ${index}`);
+    const parse = (activity: unknown, summary?: unknown) =>
+      normalizeMighty({
+        style: 'cli',
+        runs: [{ id: 'r1', input: '', status: 'running', blocks: [{ id: 'b1', kind: 'agent', title: '', status: 'running', activity, summary }] }],
+      })?.runs[0]?.blocks[0];
+    expect(parse(lines)?.activity).toEqual(lines.slice(-MAX_BLOCK_ACTIVITY));
+    expect(parse(['a\u0007b', '', 3, null, '  c  '])?.activity).toEqual(['ab', 'c']);
+    expect(parse('not a list')?.activity).toBeUndefined();
+    expect(parse([])?.activity).toBeUndefined();
+    // An old Mac sends none at all; the summary keeps the full prompt the Mac allows.
+    expect(parse(undefined, 'ㄱ'.repeat(MAX_BLOCK_SUMMARY + 5))?.summary).toHaveLength(MAX_BLOCK_SUMMARY);
   });
 });

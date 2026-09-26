@@ -196,6 +196,32 @@ public enum MobileMightySupport {
         return milliseconds.rounded()
     }
 
+    /// The recent steps of a block still in motion, oldest first, as the Mac's
+    /// own transcript words them: a tool call is its summary (else its tool's
+    /// name), a reply or an error its first line. The run's own lifecycle row
+    /// ("turn") and a question's raw form are left out. A settled block sends
+    /// none — its output is what it has to say.
+    static func activity(_ entries: [LogEntry], status: String) -> [String]? {
+        guard status == "running" || status == "waiting" else { return nil }
+        var lines: [String] = []
+        for entry in entries.reversed() {
+            guard let line = step(entry) else { continue }
+            lines.append(line)
+            if lines.count == MobileWire.maximumBlockActivity { break }
+        }
+        return lines.isEmpty ? nil : lines.reversed()
+    }
+
+    static func step(_ entry: LogEntry) -> String? {
+        if let activity = entry.activity {
+            guard activity.kind != "turn" else { return nil }
+            return summary(activity.summary.isEmpty ? activity.toolName ?? "" : activity.summary)
+        }
+        guard entry.kind == "assistant" || entry.kind == "error",
+              UserQuestionnaire.parse(inputJSON: entry.text) == nil else { return nil }
+        return summary(String(entry.text.drop(while: \.isWhitespace).prefix(while: { !$0.isNewline })))
+    }
+
     /// The last answer a child block produced; `recordGraph` appends the node's
     /// output as an assistant entry, so that entry is the block's result.
     static func answer(_ entries: [LogEntry]) -> String? {
@@ -207,13 +233,13 @@ public enum MobileMightySupport {
     public static func blocks(_ run: MightyGraphRun, ordinal: Int) -> [MobileBlock] {
         let mainStatus = status(run.status)
         var result = [MobileBlock(id: run.id + ":main", kind: "main", title: "요청 \(ordinal)", status: mainStatus,
-                                  summary: nil, output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
-                                  nodeModelLabel: run.nodeModelLabel)]
+                                  summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
+                                  nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))]
         for agent in run.agents {
             let state = status(agent.status)
             result.append(MobileBlock(id: agent.id, kind: MightyGraphSupport.blockKind(agent), title: MightyGraphSupport.blockTitle(agent),
                                       status: state, summary: summary(agent.input), output: output(answer(agent.entries)),
-                                      durationMs: duration(agent.entries, status: state)))
+                                      durationMs: duration(agent.entries, status: state), activity: activity(agent.entries, status: state)))
         }
         return result
     }
@@ -233,15 +259,22 @@ public enum MobileMightySupport {
     }
 
     /// A cheap digest of what the phone would see change: run and block
-    /// identities with their statuses. Streaming text is deliberately absent —
-    /// hashing it would wake every long poll on every token.
+    /// identities with their statuses, and how many records each holds with
+    /// the newest one's id — a new step is what moves a running block's
+    /// activity lines, and the id still moves once a list is at its cap.
+    /// Streaming text is deliberately absent — hashing it would wake every
+    /// long poll on every token.
     /// Hashed rather than joined: this runs on every snapshot publish, which
     /// during a stream is every token, so it must allocate nothing.
     public static func digest(_ values: [MightyGraphRun]) -> Int {
         var hasher = Hasher()
         for run in values.suffix(MobileWire.mightyRuns) {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(run.agents.count)
-            for agent in run.agents { hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind) }
+            hasher.combine(run.rootEntries.count); hasher.combine(run.rootEntries.last?.id)
+            for agent in run.agents {
+                hasher.combine(agent.id); hasher.combine(agent.status); hasher.combine(agent.kind)
+                hasher.combine(agent.entries.count); hasher.combine(agent.entries.last?.id)
+            }
         }
         return hasher.finalize()
     }
@@ -255,31 +288,44 @@ public enum MobileMightySupport {
         var hasher = Hasher()
         for run in legacyRunIdentities(session) {
             hasher.combine(run.id); hasher.combine(run.status); hasher.combine(0)
+            hasher.combine(run.entries); hasher.combine(run.lastEntry)
         }
         return hasher.finalize()
     }
 
-    /// What the newest legacy runs are called and how they stand, without
-    /// building them: `MightyGraphSupport.legacyRuns` copies every entry of
-    /// every run, and this is read on every snapshot publish. Walked backwards
-    /// and stopped at the window the payload sends, so a long transcript costs
-    /// no more than a short one.
-    static func legacyRunIdentities(_ session: RunSession) -> [(id: String, status: String)] {
-        var ids: [String] = []
+    /// What the newest legacy runs are called, how they stand and what records
+    /// they hold, without building them: `MightyGraphSupport.legacyRuns` copies
+    /// every entry of every run, and this is read on every snapshot publish.
+    /// Walked backwards and stopped at the window the payload sends, so a long
+    /// transcript costs no more than a short one. Walking backwards, a run's
+    /// records are the ones seen since the request after it, newest first.
+    static func legacyRunIdentities(_ session: RunSession) -> [(id: String, status: String, entries: Int, lastEntry: String?)] {
+        var ids: [(id: String, entries: Int, lastEntry: String?)] = []
+        var entries = 0
+        var lastEntry: String?
         var index = session.logs.count - 1
         while index >= 0, ids.count < MobileWire.mightyRuns {
-            if session.logs[index].kind == "user" { ids.append(session.logs[index].id) }
+            let entry = session.logs[index]
+            if entry.kind == "user" {
+                ids.append((entry.id, entries, lastEntry))
+                entries = 0; lastEntry = nil
+            } else {
+                entries += 1
+                if lastEntry == nil { lastEntry = entry.id }
+            }
             index -= 1
         }
         // The transcript opens with replies to a request the pane no longer
         // holds: those entries are grouped under one synthetic run.
         if index < 0, let first = session.logs.first, first.kind != "user", ids.count < MobileWire.mightyRuns {
-            ids.append("history-" + session.id)
+            ids.append(("history-" + session.id, entries, lastEntry))
         }
         guard !ids.isEmpty else { return [] }
         ids.reverse()
         let last = session.status == "idle" ? "completed" : session.status
-        return ids.enumerated().map { (id: $0.element, status: $0.offset == ids.count - 1 ? last : "completed") }
+        return ids.enumerated().map {
+            (id: $0.element.id, status: $0.offset == ids.count - 1 ? last : "completed", entries: $0.element.entries, lastEntry: $0.element.lastEntry)
+        }
     }
 
     /// The prompt a guided request sends, built by the very evaluator the Mac's

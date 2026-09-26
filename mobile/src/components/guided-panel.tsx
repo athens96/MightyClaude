@@ -12,6 +12,7 @@ import type { StyleAction, StylePanel } from '@/api/types';
 import { GuidedActionChip } from '@/components/guided-action-chip';
 import { ActionListSheet, InfoSheet } from '@/components/sheets';
 import { Button } from '@/components/ui';
+import { t } from '@/lib/i18n';
 import { styleViewModel, type StyleViewModel } from '@/lib/styles';
 import { monoText, radius, spacing, tintColor, useStyles, usePalette, type Palette } from '@/theme';
 
@@ -88,19 +89,34 @@ export function GuidedPanel({
         keyboardShouldPersistTaps="handled"
         style={{ maxHeight: bodyMaxHeight }}
       >
+        {/* Done steps are the tint dimmed, the current one is the tint at full height, and
+            the rest are the border colour. The counter is one string that never shrinks:
+            split across text fragments, Android measured it a glyph short. */}
         {model.phase && model.phase.count > 1 ? (
-          <View style={styles.stepper}>
-            {Array.from({ length: model.phase.count }, (_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.step,
-                  { backgroundColor: index <= (model.phase?.index ?? 0) ? tint : palette.border },
-                ]}
-              />
-            ))}
-            <Text style={styles.stepCount}>
-              {model.phase.index + 1}/{model.phase.count}
+          <View
+            accessible
+            accessibilityLabel={t('phone.guided.phaseProgress', {
+              title: model.phase.title,
+              current: model.phase.index + 1,
+              count: model.phase.count,
+            })}
+            style={styles.stepper}
+          >
+            {Array.from({ length: model.phase.count }, (_, index) => {
+              const current = model.phase?.index ?? 0;
+              return (
+                <View
+                  key={index}
+                  style={[
+                    styles.step,
+                    index < current && [styles.stepDone, { backgroundColor: tint }],
+                    index === current && [styles.stepCurrent, { backgroundColor: tint }],
+                  ]}
+                />
+              );
+            })}
+            <Text style={[styles.stepCount, { borderColor: tint, color: tint }]}>
+              {`${model.phase.index + 1}/${model.phase.count}`}
             </Text>
           </View>
         ) : null}
@@ -181,7 +197,11 @@ export function GuidedPanel({
           running ? (
             <View style={styles.busyRow}>
               <ActivityIndicator color={tint} size="small" />
-              <Text style={styles.hint}>실행 중입니다. 끝나면 다음 행동이 나옵니다.</Text>
+              {/* A text beside a spinner only wraps once it may shrink; otherwise the row
+                  runs off the panel and the sentence is cut where the screen ends. */}
+              <Text lineBreakStrategyIOS="hangul-word" numberOfLines={3} style={[styles.hint, styles.busyText]}>
+                실행 중입니다. 끝나면 다음 행동이 나옵니다.
+              </Text>
             </View>
           ) : (
             <Text style={styles.hint}>지금은 고를 행동이 없습니다. 아래에 적어 그대로 보내세요.</Text>
@@ -310,9 +330,22 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.xs,
       paddingVertical: 1,
     },
-    stepper: { alignItems: 'center', flexDirection: 'row', gap: 3 },
-    step: { borderRadius: 2, flex: 1, height: 3 },
-    stepCount: { color: palette.textFaint, fontSize: 10, marginLeft: spacing.xs },
+    busyText: { flexShrink: 1 },
+    stepper: { alignItems: 'center', flexDirection: 'row', gap: 4, paddingVertical: 2 },
+    step: { backgroundColor: palette.border, borderRadius: 2, flex: 1, height: 4 },
+    stepDone: { opacity: 0.45 },
+    stepCurrent: { borderRadius: 4, flex: 1.6, height: 8 },
+    stepCount: {
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      flexShrink: 0,
+      fontSize: 12,
+      fontVariant: ['tabular-nums'],
+      fontWeight: '700',
+      marginLeft: spacing.xs,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: 1,
+    },
     setup: { gap: 2 },
     command: {
       ...monoText,

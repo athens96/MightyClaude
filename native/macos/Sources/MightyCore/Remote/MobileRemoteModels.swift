@@ -81,6 +81,8 @@ public enum MobileWire {
     public static let maximumBlockOutput = 2_000
     /// A block's own prompt, bounded like an activity summary.
     public static let maximumBlockSummary = 1_000
+    /// How many recent step lines a block still in motion carries.
+    public static let maximumBlockActivity = 8
     /// How many of a pane's newest runs the Mighty payload carries.
     public static let mightyRuns = 20
     /// Built-in relay address shipped with the app: the relay deployed with
@@ -319,10 +321,12 @@ public struct MobileBlock: Codable, Sendable, Equatable, Identifiable {
     public var durationMs: Double?
     /// The model label computed by the Mac and projected directly; present only on `main` blocks.
     public var nodeModelLabel: String?
-    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil, nodeModelLabel: String? = nil) {
+    /// What a block still in motion has been doing, oldest first; absent once it settles.
+    public var activity: [String]?
+    public init(id: String, kind: String, title: String, status: String, summary: String? = nil, output: String? = nil, durationMs: Double? = nil, nodeModelLabel: String? = nil, activity: [String]? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.status = status
         self.summary = summary; self.output = output; self.durationMs = durationMs
-        self.nodeModelLabel = nodeModelLabel
+        self.nodeModelLabel = nodeModelLabel; self.activity = activity
     }
 }
 

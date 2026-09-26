@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -12,6 +12,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError, isNotFound } from '@/api/client';
 import { describeRepairNeeded } from '@/api/relay/transport';
@@ -42,6 +43,7 @@ import { ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, Sheet } from '@
 import { Button, Chip, EmptyState, ErrorBanner } from '@/components/ui';
 import { useAttachments } from '@/hooks/use-attachments';
 import { useCapabilities } from '@/hooks/use-capabilities';
+import { useFollowBottom } from '@/hooks/use-follow-bottom';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { hasCapability } from '@/lib/capabilities';
 import { commandActionOf, isMessageAction } from '@/lib/commands';
@@ -112,9 +114,8 @@ export default function SessionScreen() {
   const commands = useSessionCommands(hostId, sessionId);
   const capabilities = useCapabilities(hostId, client);
   const insets = useSafeAreaInsets();
-
-  const listRef = useRef<FlatList<LogEntry>>(null);
-  const atBottom = useRef(true);
+  const headerHeight = useHeaderHeight();
+  const [keyboardShown, setKeyboardShown] = useState(false);
   const [sending, setSending] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [paneBusy, setPaneBusy] = useState(false);
@@ -232,8 +233,6 @@ export default function SessionScreen() {
   const previousLive = useRef<LogEntry[]>(NO_ENTRIES);
 
   const entries = useMemo(() => combineEntries(older, live), [older, live]);
-  const entryCount = entries.length;
-  const lastEntryText = entries[entryCount - 1]?.text ?? '';
 
   useEffect(() => {
     setOlder([]);
@@ -254,11 +253,16 @@ export default function SessionScreen() {
     setOlder((prev) => retainDropped(prev, previous, live));
   }, [live]);
 
+  // Android reports only the "did" events; the composer drops its home-indicator inset
+  // while the keyboard is up, since the keyboard already covers that strip.
   useEffect(() => {
-    if (!atBottom.current || entryCount === 0) return;
-    const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 40);
-    return () => clearTimeout(timer);
-  }, [entryCount, lastEntryText]);
+    const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardShown(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardShown(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
 
   // Slash commands are cached per session and re-read whenever the screen regains focus.
   useFocusEffect(
@@ -300,13 +304,21 @@ export default function SessionScreen() {
 
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-      const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-      atBottom.current = distanceFromBottom < 80;
-      if (contentOffset.y < 120) void loadOlder();
+      if (event.nativeEvent.contentOffset.y < 120) void loadOlder();
     },
     [loadOlder],
   );
+
+  // Both bodies stay on their newest content while it grows, until the user scrolls up
+  // to read. Only one is mounted at a time; sending pins whichever it is.
+  const logFollow = useFollowBottom(onScroll);
+  const blockFollow = useFollowBottom();
+  const followLog = logFollow.follow;
+  const followBlocks = blockFollow.follow;
+  const followNewest = useCallback(() => {
+    followLog();
+    followBlocks();
+  }, [followBlocks, followLog]);
 
   const onAttachmentError = useCallback((message: string) => showToast(message, 'error'), []);
   const attachments = useAttachments(onAttachmentError);
@@ -343,14 +355,14 @@ export default function SessionScreen() {
         }
         showToast(acceptedMessage(result.accepted), 'success');
         clearAttachments();
-        atBottom.current = true;
+        followNewest();
         poll.refresh();
         return true;
       } finally {
         setSending(false);
       }
     },
-    [attachFiles.length, clearAttachments, client, poll, sessionId, uploadAttachments],
+    [attachFiles.length, clearAttachments, client, followNewest, poll, sessionId, uploadAttachments],
   );
 
   const stop = useCallback(() => {
@@ -605,7 +617,7 @@ export default function SessionScreen() {
           showToast(acceptedMessage(result.accepted), 'success');
           // Only text that actually went with the action leaves the composer.
           if (request.text) setText('');
-          atBottom.current = true;
+          followNewest();
         } catch (error) {
           showToast(describeError(error), 'error');
         } finally {
@@ -617,7 +629,7 @@ export default function SessionScreen() {
         }
       })();
     },
-    [canStyle, client, panel, poll, sessionId, text],
+    [canStyle, client, followNewest, panel, poll, sessionId, text],
   );
 
   const headerNode = detail ? (
@@ -680,9 +692,12 @@ export default function SessionScreen() {
   ) : null;
 
   return (
+    // Padding on both platforms: Android draws edge to edge (targetSdk 36), so the window
+    // no longer shrinks for the keyboard and the view has to make the room itself. The
+    // offset is the native header above this view, which the keyboard's position counts.
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
+      behavior="padding"
+      keyboardVerticalOffset={headerHeight}
       style={styles.screen}
     >
       <Stack.Screen
@@ -715,16 +730,17 @@ export default function SessionScreen() {
           contentContainerStyle={styles.list}
           header={headerNode}
           footer={footerNode}
+          listRef={blockFollow.attach}
+          follow={blockFollow.props}
         />
       ) : (
         <FlatList
-          ref={listRef}
+          {...logFollow.props}
+          ref={logFollow.attach}
           data={entries}
           keyExtractor={(entry) => entry.id}
           renderItem={({ item }) => <LogEntryView entry={item} />}
           contentContainerStyle={styles.list}
-          onScroll={onScroll}
-          scrollEventThrottle={64}
           keyboardShouldPersistTaps="handled"
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
           ListHeaderComponent={headerNode}
@@ -735,7 +751,7 @@ export default function SessionScreen() {
         />
       )}
 
-      <View style={{ paddingBottom: insets.bottom + spacing.sm }}>
+      <View style={{ paddingBottom: (keyboardShown ? 0 : insets.bottom) + spacing.sm }}>
         {!questionPending && panel ? (
           <GuidedPanel
             panel={panel}

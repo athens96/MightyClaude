@@ -290,6 +290,62 @@ struct MobileRemoteExtensionTests {
         #expect(MobileMightySupport.digest([run]) != withAgent)
     }
 
+    @Test func theMightyDigestMovesOnANewStepInEitherBlock() {
+        var run = MightyGraphRun(id: "run-1", input: "안녕", status: "running",
+                                 rootEntries: [LogEntry(id: "e1", kind: "assistant", text: "부")],
+                                 agents: [agent("a1", kind: nil, status: "running")])
+        let first = MobileMightySupport.digest([run])
+        run.rootEntries.append(LogEntry(id: "e2", kind: "system", text: "",
+                                        activity: AgentActivity(id: "t1", provider: "claude", kind: "read", state: "running", summary: "a.swift")))
+        let rooted = MobileMightySupport.digest([run])
+        #expect(rooted != first)
+        // A tool that finishes in place is the same record, not a new step.
+        run.rootEntries[1].activity?.state = "completed"
+        #expect(MobileMightySupport.digest([run]) == rooted)
+        run.agents[0].entries.append(LogEntry(id: "c1", kind: "assistant", text: "하위"))
+        let child = MobileMightySupport.digest([run])
+        #expect(child != rooted)
+        // A list held at its cap still moves: the newest record is a new id.
+        run.agents[0].entries = [LogEntry(id: "c2", kind: "assistant", text: "하위")]
+        #expect(MobileMightySupport.digest([run]) != child)
+    }
+
+    @Test func aRunningBlockCarriesItsRecentStepsAndTheRequestAsItsSummary() {
+        func tool(_ id: String, kind: String, summary: String, name: String? = nil) -> LogEntry {
+            LogEntry(id: id, kind: "system", text: "",
+                     activity: AgentActivity(id: "act-" + id, provider: "claude", kind: kind, state: "completed", toolName: name, summary: summary))
+        }
+        let questionnaire = #"{"questions":[{"question":"어느 쪽?","header":"선택","multiSelect":false,"options":[{"label":"가","description":""},{"label":"나","description":""}]}]}"#
+        var root: [LogEntry] = [LogEntry(id: "turn", kind: "system", text: "",
+                                         activity: AgentActivity(id: "turn", provider: "claude", kind: "turn", state: "running", summary: "Claude 실행 중"))]
+        root.append(LogEntry(id: "say", kind: "assistant", text: "\n  먼저 구조를 봅니다.\n둘째 줄"))
+        root.append(tool("t0", kind: "tool", summary: "", name: "TodoWrite"))
+        root.append(LogEntry(id: "q", kind: "assistant", text: questionnaire))
+        for index in 1...9 { root.append(tool("t\(index)", kind: "read", summary: "파일\(index).swift")) }
+        let running = MightyGraphRun(id: "run-1", input: "첫 줄\n둘째 줄", status: "running", rootEntries: root,
+                                     agents: [MightyGraphAgent(id: "a1", input: "찾아 줘", status: "running",
+                                                               entries: [tool("c1", kind: "search", summary: "grep \u{1b}[31mfoo")])])
+        let blocks = MobileMightySupport.blocks(running, ordinal: 1)
+        // The request itself is the main block's summary, folded to one line.
+        #expect(blocks[0].summary == "첫 줄 둘째 줄")
+        // The newest eight steps, oldest first, each cleaned like a summary.
+        #expect(blocks[0].activity == (2...9).map { "파일\($0).swift" })
+        #expect(blocks[1].activity == ["grep foo"])
+        // Fewer steps than the cap: a reply is its first line, a nameless tool
+        // is its name, and neither the lifecycle row nor a question's raw form shows.
+        let short = MightyGraphRun(id: "run-2", status: "running", rootEntries: Array(root.prefix(4)))
+        #expect(MobileMightySupport.blocks(short, ordinal: 1)[0].activity == ["먼저 구조를 봅니다.", "TodoWrite"])
+        // A settled block sends none, and a long step is cut like a summary.
+        var settled = running
+        settled.status = "completed"
+        settled.agents[0].status = "completed"
+        #expect(MobileMightySupport.blocks(settled, ordinal: 1).allSatisfy { $0.activity == nil })
+        let long = MightyGraphRun(id: "run-3", status: "running", rootEntries: [tool("l", kind: "command", summary: String(repeating: "가", count: 900))])
+        let line = MobileMightySupport.blocks(long, ordinal: 1)[0].activity?.first
+        #expect((line?.utf8.count ?? 0) <= MobileWire.maximumBlockSummary && line?.hasSuffix("가") == true)
+        #expect(MobileMightySupport.blocks(MightyGraphRun(id: "run-4", status: "running"), ordinal: 1)[0].activity == nil)
+    }
+
     @Test func aLegacyGraphPaneStillMovesItsDigestWhenABlockStatusChanges() {
         // No saved graph: the payload groups the transcript, so the digest has
         // to read that same grouping or the phone's blocks change in silence.
@@ -304,11 +360,15 @@ struct MobileRemoteExtensionTests {
         session.status = "completed"
         let finished = MobileMightySupport.digest(session: session)
         #expect(finished != running && finished == MobileMightySupport.digest(MightyGraphSupport.legacyRuns(session)))
-        // A new request is a new block, and streamed text alone is not.
-        session.logs.append(LogEntry(id: "a2", kind: "assistant", text: "자라나는 답"))
+        // Streamed text alone is not a change; a new record is a new step, and
+        // a new request is a new block.
+        session.logs[1].text = "부분 응답이 자라난다"
         #expect(MobileMightySupport.digest(session: session) == finished)
+        session.logs.append(LogEntry(id: "a2", kind: "assistant", text: "자라나는 답"))
+        let stepped = MobileMightySupport.digest(session: session)
+        #expect(stepped != finished && stepped == MobileMightySupport.digest(MightyGraphSupport.legacyRuns(session)))
         session.logs.append(LogEntry(id: "u3", kind: "user", text: "또"))
-        #expect(MobileMightySupport.digest(session: session) != finished)
+        #expect(MobileMightySupport.digest(session: session) != stepped)
         // A transcript that opens with replies groups them under one run, and
         // an empty pane has nothing to hash at all.
         let orphan = RunSession(workspaceId: "w1", title: "Claude", status: "idle", logs: [LogEntry(id: "a0", kind: "assistant", text: "이전 답")])
@@ -472,7 +532,9 @@ struct MobileRemoteExtensionTests {
         let plain = try encoded(MobileMighty(style: "cli", runs: []))
         #expect(plain["style"] as? String == "cli" && plain["ouroboros"] == nil && plain["paperthin"] == nil)
         let block = try encoded(MobileBlock(id: "b", kind: "main", title: "요청 1", status: "running"))
-        for key in ["summary", "output", "durationMs"] { #expect(block[key] == nil) }
+        for key in ["summary", "output", "durationMs", "activity"] { #expect(block[key] == nil) }
+        let active = try encoded(MobileBlock(id: "b", kind: "agent", title: "검색", status: "running", activity: ["a.swift"]))
+        #expect(active["activity"] as? [String] == ["a.swift"])
         let run = try encoded(MobileMightyRun(id: "r", input: "안녕", status: "running", blocks: []))
         #expect(run["title"] == nil)
     }

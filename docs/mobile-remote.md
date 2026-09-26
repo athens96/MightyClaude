@@ -139,7 +139,15 @@ MobileMighty {
                 domains: [{ id, title, axis, question, skills: [{ name, emoji, summary, scope, userInvoked, readOnly }] }],
                 casebook?: { name, weight: "full" | "lightweight", files: [string] } }
 }
-MobileBlock { id, kind, title, status, summary?, output?, durationMs? }   // output은 2 000자까지. durationMs는 끝난 블록만(첫 기록~마지막 기록)
+MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModelLabel?, activity?: [string] }
+                                             // output은 2 000자까지. durationMs는 끝난 블록만(첫 기록~마지막 기록)
+                                             // summary는 그 블록이 받은 지시를 한 줄로 편 것(1 000바이트까지): 하위 블록은 프롬프트, main 블록은 요청 자체
+                                             // activity(선택, 추가 필드)는 running·waiting 블록에만 실리는 최근 단계 최대 8줄, 오래된 것부터.
+                                             //   Mac 대화 기록과 같은 문구: 도구 호출은 그 요약(없으면 도구 이름), 답변·오류는 첫 줄. 실행 자체의
+                                             //   "turn" 행과 질문의 원문(JSON)은 빠진다. 줄마다 summary처럼 한 줄로 펴고 1 000바이트에서 자른다.
+                                             //   끝난 블록에는 없다. 이 필드를 모르는 구버전 휴대폰은 무시한다.
+                                             // 롱 폴을 깨우는 mighty 요약값은 블록 id·상태와 함께 run.rootEntries·agent.entries의 개수와
+                                             // 마지막 기록 id를 해시한다 — 새 단계가 휴대폰을 깨운다. 스트리밍 중인 글자는 여전히 해시하지 않는다.
                                              // 호스트는 요청당 블록 수를 제한하지 않는다. 휴대폰은 최근 200개만 그리고 나머지는 "이전 블록 N개 생략"으로 표시한다.
 ```
 
