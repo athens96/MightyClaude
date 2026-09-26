@@ -178,7 +178,7 @@ Windows는 macOS의 손으로 여는 브라우저 탭을 WebView2로 옮긴 것�
 - 새 실행 창 메뉴의 `새 브라우저 탭`(`browser.newTab`)이 `browser` 종류의 실행 창을 연다. 설정이 꺼져 있어도 메뉴 항목은 그대로 있다.
 - 브라우저 창은 CLI 실행을 절대 시작하지 않는다. 창이 화면에 붙는 순간 에이전트용 대화·입력칸을 접고 주소줄·뒤로·앞으로·새로 고침과 WebView2 화면으로 바꾼다.
 - 주소줄은 macOS와 같은 `BrowserAddress.Resolve` 규칙이다(앞뒤 공백 제거, 빈 값은 무시, `://`가 있으면 그대로, 없으면 `https://`를 붙인다).
-- 뒤로·앞으로 단추의 켜짐과 주소줄은 `BrowserHistory`를 따른다. 기록은 WinUI 컨트롤이 아니라 엔진(`CoreWebView2`)의 탐색 사건을 따른다. 탐색이 성공으로 끝나면(`NavigationCompleted`의 `IsSuccess`) 엔진이 보고한 주소(`CoreWebView2.Source`)를 적고, `data:` 페이지처럼 엔진이 빈 주소를 보고하면 같은 탐색이 시작한 주소(`NavigationStarting`, 리디렉트되면 새 주소)를 적는다. 주소줄 입력도 엔진의 `Navigate`로 바로 보낸다. 같은 주소는 새로 고침으로 보고, 새 방문은 앞으로 기록을 버린다.
+- 뒤로·앞으로 단추의 켜짐과 주소줄은 `BrowserHistory`를 따른다. 기록은 WinUI 컨트롤이 아니라 엔진(`CoreWebView2`)의 탐색 사건을 따른다. 탐색이 성공으로 끝나면(`NavigationCompleted`의 `IsSuccess`) 엔진이 보고한 주소(`CoreWebView2.Source`)를 적고, `data:` 페이지처럼 엔진이 빈 주소를 보고하면 같은 탐색이 시작한 주소(`NavigationStarting`, 리디렉트되면 새 주소)를 적는다. 주소줄 입력도 엔진의 `Navigate`로, 뒤로·앞으로 단추도 엔진의 `GoBack`·`GoForward`로 바로 보낸다. 같은 주소는 새로 고침으로 보고, 새 방문은 앞으로 기록을 버린다.
 - 세션 상태의 `RunSession`은 `kind: "browser"`와 `workspaceProfileKey`(창을 만들 때 워크스페이스 id)를 macOS와 같은 이름으로 저장한다. macOS가 쓴 브라우저 창이 든 스냅샷도 Windows에서 열리고, `AppSnapshot` 버전은 1 그대로다.
 
 ### 런타임: WebView2 Evergreen
@@ -218,7 +218,7 @@ Windows는 macOS의 손으로 여는 브라우저 탭을 WebView2로 옮긴 것�
 ### 검증
 
 - Core: `dotnet run --project native/windows/MightyClaude.Core.Tests`의 `browser …` 테스트 여덟 개(주소, 기록, 프로필 폴더, 설정 기본값·한 번 읽기, 클릭 전 설치 없음, Microsoft 서명 필수, 실패 시 정리, 세션 필드 이름).
-- GUI 스모크 키 `browserPane`: 임시 `--profile`과 스모크 전용으로 켠 설정에서 실제 WebView2로 local `data:` 페이지 둘을 탐색하고(각 단계의 `NavigationCompleted`를 기다린다), 뒤로 가기, 프로필 폴더가 임시 상태 폴더 아래인지, 페이지의 `window.open()`이 `NewWindowRequested`를 일으키고 `Handled`로 막혀 새 창이 없는지를 기록한다. 망은 쓰지 않는다. 런타임 없음 안내와 꺼짐 안내의 문구도 로케일 키 누수 검사에 넣는다. `scripts/test-native-windows.ps1`은 키가 없거나 값이 하나라도 false면 실패시킨다.
+- GUI 스모크 키 `browserPane`: 임시 `--profile`과 스모크 전용으로 켠 설정에서 실제 WebView2로 로컬 페이지 둘을 탐색하고(각 단계의 `NavigationCompleted`를 기다린다), 앱의 뒤로 단추와 같은 길로 뒤로 가서 첫 페이지의 `NavigationCompleted`가 오는지, 프로필 폴더가 임시 상태 폴더 아래인지, 첫 페이지의 스크립트가 부른 `window.open()`이 `NewWindowRequested`를 일으키고 `Handled`로 막혀 새 창이 없는지를 기록한다. 두 페이지는 임시 폴더의 HTML 파일을 `SetVirtualHostNameToFolderMapping`으로 `https://mighty-smoke.invalid/one.html`·`two.html`에 비춘 것이다. `.invalid`는 실제 사이트가 쓸 수 없는 이름이고 매핑은 DNS를 거치지 않으므로 망은 쓰지 않으면서, 실제 https 페이지처럼 엔진 세션 기록이 남는다(최상위 `data:` 주소는 Chromium이 따로 다뤄 뒤로 가기가 탐색을 일으키지 않았다). 런타임 없음 안내와 꺼짐 안내의 문구도 로케일 키 누수 검사에 넣는다. `scripts/test-native-windows.ps1`은 키가 없거나 값이 하나라도 false면 실패시킨다.
 - 기기 확인 항목은 `docs/windows-screen-checklist.md`에 있다.
 
 ### Windows 범위 밖

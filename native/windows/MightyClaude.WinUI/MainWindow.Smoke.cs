@@ -131,8 +131,8 @@ public sealed partial class MainWindow
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         await FinishSmoke(passed);
     }
-    // 브라우저 창 스모크: 임시 --profile 안에서 실제 WebView2로 local data: 페이지를
-    // 두 번 탐색하고, 뒤로 가기와 window.open() 차단, 워크스페이스별 프로필 폴더를
+    // 브라우저 창 스모크: 임시 --profile 안에서 실제 WebView2로 임시 폴더의 로컬 페이지
+    // 둘을 가상 호스트(https://mighty-smoke.invalid/)로 탐색하고, 뒤로 가기와 window.open() 차단, 워크스페이스별 프로필 폴더를
     // 확인한다. 망은 건드리지 않는다. 런타임이 없는 실행기는 실패로 본다.
     private async Task<Dictionary<string, object?>> RunBrowserPaneSmoke(Workspace workspace, List<string> leakStrings)
     {
@@ -659,18 +659,32 @@ public sealed partial class MainWindow
 
     private sealed partial class PaneView
     {
-        // 브라우저 창을 실제 WebView2로 몰아 본다. 두 local data: 페이지(이스케이프가 필요 없는
-        // 글자만)로 탐색하고, 뒤로 가기는 앱의 뒤로 단추와 같은 길로 부른다. 각 단계는 그
-        // 탐색의 NavigationCompleted를 기다린 뒤 앱이 BrowserHistory에 적은 주소를
-        // BrowserHistory와 같은 Uri 비교로 확인한다. 마지막으로 페이지가 window.open()을
-        // 부르면 NewWindowRequested가 와서 Handled로 끝나야 하고 새 창은 없어야 한다.
-        // 망은 건드리지 않는다. 실패하면 기록된 주소와 본 탐색 사건을 메시지에 싣는다.
+        // 브라우저 창을 실제 WebView2로 몰아 본다. 두 페이지는 임시 폴더의 HTML 파일이고,
+        // SetVirtualHostNameToFolderMapping으로 https://mighty-smoke.invalid/ 아래에 비춘다.
+        // .invalid는 실제 사이트가 쓸 수 없는 이름이고 매핑은 DNS를 거치지 않으므로 망은
+        // 건드리지 않으면서, data: 주소와 달리 엔진이 진짜 세션 기록을 남기는 https 페이지다.
+        // 탐색은 주소줄과 같은 길(NavigateBrowser)로, 뒤로 가기는 앱의 뒤로 단추와 같은 길로
+        // 부른다. 각 단계는 그 탐색의 NavigationCompleted를 기다린 뒤 앱이 BrowserHistory에
+        // 적은 주소를 BrowserHistory와 같은 Uri 비교로 확인한다. 마지막으로 첫 페이지의 스크립트가
+        // window.open()을 부르면 NewWindowRequested가 와서 Handled로 끝나야 하고 새 창은
+        // 없어야 한다. 실패하면 기록된 주소와 본 탐색 사건을 메시지에 싣는다.
         internal async Task<(bool Navigated, bool BackWorked, bool PopupBlocked)> DriveBrowserSmokeAsync()
         {
-            var first = new Uri("data:text/html,MightyBrowserSmokeOne");
-            var second = new Uri("data:text/html,MightyBrowserSmokeTwo");
+            const string host = "mighty-smoke.invalid";
+            var first = new Uri($"https://{host}/one.html");
+            var second = new Uri($"https://{host}/two.html");
             var view = webView ?? throw new InvalidOperationException("WebView2 컨트롤이 없습니다.");
             var core = view.CoreWebView2;
+            var pages = Path.Combine(Path.GetTempPath(), "MightyBrowserSmoke_" + Wire.Id());
+            Directory.CreateDirectory(pages);
+            await File.WriteAllTextAsync(Path.Combine(pages, "one.html"),
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>MightyBrowserSmokeOne</title></head>"
+                + "<body><p>MightyBrowserSmokeOne</p><script>function mightyOpenPopup() { window.open('two.html'); return 'opened'; }</script></body></html>");
+            await File.WriteAllTextAsync(Path.Combine(pages, "two.html"),
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>MightyBrowserSmokeTwo</title></head>"
+                + "<body><p>MightyBrowserSmokeTwo</p></body></html>");
+            core.SetVirtualHostNameToFolderMapping(host, pages, Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Deny);
+
             var events = new List<string>();
             core.NavigationStarting += (_, a) => events.Add($"starting#{a.NavigationId} {a.Uri}");
             core.SourceChanged += (_, _) => events.Add($"source {core.Source}");
@@ -681,7 +695,8 @@ public sealed partial class MainWindow
             core.NewWindowRequested += (_, a) => popupRequests.Add((a.IsUserInitiated, a.Handled, a.Uri));
 
             string Diagnose(string step) =>
-                $"{step}: 기록된 주소={browserHistory?.Current?.OriginalString ?? "(없음)"}, 엔진 주소={core.Source}, 사건=[{string.Join(" | ", events)}]";
+                $"{step}: 기록된 주소={browserHistory?.Current?.OriginalString ?? "(없음)"}, 엔진 주소={core.Source}, "
+                + $"엔진 뒤로={core.CanGoBack}, 엔진 앞으로={core.CanGoForward}, 사건=[{string.Join(" | ", events)}]";
 
             // 앱이 기록에 쓰는 것과 같은 엔진 NavigationCompleted를 기다린다. 이어서 할 일은
             // 사건 처리가 모두 끝난 뒤에 돌므로(RunContinuationsAsynchronously), 그때는 앱이
@@ -698,25 +713,37 @@ public sealed partial class MainWindow
                         throw new TimeoutException("브라우저 탐색이 30초 안에 끝나지 않았습니다. " + Diagnose(step));
                     Require(done.Task.Result, "브라우저 탐색이 실패했습니다. " + Diagnose(step));
                     Require(browserHistory?.Current == expected, "브라우저 기록 주소가 탐색한 페이지와 다릅니다. " + Diagnose(step));
+                    Require(core.Source == expected.AbsoluteUri, "엔진 주소가 탐색한 페이지와 다릅니다. " + Diagnose(step));
                 }
                 finally { core.NavigationCompleted -= OnCompleted; }
             }
 
-            // 주소줄과 같은 길(NavigateBrowser)로 탐색한다.
-            await NavigateAndWait("첫 페이지", () => NavigateBrowser(first), first);
-            await NavigateAndWait("둘째 페이지", () => NavigateBrowser(second), second);
-            var navigated = browserHistory?.State(false) is { CanGoBack: true, CanGoForward: false } && core.CanGoBack;
+            try
+            {
+                await NavigateAndWait("첫 페이지", () => NavigateBrowser(first), first);
+                await NavigateAndWait("둘째 페이지", () => NavigateBrowser(second), second);
+                var navigated = browserHistory?.State(false) is { CanGoBack: true, CanGoForward: false } && core.CanGoBack;
+                Require(navigated, "두 페이지를 탐색한 뒤 뒤로 갈 수 없습니다. " + Diagnose("둘째 페이지"));
 
-            await NavigateAndWait("뒤로 가기", BrowserGoBack, first);
-            var backWorked = browserHistory?.State(false) is { CanGoForward: true } && core.CanGoForward;
+                await NavigateAndWait("뒤로 가기", BrowserGoBack, first);
+                var backWorked = browserHistory?.State(false) is { CanGoForward: true } && core.CanGoForward;
 
-            await core.ExecuteScriptAsync("window.open('about:blank')");
-            var deadline = DateTime.UtcNow.AddSeconds(10);
-            while (popupRequests.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(20);
-            Require(popupRequests.Count > 0, "window.open()이 NewWindowRequested를 일으키지 않았습니다. " + Diagnose("팝업"));
-            var popupBlocked = popupRequests.All(r => r.Handled) && browserHistory?.Current == first && core.CanGoForward;
-            Require(popupBlocked, "팝업 요청이 막히지 않았습니다: " + string.Join(", ", popupRequests.Select(r => $"{r.Uri} handled={r.Handled}")) + " " + Diagnose("팝업"));
-            return (navigated, backWorked, popupBlocked);
+                // 첫 페이지에 실린 스크립트가 window.open()을 부른다. 함수가 있다는 것은 첫 페이지가
+                // 로컬 폴더에서 실제로 읽혀 살아 있다는 뜻이기도 하다.
+                var opened = await core.ExecuteScriptAsync("typeof mightyOpenPopup === 'function' ? mightyOpenPopup() : 'missing'");
+                Require(opened == "\"opened\"", "첫 페이지의 window.open() 스크립트가 돌지 않았습니다: " + opened + " " + Diagnose("팝업"));
+                var deadline = DateTime.UtcNow.AddSeconds(10);
+                while (popupRequests.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(20);
+                Require(popupRequests.Count > 0, "window.open()이 NewWindowRequested를 일으키지 않았습니다. " + Diagnose("팝업"));
+                var popupBlocked = popupRequests.All(r => r.Handled) && browserHistory?.Current == first && core.CanGoForward;
+                Require(popupBlocked, "팝업 요청이 막히지 않았습니다: " + string.Join(", ", popupRequests.Select(r => $"{r.Uri} handled={r.Handled}")) + " " + Diagnose("팝업"));
+                return (navigated, backWorked, popupBlocked);
+            }
+            finally
+            {
+                core.ClearVirtualHostNameToFolderMapping(host);
+                try { Directory.Delete(pages, true); } catch { }
+            }
         }
 
         internal async Task<Dictionary<string, object?>> RunComposerSmoke()
