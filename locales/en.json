@@ -276,6 +276,14 @@
   "settings.components.statusInstalled": "Ready",
   "settings.components.statusMissing": "Install required",
   "settings.components.statusUnsupported": "Not supported",
+  "session.menu.close": "Close",
+  "session.menu.focus": "Focus View / Go Back",
+  "session.newTab.shell": "Shell",
+  "session.state.completed": "Completed",
+  "session.state.error": "Error",
+  "session.state.idle": "Ready",
+  "session.state.running": "Running",
+  "session.state.stopped": "Stopped",
   "settings.display.browserDescription": "Starts Chromium together with the app. Takes effect after a restart. If Chromium crashes, the whole app can quit.",
   "settings.display.browserToggle": "Use browser panes (experimental)",
   "settings.display.languageEnglish": "English",
@@ -482,5 +490,6 @@
   "wire.startRun.emptyInput": "Enter a message or attach a file. Input must be 100,000 characters or fewer.",
   "wire.startRun.invalidFormat": "Start run request format is invalid.",
   "wire.startRun.invalidSettings": "Run settings are invalid.",
-  "wire.startRun.unsupportedSettings": "The runner does not support these settings."
+  "wire.startRun.unsupportedSettings": "The runner does not support these settings.",
+  "workspace.menu.remove": "Remove from List"
 }

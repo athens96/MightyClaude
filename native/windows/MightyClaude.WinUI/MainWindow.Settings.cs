@@ -127,6 +127,19 @@ public sealed partial class MainWindow
         panel.Children.Add(language);
 
         panel.Children.Add(BuildNotificationSettingsSection());
+
+        // Browser engine toggle — opt-in, off by default; restart required to apply.
+        var browserToggle = new ToggleSwitch
+        {
+            Header = Locale.Get("settings.display.browserToggle"),
+            IsOn = service.Snapshot.BrowserEngineEnabled,
+        };
+        AutomationProperties.SetName(browserToggle, Locale.Get("settings.display.browserToggle"));
+        panel.Children.Add(new TextBlock { Text = Locale.Get("settings.display.browserDescription"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = .65 });
+        browserToggle.Toggled += async (_, _) =>
+            await Act(async () => await service.UpdateAsync(s => s with { BrowserEngineEnabled = browserToggle.IsOn }));
+        panel.Children.Add(browserToggle);
+
         return panel;
     }
 
