@@ -18,31 +18,18 @@ private func resolvedLanguage() -> String {
 private typealias Catalog = [String: String]
 
 private func loadCatalog(_ lang: String) -> Catalog {
-    let name = "\(lang).json"
-    // `Bundle.module` traps when the resource bundle is not where its generated
-    // accessor expects it — beside the `.xctest` on the CI runner's SwiftPM, or
-    // after a packaging slip in the `.app`. The bundled-style search already
-    // knows every place the bundle can sit (StyleRegistry.swift), so the locale
-    // files are found through the same roots and a miss is an empty catalog.
-    // 1. `Locales/` inside the MightyCore resource bundle (SwiftPM layouts, the app).
-    // 2. The app's own `Contents/Resources/Locales`.
-    // 3. Working directory locales/ (a plain checkout).
-    var candidates: [URL] = []
-    for root in BundledStyleSource.searchRoots() {
-        let bundle = root.appendingPathComponent(BundledStyleSource.bundleName, isDirectory: true)
-        candidates.append(bundle.appendingPathComponent("Contents/Resources/Locales/\(name)"))
-        candidates.append(bundle.appendingPathComponent("Locales/\(name)"))
+    // ResourceHealthChecker owns the search-root logic so --verify-resources and
+    // the running app walk exactly the same candidate list. An empty JSON object
+    // is treated as a miss (same rule as the guard).
+    let result = ResourceHealthChecker.checkCatalog(lang)
+    if !result.found {
+        ResourceHealthChecker.logWarning(result)
+        return [:]
     }
-    if let resources = Bundle.main.resourceURL {
-        candidates.append(resources.appendingPathComponent("Locales/\(name)"))
-        candidates.append(resources.appendingPathComponent(name))
-    }
-    candidates.append(URL(fileURLWithPath: "locales/\(lang).json"))
-    for url in candidates {
-        if let data = try? Data(contentsOf: url),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-            return obj
-        }
+    if let path = result.resolvedPath,
+       let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+        return obj
     }
     return [:]
 }

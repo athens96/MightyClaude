@@ -32,6 +32,16 @@ running() { ps -axo command | grep -F "$BINARY" | grep -v grep >/dev/null; }
 [ -d "$SOURCE" ] || { echo "설치할 앱이 없습니다: $SOURCE" >&2; exit 1; }
 codesign --verify --deep --strict "$SOURCE"
 
+# Guard: verify that the source bundle resolves its resources before touching
+# the installed app. A broken bundle must never replace a working installation.
+VERIFY_OUT="$("$SOURCE/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+VERIFY_EXIT=$?
+echo "$VERIFY_OUT"
+if [ "$VERIFY_EXIT" -ne 0 ]; then
+  echo "설치 거부: $SOURCE 의 --verify-resources 가 실패했습니다. 빌드를 다시 확인하세요." >&2
+  exit 1
+fi
+
 if running; then
   echo "MightyClaude가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
   while running; do sleep 1; done

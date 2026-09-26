@@ -175,6 +175,15 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     codesign --force --sign "$CODESIGN_IDENTITY" "$CEF_FW"
 fi
 codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
+# Verify that the packaged app can resolve its locale catalogs and default pet
+# through its own binary before reporting a successful build.
+VERIFY_OUT="$("$APP_PATH/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+VERIFY_EXIT=$?
+echo "$VERIFY_OUT"
+if [ "$VERIFY_EXIT" -ne 0 ]; then
+  echo "빌드 실패: --verify-resources가 패키지된 앱에서 실패했습니다." >&2
+  exit 1
+fi
 # Building must not change LaunchServices registrations while the installed app
 # may be running. install-macos.sh handles registration after the app has quit.
 printf '%s\n' "$APP_PATH"

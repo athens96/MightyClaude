@@ -6,6 +6,13 @@ import MightyCore
 enum MightyClaudeLauncher {
     @MainActor
     static func main() {
+        // --verify-resources is handled before CEF, NSApplication, IME registration
+        // or any other initialisation so the binary can be called headlessly by the
+        // build and install scripts to prove the packaged bundle is correct.
+        if CommandLine.arguments.contains("--verify-resources") {
+            ResourceVerifier.run()
+            // run() exits; this line is never reached.
+        }
         // SwiftUI creates its own AppKitApplication if NSApp does not exist.
         // NSPrincipalClass alone is ignored by App.main(), so establish our
         // CEF-compatible singleton before handing scene management to SwiftUI.
