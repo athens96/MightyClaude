@@ -20,7 +20,7 @@ MIGHTY_BUILD_SCRATCH="$SCRATCH/build" MIGHTY_MACOS_APP_PATH="$APP" \
 
 # --- Case 1: good build must exit 0 and print VERIFY_RESOURCES_OK ----------
 echo "--- case 1: good build ---"
-GOOD_OUT="$("$BINARY" --verify-resources 2>&1)"
+GOOD_OUT="$(cd "$SCRATCH" && "$BINARY" --verify-resources 2>&1)"
 GOOD_EXIT=$?
 if [ "$GOOD_EXIT" -ne 0 ]; then
   echo "FAIL: good build exited $GOOD_EXIT" >&2
@@ -37,12 +37,15 @@ echo "case 1 passed: VERIFY_RESOURCES_OK"
 # --- Case 2: Locales removed from MightyCore bundle must exit non-zero ------
 echo "--- case 2: broken Locales ---"
 COPY_NO_LOCALES="$SCRATCH/no-locales/MightyClaude.app"
+mkdir -p "$SCRATCH/no-locales"
 cp -R "$APP" "$COPY_NO_LOCALES"
 CORE_BUNDLE="$COPY_NO_LOCALES/Contents/Resources/MightyClaude_MightyCore.bundle"
 # Remove both layout variants so neither path finds the catalogs.
 rm -rf "$CORE_BUNDLE/Contents/Resources/Locales" "$CORE_BUNDLE/Locales"
-NO_LOC_OUT="$("$COPY_NO_LOCALES/Contents/MacOS/MightyClaude" --verify-resources 2>&1)" || true
+set +e
+NO_LOC_OUT="$(cd "$SCRATCH" && "$COPY_NO_LOCALES/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
 NO_LOC_EXIT=$?
+set -e
 if [ "$NO_LOC_EXIT" -eq 0 ]; then
   echo "FAIL: missing Locales did not cause non-zero exit" >&2
   echo "$NO_LOC_OUT" >&2
@@ -58,10 +61,13 @@ echo "case 2 passed: broken Locales exits non-zero and names the missing resourc
 # --- Case 3: pets/mighty-raccoon removed must exit non-zero -----------------
 echo "--- case 3: broken pet ---"
 COPY_NO_PET="$SCRATCH/no-pet/MightyClaude.app"
+mkdir -p "$SCRATCH/no-pet"
 cp -R "$APP" "$COPY_NO_PET"
 rm -rf "$COPY_NO_PET/Contents/Resources/pets/mighty-raccoon"
-NO_PET_OUT="$("$COPY_NO_PET/Contents/MacOS/MightyClaude" --verify-resources 2>&1)" || true
+set +e
+NO_PET_OUT="$(cd "$SCRATCH" && "$COPY_NO_PET/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
 NO_PET_EXIT=$?
+set -e
 if [ "$NO_PET_EXIT" -eq 0 ]; then
   echo "FAIL: missing pet did not cause non-zero exit" >&2
   echo "$NO_PET_OUT" >&2

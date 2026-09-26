@@ -177,7 +177,7 @@ fi
 codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
 # Verify that the packaged app can resolve its locale catalogs and default pet
 # through its own binary before reporting a successful build.
-VERIFY_OUT="$("$APP_PATH/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
+VERIFY_OUT="$(cd /tmp && "$APP_PATH/Contents/MacOS/MightyClaude" --verify-resources 2>&1)"
 VERIFY_EXIT=$?
 echo "$VERIFY_OUT"
 if [ "$VERIFY_EXIT" -ne 0 ]; then
