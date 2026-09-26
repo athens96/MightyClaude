@@ -391,18 +391,22 @@ public sealed partial class MainWindow
         /// </summary>
         private void NavigateBrowser(Uri address) => webView?.CoreWebView2?.Navigate(address.AbsoluteUri);
 
-        /// <summary>The back button: the engine goes back and BrowserHistory follows.</summary>
+        /// <summary>
+        /// The back button: the engine goes back and BrowserHistory follows. Like the
+        /// address field it drives CoreWebView2 directly, so it never depends on the WinUI
+        /// control's own back/forward bookkeeping.
+        /// </summary>
         private void BrowserGoBack()
         {
-            if (webView is null || browserHistory is not { CanGoBack: true }) return;
-            webView.GoBack(); browserHistory.GoBack(); RefreshBrowserNavBar();
+            if (webView?.CoreWebView2 is not { } core || browserHistory is not { CanGoBack: true }) return;
+            core.GoBack(); browserHistory.GoBack(); RefreshBrowserNavBar();
         }
 
         /// <summary>The forward button: the engine goes forward and BrowserHistory follows.</summary>
         private void BrowserGoForward()
         {
-            if (webView is null || browserHistory is not { CanGoForward: true }) return;
-            webView.GoForward(); browserHistory.GoForward(); RefreshBrowserNavBar();
+            if (webView?.CoreWebView2 is not { } core || browserHistory is not { CanGoForward: true }) return;
+            core.GoForward(); browserHistory.GoForward(); RefreshBrowserNavBar();
         }
 
         /// <summary>Follows BrowserHistory: the address field, back and forward.</summary>
