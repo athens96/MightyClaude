@@ -25,6 +25,13 @@ public struct MobileRemoteSettings: Codable, Sendable, Equatable {
     public var normalized: MobileRemoteSettings {
         MobileRemoteSettings(enabled: enabled, relayURL: RelayEndpoint.normalize(relayURL) ?? "", allowLegacyPhones: allowLegacyPhones)
     }
+    /// The relay the host actually connects through: the user's own address
+    /// wins, the built-in `MobileWire.defaultRelayURL` is the fallback, and
+    /// nil means neither is usable.
+    public var effectiveRelayURL: String? { Self.effectiveRelay(user: relayURL, fallback: MobileWire.defaultRelayURL) }
+    public static func effectiveRelay(user: String, fallback: String) -> String? {
+        RelayEndpoint.normalize(user) ?? RelayEndpoint.normalize(fallback)
+    }
 }
 
 public struct MobileInfo: Codable, Sendable, Equatable {
@@ -76,6 +83,11 @@ public enum MobileWire {
     public static let maximumBlockSummary = 1_000
     /// How many of a pane's newest runs the Mighty payload carries.
     public static let mightyRuns = 20
+    /// Built-in relay address shipped with the app. Empty until you deploy one;
+    /// the user's own relay field always wins over this. Change this one line
+    /// after deploying the Oracle Cloud kit to enable the default relay for
+    /// all new Mac installs.
+    public static let defaultRelayURL: String = ""
     /// The text a guided request may carry, the same ceiling `submit` has.
     public static let maximumText = 32_768
 }

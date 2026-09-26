@@ -171,3 +171,12 @@ export function normalizeMighty(raw: unknown): MobileMighty | undefined {
   if (paperthin) mighty.paperthin = paperthin;
   return mighty;
 }
+
+/**
+ * The session view the phone opens by default for a pane. Non-shell panes always
+ * carry a mighty payload from the Mac, so when one is present the phone opens blocks.
+ * The user's explicit toggle overrides this; the Mac pane's own view mode does not.
+ */
+export function defaultView(mighty: MobileMighty | undefined): 'log' | 'blocks' {
+  return mighty !== undefined ? 'blocks' : 'log';
+}

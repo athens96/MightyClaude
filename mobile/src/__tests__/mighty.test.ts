@@ -5,6 +5,7 @@ import {
   blockKindLabel,
   blockKindMark,
   blockTitle,
+  defaultView,
   normalizeMighty,
   runHeading,
   runPreview,
@@ -402,6 +403,23 @@ describe('model labels on blocks', () => {
     });
     expect(mighty?.runs[0]?.blocks[0]?.nodeModelLabel).toBe('claude-sonnet-5');
     expect(mighty?.runs[0]?.blocks[1]?.nodeModelLabel).toBeUndefined();
+  });
+});
+
+describe('default session view', () => {
+  it('opens blocks when the pane carries a mighty payload', () => {
+    const mighty = normalizeMighty({ style: 'cli', runs: [] });
+    expect(defaultView(mighty)).toBe('blocks');
+  });
+
+  it('opens log when no mighty payload is present (shell pane)', () => {
+    expect(defaultView(undefined)).toBe('log');
+  });
+
+  it('opens blocks regardless of what Mac view mode the payload came from', () => {
+    // The Mac pane may be in plain/transcript view; the phone still opens blocks.
+    const mighty = normalizeMighty({ style: 'cli', runs: [], agentViewMode: 'plain' });
+    expect(defaultView(mighty)).toBe('blocks');
   });
 });
 

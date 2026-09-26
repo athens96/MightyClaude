@@ -99,12 +99,22 @@ struct MobileRemoteExtensionTests {
         #expect(options[0].source == nil && options[1].source == .bundled)
         #expect(MobileRemoteSupport.styleOptions([]).map(\.id) == ["cli"])
 
-        // Only a pane the Mac draws as a graph carries a Mighty payload; every
-        // other pane leaves the field off the wire entirely.
+        // Every non-shell pane carries a Mighty payload whatever the Mac pane's
+        // own view mode, so the phone can open the blocks view by default; a
+        // shell pane leaves the field off the wire entirely.
         #expect(MobileRemoteSupport.sendsMighty(kind: "claude", agentViewMode: "mighty"))
-        #expect(!MobileRemoteSupport.sendsMighty(kind: "claude", agentViewMode: "default"))
-        #expect(!MobileRemoteSupport.sendsMighty(kind: "claude", agentViewMode: nil))
+        #expect(MobileRemoteSupport.sendsMighty(kind: "claude", agentViewMode: "default"))
+        #expect(MobileRemoteSupport.sendsMighty(kind: "claude", agentViewMode: nil))
         #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: "mighty"))
+        #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: nil))
+
+        // The host connects through the user's own relay when there is one, the
+        // built-in default otherwise, and not at all when neither is usable.
+        #expect(MobileRemoteSettings.effectiveRelay(user: "wss://mine.example", fallback: "wss://default.example") == "wss://mine.example")
+        #expect(MobileRemoteSettings.effectiveRelay(user: "", fallback: "wss://default.example") == "wss://default.example")
+        #expect(MobileRemoteSettings.effectiveRelay(user: "not a url", fallback: "wss://default.example") == "wss://default.example")
+        #expect(MobileRemoteSettings.effectiveRelay(user: "", fallback: "") == nil)
+        #expect(MobileRemoteSettings(relayURL: "").effectiveRelayURL == RelayEndpoint.normalize(MobileWire.defaultRelayURL))
     }
 
     @Test func settingsAreEditableOnlyWhileNothingIsRunningOrPending() {

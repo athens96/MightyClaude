@@ -198,7 +198,7 @@ public actor MobileRemoteService {
         return status()
     }
     private func offerIfAvailable() -> MobilePairingOffer? {
-        guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let relay = RelayEndpoint.normalize(settings.relayURL) else { return nil }
+        guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let relay = settings.effectiveRelayURL else { return nil }
         return MobilePairingOffer(serverId: hostId, publicKeyB64: keypair.publicKeyB64, relayURL: relay, pairingKey: key, name: hostName)
     }
     private func publish() { statusObserver?(status()) }
@@ -215,7 +215,7 @@ public actor MobileRemoteService {
         if refusesLegacy {
             close(connections: connectedDevices.filter { $0.value == MobileDeviceRegistry.legacyId }.map(\.key), reason: "legacy phones refused")
         }
-        if settings.enabled, RelayEndpoint.normalize(settings.relayURL) != nil {
+        if settings.enabled, settings.effectiveRelayURL != nil {
             if relayChanged || controlTask == nil { await start() }
             else if changed { publish() }
         } else {
@@ -267,7 +267,7 @@ public actor MobileRemoteService {
 
     /// Reconnects now when enabled but offline (settings sheet, network change).
     public func retryIfNeeded() async {
-        guard settings.enabled, !relayConnected, !disposed, RelayEndpoint.normalize(settings.relayURL) != nil else { return }
+        guard settings.enabled, !relayConnected, !disposed, settings.effectiveRelayURL != nil else { return }
         await start()
     }
 
@@ -279,7 +279,7 @@ public actor MobileRemoteService {
 
     /// One control-socket session. Returns true when it connected at all.
     private func runControlSocket(generation current: Int) async -> Bool {
-        guard let url = RelayEndpoint.socketURL(relay: settings.relayURL, serverId: hostId, role: "server", connectionId: nil) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
+        guard let relay = settings.effectiveRelayURL, let url = RelayEndpoint.socketURL(relay: relay, serverId: hostId, role: "server", connectionId: nil) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
         let socket = session.webSocketTask(with: url)
         socket.maximumMessageSize = 1024 * 1024
         controlSocket = socket
@@ -356,7 +356,8 @@ public actor MobileRemoteService {
     private func acceptClient(connectionId: String, generation current: Int) {
         guard clients[connectionId] == nil, clients.count < Self.maximumClients, unauthenticated.count < Self.maximumUnauthenticated,
               let delegate, let keypair = try? loadKeypair(), let pairingKey = try? loadOrCreateKey(),
-              let url = RelayEndpoint.socketURL(relay: settings.relayURL, serverId: hostId, role: "server", connectionId: connectionId) else { return }
+              let relay = settings.effectiveRelayURL,
+              let url = RelayEndpoint.socketURL(relay: relay, serverId: hostId, role: "server", connectionId: connectionId) else { return }
         let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair,
                                          devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones)
         let client = RelayClientConnection(id: connectionId, url: url, session: session, identity: identity, delegate: delegate, router: self)

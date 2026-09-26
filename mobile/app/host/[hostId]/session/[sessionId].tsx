@@ -52,7 +52,7 @@ import {
   prependOlderPage,
   retainDropped,
 } from '@/lib/history';
-import { normalizeMighty } from '@/lib/mighty';
+import { defaultView, normalizeMighty } from '@/lib/mighty';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
 import { useForgetRefusedSecret } from '@/store/hosts';
@@ -587,8 +587,7 @@ export default function SessionScreen() {
   // steps aside for it rather than offering a second thing to press.
   const questionPending =
     detail?.permissions.some((permission) => permission.questionnaire !== undefined) ?? false;
-  const view: BodyView =
-    chosenView ?? (mighty && session?.agentViewMode === 'mighty' ? 'blocks' : 'log');
+  const view: BodyView = chosenView ?? defaultView(mighty);
 
   const runGuided = useCallback(
     (actionId: string) => {

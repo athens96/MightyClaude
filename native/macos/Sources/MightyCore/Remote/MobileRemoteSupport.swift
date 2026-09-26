@@ -102,11 +102,11 @@ public enum MobileRemoteSupport {
         return raw
     }
 
-    /// Whether a pane's detail carries a `mighty` payload at all. Only a pane
-    /// the Mac itself is drawing as a graph has one; everywhere else the phone
-    /// shows the transcript, so the field is absent rather than empty.
+    /// Whether a pane's detail carries a `mighty` payload at all. Every non-shell
+    /// pane carries one so the phone can open the blocks view by default, whatever
+    /// view mode the Mac pane itself is in.
     public static func sendsMighty(kind: String, agentViewMode: String?) -> Bool {
-        kind != "shell" && viewMode(agentViewMode) == "mighty"
+        kind != "shell"
     }
 
     /// Whether the pane may carry a guided style — the same rule
