@@ -105,6 +105,21 @@ public static class MightyGraphViewModel
     /// </summary>
     public static bool WheelScrollsBlock(string? selectedNodeID) => selectedNodeID is not null;
 
+    /// <summary>
+    /// How far one wheel event pans the canvas camera. A vertical wheel moves
+    /// it up and down; a horizontal wheel or tilt, and Shift with the vertical
+    /// wheel (the Windows convention), move it left and right — the macOS
+    /// wheel/trackpad pan in both directions. A tilt to the right (positive
+    /// delta) and Shift with the wheel turned down (negative delta) both bring
+    /// content from the right into view.
+    /// </summary>
+    public static (double X, double Y) WheelPan(double delta, bool horizontalWheel, bool shift)
+    {
+        if (horizontalWheel) return (-delta, 0);
+        if (shift) return (delta, 0);
+        return (0, delta);
+    }
+
     // ── result files panel ────────────────────────────────────────────────────
 
     /// <summary>
@@ -156,6 +171,8 @@ public static class MightyGraphViewModel
     public static string LocaleKeyZoomIn => "graph.zoom.in";
     public static string LocaleKeyResultFilesTitle => "graph.resultFiles.title";
     public static string LocaleKeyResultFilesClose => "graph.resultFiles.closeButton";
+    public static string LocaleKeyResultFilesOpen => "graph.resultFiles.openButton";
+    public static string LocaleKeyResultFilesCount => "graph.resultFiles.countLabel";
     public static string LocaleKeyBlockScrolling => "graph.block.scrolling";
 }
 

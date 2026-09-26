@@ -138,6 +138,10 @@ internal static class MightyViewModelVerification
             "graph.resultFiles.closeButton must be 파일 목록 닫기");
         Check(Locale.Get(MightyGraphViewModel.LocaleKeyBlockScrolling) == "블록 스크롤",
             "graph.block.scrolling must be 블록 스크롤");
+        Check(Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesOpen) == "결과에 나온 파일 보기",
+            "graph.resultFiles.openButton must be 결과에 나온 파일 보기");
+        Check(Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesCount, new Dictionary<string, string> { ["count"] = "3" }) == "결과 파일 3개 · 목록 토글",
+            "graph.resultFiles.countLabel must be 결과 파일 3개 · 목록 토글");
 
         return Task.CompletedTask;
     }
@@ -197,6 +201,13 @@ internal static class MightyViewModelVerification
         // When a block is selected, wheel scrolls the block body
         Check(MightyGraphViewModel.WheelScrollsBlock("node-1"), "selected block must capture the wheel");
         Check(!MightyGraphViewModel.WheelScrollsBlock(null), "no selection must let wheel pan canvas");
+
+        // The canvas pans both ways: vertical wheel up/down, horizontal wheel
+        // or tilt and Shift+wheel left/right (docs/mighty-mode.md 상하·좌우).
+        Check(MightyGraphViewModel.WheelPan(120, horizontalWheel: false, shift: false) == (0, 120), "the vertical wheel must pan up and down");
+        Check(MightyGraphViewModel.WheelPan(120, horizontalWheel: true, shift: false) == (-120, 0), "a tilt to the right must pan left and right");
+        Check(MightyGraphViewModel.WheelPan(-120, horizontalWheel: false, shift: true) == (-120, 0), "Shift with the wheel down must pan like a tilt to the right");
+        Check(MightyGraphViewModel.WheelPan(120, horizontalWheel: true, shift: true) == (-120, 0), "Shift must not flip a horizontal wheel");
 
         return Task.CompletedTask;
     }
@@ -289,7 +300,8 @@ internal static class MightyViewModelVerification
             MightyGraphViewModel.LocaleKeyDefault, MightyGraphViewModel.LocaleKeyMighty,
             MightyGraphViewModel.LocaleKeyZoomOut, MightyGraphViewModel.LocaleKeyZoomReset,
             MightyGraphViewModel.LocaleKeyZoomIn, MightyGraphViewModel.LocaleKeyResultFilesTitle,
-            MightyGraphViewModel.LocaleKeyResultFilesClose, MightyGraphViewModel.LocaleKeyBlockScrolling })
+            MightyGraphViewModel.LocaleKeyResultFilesClose, MightyGraphViewModel.LocaleKeyBlockScrolling,
+            MightyGraphViewModel.LocaleKeyResultFilesOpen, MightyGraphViewModel.LocaleKeyResultFilesCount })
         {
             Check(!string.IsNullOrEmpty(key) && key.Contains('.'), "locale key must be a dotted path: " + key);
         }

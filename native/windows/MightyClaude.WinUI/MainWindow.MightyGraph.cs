@@ -326,10 +326,10 @@ public sealed partial class MainWindow
             if (block.ResultFilesRunId is { } runId && files.Count > 0)
             {
                 var open = graphResultFilesRunId == runId;
-                var text = open ? Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesClose) : Locale.Get("graph.resultFiles.openButton");
+                var text = Locale.Get(open ? MightyGraphViewModel.LocaleKeyResultFilesClose : MightyGraphViewModel.LocaleKeyResultFilesOpen);
                 var toggle = new Button { Content = new TextBlock { Text = "▤ " + files.Count, FontSize = 10 }, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
                 AutomationProperties.SetAutomationId(toggle, "mighty-result-files-toggle-" + block.Id);
-                AutomationProperties.SetName(toggle, Locale.Get("graph.resultFiles.countLabel", new Dictionary<string, string> { ["count"] = files.Count.ToString() }));
+                AutomationProperties.SetName(toggle, Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesCount, new Dictionary<string, string> { ["count"] = files.Count.ToString() }));
                 ToolTipService.SetToolTip(toggle, text);
                 toggle.Click += (_, _) => ToggleResultFiles(runId);
                 right.Children.Add(toggle);
@@ -417,13 +417,19 @@ public sealed partial class MainWindow
         internal int GraphBlockCount => graphCards.Count;
 
         /// The wheel scrolls the selected block's body; with nothing selected it
-        /// pans the canvas. Either way it never reaches the outer page.
+        /// pans the canvas up and down, and left and right for a horizontal
+        /// wheel, a tilt or Shift+wheel. Either way it never reaches the outer page.
         private void OnGraphWheel(object sender, PointerRoutedEventArgs args)
         {
-            var delta = args.GetCurrentPoint(graphViewport).Properties.MouseWheelDelta;
+            var properties = args.GetCurrentPoint(graphViewport).Properties;
+            var shift = (args.KeyModifiers & Windows.System.VirtualKeyModifiers.Shift) != 0;
+            var (panX, panY) = MightyGraphViewModel.WheelPan(properties.MouseWheelDelta, properties.IsHorizontalMouseWheel, shift);
             if (MightyGraphViewModel.WheelScrollsBlock(graphSelection) && graphSelection is { } selected && graphBodies.TryGetValue(selected, out var body))
-                body.ChangeView(null, Math.Max(0, body.VerticalOffset - delta), null, true);
-            else graphPan.Y += delta;
+            {
+                // The block body only scrolls up and down.
+                if (panY != 0) body.ChangeView(null, Math.Max(0, body.VerticalOffset - panY), null, true);
+            }
+            else { graphPan.X += panX; graphPan.Y += panY; }
             args.Handled = true;
         }
 
