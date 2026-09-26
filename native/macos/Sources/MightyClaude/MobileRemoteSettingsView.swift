@@ -31,6 +31,7 @@ struct MobileRemoteSettingsSection: View {
                     .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
                 Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
             }
+            connectionGuide
             HStack(spacing: 8) {
                 Circle().fill(status.relayConnected ? Color.green : settings.enabled ? Color.orange : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
                 Text(status.relayConnected
@@ -43,7 +44,7 @@ struct MobileRemoteSettingsSection: View {
                 }
             }
             Text(status.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if settings.enabled, RelayEndpoint.normalize(settings.relayURL) == nil {
+            if settings.enabled, settings.effectiveRelayURL == nil {
                 Text(L("settings.mobileRemote.relayHint")).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if status.relayConnected, let pairing = status.pairingURL {
@@ -159,6 +160,24 @@ struct MobileRemoteSettingsSection: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter.string(from: date)
+    }
+
+    @ViewBuilder private var connectionGuide: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            guideStep(1, L("settings.mobileRemote.guide.step1"))
+            guideStep(2, L("settings.mobileRemote.guide.step2"))
+            guideStep(3, L("settings.mobileRemote.guide.step3"))
+            guideStep(4, L("settings.mobileRemote.guide.step4"))
+        }
+        .padding(.vertical, 2)
+        .accessibilityIdentifier("settings-mobile-guide")
+    }
+
+    private func guideStep(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text("\(n).").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 14, alignment: .trailing)
+            Text(text).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func applyRelay() {

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { hostAddress, useHostsStore, type PairedHost, type Reachability } from '
 import { useLiveStore } from '@/store/live';
 import { countAttention } from '@/lib/merge';
 import { t } from '@/lib/i18n';
+import { needsOnboarding } from '@/lib/onboarding';
 import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const reachabilityKeys: Record<Reachability, string> = {
@@ -91,6 +92,12 @@ export default function HostsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
 
+  useEffect(() => {
+    if (loaded && needsOnboarding(hosts.length)) {
+      router.replace('/connect');
+    }
+  }, [loaded, hosts.length]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshAll();
@@ -126,6 +133,11 @@ export default function HostsScreen() {
           label={t('phone.hosts.addHost')}
           tone="primary"
           onPress={() => router.push('/pair')}
+        />
+        <Button
+          label={t('phone.hosts.guide')}
+          tone="ghost"
+          onPress={() => router.push('/connect')}
         />
       </View>
     </View>
