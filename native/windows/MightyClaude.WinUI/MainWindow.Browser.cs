@@ -348,19 +348,25 @@ public sealed partial class MainWindow
             }
 
             // Popups and new windows are refused, downloads are cancelled and script
-            // dialogs are dismissed by handling the event without accepting it.
+            // dialogs are dismissed: with the default dialogs off, ScriptDialogOpening
+            // fires and a handler that never calls Accept() dismisses the dialog.
+            view.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false;
             view.CoreWebView2.NewWindowRequested += (_, args) => args.Handled = true;
             view.CoreWebView2.DownloadStarting += (_, args) => { args.Cancel = true; args.Handled = true; };
             view.CoreWebView2.ScriptDialogOpening += (_, _) => { };
 
-            view.NavigationCompleted += (_, args) =>
+            // History records the URL string the engine reports (CoreWebView2.Source),
+            // not the control's Source property, so no WinRT Uri round trip can escape it
+            // into a form that differs from what the engine navigated to.
+            view.NavigationCompleted += (sender, args) =>
             {
-                if (args.IsSuccess && view.Source is { } uri) browserHistory?.Visit(uri);
+                if (args.IsSuccess && Uri.TryCreate(sender.CoreWebView2?.Source, UriKind.Absolute, out var uri))
+                    browserHistory?.Visit(uri);
                 RefreshBrowserNavBar();
             };
 
-            browserBack!.Click += (_, _) => { view.GoBack(); browserHistory?.GoBack(); RefreshBrowserNavBar(); };
-            browserForward!.Click += (_, _) => { view.GoForward(); browserHistory?.GoForward(); RefreshBrowserNavBar(); };
+            browserBack!.Click += (_, _) => BrowserGoBack();
+            browserForward!.Click += (_, _) => BrowserGoForward();
             browserReload!.Click += (_, _) => view.Reload();
             addressBox!.KeyDown += (_, args) =>
             {
@@ -371,6 +377,20 @@ public sealed partial class MainWindow
             webView = view;
             SetBrowserNavEnabled(true);
             browserContent.Child = view;
+        }
+
+        /// <summary>The back button: the engine goes back and BrowserHistory follows.</summary>
+        private void BrowserGoBack()
+        {
+            if (webView is null || browserHistory is not { CanGoBack: true }) return;
+            webView.GoBack(); browserHistory.GoBack(); RefreshBrowserNavBar();
+        }
+
+        /// <summary>The forward button: the engine goes forward and BrowserHistory follows.</summary>
+        private void BrowserGoForward()
+        {
+            if (webView is null || browserHistory is not { CanGoForward: true }) return;
+            webView.GoForward(); browserHistory.GoForward(); RefreshBrowserNavBar();
         }
 
         /// <summary>Follows BrowserHistory: the address field, back and forward.</summary>
@@ -445,33 +465,6 @@ public sealed partial class MainWindow
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Padding = new Thickness(24),
             };
-
-        /// <summary>
-        /// Drives the live control for the GUI smoke: two local pages, back, and a
-        /// window.open() that must not open a window. No network is touched.
-        /// </summary>
-        internal async Task<(bool Navigated, bool BackWorked, bool PopupBlocked)> DriveBrowserSmokeAsync(
-            Func<Func<bool>, Task> wait)
-        {
-            var first = new Uri("data:text/html,<h1>MightyBrowserSmokeOne</h1>");
-            var second = new Uri("data:text/html,<h1>MightyBrowserSmokeTwo</h1>");
-            var opened = false;
-            webView!.CoreWebView2.NewWindowRequested += (_, _) => opened = true;
-
-            webView.Source = first;
-            await wait(() => browserHistory?.State(false).Url?.OriginalString == first.OriginalString);
-            webView.Source = second;
-            await wait(() => browserHistory?.State(false).Url?.OriginalString == second.OriginalString);
-            var navigated = browserHistory?.State(false).CanGoBack == true;
-
-            webView.GoBack(); browserHistory?.GoBack(); RefreshBrowserNavBar();
-            await wait(() => browserHistory?.State(false).Url?.OriginalString == first.OriginalString);
-            var backWorked = browserHistory?.State(false).Url?.OriginalString == first.OriginalString;
-
-            await webView.CoreWebView2.ExecuteScriptAsync("window.open('data:text/html,popup')");
-            await wait(() => true);
-            return (navigated, backWorked, !opened);
-        }
 
         /// <summary>The nav bar strings the smoke feeds to the locale-key leak scan.</summary>
         internal IEnumerable<string> BrowserVisibleStrings()

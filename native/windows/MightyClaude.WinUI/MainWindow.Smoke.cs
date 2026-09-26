@@ -150,7 +150,7 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("이 실행기에 WebView2 Evergreen 런타임이 없습니다. 런타임을 설치한 뒤 다시 실행하세요.");
         Require(view.BrowserControlLive, "WebView2 컨트롤이 만들어지지 않았습니다.");
 
-        var (navigated, backWorked, popupBlocked) = await view.DriveBrowserSmokeAsync(predicate => WaitUI(predicate));
+        var (navigated, backWorked, popupBlocked) = await view.DriveBrowserSmokeAsync();
 
         // 프로필 폴더는 임시 --profile 아래의 상태 폴더 안에 있어야 한다.
         var profile = BrowserProfile.ProfileFolder(StateDirectory, session.WorkspaceProfileKey ?? session.WorkspaceId);
@@ -659,6 +659,65 @@ public sealed partial class MainWindow
 
     private sealed partial class PaneView
     {
+        // 브라우저 창을 실제 WebView2로 몰아 본다. 두 local data: 페이지(이스케이프가 필요 없는
+        // 글자만)로 탐색하고, 뒤로 가기는 앱의 뒤로 단추와 같은 길로 부른다. 각 단계는 그
+        // 탐색의 NavigationCompleted를 기다린 뒤 앱이 BrowserHistory에 적은 주소를
+        // BrowserHistory와 같은 Uri 비교로 확인한다. 마지막으로 페이지가 window.open()을
+        // 부르면 NewWindowRequested가 와서 Handled로 끝나야 하고 새 창은 없어야 한다.
+        // 망은 건드리지 않는다. 실패하면 기록된 주소와 본 탐색 사건을 메시지에 싣는다.
+        internal async Task<(bool Navigated, bool BackWorked, bool PopupBlocked)> DriveBrowserSmokeAsync()
+        {
+            var first = new Uri("data:text/html,MightyBrowserSmokeOne");
+            var second = new Uri("data:text/html,MightyBrowserSmokeTwo");
+            var view = webView ?? throw new InvalidOperationException("WebView2 컨트롤이 없습니다.");
+            var core = view.CoreWebView2;
+            var events = new List<string>();
+            core.NavigationStarting += (_, a) => events.Add($"starting#{a.NavigationId} {a.Uri}");
+            core.SourceChanged += (_, _) => events.Add($"source {core.Source}");
+            core.NavigationCompleted += (_, a) => events.Add($"completed#{a.NavigationId} ok={a.IsSuccess} status={a.WebErrorStatus}");
+            core.ProcessFailed += (_, a) => events.Add($"processFailed {a.ProcessFailedKind}");
+            var popupRequests = new List<(bool UserInitiated, bool Handled, string Uri)>();
+            // 앱의 처리기가 먼저 등록돼 있으므로 여기서는 앱이 Handled로 끝냈는지를 본다.
+            core.NewWindowRequested += (_, a) => popupRequests.Add((a.IsUserInitiated, a.Handled, a.Uri));
+
+            bool EngineAt(Uri expected) => Uri.TryCreate(core.Source, UriKind.Absolute, out var at) && at == expected;
+            string Diagnose(string step) =>
+                $"{step}: 기록된 주소={browserHistory?.Current?.OriginalString ?? "(없음)"}, 엔진 주소={core.Source}, 사건=[{string.Join(" | ", events)}]";
+
+            // 앱과 같은 WinUI NavigationCompleted를 앱 처리기 뒤에 기다리므로, 끝났을 때는
+            // 앱이 이미 BrowserHistory에 주소를 적은 뒤다.
+            async Task NavigateAndWait(string step, Action start, Uri expected)
+            {
+                var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                void OnCompleted(Microsoft.UI.Xaml.Controls.WebView2 _, Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs a) => done.TrySetResult(a.IsSuccess);
+                view.NavigationCompleted += OnCompleted;
+                try
+                {
+                    start();
+                    if (await Task.WhenAny(done.Task, Task.Delay(TimeSpan.FromSeconds(30))) != done.Task)
+                        throw new TimeoutException("브라우저 탐색이 30초 안에 끝나지 않았습니다. " + Diagnose(step));
+                    Require(done.Task.Result, "브라우저 탐색이 실패했습니다. " + Diagnose(step));
+                    Require(browserHistory?.Current == expected, "브라우저 기록 주소가 탐색한 페이지와 다릅니다. " + Diagnose(step));
+                }
+                finally { view.NavigationCompleted -= OnCompleted; }
+            }
+
+            await NavigateAndWait("첫 페이지", () => view.Source = first, first);
+            await NavigateAndWait("둘째 페이지", () => view.Source = second, second);
+            var navigated = browserHistory?.State(false) is { CanGoBack: true, CanGoForward: false } && core.CanGoBack;
+
+            await NavigateAndWait("뒤로 가기", BrowserGoBack, first);
+            var backWorked = browserHistory?.State(false) is { CanGoForward: true } && core.CanGoForward && EngineAt(first);
+
+            await core.ExecuteScriptAsync("window.open('about:blank')");
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (popupRequests.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(20);
+            Require(popupRequests.Count > 0, "window.open()이 NewWindowRequested를 일으키지 않았습니다. " + Diagnose("팝업"));
+            var popupBlocked = popupRequests.All(r => r.Handled) && EngineAt(first);
+            Require(popupBlocked, "팝업 요청이 막히지 않았습니다: " + string.Join(", ", popupRequests.Select(r => $"{r.Uri} handled={r.Handled}")) + " " + Diagnose("팝업"));
+            return (navigated, backWorked, popupBlocked);
+        }
+
         internal async Task<Dictionary<string, object?>> RunComposerSmoke()
         {
             var checks = new Dictionary<string, object?>();
