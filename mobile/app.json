@@ -74,6 +74,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ea509e9f-d683-47a2-8cdc-626161624401"
+      }
+    },
+    "owner": "young.kim"
   }
 }
