@@ -293,6 +293,31 @@
 - [ ] (not checked on device) An approved winget entry installs after the confirm view listing its argv and then shows "Installed" in the result table
 - [ ] (not checked on device) A brew entry added on the Mac stays in `toolkit.json` but is not listed on Windows
 
+### 브라우저 창 — WebView2 (`docs/browser-pane.md` 10절, 시드 `seed_windows_b2_s5_browser_pane`)
+
+<!-- 기기 미확인 -->
+
+**Windows 기기 확인 항목 (한국어)** — x64 PC, CI ZIP
+
+- [ ] (기기 미확인) 설정 → 표시의 "브라우저 창 사용 (실험)"이 꺼진 처음 상태에서 새 실행 창 메뉴의 "새 브라우저 탭"을 열면 WebView2 화면 대신 "브라우저가 꺼져 있습니다. 설정 → 표시에서 ‘브라우저 창 사용’을 켜고 앱을 다시 시작하세요."만 보인다
+- [ ] (기기 미확인) 스위치를 켜기만 하고 다시 시작하지 않으면 새 브라우저 탭은 여전히 꺼짐 안내를 보이고, 앱을 다시 시작한 뒤 "새 브라우저 탭"을 열면 주소줄·뒤로·앞으로·새로 고침과 빈 브라우저 화면이 보인다
+- [ ] (기기 미확인) 주소줄에 `example.com`처럼 입력하고 Enter를 누르면 `https://`가 붙은 페이지가 그려지고, 주소줄이 실제 주소로 바뀐다
+- [ ] (기기 미확인) 다른 페이지로 이동한 뒤 "뒤로"·"앞으로"가 각각 앞 페이지·다음 페이지로 가고 끝에서는 꺼지며, "새로 고침"이 현재 페이지를 다시 읽는다
+- [ ] (기기 미확인) 어느 사이트에 로그인하고 앱을 껐다 켠 뒤 같은 워크스페이스에서 새 브라우저 탭을 열면 로그인이 남아 있다
+- [ ] (기기 미확인) 다른 워크스페이스에서 새 브라우저 탭을 열어 같은 사이트에 가면 그 로그인이 보이지 않는다
+- [ ] (기기 미확인) 브라우저 창·단추 설명·설정 화면 어디에도 날 키(`browser.…`, `settings.display.…`)가 보이지 않는다
+- [ ] (기기 미확인, WebView2 런타임이 없는 PC가 있을 때만) 런타임이 없는 PC에서 스위치를 켜고 다시 시작하면 "WebView2 런타임이 설치되어 있지 않습니다. 아래 버튼으로 설치하세요."와 "설치" 단추만 보이고 아무것도 내려받지 않다가, "설치"를 누른 뒤에야 "설치 중…"이 보이고 권한 상승 창 없이 설치가 끝나 "설치가 완료되었습니다. 앱을 다시 시작하면 브라우저를 쓸 수 있습니다."가 보이며, 다시 시작하면 브라우저 탭이 열린다
+
+**Windows 기기 확인 항목 (English)**
+
+- [ ] (not checked on device) With English selected and "Use browser panes (experimental)" off, a "New Browser Tab" pane shows only "The browser is off. Turn on “Use browser panes” in Settings → Display and restart the app."
+- [ ] (not checked on device) Turning the switch on changes nothing until the app is restarted; after the restart a new browser tab shows the address field, Back, Forward, Reload and the page area
+- [ ] (not checked on device) Typing `example.com` and Enter loads the `https://` page and the address field shows the real address
+- [ ] (not checked on device) Back and Forward move between visited pages and turn off at the ends; Reload reloads the current page
+- [ ] (not checked on device) A site login in one workspace survives an app restart, and a browser tab in another workspace does not see it
+- [ ] (not checked on device) No raw keys (`browser.…`, `settings.display.…`) anywhere in the pane, its tooltips or the settings
+- [ ] (not checked on device, only if a PC without the WebView2 runtime is available) The pane shows "WebView2 runtime is not installed. Use the button below to install it." and "Install", downloads nothing before the click, and after the click shows "Installing…", installs without an elevation prompt and shows "Installation complete. Restart the app to use the browser."
+
 ### 워크스페이스 Git 정보
 - [ ] Git 저장소 워크스페이스에서 현재 브랜치와 상태가 표시된다
 
