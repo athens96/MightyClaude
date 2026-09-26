@@ -27,7 +27,7 @@ struct MobileRemoteSettingsSection: View {
             .accessibilityIdentifier("settings-mobile-toggle")
             HStack(spacing: 8) {
                 Text(L("settings.mobileRemote.relayLabel"))
-                TextField("wss://relay.example.com", text: $relayText).textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
+                TextField(MobileWire.defaultRelayURL.isEmpty ? "wss://relay.example.com" : MobileWire.defaultRelayURL, text: $relayText).textFieldStyle(.roundedBorder).font(.system(size: 11, design: .monospaced))
                     .onSubmit(applyRelay).accessibilityIdentifier("settings-mobile-relay")
                 Button(L("settings.mobileRemote.applyButton"), action: applyRelay).disabled(store.mobileBusy || !relayDirty || RelayEndpoint.normalize(relayText) == nil)
             }

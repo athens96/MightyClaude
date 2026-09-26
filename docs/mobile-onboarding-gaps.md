@@ -110,13 +110,15 @@ Mac의 릴레이 주소 기본값이 비어 있었고, 저장소에는 릴레이
 
 ### 무엇을 바꿨나
 - `native/macos/Sources/MightyCore/Remote/MobileRemoteModels.swift` —
-  `MobileWire.defaultRelayURL` 상수를 추가했습니다. **이번 작업에서는 빈 값으로 나갑니다.**
-  사용자가 `docs/relay-oracle.md`대로 자기 릴레이를 배포한 뒤, 이 한 줄에 주소를 넣는
-  것으로 기본값이 생깁니다. 사용자가 입력한 릴레이 주소가 항상 기본값보다 우선합니다.
+  `MobileWire.defaultRelayURL` 상수를 추가했습니다. `docs/relay-oracle.md`대로 Oracle
+  Cloud 싱가포르에 배포한 릴레이 `wss://mightyclaude.duckdns.org`가 기본값입니다(Let's
+  Encrypt 인증서, `healthz` `ok`, `wss` 연결 확인). 사용자가 입력한 릴레이 주소가 항상
+  기본값보다 우선하고, 빈 문자열로 바꾸면 기본값이 꺼집니다. 설정 화면의 릴레이 칸은
+  비어 있을 때 이 주소를 흐리게 보여 줍니다.
 - `MobileRemoteSettings.effectiveRelayURL`(사용자 값, 없으면 기본값, 둘 다 없으면 nil)을
   두고, `MobileRemoteService`의 연결·재연결·페어링 QR과 설정 화면의 안내 문구가 모두 이
-  값을 읽도록 바꿨습니다. 그래서 상수 한 줄만 채우면 실제로 그 릴레이로 연결됩니다.
-  기본값이 비어 있는 지금은 동작이 이전과 같습니다.
+  값을 읽도록 바꿨습니다. 서비스는 기본값을 생성자로 받아서(`defaultRelayURL`), 앱은
+  내장 주소를 쓰고 테스트는 빈 값이나 로컬 주소를 넣습니다.
 - `relay/deploy/oracle/` — Oracle Cloud Always Free용 배포 묶음(Ampere arm64와 AMD
   micro 모두). `compose.yaml`은 기존 `relay/Dockerfile`을 서버 CPU에 맞게 빌드하고
   공식 `caddy:2-alpine`으로 앞을 막아 DuckDNS 이름에 Let's Encrypt 인증서를 80·443으로
