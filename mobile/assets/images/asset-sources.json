@@ -1,0 +1,51 @@
+{
+  "source": "assets/icons/mightyclaude.png",
+  "source_sha256": "e2981e7200e27505c5d27d4b520643984feb9b38f1ce7af2d8e0031106ca4562",
+  "outputs": {
+    "icon.png": {
+      "size": [
+        1024,
+        1024
+      ],
+      "mode": "RGB",
+      "note": "iOS icon, no alpha, #0d0d0f background",
+      "sha256": "b674aba6a782fd73c875c234eff903aeaf2015b77ccb349284211094ad23827e"
+    },
+    "android-icon-foreground.png": {
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "note": "Android adaptive foreground, raccoon in 66% safe zone",
+      "sha256": "43ca617259f45f30544f30b453e7b12e1dafd06d77d32e26c8d3fefc85f9cefc"
+    },
+    "android-icon-monochrome.png": {
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGBA",
+      "note": "Android monochrome glyph, white silhouette",
+      "sha256": "dda7b1390fbc4eb1a26694e4b5c2152f91843d863acd074cc8689b69c1c91c36"
+    },
+    "splash-icon.png": {
+      "size": [
+        400,
+        400
+      ],
+      "mode": "RGBA",
+      "note": "Splash image, expo-splash-screen adds #0d0d0f background",
+      "sha256": "416b02b8b29c3e495dd47c150edc1ba84782d996099719e1756ba6a13de496fc"
+    },
+    "favicon.png": {
+      "size": [
+        48,
+        48
+      ],
+      "mode": "RGBA",
+      "note": "Web favicon",
+      "sha256": "7a980288fec2ed3b093357c95b06fe5f110d5ac6fe220f11cfda01118f2fb969"
+    }
+  }
+}
