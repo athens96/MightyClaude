@@ -355,12 +355,18 @@ public sealed partial class MainWindow
             view.CoreWebView2.DownloadStarting += (_, args) => { args.Cancel = true; args.Handled = true; };
             view.CoreWebView2.ScriptDialogOpening += (_, _) => { };
 
-            // History records the URL string the engine reports (CoreWebView2.Source),
-            // not the control's Source property, so no WinRT Uri round trip can escape it
-            // into a form that differs from what the engine navigated to.
-            view.NavigationCompleted += (sender, args) =>
+            // History follows the engine's own navigation events, not the WinUI control's:
+            // for a data: page the engine reports an empty Source and the control never
+            // raises its NavigationCompleted. A successful navigation is recorded under the
+            // URL the engine reports, or, when that is empty, the URL the same navigation
+            // started with (redirects restart it under the same id with the new URL).
+            var startedUris = new Dictionary<ulong, string>();
+            view.CoreWebView2.NavigationStarting += (_, args) => startedUris[args.NavigationId] = args.Uri;
+            view.CoreWebView2.NavigationCompleted += (core, args) =>
             {
-                if (args.IsSuccess && Uri.TryCreate(sender.CoreWebView2?.Source, UriKind.Absolute, out var uri))
+                startedUris.Remove(args.NavigationId, out var started);
+                var reported = string.IsNullOrEmpty(core.Source) ? started : core.Source;
+                if (args.IsSuccess && Uri.TryCreate(reported, UriKind.Absolute, out var uri))
                     browserHistory?.Visit(uri);
                 RefreshBrowserNavBar();
             };
@@ -371,13 +377,19 @@ public sealed partial class MainWindow
             addressBox!.KeyDown += (_, args) =>
             {
                 if (args.Key != Windows.System.VirtualKey.Enter) return;
-                if (BrowserAddress.Resolve(addressBox.Text) is { } resolved) view.Source = resolved;
+                if (BrowserAddress.Resolve(addressBox.Text) is { } resolved) NavigateBrowser(resolved);
             };
 
             webView = view;
             SetBrowserNavEnabled(true);
             browserContent.Child = view;
         }
+
+        /// <summary>
+        /// The address field: the engine navigates directly, so a repeated or data: address
+        /// never depends on the WinUI control's cached Source property.
+        /// </summary>
+        private void NavigateBrowser(Uri address) => webView?.CoreWebView2?.Navigate(address.AbsoluteUri);
 
         /// <summary>The back button: the engine goes back and BrowserHistory follows.</summary>
         private void BrowserGoBack()
