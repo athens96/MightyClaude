@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import type { MobileBlock, MobileMightyRun } from '@/api/types';
+import { AssistantMarkdown } from '@/components/assistant-markdown';
 import { StatusChip } from '@/components/status-chip';
 import { EmptyState } from '@/components/ui';
 import { formatDuration } from '@/components/log-entry-view';
@@ -100,9 +101,7 @@ function BlockDetails({ block, runInput }: { block: MobileBlock; runInput: strin
       {prompt ? (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>{t('phone.blocks.prompt')}</Text>
-          <Text selectable style={styles.sectionText}>
-            {prompt}
-          </Text>
+          <AssistantMarkdown compact text={prompt} />
         </View>
       ) : null}
       {activity.length > 0 ? (
@@ -118,9 +117,7 @@ function BlockDetails({ block, runInput }: { block: MobileBlock; runInput: strin
       {block.output ? (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>{t('phone.blocks.result')}</Text>
-          <Text selectable style={styles.output}>
-            {block.output}
-          </Text>
+          <AssistantMarkdown compact text={block.output} />
         </View>
       ) : null}
       {!prompt && activity.length === 0 && !block.output ? (
@@ -278,8 +275,6 @@ const makeStyles = (palette: Palette) =>
     },
     section: { gap: 2 },
     sectionLabel: { color: palette.textFaint, fontSize: 11, fontWeight: '700' },
-    sectionText: { color: palette.text, fontSize: 13 },
     activityLine: { ...monoText, color: palette.textMuted },
-    output: { ...monoText, color: palette.textMuted },
     pressed: { opacity: 0.7 },
   });
