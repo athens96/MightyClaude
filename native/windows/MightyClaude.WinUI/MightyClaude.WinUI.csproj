@@ -44,5 +44,8 @@
          copy cannot drift from the one source; scripts/check-locales.js asserts these links. -->
     <Content Include="../../../locales/ko.json" Link="Locales/ko.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../../locales/en.json" Link="Locales/en.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The GUI smoke feeds recorded claudeStream cases through the execution graph
+         tracker so the Mighty canvas it renders comes from macOS truth, not a fixture. -->
+    <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyClaude.WinUI.GraphVectors.json" />
   </ItemGroup>
 </Project>

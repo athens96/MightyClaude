@@ -69,6 +69,28 @@ try {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    $mg = $result.mightyGraph
+    if ($null -eq $mg) {
+        $msg = "mighty 그래프 스모크가 실행되지 않았습니다: mightyGraph 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    if ([int]$mg.blocks -lt 3) {
+        $msg = "mighty 그래프 블록이 3개 미만입니다: blocks=$($mg.blocks)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    if ([int]$mg.edges -lt 2) {
+        $msg = "mighty 그래프 엣지가 2개 미만입니다: edges=$($mg.edges)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    $zoom = @($mg.zoom)
+    if ($zoom.Count -lt 3 -or [int]$zoom[0] -ne 50 -or [int]$zoom[1] -ne 100 -or [int]$zoom[2] -ne 150) {
+        $msg = "mighty 그래프 줌이 [50,100,150]이 아닙니다: zoom=$($mg.zoom)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    if ($mg.modeRestored -ne $true) {
+        $msg = "mighty 그래프 모드 복원이 실패했습니다: modeRestored=$($mg.modeRestored)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     $leaks = $result.localeKeyLeaks
     if ($leaks -and @($leaks).Count -gt 0) {
         $msg = "로케일 키가 화면에 그대로 노출됩니다: $($leaks -join ', ')"

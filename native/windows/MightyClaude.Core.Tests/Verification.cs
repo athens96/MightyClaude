@@ -499,6 +499,8 @@ internal static class Verification
         await Test("mighty selection routes the wheel", MightyViewModelVerification.SelectionRoutesTheWheel);
         await Test("mighty result files panel rules match macOS", MightyViewModelVerification.ResultFilesPanelRulesMatchMacOS);
         await Test("mighty indicators respect animations off", MightyViewModelVerification.IndicatorsRespectAnimationsOff);
+        await Test("WIN_VIEW_MODEL_OK", MightyViewModelVerification.ViewModelOK);
+        await Test("DELIVERED_OK", MightyViewModelVerification.DeliveredOK);
         await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);
         await Test("locale English file loads from shared locales path", LocalizationVerification.EnglishLocaleLoadsFromSharedFile);
         await Test("locale key absent from both catalogs returns the key itself", LocalizationVerification.MissingKeyInChosenLanguageFallsBackToKorean);

@@ -158,3 +158,190 @@ public static class MightyGraphViewModel
     public static string LocaleKeyResultFilesClose => "graph.resultFiles.closeButton";
     public static string LocaleKeyBlockScrolling => "graph.block.scrolling";
 }
+
+/// <summary>
+/// One canvas block as the Mighty view draws it: the layout node plus the copy,
+/// state, request and output text, the usage capsule and its tooltip, and the
+/// running/waiting indicator choice. WinUI renders these and decides nothing.
+/// </summary>
+public sealed record MightyGraphBlock(
+    string Id,
+    string Kind,
+    GraphRect Frame,
+    string Title,
+    string State,
+    string Request,
+    IReadOnlyList<LogEntry> Entries,
+    string? Capsule,
+    string CapsuleHelp,
+    string Indicator,
+    string? ResultFilesRunId);
+
+public static class MightyGraphBlockModel
+{
+    // ── state and title copy ──────────────────────────────────────────────────
+
+    /// <summary>The short state word under a block header (macOS statusLabel).</summary>
+    public static string StateLabel(string status) => status switch
+    {
+        "completed" => Locale.Get("graph.state.completed"),
+        "error" or "failed" => Locale.Get("graph.state.error"),
+        "stopped" or "cancelled" or "interrupted" => Locale.Get("graph.state.stopped"),
+        "waiting" => Locale.Get("graph.state.waiting"),
+        "starting" or "queued" => Locale.Get("graph.state.starting"),
+        _ => Locale.Get("graph.state.running"),
+    };
+
+    /// <summary>The main request block's title: `요청 N · Claude` (style prefixes are out of scope).</summary>
+    public static string RequestTitle(int ordinal, string providerLabel) =>
+        Locale.Get("graph.block.requestTitle", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(), ["provider"] = providerLabel });
+
+    /// <summary>The result block's title, by how the run ended.</summary>
+    public static string ResultTitle(string runStatus) => runStatus switch
+    {
+        "error" or "failed" => Locale.Get("graph.block.resultError"),
+        "stopped" or "cancelled" or "interrupted" => Locale.Get("graph.block.resultStopped"),
+        _ => Locale.Get("graph.block.result"),
+    };
+
+    /// <summary>The result block's own state, normalised the way macOS does.</summary>
+    public static string ResultState(string runStatus) => runStatus switch
+    {
+        "error" or "failed" => "error",
+        "stopped" or "cancelled" or "interrupted" => "stopped",
+        _ => "completed",
+    };
+
+    public static string DraftTitle(bool anyRuns) =>
+        anyRuns ? Locale.Get("graph.block.nextRequest") : Locale.Get("graph.block.firstRequest");
+
+    public static string DraftState(string draft) =>
+        draft.Length == 0 ? Locale.Get("graph.state.draftIdle") : Locale.Get("graph.state.draftTyping");
+
+    // ── the block list ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Every canvas block, in layout order, for one pane. The layout is the one
+    /// MightyGraphLayout.Make produced — this only attaches the copy WinUI draws.
+    /// </summary>
+    public static List<MightyGraphBlock> Blocks(
+        MightyGraphLayout layout,
+        IReadOnlyList<MightyGraphRun> runs,
+        string draft,
+        string providerLabel,
+        bool animationsEnabled,
+        IReadOnlyList<ModelOption>? catalog = null)
+    {
+        var blocks = new List<MightyGraphBlock>();
+        foreach (var node in layout.Nodes)
+        {
+            var (runIndex, agentId) = Locate(node, runs);
+            var run = runIndex >= 0 ? runs[runIndex] : null;
+            switch (node.Kind)
+            {
+                case "draft":
+                    blocks.Add(new(node.Id, "draft", node.Frame, DraftTitle(runs.Count > 0), DraftState(draft),
+                        draft, [], null, "", "none", null));
+                    break;
+                case "request" when run is not null:
+                    blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel),
+                        StateLabel(run.Status), run.Input,
+                        run.RootEntries.Where(e => e.Kind != "user").ToList(),
+                        ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog),
+                        Help(run.Usage, run.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
+                        MightyGraphViewModel.BlockIndicator(run.Status, animationsEnabled), null));
+                    break;
+                case "agent" when run is not null && run.Agents.FirstOrDefault(a => a.Id == agentId) is { } agent:
+                    blocks.Add(new(node.Id, MightyGraphSupport.BlockKind(agent), node.Frame, MightyGraphSupport.BlockTitle(agent),
+                        StateLabel(agent.Status), agent.Input,
+                        agent.Entries.Where(e => e.Kind != "user").ToList(),
+                        ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog),
+                        Help(agent.Usage, agent.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
+                        MightyGraphViewModel.BlockIndicator(agent.Status, animationsEnabled), null));
+                    break;
+                case "result" when run is not null:
+                    blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status),
+                        StateLabel(ResultState(run.Status)), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
+                        ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog),
+                        Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),
+                        "none", run.Status == "completed" ? run.Id : null));
+                    break;
+                case "resultFiles" when run is not null:
+                    blocks.Add(new(node.Id, "resultFiles", node.Frame, Locale.Get("graph.resultFiles.title"),
+                        "", "", [], null, "", "none", run.Id));
+                    break;
+            }
+        }
+        return blocks;
+    }
+
+    private static string Help(GraphTokenUsage? usage, IReadOnlyList<GraphResponseRecord> records, string usageLabel, IReadOnlyList<ModelOption>? catalog)
+        => records.Count == 0
+            ? usage is null ? "" : usageLabel + " · " + usage.Detail
+            : ModelUsageFormat.BlockCapsuleHelp(records, catalog);
+
+    /// <summary>Which run (and, for an agent node, which agent) a layout node belongs to.</summary>
+    private static (int RunIndex, string? AgentId) Locate(MightyGraphLayout.Node node, IReadOnlyList<MightyGraphRun> runs)
+    {
+        for (var i = 0; i < runs.Count; i++)
+        {
+            var run = runs[i];
+            if (node.Id == MightyGraphLayout.NodeID(run, "request") && node.Kind == "request") return (i, null);
+            if (node.Id == MightyGraphLayout.NodeID(run, "result") && node.Kind == "result") return (i, null);
+            if (node.Id == MightyGraphLayout.NodeID(run, "result-files") && node.Kind == "resultFiles") return (i, null);
+            if (node.Kind != "agent") continue;
+            foreach (var agent in run.Agents)
+                if (node.Id == MightyGraphLayout.NodeID(run, "agent:" + agent.Id)) return (i, agent.Id);
+        }
+        return (-1, null);
+    }
+
+    // ── toolbar ───────────────────────────────────────────────────────────────
+
+    /// <summary>The pane total line macOS draws in the graph toolbar.</summary>
+    public static string ToolbarSummary(IReadOnlyList<MightyGraphRun> runs)
+    {
+        static Dictionary<string, string> N(int n) => new() { ["n"] = n.ToString() };
+        int Kind(string kind) => runs.Sum(r => r.Agents.Count(a => MightyGraphSupport.BlockKind(a) == kind));
+        var parts = new List<string>
+        {
+            Locale.Get("graph.header.requests", N(runs.Count)),
+            Locale.Get("graph.header.agents", N(Kind("agent"))),
+        };
+        if (Kind("question") > 0) parts.Add(Locale.Get("graph.header.questions", N(Kind("question"))));
+        if (Kind("task") > 0) parts.Add(Locale.Get("graph.header.tasks", N(Kind("task"))));
+        if (Kind("steer") > 0) parts.Add(Locale.Get("graph.header.steers", N(Kind("steer"))));
+        if (Kind("compact") > 0) parts.Add(Locale.Get("graph.header.compactions", N(Kind("compact"))));
+        var tokens = Total(runs);
+        if (!tokens.IsEmpty) parts.Add(tokens.Summary);
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>The tooltip on the toolbar total; empty when nothing was counted.</summary>
+    public static string ToolbarHelp(IReadOnlyList<MightyGraphRun> runs)
+    {
+        var tokens = Total(runs);
+        return tokens.IsEmpty ? "" : Locale.Get("graph.header.totalHelp", new Dictionary<string, string> { ["detail"] = tokens.Detail });
+    }
+
+    private static GraphTokenUsage Total(IReadOnlyList<MightyGraphRun> runs) =>
+        runs.Aggregate(new GraphTokenUsage(), (sum, run) => sum + (run.TotalUsage ?? new GraphTokenUsage()));
+
+    // ── result files ──────────────────────────────────────────────────────────
+
+    /// <summary>The workspace files the given run's final result names.</summary>
+    public static List<ResultFiles.ResultFile> FilesFor(MightyGraphRun run, string? workspaceRoot)
+    {
+        var texts = run.ResultEntries.Select(e => e.Text).ToList();
+        if (run.FinalOutput is { Length: > 0 } final) texts.Add(final);
+        return ResultFiles.In(texts, workspaceRoot);
+    }
+
+    /// <summary>The newest run whose result is complete; null when none finished.</summary>
+    public static MightyGraphRun? LatestCompletedRun(IReadOnlyList<MightyGraphRun> runs)
+    {
+        for (var i = runs.Count - 1; i >= 0; i--)
+            if (runs[i].Status == "completed" && MightyGraphLayout.Finished(runs[i])) return runs[i];
+        return null;
+    }
+}

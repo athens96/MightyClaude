@@ -62,6 +62,8 @@ public sealed partial class MainWindow
             result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
             result[CodexPluginSmokeOutcome.ResultKey] = await RunCodexPluginSmoke();
             result[PluginMarketplaceSmokeOutcome.ResultKey] = await RunPluginMarketplaceSmoke();
+            var mightyLeakStrings = new List<string>();
+            result["mightyGraph"] = await RunMightyGraphSmoke(pane, workspace, mightyLeakStrings);
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -108,6 +110,8 @@ public sealed partial class MainWindow
             leakStrings.AddRange(PhaseModelSectionTexts(BuildPhaseModelsSection(new(), PhaseModelSection.SmokeFixtureTools)));
             // 구성 요소 칸은 임시 toolkit.json과 실행 결과 표까지 채운 모습으로 넣는다.
             leakStrings.AddRange(componentsLeakStrings);
+            // mighty 그래프 캔버스의 글자도 로케일 키 누수 검사에 넣는다.
+            leakStrings.AddRange(mightyLeakStrings);
             var koKeys = Locale.Catalogue("ko").Keys.ToList();
             var keyLeaks = LocaleKeyLeak.Detect(leakStrings, koKeys);
             result["localeKeyLeakScanned"] = leakStrings.Count;
@@ -461,6 +465,118 @@ public sealed partial class MainWindow
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels); await encoder.FlushAsync();
         using var source = stream.GetInputStreamAt(0); using var output = new DataReader(source); await output.LoadAsync((uint)stream.Size); var png = new byte[(int)stream.Size]; output.ReadBytes(png); await File.WriteAllBytesAsync(path, png); return path;
     }
+
+    // ── mighty graph smoke ────────────────────────────────────────────────────
+
+    /// Drives the real Mighty view: the pane's GraphRuns are produced by feeding
+    /// claudeStream cases from native/contracts/graph-vectors.json through the
+    /// stage 4a ExecutionGraphTracker, the pane is switched to 마이티, the canvas
+    /// is rendered, and the drawn blocks, edges, kinds, result files and zoom
+    /// range are reported. Switching back to 기본 must leave the draft alone.
+    private async Task<Dictionary<string, object?>> RunMightyGraphSmoke(PaneView pane, Workspace workspace, List<string> leakStrings)
+    {
+        var runs = MightyGraphVectorRuns();
+        Require(runs.Count >= 3, "mighty 스모크: 벡터에서 만든 실행이 너무 적습니다: " + runs.Count);
+
+        // A real file inside the smoke workspace so the 결과에 나온 파일 panel has
+        // something to list; nothing outside the workspace is ever resolved.
+        var notesDirectory = Path.Combine(workspace.Path, "docs");
+        Directory.CreateDirectory(notesDirectory);
+        var notePath = Path.Combine(notesDirectory, "mighty-note.md");
+        await File.WriteAllTextAsync(notePath, "# mighty\n");
+        var last = runs[^1];
+        last.FinalOutput = "정리한 내용은 docs/mighty-note.md 에 적었습니다.";
+        MightyGraphSupport.RefreshResult(last);
+
+        var draftBefore = pane.SessionForSmoke.Draft;
+        await pane.SetGraphRunsForSmoke(runs);
+        await pane.SetAgentViewMode("mighty");
+        root.UpdateLayout(); await Task.Delay(60);
+        Require(pane.SessionForSmoke.AgentViewMode == "mighty", "마이티 모드가 저장되지 않았습니다.");
+        Require(pane.SessionForSmoke.Draft == draftBefore, "모드 전환이 입력창 초안을 지웠습니다.");
+
+        var reading = pane.ReadGraphForSmoke();
+        Require(reading.Blocks >= 3, "mighty 스모크: 블록이 3개 미만입니다: " + reading.Blocks);
+        Require(reading.Edges >= 2, "mighty 스모크: 엣지가 2개 미만입니다: " + reading.Edges);
+        Require(reading.Kinds.Contains("request") && reading.Kinds.Contains("result"), "mighty 스모크: 요청·결과 블록이 없습니다.");
+
+        // Zoom: 50% at the bottom, 100% on reset, 150% at the top, disabled at the ends.
+        pane.SetGraphZoom(MightyGraphViewModel.ZoomMin);
+        Require(MightyGraphViewModel.ZoomOutDisabled(pane.GraphZoom), "최소 배율에서 축소 단추가 잠기지 않았습니다.");
+        var minimum = (int)Math.Round(pane.GraphZoom * 100);
+        pane.SetGraphZoom(MightyGraphViewModel.ZoomDefault);
+        var reset = (int)Math.Round(pane.GraphZoom * 100);
+        pane.SetGraphZoom(MightyGraphViewModel.ZoomMax);
+        Require(MightyGraphViewModel.ZoomInDisabled(pane.GraphZoom), "최대 배율에서 확대 단추가 잠기지 않았습니다.");
+        var maximum = (int)Math.Round(pane.GraphZoom * 100);
+        pane.SetGraphZoom(MightyGraphViewModel.ZoomDefault);
+
+        // Selection routes the wheel into the block; the empty background clears it.
+        var first = pane.GraphBlockIds.First();
+        pane.SelectGraphBlock(first);
+        Require(pane.GraphSelection == first && MightyGraphViewModel.WheelScrollsBlock(pane.GraphSelection), "블록 선택이 휠을 블록으로 보내지 않았습니다.");
+        pane.ClearGraphSelection();
+        Require(pane.GraphSelection is null && !MightyGraphViewModel.WheelScrollsBlock(pane.GraphSelection), "빈 배경 클릭이 선택을 지우지 않았습니다.");
+
+        // Windows animations off: a running block must take the static indicator
+        // and a waiting block the pause mark. Core owns the choice.
+        PaneView.AnimationsEnabledOverride = false;
+        pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+        Require(MightyGraphViewModel.BlockIndicator("running", false) == "static"
+            && MightyGraphViewModel.BlockIndicator("running", true) == "animating"
+            && MightyGraphViewModel.BlockIndicator("waiting", false) == "waiting",
+            "애니메이션이 꺼졌을 때의 표시가 macOS와 다릅니다.");
+        PaneView.AnimationsEnabledOverride = null;
+        pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+
+        // The canvas text joins the locale-key leak scan.
+        CollectVisibleStrings(pane.GraphCanvas, leakStrings);
+        leakStrings.Add(pane.GraphTotalText);
+        leakStrings.AddRange(pane.GraphHeaderTextsForSmoke());
+
+        await pane.SetAgentViewMode("default");
+        root.UpdateLayout(); await Task.Delay(30);
+        var modeRestored = pane.SessionForSmoke.AgentViewMode == "default" && pane.SessionForSmoke.Draft == draftBefore;
+        Require(modeRestored, "기본으로 되돌린 뒤 모드나 초안이 어긋났습니다.");
+
+        return new Dictionary<string, object?>
+        {
+            ["blocks"] = reading.Blocks,
+            ["edges"] = reading.Edges,
+            ["kinds"] = reading.Kinds,
+            ["resultFiles"] = reading.ResultFiles,
+            ["zoom"] = new[] { minimum, reset, maximum },
+            ["modeRestored"] = modeRestored,
+        };
+    }
+
+    /// Every claudeStream case of the committed vector file, replayed through the
+    /// stage 4a tracker. No graph is hand-built here — the tracker produces them.
+    private static List<MightyGraphRun> MightyGraphVectorRuns()
+    {
+        using var stream = typeof(MainWindow).Assembly.GetManifestResourceStream("MightyClaude.WinUI.GraphVectors.json")
+            ?? throw new InvalidOperationException("graph-vectors.json이 WinUI 어셈블리에 포함되지 않았습니다.");
+        using var document = JsonDocument.Parse(stream);
+        var runs = new List<MightyGraphRun>();
+        foreach (var value in document.RootElement.GetProperty("claudeStream").EnumerateArray())
+        {
+            var tracker = new ExecutionGraphTracker(
+                value.GetProperty("runId").GetString()!,
+                value.TryGetProperty("input", out var input) ? input.GetString() : null,
+                value.TryGetProperty("provider", out var provider) ? provider.GetString()! : "claude",
+                null, _ => { });
+            foreach (var step in value.GetProperty("steps").EnumerateArray())
+                switch (step.GetProperty("kind").GetString())
+                {
+                    case "frame": tracker.Consume(step.GetProperty("value")); break;
+                    case "steer": tracker.Steer(step.TryGetProperty("id", out var steerId) ? steerId.GetString() ?? "" : "", step.TryGetProperty("text", out var steerText) ? steerText.GetString() ?? "" : ""); break;
+                    case "finish": tracker.Finish(step.TryGetProperty("state", out var state) ? state.GetString() ?? "completed" : "completed"); break;
+                }
+            if (tracker.BuildRun() is { } run) runs.Add(run);
+        }
+        return runs;
+    }
+
     private static void CollectVisibleStrings(DependencyObject element, List<string> strings)
     {
         switch (element)
