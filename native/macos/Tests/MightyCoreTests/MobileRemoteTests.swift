@@ -710,4 +710,25 @@ struct MobileRemoteTests {
         #expect(sameHostId == status.serverId && CoreValidation.identifier(status.serverId))
         await service.shutdown()
     }
+
+    // MARK: - Mighty-default AC
+
+    @Test func sendsMightyIsTrueForEveryNonShellKindRegardlessOfViewMode() {
+        // Non-shell panes always carry a mighty payload so the phone can open
+        // the blocks view by default, whatever view mode the Mac pane itself is in.
+        for kind in ["claude", "codex", "browser"] {
+            #expect(MobileRemoteSupport.sendsMighty(kind: kind, agentViewMode: nil),
+                    "expected mighty for kind=\(kind) viewMode=nil")
+            #expect(MobileRemoteSupport.sendsMighty(kind: kind, agentViewMode: MobileWire.plainViewMode),
+                    "expected mighty for kind=\(kind) viewMode=plain")
+            #expect(MobileRemoteSupport.sendsMighty(kind: kind, agentViewMode: "mighty"),
+                    "expected mighty for kind=\(kind) viewMode=mighty")
+        }
+    }
+
+    @Test func sendsMightyIsFalseForShellRegardlessOfViewMode() {
+        #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: nil))
+        #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: MobileWire.plainViewMode))
+        #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: "mighty"))
+    }
 }
