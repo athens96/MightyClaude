@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
+import { t } from '@/lib/i18n';
 import { darkPalette, useStyles, usePalette, type Palette } from '@/theme';
 
 // `@noble/*` reads `globalThis.crypto.getRandomValues`, which React Native lacks.
@@ -53,6 +54,7 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="index" options={{ title: '호스트' }} />
+            <Stack.Screen name="connect" options={{ title: t('phone.connect.title'), presentation: 'modal' }} />
             <Stack.Screen name="pair" options={{ title: '호스트 추가', presentation: 'modal' }} />
             <Stack.Screen name="host/[hostId]/index" options={{ title: '작업 공간' }} />
             <Stack.Screen name="host/[hostId]/session/[sessionId]" options={{ title: '세션' }} />
