@@ -87,6 +87,9 @@ public sealed record RunSession
     [JsonConverter(typeof(AgentViewModeConverter))]
     public string? AgentViewMode { get; init; }
     [JsonPropertyName("graphRuns")] public List<MightyGraphRun>? GraphRuns { get; init; }
+    // Browser pane fields — serialized with the same keys as macOS RunSession.
+    [JsonPropertyName("workspaceProfileKey")] public string? WorkspaceProfileKey { get; init; }
+    [JsonPropertyName("ownerSessionId")] public string? OwnerSessionId { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {
@@ -225,6 +228,10 @@ public sealed record AppSnapshot
     // Additive with a default (null = all "default") so Version stays 1.
     [JsonPropertyName("phaseModels")]
     public PhaseModelsSnapshot? PhaseModels { get; init; }
+    // Opt-in browser pane engine. Read once at launch; a change applies after restart.
+    // Additive with a default (false) so Version stays 1.
+    [JsonPropertyName("browserEngineEnabled")]
+    public bool BrowserEngineEnabled { get; init; }
     public AppSnapshot Apply(RunEvent ev) => !ev.Valid() ? this : this with { Sessions = Sessions.Select(s => s.Id == ev.SessionId ? s.Apply(ev) : s).ToList() };
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, IReadOnlyList<RegisteredModelEntry> RegisteredModels, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)

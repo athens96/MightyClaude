@@ -646,7 +646,15 @@ internal static class Verification
         await Test("hash parity stale platforms key excluded from hash surface", ToolkitVerification.HashParityStalePlatformsKeyExcluded);
         await Test("hash parity changing a hashed field changes the digest", ToolkitVerification.HashParityChangingFieldChangesHash);
         await Test("hash parity round-trip with stale platforms key is byte-identical", ToolkitVerification.HashParityRoundTripWithStalePlatformsKey);
-        await Test("BrowserSession is dropped without error on Windows state load", BrowserSessionVerification.BrowserSessionIsDroppedWithoutError);
+        await Test("browser session loads with workspaceProfileKey on Windows state load", BrowserSessionVerification.BrowserSessionLoadsWithWorkspaceProfileKey);
+        await Test("browser address resolves like macOS", BrowserVerification.AddressResolvesLikeMacOS);
+        await Test("browser history follows macOS rules", BrowserVerification.HistoryFollowsMacOSRules);
+        await Test("browser profile folder per workspace follows profile", BrowserVerification.ProfileFolderPerWorkspaceFollowsProfile);
+        await Test("browser setting is off by default and read once", BrowserVerification.SettingIsOffByDefaultAndReadOnce);
+        await Test("browser runtime missing offers install only on click", BrowserVerification.RuntimeMissingOffersInstallOnlyOnClick);
+        await Test("browser installer requires a Microsoft signature", BrowserVerification.InstallerRequiresMicrosoftSignature);
+        await Test("browser installer failure cleans up", BrowserVerification.InstallerFailureCleansUp);
+        await Test("browser session fields share macOS names", BrowserVerification.SessionFieldsShareMacOSNames);
         await Test("Mod bridge authenticates metadata and rejects browser/secret/stale events", async () =>
         {
             var received = 0; await using var bridge = new ModBridge(); using var connection = await bridge.RegisterAsync(_ => Interlocked.Increment(ref received), CancellationToken.None); using var client = new HttpClient();

@@ -105,6 +105,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         }
         RunSession NormalizeSession(RunSession s)
         {
+            if (s.Kind == "browser")
+                return s with { Title = RenameSupport.ClampTitle(s.Title), Status = "idle", Logs = [], Draft = "", RunTiming = null, SessionUsage = null, CurrentActivity = null, AgentViewMode = null, GraphRuns = null, ResumeId = null, WorkspaceProfileKey = Wire.Clean(s.WorkspaceProfileKey, 128) is { Length: > 0 } wpk ? wpk : null, OwnerSessionId = Wire.Identifier(s.OwnerSessionId) ? s.OwnerSessionId : null };
             var provider = Wire.Providers.Contains(s.Provider) ? s.Provider : "claude";
             var logs = (s.Logs ?? []).Where(l => l is not null && Wire.Identifier(l.Id) && l.Kind is "user" or "assistant" or "system" or "output" or "error").TakeLast(300).Select(NormalizeLog).Where(l => l.Text.Length > 0).ToList();
             var timing = s.Kind == "shell" ? null : s.RunTiming is { IsValid: true } ? s.RunTiming : AgentRunTiming.Infer(logs);
@@ -116,7 +118,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             if (graphRuns is { Count: 0 }) graphRuns = null;
             return s with { Title = RenameSupport.ClampTitle(s.Title), Draft = Bounded(s.Draft, 100000), Provider = provider, Model = Wire.Model(s.Model) ? s.Model : "default", Settings = ProviderCatalog.NormalizeSettings(provider, s.Settings), ResumeId = Wire.Identifier(s.ResumeId) ? s.ResumeId : null, Status = restoring && s.Status == "running" ? "stopped" : s.Status is "idle" or "running" or "completed" or "error" or "stopped" ? s.Status : "idle", Logs = logs, RunTiming = timing, SessionUsage = usage, CurrentActivity = restoring ? null : ActivitySupport.Normalize(s.CurrentActivity), AgentViewMode = viewMode, GraphRuns = graphRuns };
         }
-        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && s.Kind is "claude" or "shell").DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
+        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && s.Kind is "claude" or "shell" or "browser").DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
         var workspaceId = ids.Contains(value.ActiveWorkspaceId ?? "") ? value.ActiveWorkspaceId : workspaces.FirstOrDefault()?.Id;
         var activeSessionId = sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId && s.Id == value.ActiveSessionId)?.Id ?? sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId)?.Id;
         Dictionary<string, PaneLayoutNode>? layouts = null;
