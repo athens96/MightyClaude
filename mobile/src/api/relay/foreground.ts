@@ -7,6 +7,9 @@ export const appForeground: ForegroundSignal = {
   subscribe(listener) {
     let previous: string | null = AppState.currentState;
     const subscription = AppState.addEventListener('change', (status) => {
+      // `inactive` is a pass-through (Control Center, alerts, the way back on iOS), so
+      // remember where the app really was: background → inactive → active still returns.
+      if (status === 'inactive') return;
       const returned = returnedToForeground(previous, status);
       previous = status;
       if (returned) listener();

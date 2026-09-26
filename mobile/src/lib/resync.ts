@@ -9,9 +9,14 @@ import type { RelayState } from '@/api/relay/transport';
  * Pure: AppState, the relay and the store are wired up in the hooks and screens.
  */
 
-/** True when the app has just come back to the front from somewhere else. */
+/**
+ * True when the app has just come back from the background. `inactive` → `active` is
+ * not a return: iOS passes through `inactive` for Control Center, the notification
+ * shade, Face ID and system alerts, and restarting every poll on each of those would
+ * pile abandoned long polls onto the tunnel's request slots.
+ */
 export function returnedToForeground(previous: string | null | undefined, next: string): boolean {
-  return next === 'active' && previous !== 'active';
+  return next === 'active' && previous === 'background';
 }
 
 /**

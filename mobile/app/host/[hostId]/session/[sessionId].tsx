@@ -602,6 +602,14 @@ export default function SessionScreen() {
   );
 
   const running = composerRunning(session?.status, detail?.revision, settledRevision);
+  // The override covers one stale detail only. Once another revision arrives it has
+  // spoken for itself, and a later detail that happens to reuse the number (the Mac
+  // restarted and counts again) must not hide 중지 for a run that is really going.
+  useEffect(() => {
+    if (settledRevision !== undefined && detail?.revision !== undefined && detail.revision !== settledRevision) {
+      setSettledRevision(undefined);
+    }
+  }, [detail?.revision, settledRevision]);
 
   // The host sends `mighty` only for a pane in Mighty view; an unknown shape is dropped
   // rather than trusted, so nothing here can be fed a field we cannot draw.

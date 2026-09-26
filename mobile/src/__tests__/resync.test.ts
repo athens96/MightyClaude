@@ -9,8 +9,9 @@ import {
 describe('returnedToForeground', () => {
   it('fires when the app comes back from the background or an interruption', () => {
     expect(returnedToForeground('background', 'active')).toBe(true);
-    expect(returnedToForeground('inactive', 'active')).toBe(true);
-    expect(returnedToForeground(null, 'active')).toBe(true);
+    // Control Center, the notification shade, Face ID: not a return from the background.
+    expect(returnedToForeground('inactive', 'active')).toBe(false);
+    expect(returnedToForeground(null, 'active')).toBe(false);
   });
 
   it('stays quiet while the app leaves or was already in front', () => {
