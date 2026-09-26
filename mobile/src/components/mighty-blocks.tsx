@@ -22,8 +22,10 @@ import {
   blockKindMark,
   blockPrompt,
   blockTitle,
+  resultPreview,
   runHeading,
   runPreview,
+  runResult,
 } from '@/lib/mighty';
 import {
   blockColor,
@@ -127,6 +129,39 @@ function BlockDetails({ block, runInput }: { block: MobileBlock; runInput: strin
   );
 }
 
+/**
+ * The run's final answer, set apart from the blocks the way the Mac's result block
+ * is: an accent frame and heading, turned to the status colour when the run ended in
+ * an error or was stopped. A long answer shows its head until asked for the rest.
+ */
+function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const [full, setFull] = useState(false);
+  const { preview, folded } = resultPreview(text);
+  const tint = run.status === 'completed' ? palette.accent : statusColor(palette, run.status);
+
+  return (
+    <View style={[styles.resultCard, { borderColor: tint }]}>
+      <Text style={[styles.resultHeading, { color: tint }]}>{t('phone.blocks.finalResult')}</Text>
+      <AssistantMarkdown selectable text={full ? text : preview} />
+      {folded ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: full }}
+          hitSlop={8}
+          onPress={() => setFull((value) => !value)}
+          style={({ pressed }) => pressed && styles.pressed}
+        >
+          <Text style={styles.toggle}>
+            {full ? t('phone.blocks.resultLess') : t('phone.blocks.resultMore')}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function RunGroup({ run, index, initiallyOpen }: {
   run: MobileMightyRun;
   index: number;
@@ -136,6 +171,7 @@ function RunGroup({ run, index, initiallyOpen }: {
   const styles = useStyles(makeStyles);
   const [open, setOpen] = useState(initiallyOpen);
   const preview = runPreview(run.input);
+  const result = runResult(run);
 
   return (
     <View style={styles.run}>
@@ -173,6 +209,7 @@ function RunGroup({ run, index, initiallyOpen }: {
               ))}
             </>
           )}
+          {result ? <ResultCard run={run} text={result} /> : null}
         </View>
       ) : null}
     </View>
@@ -276,5 +313,14 @@ const makeStyles = (palette: Palette) =>
     section: { gap: 2 },
     sectionLabel: { color: palette.textFaint, fontSize: 11, fontWeight: '700' },
     activityLine: { ...monoText, color: palette.textMuted },
+    resultCard: {
+      backgroundColor: palette.surface,
+      borderRadius: radius.md,
+      borderWidth: 1.5,
+      gap: spacing.xs,
+      marginTop: spacing.xs,
+      padding: spacing.md,
+    },
+    resultHeading: { fontSize: 13, fontWeight: '800' },
     pressed: { opacity: 0.7 },
   });

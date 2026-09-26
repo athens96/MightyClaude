@@ -1,7 +1,15 @@
-import { MAX_BLOCK_ACTIVITY, MAX_BLOCK_SUMMARY, type MobileBlock, type MobileMightyRun } from '@/api/types';
+import {
+  MAX_BLOCK_ACTIVITY,
+  MAX_BLOCK_SUMMARY,
+  MAX_RUN_RESULT,
+  type MobileBlock,
+  type MobileMightyRun,
+} from '@/api/types';
 import {
   MAX_BLOCKS_PER_RUN,
   MAX_INPUT_PREVIEW,
+  RESULT_PREVIEW_CHARS,
+  RESULT_PREVIEW_LINES,
   blockActivity,
   blockGist,
   blockKindLabel,
@@ -10,8 +18,10 @@ import {
   blockTitle,
   defaultView,
   normalizeMighty,
+  resultPreview,
   runHeading,
   runPreview,
+  runResult,
 } from '@/lib/mighty';
 import { panelOf } from '@/lib/styles';
 
@@ -481,5 +491,55 @@ describe('what a block says folded and open', () => {
     expect(parse([])?.activity).toBeUndefined();
     // An old Mac sends none at all; the summary keeps the full prompt the Mac allows.
     expect(parse(undefined, 'ㄱ'.repeat(MAX_BLOCK_SUMMARY + 5))?.summary).toHaveLength(MAX_BLOCK_SUMMARY);
+  });
+});
+
+describe('the final result of a run', () => {
+  const main = (output?: string) => block({ id: 'm', kind: 'main', status: 'completed', output });
+
+  it('prefers the full result, then falls back to the request block output', () => {
+    expect(runResult(run({ result: '# 전체 답', blocks: [main('짧은 답')] }))).toBe('# 전체 답');
+    // An older run, or an older Mac, has only the request block's output.
+    expect(runResult(run({ blocks: [block({ output: '하위 답' }), main('짧은 답')] }))).toBe('짧은 답');
+    expect(runResult(run({ status: 'error', blocks: [main('오류 설명')] }))).toBe('오류 설명');
+    expect(runResult(run({ status: 'stopped', result: '멈춘 곳까지' }))).toBe('멈춘 곳까지');
+  });
+
+  it('has nothing to show while running or when the run said nothing', () => {
+    expect(runResult(run({ status: 'running', result: '중간', blocks: [main('중간')] }))).toBeUndefined();
+    expect(runResult(run({ status: 'waiting', blocks: [main('중간')] }))).toBeUndefined();
+    expect(runResult(run({ status: 'hologram', result: '답' }))).toBeUndefined();
+    expect(runResult(run({ blocks: [main()] }))).toBeUndefined();
+    expect(runResult(run({ blocks: [main('  \n ')] }))).toBeUndefined();
+    // A child block's answer is never mistaken for the run's own.
+    expect(runResult(run({ blocks: [block({ status: 'completed', output: '하위 답' })] }))).toBeUndefined();
+    expect(runResult(run())).toBeUndefined();
+  });
+
+  it('parses the result defensively and clamps it', () => {
+    const parse = (result: unknown) =>
+      normalizeMighty({ style: 'cli', runs: [{ id: 'r1', input: '', status: 'completed', blocks: [], result }] })
+        ?.runs[0]?.result;
+    expect(parse('x'.repeat(MAX_RUN_RESULT + 10))).toHaveLength(MAX_RUN_RESULT);
+    expect(parse('답\u0007변')).toBe('답변');
+    expect(parse('   ')).toBeUndefined();
+    expect(parse(42)).toBeUndefined();
+    expect(parse(undefined)).toBeUndefined();
+  });
+
+  it('shows the head of a long result and says there is more', () => {
+    const lines = Array.from({ length: RESULT_PREVIEW_LINES + 5 }, (_, index) => `줄 ${index}`).join('\n');
+    const long = resultPreview(lines);
+    expect(long.folded).toBe(true);
+    expect(long.preview.split('\n')).toHaveLength(RESULT_PREVIEW_LINES);
+    expect(long.preview.endsWith('줄 14…')).toBe(true);
+    const wide = resultPreview('가'.repeat(RESULT_PREVIEW_CHARS * 2));
+    expect(wide.folded).toBe(true);
+    expect(wide.preview).toHaveLength(RESULT_PREVIEW_CHARS + 1);
+    // An emoji cut in half at the limit is dropped rather than left broken.
+    const emoji = resultPreview(`${'가'.repeat(RESULT_PREVIEW_CHARS - 1)}😀 끝`);
+    expect(emoji.preview).toBe(`${'가'.repeat(RESULT_PREVIEW_CHARS - 1)}…`);
+    // A short result, even with trailing blank lines, is shown whole.
+    expect(resultPreview('짧은 답\n\n')).toEqual({ preview: '짧은 답\n\n', folded: false });
   });
 });

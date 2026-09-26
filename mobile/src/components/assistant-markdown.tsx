@@ -101,9 +101,20 @@ const rules: RenderRules = {
   ),
 };
 
+/** The same rules with every run of prose selectable, so a long press can copy it. */
+const selectableRules: RenderRules = {
+  ...rules,
+  textgroup: (node, children, _parent, styles) => (
+    <Text key={node.key} selectable style={styles.textgroup}>
+      {children}
+    </Text>
+  ),
+};
+
 interface BoundaryProps {
   text: string;
   fallbackStyle: TextStyle;
+  selectable: boolean;
   children: ReactNode;
 }
 
@@ -117,7 +128,11 @@ class MarkdownBoundary extends Component<BoundaryProps, { failed: boolean }> {
 
   render(): ReactNode {
     if (this.state.failed) {
-      return <Text style={this.props.fallbackStyle}>{this.props.text}</Text>;
+      return (
+        <Text selectable={this.props.selectable} style={this.props.fallbackStyle}>
+          {this.props.text}
+        </Text>
+      );
     }
     return this.props.children;
   }
@@ -125,14 +140,28 @@ class MarkdownBoundary extends Component<BoundaryProps, { failed: boolean }> {
 
 /**
  * Markdown as the Mac's result wrote it: headings, lists, quotes, tables, code,
- * links and images. `compact` is the smaller size the Mighty blocks use.
+ * links and images. `compact` is the smaller size the Mighty blocks use;
+ * `selectable` lets the prose be long-pressed and copied, as code always can.
  */
-export function AssistantMarkdown({ text, compact = false }: { text: string; compact?: boolean }) {
+export function AssistantMarkdown({
+  text,
+  compact = false,
+  selectable = false,
+}: {
+  text: string;
+  compact?: boolean;
+  selectable?: boolean;
+}) {
   const markdownStyles = useStyles(compact ? compactStyles : regularStyles);
   const prepared = useMemo(() => prepareMarkdown(text), [text]);
   return (
-    <MarkdownBoundary text={text} fallbackStyle={markdownStyles.body}>
-      <Markdown markdownit={parser} rules={rules} style={markdownStyles} onLinkPress={isOpenableLink}>
+    <MarkdownBoundary text={text} fallbackStyle={markdownStyles.body} selectable={selectable}>
+      <Markdown
+        markdownit={parser}
+        rules={selectable ? selectableRules : rules}
+        style={markdownStyles}
+        onLinkPress={isOpenableLink}
+      >
         {prepared}
       </Markdown>
     </MarkdownBoundary>

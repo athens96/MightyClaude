@@ -2,6 +2,7 @@ import {
   MAX_BLOCK_ACTIVITY,
   MAX_BLOCK_OUTPUT,
   MAX_BLOCK_SUMMARY,
+  MAX_RUN_RESULT,
   type MobileBlock,
   type MobileMighty,
   type MobileMightyRun,
@@ -136,6 +137,34 @@ export function blockActivity(block: MobileBlock): string[] {
   return inMotion(block) ? (block.activity ?? []) : [];
 }
 
+/** Lines a long final result shows before it asks to be opened in full. */
+export const RESULT_PREVIEW_LINES = 15;
+/** Characters the same preview keeps when a few lines are very long ones. */
+export const RESULT_PREVIEW_CHARS = 1_500;
+
+/**
+ * A settled run's final answer: the full `result` the Mac sends for its newest run,
+ * else the request block's shorter output (an older run, or an older Mac), else
+ * nothing — a run still in motion, or one that said nothing, gets no result card.
+ */
+export function runResult(run: MobileMightyRun): string | undefined {
+  if (run.status !== 'completed' && run.status !== 'error' && run.status !== 'stopped') return undefined;
+  const text = run.result ?? run.blocks.find((block) => block.kind === 'main')?.output ?? '';
+  return text.trim().length > 0 ? text : undefined;
+}
+
+/**
+ * The head of a long result, cut at `RESULT_PREVIEW_LINES` lines or
+ * `RESULT_PREVIEW_CHARS` characters, whichever comes first. `folded` says whether
+ * anything was left out, so the card offers the rest only when there is a rest.
+ */
+export function resultPreview(text: string): { preview: string; folded: boolean } {
+  const head = text.split('\n').slice(0, RESULT_PREVIEW_LINES).join('\n').slice(0, RESULT_PREVIEW_CHARS);
+  // A cut through an emoji would leave half of it behind as a broken glyph.
+  const preview = head.replace(/[\uD800-\uDBFF]$/, '').trimEnd();
+  return preview.length < text.trimEnd().length ? { preview: `${preview}…`, folded: true } : { preview: text, folded: false };
+}
+
 // ------------------------------------------------------------------ parsing
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,6 +218,8 @@ function parseRun(raw: unknown): MobileMightyRun | undefined {
   }
   const title = inlineText(raw.title, 160);
   if (title.length > 0) run.title = title;
+  const result = blockText(raw.result, MAX_RUN_RESULT);
+  if (result.trim().length > 0) run.result = result;
   return run;
 }
 

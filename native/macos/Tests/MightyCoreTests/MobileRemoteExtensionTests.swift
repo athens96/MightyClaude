@@ -275,6 +275,49 @@ struct MobileRemoteExtensionTests {
         #expect(MobileMightySupport.runs([]).isEmpty)
     }
 
+    @Test func onlyTheNewestSettledRunCarriesItsFullResult() throws {
+        let long = String(repeating: "가", count: 25_000)
+        var runs = [MightyGraphRun(id: "run-1", input: "첫 요청", status: "completed", finalOutput: "이전 답"),
+                    MightyGraphRun(id: "run-2", input: "둘째 요청", status: "completed", finalOutput: long)]
+        var wire = MobileMightySupport.runs(runs)
+        // An older run leans on its main block's shorter output.
+        #expect(wire[0].result == nil && wire[0].blocks.first?.output == "이전 답")
+        #expect(wire[1].result?.count == MobileWire.maximumRunResult && wire[1].result?.hasSuffix("가") == true)
+        #expect(wire[1].blocks.first?.output?.count == MobileWire.maximumBlockOutput)
+        // Still in motion, or settled with nothing to say: no result at all.
+        runs[1].status = "running"
+        #expect(MobileMightySupport.runs(runs)[1].result == nil)
+        runs[1].status = "failed"; runs[1].finalOutput = "오류로 멈춤"
+        #expect(MobileMightySupport.runs(runs)[1].result == "오류로 멈춤")
+        runs[1].status = "cancelled"; runs[1].finalOutput = "  \n "
+        wire = MobileMightySupport.runs(runs)
+        #expect(wire[1].result == nil)
+        // Absent on the wire rather than null, so an older phone sees nothing new.
+        let encodedRun = try JSONSerialization.jsonObject(with: JSONEncoder().encode(wire[1])) as? [String: Any]
+        #expect(encodedRun?.keys.contains("result") == false)
+    }
+
+    @Test func theMightyDigestMovesWhenTheNewestRunsResultLands() {
+        var run = MightyGraphRun(id: "run-1", input: "안녕", status: "running")
+        let running = MobileMightySupport.digest([run])
+        // Settling with its answer moves it, as the status alone would.
+        run.status = "completed"; run.finalOutput = "최종 답"
+        let settled = MobileMightySupport.digest([run])
+        #expect(settled != running)
+        // An answer that lands after the status has already settled still moves it.
+        run.finalOutput = "최종 답, 조금 더 긴 판"
+        #expect(MobileMightySupport.digest([run]) != settled)
+        // A legacy pane's completed request reads its last reply the same way.
+        var session = RunSession(workspaceId: "w1", title: "Claude", status: "idle",
+                                 logs: [LogEntry(id: "u1", kind: "user", text: "정리해줘"),
+                                        LogEntry(id: "a1", kind: "assistant", text: "답")])
+        let short = MobileMightySupport.digest(session: session)
+        #expect(short == MobileMightySupport.digest(MightyGraphSupport.legacyRuns(session)))
+        session.logs[1].text = "더 긴 답"
+        #expect(MobileMightySupport.digest(session: session) != short)
+        #expect(MobileMightySupport.digest(session: session) == MobileMightySupport.digest(MightyGraphSupport.legacyRuns(session)))
+    }
+
     @Test func theMightyDigestMovesOnStructureAndIgnoresStreamedText() {
         var run = MightyGraphRun(id: "run-1", input: "안녕", status: "running", rootEntries: [LogEntry(id: "e1", kind: "assistant", text: "부")])
         let first = MobileMightySupport.digest([run])
