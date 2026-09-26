@@ -31,8 +31,12 @@ export const RECONNECT_MIN_MS = 1_500;
 export const RECONNECT_MAX_MS = 30_000;
 /** Covers a 10 s long poll plus slack on a slow mobile link. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
-/** How long a tunnel that still looks open gets to answer a ping when the app returns. */
-export const FOREGROUND_PROBE_MS = 5_000;
+/**
+ * How long a tunnel that still looks open gets to show life when the app returns. Any
+ * frame counts, not just the pong: on a slow uplink the ping can queue behind upload
+ * chunks, and dropping a live tunnel fails the requests already on it.
+ */
+export const FOREGROUND_PROBE_MS = 10_000;
 const HANDSHAKE_TIMEOUT_MS = 20_000;
 
 export type RelayState = 'connecting' | 'handshaking' | 'ready' | 'closed';
@@ -297,8 +301,8 @@ export class RelayConnection {
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private probeTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPongAt = 0;
-  /** Counts pongs, so a probe can tell whether its own ping was answered. */
-  private pongs = 0;
+  /** Counts every frame received, so a probe can tell whether the tunnel is alive. */
+  private frames = 0;
   private disposed = false;
   private authFailure: RelayFailure | undefined;
   private authRejection: AuthRejection | undefined;
@@ -439,11 +443,14 @@ export class RelayConnection {
   private probe(): void {
     const socket = this.socket;
     if (!socket || this.probeTimer) return;
-    const pongsBefore = this.pongs;
+    const framesBefore = this.frames;
     this.sendEncrypted({ type: 'ping' });
     this.probeTimer = setTimeout(() => {
       this.probeTimer = undefined;
-      if (this.socket === socket && this.pongs === pongsBefore) this.dropSocket(socket, 'closed');
+      if (this.socket !== socket || this.frames !== framesBefore) return;
+      // Dead: drop it and dial again now rather than after the backoff delay.
+      this.dropSocket(socket, 'closed');
+      this.reconnectNow();
     }, this.probeTimeoutMs);
   }
 
@@ -505,6 +512,7 @@ export class RelayConnection {
 
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
+      this.frames += 1;
       try {
         this.handleMessage(event.data, keyPair.secretKey, clientNonce, socket);
       } catch (error) {
@@ -682,7 +690,6 @@ export class RelayConnection {
       }
       case 'pong': {
         this.lastPongAt = Date.now();
-        this.pongs += 1;
         return;
       }
       case 'ping': {
