@@ -252,10 +252,28 @@
 - [ ] 실행 중 에이전트 질문이 별도 패널에 표시된다
 - [ ] 답변 입력 후 에이전트가 계속 진행한다
 
-### 실행 그래프
-- [ ] 실행 그래프 뷰가 열린다
-- [ ] 노드와 엣지가 렌더링된다
-- [ ] 노드 선택 시 세부 정보가 표시된다
+### 실행 그래프 — 마이티 보기 (`docs/mighty-mode.md`, 시드 `seed_windows_b2_s4b_graph_screen`)
+
+<!-- 기기 미확인 -->
+
+**Windows 기기 확인 항목 (한국어)** — x64 PC, CI ZIP, 실제 Claude 실행
+
+- [ ] (기기 미확인) Claude 실행 창 머리에 "기본 / 마이티" 스위치가 보이고(Codex 창도 같다, Gemini·셸 창에는 없다), "마이티"를 고르면 요청·하위 에이전트·결과 블록이 연결선과 함께 보이며 블록마다 토큰 캡슐이 있고 마우스를 올리면 항목별 내역이 나온다
+- [ ] (기기 미확인) 휠로 캔버스가 상하로, 가로 휠·Shift+휠로 좌우로 움직이고, 빈 배경을 누른 채 드래그해도 움직인다. 바깥 화면은 스크롤되지 않는다
+- [ ] (기기 미확인) "축소 / 100% / 확대"로 50%부터 150%까지 10%씩 바뀌고, 50%에서 "축소", 150%에서 "확대"가 꺼지며, 퍼센트 버튼을 누르면 100%로 돌아간다
+- [ ] (기기 미확인) 블록을 클릭하면 테두리가 강조되고 "블록 스크롤"이 보이며 휠이 그 블록 내용만 스크롤한다. 빈 배경을 클릭하거나 Esc를 누르면 선택이 풀린다
+- [ ] (기기 미확인) 파일을 언급한 결과가 나오면 "결과에 나온 파일" 패널이 개수와 함께 열리고, 파일을 누르면 기본 앱으로 열린다. "파일 목록 닫기"로 닫으면 다음 결과까지 다시 열리지 않는다
+- [ ] (기기 미확인) 캔버스·도구 모음·패널 어디에도 날 키(`graph.…`)가 보이지 않는다
+- [ ] (기기 미확인) 입력창에 초안을 써 둔 채 "기본"으로 돌아가면 실행이 그대로 이어지고 대화와 초안이 그대로 남는다
+
+**Windows 기기 확인 항목 (English)**
+
+- [ ] (not checked on device) With English selected, a Claude pane header shows "Default / Mighty"; Mighty shows the request, sub-agent and result blocks with token capsules and their hover breakdown
+- [ ] (not checked on device) The wheel pans up and down, a horizontal wheel or Shift+wheel pans left and right, and dragging the empty background pans too
+- [ ] (not checked on device) "Zoom out / 100% / Zoom in" goes from 50% to 150% in 10% steps, the end buttons turn off at the limits, and the percent button returns to 100%
+- [ ] (not checked on device) Clicking a block shows "Block scroll" and the wheel scrolls only that block; clicking the background or Esc clears it
+- [ ] (not checked on device) The "Files in result" panel opens with its count, a file opens in its default app, and "Close file list" keeps it closed until the next result
+- [ ] (not checked on device) No raw keys anywhere on the canvas; switching back to "Default" keeps the run and the draft
 
 ### 컴포넌트 (설치 대시보드) (`docs/toolkit.md`, 시드 `seed_windows_b2_s3_components_toolkit`)
 
