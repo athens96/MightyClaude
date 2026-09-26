@@ -7,7 +7,7 @@ import Testing
 /// Drives the real Node relay (relay/dist/server.js) with the host service on
 /// one side and a phone-shaped client written here on the other. Skipped when
 /// the relay has not been built.
-private final class StaticHost: MobileHostDelegate, @unchecked Sendable {
+private class StaticHost: MobileHostDelegate, @unchecked Sendable {
     func mobileState() async -> MobileState { MobileState(revision: 3, hostName: "Relay Mac", workspaces: [], sessions: []) }
     func mobileSession(id: String) async -> MobileSessionDetail? { nil }
     func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String { "started" }
@@ -24,6 +24,26 @@ private final class StaticHost: MobileHostDelegate, @unchecked Sendable {
     func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws {}
     func mobileCommands(sessionId: String) async throws -> [MobileCommand] { [] }
     func mobilePerformCommand(sessionId: String, action: String) async throws -> String? { nil }
+}
+
+/// A Mac with two open panes that writes down every text the phone submits,
+/// so a test can tell which pane a request actually landed in.
+private final class RecordingHost: StaticHost, @unchecked Sendable {
+    static let panes = ["pane-a", "pane-b"]
+    private let lock = NSLock()
+    private var submitted: [(sessionId: String, text: String)] = []
+    var submits: [(sessionId: String, text: String)] { lock.lock(); defer { lock.unlock() }; return submitted }
+
+    override func mobileState() async -> MobileState {
+        MobileState(revision: 3, hostName: "Relay Mac", workspaces: [MobileWorkspace(id: "workspace-1", name: "Work", path: "/tmp/work", remote: false)],
+                    sessions: Self.panes.map { MobileSessionSummary(id: $0, workspaceId: "workspace-1", title: $0, kind: "claude", provider: "claude", model: "default",
+                                                                    status: "idle", revision: 1, updatedAt: "2026-09-26T00:00:00Z") })
+    }
+    override func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        submitted.append((sessionId, text))
+        return "started"
+    }
 }
 
 /// One phone-shaped connection: the socket and the cipher that keeps talking on
@@ -369,6 +389,46 @@ struct RelayIntegrationTests {
             #expect(restoredB.reply["type"] as? String == "auth_ok" && restoredB.reply["deviceToken"] == nil)
             #expect(await service.status().devices.map(\.id) == [phoneB])
             restoredB.phone.close()
+        }
+        withExtendedLifetime(host) {}
+    }
+
+    /// A request typed on the phone lands in the pane the phone has open and
+    /// nowhere else: the phone lists two panes through the relay, submits to
+    /// pane-b, and the host sees exactly that one submit while the phone is
+    /// told it was accepted.
+    @Test(.enabled(if: RelayIntegrationTests.relayHarnessAvailable))
+    func phoneChatRequestReachesOnlyThePaneItHasOpen() async throws {
+        let script = try #require(Self.relayScript)
+        let node = try #require(Self.node)
+        let (relay, port) = try await startRelay(script: script, node: node)
+        defer { relay.stop() }
+        try #require(await waitForHealthz(port: port))
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("relay-chat-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = RecordingHost()
+        try await withHost(directory: directory, port: port, delegate: host) { _, offer in
+            let paired = try await dial(offer: offer, frame: ["type": "auth", "pairingKey": offer.pairingKey, "clientId": "cGhvbmUtaW50ZWctQ0hU", "clientName": "Chat phone"])
+            #expect(paired.reply["type"] as? String == "auth_ok")
+            let phone = paired.phone
+            defer { phone.close() }
+
+            // The phone sees both panes and opens pane-b.
+            try await phone.send(["id": "s1", "method": "GET", "path": "/m1/state?since=0&wait=0"])
+            let state = try await phone.receive()
+            let sessions = ((state["body"] as? [String: Any])?["sessions"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+            #expect(sessions == RecordingHost.panes)
+
+            try await phone.send(["id": "c1", "method": "POST", "path": "/m1/sessions/pane-b/submit", "body": ["text": "hello"]])
+            let reply = try await phone.receive()
+            #expect(reply["id"] as? String == "c1" && reply["status"] as? Int == 202)
+            #expect((reply["body"] as? [String: Any])?["accepted"] as? String == "started")
+
+            let submits = host.submits
+            #expect(submits.count == 1)
+            #expect(submits.first?.sessionId == "pane-b" && submits.first?.text == "hello")
+            #expect(!submits.contains { $0.sessionId == "pane-a" })
         }
         withExtendedLifetime(host) {}
     }
