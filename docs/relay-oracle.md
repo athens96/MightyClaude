@@ -24,7 +24,7 @@ bash relay/deploy/oracle/provision.sh --profile mighty --domain mighty-young-rel
 - 전용 VCN·인터넷 게이트웨이·보안 규칙(22/80/443)·서브넷을 만듭니다.
 - Ubuntu 24.04 인스턴스를 A1 1 OCPU/6 GB로 만들고, 용량이 없으면 E2.1.Micro로 다시 시도합니다.
 - 예약 공인 IP를 붙인 뒤, 그 IP를 보여 주고 DuckDNS에 넣을 때까지 기다립니다.
-- SSH로 접속해 `setup.sh`를 돌리고, 끝에 `wss://…` 주소를 알려 줍니다.
+- 새 인스턴스는 첫 부팅 때(cloud-init) 스스로 저장소를 받아 `setup.sh`를 돌리므로 SSH가 필요 없습니다 — 22번 포트를 막는 회사·공용 네트워크에서도 됩니다. 스크립트는 `https://<이름>/healthz`가 `ok`가 될 때까지 기다렸다가 `wss://…` 주소를 알려 줍니다. (이 기능 전에 만든 인스턴스는 SSH로 설정하므로 22번이 열린 네트워크가 필요합니다.)
 
 같은 이름의 자원은 다시 만들지 않으니 중간에 멈춰도 다시 돌리면 됩니다. SSH 키는 `~/.ssh/mightyclaude-relay`에 새로 만들어지고, 로그인 세션(약 1시간)이 끝났다면 `oci session authenticate`를 다시 하면 됩니다. Pay As You Go 업그레이드와 DuckDNS의 IP 입력만 웹에서 합니다.
 

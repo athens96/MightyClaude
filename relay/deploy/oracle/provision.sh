@@ -91,6 +91,18 @@ if [ ! -f "${SSH_KEY}" ]; then
     ssh-keygen -q -t ed25519 -N "" -C "${NAME}" -f "${SSH_KEY}"
 fi
 
+# ── 첫 부팅 설정(cloud-init) ─────────────────────────────────────────────────
+# 새 인스턴스는 첫 부팅 때 스스로 저장소를 받아 setup.sh를 돌린다. 그래서 22번
+# 포트를 막는 네트워크에서도 SSH 없이 끝난다. 인증서는 DuckDNS가 이 서버를
+# 가리키는 순간 Caddy가 알아서 받는다.
+USER_DATA="$(mktemp)"; trap 'rm -f "${ERR}" "${USER_DATA}"' EXIT
+cat > "${USER_DATA}" <<USERDATA
+#!/bin/bash
+apt-get update -qq && apt-get install -y -qq git curl
+sudo -u ubuntu -H git clone -q --depth 1 ${REPO} /home/ubuntu/MightyClaude
+sudo -u ubuntu -H bash /home/ubuntu/MightyClaude/relay/deploy/oracle/setup.sh ${DOMAIN} || true
+USERDATA
+
 # ── 인스턴스 ────────────────────────────────────────────────────────────────
 INSTANCE="$(q compute instance list --compartment-id "$C" --display-name "${NAME}" --query "data[?\"lifecycle-state\"!='TERMINATED' && \"lifecycle-state\"!='TERMINATING'] | [0].id")"
 if [ -z "${INSTANCE}" ]; then
@@ -111,7 +123,7 @@ if [ -z "${INSTANCE}" ]; then
                 say "인스턴스를 만듭니다: ${SHAPE} (${AD}) — ${ROUND}/${ROUNDS}회차"
                 if INSTANCE="$("${OCI[@]}" compute instance launch --compartment-id "$C" --availability-domain "${AD}" \
                         --shape "${SHAPE}" ${SHAPE_ARGS[@]+"${SHAPE_ARGS[@]}"} --image-id "${IMAGE}" --subnet-id "${SUBNET}" \
-                        --assign-public-ip false --display-name "${NAME}" --ssh-authorized-keys-file "${SSH_KEY}.pub" \
+                        --assign-public-ip false --display-name "${NAME}" --ssh-authorized-keys-file "${SSH_KEY}.pub" --user-data-file "${USER_DATA}" \
                         --wait-for-state RUNNING --query data.id --raw-output 2>"${ERR}")"; then
                     break 3
                 fi
@@ -159,22 +171,40 @@ if [ "$(resolved)" != "${IP}" ]; then
 fi
 
 # ── 서버 설정 ───────────────────────────────────────────────────────────────
-# BatchMode: 키가 안 맞을 때 비밀번호를 묻고 멈추지 않는다. IdentitiesOnly: 에이전트의
-# 다른 키를 먼저 내밀다 "Too many authentication failures"로 끊기지 않는다.
-SSH=(ssh -i "${SSH_KEY}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 "ubuntu@${IP}")
-say "SSH가 열릴 때까지 기다립니다 (새 인스턴스는 부팅에 2~5분 걸립니다)"
-SSH_OK=""
-for i in $(seq 1 40); do
-    if "${SSH[@]}" true 2>"${ERR}"; then SSH_OK=1; break; fi
-    printf '  %2d/40  %s\n' "$i" "$(tail -1 "${ERR}")"
-    sleep 7
-done
-[ -n "${SSH_OK}" ] || fail "ubuntu@${IP}에 SSH로 접속하지 못했습니다. 위 오류가 'timed out'이면 보안 목록·라우팅, 'Permission denied'면 키, 'refused'면 아직 부팅 중입니다."
-say "서버에서 setup.sh를 돌립니다"
-"${SSH[@]}" "cloud-init status --wait >/dev/null 2>&1 || true
-    command -v git >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq git; }
-    if [ -d MightyClaude ]; then git -C MightyClaude pull --ff-only -q; else git clone -q --depth 1 ${REPO}; fi
-    bash MightyClaude/relay/deploy/oracle/setup.sh ${DOMAIN}"
+healthy() { [ "$(curl -fsS --max-time 5 "https://${DOMAIN}/healthz" 2>/dev/null)" = "ok" ]; }
+SELF_SETUP="$(q compute instance get --instance-id "${INSTANCE}" --query 'data.metadata."user_data"')"
+if [ -n "${SELF_SETUP}" ]; then
+    # 첫 부팅 설정이 있는 인스턴스: SSH 없이 https://<이름>/healthz만 기다린다.
+    say "서버가 스스로 설정을 마칠 때까지 기다립니다 (보통 5~10분)"
+    for i in $(seq 1 90); do
+        healthy && break
+        [ $((i % 6)) -eq 0 ] && printf '  %d분 지남\n' $((i / 6))
+        sleep 10
+    done
+    healthy || fail "15분이 지나도 https://${DOMAIN}/healthz가 ok가 아닙니다. 22번이 열린 네트워크에서: ssh -i ${SSH_KEY} ubuntu@${IP} 'sudo tail -50 /var/log/cloud-init-output.log'"
+else
+    # 첫 부팅 설정 없이 만든 예전 인스턴스: SSH로 setup.sh를 돌린다.
+    # BatchMode: 키가 안 맞을 때 비밀번호를 묻고 멈추지 않는다. IdentitiesOnly: 에이전트의
+    # 다른 키를 먼저 내밀다 "Too many authentication failures"로 끊기지 않는다.
+    SSH=(ssh -i "${SSH_KEY}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 "ubuntu@${IP}")
+    say "SSH가 열릴 때까지 기다립니다 (새 인스턴스는 부팅에 2~5분 걸립니다)"
+    SSH_OK=""
+    for i in $(seq 1 40); do
+        if "${SSH[@]}" true 2>"${ERR}"; then SSH_OK=1; break; fi
+        printf '  %2d/40  %s\n' "$i" "$(tail -1 "${ERR}")"
+        sleep 7
+    done
+    if [ -z "${SSH_OK}" ]; then
+        grep -qi "timed out" "${ERR}" && ! nc -z -G 5 github.com 22 2>/dev/null && \
+            fail "이 네트워크가 바깥으로 나가는 22번 포트를 막고 있습니다(github.com:22도 막힘). 휴대폰 핫스팟 등 다른 네트워크에서 다시 돌리세요."
+        fail "ubuntu@${IP}에 SSH로 접속하지 못했습니다. 위 오류가 'timed out'이면 보안 목록·라우팅, 'Permission denied'면 키, 'refused'면 아직 부팅 중입니다."
+    fi
+    say "서버에서 setup.sh를 돌립니다"
+    "${SSH[@]}" "cloud-init status --wait >/dev/null 2>&1 || true
+        command -v git >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq git; }
+        if [ -d MightyClaude ]; then git -C MightyClaude pull --ff-only -q; else git clone -q --depth 1 ${REPO}; fi
+        bash MightyClaude/relay/deploy/oracle/setup.sh ${DOMAIN}"
+fi
 
 echo ""
 echo "✔ 끝. Mac → 설정 → 모바일 리모트 → 릴레이: wss://${DOMAIN}"
