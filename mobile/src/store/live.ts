@@ -20,8 +20,14 @@ interface LiveStore {
   capabilities: Record<string, Capability[]>;
   /** `/m1/sessions/{id}/commands`, cached per session and refreshed on focus. */
   commands: Record<string, MobileCommand[]>;
-  applyState: (hostId: string, incoming: MobileState) => void;
-  applyDetail: (hostId: string, sessionId: string, incoming: MobileSessionDetail) => void;
+  /** `fresh`: the host's whole current state, taken whatever its revision. */
+  applyState: (hostId: string, incoming: MobileState, fresh?: boolean) => void;
+  applyDetail: (
+    hostId: string,
+    sessionId: string,
+    incoming: MobileSessionDetail,
+    fresh?: boolean,
+  ) => void;
   setCapabilities: (hostId: string, capabilities: Capability[]) => void;
   setCommands: (hostId: string, sessionId: string, commands: MobileCommand[]) => void;
   clearHost: (hostId: string) => void;
@@ -33,17 +39,17 @@ export const useLiveStore = create<LiveStore>((set) => ({
   capabilities: {},
   commands: {},
 
-  applyState: (hostId, incoming) =>
+  applyState: (hostId, incoming, fresh) =>
     set((prev) => {
-      const merged = mergeState(prev.states[hostId], incoming);
+      const merged = mergeState(prev.states[hostId], incoming, fresh);
       if (merged === prev.states[hostId]) return prev;
       return { ...prev, states: { ...prev.states, [hostId]: merged } };
     }),
 
-  applyDetail: (hostId, sessionId, incoming) =>
+  applyDetail: (hostId, sessionId, incoming, fresh) =>
     set((prev) => {
       const key = detailKey(hostId, sessionId);
-      const merged = mergeSessionDetail(prev.details[key], incoming);
+      const merged = mergeSessionDetail(prev.details[key], incoming, fresh);
       if (merged === prev.details[key]) return prev;
       return { ...prev, details: { ...prev.details, [key]: merged } };
     }),

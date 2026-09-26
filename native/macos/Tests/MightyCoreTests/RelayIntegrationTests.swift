@@ -12,7 +12,7 @@ private class StaticHost: MobileHostDelegate, @unchecked Sendable {
     func mobileSession(id: String) async -> MobileSessionDetail? { nil }
     func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String { "started" }
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String { "started" }
-    func mobileStop(sessionId: String) async throws {}
+    func mobileStop(sessionId: String) async throws -> Bool { true }
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws {}
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {}
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String { "new" }

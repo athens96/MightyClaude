@@ -16,7 +16,9 @@ import {
   buildRelayUrl,
   mapCloseCode,
   type AuthLease,
+  type ForegroundSignal,
   type RelaySocket,
+  type RelayState,
 } from '@/api/relay/transport';
 import { createClient } from '@/api/client';
 import type { DeviceAuthState } from '@/lib/device-token';
@@ -54,6 +56,8 @@ interface FakeRelay {
   /** Plaintext envelopes the fake host received after authentication. */
   received: unknown[];
   queries: URLSearchParams[];
+  /** Plays a tunnel the relay has already dropped while the phone still thinks it open. */
+  ignorePings: (value: boolean) => void;
   stop: () => Promise<void>;
 }
 
@@ -68,6 +72,7 @@ async function startFakeRelay(options: FakeOptions = {}): Promise<FakeRelay> {
   const queries: URLSearchParams[] = [];
   /** The Mac's `devices.json`: a token stays valid until the device is released. */
   const knownTokens = new Set(options.acceptTokens ?? []);
+  let pingsIgnored = false;
 
   server.on('connection', (socket, request) => {
     const query = new URLSearchParams((request.url ?? '').split('?')[1] ?? '');
@@ -173,7 +178,7 @@ async function startFakeRelay(options: FakeOptions = {}): Promise<FakeRelay> {
       }
 
       if (message.type === 'ping') {
-        socket.send(cipher.sealJson({ type: 'pong' }));
+        if (!pingsIgnored) socket.send(cipher.sealJson({ type: 'pong' }));
         return;
       }
 
@@ -205,6 +210,9 @@ async function startFakeRelay(options: FakeOptions = {}): Promise<FakeRelay> {
     hostPublicKeyB64: toBase64(hostKeys.publicKey),
     received,
     queries,
+    ignorePings: (value) => {
+      pingsIgnored = value;
+    },
     stop: () =>
       new Promise<void>((resolve) => {
         if (stopped) {
@@ -248,6 +256,8 @@ interface ConnectOverrides {
   onDeviceToken?: (deviceToken: string) => void | Promise<void>;
   authorize?: (state: DeviceAuthState) => Promise<AuthLease>;
   mintClientId?: () => Promise<string | undefined>;
+  foreground?: ForegroundSignal;
+  probeTimeoutMs?: number;
 }
 
 function connect(relay: FakeRelay, overrides: ConnectOverrides = {}) {
@@ -269,9 +279,35 @@ function connect(relay: FakeRelay, overrides: ConnectOverrides = {}) {
         onDeviceToken: overrides.onDeviceToken,
         authorize: overrides.authorize,
         mintClientId: overrides.mintClientId,
+        foreground: overrides.foreground,
+        probeTimeoutMs: overrides.probeTimeoutMs,
       },
     ),
   );
+}
+
+/** The app coming back to the front, on demand. */
+function manualForeground(): { signal: ForegroundSignal; fire: () => void } {
+  const listeners = new Set<() => void>();
+  return {
+    signal: {
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+    fire: () => {
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('condition not met in time');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }
 
 /** Closed by the teardown above, whatever the test does with it. */
@@ -336,6 +372,39 @@ describe('RelayConnection against a fake host', () => {
 
     connection.close();
     await relay.stop();
+  });
+
+  it('keeps a tunnel that still answers when the app returns', async () => {
+    const relay = await startFakeRelay();
+    const foreground = manualForeground();
+    const connection = connect(relay, { foreground: foreground.signal, probeTimeoutMs: 200 });
+    await connection.ready();
+    const states: RelayState[] = [];
+    connection.onStateChange((state) => states.push(state));
+
+    foreground.fire();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(states).toEqual([]);
+    expect(relay.queries).toHaveLength(1);
+  });
+
+  it('drops a tunnel that went silent in the background and dials again on return', async () => {
+    const relay = await startFakeRelay();
+    const foreground = manualForeground();
+    const connection = connect(relay, {
+      autoReconnect: true,
+      foreground: foreground.signal,
+      probeTimeoutMs: 200,
+    });
+    await connection.ready();
+    const states: RelayState[] = [];
+    connection.onStateChange((state) => states.push(state));
+
+    relay.ignorePings(true);
+    foreground.fire();
+    await waitFor(() => states.includes('closed') && states[states.length - 1] === 'ready');
+    expect(states[0]).toBe('closed');
+    expect(relay.queries).toHaveLength(2);
   });
 
   it('serves the m1 client surface over the tunnel', async () => {

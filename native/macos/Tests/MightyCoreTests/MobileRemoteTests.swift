@@ -85,7 +85,11 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         commands.append("guided:\(prompt)")
         return running ? "queued" : "started"
     }
-    func mobileStop(sessionId: String) async throws { lock.lock(); commands.append("stop:\(sessionId)"); lock.unlock() }
+    func mobileStop(sessionId: String) async throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard running else { return false }
+        commands.append("stop:\(sessionId)"); return true
+    }
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws { lock.lock(); commands.append("perm:\(requestId):\(runId):\(allow)"); lock.unlock() }
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {
         lock.lock(); commands.append("answers:\(requestId):\(answers.keys.sorted().joined(separator: ","))"); lock.unlock()
@@ -226,6 +230,22 @@ struct MobileRemoteTests {
         let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
         await service.attach(host)
         return (service, directory)
+    }
+
+    /// A phone that slept through the end of a run still offers 중지; the
+    /// answer has to say nothing was running, not pretend a stop was sent.
+    @Test func stoppingAPaneWithNothingRunningAnswersStoppedFalse() async throws {
+        let host = FakeMobileHost()
+        let (service, directory) = await service(host)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        host.running = false
+        let idle = try await call(service, "POST", "/m1/sessions/session-1/stop")
+        #expect(idle.0 == 200 && idle.1["stopped"] as? Bool == false)
+        #expect(host.recorded().isEmpty)
+        host.running = true
+        let busy = try await call(service, "POST", "/m1/sessions/session-1/stop")
+        #expect(busy.0 == 200 && busy.1["stopped"] as? Bool == true)
+        #expect(host.recorded() == ["stop:session-1"])
     }
 
     @Test func infoAdvertisesOnlyTheCapabilitiesThisHostImplements() async throws {

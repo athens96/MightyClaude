@@ -31,6 +31,8 @@ export const RECONNECT_MIN_MS = 1_500;
 export const RECONNECT_MAX_MS = 30_000;
 /** Covers a 10 s long poll plus slack on a slow mobile link. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+/** How long a tunnel that still looks open gets to answer a ping when the app returns. */
+export const FOREGROUND_PROBE_MS = 5_000;
 const HANDSHAKE_TIMEOUT_MS = 20_000;
 
 export type RelayState = 'connecting' | 'handshaking' | 'ready' | 'closed';
@@ -206,6 +208,8 @@ export interface RelayConnectionOptions {
   createSocket?: RelaySocketFactory;
   foreground?: ForegroundSignal;
   requestTimeoutMs?: number;
+  /** Overrides `FOREGROUND_PROBE_MS`. */
+  probeTimeoutMs?: number;
   /**
    * Called once, with the token the host issued, so it can be stored per host. A promise
    * is awaited before the pairing-key lease is let go, so the next connection in line
@@ -291,7 +295,10 @@ export class RelayConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private handshakeTimer: ReturnType<typeof setTimeout> | undefined;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
+  private probeTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPongAt = 0;
+  /** Counts pongs, so a probe can tell whether its own ping was answered. */
+  private pongs = 0;
   private disposed = false;
   private authFailure: RelayFailure | undefined;
   private authRejection: AuthRejection | undefined;
@@ -307,6 +314,7 @@ export class RelayConnection {
   private readonly autoReconnect: boolean;
   private readonly createSocket: RelaySocketFactory;
   private readonly requestTimeoutMs: number;
+  private readonly probeTimeoutMs: number;
   private readonly onDeviceToken: ((deviceToken: string) => void | Promise<void>) | undefined;
   private readonly authorize: ((state: DeviceAuthState) => Promise<AuthLease>) | undefined;
   private readonly mintClientId: (() => Promise<string | undefined>) | undefined;
@@ -319,6 +327,7 @@ export class RelayConnection {
     this.autoReconnect = options.autoReconnect ?? true;
     this.createSocket = options.createSocket ?? defaultSocketFactory;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.probeTimeoutMs = options.probeTimeoutMs ?? FOREGROUND_PROBE_MS;
     this.onDeviceToken = options.onDeviceToken;
     this.authorize = options.authorize;
     this.mintClientId = options.mintClientId;
@@ -328,7 +337,7 @@ export class RelayConnection {
       deviceToken: target.deviceToken,
     };
     if (options.foreground) {
-      this.unsubscribeForeground = options.foreground.subscribe(() => this.reconnectNow());
+      this.unsubscribeForeground = options.foreground.subscribe(() => this.onForeground());
     }
     this.connect();
   }
@@ -414,6 +423,28 @@ export class RelayConnection {
     }
     this.reconnectDelayMs = RECONNECT_MIN_MS;
     this.connect();
+  }
+
+  /**
+   * The app is back. A tunnel that is down redials at once; one that still looks open
+   * is asked for a pong first. A socket the OS froze or cut while the app was in the
+   * background can stay "open" here long after the relay dropped it, and everything
+   * sent into it — the screen's refresh, a tap on 중지 — would wait out its deadline.
+   */
+  private onForeground(): void {
+    if (this.socket && this.currentState === 'ready') this.probe();
+    else this.reconnectNow();
+  }
+
+  private probe(): void {
+    const socket = this.socket;
+    if (!socket || this.probeTimer) return;
+    const pongsBefore = this.pongs;
+    this.sendEncrypted({ type: 'ping' });
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = undefined;
+      if (this.socket === socket && this.pongs === pongsBefore) this.dropSocket(socket, 'closed');
+    }, this.probeTimeoutMs);
   }
 
   close(): void {
@@ -651,6 +682,7 @@ export class RelayConnection {
       }
       case 'pong': {
         this.lastPongAt = Date.now();
+        this.pongs += 1;
         return;
       }
       case 'ping': {
@@ -717,6 +749,13 @@ export class RelayConnection {
     }
   }
 
+  private stopProbe(): void {
+    if (this.probeTimer) {
+      clearTimeout(this.probeTimer);
+      this.probeTimer = undefined;
+    }
+  }
+
   private sendEncrypted(value: unknown): void {
     const socket = this.socket;
     const cipher = this.cipher;
@@ -771,6 +810,7 @@ export class RelayConnection {
     this.socket = undefined;
     this.cipher = undefined;
     this.stopHeartbeat();
+    this.stopProbe();
     if (this.handshakeTimer) {
       clearTimeout(this.handshakeTimer);
       this.handshakeTimer = undefined;
@@ -866,6 +906,7 @@ export class RelayConnection {
     this.cipher = undefined;
     this.releaseAuthLease();
     this.stopHeartbeat();
+    this.stopProbe();
     if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.handshakeTimer = undefined;

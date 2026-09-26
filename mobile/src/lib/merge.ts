@@ -18,10 +18,16 @@ export function nextBackoff(current: number | undefined): number {
 
 /**
  * Applies a long-poll result. The server may answer with the same revision after a
- * `wait` timeout, and out-of-order responses must never roll state backwards.
+ * `wait` timeout, and out-of-order responses must never roll state backwards. A
+ * `fresh` answer (see `isFreshAnswer`) is the host's whole current state and replaces
+ * what we hold whatever its revision, so a host that started counting again is heard.
  */
-export function mergeState(previous: MobileState | undefined, incoming: MobileState): MobileState {
-  if (!previous) return incoming;
+export function mergeState(
+  previous: MobileState | undefined,
+  incoming: MobileState,
+  fresh = false,
+): MobileState {
+  if (!previous || fresh) return incoming;
   if (incoming.revision < previous.revision) return previous;
   if (incoming.revision === previous.revision) return previous;
   return incoming;
@@ -29,13 +35,14 @@ export function mergeState(previous: MobileState | undefined, incoming: MobileSt
 
 /**
  * Applies a session long-poll result. Entries are replaced wholesale because a
- * streaming entry keeps its id while its text grows.
+ * streaming entry keeps its id while its text grows. `fresh` as for `mergeState`.
  */
 export function mergeSessionDetail(
   previous: MobileSessionDetail | undefined,
   incoming: MobileSessionDetail,
+  fresh = false,
 ): MobileSessionDetail {
-  if (!previous) return incoming;
+  if (!previous || fresh) return incoming;
   if (incoming.revision < previous.revision) return previous;
   if (incoming.revision === previous.revision) return previous;
   return incoming;

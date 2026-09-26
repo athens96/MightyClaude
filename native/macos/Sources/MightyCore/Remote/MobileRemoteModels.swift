@@ -566,8 +566,9 @@ public struct MobileOK: Codable, Sendable, Equatable {
 }
 public struct MobileStopped: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
+    /// False when the pane had nothing running, so the stop changed nothing.
     public var stopped: Bool = true
-    public init() {}
+    public init(stopped: Bool = true) { self.stopped = stopped }
 }
 public struct MobilePermissionAnswer: Codable, Sendable {
     public var requestId: String
