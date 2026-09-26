@@ -14,6 +14,7 @@ struct WorkspaceView: View {
                 .navigationSplitViewColumnWidth(min: 210, ideal: store.snapshot.sidebarWidth, max: 360)
         } detail: {
             VStack(spacing: 0) {
+                if let warning = store.resourceWarning { resourceWarningBanner(warning) }
                 if let error = store.error { errorBanner(error) }
                 if let workspace = store.activeWorkspace {
                     workspaceHeader(workspace)
@@ -321,6 +322,14 @@ struct WorkspaceView: View {
         }
         .font(.system(size: 10)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 8)
         .background(Palette.subtle).overlay(alignment: .top) { Divider() }
+    }
+
+    private func resourceWarningBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.triangle").foregroundStyle(.yellow)
+            Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("경고 닫기")
+        }.padding(12).background(Color.yellow.opacity(0.07))
     }
 
     private func errorBanner(_ message: String) -> some View {

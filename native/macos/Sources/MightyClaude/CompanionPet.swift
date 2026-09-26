@@ -63,6 +63,9 @@ struct CompanionPet: Identifiable {
         for url in builtins {
             if let pet = try? load(from: url, id: "mighty-raccoon") { result.append(pet); break }
         }
+        if !result.contains(where: { $0.id == "mighty-raccoon" }) {
+            ResourceHealthChecker.logWarning(ResourceHealthChecker.checkDefaultPet())
+        }
         let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
         for root in [dataDirectory?.appendingPathComponent("pets"), codexHome.appendingPathComponent("pets")].compactMap({ $0 }) {

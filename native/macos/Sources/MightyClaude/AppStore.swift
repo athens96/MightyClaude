@@ -137,6 +137,7 @@ final class AppStore: ObservableObject {
     @Published var pendingRemoval: Workspace?
     @Published var error: String?
     @Published var remoteError: String?
+    @Published var resourceWarning: String?
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
     @Published var permissionResponses = Set<String>()
     @Published var permissionErrors: [String: String] = [:]
@@ -212,6 +213,7 @@ final class AppStore: ObservableObject {
         catch { self.error = "상태를 불러오지 못했습니다. 기존 파일을 보호하기 위해 저장을 중단했습니다. \(error.localizedDescription)" }
         guard !ending, !Task.isCancelled else { loading = false; return }
         isLoaded = true
+        checkResourceHealth()
         // The bundled and user styles are read once at start; a workspace's
         // own are read when it first draws a pane (§3.1).
         rescanStyles()
@@ -249,6 +251,19 @@ final class AppStore: ObservableObject {
         else if arguments.contains("--usage-reset-smoke-test") { Task { await runUsageResetSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
         else if arguments.contains("--smoke-test") { Task { await runSmokeTest() } }
+    }
+
+    private func checkResourceHealth() {
+        let checks = [
+            ResourceHealthChecker.checkCatalog("ko"),
+            ResourceHealthChecker.checkCatalog("en"),
+            ResourceHealthChecker.checkDefaultPet(),
+        ]
+        let missing = checks.filter { !$0.found }
+        guard !missing.isEmpty else { return }
+        for r in missing { ResourceHealthChecker.logWarning(r) }
+        let names = missing.map { $0.resource }.joined(separator: ", ")
+        resourceWarning = "[MightyClaude] 리소스를 찾지 못했습니다: \(names) — 앱 재설치가 필요할 수 있습니다."
     }
 
     var canManageCLIUpdates: Bool { isLoaded && !ending }
