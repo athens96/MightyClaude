@@ -70,6 +70,9 @@ public sealed partial class MainWindow
             anchor.Loaded += (_, _) => BuildMightyView();
         }
 
+        /// <summary>Builds the view now instead of waiting for the anchor to load.</summary>
+        internal void EnsureMightyView() => BuildMightyView();
+
         private void BuildMightyView()
         {
             if (graphAttached || Container.Child is not Grid grid) return;
