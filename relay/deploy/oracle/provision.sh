@@ -159,10 +159,17 @@ if [ "$(resolved)" != "${IP}" ]; then
 fi
 
 # ── 서버 설정 ───────────────────────────────────────────────────────────────
-SSH=(ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 "ubuntu@${IP}")
-say "SSH가 열릴 때까지 기다립니다"
-for _ in $(seq 1 60); do "${SSH[@]}" true 2>/dev/null && break; sleep 5; done
-"${SSH[@]}" true 2>/dev/null || fail "ubuntu@${IP}에 SSH로 접속하지 못했습니다."
+# BatchMode: 키가 안 맞을 때 비밀번호를 묻고 멈추지 않는다. IdentitiesOnly: 에이전트의
+# 다른 키를 먼저 내밀다 "Too many authentication failures"로 끊기지 않는다.
+SSH=(ssh -i "${SSH_KEY}" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8 "ubuntu@${IP}")
+say "SSH가 열릴 때까지 기다립니다 (새 인스턴스는 부팅에 2~5분 걸립니다)"
+SSH_OK=""
+for i in $(seq 1 40); do
+    if "${SSH[@]}" true 2>"${ERR}"; then SSH_OK=1; break; fi
+    printf '  %2d/40  %s\n' "$i" "$(tail -1 "${ERR}")"
+    sleep 7
+done
+[ -n "${SSH_OK}" ] || fail "ubuntu@${IP}에 SSH로 접속하지 못했습니다. 위 오류가 'timed out'이면 보안 목록·라우팅, 'Permission denied'면 키, 'refused'면 아직 부팅 중입니다."
 say "서버에서 setup.sh를 돌립니다"
 "${SSH[@]}" "cloud-init status --wait >/dev/null 2>&1 || true
     command -v git >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq git; }
