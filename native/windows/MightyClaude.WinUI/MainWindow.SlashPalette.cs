@@ -63,6 +63,11 @@ public sealed partial class MainWindow
             };
             AutomationProperties.SetAutomationId(host, "slash-palette-" + id);
             slashPaletteHost = host;
+            // The Mighty view needs the pane's own grid and header, which exist
+            // only once the pane is in the visual tree. This composer slot is
+            // built here and loads with the pane, so it is the anchor the view
+            // waits on (MainWindow.MightyGraph.cs).
+            AttachMightyView(host);
         }
 
         /// <summary>The catalogue key this pane scans under, mirroring slashCatalogKey.</summary>
@@ -83,6 +88,8 @@ public sealed partial class MainWindow
                 paletteState = next;
             else paletteState = next with { HighlightedIndex = paletteState.SafeIndex };
             RenderSlashPalette();
+            // The Mighty canvas carries a draft block, so it follows the composer.
+            RefreshDraftBlock();
             if (SlashPalette.Draft(pane.Kind, draft, slashDismissedFor) is not null) ScanSlashCommands();
         }
 

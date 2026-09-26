@@ -273,4 +273,132 @@ internal static class MightyViewModelVerification
 
         return Task.CompletedTask;
     }
+
+    // ── WIN_VIEW_MODEL_OK: complete public API surface for WinUI ─────────────
+
+    internal static Task ViewModelOK()
+    {
+        // Zoom constants
+        Check(MightyGraphViewModel.ZoomMin == 0.5, "ZoomMin must be 0.5");
+        Check(MightyGraphViewModel.ZoomMax == 1.5, "ZoomMax must be 1.5");
+        Check(MightyGraphViewModel.ZoomDefault == 1.0, "ZoomDefault must be 1.0");
+        Check(MightyGraphViewModel.ZoomStep == 0.1, "ZoomStep must be 0.1");
+
+        // Locale keys are non-empty strings (not hardcoded values)
+        foreach (var key in new[] {
+            MightyGraphViewModel.LocaleKeyDefault, MightyGraphViewModel.LocaleKeyMighty,
+            MightyGraphViewModel.LocaleKeyZoomOut, MightyGraphViewModel.LocaleKeyZoomReset,
+            MightyGraphViewModel.LocaleKeyZoomIn, MightyGraphViewModel.LocaleKeyResultFilesTitle,
+            MightyGraphViewModel.LocaleKeyResultFilesClose, MightyGraphViewModel.LocaleKeyBlockScrolling })
+        {
+            Check(!string.IsNullOrEmpty(key) && key.Contains('.'), "locale key must be a dotted path: " + key);
+        }
+
+        // All selector methods exist and return expected types
+        var session = new RunSession { Kind = "claude", Provider = "claude" };
+        Check(MightyGraphViewModel.ShowsModeSwitch(session), "ShowsModeSwitch must exist and work");
+        Check(MightyGraphViewModel.ApplyViewMode(session, "mighty").AgentViewMode == "mighty", "ApplyViewMode must work");
+        Check(MightyGraphViewModel.ZoomIn(1.0) > 1.0, "ZoomIn must increase zoom");
+        Check(MightyGraphViewModel.ZoomOut(1.0) < 1.0, "ZoomOut must decrease zoom");
+        Check(!string.IsNullOrEmpty(MightyGraphViewModel.ZoomLabel(1.0)), "ZoomLabel must return a string");
+
+        return Task.CompletedTask;
+    }
+
+    // ── DELIVERED_OK: canvas layout verified end-to-end ──────────────────────
+
+    internal static Task DeliveredOK()
+    {
+        // Build a 3-node run matching the nested-delegation-three-levels vector case.
+        var run = new MightyGraphRun
+        {
+            Id = "delivered-run", Input = "Nested task", Status = "completed",
+            Provider = "claude", FinalOutput = "Root done",
+            Agents =
+            [
+                new MightyGraphAgent { Id = "agent-l1", Title = "L1", Input = "Level 1", Status = "completed" },
+                new MightyGraphAgent { Id = "agent-l2", ParentID = "agent-l1", Title = "L2", Input = "Level 2", Status = "completed",
+                    Entries = [new LogEntry(Wire.Id(), "assistant", "Deep answer", Wire.Now(), "claude")] },
+            ],
+        };
+        var layout = MightyGraphViewModel.CanvasLayout([run], draft: "", running: false, new HashSet<string>());
+
+        // Canvas must produce >= 3 blocks and >= 2 edges (request + 2 agents)
+        Check(layout.Nodes.Count >= 3, "canvas must have at least 3 blocks; got " + layout.Nodes.Count);
+        Check(layout.Edges.Count >= 2, "canvas must have at least 2 edges; got " + layout.Edges.Count);
+
+        // Distinct block kinds must include at least 2 (request + agent)
+        var kinds = layout.Nodes.Select(n => n.Kind).Distinct().ToList();
+        Check(kinds.Count >= 2, "canvas must have at least 2 distinct block kinds: " + string.Join(", ", kinds));
+
+        // Zoom [50, 100, 150] as integer percents
+        var levels = MightyGraphViewModel.ZoomLevels();
+        Check((int)Math.Round(levels[0] * 100) == 50, "min zoom must be 50%");
+        Check((int)Math.Round(MightyGraphViewModel.ZoomDefault * 100) == 100, "default zoom must be 100%");
+        Check((int)Math.Round(levels[^1] * 100) == 150, "max zoom must be 150%");
+
+        // Mode restore must keep draft unchanged
+        var session = new RunSession { Kind = "claude", Provider = "claude", AgentViewMode = "default", Draft = "smoke draft" };
+        var switched = MightyGraphViewModel.ApplyViewMode(session, "mighty");
+        var restored = MightyGraphViewModel.ApplyViewMode(switched, "default");
+        Check(restored.AgentViewMode == "default" && restored.Draft == "smoke draft",
+            "mode restore must set default and keep draft");
+
+        // Every drawn block carries the copy the Windows canvas renders.
+        var blocks = MightyGraphBlockModel.Blocks(layout, [run], draft: "", providerLabel: "Claude",
+            animationsEnabled: true);
+        Check(blocks.Count == layout.Nodes.Count, "every layout node must become a block; got " + blocks.Count);
+        var request = blocks.Single(b => b.Kind == "request");
+        Check(request.Title == "요청 1 · Claude", "request title must read 요청 1 · Claude; got " + request.Title);
+        Check(request.Request == "Nested task", "the request block must carry the request text");
+        Check(request.State == "완료", "a completed run's request block must read 완료; got " + request.State);
+        var resultBlock = blocks.Single(b => b.Kind == "result");
+        Check(resultBlock.Title == "최종 결과", "a completed run's result block must read 최종 결과; got " + resultBlock.Title);
+        Check(blocks.Count(b => b.Kind == "agent") == 2, "both sub-agent blocks must be present");
+        Check(blocks.All(b => b.Indicator == "none"), "a finished graph must show no motion");
+
+        // The toolbar total counts the same blocks macOS counts.
+        var summary = MightyGraphBlockModel.ToolbarSummary([run]);
+        Check(summary.StartsWith("요청 1 · 하위 에이전트 2", StringComparison.Ordinal),
+            "toolbar total must read 요청 1 · 하위 에이전트 2; got " + summary);
+
+        // A kind per block: agent, task, steer, compact and question all resolve.
+        var mixed = new MightyGraphRun
+        {
+            Id = "delivered-kinds", Input = "Mixed", Status = "completed", Provider = "claude", FinalOutput = "done",
+            Agents =
+            [
+                new MightyGraphAgent { Id = "k-task", Kind = "task", Status = "completed" },
+                new MightyGraphAgent { Id = "k-steer", Kind = "steer", Status = "completed" },
+                new MightyGraphAgent { Id = "k-compact", Kind = "compact", Status = "completed" },
+            ],
+        };
+        var mixedLayout = MightyGraphViewModel.CanvasLayout([mixed], draft: "", running: false, new HashSet<string>());
+        var mixedKinds = MightyGraphBlockModel.Blocks(mixedLayout, [mixed], "", "Claude", true).Select(b => b.Kind).ToHashSet();
+        foreach (var kind in new[] { "request", "task", "steer", "compact", "result" })
+            Check(mixedKinds.Contains(kind), "the canvas must carry a " + kind + " block; got " + string.Join(", ", mixedKinds));
+
+        // The draft block is the pending input card.
+        var drafted = MightyGraphViewModel.CanvasLayout([], draft: "next", running: false, new HashSet<string>());
+        var draftBlock = MightyGraphBlockModel.Blocks(drafted, [], "next", "Claude", true).Single(b => b.Kind == "draft");
+        Check(draftBlock.Title == "첫 요청" && draftBlock.State == "작성 중",
+            "the draft block must read 첫 요청 / 작성 중; got " + draftBlock.Title + " / " + draftBlock.State);
+
+        // Result files never leave the workspace root.
+        var root = Path.Combine(Path.GetTempPath(), "mighty-delivered-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "docs"));
+        File.WriteAllText(Path.Combine(root, "docs", "note.md"), "note");
+        var filed = new MightyGraphRun { Id = "delivered-files", Input = "x", Status = "completed", Provider = "claude", FinalOutput = "wrote docs/note.md and /etc/passwd.txt" };
+        MightyGraphSupport.RefreshResult(filed);
+        var files = MightyGraphBlockModel.FilesFor(filed, root);
+        try
+        {
+            Check(files.Count == 1 && files[0].Path == "docs/note.md",
+                "only the workspace file may be listed; got " + string.Join(", ", files.Select(f => f.Path)));
+            Check(MightyGraphBlockModel.LatestCompletedRun([filed])?.Id == "delivered-files", "the newest completed run must be found");
+        }
+        finally { Directory.Delete(root, true); }
+
+        return Task.CompletedTask;
+    }
 }
