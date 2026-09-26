@@ -679,7 +679,7 @@ struct MobileRemoteTests {
     @Test func keysPersistAndStatusExposesTheOfferOnlyWhileConnected() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac")
+        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", defaultRelayURL: "")
         let key = try await service.loadOrCreateKey()
         #expect(RemoteValidation.token(key))
         let reloaded = try await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").loadOrCreateKey()
@@ -706,6 +706,12 @@ struct MobileRemoteTests {
         // On with an unreachable relay: connecting, still no offer until the relay accepts.
         status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1"))
         #expect(status.enabled && status.relayURL == "ws://127.0.0.1:1" && status.pairingURL == nil)
+        // A host shipped with a default relay connects through it when the
+        // user's field is empty, instead of asking for an address.
+        let defaulted = MobileRemoteService(dataDirectory: directory.appendingPathComponent("defaulted"), hostName: "Test Mac", defaultRelayURL: "ws://127.0.0.1:1")
+        let viaDefault = await defaulted.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
+        #expect(viaDefault.enabled && !viaDefault.detail.contains("릴레이 주소를 입력하면"))
+        await defaulted.shutdown()
         let sameHostId = await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").status().serverId
         #expect(sameHostId == status.serverId && CoreValidation.identifier(status.serverId))
         await service.shutdown()

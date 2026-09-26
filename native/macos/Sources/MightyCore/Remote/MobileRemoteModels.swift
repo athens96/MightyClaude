@@ -83,11 +83,10 @@ public enum MobileWire {
     public static let maximumBlockSummary = 1_000
     /// How many of a pane's newest runs the Mighty payload carries.
     public static let mightyRuns = 20
-    /// Built-in relay address shipped with the app. Empty until you deploy one;
-    /// the user's own relay field always wins over this. Change this one line
-    /// after deploying the Oracle Cloud kit to enable the default relay for
-    /// all new Mac installs.
-    public static let defaultRelayURL: String = ""
+    /// Built-in relay address shipped with the app: the relay deployed with
+    /// relay/deploy/oracle (docs/relay-oracle.md). The user's own relay field
+    /// always wins over this, and an empty string turns the default off.
+    public static let defaultRelayURL: String = "wss://mightyclaude.duckdns.org"
     /// The text a guided request may carry, the same ceiling `submit` has.
     public static let maximumText = 32_768
 }

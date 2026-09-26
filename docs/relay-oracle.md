@@ -85,7 +85,7 @@ bash MightyClaude/relay/deploy/oracle/setup.sh myrelay.duckdns.org
 
 ## 6. Mac에 넣기
 
-MightyClaude → **설정 → 모바일 리모트 → 릴레이**에 `wss://myrelay.duckdns.org`를 넣고 **적용**. QR이 뜨면 휴대폰으로 스캔합니다. 앱에 기본값으로 박아 넣고 싶다면 이 주소를 알려 주세요 — `MobileWire.defaultRelayURL` 한 줄입니다.
+MightyClaude → **설정 → 모바일 리모트 → 릴레이**에 `wss://myrelay.duckdns.org`를 넣고 **적용**. QR이 뜨면 휴대폰으로 스캔합니다. 앱의 기본 릴레이는 `MobileWire.defaultRelayURL` 한 줄이고, 지금은 이 저장소 주인이 배포한 `wss://mightyclaude.duckdns.org`입니다. 칸을 비워 두면 그 주소를 쓰고, 칸에 넣은 주소가 항상 우선합니다.
 
 ## 문제 해결
 
@@ -96,6 +96,7 @@ MightyClaude → **설정 → 모바일 리모트 → 릴레이**에 `wss://myre
 | 인증서 오류(`acme`) | 80 포트가 밖에서 열려 있어야 Let's Encrypt가 확인합니다. 같은 이름으로 너무 자주 재발급하면 한도에 걸리니 한 시간쯤 기다렸다 다시 |
 | `healthz`가 502 | `sudo docker compose … logs relay` |
 | 재부팅 뒤 | 두 컨테이너는 `restart: unless-stopped`라 저절로 다시 뜹니다 |
+| 이 컴퓨터에서 22번이 막힘(회사 보안 프로그램 등) | 새 인스턴스는 SSH가 필요 없습니다. 이미 있는 인스턴스에 들어가야 하면 콘솔의 Cloud Shell에서 `ssh`하거나, 무료 Network Load Balancer에 TCP 2222 → 인스턴스 22 리스너를 잠시 만들고 보안 목록에 2222를 연 뒤 `ssh -p 2222 ubuntu@<NLB IP>`로 들어가서, 끝나면 둘 다 지웁니다 |
 
 ## 업데이트
 
