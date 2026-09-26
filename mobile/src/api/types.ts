@@ -17,6 +17,10 @@ export const MAX_STATUS_LINES = 6;
 
 /** Longest `output` the contract lets a Mighty block carry. */
 export const MAX_BLOCK_OUTPUT = 2000;
+/** Longest `summary`, and longest `activity` line, a Mighty block carries. */
+export const MAX_BLOCK_SUMMARY = 1000;
+/** Most `activity` lines a Mighty block carries. */
+export const MAX_BLOCK_ACTIVITY = 8;
 
 /** Attachment limits, the same numbers the Mac enforces. */
 export const MAX_ATTACHMENTS = 8;
@@ -269,12 +273,18 @@ export interface MobileBlock {
   kind: string;
   title: string;
   status: string;
+  /** What the block was asked: a child's prompt, or the request itself on `main`. */
   summary?: string;
   /** Up to `MAX_BLOCK_OUTPUT` characters. */
   output?: string;
   durationMs?: number;
   /** Model label projected from the Mac's request node; present only on `main` blocks. */
   nodeModelLabel?: string;
+  /**
+   * The block's most recent steps, oldest first, while it is still running or waiting;
+   * absent once it settles and on a host that predates the field.
+   */
+  activity?: string[];
 }
 
 export interface MobileMightyRun {

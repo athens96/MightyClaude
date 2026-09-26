@@ -1,4 +1,11 @@
-import { MAX_BLOCK_OUTPUT, type MobileBlock, type MobileMighty, type MobileMightyRun } from '@/api/types';
+import {
+  MAX_BLOCK_ACTIVITY,
+  MAX_BLOCK_OUTPUT,
+  MAX_BLOCK_SUMMARY,
+  type MobileBlock,
+  type MobileMighty,
+  type MobileMightyRun,
+} from '@/api/types';
 import {
   blockText,
   inlineText,
@@ -93,6 +100,42 @@ export function runPreview(input: string): string {
   return `${flat.slice(0, MAX_INPUT_PREVIEW)}…`;
 }
 
+/** Whether the block is still in motion, so what it is doing now outranks its result. */
+function inMotion(block: MobileBlock): boolean {
+  return block.status === 'running' || block.status === 'waiting';
+}
+
+/**
+ * What the block was asked, in full. The request block reads the run's own input, which
+ * is longer than any summary; a Mac that sends no summary still has that input.
+ */
+export function blockPrompt(block: MobileBlock, runInput: string): string {
+  if (block.kind === 'main' && runInput.trim().length > 0) return runInput.trim();
+  return block.summary ?? '';
+}
+
+/** The first line of the text that has something on it. */
+function firstLine(text: string): string {
+  return text.split('\n').find((line) => line.trim().length > 0) ?? '';
+}
+
+/**
+ * The one brief line a folded block shows under its title: the latest step while it is
+ * running, else the first line of what it produced, else what it was asked.
+ */
+export function blockGist(block: MobileBlock, runInput: string): string {
+  const latest = inMotion(block) ? block.activity?.[block.activity.length - 1] : undefined;
+  if (latest) return runPreview(latest);
+  const result = runPreview(firstLine(block.output ?? ''));
+  if (result.length > 0) return result;
+  return runPreview(blockPrompt(block, runInput));
+}
+
+/** The steps an open block lists: only while it is still in motion. */
+export function blockActivity(block: MobileBlock): string[] {
+  return inMotion(block) ? (block.activity ?? []) : [];
+}
+
 // ------------------------------------------------------------------ parsing
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,8 +155,13 @@ function parseBlock(raw: unknown): MobileBlock | undefined {
     title: inlineText(raw.title, 160),
     status: inlineText(raw.status, 40),
   };
-  const summary = inlineText(raw.summary, 400);
+  const summary = inlineText(raw.summary, MAX_BLOCK_SUMMARY);
   if (summary.length > 0) block.summary = summary;
+  const activity = arrayOf(raw.activity)
+    .map((line) => inlineText(line, MAX_BLOCK_SUMMARY))
+    .filter((line) => line.length > 0)
+    .slice(-MAX_BLOCK_ACTIVITY);
+  if (activity.length > 0) block.activity = activity;
   const output = blockText(raw.output, MAX_BLOCK_OUTPUT);
   if (output.length > 0) block.output = output;
   if (typeof raw.durationMs === 'number' && Number.isFinite(raw.durationMs) && raw.durationMs >= 0) {
