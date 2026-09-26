@@ -489,6 +489,7 @@ public sealed partial class MainWindow
         MightyGraphSupport.RefreshResult(last);
 
         var draftBefore = pane.SessionForSmoke.Draft;
+        pane.EnsureMightyView();
         await pane.SetGraphRunsForSmoke(runs);
         await pane.SetAgentViewMode("mighty");
         root.UpdateLayout(); await Task.Delay(60);
