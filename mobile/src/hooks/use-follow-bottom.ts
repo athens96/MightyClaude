@@ -1,6 +1,15 @@
-import { useCallback, useMemo, useRef } from 'react';
-import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { followAfterScroll, type ScrollMetrics } from '@/lib/follow';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import { Gesture } from 'react-native-gesture-handler';
+import {
+  PULL_GIVE_UP,
+  PULL_START_SLACK,
+  followAfterScroll,
+  isNearBottom,
+  pullPhase,
+  type PullPhase,
+  type ScrollMetrics,
+} from '@/lib/follow';
 
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
 
@@ -16,9 +25,9 @@ export interface FollowBottomProps {
   onScrollEndDrag: (event: ScrollEvent) => void;
   onMomentumScrollBegin: () => void;
   onMomentumScrollEnd: (event: ScrollEvent) => void;
-  onContentSizeChange: () => void;
+  onContentSizeChange: (width: number, height: number) => void;
   /** The keyboard shrinking the list is growth too, seen from the other side. */
-  onLayout: () => void;
+  onLayout: (event: LayoutChangeEvent) => void;
   scrollEventThrottle: number;
 }
 
@@ -36,12 +45,23 @@ function metricsOf(event: ScrollEvent): ScrollMetrics {
  * alone once they scroll up to read (`lib/follow.ts` decides). The jump to the end is not
  * animated: an animation would send scroll events of its own half-way up the list. A
  * freshly mounted list starts out following, so switching views lands on the newest.
+ *
+ * With `onPull`, dragging further up from the very bottom refreshes. A gesture carries
+ * it rather than scroll events or raw touches: Android reports no offset past the end,
+ * and its scroll view cancels a view's own touches once it starts dragging. The gesture
+ * waits in manual activation, gives up at once unless the finger started at the bottom
+ * and moves up, and so never takes an ordinary scroll away from the list.
  */
-export function useFollowBottom(onScroll?: (event: ScrollEvent) => void) {
+export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?: () => void) {
   const list = useRef<EndScrollable | null>(null);
   const following = useRef(true);
   const dragging = useRef(false);
   const coasting = useRef(false);
+  const metrics = useRef<ScrollMetrics>({ contentHeight: 0, viewportHeight: 0, offsetY: 0 });
+  const pullStart = useRef<number | null>(null);
+  const pullActive = useRef(false);
+  const phaseRef = useRef<PullPhase>('idle');
+  const [pull, setPull] = useState<PullPhase>('idle');
 
   const attach = useCallback((instance: EndScrollable | null) => {
     list.current = instance;
@@ -56,15 +76,17 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void) {
 
   const props = useMemo<FollowBottomProps>(() => {
     const settle = (event: ScrollEvent) => {
-      following.current = followAfterScroll(following.current, metricsOf(event), true);
+      metrics.current = metricsOf(event);
+      following.current = followAfterScroll(following.current, metrics.current, true);
     };
     const keepUp = () => {
       if (following.current) list.current?.scrollToEnd({ animated: false });
     };
     return {
       onScroll: (event) => {
+        metrics.current = metricsOf(event);
         const byUser = dragging.current || coasting.current;
-        following.current = followAfterScroll(following.current, metricsOf(event), byUser);
+        following.current = followAfterScroll(following.current, metrics.current, byUser);
         onScroll?.(event);
       },
       onScrollBeginDrag: () => {
@@ -81,11 +103,60 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void) {
         coasting.current = false;
         settle(event);
       },
-      onContentSizeChange: keepUp,
-      onLayout: keepUp,
+      onContentSizeChange: (_width, height) => {
+        metrics.current = { ...metrics.current, contentHeight: height };
+        keepUp();
+      },
+      onLayout: (event) => {
+        metrics.current = { ...metrics.current, viewportHeight: event.nativeEvent.layout.height };
+        keepUp();
+      },
       scrollEventThrottle: 64,
     };
   }, [onScroll]);
 
-  return { attach, follow, props };
+  const pullGesture = useMemo(() => {
+    const toPhase = (next: PullPhase) => {
+      if (phaseRef.current === next) return;
+      phaseRef.current = next;
+      setPull(next);
+    };
+    const lifted = (y: number) => (pullStart.current === null ? 0 : pullStart.current - y);
+    return Gesture.Pan()
+      .enabled(onPull !== undefined)
+      .runOnJS(true)
+      .manualActivation(true)
+      .onTouchesDown((event, state) => {
+        // A second finger joining a pull must not move where it started.
+        if (event.numberOfTouches > 1) return;
+        toPhase('idle');
+        const measured = metrics.current.viewportHeight > 0;
+        const touch = event.allTouches[0];
+        pullStart.current = measured && touch && isNearBottom(metrics.current, PULL_START_SLACK) ? touch.absoluteY : null;
+        if (pullStart.current === null) state.fail();
+      })
+      .onTouchesMove((event, state) => {
+        const touch = event.allTouches[0];
+        if (!touch || pullStart.current === null) return;
+        const by = lifted(touch.absoluteY);
+        // Once active a gesture cannot fail any more, so a pull the finger turns back on
+        // just rides out to release, where it only refreshes if still armed.
+        if (!pullActive.current && by < -PULL_GIVE_UP) state.fail();
+        else if (!pullActive.current && by > PULL_GIVE_UP) {
+          pullActive.current = true;
+          state.activate();
+        }
+        toPhase(pullPhase(by));
+      })
+      .onEnd(() => {
+        if (phaseRef.current === 'armed') onPull?.();
+      })
+      .onFinalize(() => {
+        pullStart.current = null;
+        pullActive.current = false;
+        toPhase('idle');
+      });
+  }, [onPull]);
+
+  return { attach, follow, props, pull, pullGesture };
 }

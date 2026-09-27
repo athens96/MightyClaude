@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
@@ -43,7 +44,8 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider value={navigationTheme}>
-        <View style={styles.root}>
+        {/* Gestures that run beside native scrolling (the chat's pull-to-refresh) need this root. */}
+        <GestureHandlerRootView style={styles.root}>
           <StatusBar style={dark ? 'light' : 'dark'} />
           <Stack
             screenOptions={{
@@ -60,7 +62,7 @@ export default function RootLayout() {
             <Stack.Screen name="host/[hostId]/session/[sessionId]" options={{ title: '세션' }} />
           </Stack>
           <ToastHost />
-        </View>
+        </GestureHandlerRootView>
       </ThemeProvider>
     </SafeAreaProvider>
   );

@@ -1,4 +1,4 @@
-import { FOLLOW_THRESHOLD, followAfterScroll, isNearBottom } from '@/lib/follow';
+import { FOLLOW_THRESHOLD, PULL_REFRESH_DISTANCE, PULL_START_SLACK, followAfterScroll, isNearBottom, pullPhase } from '@/lib/follow';
 
 const at = (offsetY: number) => ({ contentHeight: 1000, viewportHeight: 400, offsetY });
 
@@ -24,5 +24,26 @@ describe('following the newest content', () => {
     expect(followAfterScroll(true, at(0), false)).toBe(true);
     // Reading higher up stays reading, even when a programmatic scroll lands at the end.
     expect(followAfterScroll(false, at(600), false)).toBe(false);
+  });
+});
+
+describe('pulling past the newest content to refresh', () => {
+  it('stays idle until the finger moves up', () => {
+    expect(pullPhase(0)).toBe('idle');
+    expect(pullPhase(-30)).toBe('idle');
+  });
+
+  it('is pulling on the way up and armed from the refresh distance on', () => {
+    expect(pullPhase(1)).toBe('pulling');
+    expect(pullPhase(PULL_REFRESH_DISTANCE - 1)).toBe('pulling');
+    expect(pullPhase(PULL_REFRESH_DISTANCE)).toBe('armed');
+    expect(pullPhase(PULL_REFRESH_DISTANCE * 3)).toBe('armed');
+  });
+
+  it('may only start right at the bottom', () => {
+    expect(isNearBottom(at(600), PULL_START_SLACK)).toBe(true);
+    expect(isNearBottom(at(597), PULL_START_SLACK)).toBe(true);
+    expect(isNearBottom(at(590), PULL_START_SLACK)).toBe(false);
+    expect(isNearBottom({ contentHeight: 200, viewportHeight: 400, offsetY: 0 }, PULL_START_SLACK)).toBe(true);
   });
 });

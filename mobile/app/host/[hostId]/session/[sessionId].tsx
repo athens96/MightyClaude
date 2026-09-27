@@ -12,6 +12,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError, isNotFound } from '@/api/client';
@@ -320,10 +321,24 @@ export default function SessionScreen() {
     [loadOlder],
   );
 
+  // Pulling up past the newest content refetches the session. The note under the list
+  // stays up until the fetch has settled, and at least briefly so a fast one is seen.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshPoll = poll.refresh;
+  const pullRefresh = useCallback(() => {
+    setRefreshing(true);
+    refreshPoll();
+  }, [refreshPoll]);
+  useEffect(() => {
+    if (!refreshing || poll.loading) return undefined;
+    const timer = setTimeout(() => setRefreshing(false), 600);
+    return () => clearTimeout(timer);
+  }, [poll.loading, refreshing]);
+
   // Both bodies stay on their newest content while it grows, until the user scrolls up
   // to read. Only one is mounted at a time; sending pins whichever it is.
-  const logFollow = useFollowBottom(onScroll);
-  const blockFollow = useFollowBottom();
+  const logFollow = useFollowBottom(onScroll, pullRefresh);
+  const blockFollow = useFollowBottom(undefined, pullRefresh);
   const followLog = logFollow.follow;
   const followBlocks = blockFollow.follow;
   const followNewest = useCallback(() => {
@@ -629,6 +644,8 @@ export default function SessionScreen() {
   const questionPending =
     detail?.permissions.some((permission) => permission.questionnaire !== undefined) ?? false;
   const view: BodyView = chosenView ?? defaultView(mighty);
+  const blocksShown = view === 'blocks' && Boolean(mighty);
+  const pull = blocksShown ? blockFollow.pull : logFollow.pull;
 
   const runGuided = useCallback(
     (actionId: string) => {
@@ -753,32 +770,51 @@ export default function SessionScreen() {
         <ErrorBanner message={poll.error} />
       ) : null}
 
-      {view === 'blocks' && mighty ? (
-        <MightyRunList
-          runs={mighty.runs}
-          contentContainerStyle={styles.list}
-          header={headerNode}
-          footer={footerNode}
-          listRef={blockFollow.attach}
-          follow={blockFollow.props}
-        />
-      ) : (
-        <FlatList
-          {...logFollow.props}
-          ref={logFollow.attach}
-          data={entries}
-          keyExtractor={(entry) => entry.id}
-          renderItem={({ item }) => <LogEntryView entry={item} />}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
-          maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
-          ListHeaderComponent={headerNode}
-          ListEmptyComponent={
-            <EmptyState title={poll.loading ? '불러오는 중…' : '기록이 없습니다'} />
-          }
-          ListFooterComponent={footerNode}
-        />
-      )}
+      <GestureDetector gesture={blocksShown ? blockFollow.pullGesture : logFollow.pullGesture}>
+        <View collapsable={false} style={styles.body}>
+          {view === 'blocks' && mighty ? (
+            <MightyRunList
+              runs={mighty.runs}
+              contentContainerStyle={styles.list}
+              header={headerNode}
+              footer={footerNode}
+              listRef={blockFollow.attach}
+              follow={blockFollow.props}
+            />
+          ) : (
+            <FlatList
+              {...logFollow.props}
+              ref={logFollow.attach}
+              data={entries}
+              keyExtractor={(entry) => entry.id}
+              renderItem={({ item }) => <LogEntryView entry={item} />}
+              contentContainerStyle={styles.list}
+              keyboardShouldPersistTaps="handled"
+              maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+              ListHeaderComponent={headerNode}
+              ListEmptyComponent={
+                <EmptyState title={poll.loading ? '불러오는 중…' : '기록이 없습니다'} />
+              }
+              ListFooterComponent={footerNode}
+            />
+          )}
+        </View>
+      </GestureDetector>
+
+      {refreshing || pull !== 'idle' ? (
+        <View style={styles.pullRow}>
+          {refreshing ? <ActivityIndicator color={palette.textFaint} size="small" /> : null}
+          <Text style={styles.olderText}>
+            {t(
+              refreshing
+                ? 'phone.session.refreshing'
+                : pull === 'armed'
+                  ? 'phone.session.releaseToRefresh'
+                  : 'phone.session.pullToRefresh',
+            )}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={{ paddingBottom: (keyboardShown ? 0 : insets.bottom) + spacing.sm }}>
         {!questionPending && panel ? (
@@ -885,10 +921,12 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
     list: { padding: spacing.lg, paddingBottom: spacing.xl },
+    body: { flex: 1 },
     footer: { gap: spacing.sm, paddingTop: spacing.sm },
     headerAction: { color: palette.text, fontSize: 22, paddingHorizontal: spacing.sm },
     menuTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     olderText: { color: palette.textFaint, fontSize: 12, paddingVertical: spacing.xs },
+    pullRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
     viewSwitch: { flexDirection: 'row', gap: spacing.xs, paddingVertical: spacing.xs },
   });
