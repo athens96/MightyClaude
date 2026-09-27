@@ -33,7 +33,9 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     /// Told when the policy refused the text outright (a line break in it).
     var initialInputRefused: ((String) -> Void)?
 
-    init(id: String, directory: String, controller: TerminalController, smoke: Bool, statusChanged: @escaping (String) -> Void, focused: @escaping () -> Void, closeRequested: @escaping () -> Void) {
+    /// `backend` is `.exec` for a shell Ghostty owns, or `.inMemory` for a view
+    /// of PTYs the app owns (an agent's terminal pane).
+    init(id: String, directory: String, controller: TerminalController, smoke: Bool, backend: TerminalSessionBackend = .exec, statusChanged: @escaping (String) -> Void, focused: @escaping () -> Void, closeRequested: @escaping () -> Void) {
         self.id = id
         workingDirectory = directory
         self.controller = controller
@@ -57,7 +59,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         // A per-surface command forces Ghostty's wait-after-command mode.
         // The shared controller supplies the shell command instead, so exit
         // reaches the close callback immediately without another key press.
-        view.configuration = TerminalSurfaceOptions(backend: .exec, fontSize: 12, workingDirectory: directory, envVars: environment, waitAfterCommand: false, resizeThrottleMilliseconds: 25)
+        view.configuration = TerminalSurfaceOptions(backend: backend, fontSize: 12, workingDirectory: directory, envVars: environment, waitAfterCommand: false, resizeThrottleMilliseconds: 25)
         view.delegate = self
         view.controller = controller
         view.setAccessibilityLabel("대화형 터미널")

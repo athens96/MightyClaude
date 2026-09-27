@@ -31,19 +31,20 @@ struct AgentTerminalToolTests {
         #expect(!a.handle.isEmpty && a.handle != b.handle)
     }
 
-    @Test func realSubprocessReturnsCombinedOutputAndExitCode() async throws {
+    @Test func realPTYReturnsCombinedOutputAndExitCode() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let result = try await AgentTerminalRunner(pane: pane).runInTerminal(command: "echo hi; echo oops >&2; exit 3")
         #expect(result.status == .done)
-        #expect(result.output.contains("hi\n") && result.output.contains("oops\n"))
+        // The tty turns each newline into CR LF, as any terminal shows it.
+        #expect(result.output == "hi\r\noops\r\n")
         #expect(result.exitCode == 3)
         #expect(result.signal == nil)
     }
 
-    @Test func realSubprocessRunsInTheWorkspaceFolderNotTheAppFolder() async throws {
+    @Test func realPTYRunsInTheWorkspaceFolderNotTheAppFolder() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let result = try await AgentTerminalRunner(pane: pane).runInTerminal(command: "pwd -P")
         #expect(result.output.trimmingCharacters(in: .whitespacesAndNewlines) == folder.path)
         #expect(folder.path != FileManager.default.currentDirectoryPath)
@@ -172,7 +173,8 @@ func toolText(_ response: [String: Any]?) -> (text: String, isError: Bool)? {
         #expect(called["id"] as? Int == 3)
         let run = try #require(toolText(called))
         #expect(!run.isError)
-        #expect(run.text.contains("\nhi\n"))
+        // Raw PTY output: the tty ends each line with CR LF.
+        #expect(run.text.contains("\nhi\r\n"))
         #expect(run.text.contains("exit code: 0"))
         #expect(run.text.contains("status: done"))
         #expect(!run.text.contains(binding.token))

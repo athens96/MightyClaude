@@ -102,7 +102,7 @@ private struct LocalTerminalContent: View {
     }
 }
 
-private struct NativeTerminalHost: NSViewRepresentable {
+struct NativeTerminalHost: NSViewRepresentable {
     let terminal: LocalTerminalSession
     let onMount: () -> Void
 

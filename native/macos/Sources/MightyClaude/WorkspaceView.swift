@@ -169,7 +169,7 @@ struct WorkspaceView: View {
                             else if agentRunning { AgentRunningIndicator().accessibilityIdentifier("sidebar-running-\(session.id)") }
                             else { StatusDot(status: session.status).frame(width: 12) }
                             Group {
-                                if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 10)) }
+                                if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
                                 else { ProviderIcon(provider: session.provider, size: 10) }
                             }.foregroundStyle(.secondary).frame(width: 12)
                             Text(session.title).font(.system(size: 11)).lineLimit(1)

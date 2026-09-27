@@ -11,6 +11,34 @@ final class FakeAgentTerminalClock: AgentTerminalClock, @unchecked Sendable {
     func sleep(for interval: TimeInterval) async { lock.withLock { current = current.addingTimeInterval(interval) } }
 }
 
+/// Real time for sleeps, but the run tool's 12 s wait is skipped: every `now()`
+/// after the first reads an hour later. Stop escalation keeps real timing.
+final class SkipInitialWaitClock: AgentTerminalClock, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    func now() -> Date { lock.lock(); defer { lock.unlock() }; calls += 1; return Date().addingTimeInterval(calls == 1 ? 0 : 3600) }
+    func sleep(for interval: TimeInterval) async { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
+}
+
+/// Poll `condition` every 20 ms until it holds or `seconds` pass; true once it holds.
+@discardableResult
+func waitFor(seconds: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(seconds)
+    while !condition() {
+        guard Date() < deadline else { return false }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return true
+}
+
+/// Collects what a PTY pane hands its view.
+final class TranscriptProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = Data()
+    var text: String { lock.lock(); defer { lock.unlock() }; return String(decoding: bytes, as: UTF8.self) }
+    func receive(_ data: Data) { lock.lock(); bytes.append(data); lock.unlock() }
+}
+
 /// Fake terminal pane. Commands complete at once by default.
 /// Set nextRunning = true before launching to simulate a long-running process.
 /// Set resistsSignals = true to simulate a process that ignores SIGINT and SIGTERM,

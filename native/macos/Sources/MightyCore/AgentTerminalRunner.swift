@@ -40,9 +40,8 @@ public struct SystemAgentTerminalClock: AgentTerminalClock, Sendable {
     }
 }
 
-/// The one terminal pane owned by an agent pane. Stage 1 runs a headless
-/// ``SubprocessAgentTerminalPane``; the visible terminal pane conforms to the same
-/// protocol. In automated tests a fake is used instead.
+/// The one terminal pane owned by an agent pane. The app runs the visible,
+/// PTY-backed ``PTYAgentTerminalPane``; automated tests may use a fake.
 public protocol AgentTerminalPane: AnyObject, Sendable {
     /// Launch `command` in the terminal pane and tag it with `handle`.
     func launch(command: String, handle: String) async throws
@@ -74,9 +73,9 @@ public protocol AgentTerminalPane: AnyObject, Sendable {
     /// Send SIGKILL to the process group (final escalation). Does not wait.
     func sendSIGKILL(handle: String)
 
-    /// Append `text` to the output buffer for `handle`, exactly as PTY echo
-    /// does when the user types into the terminal. The next `readOutput` call
-    /// returns the appended bytes alongside any process output.
+    /// Record `text` the user typed into the terminal pane for `handle`, so it
+    /// reaches the process and appears in `readOutput` alongside its output.
+    /// A PTY pane writes it to the PTY and the tty's echo records it there.
     func appendUserTyped(text: String, handle: String)
 }
 
