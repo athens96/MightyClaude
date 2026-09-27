@@ -1,4 +1,4 @@
-import { FOLLOW_THRESHOLD, PULL_REFRESH_DISTANCE, PULL_START_SLACK, followAfterScroll, isNearBottom, pullPhase } from '@/lib/follow';
+import { FOLLOW_THRESHOLD, PULL_REFRESH_DISTANCE, PULL_START_SLACK, blocksProgressKey, entriesProgressKey, followAfterScroll, isNearBottom, pullPhase } from '@/lib/follow';
 
 const at = (offsetY: number) => ({ contentHeight: 1000, viewportHeight: 400, offsetY });
 
@@ -45,5 +45,36 @@ describe('pulling past the newest content to refresh', () => {
     expect(isNearBottom(at(597), PULL_START_SLACK)).toBe(true);
     expect(isNearBottom(at(590), PULL_START_SLACK)).toBe(false);
     expect(isNearBottom({ contentHeight: 200, viewportHeight: 400, offsetY: 0 }, PULL_START_SLACK)).toBe(true);
+  });
+});
+
+describe('what counts as work moving on', () => {
+  const block = (id: string, status = 'running', output = '') => ({ id, status, output });
+  const run = (id: string, blocks: ReturnType<typeof block>[], status = 'running', result?: string) => ({ id, status, blocks, result });
+
+  it('changes on a new block, a change to the newest block, and a settled result', () => {
+    const base = blocksProgressKey([run('r1', [block('a')])]);
+    expect(blocksProgressKey([run('r1', [block('a'), block('b')])])).not.toBe(base);
+    expect(blocksProgressKey([run('r1', [block('a', 'running', 'more')])])).not.toBe(base);
+    expect(blocksProgressKey([run('r1', [block('a')], 'done', 'answer')])).not.toBe(base);
+    expect(blocksProgressKey([run('r1', [block('a')]), run('r2', [])])).not.toBe(base);
+  });
+
+  it('stays put when only older blocks change', () => {
+    const before = blocksProgressKey([run('r1', [block('a'), block('b')])]);
+    expect(blocksProgressKey([run('r1', [block('a', 'done', 'x'), block('b')])])).toBe(before);
+    expect(blocksProgressKey([])).toBe('');
+  });
+
+  it('tracks the newest transcript entry the same way', () => {
+    const base = entriesProgressKey([{ id: '1', text: 'a' }]);
+    expect(entriesProgressKey([{ id: '1', text: 'a' }, { id: '2', text: 'b' }])).not.toBe(base);
+    expect(entriesProgressKey([{ id: '1', text: 'ab' }])).not.toBe(base);
+    expect(entriesProgressKey([])).toBe('');
+  });
+
+  it('ignores older history paged in above', () => {
+    const base = entriesProgressKey([{ id: '5', text: 'e' }]);
+    expect(entriesProgressKey([{ id: '3', text: 'c' }, { id: '4', text: 'd' }, { id: '5', text: 'e' }])).toBe(base);
   });
 });

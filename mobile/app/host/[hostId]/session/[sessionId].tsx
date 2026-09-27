@@ -56,6 +56,7 @@ import {
   retainDropped,
 } from '@/lib/history';
 import { t } from '@/lib/i18n';
+import { blocksProgressKey, entriesProgressKey } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
@@ -646,6 +647,19 @@ export default function SessionScreen() {
   const view: BodyView = chosenView ?? defaultView(mighty);
   const blocksShown = view === 'blocks' && Boolean(mighty);
   const pull = blocksShown ? blockFollow.pull : logFollow.pull;
+
+  // New work pulls the shown list back to its newest content, even from further up,
+  // unless the user is dragging it.
+  const blocksProgress = useMemo(() => blocksProgressKey(mighty?.runs ?? []), [mighty]);
+  const entriesProgress = useMemo(() => entriesProgressKey(entries), [entries]);
+  const followBlockProgress = blockFollow.followProgress;
+  const followLogProgress = logFollow.followProgress;
+  useEffect(() => {
+    if (blocksShown) followBlockProgress();
+  }, [blocksProgress, blocksShown, followBlockProgress]);
+  useEffect(() => {
+    if (!blocksShown) followLogProgress();
+  }, [entriesProgress, blocksShown, followLogProgress]);
 
   const runGuided = useCallback(
     (actionId: string) => {
