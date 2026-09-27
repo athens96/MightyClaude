@@ -13,6 +13,10 @@ enum MightyClaudeLauncher {
             ResourceVerifier.run()
             // run() exits; this line is never reached.
         }
+        // The per-pane MCP server a Claude or Codex run launches: stdio only, no GUI.
+        if CommandLine.arguments.contains(PaneMCPServerLocation.headlessArgument) {
+            AgentIOMCPCommand.run()
+        }
         // SwiftUI creates its own AppKitApplication if NSApp does not exist.
         // NSPrincipalClass alone is ignored by App.main(), so establish our
         // CEF-compatible singleton before handing scene management to SwiftUI.

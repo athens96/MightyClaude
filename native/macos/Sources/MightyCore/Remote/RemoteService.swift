@@ -62,8 +62,13 @@ public actor RemoteService {
     private var rateCount = 0
     private var peerRates: [String: (Date, Int)] = [:]
 
-    public init(repository: StateRepository, providers: ProviderService, pluginDirectory: URL, dataDirectory: URL, onEvent: @escaping @Sendable (RunEvent) -> Void, allowLoopbackForTests: Bool = false) {
+    /// Local runs this host starts get the same per-pane MCP server as the app's own.
+    private let paneMCPServer: PaneMCPServerLocation?
+    private let paneMCPBindings: PaneMCPBindingRegistry
+
+    public init(repository: StateRepository, providers: ProviderService, pluginDirectory: URL, dataDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void, allowLoopbackForTests: Bool = false) {
         self.repository = repository; self.providers = providers; self.pluginDirectory = pluginDirectory; self.dataDirectory = dataDirectory; self.onEvent = onEvent; self.testing = allowLoopbackForTests
+        self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings
     }
 
     private func ensureActive() throws { if disposed { throw RemoteFailure("앱이 종료 중입니다.") } }
@@ -105,7 +110,7 @@ public actor RemoteService {
         var continuation: AsyncStream<RunEvent>.Continuation!
         let stream = AsyncStream<RunEvent> { continuation = $0 }
         let sink = continuation!
-        let runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, onEvent: { event in sink.yield(event) })
+        let runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: paneMCPServer, paneMCPBindings: paneMCPBindings, onEvent: { event in sink.yield(event) })
         hostRunner = runner
         hostEvents = Task { for await event in stream { if Task.isCancelled { break }; self.receiveHost(event, generation: generation) } }
         let allowLoopback = testing

@@ -38,7 +38,21 @@ export const MAX_CHUNK_BODY_BYTES = 300 * 1024;
  */
 export const MAX_CHUNK_BYTES = 230_400;
 
+/** The pane kinds the phone may create. */
 export type SessionKind = 'claude' | 'shell';
+/**
+ * The IO panes an agent pane owns: its dedicated terminal pane and the browser
+ * pane it opened a URL into. The phone lists them beside the agent pane and
+ * cannot command them (they arrive with `terminal: true`).
+ */
+export type AgentIOPaneKind = 'agent-terminal' | 'agent-browser';
+/** Every pane kind the host may put in the pane list. */
+export type PaneKind = SessionKind | 'browser' | AgentIOPaneKind;
+
+/** True for a pane an agent pane owns rather than one the user opened. */
+export function isAgentIOPane(kind: string): kind is AgentIOPaneKind {
+  return kind === 'agent-terminal' || kind === 'agent-browser';
+}
 export type Provider = 'claude' | 'codex' | 'gemini';
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
 export type LogEntryKind = 'user' | 'assistant' | 'system' | 'output' | 'error';
@@ -109,7 +123,7 @@ export interface MobileSessionSummary {
   id: string;
   workspaceId: string;
   title: string;
-  kind: SessionKind;
+  kind: PaneKind;
   provider: Provider;
   model: string;
   status: SessionStatus;

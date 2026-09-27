@@ -204,6 +204,24 @@ struct AppSettingsView: View {
                     Text(L("settings.remote.description"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                // Per-workspace destination for URLs the agent opens. Writes to the
+                // same shared store the open agent panes read, so a change here is
+                // in force on their very next open_url call.
+                Section(WebOpenChoiceCopy.settingTitle) {
+                    Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
+                        get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },
+                        set: { choice in
+                            store.objectWillChange.send()
+                            WebOpenChoiceStore.shared.applySetting(choice, forWorkspace: store.snapshot.activeWorkspaceId ?? "")
+                        }
+                    )) {
+                        ForEach(WebOpenSetting.allCases, id: \.self) { option in
+                            Text(WebOpenChoiceCopy.settingLabel(option)).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("settings-web-open-choice")
+                }
                 PhaseModelSettingsSection().environmentObject(store)
                 StyleSettingsSection().environmentObject(store)
                 ComponentsSettingsSection().environmentObject(store)

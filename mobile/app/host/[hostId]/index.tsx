@@ -4,7 +4,7 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError } from '@/api/client';
 import { describeRepairNeeded, type RelayState } from '@/api/relay/transport';
-import type { MobileState } from '@/api/types';
+import { isAgentIOPane, type MobileState } from '@/api/types';
 import { Button, EmptyState, ErrorBanner } from '@/components/ui';
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
 import { SessionRow } from '@/components/session-row';
@@ -154,7 +154,14 @@ export default function HostScreen() {
                   <SessionRow
                     key={session.id}
                     session={session}
-                    onPress={() => router.push(`/host/${host.id}/session/${session.id}`)}
+                    onPress={() =>
+                      // An agent's own terminal/browser pane is listed, not opened:
+                      // its contents live on the Mac and the host keeps no record
+                      // to show here.
+                      isAgentIOPane(session.kind)
+                        ? showToast('에이전트 창이 여는 창이라 Mac에서만 볼 수 있습니다.')
+                        : router.push(`/host/${host.id}/session/${session.id}`)
+                    }
                   />
                 ))
               )}

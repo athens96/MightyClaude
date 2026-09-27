@@ -34,13 +34,22 @@ MobileState {
   sessions: [MobileSessionSummary]
 }
 MobileSessionSummary {
-  id, workspaceId, title, kind: "claude" | "shell", provider: "claude" | "codex" | "gemini", model,
+  id, workspaceId, title, kind: "claude" | "shell" | "browser" | "agent-terminal" | "agent-browser",
+  provider: "claude" | "codex" | "gemini", model,
   status: "idle" | "running" | "completed" | "error" | "stopped",
   revision: number, updatedAt: ISO-8601,
   preview?: { kind, text },            // 마지막 기록 항목 (200자)
   pendingPermissions: number, pendingQuestions: number, queued: number,
   resumeId?: string, terminal: boolean // terminal: 앱 안 로컬 터미널 창이라 모바일에서 명령 불가
 }
+```
+
+에이전트 창이 소유한 창 두 가지도 같은 목록에 실린다: 전용 터미널 창(`kind: "agent-terminal"`,
+id `agent-terminal:<에이전트 창 id>`)과 에이전트가 앱 안에서 연 브라우저 창(`kind: "agent-browser"`,
+id `agent-browser:<에이전트 창 id>`). 둘 다 `terminal: true`로 실려서 휴대폰은 목록에만 올리고
+명령은 보내지 않는다(내용 렌더링은 범위 밖). 에이전트 창이 닫히면 두 창도 목록에서 사라진다.
+
+```
 MobileSessionDetail {
   protocol: 1, revision: number, session: MobileSessionSummary,
   entries: [LogEntry],                 // 최근 80개. id는 안정적이며 스트리밍 중 같은 id의 text가 갱신된다

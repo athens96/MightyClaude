@@ -18,6 +18,9 @@ final class NativeChildProcess: @unchecked Sendable {
     private var result: Int32?
     private var waiters: [UUID: CheckedContinuation<Int32, Never>] = [:]
     private(set) var pid: pid_t = 0
+    private var signal: Int32?
+    /// The signal that ended the child, or nil when it exited normally or still runs.
+    var terminationSignal: Int32? { lock.lock(); defer { lock.unlock() }; return signal }
 
     init(executable: URL, arguments: [String], environment: [String: String], cwd: URL,
          stdout: @escaping @Sendable (Data) -> Void, stderr: @escaping @Sendable (Data) -> Void,
@@ -71,7 +74,7 @@ final class NativeChildProcess: @unchecked Sendable {
             DispatchQueue.global(qos: .utility).async { [self] in
                 var status: Int32 = 0
                 while waitpid(childPID, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
-                lock.lock(); exitedAt = Date(); lock.unlock()
+                lock.lock(); exitedAt = Date(); if status & 0x7f != 0 { signal = status & 0x7f }; lock.unlock()
                 closeInput()
                 // The parent can exit while a background child still holds a pipe.
                 terminateGroup()
@@ -245,7 +248,25 @@ public actor ProcessRunner {
     private let onEvent: @Sendable (RunEvent) -> Void
     private var runs: [String: ManagedProcess] = [:]
     private var shuttingDown = false
-    public init(providerService: ProviderService, pluginDirectory: URL, onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.onEvent = onEvent }
+    /// How a run launches the per-pane MCP server. Nil when the app has no
+    /// agent IO socket, in which case no run is given a terminal/web binding.
+    private let paneMCPServer: PaneMCPServerLocation?
+    /// Live per-pane tokens, shared with the socket server that resolves them.
+    /// Memory only, revoked on pane close and on quit.
+    private let paneMCPBindings: PaneMCPBindingRegistry
+    /// Panes this runner minted tokens for, so shutdown revokes only its own.
+    private var boundPaneIds = Set<String>()
+
+    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.onEvent = onEvent }
+
+    /// The agent pane a tool call belongs to, resolved from the token its own MCP
+    /// server presented. An unknown or revoked token reaches no pane.
+    public func agentPane(forPaneToken token: String) -> String? { paneMCPBindings.agentPaneId(forToken: token) }
+
+    /// Revoke one agent pane's token. Called when that pane closes.
+    public func revokePaneMCPBinding(agentPaneId: String) { paneMCPBindings.revoke(agentPaneId: agentPaneId); boundPaneIds.remove(agentPaneId) }
+
+    public var activePaneMCPPaneIds: [String] { paneMCPBindings.activePaneIds }
 
     public func start(request: StartRunRequest, workspace: Workspace, allowPermissionPrompts: Bool = false) async throws {
         try Task.checkCancellation()
@@ -292,10 +313,17 @@ public actor ProcessRunner {
                 run.attachments = attachments
                 let interactivePermissions = allowPermissionPrompts && request.provider == "claude"
                 let codexApprovals = request.provider == "codex" && request.settings.permissionMode == "onRequest"
+                // Every Claude and Codex run gets its own MCP server with a fresh random
+                // token bound to this agent pane alone. The token rides in the CLI
+                // environment only, never in argv.
+                let paneBinding = ["claude", "codex"].contains(request.provider) ? paneMCPServer.map {
+                    paneMCPBindings.bind(agentPaneId: request.sessionId, server: $0, workspaceId: workspace.id, workspacePath: workspace.path, provider: request.provider)
+                } : nil
+                if let paneBinding { boundPaneIds.insert(request.sessionId); environment.merge(paneBinding.environment) { _, new in new } }
                 if codexApprovals {
-                    arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts)
+                    arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding)
                 } else {
-                    let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions)
+                    let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions, paneMCPBinding: paneBinding)
                     arguments = prepared.arguments; standardInput = prepared.standardInput
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
@@ -520,5 +548,5 @@ public actor ProcessRunner {
         if let child = run.child { child.stop(); let code = await child.wait(timeout: 3); if code == -1 { run.task?.cancel() } else { await run.task?.value }; if !run.finished { await finish(run, code: -1) } else { await waitForFinalization(run) } }
         else { await cancelPending(run) }
     }
-    public func shutdown() async { shuttingDown = true; for id in Array(runs.keys) { await stop(id: id) } }
+    public func shutdown() async { shuttingDown = true; for id in Array(runs.keys) { await stop(id: id) }; for id in boundPaneIds { paneMCPBindings.revoke(agentPaneId: id) }; boundPaneIds.removeAll() }
 }
