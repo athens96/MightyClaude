@@ -28,6 +28,10 @@ export interface FollowBottomProps {
   onContentSizeChange: (width: number, height: number) => void;
   /** The keyboard shrinking the list is growth too, seen from the other side. */
   onLayout: (event: LayoutChangeEvent) => void;
+  /** A finger resting on the list before it moves enough to count as a drag. */
+  onTouchStart: () => void;
+  onTouchEnd: () => void;
+  onTouchCancel: () => void;
   scrollEventThrottle: number;
 }
 
@@ -57,6 +61,7 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
   const following = useRef(true);
   const dragging = useRef(false);
   const coasting = useRef(false);
+  const touching = useRef(false);
   const metrics = useRef<ScrollMetrics>({ contentHeight: 0, viewportHeight: 0, offsetY: 0 });
   const pullStart = useRef<number | null>(null);
   const pullActive = useRef(false);
@@ -70,6 +75,16 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
 
   /** Back to the newest content, e.g. once the user has sent something. */
   const follow = useCallback(() => {
+    following.current = true;
+    list.current?.scrollToEnd({ animated: false });
+  }, []);
+
+  /**
+   * Back to the newest content because the work moved on, unless the user's finger is on
+   * the list or it is still coasting from a flick: then they are reading, and are left be.
+   */
+  const followProgress = useCallback(() => {
+    if (touching.current || dragging.current || coasting.current || pullStart.current !== null) return;
     following.current = true;
     list.current?.scrollToEnd({ animated: false });
   }, []);
@@ -110,6 +125,16 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
       onLayout: (event) => {
         metrics.current = { ...metrics.current, viewportHeight: event.nativeEvent.layout.height };
         keepUp();
+      },
+      // Android cancels these once its scroll view takes the drag; `dragging` covers from there.
+      onTouchStart: () => {
+        touching.current = true;
+      },
+      onTouchEnd: () => {
+        touching.current = false;
+      },
+      onTouchCancel: () => {
+        touching.current = false;
       },
       scrollEventThrottle: 64,
     };
@@ -158,5 +183,5 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
       });
   }, [onPull]);
 
-  return { attach, follow, props, pull, pullGesture };
+  return { attach, follow, followProgress, props, pull, pullGesture };
 }

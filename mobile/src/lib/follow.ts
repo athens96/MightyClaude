@@ -43,3 +43,32 @@ export function pullPhase(liftedBy: number): PullPhase {
   if (liftedBy >= PULL_REFRESH_DISTANCE) return 'armed';
   return liftedBy > 0 ? 'pulling' : 'idle';
 }
+
+/** The part of a Mighty run the jump to the newest content watches. */
+export interface ProgressRun {
+  id: string;
+  status: string;
+  result?: string;
+  blocks: readonly unknown[];
+}
+
+/**
+ * Changes whenever work moves on: a new run, a new block, or any change to the newest
+ * block or to its run's status or result. A new value pulls the list back to its newest
+ * content even after the user scrolled up to read, unless a finger is on it.
+ */
+export function blocksProgressKey(runs: readonly ProgressRun[]): string {
+  const run = runs[runs.length - 1];
+  if (!run) return '';
+  const newest = run.blocks[run.blocks.length - 1];
+  return [runs.length, run.id, run.status, run.blocks.length, run.result?.length ?? 0, JSON.stringify(newest ?? null)].join('|');
+}
+
+/**
+ * The same for the plain transcript: a new entry, or a change to the newest one. Only the
+ * newest entry counts, never the length: paging older history in grows the list at the
+ * top, and must leave the reader where they are.
+ */
+export function entriesProgressKey(entries: readonly unknown[]): string {
+  return entries.length === 0 ? '' : JSON.stringify(entries[entries.length - 1]);
+}
