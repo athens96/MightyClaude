@@ -228,7 +228,10 @@ extension AppStore {
         let permissions = permissions ?? toolPermissions
         let queued = queued ?? queuedInputs
         var changedSessions: [String] = []
-        var stateChanged = mobileTracking.workspaces != snapshot.workspaces || mobileTracking.order != snapshot.sessions.map(\.id)
+        // The order carries the agent-owned terminal and browser panes too, so
+        // opening or closing one of them is a state change the phone hears about.
+        let paneOrder = snapshot.sessions.map(\.id) + AgentIOPaneRegistry.shared.extraPaneIds(agentSessions: snapshot.sessions)
+        var stateChanged = mobileTracking.workspaces != snapshot.workspaces || mobileTracking.order != paneOrder
         var nextSeen: [String: MobileRemoteTracking.SessionFingerprint] = [:]
         var nextSummaries: [String: MobileSessionSummary] = [:]
         for session in snapshot.sessions {
@@ -250,7 +253,7 @@ extension AppStore {
         }
         for id in mobileTracking.summaries.keys where nextSummaries[id] == nil { mobileTracking.sessionRevisions.removeValue(forKey: id) }
         mobileTracking.seen = nextSeen; mobileTracking.summaries = nextSummaries; mobileTracking.workspaces = snapshot.workspaces
-        mobileTracking.order = snapshot.sessions.map(\.id)
+        mobileTracking.order = paneOrder
         if stateChanged { mobileTracking.stateRevision += 1 }
         guard stateChanged || !changedSessions.isEmpty else { return }
         let stateRevision = mobileTracking.stateRevision
@@ -297,9 +300,16 @@ extension AppStore {
     }
 
     func mobileState() -> MobileState {
-        MobileState(revision: mobileTracking.stateRevision, hostName: Host.current().localizedName ?? "MightyClaude Mac",
-                    workspaces: snapshot.workspaces.map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path, remote: $0.remote != nil) },
-                    sessions: snapshot.sessions.map { mobileTracking.summaries[$0.id] ?? mobileSummary($0, revision: mobileTracking.sessionRevisions[$0.id, default: 1]) })
+        let revision = mobileTracking.stateRevision
+        var sessions = snapshot.sessions.map { mobileTracking.summaries[$0.id] ?? mobileSummary($0, revision: mobileTracking.sessionRevisions[$0.id, default: 1]) }
+        sessions.append(contentsOf: AgentIOPaneRegistry.shared.extraPaneSummaries(
+            agentSessions: snapshot.sessions,
+            revision: revision,
+            updatedAt: mightyTimestamp()
+        ))
+        return MobileState(revision: revision, hostName: Host.current().localizedName ?? "MightyClaude Mac",
+                           workspaces: snapshot.workspaces.map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path, remote: $0.remote != nil) },
+                           sessions: sessions)
     }
 
     func mobileSessionDetail(_ id: String) -> MobileSessionDetail? {

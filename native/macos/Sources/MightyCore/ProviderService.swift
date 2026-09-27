@@ -198,7 +198,7 @@ public actor ProviderService {
         for key in keys { await invalidateModelCatalog(provider: provider, workspacePath: key.workspacePath) }
     }
 
-    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig = PhaseModelConfig()) throws -> [String] {
+    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig = PhaseModelConfig(), paneMCPBinding: PaneMCPBinding? = nil) throws -> [String] {
         try CoreValidation.validate(request)
         let s = request.settings
         switch request.provider {
@@ -226,6 +226,8 @@ public actor ProviderService {
             if let turns = s.maxTurns { args += ["--max-turns", String(turns)] }
             if let budget = s.maxBudgetUsd { args += ["--max-budget-usd", String(budget)] }
             if let resume = request.resumeId { args += ["--resume", resume] }
+            // Adds our server beside the user's own MCP servers; the token rides in the environment.
+            if let binding = paneMCPBinding { args += ["--mcp-config", try binding.claudeMCPConfigJSON()] }
             return args
         case "codex":
             let asks = s.permissionMode == "onRequest"
@@ -237,6 +239,7 @@ public actor ProviderService {
             if phaseModels.codexReviewModel != "default" { args += ["-c", "review_model=\"\(phaseModels.codexReviewModel)\""] }
             if phaseModels.codexSubagentDefault != "default" { args += ["-c", "agents.default_subagent_model=\"\(phaseModels.codexSubagentDefault)\""] }
             if phaseModels.codexPlanModeReasoningEffort != "default" { args += ["-c", "plan_mode_reasoning_effort=\"\(phaseModels.codexPlanModeReasoningEffort)\""] }
+            if let binding = paneMCPBinding { args += binding.codexMCPArgs() }
             if asks {
                 // Never inherit delegated automatic approval from a user profile.
                 args += ["-c", "approvals_reviewer=\"user\""]

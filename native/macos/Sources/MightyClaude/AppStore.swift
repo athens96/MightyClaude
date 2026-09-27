@@ -177,10 +177,16 @@ final class AppStore: ObservableObject {
     /// Smoke profiles must not run the user's own status line command.
     var smokeTesting: Bool { arguments.contains { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") } }
 
-    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory) { [weak self] event in
+    /// Per-pane MCP tokens, shared by the local and remote-host runners and the agent IO socket.
+    let paneBindings = PaneMCPBindingRegistry()
+    var agentIOServer: AgentIOSocketServer?
+    /// How runs launch their per-pane MCP server; nil until the agent IO socket listens.
+    var agentIOLocation: PaneMCPServerLocation?
+
+    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings) { [weak self] event in
         Task { @MainActor in self?.apply(event) }
     }
-    private lazy var remote = RemoteService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, dataDirectory: dataDirectory) { [weak self] event in
+    private lazy var remote = RemoteService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, dataDirectory: dataDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings) { [weak self] event in
         Task { @MainActor in self?.apply(event) }
     }
 
@@ -209,6 +215,8 @@ final class AppStore: ObservableObject {
     func load() async {
         guard !loading, !isLoaded, !ending else { return }
         loading = true
+        // Before anything can touch the lazy runners, which capture the server location once.
+        startAgentIO()
         do { snapshot = try await repository.load(); preparePaneLayouts(); canSave = true }
         catch { self.error = "상태를 불러오지 못했습니다. 기존 파일을 보호하기 위해 저장을 중단했습니다. \(error.localizedDescription)" }
         guard !ending, !Task.isCancelled else { loading = false; return }
@@ -441,6 +449,7 @@ final class AppStore: ObservableObject {
         let previousGroup = workspaceId.flatMap { layoutForWorkspace($0)?.group(containing: id) }
         Task {
             await stop(id)
+            await runner.revokePaneMCPBinding(agentPaneId: id)
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
@@ -463,6 +472,7 @@ final class AppStore: ObservableObject {
         Task {
             for session in snapshot.sessions where session.workspaceId == workspace.id {
                 await stop(session.id)
+                await runner.revokePaneMCPBinding(agentPaneId: session.id)
                 drafts.removeValue(forKey: session.id)
                 statusLines.removeValue(forKey: session.id)
                 pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); guidedProgress.removeValue(forKey: session.id)
@@ -896,6 +906,9 @@ final class AppStore: ObservableObject {
         await runner.shutdown()
         await remote.shutdown()
         await shutdownMobileRemote()
+        stopAgentIO()
+        // Processes started from agent terminal panes stop with the app (bounded to about 1 s).
+        await AgentProcessRegistry.shared.terminateAll()
         for task in starting { await task.value }
         // Process callbacks enqueue onto the main actor. Let terminal events settle before the final save.
         try? await Task.sleep(for: .milliseconds(60))

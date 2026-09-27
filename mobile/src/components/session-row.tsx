@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { MobileSessionSummary } from '@/api/types';
+import { isAgentIOPane, type MobileSessionSummary } from '@/api/types';
 import { Badge } from '@/components/ui';
 import { ProviderTag } from '@/components/provider-mark';
 import { StatusChip } from '@/components/status-chip';
@@ -32,7 +32,9 @@ export function SessionRow({
         <Text style={styles.meta}>{kindLabel(session.kind)}</Text>
         <ProviderTag provider={session.provider} />
         {session.model ? <Text style={styles.meta}>· {session.model}</Text> : null}
-        {session.terminal ? <Text style={styles.terminalTag}>· 로컬 터미널</Text> : null}
+        {session.terminal && !isAgentIOPane(session.kind) ? (
+          <Text style={styles.terminalTag}>· 로컬 터미널</Text>
+        ) : null}
         {session.queued > 0 ? <Text style={styles.meta}>· 대기 {session.queued}</Text> : null}
       </View>
 

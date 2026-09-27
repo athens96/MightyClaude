@@ -153,6 +153,9 @@ const statusLabels: Record<SessionStatus, string> = {
 const kindLabels: Record<string, string> = {
   claude: '에이전트',
   shell: '셸',
+  browser: '브라우저',
+  'agent-terminal': '에이전트 터미널',
+  'agent-browser': '에이전트 브라우저',
 };
 
 const providerLabels: Record<Provider, string> = {
