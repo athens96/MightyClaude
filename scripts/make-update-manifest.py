@@ -47,6 +47,8 @@ def main():
     a = p.parse_args()
     if a.generate_key:
         if os.path.exists(a.generate_key): sys.exit(f"refusing to overwrite {a.generate_key}")
+        # The key's folder may not exist yet (e.g. ~/.config/mightyclaude); only its owner may read it.
+        os.makedirs(os.path.dirname(os.path.abspath(a.generate_key)), mode=0o700, exist_ok=True)
         public = subprocess.run([signer(), "keygen", a.generate_key], capture_output=True, text=True, check=True).stdout.strip()
         print(f"private key written to {a.generate_key} (keep it secret; give it to CI as MIGHTY_UPDATE_SIGNING_KEY)")
         print(f"public key (build with MIGHTY_UPDATE_PUBLIC_KEY): {public}")
