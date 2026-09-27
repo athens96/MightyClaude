@@ -1,4 +1,5 @@
 {
+  "agentTerminal.terminalPane.open": "터미널 창 열기",
   "agentTerminal.terminalPane.title": "터미널",
   "agentTerminal.urlOpen.dialogTitle": "링크 열기",
   "agentTerminal.urlOpen.errorEmpty": "URL을 입력해 주세요.",

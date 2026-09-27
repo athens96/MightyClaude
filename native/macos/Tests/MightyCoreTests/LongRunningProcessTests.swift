@@ -3,15 +3,6 @@ import Darwin
 import Testing
 @testable import MightyCore
 
-/// Real time for sleeps, but the run tool's 12 s wait is skipped: every `now()`
-/// after the first reads an hour later. Stop escalation keeps real timing.
-private final class SkipInitialWaitClock: AgentTerminalClock, @unchecked Sendable {
-    private let lock = NSLock()
-    private var calls = 0
-    func now() -> Date { lock.lock(); defer { lock.unlock() }; calls += 1; return Date().addingTimeInterval(calls == 1 ? 0 : 3600) }
-    func sleep(for interval: TimeInterval) async { try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
-}
-
 /// A process that does not end: 12 s handle, incremental reads, 1 MB retention, stop within 10 s.
 struct LongRunningProcessTests {
     // MARK: 12 seconds, then a handle
@@ -76,12 +67,10 @@ struct LongRunningProcessTests {
 
     @Test func realPaneKeepsTheLatestOneMegabyteAndSaysOlderOutputWasDropped() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
-        try await pane.launch(command: "exec cat", handle: "h")
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
+        try await pane.launch(command: "head -c 500000 /dev/zero | tr '\\0' a; head -c \(PTYAgentTerminalPane.ringBufferMaxBytes) /dev/zero | tr '\\0' b", handle: "h")
         defer { pane.sendSIGKILL(handle: "h") }
-        let head = String(repeating: "a", count: 500_000), tail = String(repeating: "b", count: SubprocessAgentTerminalPane.ringBufferMaxBytes)
-        pane.appendUserTyped(text: head, handle: "h")
-        pane.appendUserTyped(text: tail, handle: "h")
+        #expect(await waitFor(seconds: 20) { !pane.isRunning(handle: "h") })
         var offset = 0, collected = "", reads = 0, dropped = false
         while true {
             let chunk = pane.readOutput(handle: "h", fromOffset: offset, maxBytes: AgentTerminalRunner.readChunkBytes)
@@ -91,9 +80,9 @@ struct LongRunningProcessTests {
             if !chunk.moreRemains { break }
         }
         #expect(dropped)
-        #expect(collected == tail)
-        #expect(reads == SubprocessAgentTerminalPane.ringBufferMaxBytes / AgentTerminalRunner.readChunkBytes)
-        #expect(SubprocessAgentTerminalPane.ringBufferMaxBytes == 1_048_576)
+        #expect(collected == String(repeating: "b", count: PTYAgentTerminalPane.ringBufferMaxBytes))
+        #expect(reads == PTYAgentTerminalPane.ringBufferMaxBytes / AgentTerminalRunner.readChunkBytes)
+        #expect(PTYAgentTerminalPane.ringBufferMaxBytes == 1_048_576)
     }
 
     @Test func droppedNoticeReachesTheAgentResult() async throws {
@@ -111,11 +100,11 @@ struct LongRunningProcessTests {
 
     @Test func realPaneChunksKoreanOutputOnCharacterBoundaries() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
-        try await pane.launch(command: "exec cat", handle: "k")
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
+        try await pane.launch(command: "awk 'BEGIN { for (i = 0; i < 15000; i++) printf \"한글\" }'", handle: "k")
         defer { pane.sendSIGKILL(handle: "k") }
+        #expect(await waitFor { !pane.isRunning(handle: "k") })
         let korean = String(repeating: "한글", count: 15_000)
-        pane.appendUserTyped(text: korean, handle: "k")
         let first = pane.readOutput(handle: "k", fromOffset: 0, maxBytes: AgentTerminalRunner.readChunkBytes)
         #expect(first.moreRemains)
         #expect(first.output.utf8.count == 65_535)
@@ -127,11 +116,11 @@ struct LongRunningProcessTests {
 
     @Test func realPaneSkipsACharacterCutByEviction() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
-        try await pane.launch(command: "exec cat", handle: "e")
-        defer { pane.sendSIGKILL(handle: "e") }
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
         // 349,526 three-byte characters overflow 1 MB by 2 bytes, cutting the first one.
-        pane.appendUserTyped(text: String(repeating: "한", count: 349_526), handle: "e")
+        try await pane.launch(command: "awk 'BEGIN { for (i = 0; i < 349526; i++) printf \"한\" }'", handle: "e")
+        defer { pane.sendSIGKILL(handle: "e") }
+        #expect(await waitFor(seconds: 20) { !pane.isRunning(handle: "e") })
         let chunk = pane.readOutput(handle: "e", fromOffset: 0, maxBytes: AgentTerminalRunner.readChunkBytes)
         #expect(chunk.dropped)
         #expect(!chunk.output.contains("\u{FFFD}"))
@@ -140,10 +129,10 @@ struct LongRunningProcessTests {
 
     @Test func utf8SafeLengthHoldsBackOnlyIncompleteCharacters() {
         let bytes = Array("a한".utf8)  // 1 + 3 bytes
-        #expect(SubprocessAgentTerminalPane.utf8SafeLength(bytes, limit: 3, holdIncompleteTail: false) == 1)
-        #expect(SubprocessAgentTerminalPane.utf8SafeLength(bytes, limit: 4, holdIncompleteTail: true) == 4)
-        #expect(SubprocessAgentTerminalPane.utf8SafeLength(Array(bytes.prefix(3)), limit: 64, holdIncompleteTail: true) == 1)
-        #expect(SubprocessAgentTerminalPane.utf8SafeLength(Array(bytes.prefix(3)), limit: 64, holdIncompleteTail: false) == 3)
+        #expect(PTYAgentTerminalPane.utf8SafeLength(bytes, limit: 3, holdIncompleteTail: false) == 1)
+        #expect(PTYAgentTerminalPane.utf8SafeLength(bytes, limit: 4, holdIncompleteTail: true) == 4)
+        #expect(PTYAgentTerminalPane.utf8SafeLength(Array(bytes.prefix(3)), limit: 64, holdIncompleteTail: true) == 1)
+        #expect(PTYAgentTerminalPane.utf8SafeLength(Array(bytes.prefix(3)), limit: 64, holdIncompleteTail: false) == 3)
     }
 
     // MARK: Stop within 10 seconds
@@ -195,9 +184,9 @@ struct LongRunningProcessTests {
         #expect(clock.currentTime.timeIntervalSince(before) <= 10)
     }
 
-    @Test func realProcessIgnoringSIGINTAndSIGTERMIsStoppedWithinTenSeconds() async throws {
+    @Test func realPTYProcessIgnoringSIGINTAndSIGTERMIsStoppedWithinTenSeconds() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let runner = AgentTerminalRunner(pane: pane, clock: SkipInitialWaitClock())
         let run = try await runner.runInTerminal(command: "trap '' INT TERM; echo stubborn; while :; do sleep 1; done")
         #expect(run.status == .running)
@@ -214,9 +203,9 @@ struct LongRunningProcessTests {
         #expect(!pane.isRunning(handle: run.handle))
     }
 
-    @Test func realCooperativeProcessStopsOnSIGINTQuickly() async throws {
+    @Test func realPTYCooperativeProcessStopsOnSIGINTQuickly() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
-        let pane = SubprocessAgentTerminalPane(workingDirectory: folder)
+        let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let runner = AgentTerminalRunner(pane: pane, clock: SkipInitialWaitClock())
         let run = try await runner.runInTerminal(command: "sleep 30")
         #expect(run.status == .running)

@@ -175,6 +175,7 @@ private struct PaneDockGroup: View {
                 tabStrip
                 if let selected {
                     if selected.kind == "browser" { BrowserPaneView(session: selected).id(selected.id) }
+                    else if selected.kind == AgentIOPaneKind.terminal { AgentTerminalPaneView(session: selected).id(selected.id) }
                     else { SessionPaneView(session: selected).id(selected.id) }
                 } else { Color.clear }
             }
@@ -223,7 +224,7 @@ private struct PaneDockTab: View {
             // button, padding included, so the tab's visible shape is its hit area.
             HStack(spacing: 6) {
                 Group {
-                    if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 10)) }
+                    if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
                     else if session.kind == "browser" { Image(systemName: "globe").font(.system(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }

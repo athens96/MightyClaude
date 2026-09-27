@@ -199,6 +199,14 @@ struct SessionPaneView: View {
             }
             if session.kind != "shell" { AgentSessionElapsedView(companion: store.companion, sessionID: session.id).fixedSize(horizontal: true, vertical: false) }
             Spacer(minLength: 2)
+            if store.agentTerminals[session.id] != nil {
+                Button { store.openAgentTerminalPane(session.id, select: true) } label: {
+                    Image(systemName: "terminal").font(.system(size: 12)).frame(width: 22, height: 24)
+                }
+                .buttonStyle(.plain).disabled(store.hasModal)
+                .help(L("agentTerminal.terminalPane.open")).accessibilityLabel(L("agentTerminal.terminalPane.open"))
+                .accessibilityIdentifier("agent-terminal-open-\(session.id)")
+            }
             HStack(spacing: 4) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.system(size: 9)) }.foregroundStyle(.secondary)
             Menu {
                 Button("이름 변경…") { store.beginRenameSession(session.id) }.disabled(store.hasModal)

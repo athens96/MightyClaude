@@ -53,10 +53,12 @@ extension AppStore {
         terminalTick = nil
         for terminal in localTerminals.values { terminal.dispose() }
         localTerminals.removeAll()
+        for host in agentTerminals.values { host.dispose() }
+        agentTerminals.removeAll()
         terminalController = nil
     }
 
-    private func sharedTerminalController() -> TerminalController {
+    func sharedTerminalController() -> TerminalController {
         if let terminalController { return terminalController }
         let theme = TerminalTheme(
             light: TerminalConfiguration.alabaster.background("FAF9F6"),
@@ -87,7 +89,7 @@ extension AppStore {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled, let self, let controller else { return }
-                if !self.localTerminals.isEmpty { controller.tick() }
+                if !self.localTerminals.isEmpty || !self.agentTerminals.isEmpty { controller.tick() }
             }
         }
         return controller

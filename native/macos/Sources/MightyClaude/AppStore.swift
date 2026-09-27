@@ -125,6 +125,9 @@ final class AppStore: ObservableObject {
     @Published var importingAttachments = Set<String>()
     @Published var attachmentPanelSession: String?
     @Published var localTerminals: [String: LocalTerminalSession] = [:]
+    /// Each agent pane's terminal view, by agent pane id. Kept until quit, like
+    /// the processes it shows, so a closed terminal pane reopens with its output.
+    @Published var agentTerminals: [String: AgentTerminalHost] = [:]
     @Published var terminalErrors: [String: String] = [:]
     @Published var terminalHistorySession: RunSession?
     @Published var draggedPane: PaneDragPayload?
@@ -461,6 +464,7 @@ final class AppStore: ObservableObject {
                 snapshot.activeSessionId = previousGroup?.sessionIds.first(where: { candidate in snapshot.sessions.contains { $0.id == candidate } }) ?? activeSessions.first?.id
             }
             if let workspaceId { reconcilePaneLayout(workspaceId) }
+            releaseUnreachableAgentTerminals()
             closingSessions.remove(id)
         }
     }
@@ -491,6 +495,7 @@ final class AppStore: ObservableObject {
                 else { snapshot.activeWorkspaceId = nil; snapshot.activeSessionId = nil }
             }
             if let activeWorkspaceId = snapshot.activeWorkspaceId { reconcilePaneLayout(activeWorkspaceId) }
+            releaseUnreachableAgentTerminals()
             closingSessions.subtract(ids)
         }
     }

@@ -5,8 +5,7 @@ import Foundation
 /// run, read and stop go through the pane's own ``AgentTerminalRunner`` in
 /// ``AgentProcessRegistry``, so a handle launched by another pane is unknown
 /// here and rejected. open_url goes through ``WebOpenService``. The terminal
-/// pane itself comes from `makePane`, the seam where the visible terminal pane
-/// replaces the headless one.
+/// pane itself comes from `makePane`, where the app also puts it on screen.
 public final class AgentTerminalIOHandler: AgentIORequestHandler, @unchecked Sendable {
     public typealias PaneFactory = @Sendable (PaneMCPBinding) -> any AgentTerminalPane
 
@@ -17,7 +16,7 @@ public final class AgentTerminalIOHandler: AgentIORequestHandler, @unchecked Sen
     private let clock: AgentTerminalClock
 
     public init(processes: AgentProcessRegistry, panes: AgentIOPaneRegistry, webOpen: WebOpenService, clock: AgentTerminalClock = SystemAgentTerminalClock(),
-                makePane: @escaping PaneFactory = { SubprocessAgentTerminalPane(workingDirectory: URL(fileURLWithPath: $0.workspacePath, isDirectory: true)) }) {
+                makePane: @escaping PaneFactory = { PTYAgentTerminalPane(workingDirectory: URL(fileURLWithPath: $0.workspacePath, isDirectory: true)) }) {
         self.processes = processes; self.panes = panes; self.webOpen = webOpen; self.clock = clock; self.makePane = makePane
     }
 
