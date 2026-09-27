@@ -272,7 +272,7 @@ extension AppStore {
             status: session.status, revision: revision, updatedAt: session.logs.last?.timestamp ?? session.createdAt,
             preview: last.map { MobilePreview(kind: $0.kind, text: String($0.text.prefix(200))) },
             pendingPermissions: pending.filter { !$0.canAnswerQuestions }.count, pendingQuestions: pending.filter(\.canAnswerQuestions).count,
-            queued: (queued ?? queuedInputs)[session.id]?.count ?? 0, resumeId: session.resumeId, terminal: usesLocalTerminal(session) || session.kind == AgentIOPaneKind.terminal,
+            queued: (queued ?? queuedInputs)[session.id]?.count ?? 0, resumeId: session.resumeId, terminal: usesLocalTerminal(session) || AgentIOPaneKind.isAgentIOPane(session.kind),
             // A command pane has no agent view and no style; sending "plain"
             // and "cli" would invite the phone to offer pickers it cannot use.
             agentViewMode: session.kind == "shell" ? nil : mobileViewMode(session),

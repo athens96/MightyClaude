@@ -54,6 +54,13 @@ final class CefBrowserEngine: NSObject, BrowserEngine, ObservableObject, @unchec
     /// Read once at launch: CEF can only initialize before the run loop starts.
     private(set) static var enabledAtLaunch = false
 
+    /// Whether a new pane would show pages: the engine was turned on at
+    /// launch, is part of this build, and started.
+    static var canShowPages: Bool {
+        guard enabledAtLaunch, case .available = BrowserEngineLocator.locate() else { return false }
+        return CefBrowserRuntime.shared.isAvailable && CefBrowserRuntime.shared.isInitializedNow
+    }
+
     /// Must run before App.main(), never on first browser pane creation.
     static func bootstrapRuntime() {
         enabledAtLaunch = isEnabledInSettings || ProcessInfo.processInfo.arguments.contains("--browser-smoke-test")

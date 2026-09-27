@@ -170,6 +170,7 @@ struct WorkspaceView: View {
                             else { StatusDot(status: session.status).frame(width: 12) }
                             Group {
                                 if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
+                                else if session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
                                 else { ProviderIcon(provider: session.provider, size: 10) }
                             }.foregroundStyle(.secondary).frame(width: 12)
                             Text(session.title).font(.system(size: 11)).lineLimit(1)

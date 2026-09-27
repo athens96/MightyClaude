@@ -8,7 +8,9 @@ public struct TerminalRunResult: Sendable, Equatable {
     }
     public let handle: String
     public let status: Status
-    /// Combined output and user-typed text since the previous read, up to readChunkBytes.
+    /// Combined output and user-typed text since the previous read, cleaned
+    /// for the agent (see ``AgentTerminalOutputCleaner``). The read limit of
+    /// readChunkBytes counts the raw terminal bytes before cleaning.
     public let output: String
     /// Set iff status == .done.
     public let exitCode: Int32?
@@ -105,6 +107,9 @@ public actor AgentTerminalRunner {
     private var knownHandles: Set<String> = []
     /// Per-handle read cursors: byte offset of the next unread byte.
     private var readOffsets: [String: Int] = [:]
+    /// Per-handle cleaners, so escape sequences and CR LF pairs split across
+    /// reads are still removed whole.
+    private var cleaners: [String: AgentTerminalOutputCleaner] = [:]
 
     public init(pane: AgentTerminalPane, clock: AgentTerminalClock = SystemAgentTerminalClock()) {
         self.pane = pane
@@ -165,12 +170,19 @@ public actor AgentTerminalRunner {
         return true
     }
 
-    /// Read from the current cursor position, advance the cursor, and return a result.
+    /// Read from the current cursor position, advance the cursor, and return a
+    /// result whose output is cleaned for the agent. The pane's buffer and the
+    /// cursor stay in raw bytes.
     private func readAndAdvance(handle: String) -> TerminalRunResult {
         let running = pane.isRunning(handle: handle)
         let offset = readOffsets[handle] ?? 0
-        let (output, dropped, more, next) = pane.readOutput(handle: handle, fromOffset: offset, maxBytes: Self.readChunkBytes)
+        let (raw, dropped, more, next) = pane.readOutput(handle: handle, fromOffset: offset, maxBytes: Self.readChunkBytes)
         readOffsets[handle] = next
+        // Bytes between the cursor and this chunk were evicted: a sequence cut
+        // there cannot be finished, so start clean after the gap.
+        var cleaner = next - offset > raw.utf8.count ? AgentTerminalOutputCleaner() : cleaners[handle] ?? AgentTerminalOutputCleaner()
+        let output = cleaner.clean(raw, final: !running && !more)
+        cleaners[handle] = cleaner
         return TerminalRunResult(
             handle: handle,
             status: running ? .running : .done,

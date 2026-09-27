@@ -194,14 +194,14 @@ struct AgentPaneListPayloadTests {
     // MARK: - An in-app open registers the pane it opened into
 
     private final class NoopOpener: WebOpener, @unchecked Sendable {
-        func openInApp(_ url: URL) async {}
-        func openExternally(_ url: URL) async {}
+        func openInApp(_ url: URL, agentPaneId: String?, workspaceId: String) async -> Bool { true }
+        func openExternally(_ url: URL) async -> Bool { true }
     }
 
     private final class NeverAsked: WebOpenPromptPresenter, @unchecked Sendable {
-        func present(url: URL, workspaceId: String) {}
-        func pendingChoice() -> (destination: WebOpenDestination, remember: Bool)? { nil }
-        func dismiss() {}
+        func present(_ request: WebOpenPromptRequest) {}
+        func answer(for id: String) -> WebOpenPromptAnswer? { nil }
+        func dismiss(_ id: String) {}
     }
 
     @Test func inAppOpenRegistersTheBrowserPane() async {
@@ -221,6 +221,79 @@ struct AgentPaneListPayloadTests {
         store.setChoice(.external, forWorkspace: "ws-1")
         let service = WebOpenService(store: store, presenter: NeverAsked(), opener: NoopOpener(), paneRegistry: registry)
         _ = await service.open("https://example.com", workspaceId: "ws-1", agentPaneId: "agent-1", provider: "claude")
+        #expect(!registry.hasBrowserPane(agentPaneId: "agent-1"))
+    }
+
+    // MARK: - The agent-browser pane the Mac holds as its own pane
+
+    /// Both agent IO kinds are view-only on the phone, so the Mac marks its own
+    /// agent-terminal and agent-browser panes `terminal: true`, like the extras.
+    @Test func agentIOKindsAreRecognised() {
+        #expect(AgentIOPaneKind.isAgentIOPane(AgentIOPaneKind.terminal))
+        #expect(AgentIOPaneKind.isAgentIOPane(AgentIOPaneKind.browser))
+        for kind in ["claude", "shell", "browser", ""] { #expect(!AgentIOPaneKind.isAgentIOPane(kind)) }
+    }
+
+    /// Once the Mac shows the agent-browser pane as a `RunSession`, the payload
+    /// lists it once, as that session, and not again as an extra.
+    @Test func agentBrowserPaneHeldAsRunSessionIsListedOnce() {
+        let registry = AgentIOPaneRegistry()
+        registry.registerTerminalPane(agentPaneId: "agent-1", workspaceId: "ws-1", provider: "claude")
+        registry.registerBrowserPane(agentPaneId: "agent-1", workspaceId: "ws-1", provider: "claude")
+        var browserPane = RunSession(id: registry.browserPaneId(for: "agent-1"), workspaceId: "ws-1", title: "My Agent \u{2014} Browser", kind: AgentIOPaneKind.browser, provider: "claude")
+        browserPane.ownerSessionId = "agent-1"
+        let sessions = [makeSession(id: "agent-1"), browserPane]
+        let extras = registry.extraPaneSummaries(agentSessions: sessions, revision: 1, updatedAt: "2026-09-27T00:00:00Z")
+        #expect(extras.map(\.id) == ["agent-terminal:agent-1"])
+        #expect(registry.extraPaneIds(agentSessions: sessions) == ["agent-terminal:agent-1"])
+        // The user closes the browser pane: the phone still lists it beside its
+        // agent pane, as it does a closed terminal pane, until the agent pane goes.
+        let closed = registry.extraPaneSummaries(agentSessions: [makeSession(id: "agent-1")], revision: 2, updatedAt: "2026-09-27T00:00:00Z")
+        #expect(closed.map(\.id) == ["agent-terminal:agent-1", "agent-browser:agent-1"])
+        #expect(closed.filter(\.terminal).count == 2)
+    }
+
+    @Test func browserPaneExtraCarriesTheBrowserPaneTitle() {
+        let registry = AgentIOPaneRegistry()
+        registry.registerBrowserPane(agentPaneId: "agent-1", workspaceId: "ws-1", provider: "claude")
+        let summary = registry.extraPaneSummaries(agentSessions: [makeSession(id: "agent-1", title: "Fixer")], revision: 1, updatedAt: "2026-09-27T00:00:00Z").first
+        #expect(summary?.title == "Fixer \u{2014} " + L("agentTerminal.browserPane.title"))
+    }
+
+    // MARK: - Registration through the production opener
+
+    private final class ShownPane: AgentBrowserPane, @unchecked Sendable {
+        func show(_ url: URL) async -> Bool { true }
+    }
+
+    private struct AcceptingSystemBrowser: ExternalURLOpener {
+        func open(_ url: URL) async -> Bool { true }
+    }
+
+    @Test func inAppOpenIntoTheAgentBrowserPaneRegistersItOnce() async {
+        let registry = AgentIOPaneRegistry()
+        let store = WebOpenChoiceStore()
+        store.setChoice(.inApp, forWorkspace: "ws-1")
+        let opener = AgentWebOpener(external: AcceptingSystemBrowser()) { _, _ in ShownPane() }
+        let service = WebOpenService(store: store, presenter: NeverAsked(), opener: opener, paneRegistry: registry)
+        _ = await service.open("https://example.com", workspaceId: "ws-1", agentPaneId: "agent-1", provider: "codex")
+        _ = await service.open("https://example.com/2", workspaceId: "ws-1", agentPaneId: "agent-1", provider: "codex")
+        let summaries = registry.extraPaneSummaries(agentSessions: [makeSession(id: "agent-1", provider: "codex")], revision: 1, updatedAt: "2026-09-27T00:00:00Z")
+        #expect(summaries.map(\.id) == ["agent-browser:agent-1"])
+        #expect(summaries.first?.kind == AgentIOPaneKind.browser)
+        #expect(summaries.first?.provider == "codex")
+    }
+
+    /// With the in-app browser off the page opens in the system browser, so no
+    /// browser pane exists to list.
+    @Test func inAppOpenWithoutTheBrowserEngineRegistersNoPane() async {
+        let registry = AgentIOPaneRegistry()
+        let store = WebOpenChoiceStore()
+        store.setChoice(.inApp, forWorkspace: "ws-1")
+        let opener = AgentWebOpener(external: AcceptingSystemBrowser()) { _, _ in nil }
+        let service = WebOpenService(store: store, presenter: NeverAsked(), opener: opener, paneRegistry: registry)
+        let result = await service.open("https://example.com", workspaceId: "ws-1", agentPaneId: "agent-1", provider: "claude")
+        #expect(result == .openedExternallyInstead(url: URL(string: "https://example.com")!))
         #expect(!registry.hasBrowserPane(agentPaneId: "agent-1"))
     }
 }

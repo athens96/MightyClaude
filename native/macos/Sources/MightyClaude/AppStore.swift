@@ -128,6 +128,21 @@ final class AppStore: ObservableObject {
     /// Each agent pane's terminal view, by agent pane id. Kept until quit, like
     /// the processes it shows, so a closed terminal pane reopens with its output.
     @Published var agentTerminals: [String: AgentTerminalHost] = [:]
+    /// Each agent pane's browser engine, by agent pane id. The page the agent
+    /// opened stays loaded while its pane is hidden behind a tab or closed, and
+    /// the agent's next in-app open navigates this same engine.
+    @Published var agentBrowsers: [String: CefBrowserEngine] = [:]
+    /// URL choice dialogs waiting for an answer, each shown in the agent pane that asked.
+    @Published var webOpenRequests: [WebOpenPromptRequest] = []
+    /// The dialog's model: the open_url service presents to it and polls it.
+    lazy var webOpenPrompts: WebOpenChoicePrompts = WebOpenChoicePrompts { [weak self] in
+        Task { @MainActor in
+            guard let self else { return }
+            self.webOpenRequests = self.webOpenPrompts.pending
+        }
+    }
+    /// Routes the agents' in-app and external opens; nil until the agent IO socket listens.
+    var agentWebOpener: AgentWebOpener?
     @Published var terminalErrors: [String: String] = [:]
     @Published var terminalHistorySession: RunSession?
     @Published var draggedPane: PaneDragPayload?
@@ -464,7 +479,7 @@ final class AppStore: ObservableObject {
                 snapshot.activeSessionId = previousGroup?.sessionIds.first(where: { candidate in snapshot.sessions.contains { $0.id == candidate } }) ?? activeSessions.first?.id
             }
             if let workspaceId { reconcilePaneLayout(workspaceId) }
-            releaseUnreachableAgentTerminals()
+            releaseUnreachableAgentIOPanes()
             closingSessions.remove(id)
         }
     }
@@ -495,7 +510,7 @@ final class AppStore: ObservableObject {
                 else { snapshot.activeWorkspaceId = nil; snapshot.activeSessionId = nil }
             }
             if let activeWorkspaceId = snapshot.activeWorkspaceId { reconcilePaneLayout(activeWorkspaceId) }
-            releaseUnreachableAgentTerminals()
+            releaseUnreachableAgentIOPanes()
             closingSessions.subtract(ids)
         }
     }

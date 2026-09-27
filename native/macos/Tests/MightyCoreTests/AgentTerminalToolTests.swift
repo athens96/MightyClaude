@@ -36,8 +36,8 @@ struct AgentTerminalToolTests {
         let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let result = try await AgentTerminalRunner(pane: pane).runInTerminal(command: "echo hi; echo oops >&2; exit 3")
         #expect(result.status == .done)
-        // The tty turns each newline into CR LF, as any terminal shows it.
-        #expect(result.output == "hi\r\noops\r\n")
+        // The tty turns each newline into CR LF; the agent reads plain LF lines.
+        #expect(result.output == "hi\noops\n")
         #expect(result.exitCode == 3)
         #expect(result.signal == nil)
     }
@@ -173,8 +173,9 @@ func toolText(_ response: [String: Any]?) -> (text: String, isError: Bool)? {
         #expect(called["id"] as? Int == 3)
         let run = try #require(toolText(called))
         #expect(!run.isError)
-        // Raw PTY output: the tty ends each line with CR LF.
-        #expect(run.text.contains("\nhi\r\n"))
+        // The tty ends each line with CR LF; the agent reads plain LF lines.
+        #expect(run.text.contains("\nhi\n"))
+        #expect(!run.text.contains("\r"))
         #expect(run.text.contains("exit code: 0"))
         #expect(run.text.contains("status: done"))
         #expect(!run.text.contains(binding.token))
