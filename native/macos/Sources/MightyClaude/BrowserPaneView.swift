@@ -7,11 +7,23 @@ struct BrowserPaneView: View {
 
     @ViewState private var addressText = ""
     @StateObject private var engine: CefBrowserEngine
+    /// An agent's browser pane shows the address it navigated to.
+    private let followsNavigation: Bool
 
     init(session: RunSession) {
         self.session = session
         let profileKey = session.workspaceProfileKey ?? session.workspaceId
         self._engine = StateObject(wrappedValue: CefBrowserEngine(profileKey: profileKey))
+        followsNavigation = false
+    }
+
+    /// A pane drawn on an engine the store keeps, so the page survives the
+    /// view going away when the pane is hidden or closed.
+    init(session: RunSession, engine: CefBrowserEngine) {
+        self.session = session
+        self._engine = StateObject(wrappedValue: engine)
+        self._addressText = ViewState(initialValue: engine.navState.url?.absoluteString ?? "")
+        followsNavigation = true
     }
 
     var body: some View {
@@ -19,6 +31,9 @@ struct BrowserPaneView: View {
             navigationBar
             Divider()
             contentArea
+        }
+        .onChange(of: engine.navState.url) { _, url in
+            if followsNavigation, let url { addressText = url.absoluteString }
         }
     }
 
@@ -92,5 +107,18 @@ struct BrowserPaneView: View {
                 .accessibilityIdentifier("browser-engine-error")
             }
         }
+    }
+}
+
+/// An agent pane's browser pane: the browser view on the engine the store
+/// keeps for that agent pane, which the agent's opens navigate.
+struct AgentBrowserPaneView: View {
+    @EnvironmentObject private var store: AppStore
+    let session: RunSession
+
+    var body: some View {
+        if let owner = session.ownerSessionId, let engine = store.agentBrowsers[owner] {
+            BrowserPaneView(session: session, engine: engine).id(ObjectIdentifier(engine))
+        } else { Color.clear }
     }
 }

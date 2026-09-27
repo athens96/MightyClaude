@@ -107,7 +107,7 @@ struct TerminalPaneLifetimeTests {
         let result = try await AgentTerminalRunner(pane: pane).runInTerminal(command: "tty; test -t 0 && test -t 1 && test -t 2 && echo all-tty")
         #expect(result.status == .done && result.exitCode == 0)
         #expect(result.output.hasPrefix("/dev/ttys"))
-        #expect(result.output.contains("all-tty\r\n"))
+        #expect(result.output.contains("all-tty\n"))
     }
 
     @Test func realPaneDeliversTypedTextToAReadingCommandAndTheAgentReadsIt() async throws {
@@ -124,7 +124,7 @@ struct TerminalPaneLifetimeTests {
         let read = await io.handle(AgentIORequest(tool: "read_latest_output", handle: handle), binding: testPaneBinding(pane: "a", workspacePath: folder.path))
         #expect(read.status == "done" && read.exitCode == 0)
         // The typed line comes back once, through the tty's echo, then the command's answer.
-        #expect(read.output == "hello\r\ngot:hello\r\n")
+        #expect(read.output == "hello\ngot:hello\n")
         #expect(pane.inputHandle == nil)
     }
 
@@ -145,7 +145,7 @@ struct TerminalPaneLifetimeTests {
         let io = ptyHandler(folder, processes: processes, made: made, clock: SystemAgentTerminalClock())
         let first = await io.handle(AgentIORequest(tool: "run_in_terminal", command: "echo one"), binding: testPaneBinding(pane: "a", workspacePath: folder.path))
         let second = await io.handle(AgentIORequest(tool: "run_in_terminal", command: "echo two"), binding: testPaneBinding(pane: "a", workspacePath: folder.path))
-        #expect(first.output == "one\r\n" && second.output == "two\r\n")
+        #expect(first.output == "one\n" && second.output == "two\n")
         #expect(made.panes.count == 1)
         let pane = try #require(made.panes.first)
         #expect((processes.terminalPane(forAgentPane: "a") as AnyObject?) === pane)
@@ -185,7 +185,7 @@ struct TerminalPaneLifetimeTests {
         let second = bindings.bind(agentPaneId: "a", server: location, workspaceId: "ws-1", workspacePath: folder.path, provider: "claude")
         let read = await io.handle(AgentIORequest(tool: "read_latest_output", handle: handle), binding: second)
         #expect(read.status == "running")
-        #expect((started.output ?? "") + (read.output ?? "") == "started\r\nwhile closed\r\nwhile closed\r\n")
+        #expect((started.output ?? "") + (read.output ?? "") == "started\nwhile closed\nwhile closed\n")
         let stopped = await io.handle(AgentIORequest(tool: "stop", handle: handle), binding: second)
         #expect(stopped.status == "done" && stopped.signal == SIGINT)
         #expect(made.panes.count == 1)

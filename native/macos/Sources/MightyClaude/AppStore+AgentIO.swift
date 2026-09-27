@@ -13,21 +13,27 @@ enum AgentIOMCPCommand {
     }
 }
 
-/// Stage-1 URL choice presenter: answers "inside the app" at once without
-/// remembering it. The workspace choice dialog replaces it in stage 3.
-struct ImmediateInAppWebOpenPresenter: WebOpenPromptPresenter {
-    func present(url: URL, workspaceId: String) {}
-    func pendingChoice() -> (destination: WebOpenDestination, remember: Bool)? { (.inApp, false) }
-    func dismiss() {}
+/// External opens: the system's default browser, through NSWorkspace.
+struct WorkspaceURLOpener: ExternalURLOpener {
+    func open(_ url: URL) async -> Bool {
+        await MainActor.run { NSWorkspace.shared.open(url) }
+    }
 }
 
-/// Stage-1 opener: hands pages to the system browser. The in-app path does the
-/// same until stage 3 routes it to the CEF browser pane, so no agent browser
-/// pane is registered for the phone's pane list yet.
-struct SystemWebOpener: WebOpener {
-    func openInApp(_ url: URL) async { await open(url) }
-    func openExternally(_ url: URL) async { await open(url) }
-    @MainActor private func open(_ url: URL) { NSWorkspace.shared.open(url) }
+/// An agent pane's browser pane as ``AgentWebOpener`` sees it. The engine and
+/// the pane itself live in the store; this handle asks the store to show a page.
+final class AgentBrowserHandle: AgentBrowserPane, @unchecked Sendable {
+    private let agentPaneId: String
+    private weak var store: AppStore?
+
+    init(agentPaneId: String, store: AppStore) {
+        self.agentPaneId = agentPaneId
+        self.store = store
+    }
+
+    func show(_ url: URL) async -> Bool {
+        await MainActor.run { store?.showAgentBrowser(url, agentPaneId: agentPaneId) ?? false }
+    }
 }
 
 extension AppStore {
@@ -36,7 +42,15 @@ extension AppStore {
     func startAgentIO() {
         guard agentIOServer == nil, let executable = Bundle.main.executableURL else { return }
         let socketPath = AgentIOWire.socketPath(dataDirectory: dataDirectory)
-        let webOpen = WebOpenService(store: .shared, presenter: ImmediateInAppWebOpenPresenter(), opener: SystemWebOpener())
+        // In-app opens go to the asking agent pane's own browser pane; with the
+        // browser engine off or missing, no pane is made and the page opens in
+        // the system browser instead. The choice is read per call from the
+        // persisted store Settings writes to.
+        let opener = AgentWebOpener(external: WorkspaceURLOpener()) { agentPaneId, _ in
+            await MainActor.run { self.canShowAgentBrowser(agentPaneId) ? AgentBrowserHandle(agentPaneId: agentPaneId, store: self) : nil }
+        }
+        agentWebOpener = opener
+        let webOpen = WebOpenService(store: .shared, presenter: webOpenPrompts, opener: opener, paneRegistry: .shared)
         // Each agent pane's terminal pane runs its commands under PTYs and shows
         // itself next to the agent pane whenever a command starts. The store
         // lives as long as the app, so the factory holds it strongly.
@@ -79,14 +93,43 @@ extension AppStore {
     }
 
     /// Open the agent pane's terminal pane to the right of the agent pane, or
-    /// as a tab beside it when the layout has no room for a split. An open
-    /// pane stays where the user put it. The pane is never saved: its
-    /// processes end with the app.
+    /// as a tab beside it when the layout has no room for a split.
     func openAgentTerminalPane(_ agentPaneId: String, select: Bool) {
-        guard agentTerminals[agentPaneId] != nil, let agent = snapshot.sessions.first(where: { $0.id == agentPaneId }) else { return }
-        let id = AgentIOPaneRegistry.shared.terminalPaneId(for: agentPaneId)
+        guard agentTerminals[agentPaneId] != nil else { return }
+        openAgentIOPane(AgentIOPaneRegistry.shared.terminalPaneId(for: agentPaneId), kind: AgentIOPaneKind.terminal,
+                        title: L("agentTerminal.terminalPane.title"), agentPaneId: agentPaneId, select: select)
+    }
+
+    /// Whether an in-app open from this agent pane can show a page: the pane
+    /// is open and the browser engine was turned on at launch and started.
+    func canShowAgentBrowser(_ agentPaneId: String) -> Bool {
+        !ending && snapshot.sessions.contains(where: { $0.id == agentPaneId }) && CefBrowserEngine.canShowPages
+    }
+
+    /// An agent opened `url` in the app: show it in the agent pane's one
+    /// browser pane, made on first use and navigated on every later open, and
+    /// put the pane back on screen if the user closed it. False when the page
+    /// cannot be shown, so the caller opens it in the system browser instead.
+    func showAgentBrowser(_ url: URL, agentPaneId: String) -> Bool {
+        guard canShowAgentBrowser(agentPaneId), let agent = snapshot.sessions.first(where: { $0.id == agentPaneId }) else { return false }
+        let engine = agentBrowsers[agentPaneId] ?? CefBrowserEngine(profileKey: agent.workspaceId)
+        guard engine.isAvailable, openAgentIOPane(AgentIOPaneRegistry.shared.browserPaneId(for: agentPaneId), kind: AgentIOPaneKind.browser,
+                                                  title: L("agentTerminal.browserPane.title"), agentPaneId: agentPaneId, select: false) else { return false }
+        agentBrowsers[agentPaneId] = engine
+        engine.loadURL(url)
+        return true
+    }
+
+    /// Open an agent pane's terminal or browser pane to the right of the agent
+    /// pane, or as a tab beside it when the layout has no room for a split. An
+    /// open pane stays where the user put it. The pane is never saved: its
+    /// processes and pages end with the app. False when the layout has no
+    /// place for it.
+    @discardableResult
+    private func openAgentIOPane(_ id: String, kind: String, title: String, agentPaneId: String, select: Bool) -> Bool {
+        guard let agent = snapshot.sessions.first(where: { $0.id == agentPaneId }) else { return false }
         if !snapshot.sessions.contains(where: { $0.id == id }), snapshot.sessions.count < 128 {
-            var session = RunSession(id: id, workspaceId: agent.workspaceId, title: agent.title + " \u{2014} " + L("agentTerminal.terminalPane.title"), kind: AgentIOPaneKind.terminal, provider: agent.provider)
+            var session = RunSession(id: id, workspaceId: agent.workspaceId, title: agent.title + " \u{2014} " + title, kind: kind, provider: agent.provider)
             session.ownerSessionId = agentPaneId
             reconcilePaneLayout(agent.workspaceId)
             let root = layoutForWorkspace(agent.workspaceId)
@@ -96,22 +139,29 @@ extension AppStore {
                 // A new tab is selected on insert; keep showing what the group showed.
                 next = PaneLayouts.selecting(root: PaneLayouts.inserting(root: root, sessionId: id, targetGroupId: group?.id, placement: "tab"), id: group?.selectedSessionId ?? agentPaneId)
             }
-            guard let next, next.group(containing: id) != nil else { return }
+            guard let next, next.group(containing: id) != nil else { return false }
             let mode = paneLayoutMode(agent.workspaceId)
             snapshot.sessions.append(session)
             savePaneLayout(next, workspaceId: agent.workspaceId)
             if mode != "focus" { setPaneLayoutMode(next.kind == "split" ? "custom" : "tabs", workspaceId: agent.workspaceId) }
         }
+        guard snapshot.sessions.contains(where: { $0.id == id }) else { return false }
         if select { selectSession(id) }
+        return true
     }
 
-    /// Let go of terminal views nothing can show again: both the agent pane
-    /// and its terminal pane are closed. The processes keep running until quit.
-    func releaseUnreachableAgentTerminals() {
+    /// Let go of terminal views and browser engines nothing can show again:
+    /// both the agent pane and its IO pane are closed. Processes keep running
+    /// until quit; a later in-app open makes a new browser pane.
+    func releaseUnreachableAgentIOPanes() {
         let ids = Set(snapshot.sessions.map(\.id))
         for (agentPaneId, host) in agentTerminals where !ids.contains(agentPaneId) && !ids.contains(AgentIOPaneRegistry.shared.terminalPaneId(for: agentPaneId)) {
             host.dispose()
             agentTerminals.removeValue(forKey: agentPaneId)
+        }
+        for agentPaneId in agentBrowsers.keys where !ids.contains(agentPaneId) && !ids.contains(AgentIOPaneRegistry.shared.browserPaneId(for: agentPaneId)) {
+            agentBrowsers.removeValue(forKey: agentPaneId)
+            if let opener = agentWebOpener { Task { await opener.forgetPane(agentPaneId: agentPaneId) } }
         }
     }
 }

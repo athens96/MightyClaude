@@ -31,10 +31,14 @@ public struct AgentIOResponse: Codable, Sendable, Equatable {
     public var moreRemains: Bool?
     public var destination: String?
     public var url: String?
+    /// In-app was chosen but the in-app browser could not show the page, so
+    /// `destination` is the system browser instead.
+    public var inAppUnavailable: Bool?
 
-    public init(error: String? = nil, handle: String? = nil, status: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil, output: String? = nil, outputDropped: Bool? = nil, moreRemains: Bool? = nil, destination: String? = nil, url: String? = nil) {
+    public init(error: String? = nil, handle: String? = nil, status: String? = nil, exitCode: Int32? = nil, signal: Int32? = nil, output: String? = nil, outputDropped: Bool? = nil, moreRemains: Bool? = nil, destination: String? = nil, url: String? = nil, inAppUnavailable: Bool? = nil) {
         self.error = error; self.handle = handle; self.status = status; self.exitCode = exitCode; self.signal = signal
         self.output = output; self.outputDropped = outputDropped; self.moreRemains = moreRemains; self.destination = destination; self.url = url
+        self.inAppUnavailable = inAppUnavailable
     }
 
     public static func failure(_ message: String) -> AgentIOResponse { AgentIOResponse(error: message) }

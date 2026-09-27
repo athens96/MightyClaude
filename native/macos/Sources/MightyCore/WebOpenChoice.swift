@@ -72,9 +72,11 @@ public enum WebOpenURLValidator {
 /// single source (checked by scripts/check-locales.js).
 public enum WebOpenChoiceCopy {
     public static var dialogTitle: String { L("agentTerminal.urlOpen.dialogTitle") }
+    public static var dialogMessage: String { L("agentTerminal.urlOpen.dialogMessage") }
     public static var inAppButton: String { L("agentTerminal.urlOpen.inAppButton") }
     public static var externalButton: String { L("agentTerminal.urlOpen.externalButton") }
     public static var rememberToggle: String { L("agentTerminal.urlOpen.rememberToggle") }
+    public static func fallbackHint(seconds: TimeInterval) -> String { L("agentTerminal.urlOpen.fallbackHint", ["seconds": String(Int(seconds))]) }
     public static var errorEmpty: String { L("agentTerminal.urlOpen.errorEmpty") }
     public static var errorTooLong: String { L("agentTerminal.urlOpen.errorTooLong") }
     public static var errorScheme: String { L("agentTerminal.urlOpen.errorScheme") }
@@ -97,14 +99,27 @@ public enum WebOpenChoiceCopy {
 /// One instance is shared by Settings and by every open agent pane, so a change
 /// made in Settings is visible to the panes that are already open on their very
 /// next open_url call — there is no per-pane copy to go stale.
+///
+/// With `defaults` the choices live in the app's settings (UserDefaults, one
+/// dictionary keyed by workspace id) and survive a restart; without it they
+/// live in memory only, which is what tests use.
 public final class WebOpenChoiceStore: @unchecked Sendable {
+    /// The UserDefaults key holding `[workspaceId: destination]`.
+    public static let defaultsKey = "agentTerminal.webOpenChoices"
     /// The app-wide store. Settings writes here; every agent pane reads here.
-    public static let shared = WebOpenChoiceStore()
+    public static let shared = WebOpenChoiceStore(defaults: .standard)
 
     private let lock = NSLock()
+    private let defaults: UserDefaults?
+    private let key: String
     private var remembered: [String: WebOpenDestination] = [:]
 
-    public init() {}
+    public init(defaults: UserDefaults? = nil, key: String = WebOpenChoiceStore.defaultsKey) {
+        self.defaults = defaults
+        self.key = key
+        let saved = defaults?.dictionary(forKey: key) as? [String: String] ?? [:]
+        remembered = saved.compactMapValues(WebOpenDestination.init(rawValue:))
+    }
 
     /// The remembered destination for `workspaceId`, or nil if not yet set.
     public func choice(forWorkspace workspaceId: String) -> WebOpenDestination? {
@@ -117,6 +132,7 @@ public final class WebOpenChoiceStore: @unchecked Sendable {
     public func setChoice(_ destination: WebOpenDestination, forWorkspace workspaceId: String) {
         lock.lock()
         remembered[workspaceId] = destination
+        persist()
         lock.unlock()
     }
 
@@ -124,7 +140,13 @@ public final class WebOpenChoiceStore: @unchecked Sendable {
     public func clearChoice(forWorkspace workspaceId: String) {
         lock.lock()
         remembered.removeValue(forKey: workspaceId)
+        persist()
         lock.unlock()
+    }
+
+    /// Write the whole map back. Called with `lock` held.
+    private func persist() {
+        defaults?.set(remembered.mapValues(\.rawValue), forKey: key)
     }
 
     // MARK: - Settings entry
@@ -162,33 +184,67 @@ public struct RealWebOpenClock: WebOpenChoiceClock {
     }
 }
 
+/// One open_url call waiting for the user's answer.
+public struct WebOpenPromptRequest: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let url: URL
+    public let workspaceId: String
+    /// The agent pane that asked; the dialog shows in that pane.
+    public let agentPaneId: String?
+    /// How long the dialog waits before the page opens in the app.
+    public let timeoutSeconds: TimeInterval
+
+    public init(id: String = UUID().uuidString, url: URL, workspaceId: String, agentPaneId: String?, timeoutSeconds: TimeInterval) {
+        self.id = id; self.url = url; self.workspaceId = workspaceId; self.agentPaneId = agentPaneId; self.timeoutSeconds = timeoutSeconds
+    }
+}
+
+/// What the user picked in the dialog.
+public struct WebOpenPromptAnswer: Sendable, Equatable {
+    public let destination: WebOpenDestination
+    /// "Remember for this workspace" was ticked.
+    public let remember: Bool
+
+    public init(destination: WebOpenDestination, remember: Bool) {
+        self.destination = destination; self.remember = remember
+    }
+}
+
 /// Presents the URL-open choice dialog to the user.
 ///
-/// Deliberately poll-shaped rather than a suspending call: ``present(url:workspaceId:)``
-/// only puts the dialog on screen, and the service asks ``pendingChoice()`` until
+/// Deliberately poll-shaped rather than a suspending call: ``present(_:)``
+/// only puts the dialog on screen, and the service asks ``answer(for:)`` until
 /// the answer arrives or the fallback deadline passes. Nothing the service does can
 /// outlive its own deadline, so the agent is never left waiting on the dialog.
+/// Every call has its own request id, so two panes can ask at the same time.
 public protocol WebOpenPromptPresenter: Sendable {
-    /// Put the dialog on screen. Called at most once per open_url call.
-    func present(url: URL, workspaceId: String)
-    /// The user's answer, or nil while the dialog is still waiting for one.
-    func pendingChoice() -> (destination: WebOpenDestination, remember: Bool)?
-    /// Take the dialog down — the answer arrived, or the fallback fired.
-    func dismiss()
+    /// Put the dialog for `request` on screen. Called at most once per open_url call.
+    func present(_ request: WebOpenPromptRequest)
+    /// The user's answer to request `id`, or nil while the dialog is still waiting.
+    func answer(for id: String) -> WebOpenPromptAnswer?
+    /// Take the dialog for request `id` down — the answer arrived, or the fallback fired.
+    func dismiss(_ id: String)
 }
 
 /// Performs the actual open once a destination is resolved.
 public protocol WebOpener: Sendable {
-    /// Show `url` in the app's CEF browser pane.
-    func openInApp(_ url: URL) async
-    /// Hand `url` to the system's default browser.
-    func openExternally(_ url: URL) async
+    /// Show `url` in the asking agent pane's browser pane. Returns false when
+    /// the in-app browser cannot show it (engine off or missing, or the agent
+    /// pane is gone); nothing was opened then.
+    func openInApp(_ url: URL, agentPaneId: String?, workspaceId: String) async -> Bool
+    /// Hand `url` to the system's default browser. Returns false when it refused.
+    func openExternally(_ url: URL) async -> Bool
 }
 
-/// Result of a ``WebOpenService/open(_:workspaceId:)`` call.
+/// Result of a ``WebOpenService/open(_:workspaceId:agentPaneId:provider:)`` call.
 public enum WebOpenOpenResult: Sendable, Equatable {
     /// The URL passed validation and was opened at `destination`.
     case opened(destination: WebOpenDestination, url: URL)
+    /// In-app was chosen but the in-app browser could not show the page, so
+    /// it opened in the system browser instead.
+    case openedExternallyInstead(url: URL)
+    /// The URL passed validation but nothing accepted it.
+    case failed(url: URL)
     /// The URL was rejected and nothing was opened.
     case rejected(reason: WebOpenURLValidator.Failure)
 }
@@ -205,7 +261,7 @@ public final class WebOpenService: @unchecked Sendable {
 
     private let store: WebOpenChoiceStore
     private let presenter: any WebOpenPromptPresenter
-    private let opener: (any WebOpener)?
+    private let opener: any WebOpener
     private let clock: any WebOpenChoiceClock
     /// Where an in-app open records the browser pane it opened into, so the
     /// relay pane list carries that pane beside the agent pane that owns it.
@@ -215,7 +271,7 @@ public final class WebOpenService: @unchecked Sendable {
     public init(
         store: WebOpenChoiceStore,
         presenter: any WebOpenPromptPresenter,
-        opener: (any WebOpener)? = nil,
+        opener: any WebOpener,
         clock: any WebOpenChoiceClock = RealWebOpenClock.shared,
         promptTimeoutSeconds: TimeInterval = WebOpenService.defaultPromptTimeoutSeconds,
         paneRegistry: AgentIOPaneRegistry? = nil
@@ -232,37 +288,42 @@ public final class WebOpenService: @unchecked Sendable {
     ///
     /// A rejected URL opens nothing: no dialog is shown and the opener is never
     /// called. Never waits longer than `promptTimeoutSeconds` on the injected clock.
-    /// `agentPaneId` names the agent pane asking; an in-app open registers the
-    /// browser pane it opened into under that pane, which is how the pane shows
-    /// up in the relay pane list. An external open opens no pane of ours and so
-    /// registers nothing.
+    /// `agentPaneId` names the agent pane asking: its dialog shows in that pane,
+    /// and an in-app open shows the page in that pane's browser pane and
+    /// registers it, which is how the pane shows up in the relay pane list. An
+    /// external open opens no pane of ours and so registers nothing. When the
+    /// in-app browser cannot show the page, it opens in the system browser and
+    /// the result says so.
     public func open(_ rawURL: String, workspaceId: String, agentPaneId: String? = nil, provider: String = "claude") async -> WebOpenOpenResult {
         switch WebOpenURLValidator.validate(rawURL) {
         case .failure(let reason):
             return .rejected(reason: reason)
         case .success(let url):
-            let destination = await resolveDestination(url: url, workspaceId: workspaceId)
-            switch destination {
+            switch await resolveDestination(url: url, workspaceId: workspaceId, agentPaneId: agentPaneId) {
             case .inApp:
-                await opener?.openInApp(url)
-                if let agentPaneId {
-                    paneRegistry?.registerBrowserPane(agentPaneId: agentPaneId, workspaceId: workspaceId, provider: provider)
+                if await opener.openInApp(url, agentPaneId: agentPaneId, workspaceId: workspaceId) {
+                    if let agentPaneId {
+                        paneRegistry?.registerBrowserPane(agentPaneId: agentPaneId, workspaceId: workspaceId, provider: provider)
+                    }
+                    return .opened(destination: .inApp, url: url)
                 }
-            case .external: await opener?.openExternally(url)
+                return await opener.openExternally(url) ? .openedExternallyInstead(url: url) : .failed(url: url)
+            case .external:
+                return await opener.openExternally(url) ? .opened(destination: .external, url: url) : .failed(url: url)
             }
-            return .opened(destination: destination, url: url)
         }
     }
 
-    private func resolveDestination(url: URL, workspaceId: String) async -> WebOpenDestination {
+    private func resolveDestination(url: URL, workspaceId: String, agentPaneId: String?) async -> WebOpenDestination {
         // A remembered choice is honoured without asking.
         if let remembered = store.choice(forWorkspace: workspaceId) { return remembered }
 
         let deadline = clock.now.addingTimeInterval(promptTimeoutSeconds)
-        presenter.present(url: url, workspaceId: workspaceId)
+        let request = WebOpenPromptRequest(url: url, workspaceId: workspaceId, agentPaneId: agentPaneId, timeoutSeconds: promptTimeoutSeconds)
+        presenter.present(request)
         while true {
-            if let answer = presenter.pendingChoice() {
-                presenter.dismiss()
+            if let answer = presenter.answer(for: request.id) {
+                presenter.dismiss(request.id)
                 if answer.remember { store.setChoice(answer.destination, forWorkspace: workspaceId) }
                 return answer.destination
             }
@@ -271,7 +332,7 @@ public final class WebOpenService: @unchecked Sendable {
         }
         // No answer within promptTimeoutSeconds: open inside the app and do not
         // remember anything — the question is still unanswered for this workspace.
-        presenter.dismiss()
+        presenter.dismiss(request.id)
         return .inApp
     }
 }

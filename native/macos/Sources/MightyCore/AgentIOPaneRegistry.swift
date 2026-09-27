@@ -4,6 +4,14 @@ import Foundation
 public enum AgentIOPaneKind {
     public static let terminal = "agent-terminal"
     public static let browser = "agent-browser"
+
+    /// Whether `kind` is one of the agent-owned IO panes. The phone lists these
+    /// panes but may not send them commands, so their summaries carry
+    /// `terminal: true`, whether they come from `extraPaneSummaries` or from a
+    /// pane the Mac holds as a `RunSession` of its own.
+    public static func isAgentIOPane(_ kind: String) -> Bool {
+        kind == terminal || kind == browser
+    }
 }
 
 /// Tracks the IO panes an agent pane owns — its one dedicated terminal pane and
@@ -141,7 +149,7 @@ public final class AgentIOPaneRegistry: @unchecked Sendable {
         }
 
         append(terminals, kind: AgentIOPaneKind.terminal, paneId: terminalPaneId(for:), suffix: L("agentTerminal.terminalPane.title"))
-        append(browsers, kind: AgentIOPaneKind.browser, paneId: browserPaneId(for:), suffix: L("browser.tab.title"))
+        append(browsers, kind: AgentIOPaneKind.browser, paneId: browserPaneId(for:), suffix: L("agentTerminal.browserPane.title"))
 
         return result
     }

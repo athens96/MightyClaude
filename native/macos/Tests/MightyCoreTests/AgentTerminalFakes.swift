@@ -133,11 +133,15 @@ func testPaneBinding(pane: String = "pane-a", token: String = "testtoken1234", w
 /// A web-open service that opens nothing and answers "in app" without asking.
 func silentWebOpenService(paneRegistry: AgentIOPaneRegistry? = nil) -> WebOpenService {
     final class Presenter: WebOpenPromptPresenter, @unchecked Sendable {
-        func present(url: URL, workspaceId: String) {}
-        func pendingChoice() -> (destination: WebOpenDestination, remember: Bool)? { (.inApp, false) }
-        func dismiss() {}
+        func present(_ request: WebOpenPromptRequest) {}
+        func answer(for id: String) -> WebOpenPromptAnswer? { WebOpenPromptAnswer(destination: .inApp, remember: false) }
+        func dismiss(_ id: String) {}
     }
-    return WebOpenService(store: WebOpenChoiceStore(), presenter: Presenter(), opener: nil, paneRegistry: paneRegistry)
+    final class Opener: WebOpener, @unchecked Sendable {
+        func openInApp(_ url: URL, agentPaneId: String?, workspaceId: String) async -> Bool { true }
+        func openExternally(_ url: URL) async -> Bool { true }
+    }
+    return WebOpenService(store: WebOpenChoiceStore(), presenter: Presenter(), opener: Opener(), paneRegistry: paneRegistry)
 }
 
 /// A fresh short temporary folder (unix socket paths must stay under 104 bytes).

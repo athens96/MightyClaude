@@ -205,8 +205,9 @@ struct AppSettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 // Per-workspace destination for URLs the agent opens. Writes to the
-                // same shared store the open agent panes read, so a change here is
-                // in force on their very next open_url call.
+                // same persisted store the open agent panes read (and the dialog's
+                // "remember" writes), so a change here is in force on their very
+                // next open_url call and survives a restart.
                 Section(WebOpenChoiceCopy.settingTitle) {
                     Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
                         get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },

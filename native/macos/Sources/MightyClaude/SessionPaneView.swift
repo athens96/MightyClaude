@@ -155,6 +155,9 @@ struct SessionPaneView: View {
             else {
                 output
                 ToolPermissionBar(sessionId: session.id)
+                if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
+                    WebOpenChoicePanel(request: request).id(request.id)
+                }
                 Divider()
                 composer
             }

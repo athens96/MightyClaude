@@ -29,31 +29,33 @@ private final class FakeWebOpenClock: WebOpenChoiceClock, @unchecked Sendable {
 /// Dialog stand-in. `answer` is what the user taps; nil means they never answer.
 private final class FakeWebOpenPrompt: WebOpenPromptPresenter, @unchecked Sendable {
     private let lock = NSLock()
-    private var answer: (destination: WebOpenDestination, remember: Bool)?
+    private var reply: WebOpenPromptAnswer?
     private(set) var presentedURLs: [URL] = []
     private(set) var presentedWorkspaces: [String] = []
     private(set) var dismissCount = 0
 
-    init(answer: (destination: WebOpenDestination, remember: Bool)? = nil) { self.answer = answer }
+    init(answer: (destination: WebOpenDestination, remember: Bool)? = nil) {
+        reply = answer.map { WebOpenPromptAnswer(destination: $0.destination, remember: $0.remember) }
+    }
 
     var presentCount: Int {
         lock.lock(); defer { lock.unlock() }
         return presentedURLs.count
     }
 
-    func present(url: URL, workspaceId: String) {
+    func present(_ request: WebOpenPromptRequest) {
         lock.lock()
-        presentedURLs.append(url)
-        presentedWorkspaces.append(workspaceId)
+        presentedURLs.append(request.url)
+        presentedWorkspaces.append(request.workspaceId)
         lock.unlock()
     }
 
-    func pendingChoice() -> (destination: WebOpenDestination, remember: Bool)? {
+    func answer(for id: String) -> WebOpenPromptAnswer? {
         lock.lock(); defer { lock.unlock() }
-        return answer
+        return reply
     }
 
-    func dismiss() {
+    func dismiss(_ id: String) {
         lock.lock()
         dismissCount += 1
         lock.unlock()
@@ -71,12 +73,14 @@ private final class FakeWebOpener: WebOpener, @unchecked Sendable {
         return inApp.count + external.count
     }
 
-    func openInApp(_ url: URL) async {
-        lock.lock(); inApp.append(url); lock.unlock()
+    func openInApp(_ url: URL, agentPaneId: String?, workspaceId: String) async -> Bool {
+        lock.withLock { inApp.append(url) }
+        return true
     }
 
-    func openExternally(_ url: URL) async {
-        lock.lock(); external.append(url); lock.unlock()
+    func openExternally(_ url: URL) async -> Bool {
+        lock.withLock { external.append(url) }
+        return true
     }
 }
 
