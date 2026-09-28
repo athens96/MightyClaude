@@ -438,7 +438,7 @@ public sealed partial class MainWindow
                 title = (string)dialog.Title;
                 // The Opened handler's own action: the first read.
                 await surface.Load();
-                Require(surface.Browser.IsReady, "플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                Require(surface.Browser.IsReady, "the plugin list did not load from the fixture");
                 installedTab = (string)PluginControl<Button>(dialog, "claude", "tab-installed").Content!;
                 marketplaceTab = (string)PluginControl<Button>(dialog, "claude", "tab-marketplace").Content!;
                 installedRows = PluginRowCount(dialog, "claude");
@@ -452,14 +452,14 @@ public sealed partial class MainWindow
                 // The real filter: selecting a marketplace raises SelectionChanged.
                 var filter = PluginControl<ComboBox>(dialog, "claude", "marketplace-filter");
                 Require(filter.Items.Count == 3 && (string)((ComboBoxItem)filter.Items[0]).Content! == PluginStrings.FilterAll,
-                    "마켓플레이스 필터가 전체와 등록된 마켓플레이스를 보여주지 않습니다.");
+                    "the marketplace filter must show All and the registered marketplaces");
                 filter.SelectedIndex = filter.Items.OfType<ComboBoxItem>().ToList().FindIndex(i => (string)i.Tag == "other");
                 filteredRows = PluginRowCount(dialog, "claude");
 
                 // The real search box: its Text change raises the registered callback.
                 var search = PluginControl<TextBox>(dialog, "claude", "search");
-                Require(search.PlaceholderText == PluginStrings.SearchPlaceholder, "검색 입력란의 안내 문구가 다릅니다.");
-                search.Text = "없는이름";
+                Require(search.PlaceholderText == PluginStrings.SearchPlaceholder, "the search box placeholder differs");
+                search.Text = "no-such-plugin-zz";
                 searchedRows = PluginRowCount(dialog, "claude");
                 search.Text = "";
                 filter.SelectedIndex = 0;
@@ -471,16 +471,16 @@ public sealed partial class MainWindow
                     .Count(e => AutomationProperties.GetAutomationId(e) is { Length: > 0 } id
                         && ClaudePluginSupport.NamesAChange(id, "claude"));
                 Require(dialog.PrimaryButtonText is null or "" && dialog.SecondaryButtonText is null or "",
-                    "플러그인 창에는 목록을 바꾸는 단추가 없어야 합니다.");
-                Require(dialog.CloseButtonText == PluginStrings.ButtonClose, "닫기 단추의 문구가 다릅니다.");
+                    "the plugin window must have no dialog button that changes the list");
+                Require(dialog.CloseButtonText == PluginStrings.ButtonClose, "the close button text differs");
                 Require((string)PluginControl<Button>(dialog, "claude", "reload").Content! == PluginStrings.ButtonReload,
-                    "목록 새로고침 단추의 문구가 다릅니다.");
+                    "the reload button text differs");
 
                 // The reload button's own action, answered by a missing CLI.
                 await surface.Load();
                 var status = PluginControl<TextBlock>(dialog, "claude", "load-status");
                 reloadedStatus = status.Text;
-                Require(status.Visibility == Visibility.Visible, "CLI를 찾지 못한 이유가 화면에 보이지 않습니다.");
+                Require(status.Visibility == Visibility.Visible, "the reason the CLI was not found is not shown");
             };
             await ShowPluginBrowser("claude", workspace);
 
@@ -500,14 +500,14 @@ public sealed partial class MainWindow
                 MutatingControls = mutating,
                 Restored = true,
             };
-            Require(outcome.Title == "Claude 플러그인" && outcome.InstalledTab == "설치됨 2" && outcome.MarketplaceTab == "마켓플레이스 3",
-                "플러그인 창의 제목 또는 탭 개수가 macOS와 다릅니다.");
+            Require(outcome.Title == PluginStrings.TitleTemplate.Replace("{provider}", "Claude") && outcome.InstalledTab == PluginStrings.TabCountTemplate.Replace("{title}", PluginStrings.TabInstalled).Replace("{count}", "2") && outcome.MarketplaceTab == PluginStrings.TabCountTemplate.Replace("{title}", PluginStrings.TabMarketplace).Replace("{count}", "3"),
+                "the plugin window title or tab counts differ from macOS");
             Require(outcome.InstalledRows == 2 && outcome.AvailableRows == 3 && outcome.FilteredRows == 1 && outcome.SearchedRows == 0,
-                "탭·필터·검색이 목록을 macOS처럼 좁히지 않았습니다.");
+                "tabs, filter and search did not narrow the list as on macOS");
             // scope-picker + refresh-marketplaces + 3 install-* buttons = 5
-            Require(outcome.MutatingControls == 5, "Claude 마켓플레이스 탭의 변경 컨트롤 수가 예상과 다릅니다: " + outcome.MutatingControls);
-            Require(outcome.ReloadedFromStatus == PluginStrings.DetailMissingCli, "CLI가 없을 때의 문장이 macOS와 다릅니다.");
-            Require(outcome.Reads == 2, "목록 읽기 횟수가 잘못됐습니다: " + outcome.Reads);
+            Require(outcome.MutatingControls == 5, "unexpected number of changing controls on the Claude marketplace tab: " + outcome.MutatingControls);
+            Require(outcome.ReloadedFromStatus == PluginStrings.DetailMissingCli, "the missing-CLI sentence differs from macOS");
+            Require(outcome.Reads == 2, "wrong number of list reads: " + outcome.Reads);
             return outcome;
         }
         finally
@@ -575,7 +575,7 @@ public sealed partial class MainWindow
                 var dialog = surface.Dialog;
                 title = (string)dialog.Title;
                 await surface.Load();
-                Require(surface.Browser.IsReady, "Codex 플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                Require(surface.Browser.IsReady, "the Codex plugin list did not load from the fixture");
                 installedTab = (string)PluginControl<Button>(dialog, "codex", "tab-installed").Content!;
                 marketplaceTab = (string)PluginControl<Button>(dialog, "codex", "tab-marketplace").Content!;
                 installedRows = PluginRowCount(dialog, "codex");
@@ -590,7 +590,7 @@ public sealed partial class MainWindow
                 filter.SelectedIndex = filter.Items.OfType<ComboBoxItem>().ToList().FindIndex(i => (string)i.Tag == "sample");
                 filteredRows = PluginRowCount(dialog, "codex");
                 var search = PluginControl<TextBox>(dialog, "codex", "search");
-                search.Text = "없는이름";
+                search.Text = "no-such-plugin-zz";
                 searchedRows = PluginRowCount(dialog, "codex");
                 search.Text = "";
                 filter.SelectedIndex = 0;
@@ -600,7 +600,7 @@ public sealed partial class MainWindow
                     .Count(e => AutomationProperties.GetAutomationId(e) is { Length: > 0 } id
                         && ClaudePluginSupport.NamesAChange(id, "codex"));
                 Require(dialog.PrimaryButtonText is null or "" && dialog.SecondaryButtonText is null or "",
-                    "Codex 플러그인 창에는 목록을 바꾸는 단추가 없어야 합니다.");
+                    "the Codex plugin window must have no dialog button that changes the list");
 
                 // The reload button's own action, answered by an empty registry.
                 await surface.Load();
@@ -610,7 +610,7 @@ public sealed partial class MainWindow
                 await surface.Load();
                 var status = PluginControl<TextBlock>(dialog, "codex", "load-status");
                 unsupportedStatus = status.Text;
-                Require(status.Visibility == Visibility.Visible, "Codex CLI가 지원하지 않는 이유가 화면에 보이지 않습니다.");
+                Require(status.Visibility == Visibility.Visible, "the reason the Codex CLI is unsupported is not shown");
             };
             await ShowPluginBrowser("codex", workspace);
 
@@ -632,19 +632,19 @@ public sealed partial class MainWindow
                 MutatingControls = mutating,
                 Restored = true,
             };
-            Require(outcome.Title == "Codex 플러그인" && outcome.InstalledTab == "설치됨 1" && outcome.MarketplaceTab == "마켓플레이스 2",
-                "Codex 플러그인 창의 제목 또는 탭 개수가 macOS와 다릅니다.");
+            Require(outcome.Title == PluginStrings.TitleTemplate.Replace("{provider}", "Codex") && outcome.InstalledTab == PluginStrings.TabCountTemplate.Replace("{title}", PluginStrings.TabInstalled).Replace("{count}", "1") && outcome.MarketplaceTab == PluginStrings.TabCountTemplate.Replace("{title}", PluginStrings.TabMarketplace).Replace("{count}", "2"),
+                "the Codex plugin window title or tab counts differ from macOS");
             Require(outcome.InstalledRows == 1 && outcome.InstalledSubtitle == PluginStrings.SubtitleTemplate.Replace("{left}", "sample").Replace("{right}", PluginStrings.ScopeUser),
-                "Codex 설치 목록은 사용자 범위 한 줄이어야 합니다: " + outcome.InstalledRows + " / " + outcome.InstalledSubtitle);
+                "the Codex installed list must be one user-scope row: " + outcome.InstalledRows + " / " + outcome.InstalledSubtitle);
             Require(outcome.AvailableRows == 2 && outcome.FilteredRows == 1 && outcome.SearchedRows == 0,
-                "탭·필터·검색이 Codex 목록을 macOS처럼 좁히지 않았습니다.");
+                "tabs, filter and search did not narrow the Codex list as on macOS");
             // scope-picker + refresh-marketplaces + 2 install-* buttons = 4
-            Require(outcome.MutatingControls == 4, "Codex 마켓플레이스 탭의 변경 컨트롤 수가 예상과 다릅니다: " + outcome.MutatingControls);
-            Require(outcome.FooterNote == CodexPluginStrings.FooterNote, "Codex 창의 안내 문장이 다릅니다.");
-            Require(outcome.ReadyStatus == CodexPluginStrings.DetailReady, "Codex는 목록을 읽은 뒤에도 안내 문장을 보여야 합니다.");
-            Require(outcome.NoMarketplaceHelp == CodexPluginStrings.MarketplaceHelp, "마켓플레이스가 없을 때의 문장이 macOS와 다릅니다.");
-            Require(outcome.UnsupportedStatus == CodexPluginStrings.DetailUnsupported, "CLI가 지원하지 않을 때의 문장이 macOS와 다릅니다.");
-            Require(outcome.Reads == 3, "Codex 목록 읽기 횟수가 잘못됐습니다: " + outcome.Reads);
+            Require(outcome.MutatingControls == 4, "unexpected number of changing controls on the Codex marketplace tab: " + outcome.MutatingControls);
+            Require(outcome.FooterNote == CodexPluginStrings.FooterNote, "the Codex window footer differs");
+            Require(outcome.ReadyStatus == CodexPluginStrings.DetailReady, "Codex must keep showing the ready sentence after reading the list");
+            Require(outcome.NoMarketplaceHelp == CodexPluginStrings.MarketplaceHelp, "the no-marketplace sentence differs from macOS");
+            Require(outcome.UnsupportedStatus == CodexPluginStrings.DetailUnsupported, "the unsupported-CLI sentence differs from macOS");
+            Require(outcome.Reads == 3, "wrong number of Codex list reads: " + outcome.Reads);
             return outcome;
         }
         finally
@@ -702,25 +702,25 @@ public sealed partial class MainWindow
             smokePluginDialog = async surface =>
             {
                 await surface.Load();
-                Require(surface.Browser.IsReady, "플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                Require(surface.Browser.IsReady, "the plugin list did not load from the fixture");
                 claudeScopes = surface.Browser.ScopeOptions.Count;
-                Require(claudeScopes == 3, "Claude 설치 범위가 3개가 아닙니다: " + claudeScopes);
+                Require(claudeScopes == 3, "Claude must offer 3 install scopes: " + claudeScopes);
                 Require(surface.Browser.ScopeOptions[0].Value == "local" && surface.Browser.ScopeOptions[1].Value == "project" && surface.Browser.ScopeOptions[2].Value == "user",
-                    "Claude 범위 목록이 local·project·user가 아닙니다.");
+                    "the Claude scopes must be local, project and user");
 
                 await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
                 // docs@sample is in the catalog and not installed: can be installed.
-                Require(surface.Browser.CanInstall("docs@sample"), "docs@sample 설치 단추가 활성화되지 않았습니다.");
+                Require(surface.Browser.CanInstall("docs@sample"), "the docs@sample install button is not enabled");
 
                 var install = await surface.Install("docs@sample");
                 installResult = install.Detail;
                 Require(installResult == PluginStrings.InstallSucceeded,
-                    "설치 완료 문장이 macOS와 다릅니다: " + installResult);
+                    "the install result sentence differs from macOS: " + installResult);
 
                 var refresh = await surface.Refresh();
                 refreshResult = refresh.Detail;
                 Require(refresh.Status == ClaudePluginStatus.Succeeded,
-                    "마켓플레이스 새로고침이 실패했습니다: " + refreshResult);
+                    "the marketplace refresh failed: " + refreshResult);
             };
             await ShowPluginBrowser("claude", workspace);
 
@@ -731,17 +731,17 @@ public sealed partial class MainWindow
                 await surface.Load();
                 await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
                 var pending = surface.Install("docs@sample");
-                Require(surface.Browser.IsMutating, "설치가 시작되었는데 진행 상태가 아닙니다.");
+                Require(surface.Browser.IsMutating, "the install started but the window is not in progress");
                 Require(surface.Browser.ProgressLabel == PluginStrings.ProgressInstalling,
-                    "설치 진행 문장이 macOS와 다릅니다: " + surface.Browser.ProgressLabel);
-                Require(!surface.Browser.CanClose, "작업이 진행 중인데 닫기가 막히지 않았습니다.");
-                Require(surface.Browser.CanCancel, "작업이 진행 중인데 취소할 수 없습니다.");
+                    "the install progress sentence differs from macOS: " + surface.Browser.ProgressLabel);
+                Require(!surface.Browser.CanClose, "closing was not blocked while an operation ran");
+                Require(surface.Browser.CanCancel, "an operation in progress could not be cancelled");
                 surface.RequestCancel();
                 cancelResult = (await pending).Detail;
                 Require(cancelResult == PluginStrings.OperationCancelledByUser,
-                    "취소 문장이 macOS와 다릅니다: " + cancelResult);
+                    "the cancel sentence differs from macOS: " + cancelResult);
                 Require(surface.Browser.CanClose && !surface.Browser.IsMutating,
-                    "취소한 뒤에도 창이 작업 중으로 남아 있습니다.");
+                    "the window stayed busy after cancelling");
             };
             await ShowPluginBrowser("claude", workspace);
 
@@ -750,10 +750,10 @@ public sealed partial class MainWindow
             smokeCodexPluginDialog = async surface =>
             {
                 await surface.Load();
-                Require(surface.Browser.IsReady, "Codex 플러그인 목록을 픽스처로 불러오지 못했습니다.");
+                Require(surface.Browser.IsReady, "the Codex plugin list did not load from the fixture");
                 codexScopes = surface.Browser.ScopeOptions.Count;
                 Require(codexScopes == 1 && surface.Browser.ScopeOptions[0].Value == "user",
-                    "Codex 설치 범위가 user 하나가 아닙니다.");
+                    "Codex must offer the user scope only");
             };
             await ShowPluginBrowser("codex", workspace);
 

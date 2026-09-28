@@ -22,7 +22,9 @@ public sealed partial class MainWindow : Window
     private readonly StackPanel sidebar = new() { Spacing = 10 };
     private readonly Grid panes = new() { ColumnSpacing = 12, RowSpacing = 12 };
     private readonly ListView workspaces = new() { SelectionMode = ListViewSelectionMode.Single };
-    private readonly TextBox search = new() { PlaceholderText = "워크스페이스 검색", Margin = new Thickness(0, 4, 0, 4) };
+    private readonly TextBox search = new() { Margin = new Thickness(0, 4, 0, 4) };
+    private readonly TextBlock sessionsHeader = new() { FontSize = 11, Opacity = .6, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly Button addFolderButton, settingsButton;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Opacity = .75 };
     private readonly TextBlock error = new() { Foreground = new SolidColorBrush(Colors.OrangeRed), TextWrapping = TextWrapping.Wrap };
     private readonly ComboBox layout = new() { Width = 105 };
@@ -65,21 +67,21 @@ public sealed partial class MainWindow : Window
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.
         service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); });
-        service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = "저장 실패: " + ex.Message);
+        service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = Locale.Get("window.error.saveFailed", new Dictionary<string, string> { ["reason"] = ex.Message }));
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(252) }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var brandImage = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 28, Height = 28 };
         AutomationProperties.SetAccessibilityView(brandImage, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         brand.Children.Add(brandImage); brand.Children.Add(new TextBlock { Text = "MightyClaude", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }); sidebar.Children.Add(brand);
-        foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Content = name switch { "grid" => "격자", "columns" => "나란히", "focus" => "집중", "tabs" => "탭", _ => "사용자 배치" }, Tag = name });
+        foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Tag = name });
         layout.SelectionChanged += async (_, _) => { if (!rendering && layout.SelectedItem is ComboBoxItem item) await ApplyLayoutPreset((string)item.Tag); };
-        sidebar.Children.Add(search); sidebar.Children.Add(Button("+ 프로젝트 폴더", PickFolder)); sidebar.Children.Add(workspaces);
-        sidebar.Children.Add(new TextBlock { Text = "실행 창", FontSize = 11, Opacity = .6, Margin = new Thickness(0, 8, 0, 0) }); sidebar.Children.Add(sessionLinks);
+        addFolderButton = Button("", PickFolder); sidebar.Children.Add(search); sidebar.Children.Add(addFolderButton); sidebar.Children.Add(workspaces);
+        sidebar.Children.Add(sessionsHeader); sidebar.Children.Add(sessionLinks);
         var sideHost = new Grid { RowSpacing = 10 }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
         var navigation = new StackPanel { Spacing = 6 }; navigation.Children.Add(layout);
-        navigation.Children.Add(Button("설정", OpenSettings)); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
+        settingsButton = Button("", OpenSettings); navigation.Children.Add(settingsButton); ApplyChromeText(); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
         workspaces.SelectionChanged += async (_, _) => { if (!rendering && workspaces.SelectedItem is ListViewItem { Tag: string id }) await SelectWorkspace(id); };
         Grid.SetRow(sideHost, 1); root.Children.Add(sideHost); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
@@ -89,15 +91,26 @@ public sealed partial class MainWindow : Window
         statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         statusRow.Children.Add(BuildAccountUsage()); Grid.SetColumn(status, 1); statusRow.Children.Add(status);
         footer.Children.Add(statusRow); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = "종료 전 정리 실패: " + ex.Message; root.IsHitTestVisible = true; closing = false; } };
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         _ = Initialize();
     }
     private async Task Initialize()
     {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await InitNotifierAsync(); await RefreshRuntime(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
-        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await RunUISmoke(); }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); await InitNotifierAsync(); await RefreshRuntime(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
+        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
+    }
+    // The sidebar chrome is built before Initialize reads the saved language,
+    // so its text is set again once the preference is applied.
+    private void ApplyChromeText()
+    {
+        search.PlaceholderText = Locale.Get("sidebar.searchPlaceholder");
+        foreach (var item in layout.Items.OfType<ComboBoxItem>())
+            item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
+        addFolderButton.Content = Locale.Get("sidebar.addProjectFolder"); AutomationProperties.SetName(addFolderButton, (string)addFolderButton.Content);
+        sessionsHeader.Text = Locale.Get("sidebar.sessionsHeader");
+        settingsButton.Content = Locale.Get("settings.settingsWindowTitle"); AutomationProperties.SetName(settingsButton, (string)settingsButton.Content);
     }
     private async Task Act(Func<Task> action)
     {
@@ -117,13 +130,13 @@ public sealed partial class MainWindow : Window
     private async Task RemoveWorkspace() { await Act(async () => { if (service.Snapshot.ActiveWorkspaceId is { } id) { await service.RemoveWorkspaceAsync(id); Render(); } }); }
     private async Task AddPane(string kind, string provider = "claude", string? groupId = null)
     {
-        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException("먼저 워크스페이스를 추가하세요."); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? "명령" : ProviderCatalog.Name(provider) }; await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
+        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
     }
-    private async Task RefreshRuntime() { await Act(async () => { status.Text = "설치된 실행기와 모델 메타데이터 확인 중…"; runtime = await service.Providers.GetRuntimeAsync(true); RefreshEnvironment(); }); }
+    private async Task RefreshRuntime() { await Act(async () => { status.Text = Locale.Get("window.status.checkingRuntimeAndModels"); runtime = await service.Providers.GetRuntimeAsync(true); RefreshEnvironment(); }); }
     private void RefreshEnvironment()
     {
         foreach (var pane in views.Values) pane.Refresh();
-        status.Text = runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
+        status.Text = runtime is null ? Locale.Get("window.status.checkingRuntime") : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
     }
     private ProviderRuntime? Runtime(string provider) => runtime?.Providers.FirstOrDefault(p => p.Id == provider);
     private void RenderSidebar()
@@ -132,7 +145,7 @@ public sealed partial class MainWindow : Window
         var state = service.Snapshot; workspaces.Items.Clear();
         foreach (var workspace in state.Workspaces.Where(w => (w.Name + w.Path).Contains(search.Text, StringComparison.OrdinalIgnoreCase)))
         {
-            var label = new StackPanel { Spacing = 3 }; label.Children.Add(new TextBlock { Text = workspace.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }); label.Children.Add(new TextBlock { Text = "이 컴퓨터", FontSize = 11, Opacity = .65 });
+            var label = new StackPanel { Spacing = 3 }; label.Children.Add(new TextBlock { Text = workspace.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }); label.Children.Add(new TextBlock { Text = Locale.Get("workspace.location.thisComputer"), FontSize = 11, Opacity = .65 });
             var item = new ListViewItem { Content = label, Tag = workspace.Id, ContextFlyout = WorkspaceMenu(workspace.Id) }; ToolTipService.SetToolTip(item, workspace.Path); workspaces.Items.Add(item); if (workspace.Id == state.ActiveWorkspaceId) workspaces.SelectedItem = item;
         }
         sessionLinks.Children.Clear(); sessionIndicators.Clear();
@@ -153,7 +166,7 @@ public sealed partial class MainWindow : Window
         // A closed session runs nothing more: end its refresher before dropping the pane.
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { views[stale].Refresher?.Close(); views.Remove(stale); }
         RenderPaneLayout(state);
-        status.Text = runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
+        status.Text = runtime is null ? Locale.Get("window.status.checkingRuntime") : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
         rendering = false;
     }
     private static void Copy(string value) { var data = new DataPackage(); data.SetText(value); Clipboard.SetContent(data); }
@@ -187,7 +200,7 @@ public sealed partial class MainWindow : Window
     }
     private sealed partial class PaneView
     {
-        private const string InputShortcuts = "Enter로 보내기 · Shift+Enter로 줄바꿈";
+        private static string InputShortcuts => Locale.Get("composer.inputShortcuts");
         private readonly MainWindow owner;
         private readonly string id;
         private readonly TextBlock label = new() { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -198,7 +211,7 @@ public sealed partial class MainWindow : Window
         private readonly TextBlock elapsed = new() { FontSize = 11, Opacity = .65, VerticalAlignment = VerticalAlignment.Center };
         // Auto height uses the native text layout, including soft wraps and IME
         // composition. Start with one line and scroll internally at the cap.
-        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 30, MaxHeight = 140, MaxLength = 100000, PlaceholderText = "무엇을 함께 만들까요?", BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(4, 5, 4, 5) };
+        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 30, MaxHeight = 140, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(4, 5, 4, 5) };
         private readonly Button provider = Pill(100), model = Pill(180), effort = Pill(125), permission = Pill(135), more = Pill(40);
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = new() { Content = "ϟ Fast", MinWidth = 0, Padding = new Thickness(10, 5, 10, 5), CornerRadius = new CornerRadius(16), FontSize = 11, MinHeight = 32, Height = 32 };
         private readonly Button send, attach, context;
@@ -231,18 +244,18 @@ public sealed partial class MainWindow : Window
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
             var header = new Grid { ColumnSpacing = 8 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
-            var copy = Button("복사", () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
+            var copy = Button(Locale.Get("pane.copyButton"), () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
             ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(input, ScrollBarVisibility.Disabled);
-            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(5); attach.CornerRadius = new CornerRadius(16); attach.Content = new SymbolIcon(Symbol.Attach); AutomationProperties.SetName(attach, "파일과 이미지 첨부"); ToolTipService.SetToolTip(attach, "파일·이미지 첨부 · 이미지나 파일은 Ctrl+V로도 붙여넣을 수 있습니다.");
+            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(5); attach.CornerRadius = new CornerRadius(16); attach.Content = new SymbolIcon(Symbol.Attach); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
             var controls = new FrameworkElement[] { attach, provider, model, effort, permission, fast, more };
             for (var index = 0; index < controls.Length; index++) { selectors.ColumnDefinitions.Add(new() { Width = index == 2 ? new(1, GridUnitType.Star) : GridLength.Auto }); Grid.SetColumn(controls[index], index); controls[index].VerticalAlignment = VerticalAlignment.Center; selectors.Children.Add(controls[index]); }
             model.HorizontalAlignment = HorizontalAlignment.Stretch; model.HorizontalContentAlignment = HorizontalAlignment.Left; model.MaxWidth = double.PositiveInfinity; model.MinWidth = 0;
             selectors.SizeChanged += (_, _) => ArrangeComposer();
             var bottom = new Grid { ColumnSpacing = 5, Height = 32 }; bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.Children.Add(selectors);
-            context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; context.Background = new SolidColorBrush(Colors.Transparent); AutomationProperties.SetName(context, "이 세션의 컨텍스트 사용량"); Grid.SetColumn(context, 1); bottom.Children.Add(context);
-            send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 20; send.Background = new SolidColorBrush(Colors.CornflowerBlue); send.Foreground = new SolidColorBrush(Colors.Black); AutomationProperties.SetName(send, "보내기"); Grid.SetColumn(send, 2); bottom.Children.Add(send);
+            context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; context.Background = new SolidColorBrush(Colors.Transparent); AutomationProperties.SetName(context, Locale.Get("composer.context.name")); Grid.SetColumn(context, 1); bottom.Children.Add(context);
+            send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 20; send.Background = new SolidColorBrush(Colors.CornflowerBlue); send.Foreground = new SolidColorBrush(Colors.Black); AutomationProperties.SetName(send, Locale.Get("composer.send.name")); Grid.SetColumn(send, 2); bottom.Children.Add(send);
             var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
             var card = new Border { Child = composer, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(12, 135, 135, 135)), Padding = new Thickness(10, 2, 10, 10) };
             var composerScroll = new ScrollViewer { Content = card, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
@@ -250,7 +263,7 @@ public sealed partial class MainWindow : Window
             Container = new Border { Child = grid, BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray), CornerRadius = new CornerRadius(10) };
             Container.SizeChanged += (_, args) => composerScroll.MaxHeight = Math.Max(150, args.NewSize.Height - 144);
             fast.Click += async (_, _) => { if (!updating) await ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode }); };
-            ToolTipService.SetToolTip(fast, "지원 모델과 계정에서 빠른 처리를 사용합니다. 사용량이 더 많이 소모될 수 있습니다."); AutomationProperties.SetName(fast, "Codex Fast");
+            ToolTipService.SetToolTip(fast, Locale.Get("composer.fast.tooltip")); AutomationProperties.SetName(fast, "Codex Fast");
             ToolTipService.SetToolTip(input, InputShortcuts);
             input.TextChanged += async (_, _) => { if (!updating) { var draft = input.Text; RefreshComposerState(); RefreshPalette(draft); await owner.Act(() => Change(p => p with { Draft = draft })); } };
             input.TextCompositionStarted += (_, _) => composingInput = true;
@@ -276,16 +289,16 @@ public sealed partial class MainWindow : Window
                     return;
                 }
                 if (args.Key != Windows.System.VirtualKey.V || !IsInputKeyDown(Windows.System.VirtualKey.Control)) return;
-                try { var data = Clipboard.GetContent(); if (!AttachmentInput.ContainsFiles(data)) return; args.Handled = true; if (Session.Kind == "shell") { owner.error.Text = "첨부 파일은 AI 실행 창에서만 사용할 수 있습니다."; return; } await LoadAttachments(() => AttachmentInput.ReadDataAsync(data)); } catch (Exception ex) { owner.error.Text = ex.Message; }
+                try { var data = Clipboard.GetContent(); if (!AttachmentInput.ContainsFiles(data)) return; args.Handled = true; if (Session.Kind == "shell") { owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); return; } await LoadAttachments(() => AttachmentInput.ReadDataAsync(data)); } catch (Exception ex) { owner.error.Text = ex.Message; }
             };
             input.Paste += async (_, args) =>
             {
-                try { var data = Clipboard.GetContent(); if (!AttachmentInput.ContainsFiles(data)) return; args.Handled = true; if (Session.Kind == "shell") { owner.error.Text = "첨부 파일은 AI 실행 창에서만 사용할 수 있습니다."; return; } await LoadAttachments(() => AttachmentInput.ReadDataAsync(data)); } catch (Exception ex) { owner.error.Text = ex.Message; }
+                try { var data = Clipboard.GetContent(); if (!AttachmentInput.ContainsFiles(data)) return; args.Handled = true; if (Session.Kind == "shell") { owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); return; } await LoadAttachments(() => AttachmentInput.ReadDataAsync(data)); } catch (Exception ex) { owner.error.Text = ex.Message; }
             };
             card.AllowDrop = true;
-            card.DragOver += (_, args) => { if (!AttachmentInput.ContainsFiles(args.DataView)) return; args.AcceptedOperation = attachmentsLoading || Session.Kind == "shell" ? DataPackageOperation.None : DataPackageOperation.Copy; args.Handled = true; if (Session.Kind == "shell") owner.error.Text = "첨부 파일은 AI 실행 창에서만 사용할 수 있습니다."; };
-            card.Drop += async (_, args) => { if (!AttachmentInput.ContainsFiles(args.DataView)) return; var deferral = args.GetDeferral(); args.Handled = true; try { if (Session.Kind == "shell") owner.error.Text = "첨부 파일은 AI 실행 창에서만 사용할 수 있습니다."; else await LoadAttachments(() => AttachmentInput.ReadDataAsync(args.DataView)); } finally { deferral.Complete(); } };
-            AutomationProperties.SetName(input, "실행 내용");  AutomationProperties.SetLiveSetting(inputHint, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
+            card.DragOver += (_, args) => { if (!AttachmentInput.ContainsFiles(args.DataView)) return; args.AcceptedOperation = attachmentsLoading || Session.Kind == "shell" ? DataPackageOperation.None : DataPackageOperation.Copy; args.Handled = true; if (Session.Kind == "shell") owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); };
+            card.Drop += async (_, args) => { if (!AttachmentInput.ContainsFiles(args.DataView)) return; var deferral = args.GetDeferral(); args.Handled = true; try { if (Session.Kind == "shell") owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); else await LoadAttachments(() => AttachmentInput.ReadDataAsync(args.DataView)); } finally { deferral.Complete(); } };
+            AutomationProperties.SetName(input, Locale.Get("composer.input.name"));  AutomationProperties.SetLiveSetting(inputHint, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
             input.GotFocus += (_, _) => card.BorderBrush = new SolidColorBrush(Colors.CornflowerBlue);
             input.LostFocus += (_, _) => { composingInput = false; suppressCompositionEnter = false; card.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)); };
         }
@@ -323,22 +336,22 @@ public sealed partial class MainWindow : Window
             var registeredModels = RegisteredModelsFor(pane.Provider, workspace, owner.service.Snapshot);
             var unsupportedEffort = pane.Kind == "claude" && pane.Settings.Effort != "default" && !ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels).Contains(pane.Settings.Effort);
             string? unsupportedSettings = null;
-            if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI를 업데이트하거나 다른 권한을 선택하세요.";
-            if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = "이 실행기가 첨부를 지원하지 않습니다. CLI를 업데이트하거나 첨부를 제거하세요.";
+            if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = Locale.Get("composer.hint.autoModeUnverified");
+            if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = Locale.Get("composer.hint.attachmentsUnsupported");
             var reason = busy ? ""
-                : attachmentsLoading ? "첨부 파일을 불러오는 중입니다."
-                : pane.Kind == "claude" && runtime?.Available != true ? (runtime?.Detail ?? "실행 환경을 새로고침하세요.") + " 초안은 작성할 수 있습니다."
-                : unsupportedEffort ? $"이 모델의 {pane.Settings.Effort} 지원 여부를 확인하지 못했습니다. Auto 또는 지원 강도를 선택하세요."
+                : attachmentsLoading ? Locale.Get("composer.hint.attachmentsLoading")
+                : pane.Kind == "claude" && runtime?.Available != true ? Locale.Get("composer.hint.draftStillAllowed", new Dictionary<string, string> { ["reason"] = runtime?.Detail ?? Locale.Get("composer.hint.refreshRuntime") })
+                : unsupportedEffort ? Locale.Get("composer.hint.effortUnverified", new Dictionary<string, string> { ["effort"] = pane.Settings.Effort })
                 : unsupportedSettings ?? "";
             inputHint.Text = reason; inputHint.Visibility = reason.Length == 0 ? Visibility.Collapsed : Visibility.Visible; AutomationProperties.SetHelpText(input, reason.Length == 0 ? InputShortcuts : reason + " " + InputShortcuts);
-            permissionHint.Text = pane.Settings.PermissionMode == "fullAccess" ? "전체 권한 · 프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다." : "";
+            permissionHint.Text = pane.Settings.PermissionMode == "fullAccess" ? Locale.Get("composer.hint.fullAccess") : "";
             permissionHint.Visibility = pane.Kind == "claude" && permissionHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-            input.PlaceholderText = busy ? "다음 요청의 초안을 작성하세요" : pane.Kind == "shell" ? "실행할 명령을 입력하세요" : "무엇을 함께 만들까요?";
+            input.PlaceholderText = busy ? Locale.Get("composer.placeholder.busy") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; send.FontSize = busy ? 13 : 20;
-            AutomationProperties.SetName(send, busy ? "실행 중지" : "보내기"); ToolTipService.SetToolTip(send, busy ? "실행 중지 · 초안은 유지됩니다" : "보내기 (Enter)");
+            AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; context.Content = pane.SessionUsage?.ContextPercent is { } percent ? $"{percent:0}%" : "—";
-            ToolTipService.SetToolTip(context, pane.SessionUsage?.ContextPercent is null ? "CLI가 컨텍스트 사용량을 제공하지 않았습니다" : "현재 세션 컨텍스트 사용량");
+            ToolTipService.SetToolTip(context, pane.SessionUsage?.ContextPercent is null ? Locale.Get("composer.context.unavailable") : Locale.Get("composer.context.tooltip"));
             foreach (var control in selectors.Children.OfType<Control>()) control.IsEnabled = !busy;
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
         }
@@ -370,12 +383,12 @@ public sealed partial class MainWindow : Window
             foreach (var file in pendingAttachments)
             {
                 var row = new Grid { ColumnSpacing = 2 }; row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var preview = Button(file.Name, () => PreviewAttachment(file)); preview.Content = new TextBlock { Text = (file.MediaType.StartsWith("image/", StringComparison.Ordinal) ? "▧ " : "▤ ") + file.Name, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11 }; preview.MinWidth = 0; preview.MaxWidth = 210; preview.Padding = new Thickness(7, 4, 7, 4); preview.Background = new SolidColorBrush(Colors.Transparent); preview.BorderThickness = new Thickness(0); AutomationProperties.SetName(preview, file.Name + " 미리보기"); ToolTipService.SetToolTip(preview, $"{file.Name} · {AttachmentSupport.DecodedLength(file):N0} bytes"); row.Children.Add(preview);
+                var preview = Button(file.Name, () => PreviewAttachment(file)); preview.Content = new TextBlock { Text = (file.MediaType.StartsWith("image/", StringComparison.Ordinal) ? "▧ " : "▤ ") + file.Name, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11 }; preview.MinWidth = 0; preview.MaxWidth = 210; preview.Padding = new Thickness(7, 4, 7, 4); preview.Background = new SolidColorBrush(Colors.Transparent); preview.BorderThickness = new Thickness(0); AutomationProperties.SetName(preview, Locale.Get("composer.attachment.preview", new Dictionary<string, string> { ["name"] = file.Name })); ToolTipService.SetToolTip(preview, $"{file.Name} · {AttachmentSupport.DecodedLength(file):N0} bytes"); row.Children.Add(preview);
                 if (file.MediaType.StartsWith("image/", StringComparison.Ordinal))
                 {
                     var thumbnail = new Image { Width = 28, Height = 28, Stretch = Stretch.Uniform }; var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 }; content.Children.Add(thumbnail); content.Children.Add(new TextBlock { Text = file.Name, MaxWidth = 145, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11, VerticalAlignment = VerticalAlignment.Center }); preview.Content = content; _ = LoadThumbnail(file, thumbnail);
                 }
-                var remove = Button("×", () => { pendingAttachments.RemoveAll(a => a.Id == file.Id); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask; }); remove.MinWidth = 0; remove.Width = 25; remove.Padding = new Thickness(3); remove.Background = new SolidColorBrush(Colors.Transparent); remove.BorderThickness = new Thickness(0); AutomationProperties.SetName(remove, file.Name + " 첨부 제거"); Grid.SetColumn(remove, 1); row.Children.Add(remove);
+                var remove = Button("×", () => { pendingAttachments.RemoveAll(a => a.Id == file.Id); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask; }); remove.MinWidth = 0; remove.Width = 25; remove.Padding = new Thickness(3); remove.Background = new SolidColorBrush(Colors.Transparent); remove.BorderThickness = new Thickness(0); AutomationProperties.SetName(remove, Locale.Get("composer.attachment.remove", new Dictionary<string, string> { ["name"] = file.Name })); Grid.SetColumn(remove, 1); row.Children.Add(remove);
                 attachmentChips.Children.Add(new Border { Child = row, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 135, 135, 135)), MaxWidth = 240 });
             }
         }
@@ -385,18 +398,18 @@ public sealed partial class MainWindow : Window
             var content = new StackPanel { Spacing = 10, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", FontSize = 11 });
             if (file.MediaType.StartsWith("image/", StringComparison.Ordinal)) content.Children.Add(new Image { Source = await AttachmentInput.PreviewAsync(file), MaxHeight = 420, Stretch = Stretch.Uniform });
             else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
-            else content.Children.Add(new TextBlock { Text = "이 형식은 파일로 전달됩니다.", TextWrapping = TextWrapping.Wrap });
-            await new ContentDialog { Title = file.Name, Content = content, CloseButtonText = "닫기", XamlRoot = owner.root.XamlRoot }.ShowAsync();
+            else content.Children.Add(new TextBlock { Text = Locale.Get("composer.attachment.sentAsFile"), TextWrapping = TextWrapping.Wrap });
+            await new ContentDialog { Title = file.Name, Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }.ShowAsync();
         });
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });
-        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException("모델 이름이 올바르지 않습니다."); var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
+        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException(Locale.Get("composer.model.invalidName")); var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
         private static MenuFlyoutItem Item(string text, Func<Task> action, bool selected = false, string? help = null)
         {
             var item = new MenuFlyoutItem { Text = (selected ? "✓  " : "") + text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
         }
-        private static string PermissionLabel(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용" : "기본 권한", "plan" => "계획", "acceptEdits" => provider == "codex" ? "프로젝트 수정" : "파일 수정 허용", "auto" => "Auto mode", "fullAccess" => "전체 권한", _ => mode };
-        private static string PermissionHelp(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용 샌드박스에서 실행하며 추가 승인은 요청하지 않습니다." : "CLI 기본 권한을 사용합니다. 승인이 필요한 작업은 거부되며 읽기 전용 샌드박스를 뜻하지 않습니다.", "plan" => "변경 전에 계획을 세웁니다.", "acceptEdits" => provider == "codex" ? "프로젝트 파일을 수정합니다. 명령의 네트워크 접근은 더 보기에서 별도로 허용합니다." : "파일 수정은 자동으로 허용하고 다른 작업에는 CLI 권한 정책을 적용합니다.", "auto" => "Claude가 작업 위험을 자동 판단합니다. 모델·제공자·관리자 정책이 적용됩니다. 이 Windows 실행기는 추가 확인이 필요한 작업은 거부합니다.", "fullAccess" => "프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다.", _ => "" };
+        private static string PermissionLabel(string provider, string mode) => mode switch { "manual" => provider == "codex" ? Locale.Get("permission.label.defaultCodex") : Locale.Get("permission.label.default"), "plan" => Locale.Get("permission.label.plan"), "acceptEdits" => provider == "codex" ? Locale.Get("composer.permission.acceptEditsCodex") : Locale.Get("composer.permission.acceptEdits"), "auto" => "Auto mode", "fullAccess" => Locale.Get("composer.permission.fullAccess"), _ => mode };
+        private static string PermissionHelp(string provider, string mode) => mode switch { "manual" => provider == "codex" ? Locale.Get("composer.permissionHelp.manualCodex") : Locale.Get("composer.permissionHelp.manual"), "plan" => Locale.Get("composer.permissionHelp.plan"), "acceptEdits" => provider == "codex" ? Locale.Get("composer.permissionHelp.acceptEditsCodex") : Locale.Get("composer.permissionHelp.acceptEdits"), "auto" => Locale.Get("composer.permissionHelp.auto"), "fullAccess" => Locale.Get("composer.permissionHelp.fullAccess"), _ => "" };
         /// Model names registered in saved state, for the effort list. Workspace
         /// entries come first and an app entry whose name is already present is
         /// skipped. Nothing here resolves a model — the pane's own model is used
@@ -418,22 +431,22 @@ public sealed partial class MainWindow : Window
         private void RefreshMenus(RunSession pane, ModelCatalog catalog)
         {
             var caps = Capabilities;
-            Label(provider, pane.Provider == "claude" ? "Claude ⌄" : pane.Provider == "codex" ? "Codex ⌄" : "Gemini ⌄", "실행기");
+            Label(provider, pane.Provider == "claude" ? "Claude ⌄" : pane.Provider == "codex" ? "Codex ⌄" : "Gemini ⌄", Locale.Get("composer.label.runner"));
             var providers = new MenuFlyout(); foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.Name(value), () => owner.Act(async () => { if (Session.Status == "running" || Session.Provider == value) return; await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); }), pane.Provider == value)); provider.Flyout = providers;
-            var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, (pane.Model == "default" ? "기본 모델" : selectedModel?.DisplayName ?? pane.Model) + " ⌄", "모델"); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
+            var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, (pane.Model == "default" ? Locale.Get("composer.model.default") : selectedModel?.DisplayName ?? pane.Model) + " ⌄", Locale.Get("composer.label.model")); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
             var models = new MenuFlyout(); foreach (var row in catalog.Models) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
             if (!catalog.Models.Any(m => m.Value == pane.Model)) models.Items.Add(Item(pane.Model, () => ChangeModel(pane.Model), true));
-            if (pane.Provider != "gemini") { models.Items.Add(new MenuFlyoutSeparator()); models.Items.Add(Item("모델 ID 입력…", CustomModel)); } model.Flyout = models;
+            if (pane.Provider != "gemini") { models.Items.Add(new MenuFlyoutSeparator()); models.Items.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); } model.Flyout = models;
             var registeredModels2 = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot);
             var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels2); var knownEffort = pane.Settings.Effort == "default" || levels.Contains(pane.Settings.Effort);
-            Label(effort, (pane.Settings.Effort == "default" ? "Auto" : pane.Settings.Effort) + (knownEffort ? " ⌄" : " · 확인 필요"), "추론 강도"); var efforts = new MenuFlyout();
-            foreach (var value in new[] { "default" }.Concat(levels)) efforts.Items.Add(Item(value == "default" ? "Auto · CLI 기본값" : value, () => ChangeSettings(s => s with { Effort = value }), pane.Settings.Effort == value)); effort.Flyout = efforts;
+            Label(effort, (pane.Settings.Effort == "default" ? "Auto" : pane.Settings.Effort) + (knownEffort ? " ⌄" : Locale.Get("composer.effort.unverifiedSuffix")), Locale.Get("composer.label.effort")); var efforts = new MenuFlyout();
+            foreach (var value in new[] { "default" }.Concat(levels)) efforts.Items.Add(Item(value == "default" ? Locale.Get("composer.effort.auto") : value, () => ChangeSettings(s => s with { Effort = value }), pane.Settings.Effort == value)); effort.Flyout = efforts;
             effort.Visibility = caps.Effort || pane.Settings.Effort != "default" ? Visibility.Visible : Visibility.Collapsed;
-            Label(permission, PermissionLabel(pane.Provider, pane.Settings.PermissionMode) + " ⌄", "권한"); ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode)); var permissions = new MenuFlyout();
+            Label(permission, PermissionLabel(pane.Provider, pane.Settings.PermissionMode) + " ⌄", Locale.Get("composer.label.permission")); ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode)); var permissions = new MenuFlyout();
             foreach (var mode in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, mode), () => ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode == "acceptEdits" && s.NetworkAccess }), pane.Settings.PermissionMode == mode, PermissionHelp(pane.Provider, mode)));
             permission.Flyout = permissions;
             fast.IsChecked = pane.Settings.FastMode; fast.Visibility = pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode) ? Visibility.Visible : Visibility.Collapsed;
-            Label(more, "···", "더 보기"); more.Flyout = MoreMenu(pane, caps);
+            Label(more, "···", Locale.Get("composer.more")); more.Flyout = MoreMenu(pane, caps);
             provider.Visibility = model.Visibility = permission.Visibility = more.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             if (pane.Kind == "shell") effort.Visibility = fast.Visibility = Visibility.Collapsed;
         }
@@ -458,24 +471,24 @@ public sealed partial class MainWindow : Window
             {
                 if (caps.WebSearch || pane.Settings.WebSearch != "default")
                 {
-                    var web = new MenuFlyoutSubItem { Text = "모델의 웹 검색" };
+                    var web = new MenuFlyoutSubItem { Text = Locale.Get("composer.webSearch.menu") };
                     foreach (var value in caps.WebSearch ? new[] { "default", "disabled", "cached", "live" } : ["default"])
-                    { var title = value == "default" ? "CLI 기본값" : value == "disabled" ? "끄기" : value == "cached" ? "캐시 검색" : "실시간 검색"; web.Items.Add(Item(title, () => ChangeSettings(s => s with { WebSearch = value }), pane.Settings.WebSearch == value)); }
+                    { var title = Locale.Get(value == "default" ? "settings.run.webSearchDefault" : value == "disabled" ? "composer.webSearch.off" : value == "cached" ? "settings.run.webSearchCached" : "settings.run.webSearchLive"); web.Items.Add(Item(title, () => ChangeSettings(s => s with { WebSearch = value }), pane.Settings.WebSearch == value)); }
                     menu.Items.Add(web);
                 }
                 if (caps.NetworkAccess || pane.Settings.NetworkAccess)
                 {
-                    var network = Item("명령의 네트워크 허용", () => ChangeSettings(s => s with { NetworkAccess = !s.NetworkAccess && s.PermissionMode == "acceptEdits" && Capabilities.NetworkAccess }), pane.Settings.NetworkAccess, "명령과 도구의 네트워크 접근입니다. 모델의 웹 검색과는 별개이며 프로젝트 수정 권한에서만 설정할 수 있습니다.");
+                    var network = Item(Locale.Get("composer.network.toggle"), () => ChangeSettings(s => s with { NetworkAccess = !s.NetworkAccess && s.PermissionMode == "acceptEdits" && Capabilities.NetworkAccess }), pane.Settings.NetworkAccess, Locale.Get("composer.network.help"));
                     network.IsEnabled = pane.Settings.NetworkAccess || caps.NetworkAccess && pane.Settings.PermissionMode == "acceptEdits"; menu.Items.Add(network);
                 }
             }
-            if (pane.Kind == "claude" && (caps.MaxTurns || caps.MaxBudgetUsd)) menu.Items.Add(Item("실행 한도…", Limits));
+            if (pane.Kind == "claude" && (caps.MaxTurns || caps.MaxBudgetUsd)) menu.Items.Add(Item(Locale.Get("composer.limits.menu"), Limits));
             if (pane.Kind == "claude")
             {
                 if (menu.Items.Count > 0) menu.Items.Add(new MenuFlyoutSeparator());
-                menu.Items.Add(Item("새 대화 시작", () => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); })));
+                menu.Items.Add(Item(Locale.Get("composer.newConversation"), () => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); })));
             }
-            if (menu.Items.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = "추가 설정 없음", IsEnabled = false });
+            if (menu.Items.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = Locale.Get("composer.more.empty"), IsEnabled = false });
             return menu;
         }
         internal void Refresh()
@@ -485,25 +498,25 @@ public sealed partial class MainWindow : Window
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);
-            detail.Text = "이 컴퓨터" + (pane.Kind == "shell" ? " · shell 명령 실행" : $" · {(catalog.Source == "cli" ? "CLI에서 확인" : "기본 모델 목록")}" + (pane.ResumeId is null ? "" : " · 기존 대화 재개"));
+            detail.Text = Locale.Get("workspace.location.thisComputer") + (pane.Kind == "shell" ? " · " + Locale.Get("composer.detail.shell") : " · " + (catalog.Source == "cli" ? Locale.Get("composer.detail.modelsFromCli") : Locale.Get("composer.detail.defaultModels")) + (pane.ResumeId is null ? "" : " · " + Locale.Get("composer.detail.resuming")));
             RefreshComposerState(); ArrangeComposer();
             RequestStatusLineRefresh();
             updating = false;
         }
         private Task CustomModel() => owner.Act(async () =>
         {
-            if (Session.Status == "running") return; var field = new TextBox { Header = "모델 ID", Text = Session.Model }; var validation = new TextBlock { TextWrapping = TextWrapping.Wrap }; var content = new StackPanel { Spacing = 8 }; content.Children.Add(field); content.Children.Add(validation);
-            var dialog = new ContentDialog { Title = "모델 ID 입력", Content = content, XamlRoot = owner.root.XamlRoot, PrimaryButtonText = "선택", CloseButtonText = "취소" };
-            dialog.PrimaryButtonClick += (_, args) => { if (!Wire.Model(field.Text.Trim())) { validation.Text = "모델 이름이 올바르지 않습니다."; args.Cancel = true; } };
+            if (Session.Status == "running") return; var field = new TextBox { Header = Locale.Get("composer.model.idHeader"), Text = Session.Model }; var validation = new TextBlock { TextWrapping = TextWrapping.Wrap }; var content = new StackPanel { Spacing = 8 }; content.Children.Add(field); content.Children.Add(validation);
+            var dialog = new ContentDialog { Title = Locale.Get("composer.model.enterIdTitle"), Content = content, XamlRoot = owner.root.XamlRoot, PrimaryButtonText = Locale.Get("composer.model.select"), CloseButtonText = Locale.Get("settings.run.cancelButton") };
+            dialog.PrimaryButtonClick += (_, args) => { if (!Wire.Model(field.Text.Trim())) { validation.Text = Locale.Get("composer.model.invalidName"); args.Cancel = true; } };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ChangeModel(field.Text.Trim());
         });
         private Task Limits() => owner.Act(async () =>
         {
             var pane = Session; if (pane.Status == "running") return; var caps = Capabilities; var content = new StackPanel { Spacing = 10 };
-            var turns = new TextBox { Header = "최대 턴 · 비우면 CLI 기본값", Text = pane.Settings.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "" }; var budget = new TextBox { Header = "예산 상한 USD · 비우면 CLI 기본값", Text = pane.Settings.MaxBudgetUsd?.ToString(CultureInfo.InvariantCulture) ?? "" };
+            var turns = new TextBox { Header = Locale.Get("composer.limits.maxTurns"), Text = pane.Settings.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "" }; var budget = new TextBox { Header = Locale.Get("composer.limits.maxBudget"), Text = pane.Settings.MaxBudgetUsd?.ToString(CultureInfo.InvariantCulture) ?? "" };
             if (caps.MaxTurns) content.Children.Add(turns); if (caps.MaxBudgetUsd) content.Children.Add(budget);
             var validation = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.OrangeRed) }; content.Children.Add(validation);
-            var dialog = new ContentDialog { Title = "실행 한도", XamlRoot = owner.root.XamlRoot, Content = content, PrimaryButtonText = "적용", CloseButtonText = "취소" };
+            var dialog = new ContentDialog { Title = Locale.Get("settings.run.limitsTitle"), XamlRoot = owner.root.XamlRoot, Content = content, PrimaryButtonText = Locale.Get("settings.run.applyButton"), CloseButtonText = Locale.Get("settings.run.cancelButton") };
             dialog.PrimaryButtonClick += async (sender, args) =>
             {
                 var deferral = args.GetDeferral();

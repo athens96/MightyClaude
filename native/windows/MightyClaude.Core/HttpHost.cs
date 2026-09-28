@@ -30,10 +30,10 @@ public sealed class HttpHost : IAsyncDisposable
     }
     public static async Task<JsonDocument> ReadJsonAsync(HttpContext context, int maximum = 512 * 1024, int timeoutSeconds = 10)
     {
-        if (context.Request.ContentType?.Split(';')[0].Trim() != "application/json" || context.Request.ContentLength > maximum) throw new InvalidDataException("JSON 요청 크기 또는 형식이 올바르지 않습니다.");
+        if (context.Request.ContentType?.Split(';')[0].Trim() != "application/json" || context.Request.ContentLength > maximum) throw new InvalidDataException(Locale.Get("http.error.invalidJsonRequest"));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted); timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         using var data = new MemoryStream(); var buffer = new byte[4096]; int count;
-        while ((count = await context.Request.Body.ReadAsync(buffer, timeout.Token)) > 0) { if (data.Length + count > maximum) throw new InvalidDataException("요청 크기 제한을 초과했습니다."); data.Write(buffer, 0, count); }
+        while ((count = await context.Request.Body.ReadAsync(buffer, timeout.Token)) > 0) { if (data.Length + count > maximum) throw new InvalidDataException(Locale.Get("http.error.requestTooLarge")); data.Write(buffer, 0, count); }
         return JsonDocument.Parse(data.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
     }
     public static async Task ReplyAsync(HttpContext context, int status, object value)

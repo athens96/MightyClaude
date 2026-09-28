@@ -48,8 +48,11 @@ public static class ActivitySupport
         if (value.Kind == "turn" || !Terminal(value.State) || value.DurationMs is not double ms || !ValidDuration(ms)) return null;
         if (ms < 1) return ms == 0 ? "0ms" : "<1ms";
         if (ms < 1000) return $"{(long)ms}ms";
-        if (ms < 60000) return (Math.Floor(ms / 100) / 10).ToString("F1", CultureInfo.InvariantCulture) + "초";
-        var seconds = (long)(ms / 1000); return seconds % 60 == 0 ? $"{seconds / 60}분" : $"{seconds / 60}분 {seconds % 60}초";
+        if (ms < 60000) return Locale.Get("run.activity.durationSeconds", new Dictionary<string, string> { ["seconds"] = (Math.Floor(ms / 100) / 10).ToString("F1", CultureInfo.InvariantCulture) });
+        var seconds = (long)(ms / 1000); var minutes = (seconds / 60).ToString(CultureInfo.InvariantCulture);
+        return seconds % 60 == 0
+            ? Locale.Get("run.activity.durationMinutes", new Dictionary<string, string> { ["minutes"] = minutes })
+            : Locale.Get("run.activity.durationMinutesSeconds", new Dictionary<string, string> { ["minutes"] = minutes, ["seconds"] = (seconds % 60).ToString(CultureInfo.InvariantCulture) });
     }
     internal static string Id(string ns, string key) => "activity-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ns + "|" + key)))[..48].ToLowerInvariant();
     internal static string Kind(string tool) => tool.ToLowerInvariant() switch
