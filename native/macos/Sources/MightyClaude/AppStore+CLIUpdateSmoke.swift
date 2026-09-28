@@ -109,15 +109,6 @@ extension AppStore {
             try require(fake.calls == ProviderOptions.ids.filter { $0 != "claude" } && cliUpdateResults["claude"]?.status == "skipped", "실행 중인 로컬 CLI를 업데이트했습니다.")
             result["runningProviderSkipped"] = true
             snapshot.sessions[index].status = "idle"
-
-            stage = "shared-host-skip"
-            fake.calls.removeAll()
-            remoteState.host.enabled = true // State-only fixture; no listener is opened.
-            startCLIUpdates(update: update)
-            try await waitForSmoke(timeout: 30) { !self.isUpdatingCLIs }
-            try require(fake.calls.isEmpty && ProviderOptions.ids.allSatisfy { cliUpdateResults[$0]?.status == "skipped" }, "원격 공유 중인 CLI를 업데이트했습니다.")
-            result["remoteHostSharingSkipped"] = true
-            remoteState.host.enabled = false
             result["passed"] = true
         } catch {
             result["failedStage"] = stage
@@ -125,7 +116,6 @@ extension AppStore {
             if let screenshot = try? captureSmokeWindow(window, filename: "cli-update-failure.png") { result["failureScreenshot"] = screenshot.path }
         }
         fake.release()
-        remoteState.host.enabled = false
         cliUpdateTask?.cancel()
         await cliUpdateTask?.value
         do {

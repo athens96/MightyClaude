@@ -112,7 +112,7 @@ public extension RunSession {
         runTiming = AgentRunTiming(startedAt: date)
     }
 
-    /// Shared local/remote and provider-independent event path. Tool completion
+    /// Shared provider-independent event path. Tool completion
     /// is only an observation; terminal run status alone finishes the clock.
     mutating func recordRunTiming(_ event: RunEvent, at date: Date = Date()) {
         guard kind != "shell", event.sessionId == id else { return }

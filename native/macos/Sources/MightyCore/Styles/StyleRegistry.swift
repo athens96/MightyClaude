@@ -48,12 +48,10 @@ public struct StyleRejection: Sendable, Equatable {
     public init(path: String, source: StyleSource, error: StyleManifestError) { self.path = path; self.source = source; self.error = error }
 }
 
-/// A path string alone cannot tell a remote host's `/home/ubuntu/proj` from
-/// the Mac's own (§3.1), so the workspace travels as a pair.
+/// The workspace a pane belongs to; only its own workspace styles apply (§3.1).
 public struct StyleWorkspaceRef: Sendable, Equatable, Hashable {
     public var path: String
-    public var isRemote: Bool
-    public init(path: String, isRemote: Bool) { self.path = path; self.isRemote = isRemote }
+    public init(path: String) { self.path = path }
 }
 
 /// The whole file's bytes, not the parsed result: a changed comment or space
@@ -74,8 +72,8 @@ public enum StyleSourceScanner {
 
     public static func user(directory: URL) -> [DiscoveredStyleFile] { read(directory: directory, source: .user, workspacePath: nil) }
 
-    /// Called only for a workspace with `remote == nil`; a linked folder or a
-    /// linked `.claude` puts the directory outside the repo and yields nothing.
+    /// A linked folder or a linked `.claude` puts the directory outside the
+    /// repo and yields nothing.
     public static func workspace(path: String) -> [DiscoveredStyleFile] {
         let workspace = URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath()
         let directory = URL(fileURLWithPath: path, isDirectory: true)
@@ -161,7 +159,7 @@ public struct StyleRegistry: Sendable {
     public func applicable(workspace: StyleWorkspaceRef?) -> [RegisteredStyle] {
         styles.filter { style in
             guard style.source == .workspace else { return true }
-            guard let workspace, !workspace.isRemote else { return false }
+            guard let workspace else { return false }
             return style.workspacePath == workspace.path
         }
     }

@@ -122,7 +122,7 @@ internal static class RenameVerification
     {
         var directory = Verification.Temp(); var workspacePath = Verification.Temp();
         await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(null));
-        var service = new DesktopService(directory, null, "", catalog, testLoopback: true);
+        var service = new DesktopService(directory, null, "", catalog);
         try
         {
             await service.InitializeAsync();

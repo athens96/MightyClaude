@@ -181,28 +181,6 @@ struct MightyGraphTests {
         #expect(!RemoteValidation.event(corrupt, sessionId: "other"))
     }
 
-    @Test func remoteGraphUsesExplicitOptInAndPreservesParentAndEntries() async throws {
-        let child = node("remote-run", agent: "child", parent: "parent", state: "completed", input: "Inspect source", output: "Checked", entries: [LogEntry(id: "child-message", kind: "assistant", text: "# Checked")])
-        let poll = WirePoll(cursor: 1, lastCursor: 1, gap: false, done: false, events: [WireEvent(cursor: 1, event: RunEvent(sessionId: "remote-job", type: "graph", graph: child))])
-        let body = try JSONEncoder().encode(poll)
-        let token = String(repeating: "g", count: 43)
-        let server = HTTPServer(address: "127.0.0.1", port: 0) { request in
-            guard request.headers["x-mighty-graph"] == "1", request.headers["authorization"] == "Bearer \(token)" else { return .json(400, ["error": "missing graph opt-in"]) }
-            return HTTPResponse(status: 200, body: body, headers: ["x-mighty-remote-version": "1"])
-        }
-        do {
-            let port = try await server.start()
-            let target = RemoteTarget(origin: "http://127.0.0.1:\(port)", host: "127.0.0.1", port: Int(port), ip: "127.0.0.1")
-            let data = try await RemoteTransport.request(target, token: token, method: "GET", path: "/v1/runs/remote-job/events?cursor=0")
-            let received = try JSONDecoder().decode(WirePoll.self, from: data)
-            let event = try #require(received.events.first?.event)
-            #expect(RemoteValidation.event(event, sessionId: "remote-job"))
-            #expect(event.graph == child)
-            #expect(ExecutionGraphSupport.normalized(child) != nil)
-        } catch { await server.stop(); throw error }
-        await server.stop()
-    }
-
     @Test func liveBudgetRetainsUnfinishedChildIdentityWhenTextIsTrimmed() throws {
         let agents = (0..<128).map { index in
             MightyGraphAgent(id: "agent-\(index)", input: String(repeating: "p", count: 16_384), status: index == 127 ? "waiting" : "completed",

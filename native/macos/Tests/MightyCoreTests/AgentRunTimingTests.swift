@@ -27,7 +27,7 @@ struct AgentRunTimingTests {
     @Test func durableSessionClockUsesWholeRunLifecycleForEveryProvider() {
         let start = Date(timeIntervalSince1970: 1_000)
         for provider in ProviderOptions.ids {
-            var session = RunSession(workspaceId: "local-or-remote", title: provider, provider: provider)
+            var session = RunSession(workspaceId: "workspace", title: provider, provider: provider)
             session.beginRunTiming(at: start); session.status = "running"
             session.recordRunTiming(RunEvent(sessionId: session.id, type: "status", status: "running"), at: start.addingTimeInterval(3))
             let tool = AgentActivity(provider: provider, kind: "tool", state: "completed", summary: "fixture")

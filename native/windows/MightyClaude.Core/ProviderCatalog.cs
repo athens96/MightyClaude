@@ -24,15 +24,6 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         var permission = PermissionModes(provider).Contains(v.PermissionMode) ? v.PermissionMode : "manual";
         return new(caps.Effort && Wire.Efforts.Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission == "acceptEdits" && v.NetworkAccess);
     }
-    public static string? RemoteSettingsProblem(RunSettings settings, ProviderCapabilities? capabilities)
-    {
-        if (settings.PermissionMode == "auto" && capabilities?.PermissionModes?.Contains("auto") != true) return Locale.Get("provider.remote.autoModeUnsupported");
-        if (settings.PermissionMode == "fullAccess" && capabilities?.PermissionModes?.Contains("fullAccess") != true) return Locale.Get("provider.remote.fullAccessUnsupported");
-        if (settings.FastMode && capabilities?.FastMode != true) return Locale.Get("provider.remote.fastModeUnsupported");
-        if (settings.WebSearch != "default" && capabilities?.WebSearch != true) return Locale.Get("provider.remote.webSearchUnsupported");
-        if (settings.NetworkAccess && capabilities?.NetworkAccess != true) return Locale.Get("provider.remote.networkAccessUnsupported");
-        return null;
-    }
     public static ModelCatalog Fallback(string provider)
     {
         var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = Name(provider) }), Locale.Get("provider.fallback.defaultDescription")) };

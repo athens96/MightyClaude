@@ -169,51 +169,5 @@ private final class AttachmentEvents: @unchecked Sendable {
         #expect(!events.values().contains { $0.entry?.text.contains("BAD_LAUNCH") == true })
         await runner.shutdown(); await service.shutdown()
     }
-    @Test func remoteAttachmentRoundtripAndAuthenticatedBodyLimits() async throws {
-        let attachment = try AttachmentSupport.make(name: "large.bin", data: Data(repeating: 255, count: 600 * 1024))
-        let token = String(repeating: "a", count: 43)
-        for modern in [false, true] {
-            let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
-            let remoteWorkspace = Workspace(id: "remote-space", name: "Remote", path: "/tmp/fixture")
-            var runtime = ProviderOptions.fallbackRuntime("gemini"); runtime.capabilities.attachments = modern
-            let info = WireInfo(hostId: "fixture-host", hostName: "Fixture", workspaces: [remoteWorkspace], runtime: RuntimeInfo(providers: [runtime]))
-            let infoBody = try JSONEncoder().encode(info); let events = AttachmentEvents()
-            let server = HTTPServer(address: "127.0.0.1", port: 0, requestBodyLimit: { head in RemoteService.attachmentBodyLimit(head, token: token, allowLoopback: true) }) { request in
-                if request.method == "POST" {
-                    events.add(RunEvent(sessionId: "captured", type: "log", entry: LogEntry(kind: "system", text: String(decoding: request.body, as: UTF8.self))))
-                    return HTTPResponse(status: 400, body: Data("{}".utf8), headers: ["x-mighty-remote-version": "1"])
-                }
-                return HTTPResponse(status: 200, body: infoBody, headers: ["x-mighty-remote-version": "1"])
-            }
-            let unavailable = URL(fileURLWithPath: "/usr/bin/false")
-            let providers = ProviderService(binaryOverrides: ["claude": unavailable, "codex": unavailable, "gemini": unavailable])
-            let repository = StateRepository(directory: root, legacyStateURL: nil)
-            let client = RemoteService(repository: repository, providers: providers, pluginDirectory: root, dataDirectory: root, onEvent: { _ in }, allowLoopbackForTests: true)
-            do {
-                let port = try await server.start(); let address = "http://127.0.0.1:\(port)"
-                let connected = try await client.connectRemote(name: "Fixture", address: address, token: token)
-                let connection = try #require(connected.connections.first)
-                let imported = try await client.importWorkspace(connectionId: connection.id, workspaceId: remoteWorkspace.id)
-                let request = StartRunRequest(sessionId: "attachment-check", workspaceId: imported.id, input: "", provider: "gemini", attachments: [attachment])
-                do { try await client.start(request: request, workspace: imported); Issue.record("Capture fixture never accepts jobs") } catch { }
-                let captured = try events.values().compactMap(\.entry).map { try JSONDecoder().decode(WireStart.self, from: Data($0.text.utf8)).request }
-                #expect(captured.count == (modern ? 1 : 0))
-                if modern {
-                    #expect(captured.first?.attachments == [attachment]); #expect(captured.first?.workspaceId == remoteWorkspace.id)
-                    #expect(try #require(events.values().first?.entry?.text.utf8.count) < 850 * 1024)
-                }
-                // Oversized uploads without a bearer, or on a different route,
-                // must be rejected before the application handler receives bytes.
-                for (route, bearer) in [("/v1/runs", "wrong"), ("/v1/runs/job/stop", token)] {
-                    // Send only the declared length: the early response proves
-                    // rejected bodies were never awaited or buffered in full.
-                    let response = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/usr/bin/curl"), arguments: ["--silent", "--max-time", "3", "--output", "/dev/null", "--write-out", "%{http_code}", "--request", "POST", "--header", "Authorization: Bearer " + bearer, "--header", "x-mighty-remote-version: 1", "--header", "Content-Length: 614400", address + route], timeout: 4)
-                    #expect(String(decoding: response.stdout, as: UTF8.self) == "413")
-                }
-                #expect(events.values().count == (modern ? 1 : 0))
-            } catch { await client.shutdown(); await server.stop(); await providers.shutdown(); throw error }
-            await client.shutdown(); await server.stop(); await providers.shutdown()
-        }
-    }
 
 }

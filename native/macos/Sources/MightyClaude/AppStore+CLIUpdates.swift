@@ -25,8 +25,8 @@ extension AppStore {
             }
             for provider in ProviderOptions.ids {
                 guard !Task.isCancelled, self.canManageCLIUpdates else { break }
-                if self.remoteState.host.enabled || self.remoteBusy || self.localCLIIsRunning(provider) {
-                    self.cliUpdateResults[provider] = CLIUpdateResult(provider: provider, status: "skipped", beforeVersion: nil, afterVersion: nil, method: "unknown", detail: self.remoteState.host.enabled || self.remoteBusy ? "원격 공유·연결 작업이 끝난 후 다시 업데이트하세요." : "이 CLI로 작업 중입니다. 작업 완료 후 다시 업데이트하세요.", output: "")
+                if self.localCLIIsRunning(provider) {
+                    self.cliUpdateResults[provider] = CLIUpdateResult(provider: provider, status: "skipped", beforeVersion: nil, afterVersion: nil, method: "unknown", detail: "이 CLI로 작업 중입니다. 작업 완료 후 다시 업데이트하세요.", output: "")
                     continue
                 }
                 self.updatingCLI = provider

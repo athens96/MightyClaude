@@ -156,7 +156,7 @@ PLIST
     trap - EXIT
 fi
 # Ad-hoc signatures differ per build, so the Keychain treats every rebuild as a
-# new app and asks again for the remote connection key. A stable local
+# new app and asks again for Keychain access (Claude usage lookup). A stable local
 # code-signing certificate (Keychain Access → Certificate Assistant, type
 # "Code Signing") makes "Always Allow" stick across rebuilds.
 CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:--}"

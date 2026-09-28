@@ -46,8 +46,6 @@ public sealed class ClaudePluginReader : IPluginReader
     /// from that running read instead of starting a second CLI process.
     public Task<ClaudePluginSnapshot> SnapshotAsync(Workspace workspace, CancellationToken cancellation = default)
     {
-        if (workspace.Remote is not null)
-            return Task.FromResult(new ClaudePluginSnapshot { Status = ClaudePluginStatus.Remote, Detail = PluginStrings.DetailRemote });
         lock (gate)
         {
             if (closed)
@@ -84,18 +82,12 @@ public sealed class ClaudePluginReader : IPluginReader
         return OperateAsync(null, null, marketplace, workspace, cancellation);
     }
 
-    // A remote workspace is answered before anything else is looked at, exactly
-    // as macOS does, so a bad argument on a remote workspace still runs nothing.
-    private Task<ClaudePluginOperationResult> Refused(Workspace workspace, string detail) =>
-        Task.FromResult(workspace.Remote is not null
-            ? new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.DetailRemote)
-            : new ClaudePluginOperationResult(ClaudePluginStatus.Failed, detail));
+    private static Task<ClaudePluginOperationResult> Refused(Workspace workspace, string detail) =>
+        Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Failed, detail));
 
     private Task<ClaudePluginOperationResult> OperateAsync(
         string? pluginId, string? scope, string? marketplace, Workspace workspace, CancellationToken cancellation)
     {
-        if (workspace.Remote is not null)
-            return Task.FromResult(new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.DetailRemote));
         lock (gate)
         {
             if (closed)

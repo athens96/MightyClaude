@@ -135,8 +135,7 @@ public struct MobileWorkspace: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var path: String
-    public var remote: Bool
-    public init(id: String, name: String, path: String, remote: Bool) { self.id = id; self.name = name; self.path = path; self.remote = remote }
+    public init(id: String, name: String, path: String) { self.id = id; self.name = name; self.path = path }
 }
 
 public struct MobilePreview: Codable, Sendable, Equatable {

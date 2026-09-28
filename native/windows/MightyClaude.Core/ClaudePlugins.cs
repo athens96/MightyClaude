@@ -65,7 +65,7 @@ public sealed record ClaudePluginMarketplace(string Name, string SourceKind = "u
 
 public sealed record ClaudePluginSnapshot
 {
-    /// ready, missing, unsupported, failed, cancelled or remote.
+    /// ready, missing, unsupported, failed or cancelled.
     public string Status { get; init; } = ClaudePluginStatus.Failed;
     public string Detail { get; init; } = "";
     public string? CliVersion { get; init; }
@@ -88,7 +88,6 @@ public static class ClaudePluginStatus
     public const string Unsupported = "unsupported";
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
-    public const string Remote = "remote";
     // Operation results add three words of their own (ClaudePluginService.swift).
     public const string Succeeded = "succeeded";
     public const string Skipped = "skipped";

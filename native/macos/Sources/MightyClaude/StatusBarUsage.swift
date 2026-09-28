@@ -48,8 +48,7 @@ final class AccountUsageStatusController: ObservableObject {
 
     private func update(_ snapshot: AppSnapshot) {
         guard !stopped else { return }
-        // Local AI panes only; a remote host never borrows this Mac's account.
-        let local = Set(snapshot.workspaces.filter { $0.remote == nil }.map(\.id))
+        let local = Set(snapshot.workspaces.map(\.id))
         var next: [String] = []
         for session in snapshot.sessions where session.kind != "shell" && local.contains(session.workspaceId) && ProviderOptions.ids.contains(session.provider) {
             if !next.contains(session.provider) { next.append(session.provider) }

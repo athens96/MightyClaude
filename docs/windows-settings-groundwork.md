@@ -119,8 +119,7 @@ arrives on Windows):
 | `providers` | `이 PC의 CLI` | the unnamed provider `Section` |
 | `appInfo` | `앱 정보` | `Section("앱 정보")` |
 
-Absent until their feature arrives: `remoteConnection`, `styles`, `components`,
-`mobileRemote`, `companion`, `cliAccounts`, `claudeMods`, `appUpdate`.
+Absent until their feature arrives: `styles`, `components`, `mobileRemote`, `companion`, `cliAccounts`, `claudeMods`, `appUpdate`.
 
 **Smoke** — `SettingsSectionsSmoke.RunAsync` (Core) takes the headings and the
 result-row statuses the screen actually built, refuses anything that is not the

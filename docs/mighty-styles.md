@@ -4,7 +4,7 @@
 
 읽는 순서: 스키마(1) → 검증(2) → 출처·신뢰(3·4) → 엔진 API(5) → 앱(6) → 폰(7) → 고정(8) → 테스트(9) → 후속(10) → 부록 A → 구현 순서(11). 부록 A는 네 스타일이 이 스키마로 표현되는지 확인하는 스케치이고, 11장은 이 계약을 서로 부딪히지 않는 세 갈래 작업으로 나눈다.
 
-**범위 밖**: 그래프 레이아웃 엔진·블록 배치·블록 종류(`MightyGraph*`), 질문 패널(`AgentQuestionPanel`·`QuestionnaireProgress`)의 동작 자체, 원격 워크스페이스, Claude 이외의 프로바이더.
+**범위 밖**: 그래프 레이아웃 엔진·블록 배치·블록 종류(`MightyGraph*`), 질문 패널(`AgentQuestionPanel`·`QuestionnaireProgress`)의 동작 자체, Claude 이외의 프로바이더.
 
 **적격성은 매니페스트가 정하지 않는다.** 가이드 스타일은 언제나 *로컬 워크스페이스의 Claude 실행 창 + 마이티 보기*에서만 쓸 수 있다(`AppStore+Ouroboros.swift:9-13`, `MobileRemoteSupport.swift:104-107`). 스키마에 적격성 필드는 없다.
 
@@ -881,8 +881,6 @@ stateOverrides: [{
 
 **워크스페이스 위치를 `.claude/mighty-styles/`로 정한 이유 한 줄**: `.claude/skills`·`.claude/commands`는 CLI 자신의 이름 공간이라 여기에 JSON을 끼워 넣으면 슬래시 명령 스캐너(`SlashCommandCatalog.commands`, `SlashCommands.swift:139-160`)와 충돌하고, 전용 폴더라야 "저장소에서 발견됨" 목록이 디렉터리 나열 한 번으로 끝난다.
 
-**원격 워크스페이스는 스캔하지 않는다.** `StyleSourceScanner.workspace(...)`는 `remote == nil`인 워크스페이스에 대해서만 호출한다. 근거: 적격성 규칙상 원격 워크스페이스의 실행 창은 어떤 스타일도 쓸 수 없는데(`AppStore+Ouroboros.swift:9-13`), 스캔하면 **맥 자신의 디스크에서 그 경로에 우연히 있는 파일**을 읽어 결코 실행될 수 없는 스타일로 등록하게 된다. 더 나아가 `applicable`·`runnable`은 `workspacePath: String?`이 아니라 `workspace: Workspace?`를 받고, `remote != nil`이면 번들·사용자 스타일만 돌려준다 — 경로 문자열만 쓰면 원격 호스트의 `/home/ubuntu/proj`와 맥의 같은 경로가 **같은 승인 키를 공유한다**(4.3).
-
 **링크와 경계.** 워크스페이스 스캔은 `<워크스페이스>/.claude/mighty-styles`를 `resolvingSymlinksInPath`로 푼 뒤, 그 결과가 **같은 방식으로 푼 워크스페이스 경로 아래에 있을 때만** 진행한다. 아니면 그 출처는 파일 0개다. 폴더 자체가 링크이거나 상위 `.claude`가 링크이면 여기서 걸린다 — 항목 단위 검사만으로는 막지 못하는 경우다(git은 심볼릭 링크를 저장하고, 클론이 그것을 재현한다). 각 항목은 `URLResourceValues`로 `isSymbolicLink == false`, `isRegularFile == true`, **`linkCount == 1`**을 확인한다. 하드 링크는 일반 파일과 구별되지 않으므로 `linkCount`로만 걸린다.
 
 **나열의 한도.** 폴더 나열은 **1024개 항목에서 멈춘 뒤** 이름순으로 정렬하고, 그중 확장자가 `.json`인 **32개까지** 읽는다. 32개 상한만 두고 전부 나열하면 항목이 백만 개인 폴더가 스캔을 멈춰 세운다. 스캔 전체는 워커에서 돌고 결과만 메인 액터로 올린다. 파일 하나가 실패해도 나머지는 계속 읽고, 실패는 이유와 함께 목록에 남는다.
@@ -1201,7 +1199,7 @@ public struct StyleRejection: Sendable { public var path: String; public var sou
 public enum StyleSourceScanner {           // 파일을 만지는 유일한 지점
     public static func bundled() -> [DiscoveredStyleFile]
     public static func user(directory: URL) -> [DiscoveredStyleFile]
-    public static func workspace(path: String) -> [DiscoveredStyleFile]   // remote == nil 일 때만 호출
+    public static func workspace(path: String) -> [DiscoveredStyleFile]
 }
 
 public struct StyleRegistry: Sendable {
@@ -1209,7 +1207,7 @@ public struct StyleRegistry: Sendable {
                             approvals: [StyleApprovalRecord]) -> (styles: [RegisteredStyle], rejections: [StyleRejection])
     public func resolve(_ id: String) -> RegisteredStyle?
     /// 이 워크스페이스의 실행 창이 고를 수 있는 것: 번들·사용자 전부 + 이 워크스페이스의 것.
-    /// workspace가 nil이거나 remote != nil이면 번들·사용자만.
+    /// workspace가 nil이면 번들·사용자만.
     public func applicable(workspace: StyleWorkspaceRef?) -> [RegisteredStyle]
     /// 실제로 돌릴 수 있는 것: 승인·번들이고, hash가 주어지면 일치할 때만 (3.4).
     public func runnable(_ id: String, workspace: StyleWorkspaceRef?, hash: String?) -> RegisteredStyle?
@@ -1218,9 +1216,9 @@ public struct StyleRegistry: Sendable {
     public func requestIcon(forInput: String, workspace: StyleWorkspaceRef?) -> StyleIcon?
     public func requestTint(forInput: String, workspace: StyleWorkspaceRef?) -> StyleTint
 }
-/// 경로 문자열만으로는 원격 호스트의 같은 경로와 구별되지 않는다(3.1).
+/// 실행 창이 속한 워크스페이스. 그 워크스페이스의 스타일만 해당된다(3.1).
 public struct StyleWorkspaceRef: Sendable, Equatable, Hashable {
-    public var path: String; public var isRemote: Bool
+    public var path: String
 }
 ```
 
@@ -1516,7 +1514,7 @@ capability는 **호스트가** 광고하고 폰은 그것을 읽을 뿐이다. �
 - `mightyStyle` — 허용 값은 그대로 `cli` `ouroboros` `paperthin`(`MobileWire.mightyStyles`, `MobileRemoteModels.swift:53`). **내장 둘이 아닌 스타일에는 언제나 `cli`를 싣는다.**
 - `styleId` (신규, 선택) — 열린 문자열.
 
-**`styleId`는 `registry.runnable(...)`의 결과에서 나온다.** 실행 창이 실제로 그 스타일로 돌고 있지 않으면 — 미승인 · 취소 · 미등록 · 해시 불일치(3.4) · 원격 워크스페이스 — **언제나 `"cli"`다**. 저장된 `mightyStyle` 값은 폰에 나가지 않는다.
+**`styleId`는 `registry.runnable(...)`의 결과에서 나온다.** 실행 창이 실제로 그 스타일로 돌고 있지 않으면 — 미승인 · 취소 · 미등록 · 해시 불일치(3.4) — **언제나 `"cli"`다**. 저장된 `mightyStyle` 값은 폰에 나가지 않는다.
 > 없으면 4.5가 공들여 감춘 것이 세션 요약 필드 하나로 새어 나간다. `options.styles`에서 빼고 `panel`을 안 만들고 400을 구별 불가능하게 만들어 놓고서, 모든 세션 요약에 미승인 스타일의 id를 실어 보내면 아무 의미가 없다.
 
 즉 값이 조용히 기본값으로 바뀌는 일은 없다: `mightyStyle`은 자기 어휘 안에서 정직한 값(`cli` = "네가 아는 스타일이 아니다")을 싣고, **진실은 `styleId`가 나른다**. 구버전 폰은 `styleId`를 모르고 무시하므로 그 실행 창을 일반 CLI로 본다 — 시드가 요구한 폴백 그대로다.
@@ -1756,7 +1754,7 @@ scripts/check-style-freeze.sh                       # 0
 | `StylesOuroborosTests` | 5.9의 값 전부 |
 | `StylesPaperthinTests` | 5.9의 값 전부 |
 | `StyleManifestTests` | 2장 오류 코드 **하나마다 최소 한 개**의 거부 픽스처(48개). 목록은 **프로덕션의 `StyleErrorCodes.all`과 집합으로 같아야** 한다 — 테스트 안의 숫자 리터럴은 새 코드를 알아차리지 못한다. 유효 최소 매니페스트가 통과한다. 키의 이스케이프(`E_KEY_ESCAPE`, 확인된 `autoAllow` 공격 입력 포함) · 키의 제어 문자·길이 · 최상위 뒤 잔여물 · `map` 없는 규칙 · `glyph`의 ZWJ 이모지 · `lowercase` 인식 아래의 대문자 id/match/별칭 |
-| `StyleRegistryTests` | 우선순위 3종, 같은 출처 안 충돌의 결정적 순서(§3.3의 이름순), `applicable`이 남의 워크스페이스 매니페스트를 내지 않음, 원격 워크스페이스가 workspace 출처를 내지 않음, `mightyStyle` 정규화(3.4), **레지스트리 제목**이 교차 스타일 값을 낸다(1.10), 인식되지 않은 입력은 아이콘·색도 얻지 않는다, 스타일 없는 실행 창은 훑을 것이 없다, 해시 불일치 창이 제목을 잃는다, 링크·하드 링크 픽스처는 32개 상한 **안쪽**에 정렬되는 이름을 쓴다 |
+| `StyleRegistryTests` | 우선순위 3종, 같은 출처 안 충돌의 결정적 순서(§3.3의 이름순), `applicable`이 남의 워크스페이스 매니페스트를 내지 않음, `mightyStyle` 정규화(3.4), **레지스트리 제목**이 교차 스타일 값을 낸다(1.10), 인식되지 않은 입력은 아이콘·색도 얻지 않는다, 스타일 없는 실행 창은 훑을 것이 없다, 해시 불일치 창이 제목을 잃는다, 링크·하드 링크 픽스처는 32개 상한 **안쪽**에 정렬되는 이름을 쓴다 |
 | `StyleTrustTests` | 승인 → `approved`, 1바이트 수정 → 스캔 후 `pending`, 취소 → `revoked`, 내용이 바뀌어도 자리가 `revoked`, 레코드 파일 권한 0600, 256개 상한, 잠금 상태, 원자적 병합, **병합이 자리당 승인 하나를 지키고 거부는 전부 남긴다**(4.3), 로드 뒤 깨진 파일은 잠기고 덮어쓰이지 않는다, 두 번째 프로세스의 승인이 다음 `load()`에 보인다 |
 | `StyleEvaluatorTests` | 프롬프트 치환 4경우(텍스트 있음/없음 × 두 접기), `recognised` vs `namesSomething`의 차이(`"ooo 이거 해줘"`), 별칭, 단계 계산, `start`/`byPhase`/`byGroup`, Enter 6조건 각각의 거짓 경우와 **되돌리기 칩 예외**, 무장 칩이 입력창의 글까지 본다, 질문이 Enter 규칙보다 먼저다(`StyleComposer`), 실행 중 `byPhase`는 칩이 없고 `byGroup`은 그대로다, `initialGroup` 3상태, 추천이 그룹과 무관하다, `guidance`의 `{phase}` 치환과 단계 없을 때의 삭제 |
 | `StyleCapabilityTests` | 케이스북 3상태, 파일 순서, 링크 미추적(폴더 링크·항목 링크·하드 링크), **정렬 뒤** 24개 상한(긴 이력에서 최신 폴더를 놓치지 않는다), 6개 칩 상한, 빈 상태 문구, **출력 문자열 정규화**(U+202E가 든 폴더명 → U+FFFD), 80자 한도가 `…`를 포함해 정확히 80 |
@@ -1829,7 +1827,7 @@ scripts/check-style-freeze.sh                       # 0
 9. **단계별 자동 허용.** `autoAllow`는 스타일 전체에 걸린다. "인터뷰 단계에서만 이 도구"는 못 쓴다. 읽기 전용/쓰기 분류도 없어서, 소속 규칙(1.9) 안에서는 작성자가 무엇이든 고를 수 있다.
 10. **설치 명령 하나.** 준비물이 여럿이어도 설치 버튼은 하나다. probe별 설치 명령이 없다(per-probe `install` 플래그는 "이 실패를 그 하나의 명령이 고치는가"만 말한다).
 11. **내장 기능 하나.** `paperthin.casebook`뿐이다. "최근 커밋 읽기", "열린 PR 읽기", "플러그인 상태 읽기" 같은 것은 표현할 수 없다.
-12. **적격성 고정.** 로컬 Claude 실행 창 + 마이티 보기가 아닌 곳(Codex·Gemini·원격 워크스페이스·터미널 창)에 스타일을 열어 줄 수 없다.
+12. **적격성 고정.** 로컬 Claude 실행 창 + 마이티 보기가 아닌 곳(Codex·Gemini·터미널 창)에 스타일을 열어 줄 수 없다.
 13. **질문 패널 손대기.** `AskUserQuestion` 패널의 문구·배치는 매니페스트가 못 건드린다.
 14. **그래프 구조.** 요청 블록의 제목 **접두사**·아이콘·색만 바꿀 수 있고, `요청 N · <provider>` 꼬리나 단계 레인이나 새 블록 종류는 못 만든다.
 15. **접두사 없는 맨 키워드 인식.** `recognition.prefixes`는 비울 수 없고 이름은 한 단어다(첫 공백 앞까지). oh-my-claudecode가 문서화한 `autopilot`·`ralplan`·`deepsearch`·`cancelomc` 같은 **맨 키워드 트리거**와 `deep interview` 같은 **두 단어 이름**은 인식되지 않는다 — 매니페스트에 그 행동이 있어도 사용자가 그렇게 치면 제목이 안 붙고 단계가 안 움직인다. `{"kind":"bareWords","names":[…]}`가 필요하다. omc는 이것을 낮춰 담는다(A.3).

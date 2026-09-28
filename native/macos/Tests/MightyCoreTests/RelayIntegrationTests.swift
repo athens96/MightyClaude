@@ -35,7 +35,7 @@ private final class RecordingHost: StaticHost, @unchecked Sendable {
     var submits: [(sessionId: String, text: String)] { lock.lock(); defer { lock.unlock() }; return submitted }
 
     override func mobileState() async -> MobileState {
-        MobileState(revision: 3, hostName: "Relay Mac", workspaces: [MobileWorkspace(id: "workspace-1", name: "Work", path: "/tmp/work", remote: false)],
+        MobileState(revision: 3, hostName: "Relay Mac", workspaces: [MobileWorkspace(id: "workspace-1", name: "Work", path: "/tmp/work")],
                     sessions: Self.panes.map { MobileSessionSummary(id: $0, workspaceId: "workspace-1", title: $0, kind: "claude", provider: "claude", model: "default",
                                                                     status: "idle", revision: 1, updatedAt: "2026-09-26T00:00:00Z") })
     }

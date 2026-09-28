@@ -99,7 +99,7 @@ Claude and Codex values are stored in `AppSnapshot.phaseModels` with the macOS f
 per run exactly as on macOS (one merged `--settings` env JSON, `--model` only when the session model is `default`,
 Codex `-c` flags).
 
-The Windows section sits between the remote-connection slot and styles (macOS order), titled from
+The Windows section sits between the display slot and styles (macOS order), titled from
 `settings.phaseModels.sectionTitle`, and uses the same `settings.phaseModels.*` locale keys as macOS.
 
 ## Registered model names

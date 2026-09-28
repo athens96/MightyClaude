@@ -88,7 +88,7 @@ public enum ReferenceLinkSupport {
     /// Read-only extraction for the final-result file list. Markdown links use
     /// the same Foundation parser and options as AgentMarkdownDocument; plain
     /// text uses the same path detector as transcript links. No directory scan
-    /// or file content read is performed, and remote panes pass a nil root.
+    /// or file content read is performed.
     public static func resultFiles(in texts: [String], root: URL?) -> [ReferenceFile] {
         guard let root, root.isFileURL else { return [] }
         let base = root.standardizedFileURL.resolvingSymlinksInPath()

@@ -418,13 +418,13 @@ internal static class PhaseModelVerification
         return Task.CompletedTask;
     }
 
-    // 7. 화면 등록: phaseModels 칸이 macOS 차례 그대로 remoteConnection과 styles 사이에 있다
+    // 7. 화면 등록: phaseModels 칸이 macOS 차례 그대로 display와 styles 사이에 있다
     internal static Task SectionRegisteredInMacOrder()
     {
         var ids = SettingsSections.MacOrder.Select(slot => slot.Id).ToArray();
         var index = Array.IndexOf(ids, SettingsSections.PhaseModels);
         Check(index > 0, "phaseModels slot is registered");
-        Check(ids[index - 1] == SettingsSections.RemoteConnection, "phaseModels sits after remoteConnection");
+        Check(ids[index - 1] == SettingsSections.Display, "phaseModels sits after display");
         Check(ids[index + 1] == SettingsSections.Styles, "phaseModels sits before styles");
 
         var slot = SettingsSections.MacOrder[index];

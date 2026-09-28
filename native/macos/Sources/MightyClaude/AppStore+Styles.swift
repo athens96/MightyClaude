@@ -31,11 +31,10 @@ extension AppStore {
     var styleDirectory: URL { dataDirectory.appendingPathComponent("styles", isDirectory: true) }
     var styleTrustDirectory: URL { dataDirectory.appendingPathComponent("style-trust", isDirectory: true) }
 
-    /// A path string alone cannot tell a remote host's folder from the Mac's,
-    /// so the workspace travels as a pair (§3.1).
+    /// The pane's workspace, for matching workspace styles (§3.1).
     func styleWorkspaceRef(_ session: RunSession) -> StyleWorkspaceRef? {
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
-        return StyleWorkspaceRef(path: workspace.path, isRemote: workspace.remote != nil)
+        return StyleWorkspaceRef(path: workspace.path)
     }
 
     /// Re-reads the three sources. There is no file watcher: a manifest that
@@ -115,9 +114,8 @@ extension AppStore {
     }
 
     /// Called when a workspace draws its first pane, so a repo's manifests are
-    /// found before anything can pick one. Remote workspaces are never scanned.
     func scanWorkspaceStyles(for session: RunSession) {
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil,
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
               !scannedStyleWorkspaces.contains(workspace.path) else { return }
         rescanStyles(workspacePath: workspace.path)
     }
@@ -129,7 +127,7 @@ extension AppStore {
     /// ones this pane chose (§3.4).
     func guidedStyle(_ session: RunSession) -> RegisteredStyle? {
         guard session.kind == "claude", session.provider == "claude", session.agentViewMode == "mighty",
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil,
+              snapshot.workspaces.contains(where: { $0.id == session.workspaceId }),
               let id = session.mightyStyle else { return nil }
         return styleRegistry.runnable(id, workspace: styleWorkspaceRef(session), hash: session.mightyStyleHash)
     }
@@ -177,7 +175,7 @@ extension AppStore {
     /// the answer: the same style is ready in one clone and not in another.
     func stylePrerequisiteKey(_ style: RegisteredStyle, for session: RunSession) -> StylePrerequisiteKey {
         StylePrerequisiteKey(styleId: style.id,
-                             workspacePath: snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }?.path)
+                             workspacePath: snapshot.workspaces.first { $0.id == session.workspaceId }?.path)
     }
 
     func stylePrerequisite(_ style: RegisteredStyle, for session: RunSession) -> StylePrerequisiteResult? {
@@ -223,7 +221,7 @@ extension AppStore {
     /// each other's readings.
     func refreshStyleCapabilities(_ style: RegisteredStyle, for session: RunSession) {
         guard !style.manifest.capabilities.isEmpty,
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }) else { return }
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
         loadStyleCapabilities(style.manifest.capabilities, workspaceId: workspace.id, path: workspace.path)
     }
 
@@ -298,7 +296,7 @@ extension AppStore {
     /// command is never run: a manifest string does not press Enter (§1.5).
     func startStyleInstall(_ style: RegisteredStyle, from session: RunSession) {
         guard let install = style.manifest.install else { return }
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId && $0.remote == nil }),
+        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
               let id = addSession(kind: "shell", workspaceId: workspace.id) else { error = "설치 터미널을 열지 못했습니다."; return }
         updateSession(id) { $0.title = StyleChrome.installPaneTitle(install.paneTitle, styleName: style.manifest.name, source: style.source) }
         pendingTerminalInput[id] = TerminalInput(text: install.command, autoRun: false)

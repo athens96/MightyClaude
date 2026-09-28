@@ -117,7 +117,7 @@ final class CoreTests {
         #expect(try ProviderService.arguments(request, pluginDirectory: plugin).contains("yolo"))
     }
 
-    @Test func testUnsupportedOptionsAndLegacyRemoteCapabilitiesFailClosed() throws {
+    @Test func testUnsupportedOptionsAndLegacyCapabilitiesFailClosed() throws {
         let legacyJSON = Data(#"{"effort":true,"permissionModes":["manual","acceptEdits"],"maxTurns":false,"maxBudgetUsd":false,"resume":true}"#.utf8)
         let legacy = try JSONDecoder().decode(ProviderCapabilities.self, from: legacyJSON)
         #expect(!legacy.fastMode && !legacy.webSearch && !legacy.networkAccess)
@@ -151,11 +151,15 @@ final class CoreTests {
 
     @Test func testLegacyImportIsAtomicBoundedAndLeavesOriginalUntouched() async throws {
         let root = try temporary(); let legacy = root.appendingPathComponent("electron-state.json"); let native = root.appendingPathComponent("native")
-        let fixture: [String: Any] = ["version": 1, "workspaces": [["id": "workspace", "name": "Legacy", "path": root.path, "createdAt": mightyTimestamp()]], "sessions": [["id": "legacy-pane", "workspaceId": "workspace", "title": "Legacy", "kind": "claude", "model": "sonnet", "status": "running", "logs": [], "createdAt": mightyTimestamp()]], "layout": "grid", "theme": "dark", "sidebarWidth": 252]
+        // The old profile may hold a workspace imported from another computer; it is left behind silently.
+        let peer: [String: Any] = ["id": "peer", "name": "Peer", "path": "/home/ubuntu/proj", "createdAt": mightyTimestamp(), "remote": ["connectionId": "conn", "workspaceId": "w1", "hostName": "Peer"]]
+        let fixture: [String: Any] = ["version": 1, "workspaces": [["id": "workspace", "name": "Legacy", "path": root.path, "createdAt": mightyTimestamp()], peer], "sessions": [["id": "legacy-pane", "workspaceId": "workspace", "title": "Legacy", "kind": "claude", "model": "sonnet", "status": "running", "logs": [], "createdAt": mightyTimestamp()], ["id": "peer-pane", "workspaceId": "peer", "kind": "claude", "logs": []]], "activeWorkspaceId": "peer", "layout": "grid", "theme": "dark", "sidebarWidth": 252]
         let original = try JSONSerialization.data(withJSONObject: fixture); try original.write(to: legacy)
         let repository = StateRepository(directory: native, legacyStateURL: legacy)
         var state = try await repository.load()
         #expect((state.sessions.first?.provider) == ("claude")); #expect((state.sessions.first?.settings) == (RunSettings())); #expect((state.sessions.first?.status) == ("stopped"))
+        #expect(state.workspaces.map(\.id) == ["workspace"] && state.sessions.map(\.id) == ["legacy-pane"] && state.activeWorkspaceId == "workspace")
+        #expect(!(try String(contentsOf: native.appendingPathComponent("workspace-state.json"), encoding: .utf8)).contains("peer"))
         #expect((try Data(contentsOf: legacy)) == (original))
         state.sessions[0].title = "Native saved"; state.sessions[0].titleMode = "fixed"; try await repository.save(state)
         let fresh = StateRepository(directory: native, legacyStateURL: legacy); let restored = try await fresh.load()
@@ -166,13 +170,12 @@ final class CoreTests {
         #expect((permissions?.intValue) == (0o600))
     }
 
-    @Test func testRemoteWindowsPathsAndLogAttributionSurviveStateNormalization() {
-        let reference = RemoteWorkspaceReference(connectionId: "connection", workspaceId: "peer-workspace", hostName: "Windows")
-        let remote = Workspace(id: "remote", name: "Remote", path: "C:\\Work\\app", remote: reference)
+    @Test func testNonLocalPathsAreDroppedAndLogAttributionSurvivesStateNormalization() {
+        let local = Workspace(id: "local", name: "Local", path: "/tmp/mighty-normalize")
         let invalid = Workspace(id: "local-invalid", name: "Invalid", path: "C:\\Work\\app")
-        let session = RunSession(workspaceId: remote.id, title: "Gemini", provider: "gemini", settings: RunSettings(effort: "high", maxTurns: 3), status: "running", logs: [LogEntry(kind: "assistant", text: "Old Codex answer", provider: "codex")])
-        let state = StateRepository.normalize(AppSnapshot(workspaces: [remote, invalid], sessions: [session]), restoring: true)
-        #expect((state.workspaces) == ([remote])); #expect((state.sessions[0].status) == ("stopped")); #expect((state.sessions[0].settings) == (RunSettings())); #expect((state.sessions[0].logs.first?.provider) == ("codex"))
+        let session = RunSession(workspaceId: local.id, title: "Gemini", provider: "gemini", settings: RunSettings(effort: "high", maxTurns: 3), status: "running", logs: [LogEntry(kind: "assistant", text: "Old Codex answer", provider: "codex")])
+        let state = StateRepository.normalize(AppSnapshot(workspaces: [local, invalid], sessions: [session]), restoring: true)
+        #expect((state.workspaces) == ([local])); #expect((state.sessions[0].status) == ("stopped")); #expect((state.sessions[0].settings) == (RunSettings())); #expect((state.sessions[0].logs.first?.provider) == ("codex"))
     }
 
     @Test func testDamagedNativeStateIsNeverOverwrittenByAnEmptySave() async throws {

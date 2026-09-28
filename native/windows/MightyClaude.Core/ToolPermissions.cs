@@ -5,8 +5,8 @@ using System.Text.Json;
 
 namespace MightyClaude.Core;
 
-/// Ephemeral, single-call consent. Never persisted in a snapshot or forwarded
-/// to a remote host. The original input stays inside the run's channel.
+/// Ephemeral, single-call consent. Never persisted in a snapshot. The original
+/// input stays inside the run's channel.
 public sealed record ToolPermissionRequest(
     string Id, string RunId, string ToolUseId, string ToolName,
     string InputJson, string Summary,

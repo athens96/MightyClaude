@@ -29,12 +29,6 @@ internal static class Verification
         var line = prompt.Split('\n').Single(value => value.StartsWith(prefix, StringComparison.Ordinal));
         return JsonSerializer.Deserialize<string>(line[prefix.Length..], Wire.Json) ?? throw new InvalidOperationException("Missing attachment path.");
     }
-    private sealed class Protector : ISecretProtector
-    {
-        private readonly byte[] key = RandomNumberGenerator.GetBytes(32);
-        public byte[] Protect(string value) { var nonce = RandomNumberGenerator.GetBytes(12); var bytes = Encoding.UTF8.GetBytes(value); var cipher = new byte[bytes.Length]; var tag = new byte[16]; using var aes = new AesGcm(key, 16); aes.Encrypt(nonce, bytes, cipher, tag); return nonce.Concat(tag).Concat(cipher).ToArray(); }
-        public string Unprotect(byte[] value) { var output = new byte[value.Length - 28]; using var aes = new AesGcm(key, 16); aes.Decrypt(value.AsSpan(0, 12), value.AsSpan(28), value.AsSpan(12, 16), output); return Encoding.UTF8.GetString(output); }
-    }
     private sealed class FakeManager(Action<RunEvent> emit) : IRunManager
     {
         internal readonly ConcurrentBag<StartRunRequest> Started = [];
@@ -117,7 +111,6 @@ internal static class Verification
         await Test("Claude current context, cumulative totals and quota observation age", ActivityUsageVerification.ClaudeContext);
         await Test("a leftover background task's report does not end the real request", ActivityUsageVerification.LeftoverTaskResult);
         await Test("optional metadata recovery, elapsed checkpoints and workspace state", ActivityUsageVerification.Persistence);
-        await Test("remote activity/usage opt-in, identity mapping and legacy cursor fallback", ActivityUsageVerification.Remote);
         await Test("authenticated structured Mods output and usage boundaries", ActivityUsageVerification.Mods);
         await Test("pane docking, split geometry, normalization and layout persistence", PaneLayoutVerification.Run);
         await Test("execution settings wire, permissions, fast/search/network overrides", SettingsVerification.Run);
@@ -131,7 +124,7 @@ internal static class Verification
             Check(ProviderCatalog.Arguments(new("p", "w", "claude", "secret", [], "sonnet", "claude", new("high", "manual", 3, 1.5)), "/plugin").Contains("--effort"));
             Check(ProviderCatalog.Efforts("codex", "default", ProviderCatalog.Fallback("codex")).Length == 0); Check(!ProviderCatalog.SupportsMods("2.1.263")); Check(ProviderCatalog.SupportsMods("2.1.271 (Claude Code)"));
         });
-        await Test("native profile imports a copy, preserves settings, remote identity and drafts", async () =>
+        await Test("native profile imports a copy, preserves settings and drafts", async () =>
         {
             var legacy = Temp(); var native = Temp();
             try
@@ -139,12 +132,38 @@ internal static class Verification
                 var workspace = new Workspace { Path = legacy }; var pane = new RunSession { WorkspaceId = workspace.Id, Provider = "codex", Model = "gpt-6-astra", Settings = new("high", "acceptEdits", FastMode: true, WebSearch: "cached", NetworkAccess: true), Status = "running", Draft = "한글 draft" };
                 var original = JsonSerializer.Serialize(new AppSnapshot { Workspaces = [workspace], Sessions = [pane], Theme = "light", Layout = "columns" }, Wire.Json); await File.WriteAllTextAsync(Path.Combine(legacy, "workspace-state.json"), original);
                 var store = new StateStore(native, legacy); var state = await store.LoadAsync(); Check(state.Sessions[0].Status == "stopped" && state.Sessions[0].Draft == pane.Draft && state.Sessions[0].Settings.Effort == "high");
-                var peer = store.ApproveRemote("connection", workspace with { Id = "peer", Path = "C:\\remote\\project" }, "Peer"); await store.SaveAsync(state with { Workspaces = state.Workspaces.Append(peer).ToList() });
-                await Reject(() => store.ResolveLocalAsync(peer.Id)); Check(await File.ReadAllTextAsync(Path.Combine(legacy, "workspace-state.json")) == original);
-                var restored = await new StateStore(native).LoadAsync(); Check(restored.Workspaces.Last().Remote?.WorkspaceId == "peer"); Check(restored.Sessions[0].Settings == pane.Settings, "Selected composer settings must survive profile restart.");
+                await store.SaveAsync(state); Check(await File.ReadAllTextAsync(Path.Combine(legacy, "workspace-state.json")) == original);
+                var restored = await new StateStore(native).LoadAsync(); Check(restored.Sessions[0].Settings == pane.Settings, "Selected composer settings must survive profile restart.");
                 await Reject(() => store.SaveAsync(state with { Workspaces = [workspace with { Path = Path.GetTempPath() }] }));
             }
             finally { Directory.Delete(legacy, true); Directory.Delete(native, true); }
+        });
+        await Test("saved remote workspaces are dropped with their panes and layout entries", async () =>
+        {
+            var directory = Temp(); var native = Temp();
+            try
+            {
+                // Old state: one local workspace and one with a "remote" key, panes and layout entries in both.
+                // The remote path is fully qualified on every OS, so only the "remote" key can drop it.
+                var local = JsonSerializer.Serialize(directory, Wire.Json); var far = JsonSerializer.Serialize(Path.Combine(directory, "far"), Wire.Json);
+                var legacy = "{\"version\":1,\"workspaces\":[{\"id\":\"local\",\"name\":\"Local\",\"path\":" + local + "},{\"id\":\"far\",\"name\":\"Far\",\"path\":" + far + ",\"remote\":{\"connectionId\":\"conn1\",\"workspaceId\":\"w1\",\"hostName\":\"Peer\"}}],"
+                    + "\"sessions\":[{\"id\":\"s1\",\"workspaceId\":\"local\"},{\"id\":\"s2\",\"workspaceId\":\"local\",\"kind\":\"shell\"},{\"id\":\"r1\",\"workspaceId\":\"far\"},{\"id\":\"r2\",\"workspaceId\":\"far\",\"kind\":\"shell\"}],"
+                    + "\"activeWorkspaceId\":\"far\",\"activeSessionId\":\"r1\","
+                    + "\"paneLayouts\":{\"local\":{\"id\":\"l\",\"kind\":\"tabs\",\"sessionIds\":[\"s1\",\"s2\"]},\"far\":{\"id\":\"f\",\"kind\":\"tabs\",\"sessionIds\":[\"r1\",\"r2\"]}},"
+                    + "\"paneLayoutModes\":{\"local\":\"tabs\",\"far\":\"custom\"},\"paneLayoutActiveSessionIds\":{\"local\":\"s2\",\"far\":\"r1\"}}";
+                // Written as an old profile, so the first-run import path is the one that drops it.
+                await File.WriteAllTextAsync(Path.Combine(directory, "workspace-state.json"), legacy);
+                var store = new StateStore(native, directory); var state = await store.LoadAsync();
+                Check(state.Workspaces.Select(w => w.Id).SequenceEqual(["local"]), "Remote workspace must be dropped");
+                Check(state.Sessions.Select(s => s.Id).SequenceEqual(["s1", "s2"]), "Remote panes must be dropped");
+                Check(state.ActiveWorkspaceId == "local" && state.ActiveSessionId == "s1", "Active ids fall back to the local workspace");
+                Check(state.PaneLayouts!.Keys.SequenceEqual(["local"]) && state.PaneLayoutModes!.Keys.SequenceEqual(["local"]) && state.PaneLayoutActiveSessionIds!.Keys.SequenceEqual(["local"]), "Layout entries keyed by the remote workspace must be dropped");
+                await Reject(() => Task.FromResult(store.GetWorkspace("far")));
+                await store.SaveAsync(state); var saved = await File.ReadAllTextAsync(Path.Combine(native, "workspace-state.json"));
+                Check(!saved.Contains("\"far\"") && !saved.Contains("\"remote\""), "Saved state must not keep the remote workspace");
+                Check(await File.ReadAllTextAsync(Path.Combine(directory, "workspace-state.json")) == legacy, "The old profile is left untouched");
+            }
+            finally { Directory.Delete(directory, true); Directory.Delete(native, true); }
         });
         await Test("corrupt/unknown/oversize state cannot be overwritten by shutdown", async () =>
         {
@@ -241,7 +260,7 @@ internal static class Verification
         });
         await Test("desktop routing retains cancellation before manager admission", async () =>
         {
-            var directory = Temp(); var workspacePath = Temp(); await using var catalog = Absent(); var service = new DesktopService(directory, null, "", catalog, testLoopback: true);
+            var directory = Temp(); var workspacePath = Temp(); await using var catalog = Absent(); var service = new DesktopService(directory, null, "", catalog);
             try
             {
                 await service.InitializeAsync(); var workspace = await service.AddWorkspaceAsync(workspacePath); var pane = new RunSession { WorkspaceId = workspace.Id, Kind = "shell" }; await service.UpdateAsync(s => s with { Sessions = [pane] });
@@ -249,123 +268,6 @@ internal static class Verification
                 await service.StartAsync(Shell(pane.Id, workspace, "echo SHOULD_NOT_RUN")); Check(service.Snapshot.Sessions[0].Status == "stopped"); Check(service.Snapshot.Sessions[0].Logs.All(l => l.Kind != "output"));
             }
             finally { await service.DisposeAsync(); Directory.Delete(directory, true); Directory.Delete(workspacePath, true); }
-        });
-        await Test("tailnet policy rejects LAN/public/service/mixed DNS and requires Tailscale", async () =>
-        {
-            Check(RemoteNetwork.TailAddress(IPAddress.Parse("100.64.0.1"))); Check(RemoteNetwork.TailAddress(IPAddress.Parse("fd7a:115c:a1e0::1"))); Check(!RemoteNetwork.TailAddress(IPAddress.Parse("100.100.100.100")));
-            var tailscale = new TailscaleInfo(true, ["100.64.0.1"], "test", "test");
-            foreach (var address in new[] { "http://127.0.0.1:1", "http://192.168.1.1:1", "http://8.8.8.8", "http://user@100.64.0.1", "http://100.64.0.1/path", "http://100.64.0.1?x=1", "https://100.64.0.1" }) await Reject(async () => { _ = await RemoteNetwork.PinAsync(address, tailscale); });
-            await Reject(async () => { _ = await RemoteNetwork.PinAsync("http://peer:1", tailscale, lookup: (_, _) => Task.FromResult(new[] { IPAddress.Parse("100.64.0.2"), IPAddress.Loopback })); });
-            await Reject(async () => { _ = await RemoteNetwork.PinAsync("http://100.64.0.1", tailscale with { Available = false }); });
-        });
-        await Test("remote authentication, allowlist, random job IDs, bounded cursors and orphan lease", async () =>
-        {
-            var directory = Temp(); var workspace = new Workspace { Path = directory }; await using var catalog = Absent(); FakeManager? manager = null;
-            await using var server = new RemoteServer("test", [workspace.Id], () => [workspace], _ => Task.FromResult(workspace), () => catalog.GetRuntimeAsync(), emit => manager = new(emit), true, TimeSpan.FromMilliseconds(300));
-            try
-            {
-                await server.StartAsync(IPAddress.Loopback, 0); var target = new PinnedRemote(new(server.Address), IPAddress.Loopback);
-                await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, RemoteNetwork.Token(), HttpMethod.Get, "/v1/info"); });
-                using var client = new HttpClient(); using var browser = new HttpRequestMessage(HttpMethod.Get, server.Address + "/v1/info"); browser.Headers.Add("Origin", "http://localhost"); browser.Headers.Add("Authorization", "Bearer " + server.Token); browser.Headers.Add(RemoteNetwork.VersionHeader, "1"); using var denied = await client.SendAsync(browser); Check(denied.StatusCode == HttpStatusCode.Forbidden);
-                await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, server.Token, HttpMethod.Post, "/v1/runs", new { request = Shell("local-pane", workspace with { Id = "unshared" }, "echo bad") }); });
-                using var started = await RemoteNetwork.RequestAsync(target, server.Token, HttpMethod.Post, "/v1/runs", new { request = Shell("local-pane", workspace, "echo good") }); var id = started.RootElement.GetProperty("jobId").GetString()!; Check(id != "local-pane"); await Until(() => manager!.Started.Count == 1);
-                for (var i = 0; i < 400; i++) manager!.Emit(RunEvent.Log(id, "output", "row " + i));
-                using var poll = await RemoteNetwork.RequestAsync(target, server.Token, HttpMethod.Get, $"/v1/runs/{id}/events?cursor=0"); Check(poll.RootElement.GetProperty("gap").GetBoolean()); Check(poll.RootElement.GetProperty("events").GetArrayLength() == 100);
-                await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, server.Token, HttpMethod.Get, $"/v1/runs/{id}/events?cursor=99999"); });
-                await Until(() => manager!.Stopped.Contains(id), 3000);
-            }
-            finally { await server.DisposeAsync(); Directory.Delete(directory, true); }
-        });
-        await Test("remote settings reject legacy hosts before POST and round trip with advertised capabilities", async () =>
-        {
-            var directory = Temp(); var workspace = new Workspace { Path = directory }; var modern = false; var posted = new ConcurrentQueue<StartRunRequest>(); var bodies = new ConcurrentQueue<JsonElement>(); var events = new ConcurrentQueue<RunEvent>(); await using var catalog = Absent();
-            var legacyCaps = new { effort = true, permissionModes = new[] { "manual", "acceptEdits" }, maxTurns = false, maxBudgetUsd = false, resume = true };
-            await using var server = await HttpHost.StartAsync(IPAddress.Loopback, 0, async context =>
-            {
-                if (context.Request.Path == "/v1/info")
-                {
-                    object caps = modern ? ProviderCatalog.Capabilities("codex") : legacyCaps;
-                    await HttpHost.ReplyAsync(context, 200, new { protocol = 1, hostId = "settings-host", hostName = "Settings host", workspaces = new[] { workspace }, runtime = new { platform = "win32", appVersion = "fixture", claudeAvailable = false, providers = new[] { new { id = "codex", name = "Codex", available = true, detail = "Metadata fixture only", modelCatalog = ProviderCatalog.Fallback("codex"), capabilities = caps } } } }); return;
-                }
-                if (context.Request.Method == "POST" && context.Request.Path == "/v1/runs")
-                {
-                    using var json = await HttpHost.ReadJsonAsync(context); var request = json.RootElement.GetProperty("request").Deserialize<StartRunRequest>(Wire.Json)!; posted.Enqueue(request); bodies.Enqueue(json.RootElement.GetProperty("request").GetProperty("settings").Clone()); await HttpHost.ReplyAsync(context, 202, new { protocol = 1, jobId = request.SessionId }); return;
-                }
-                var parts = context.Request.Path.Value!.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                if (context.Request.Method == "GET" && parts.Length == 4) { await HttpHost.ReplyAsync(context, 200, new WirePoll(1, 1, 1, false, true, [new(1, RunEvent.State(parts[2], "completed"))])); return; }
-                await HttpHost.ReplyAsync(context, 200, new { protocol = 1, stopped = true });
-            });
-            await using var client = new RemoteController(directory, () => [], _ => throw new ArgumentException(), () => catalog.GetRuntimeAsync(), emit => new FakeManager(emit), events.Enqueue, testLoopback: true);
-            try
-            {
-                var connected = await client.ConnectAsync(new("Settings host", server.Address.GetLeftPart(UriPartial.Authority), RemoteNetwork.Token())); var connection = connected.Connections.Single(); var imported = workspace with { Id = "imported-settings", Remote = new(connection.Id, workspace.Id, "Settings host") };
-                var selected = new[] { new RunSettings(FastMode: true), new RunSettings(WebSearch: "live"), new RunSettings(PermissionMode: "acceptEdits", NetworkAccess: true), new RunSettings(PermissionMode: "fullAccess") };
-                foreach (var settings in selected) await Reject(() => client.StartRunAsync(new(Wire.Id(), imported.Id, "claude", "fixture metadata only", [], Provider: "codex", Settings: settings), imported));
-                Check(posted.Count == 0, "Unsupported settings reached a legacy host."); Check((await client.GetStateAsync()).Connections.Single().Status == "connected");
-                await client.StartRunAsync(new("legacy-default", imported.Id, "claude", "fixture metadata only", [], Provider: "codex"), imported); await Until(() => events.Any(e => e.SessionId == "legacy-default" && e.Status == "completed")); Check(bodies.Single().EnumerateObject().Count() == 4);
-                modern = true; await client.RefreshAsync(connection.Id);
-                foreach (var settings in selected) { var id = Wire.Id(); await client.StartRunAsync(new(id, imported.Id, "claude", "fixture metadata only", [], Provider: "codex", Settings: settings), imported); await Until(() => events.Any(e => e.SessionId == id && e.Status == "completed")); }
-                Check(posted.Skip(1).Select(r => r.Settings).SequenceEqual(selected)); Check(posted.All(r => r.WorkspaceId == workspace.Id));
-                foreach (var json in new[] { "{\"fastMode\":\"true\"}", "{\"networkAccess\":1}", "{\"webSearch\":null}" }) await Reject(() => Task.FromResult(JsonSerializer.Deserialize<RunSettings>(json, Wire.Json)));
-            }
-            finally { await client.DisposeAsync(); await server.DisposeAsync(); Directory.Delete(directory, true); }
-        });
-        await Test("remote attachment capability, large-byte transfer, authenticated limits and failed acceptance", async () =>
-        {
-            var directory = Temp(); var clientDirectory = Temp(); var workspace = new Workspace { Path = directory }; var modern = false; var shared = true; var events = new ConcurrentQueue<RunEvent>(); await using var catalog = Absent(); var baseline = await catalog.GetRuntimeAsync(); FakeManager? manager = null;
-            Task<RuntimeInfo> Runtime() => Task.FromResult(baseline with { Providers = baseline.Providers.Select(p => p with { Available = true, Capabilities = p.Capabilities with { Attachments = modern } }).ToList() });
-            await using var host = new RemoteServer("Attachments", [workspace.Id], () => shared ? [workspace] : [], _ => Task.FromResult(workspace), Runtime, emit => manager = new(emit), true);
-            await using var client = new RemoteController(clientDirectory, () => [], _ => throw new ArgumentException(), Runtime, emit => new FakeManager(emit), events.Enqueue, testLoopback: true);
-            try
-            {
-                await host.StartAsync(IPAddress.Loopback, 0); var state = await client.ConnectAsync(new("Attachments", host.Address, host.Token)); var connection = state.Connections.Single(); var imported = workspace with { Id = "attachment-workspace", Remote = new(connection.Id, workspace.Id, "Attachments") };
-                var file = AttachmentSupport.Make("large.txt", Enumerable.Repeat((byte)'Z', 600000).ToArray()); var request = new StartRunRequest("large-attachment", imported.Id, "claude", "", [], Provider: "codex", Attachments: [file]);
-                await Reject(() => client.StartRunAsync(request, imported)); Check(manager!.Started.IsEmpty, "Unsupported attachment reached host.");
-                modern = true; await client.RefreshAsync(connection.Id); await client.StartRunAsync(request, imported); await Until(() => manager.Started.Count == 1); Check(manager.Started.Single().Attachments!.Single() == file); Check(manager.Started.Single().WorkspaceId == workspace.Id); await client.StopRunAsync(request.SessionId);
-                var target = new PinnedRemote(new(host.Address), IPAddress.Loopback);
-                await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, RemoteNetwork.Token(), HttpMethod.Post, "/v1/runs", new { request = request with { WorkspaceId = workspace.Id } }); });
-                await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, host.Token, HttpMethod.Post, "/v1/runs", new { request = request with { WorkspaceId = workspace.Id, Attachments = [file with { MediaType = "image/png" }] } }); });
-                var job = manager.Started.Single().SessionId;
-                await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, host.Token, HttpMethod.Post, $"/v1/runs/{job}/stop", new { padding = new string('x', 600000) }); });
-                Check(manager.Started.Count == 1);
-                shared = false;
-                await Reject(() => client.StartRunAsync(request with { SessionId = "rejected-upload" }, imported)); Check(manager.Started.Count == 1, "Rejected startup must not run.");
-                await Until(() => !client.IsRemoteRun("rejected-upload"));
-            }
-            finally { await client.DisposeAsync(); await host.DisposeAsync(); Directory.Delete(directory, true); Directory.Delete(clientDirectory, true); }
-        });
-        await Test("two controllers run/stop real shell remotely and persist encrypted keys", async () =>
-        {
-            var directory = Temp(); var clientDirectory = Temp(); var workspace = new Workspace { Path = directory }; var events = new ConcurrentQueue<RunEvent>(); await using var catalog = Absent(); var protector = new Protector();
-            await using var host = new RemoteController(directory, () => [workspace], _ => Task.FromResult(workspace), () => catalog.GetRuntimeAsync(), emit => new RunManager(_ => Task.FromResult(workspace), catalog, "", emit), _ => { }, testLoopback: true);
-            var client = new RemoteController(clientDirectory, () => [], _ => throw new ArgumentException(), () => catalog.GetRuntimeAsync(), emit => new FakeManager(emit), events.Enqueue, protector, true);
-            try
-            {
-                var shared = await host.StartSharingAsync(new([workspace.Id], 0)); var state = await client.ConnectAsync(new("Host", shared.Host.Address!, shared.Host.Token!)); var id = state.Connections.Single().Id;
-                var imported = workspace with { Id = "remote-pane-workspace", Remote = new(id, workspace.Id, "Host") };
-                await client.StartRunAsync(Shell("remote-echo", imported, "echo MIGHTY_REMOTE_OK"), imported); await Until(() => events.Any(e => e.SessionId == "remote-echo" && e.Status == "completed")); Check(events.Any(e => e.Entry?.Text.Contains("MIGHTY_REMOTE_OK") == true));
-                var pid = Path.Combine(directory, "remote-pid"); await client.StartRunAsync(Shell("remote-long", imported, LongCommand(pid)), imported); await Until(() => File.Exists(pid)); var processId = int.Parse(await File.ReadAllTextAsync(pid)); await client.DisconnectAsync(id); await Until(() => !Alive(processId)); Check((await client.GetStateAsync()).Connections[0].Status == "disconnected"); await Task.Delay(600); Check((await client.GetStateAsync()).Connections[0].Status == "disconnected");
-                var file = await File.ReadAllTextAsync(Path.Combine(clientDirectory, "remote-connections.json")); Check(!file.Contains(shared.Host.Token!)); await client.DisposeAsync();
-                client = new(clientDirectory, () => [], _ => throw new ArgumentException(), () => catalog.GetRuntimeAsync(), emit => new FakeManager(emit), _ => { }, protector, true); Check((await client.GetStateAsync()).Host.Enabled == false); Check((await client.RefreshAsync(id)).Connections[0].Status == "connected");
-                await host.StopSharingAsync(); var newShared = await host.StartSharingAsync(new([workspace.Id], shared.Host.Port)); var updated = await client.ConnectAsync(new("Host renamed", newShared.Host.Address!, newShared.Host.Token!)); Check(updated.Connections.Single().Id == id, "Rotating a host key must preserve imported workspace references");
-            }
-            finally { await client.DisposeAsync(); await host.DisposeAsync(); Directory.Delete(directory, true); Directory.Delete(clientDirectory, true); }
-        });
-        await Test("remote transport pins DNS, refuses redirects and response version mismatches", async () =>
-        {
-            var hits = 0; await using var server = await HttpHost.StartAsync(IPAddress.Loopback, 0, context => { hits++; if (context.Request.Path == "/redirect") { context.Response.Headers.Location = "/destination"; return HttpHost.ReplyAsync(context, 302, new { protocol = 1 }); } context.Response.StatusCode = 200; return context.Response.WriteAsync("{\"protocol\":1}"); });
-            var target = new PinnedRemote(new($"http://pinned.invalid:{server.Address.Port}"), IPAddress.Loopback); await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, RemoteNetwork.Token(), HttpMethod.Get, "/redirect"); }); Check(hits == 1); await Reject(async () => { using var _ = await RemoteNetwork.RequestAsync(target, RemoteNetwork.Token(), HttpMethod.Get, "/version-missing"); }); Check(hits == 2);
-        });
-        await Test("legacy connection names keep imported IDs without migrating credentials", async () =>
-        {
-            var legacy = Temp(); var native = Temp(); await using var catalog = Absent();
-            try
-            {
-                var original = JsonSerializer.Serialize(new { version = 1, connections = new[] { new { id = "imported-connection", name = "Legacy peer", address = "http://100.64.0.2:43137", encryptedToken = "old-electron-ciphertext" } } }, Wire.Json); var path = Path.Combine(legacy, "remote-connections.json"); await File.WriteAllTextAsync(path, original);
-                await using var client = new RemoteController(native, () => [], _ => throw new ArgumentException(), () => catalog.GetRuntimeAsync(), emit => new FakeManager(emit), _ => { }, testLoopback: true, legacyDirectory: legacy);
-                var state = await client.GetStateAsync(); Check(state.Connections.Single().Id == "imported-connection" && state.Connections.Single().Status == "disconnected"); await Reject(() => client.RefreshAsync("imported-connection")); Check(await File.ReadAllTextAsync(path) == original); Check(!(await File.ReadAllTextAsync(Path.Combine(native, "remote-connections.json"))).Contains("old-electron-ciphertext"));
-            }
-            finally { Directory.Delete(legacy, true); Directory.Delete(native, true); }
         });
         await Test("slash query parsing", SlashCommandVerification.QueryParsing);
         await Test("slash argument query", SlashCommandVerification.ArgumentQuery);
@@ -578,7 +480,6 @@ internal static class Verification
         await Test("claude plugin missing, old and empty sources are explained without installing", ClaudePluginVerification.MissingOldAndEmptyAreExplainedWithoutInstalling);
         await Test("claude plugin malformed or oversized answer never becomes an empty list", ClaudePluginVerification.MalformedOrOversizedAnswerNeverBecomesAnEmptyList);
         await Test("claude plugin failed runs and timeouts keep the screen intact", ClaudePluginVerification.FailedRunsAndTimeoutsKeepTheScreenIntact);
-        await Test("claude plugin remote workspace runs nothing", ClaudePluginVerification.RemoteWorkspaceRunsNothing);
         await Test("claude plugin second request joins the running read", ClaudePluginVerification.SecondRequestJoinsTheRunningRead);
         await Test("claude plugin window tabs, filter, search and rows match macOS", ClaudePluginVerification.BrowserTabsFilterSearchAndRowsMatchMacOS);
         await Test("claude plugin reload reads again and replaces the list", ClaudePluginVerification.ReloadReadsAgainAndReplacesTheList);
@@ -592,7 +493,6 @@ internal static class Verification
         await Test("codex plugin malformed or oversized answer never becomes an empty list", CodexPluginVerification.MalformedOrOversizedNeverBecomesEmptyList);
         await Test("codex plugin restricted install policies are left out and counted", CodexPluginVerification.RestrictedPolicyExcludesRows);
         await Test("codex plugin installed rows are always user scope", CodexPluginVerification.InstalledRowsAreAlwaysUserScope);
-        await Test("codex plugin remote workspace runs nothing", CodexPluginVerification.RemoteWorkspaceRunsNothing);
         await Test("codex plugin second request joins the running read", CodexPluginVerification.SecondRequestJoinsTheRunningRead);
         await Test("codex plugin window shows the Codex footer, scopes and empty sentence", CodexPluginVerification.BrowserShowsCodexFooterAndScopes);
         await Test("codex plugin palette offers /plugins and leaves no app action out", CodexPluginVerification.PaletteOffersCodexPlugins);
@@ -604,7 +504,6 @@ internal static class Verification
         await Test("plugin marketplace claude install needing a command is never approved here", PluginMarketplaceVerification.ClaudeInstallNeedingACommandIsNeverApprovedHere);
         await Test("plugin marketplace claude install is skipped when the scope already has it", PluginMarketplaceVerification.ClaudeInstallIsSkippedWhenTheScopeAlreadyHasIt);
         await Test("plugin marketplace claude refuses values that did not come from the list", PluginMarketplaceVerification.ClaudeInstallRefusesValuesThatDidNotComeFromTheList);
-        await Test("plugin marketplace claude mutations never run for a remote workspace", PluginMarketplaceVerification.ClaudeMutationsNeverRunForARemoteWorkspace);
         await Test("plugin marketplace claude install reports an unsupported CLI version", PluginMarketplaceVerification.ClaudeInstallReportsAnUnsupportedCliVersion);
         await Test("plugin marketplace claude install is cancellable", PluginMarketplaceVerification.ClaudeInstallIsCancellable);
         await Test("plugin marketplace claude runs one operation at a time", PluginMarketplaceVerification.ClaudeRunsOneOperationAtATime);
@@ -613,7 +512,6 @@ internal static class Verification
         await Test("plugin marketplace codex install refuses another scope and an id not from the list", PluginMarketplaceVerification.CodexInstallRefusesAnotherScopeAndAnIdNotFromTheList);
         await Test("plugin marketplace codex install reports an unverifiable result", PluginMarketplaceVerification.CodexInstallReportsAnUnverifiableResult);
         await Test("plugin marketplace codex upgrade runs only for a registered git source", PluginMarketplaceVerification.CodexMarketplaceUpgradeRunsOnlyForARegisteredGitSource);
-        await Test("plugin marketplace codex mutations never run for a remote workspace", PluginMarketplaceVerification.CodexMutationsNeverRunForARemoteWorkspace);
         await Test("plugin marketplace window offers the macOS scope choice and controls", PluginMarketplaceVerification.WindowOffersTheMacOSScopeChoiceAndControls);
         await Test("plugin marketplace window install shows progress, cancel, result and reloads", PluginMarketplaceVerification.WindowInstallShowsProgressCancelResultAndReloads);
         await Test("plugin marketplace window cancel stops the operation and says so", PluginMarketplaceVerification.WindowCancelStopsTheOperationAndSaysSo);

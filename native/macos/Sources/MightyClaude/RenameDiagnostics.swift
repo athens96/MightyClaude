@@ -54,7 +54,7 @@ extension AppStore {
         try await waitForSmoke(timeout: 2) { self.renameTarget == nil && window.attachedSheet == nil }
         var renamedWorkspace = workspace; renamedWorkspace.name = workspaceName
         guard snapshot.workspaces.first(where: { $0.id == workspace.id }) == renamedWorkspace else {
-            throw MightyError("워크스페이스 이름 외의 경로 또는 원격 정보가 변경되었습니다.")
+            throw MightyError("워크스페이스 이름 외의 정보가 변경되었습니다.")
         }
         try await flush()
         let restored = try await StateRepository(directory: dataDirectory, legacyStateURL: nil).load()

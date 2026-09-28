@@ -17,14 +17,12 @@ public static class Wire
     public static readonly string[] Efforts = ["low", "medium", "high", "xhigh", "max"];
 }
 
-public sealed record RemoteReference(string ConnectionId, string WorkspaceId, string HostName);
 public sealed record Workspace
 {
     public string Id { get; init; } = Wire.Id();
     public string Name { get; init; } = "Workspace";
     public string Path { get; init; } = "";
     public string CreatedAt { get; init; } = Wire.Now();
-    public RemoteReference? Remote { get; init; }
     // Workspace-level model defaults override; null means no workspace-level override.
     public ModelDefaultsConfig? ModelDefaults { get; init; }
 }
@@ -265,12 +263,3 @@ public sealed record ProviderCapabilities(bool Effort, string[] PermissionModes,
 public sealed record ProviderRuntime(string Id, string Name, bool Available, string? Version, string Detail, ModelCatalog ModelCatalog, ProviderCapabilities Capabilities);
 public sealed record ModsInfo(string Status, string MinimumVersion, string Detail);
 public sealed record RuntimeInfo(string Platform, string AppVersion, bool ClaudeAvailable, string? ClaudeVersion, ModelCatalog? ModelCatalog, List<ProviderRuntime> Providers, ModsInfo? Mods);
-public sealed record TailscaleInfo(bool Available, string[] Addresses, string? DeviceName, string Detail)
-{
-    [JsonIgnore] public string[]? Peers { get; init; }
-}
-public sealed record HostState(bool Enabled, string? Address = null, string? Token = null, int? Port = null, string[]? WorkspaceIds = null, int ActiveRuns = 0, string? Detail = null);
-public sealed record RemoteConnectionInfo(string Id, string Name, string Address, string Status, string? HostId = null, string? HostName = null, List<Workspace>? Workspaces = null, RuntimeInfo? Runtime = null, string? Detail = null);
-public sealed record RemoteState(TailscaleInfo Tailscale, HostState Host, List<RemoteConnectionInfo> Connections);
-public sealed record ShareRequest(string[] WorkspaceIds, int? Port = null);
-public sealed record ConnectRemoteRequest(string Name, string Address, string Token);

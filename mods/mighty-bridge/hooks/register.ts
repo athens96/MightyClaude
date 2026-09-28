@@ -81,7 +81,7 @@ function report(
   void (async () => {
     const [url, token, runId, claudeSessionId, activity, graph] = await context()
     if (!url || !/^http:\/\/127\.0\.0\.1:\d{1,5}\/events$/.test(url) || !token || !/^[a-f0-9]{64}$/.test(token) || !runId || !claudeSessionId) return
-    // Existing Windows/Electron receivers accept the original metadata schema.
+    // Existing Windows receivers accept the original metadata schema.
     // Rich observations require an explicit host opt-in, never a global setting.
     let payload: object = { ...metadata, sequence: order }
     if (activity !== '1' && graph !== '1') {
@@ -135,7 +135,7 @@ function boundedNumber(value: unknown, maximum: number, integer = false): number
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= maximum && (!integer || Number.isSafeInteger(value)) ? value : undefined
 }
 
-// This separate opt-in keeps unchanged Windows/Electron receivers on their
+// This separate opt-in keeps unchanged Windows receivers on their
 // original v1 metadata. Only free figures already held by the engine are read.
 function reportUsage(
   model: string | undefined,

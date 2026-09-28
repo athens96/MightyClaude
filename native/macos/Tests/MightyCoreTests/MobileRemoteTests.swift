@@ -38,7 +38,7 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     }
     func mobileState() async -> MobileState {
         lock.lock(); defer { lock.unlock() }
-        return MobileState(revision: stateRevision, hostName: "Test Mac", workspaces: [MobileWorkspace(id: "workspace-1", name: "Repo", path: "/tmp/repo", remote: false)], sessions: [summary()])
+        return MobileState(revision: stateRevision, hostName: "Test Mac", workspaces: [MobileWorkspace(id: "workspace-1", name: "Repo", path: "/tmp/repo")], sessions: [summary()])
     }
     func mobileSession(id: String) async -> MobileSessionDetail? {
         lock.lock(); defer { lock.unlock() }
@@ -96,7 +96,7 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     }
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String {
         lock.lock(); defer { lock.unlock() }
-        if kind == "shell" { throw MobileHostError.conflict("로컬 워크스페이스의 명령 창은 휴대폰에서 쓸 수 없습니다.") }
+        if kind == "shell" { throw MobileHostError.conflict("명령 창은 휴대폰에서 쓸 수 없습니다.") }
         commands.append("create:\(workspaceId):\(kind):\(provider)"); return "session-2"
     }
     /// Every extension route refuses an unknown pane with 404, as the host does.
@@ -140,7 +140,7 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         // Shape before state, as the host does, and the style is judged against
         // the view mode this same request asks for.
         let mode = request.agentViewMode ?? viewMode
-        let guided = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", localWorkspace: true, viewMode: mode)
+        let guided = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", viewMode: mode)
         try MobileRemoteSupport.validate(request, options: Self.options(guidedStyles: guided))
         if running { throw MobileHostError.conflict("실행 중에는 설정을 바꿀 수 없습니다.") }
         if let value = request.agentViewMode { viewMode = value }

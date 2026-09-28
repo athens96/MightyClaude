@@ -89,7 +89,7 @@ public static class ActivitySupport
 }
 
 // Optional metadata is independently decoded. Bad measurements must never erase
-// an otherwise valid conversation or make an entire remote poll undecodable.
+// an otherwise valid conversation or make an entire saved state undecodable.
 internal static class MetadataJson
 {
     internal static JsonElement Property(JsonElement value, string key) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(key, out var child) ? child : default;

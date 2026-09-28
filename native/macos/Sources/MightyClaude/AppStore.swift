@@ -12,7 +12,6 @@ final class AppStore: ObservableObject {
 
     @Published var snapshot = AppSnapshot() { didSet { scheduleSave(); companion.refresh(snapshot) } }
     @Published var runtime: RuntimeInfo?
-    @Published var remoteState = RemoteState()
     @Published var isLoaded = false
     @Published var isRefreshingRuntime = false
     @Published var isUpdatingCLIs = false
@@ -26,7 +25,6 @@ final class AppStore: ObservableObject {
     @Published var isManagingPlugins = false
     let claudePlugins = ClaudePluginService()
     let codexPlugins = CodexPluginService()
-    @Published var remoteBusy = false
     @Published var search = ""
     @Published var focusSearch = false
     @Published var drafts: [String: String] = [:] {
@@ -146,15 +144,12 @@ final class AppStore: ObservableObject {
     @Published var terminalErrors: [String: String] = [:]
     @Published var terminalHistorySession: RunSession?
     @Published var draggedPane: PaneDragPayload?
-    @Published var showRemote = false
     @Published var showSettings = false
-    @Published var settingsShowsRemote = false
     @Published var renameTarget: RenameTarget?
     @Published var settingsSession: RunSession?
     @Published var sessionInfoSessionID: String?
     @Published var pendingRemoval: Workspace?
     @Published var error: String?
-    @Published var remoteError: String?
     @Published var resourceWarning: String?
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
     @Published var permissionResponses = Set<String>()
@@ -195,16 +190,13 @@ final class AppStore: ObservableObject {
     /// Smoke profiles must not run the user's own status line command.
     var smokeTesting: Bool { arguments.contains { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") } }
 
-    /// Per-pane MCP tokens, shared by the local and remote-host runners and the agent IO socket.
+    /// Per-pane MCP tokens, shared by the runners and the agent IO socket.
     let paneBindings = PaneMCPBindingRegistry()
     var agentIOServer: AgentIOSocketServer?
     /// How runs launch their per-pane MCP server; nil until the agent IO socket listens.
     var agentIOLocation: PaneMCPServerLocation?
 
     private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings) { [weak self] event in
-        Task { @MainActor in self?.apply(event) }
-    }
-    private lazy var remote = RemoteService(repository: repository, providers: providers, pluginDirectory: pluginDirectory, dataDirectory: dataDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings) { [weak self] event in
         Task { @MainActor in self?.apply(event) }
     }
 
@@ -224,7 +216,7 @@ final class AppStore: ObservableObject {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showRemote || showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -253,7 +245,6 @@ final class AppStore: ObservableObject {
             if !arguments.contains(where: { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") }) { beginAutomaticCLIUpdatesIfNeeded() }
             checkForAppUpdateAutomatically()
         }
-        remoteState = await remote.state()
         configureMobileRemote()
         guard !ending, !Task.isCancelled else { return }
         pollTask = Task { [weak self] in
@@ -264,7 +255,6 @@ final class AppStore: ObservableObject {
                     do { try await self.flush() }
                     catch { if !self.ending { self.error = "실행 시간을 저장하지 못했습니다: \(error.localizedDescription)" } }
                 }
-                await self.pollRemote()
             }
         }
         if arguments.contains("--plugin-smoke-test") { Task { await runPluginSmokeTest() } }
@@ -297,8 +287,7 @@ final class AppStore: ObservableObject {
     func localCLIIsRunning(_ provider: String) -> Bool {
         snapshot.sessions.contains { session in
             session.kind != "shell" && session.provider == provider &&
-            (session.status == "running" || pendingRuns.contains(session.id)) &&
-            snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+            (session.status == "running" || pendingRuns.contains(session.id))
         }
     }
 
@@ -333,50 +322,26 @@ final class AppStore: ObservableObject {
 
     func providerRuntime(_ provider: String, workspaceId: String) -> ProviderRuntime {
         let workspace = snapshot.workspaces.first { $0.id == workspaceId }
-        let info: RuntimeInfo?
-        if let reference = workspace?.remote {
-            info = remoteState.connections.first { $0.id == reference.connectionId }?.runtime
-        } else {
-            if let workspace, let value = localModels.value(for: LocalModelContext(workspaceID: workspace.id, path: workspace.path, provider: provider)) { return value }
-            info = runtime
+        if let workspace, let value = localModels.value(for: LocalModelContext(workspaceID: workspace.id, path: workspace.path, provider: provider)) { return value }
+        if var rt = runtime?.providers?.first(where: { $0.id == provider }) {
+            if localModels.hasDiscarded(provider) { rt.modelCatalog = ProviderOptions.fallbackCatalog(provider) }
+            return rt
         }
-        if var runtime = info?.providers?.first(where: { $0.id == provider }) {
-            if workspace?.remote == nil, localModels.hasDiscarded(provider) { runtime.modelCatalog = ProviderOptions.fallbackCatalog(provider) }
-            return runtime
-        }
-        var fallback = ProviderOptions.fallbackRuntime(provider)
-        if workspace?.remote != nil {
-            // New options require an explicit capability advertisement from the host.
-            fallback.capabilities.fastMode = false
-            fallback.capabilities.webSearch = false
-            fallback.capabilities.networkAccess = false
-            fallback.capabilities.attachments = false
-            fallback.capabilities.permissionModes.removeAll { $0 == "fullAccess" || $0 == "auto" || $0 == "onRequest" }
-        }
-        return fallback
-    }
-
-    func connection(for workspace: Workspace) -> RemoteConnectionInfo? {
-        guard let reference = workspace.remote else { return nil }
-        return remoteState.connections.first { $0.id == reference.connectionId }
+        return ProviderOptions.fallbackRuntime(provider)
     }
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return "워크스페이스를 선택하세요." }
-        if workspace.remote == nil, session.kind != "shell", updatingCLI == session.provider {
+        guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return "워크스페이스를 선택하세요." }
+        if session.kind != "shell", updatingCLI == session.provider {
             return "\(ProviderOptions.label(session.provider)) CLI를 업데이트하고 있습니다. 완료 후 전송하세요."
         }
-        if workspace.remote == nil, session.kind != "shell", ["claude", "codex"].contains(session.provider), isManagingPlugins {
+        if session.kind != "shell", ["claude", "codex"].contains(session.provider), isManagingPlugins {
             return "플러그인을 변경하고 있습니다. 완료 후 전송하세요."
-        }
-        if workspace.remote != nil, connection(for: workspace)?.status != "connected" { return "원격 컴퓨터에 연결한 후 실행하세요." }
-        if session.kind != "shell", session.settings.permissionMode == "onRequest", workspace.remote != nil {
-            return "Codex 승인 요청은 이 Mac의 로컬 세션에서 사용할 수 있습니다. 원격 세션에서는 다른 권한을 선택하세요."
         }
         if session.kind != "shell", checkRuntime {
             let provider = providerRuntime(session.provider, workspaceId: session.workspaceId)
             if !provider.available { return provider.detail.isEmpty ? "\(provider.name) CLI를 설치하고 로그인하세요." : provider.detail }
-            if session.settings.permissionMode == "auto", !provider.capabilities.permissionModes.contains("auto") { return "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI·원격 앱을 업데이트하거나 다른 권한을 선택하세요." }
+            if session.settings.permissionMode == "auto", !provider.capabilities.permissionModes.contains("auto") { return "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI를 업데이트하거나 다른 권한을 선택하세요." }
             if session.settings.permissionMode == "onRequest", !provider.capabilities.permissionModes.contains("onRequest") { return "승인 요청을 사용하려면 Codex CLI 0.153.4 이상으로 업데이트하세요." }
         }
         return nil
@@ -443,7 +408,7 @@ final class AppStore: ObservableObject {
     func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
         guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
         guard snapshot.sessions.count < 128 else { error = "실행 창은 최대 128개까지 만들 수 있습니다."; return nil }
-        let name = kind == "shell" ? (workspace.remote == nil ? "터미널" : "원격 명령") : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
+        let name = kind == "shell" ? "터미널" : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
         var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
         if kind == "browser" { session.workspaceProfileKey = workspace.id }
         // Start from the most recently used pane of the same provider.
@@ -586,7 +551,7 @@ final class AppStore: ObservableObject {
         let input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = attachmentDrafts[id] ?? []
         guard !input.isEmpty || !attachments.isEmpty else { return }
-        if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) { error = reason; return }
+        if let reason = runBlockedReason(session) { error = reason; return }
         if session.status == "running" || pendingRuns.contains(id) {
             deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: steering)
             return
@@ -598,7 +563,7 @@ final class AppStore: ObservableObject {
     /// joins the running turn. Everything else waits for the current request.
     func canSteer(_ session: RunSession) -> Bool {
         session.kind == "claude" && session.provider == "claude" && !pendingRuns.contains(session.id)
-            && snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+            && snapshot.workspaces.contains { $0.id == session.workspaceId }
     }
 
     /// What deferring did. Steering is only known once the runner answers, so
@@ -683,7 +648,7 @@ final class AppStore: ObservableObject {
             guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id),
                   let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
             let next = queue[0]
-            if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) {
+            if let reason = runBlockedReason(session) {
                 queuedInputs.removeValue(forKey: id)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청 \(queue.count)개를 실행할 수 없어 취소했습니다. \(reason)")) }
                 return
@@ -705,17 +670,17 @@ final class AppStore: ObservableObject {
 
     @discardableResult
     func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?) -> Bool {
-        if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell", workspace.remote == nil {
+        if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" {
             error = "Claude 모델 목록을 다시 불러오는 중입니다. 완료 후 다시 실행하세요."
             return false
         }
         guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), session.status != "running" else { return false }
         let initialRequest = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: session.kind, input: input, model: session.model, provider: session.provider, settings: session.settings, resumeId: session.resumeId, attachments: attachments)
         var admissionRequest = initialRequest
-        if workspace.remote == nil, session.kind != "shell" { admissionRequest.settings.effort = "default" }
+        if session.kind != "shell" { admissionRequest.settings.effort = "default" }
         do { try CoreValidation.validate(admissionRequest) }
         catch { self.error = error.localizedDescription; return false }
-        if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) { error = reason; return false }
+        if let reason = runBlockedReason(session) { error = reason; return false }
         pendingRuns.insert(id)
         if restoringDraft != nil { drafts[id] = "" }
         let submittedRevision = draftRevisions[id, default: 0]
@@ -741,7 +706,7 @@ final class AppStore: ObservableObject {
                       let current = snapshot.sessions.first(where: { $0.id == id }),
                       current.provider == session.provider, current.workspaceId == workspace.id,
                       let currentWorkspace = snapshot.workspaces.first(where: { $0.id == workspace.id }),
-                      currentWorkspace.path == workspace.path, currentWorkspace.remote == workspace.remote else { throw CancellationError() }
+                      currentWorkspace.path == workspace.path else { throw CancellationError() }
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
                 let registered = providerRegisteredModels(current.provider)
                 let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
@@ -756,8 +721,7 @@ final class AppStore: ObservableObject {
                 updateSession(id) { $0.beginRunTiming(); $0.status = "running" }
                 try await flush()
                 try Task.checkCancellation()
-                if currentWorkspace.remote != nil { try await remote.start(request: request, workspace: currentWorkspace) }
-                else { try await runner.start(request: request, workspace: currentWorkspace, allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest"))) }
+                try await runner.start(request: request, workspace: currentWorkspace, allowPermissionPrompts: current.kind == "claude" && (current.provider == "claude" || (current.provider == "codex" && current.settings.permissionMode == "onRequest")))
             } catch {
                 if let restoringDraft, draftRevisions[id, default: 0] == submittedRevision, (drafts[id] ?? "").isEmpty, canEditAttachments(id) {
                     drafts[id] = restoringDraft
@@ -789,8 +753,7 @@ final class AppStore: ObservableObject {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status == "running" || pendingRuns.contains(id) else { return }
         let starting = startTasks[id]
         starting?.cancel()
-        let workspace = snapshot.workspaces.first { $0.id == session.workspaceId }
-        if workspace?.remote != nil { await remote.stop(id: id) } else { await runner.stop(id: id) }
+        await runner.stop(id: id)
         await starting?.value
     }
 
@@ -827,7 +790,7 @@ final class AppStore: ObservableObject {
         guard event.type == "permission", let permission = event.permission,
               let session = snapshot.sessions.first(where: { $0.id == event.sessionId }),
               session.kind == "claude", (session.provider == "claude" || (session.provider == "codex" && session.settings.permissionMode == "onRequest")),
-              snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil else { return }
+              snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return }
         var requests = toolPermissions[event.sessionId] ?? []
         let previousFirst = requests.first.map { permissionResponseKey(sessionId: event.sessionId, request: $0) }
         requests.removeAll { $0.id == permission.id && $0.runId == permission.runId }
@@ -927,7 +890,6 @@ final class AppStore: ObservableObject {
         for task in starting { task.cancel() }
         await providers.shutdown()
         await runner.shutdown()
-        await remote.shutdown()
         await shutdownMobileRemote()
         stopAgentIO()
         // Processes started from agent terminal panes stop with the app (bounded to about 1 s).
@@ -944,52 +906,6 @@ final class AppStore: ObservableObject {
         }
         do { if canSave { try await repository.save(snapshot) } }
         catch { NSLog("MightyClaude save failed: %@", error.localizedDescription) }
-    }
-
-    private func pollRemote() async {
-        guard !remoteBusy, showRemote || (showSettings && settingsShowsRemote) || activeWorkspace?.remote != nil || remoteState.host.enabled else { return }
-        if let reference = activeWorkspace?.remote, remoteState.connections.first(where: { $0.id == reference.connectionId })?.status == "connected" {
-            do { remoteState = try await remote.refreshRemote(id: reference.connectionId) }
-            catch { remoteError = error.localizedDescription; remoteState = await remote.state() }
-        } else { remoteState = await remote.state() }
-    }
-
-    func reloadRemoteState() async { remoteState = await remote.state() }
-
-    private func remoteAction(_ operation: @escaping () async throws -> RemoteState) {
-        guard !remoteBusy else { return }
-        remoteBusy = true
-        remoteError = nil
-        Task {
-            do { remoteState = try await operation() }
-            catch { remoteError = error.localizedDescription; remoteState = await remote.state() }
-            remoteBusy = false
-        }
-    }
-
-    func startSharing(workspaceIds: [String], port: Int) {
-        guard !isManagingPlugins else { remoteError = "플러그인 변경이 끝난 후 공유를 시작하세요."; return }
-        guard !isUpdatingCLIs else { remoteError = "CLI 업데이트가 끝난 후 공유를 시작하세요."; return }
-        remoteAction { [self] in try await flush(); return try await remote.startSharing(workspaceIds: workspaceIds, port: port) }
-    }
-    func stopSharing() { remoteAction { [self] in await remote.stopSharing() } }
-    func connectRemote(name: String, address: String, token: String) { remoteAction { [self] in try await remote.connectRemote(name: name, address: address, token: token) } }
-    func refreshConnection(_ id: String) { remoteAction { [self] in try await remote.refreshRemote(id: id) } }
-    func disconnectRemote(_ id: String) { remoteAction { [self] in await remote.disconnectRemote(id: id) } }
-    func importRemoteWorkspace(connectionId: String, workspaceId: String) {
-        guard !remoteBusy else { return }
-        remoteBusy = true
-        Task {
-            do {
-                let workspace = try await remote.importWorkspace(connectionId: connectionId, workspaceId: workspaceId)
-                showRemote = false
-                settingsShowsRemote = false
-                showSettings = false
-                addWorkspace(workspace)
-                try await flush()
-            } catch { remoteError = error.localizedDescription }
-            remoteBusy = false
-        }
     }
 
     private func runSmokeTest() async {

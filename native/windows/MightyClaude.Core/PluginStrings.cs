@@ -1,14 +1,10 @@
 namespace MightyClaude.Core;
 
 // Korean copy of the Claude plugin list, mirrored from
-// ClaudePluginView.swift (title, tabs, filter, rows, buttons, empty and remote
+// ClaudePluginView.swift (title, tabs, filter, rows, buttons and empty
 // copy) and ClaudePluginService.swift (the status sentences).
 // WinUI reads these constants and never types Korean of its own.
 // ClaudePluginVerification.claudePluginStringsMatchMacOS checks every value.
-//
-// One OS-bound substitution (recorded in docs/windows-plugins.md):
-//   DetailRemote reads "이 PC의 설치는" where macOS reads "이 Mac의 설치는".
-//   Windows has no Mac; the sentence names the computer the app runs on.
 //
 // Install buttons, the scope picker and the marketplace refresh belong to the
 // marketplace feature and have no copy here. Reading changes nothing.
@@ -30,10 +26,6 @@ public static class PluginStrings
     public const string ButtonClose = "닫기";
     public const string DiagnosticsDisclosure = "명령 실행 상세";
     public const string MarketplaceHelpLink = "마켓플레이스 추가 방법";
-
-    // Remote workspace: the two sentences the browser shows instead of a list.
-    public const string RemoteTitle = "원격 워크스페이스에서는 관리할 수 없습니다.";
-    public const string RemoteNote = "원격 컴퓨터의 MightyClaude에서 플러그인을 관리하세요.";
 
     // Installed row: subtitle is "{marketplace} · {scope}" with this fallback,
     // and the enabled badge.
@@ -62,8 +54,6 @@ public static class PluginStrings
     // ClaudePluginService.swift — one sentence per status.
     public const string DetailReady = "현재 작업 폴더의 CLI 설정과 등록된 마켓플레이스의 캐시 목록입니다. 이미 실행 중인 세션의 로드 상태와 다를 수 있습니다.";
     public const string DetailNoMarketplaces = "등록된 마켓플레이스가 없습니다. Claude CLI에서 marketplace add로 등록한 뒤 목록을 다시 읽으세요.";
-    // OS-bound substitution: "이 PC의 설치는" replaces "이 Mac의 설치는".
-    public const string DetailRemote = "원격 워크스페이스의 플러그인은 해당 호스트에서 관리하세요. 이 PC의 설치는 변경하지 않습니다.";
     public const string DetailCancelled = "플러그인 조회를 취소했습니다.";
     public const string DetailFailed = "플러그인 목록을 읽지 못했습니다.";
     public const string DetailInvalidWorkspace = "로컬 작업 폴더가 올바르지 않습니다.";

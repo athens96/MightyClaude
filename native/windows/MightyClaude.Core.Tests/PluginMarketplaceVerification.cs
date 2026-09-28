@@ -227,24 +227,6 @@ internal static class PluginMarketplaceVerification
             "a marketplace name that is not an identifier is refused: " + badName.Detail);
     }
 
-    internal static async Task ClaudeMutationsNeverRunForARemoteWorkspace()
-    {
-        var runner = ClaudeRunner(_ => Ok(InstallOk));
-        var (reader, workspace) = Claude(runner);
-        var remote = new Workspace { Path = workspace, Remote = new RemoteReference("connection", "peer", "Host") };
-
-        var install = await reader.InstallAsync("fmt@sample", "local", remote);
-        var refresh = await reader.RefreshMarketplaceAsync("sample", remote);
-        var refused = await reader.InstallAsync("fmt@sample", "nonsense", remote);
-
-        foreach (var result in new[] { install, refresh, refused })
-        {
-            Check(result.Status == ClaudePluginStatus.Remote, "a remote workspace answers remote: " + result.Status);
-            Check(result.Detail == PluginStrings.DetailRemote, "the remote sentence is the macOS one: " + result.Detail);
-        }
-        lock (runner.Calls) Check(runner.Calls.Count == 0, "a remote workspace starts no process");
-    }
-
     internal static async Task ClaudeInstallReportsAnUnsupportedCliVersion()
     {
         var runner = ClaudeRunner(_ => Ok(InstallOk), version: "2.1.267 (Claude Code)");
@@ -425,20 +407,6 @@ internal static class PluginMarketplaceVerification
             "an answer about another marketplace is refused: " + unconfirmed.Detail);
     }
 
-    internal static async Task CodexMutationsNeverRunForARemoteWorkspace()
-    {
-        var runner = CodexRunner(_ => Ok("{}"));
-        var (reader, workspace) = Codex(runner);
-        var remote = new Workspace { Path = workspace, Remote = new RemoteReference("connection", "peer", "Host") };
-
-        var install = await reader.InstallAsync("fmt@sample", "user", remote);
-        var refresh = await reader.RefreshMarketplaceAsync("sample", remote);
-        foreach (var result in new[] { install, refresh })
-            Check(result.Status == ClaudePluginStatus.Remote && result.Detail == PluginStrings.DetailRemote,
-                "a remote Codex workspace changes nothing: " + result.Status);
-        lock (runner.Calls) Check(runner.Calls.Count == 0, "a remote workspace starts no process");
-    }
-
     // ---- The window -------------------------------------------------------
 
     internal static Task WindowOffersTheMacOSScopeChoiceAndControls()
@@ -562,17 +530,6 @@ internal static class PluginMarketplaceVerification
         var early = await cold.InstallAsync(reader, "fmt@sample");
         Check(early.Status == ClaudePluginStatus.Failed && early.Detail == PluginStrings.LoadListFirst,
             "a window with no list asks for the list first: " + early.Detail);
-
-        // A remote workspace.
-        var remote = new ClaudePluginBrowser("claude", new Workspace
-        {
-            Path = Verification.Temp(),
-            Remote = new RemoteReference("connection", "peer", "Host"),
-        });
-        var blocked = await remote.InstallAsync(reader, "fmt@sample");
-        Check(blocked.Status == ClaudePluginStatus.Remote && blocked.Detail == PluginStrings.RemoteNote,
-            "a remote workspace is told where to manage plugins: " + blocked.Detail);
-        Check(remote.BlockedReason == PluginStrings.RemoteNote, "the window says why it is blocked");
 
         // A ready list with no registered marketplace.
         var empty = new ClaudePluginBrowser("claude", new Workspace { Path = Verification.Temp() });

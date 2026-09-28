@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace MightyClaude.Core;
 
@@ -27,7 +26,11 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
                 if (new FileInfo(StatePath).Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.fileTooLarge"));
                 using var json = JsonDocument.Parse(await File.ReadAllTextAsync(StatePath));
                 if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("version", out var version) || !version.TryGetInt32(out var number) || number != 1 || !json.RootElement.TryGetProperty("workspaces", out var workspaces) || workspaces.ValueKind != JsonValueKind.Array || !json.RootElement.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) throw new InvalidDataException(Locale.Get("store.error.invalidFormat"));
-                Snapshot = Normalize(json.RootElement.Deserialize<AppSnapshot>(Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot")), true);
+                var restored = json.RootElement.Deserialize<AppSnapshot>(Wire.Json) ?? throw new InvalidDataException(Locale.Get("store.error.noSnapshot"));
+                // A workspace saved with a "remote" value names a folder on another computer.
+                // It is dropped here; Normalize then drops everything keyed by its id.
+                var remote = workspaces.EnumerateArray().Select((w, i) => (w, i)).Where(p => p.w.ValueKind == JsonValueKind.Object && p.w.TryGetProperty("remote", out var r) && r.ValueKind != JsonValueKind.Null).Select(p => p.i).ToHashSet();
+                Snapshot = Normalize(restored with { Workspaces = (restored.Workspaces ?? []).Where((_, i) => !remote.Contains(i)).ToList() }, true);
             }
             approved.Clear();
             foreach (var workspace in Snapshot.Workspaces) approved[workspace.Id] = workspace;
@@ -42,21 +45,9 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         if (!Directory.Exists(path)) throw new DirectoryNotFoundException(Locale.Get("store.error.projectFolderNotFound"));
         lock (approved)
         {
-            var existing = approved.Values.FirstOrDefault(w => w.Remote is null && w.Path == path);
+            var existing = approved.Values.FirstOrDefault(w => w.Path == path);
             if (existing is not null) return existing;
             var workspace = new Workspace { Name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path)), Path = path };
-            approved[workspace.Id] = workspace;
-            return workspace;
-        }
-    }
-    public Workspace ApproveRemote(string connectionId, Workspace peer, string hostName)
-    {
-        if (!Wire.Identifier(connectionId) || !ValidWorkspace(peer) || peer.Remote is not null) throw new ArgumentException(Locale.Get("store.error.invalidRemoteWorkspace"));
-        lock (approved)
-        {
-            var existing = approved.Values.FirstOrDefault(w => w.Remote?.ConnectionId == connectionId && w.Remote.WorkspaceId == peer.Id);
-            if (existing is not null) return existing;
-            var workspace = peer with { Id = Wire.Id(), Remote = new(connectionId, peer.Id, Wire.Clean(hostName, 120)) };
             approved[workspace.Id] = workspace;
             return workspace;
         }
@@ -68,7 +59,6 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     public Task<Workspace> ResolveLocalAsync(string id)
     {
         var workspace = GetWorkspace(id);
-        if (workspace.Remote is not null) throw new ArgumentException(Locale.Get("store.error.remoteNotLocal"));
         if (!Directory.Exists(workspace.Path)) throw new DirectoryNotFoundException(Locale.Get("store.error.workspaceFolderNotFound"));
         return Task.FromResult(workspace);
     }
@@ -81,7 +71,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             snapshot = Normalize(snapshot, false);
             lock (approved)
                 foreach (var workspace in snapshot.Workspaces)
-                    if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path || workspace.Remote != original.Remote) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
+                    if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
             var encoded = JsonSerializer.SerializeToUtf8Bytes(snapshot, Wire.Json);
             if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.stateTooLarge"));
             await AtomicWriteAsync(StatePath, encoded);
@@ -89,7 +79,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         }
         finally { gate.Release(); }
     }
-    public static bool ValidWorkspace(Workspace w) => w is not null && Wire.Identifier(w.Id) && w.Path is { Length: > 0 and <= 4096 } && !w.Path.Contains('\0') && (Path.IsPathFullyQualified(w.Path) || Regex.IsMatch(w.Path, @"^[a-zA-Z]:[\\/]")) && (w.Remote is null || Wire.Identifier(w.Remote.ConnectionId) && Wire.Identifier(w.Remote.WorkspaceId));
+    public static bool ValidWorkspace(Workspace w) => w is not null && Wire.Identifier(w.Id) && w.Path is { Length: > 0 and <= 4096 } && !w.Path.Contains('\0') && Path.IsPathFullyQualified(w.Path);
     public static AppSnapshot Normalize(AppSnapshot value, bool restoring)
     {
         if (value.Version != 1) return new();

@@ -27,7 +27,7 @@ function stateWithAgentIOPanes(): MobileState {
     protocol: 1,
     revision: 7,
     hostName: 'mac',
-    workspaces: [{ id: 'w1', name: '작업1', path: '/a', remote: false }],
+    workspaces: [{ id: 'w1', name: '작업1', path: '/a' }],
     sessions: [
       session({ id: 'agent-1', title: '내 에이전트' }),
       session({ id: 'shell-1', title: '터미널', kind: 'shell', terminal: true }),

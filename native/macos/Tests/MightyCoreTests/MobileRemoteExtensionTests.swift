@@ -87,11 +87,10 @@ struct MobileRemoteExtensionTests {
         // An unknown saved style is the plain CLI, never invented.
         #expect(MobileRemoteSupport.style("zzz") == "cli")
 
-        let mighty = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", localWorkspace: true, viewMode: "mighty")
-        let plain = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", localWorkspace: true, viewMode: "plain")
-        let remote = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", localWorkspace: false, viewMode: "mighty")
-        let codex = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "codex", localWorkspace: true, viewMode: "mighty")
-        #expect(mighty && !plain && !remote && !codex)
+        let mighty = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", viewMode: "mighty")
+        let plain = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "claude", viewMode: "plain")
+        let codex = MobileRemoteSupport.guidedStylesAvailable(kind: "claude", provider: "codex", viewMode: "mighty")
+        #expect(mighty && !plain && !codex)
         // `options.styles` is the open list: the CLI plus what may be run.
         let options = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
         #expect(options.map(\.id) == ["cli", "ouroboros", "paperthin", "superpowers"])

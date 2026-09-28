@@ -309,7 +309,7 @@ extension AppStore {
             updatedAt: mightyTimestamp()
         ))
         return MobileState(revision: revision, hostName: Host.current().localizedName ?? "MightyClaude Mac",
-                           workspaces: snapshot.workspaces.map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path, remote: $0.remote != nil) },
+                           workspaces: snapshot.workspaces.map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path) },
                            sessions: sessions)
     }
 
@@ -469,8 +469,7 @@ extension AppStore {
     /// Guided styles exist only for local Claude panes in Mighty view — the
     /// same rule `guidedStyle(_:)` applies on the Mac.
     private func mobileSupportsGuidedStyles(_ session: RunSession, viewMode: String) -> Bool {
-        let local = snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
-        return MobileRemoteSupport.guidedStylesAvailable(kind: session.kind, provider: session.provider, localWorkspace: local, viewMode: viewMode)
+        MobileRemoteSupport.guidedStylesAvailable(kind: session.kind, provider: session.provider, viewMode: viewMode)
     }
     /// The bundled two keep the labels the old field always carried.
     private static func mobileStyleLabel(_ style: String) -> String {
@@ -498,7 +497,7 @@ extension AppStore {
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창에는 휴대폰에서 명령을 보낼 수 없습니다.") }
         guard !text.isEmpty || !attachments.isEmpty else { throw MightyError("보낼 내용이 없습니다.") }
-        if let reason = runBlockedReason(session, checkRuntime: workspace.remote != nil) { throw MightyError(reason) }
+        if let reason = runBlockedReason(session, checkRuntime: false) { throw MightyError(reason) }
         if session.status == "running" || pendingRuns.contains(id) {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError("대기열이 가득 찼습니다.") }
             let item = QueuedInput(text: text, attachments: attachments)
@@ -568,8 +567,7 @@ extension AppStore {
         guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict("실행이 끝난 뒤에 다음 요청을 시작할 수 있습니다.") }
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.
-        let isRemote = snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil
-        if let reason = runBlockedReason(session, checkRuntime: isRemote) { throw MobileHostError.conflict(reason) }
+        if let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
         runNextQueuedInput(id)
     }
 
@@ -728,10 +726,10 @@ extension AppStore {
     }
 
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) throws -> String {
-        guard let workspace = snapshot.workspaces.first(where: { $0.id == workspaceId }) else { throw MobileHostError.notFound("워크스페이스를 찾을 수 없습니다.") }
-        // A local command pane runs in the app's own terminal, which the phone
+        guard snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { throw MobileHostError.notFound("워크스페이스를 찾을 수 없습니다.") }
+        // A command pane runs in the app's own terminal, which the phone
         // cannot drive; creating one would hand it a dead window.
-        guard kind != "shell" || workspace.remote != nil else { throw MobileHostError.conflict("로컬 워크스페이스의 명령 창은 휴대폰에서 쓸 수 없습니다.") }
+        guard kind != "shell" else { throw MobileHostError.conflict("명령 창은 휴대폰에서 쓸 수 없습니다.") }
         guard !hasModal else { throw MightyError("Mac에서 열린 창을 닫은 뒤 다시 시도하세요.") }
         let created = mobileCapturingError { addSession(kind: kind, provider: provider, workspaceId: workspaceId) }
         guard let id = created.value else { throw MightyError(created.failure ?? "실행 창을 만들지 못했습니다.") }

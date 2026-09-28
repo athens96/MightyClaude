@@ -20,7 +20,7 @@ extension AppStore {
         modelRefreshSelections = modelRefreshSelections.filter { $0.key.provider != "claude" }
         localModels.discard(provider: "claude")
         modelRefreshRevision &+= 1
-        let contexts = snapshot.workspaces.filter { $0.remote == nil }.map {
+        let contexts = snapshot.workspaces.map {
             LocalModelContext(workspaceID: $0.id, path: $0.path, provider: "claude")
         }
         Task { [weak self] in

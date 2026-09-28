@@ -126,32 +126,6 @@ internal static class ActivityUsageVerification
         public Task StopAsync(string id) { emit(RunEvent.State(id,"stopped")); return Task.CompletedTask; }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
-    internal static async Task Remote()
-    {
-        Console.WriteLine("TRACE structured remote: runtime");
-        var directory = Path.Combine(Path.GetTempPath(),"mighty-activity-remote-"+Wire.Id()); Directory.CreateDirectory(directory);
-        var workspace = new Workspace { Path=directory }; await using var catalog = new ProviderCatalog((_,_)=>Task.FromResult<CliCommand?>(null)); FakeManager? manager=null;
-        var runtime = await catalog.GetRuntimeAsync(); runtime=runtime with { Providers=runtime.Providers.Select(p=>p with { Available=true }).ToList() };
-        await using var host = new RemoteServer("metadata",[workspace.Id],()=>[workspace],_=>Task.FromResult(workspace),()=>Task.FromResult(runtime),emit=>manager=new(emit),true);
-        var delivered=new ConcurrentQueue<RunEvent>();
-        await using var client = new RemoteController(directory,()=>[],_=>throw new ArgumentException(),()=>Task.FromResult(runtime),emit=>new FakeManager(emit),delivered.Enqueue,testLoopback:true,discover:_=>Task.FromResult(new TailscaleInfo(false,[],null,"fixture")));
-        try
-        {
-            Console.WriteLine("TRACE structured remote: host start");
-            await host.StartAsync(IPAddress.Loopback,0).WaitAsync(TimeSpan.FromSeconds(20));
-            Console.WriteLine("TRACE structured remote: connect");
-            var state=await client.ConnectAsync(new("fixture",host.Address,host.Token)).WaitAsync(TimeSpan.FromSeconds(20)); var connection=state.Connections.Single();
-            var imported=workspace with { Id="imported",Remote=new(connection.Id,workspace.Id,"fixture") };
-            Console.WriteLine("TRACE structured remote: start and events");
-            await client.StartRunAsync(new("local-pane",imported.Id,"claude","fixture without model",[]),imported); await Until(()=>delivered.Any(e=>e.Status=="completed"));
-            Check(delivered.All(e=>e.SessionId=="local-pane") && delivered.Any(e=>e.Activity?.DurationMs==125) && delivered.Any(e=>e.Usage?.ContextPercent==1) && delivered.Any(e=>e.Entry?.Activity?.Output=="fixture output"),"New remote client must opt in and preserve structured Mac-compatible DTOs");
-            Console.WriteLine("TRACE structured remote: legacy poll");
-            using var http=new HttpClient { Timeout=TimeSpan.FromSeconds(10) }; using var request=new HttpRequestMessage(HttpMethod.Get,host.Address+$"/v1/runs/{manager!.Job}/events?cursor=0"); request.Headers.Add("Authorization","Bearer "+host.Token); request.Headers.Add(RemoteNetwork.VersionHeader,"1");
-            using var response=await http.SendAsync(request); var poll=JsonSerializer.Deserialize<WirePoll>(await response.Content.ReadAsStringAsync(),Wire.Json)!;
-            Check(poll.Events.Count==5 && poll.Cursor==5 && poll.Events.All(e=>e.Event.Type is "log" or "status") && poll.Events.All(e=>e.Event.Entry?.Activity is null) && poll.Events.Last().Event.Status=="completed", "Legacy poll must retain every cursor and terminal status without new metadata types");
-        }
-        finally { Console.WriteLine("TRACE structured remote: cleanup"); await client.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15)); await host.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15)); Directory.Delete(directory,true); }
-    }
     internal static async Task Mods()
     {
         var seen=new List<JsonElement>(); await using var bridge=new ModBridge(); using var connection=await bridge.RegisterAsync(v=>seen.Add(v.Clone()),CancellationToken.None); using var http=new HttpClient();

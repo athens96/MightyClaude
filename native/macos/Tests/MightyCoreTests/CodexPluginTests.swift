@@ -141,12 +141,8 @@ final class CodexPluginTests {
         await service.shutdown()
     }
 
-    @Test func rejectsRemoteInvalidScopeNamesUnknownCatalogAndBlockedPolicies() async throws {
+    @Test func rejectsInvalidScopeNamesUnknownCatalogAndBlockedPolicies() async throws {
         let f = try fixture(); let service = f.service()
-        var remote = f.workspace; remote.remote = RemoteWorkspaceReference(connectionId: "peer", workspaceId: "there", hostName: "Remote")
-        #expect(await service.snapshot(workspace: remote).status == "remote")
-        #expect(await service.install(pluginID: "format@sample", workspace: remote).status == "remote")
-        #expect(await service.refreshMarketplace(name: "sample", workspace: remote).status == "remote")
         for id in ["-y@sample", "format@sample\n", "a@b@c", "format@$(touch)", "../format@sample"] {
             #expect(await service.install(pluginID: id, workspace: f.workspace).status == "failed")
         }

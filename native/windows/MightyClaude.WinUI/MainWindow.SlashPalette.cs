@@ -75,7 +75,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>The catalogue key this pane scans under, mirroring slashCatalogKey.</summary>
-        private string? SlashWorkspacePath => Workspace.Remote is null ? Workspace.Path : null;
+        private string? SlashWorkspacePath => Workspace.Path;
 
         /// <summary>
         /// Recomputes the palette for the current draft and draws it. Called on
@@ -104,7 +104,7 @@ public sealed partial class MainWindow
             var pane = Session;
             if (argument == SlashArgument.Model)
             {
-                var catalog = owner.Runtime(pane.Provider, pane.WorkspaceId)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+                var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
                 var options = catalog.Models.Select(m => (m.Value, m.DisplayName)).ToList();
                 if (!options.Any(o => o.Value == pane.Model)) options.Add((pane.Model, pane.Model));
                 return SlashPalette.ModelChoices(command, options, pane.Model);
@@ -253,7 +253,7 @@ public sealed partial class MainWindow
                 {
                     if (argument is not { } model) return false;
                     if (running) { await SlashNote(SlashCommandStrings.NoteModelRunning); break; }
-                    var catalog = owner.Runtime(pane.Provider, pane.WorkspaceId)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+                    var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
                     var name = catalog.Models.FirstOrDefault(m => m.Value == model)?.DisplayName ?? model;
                     if (pane.Model == model) { await SlashNote(SlashCommandStrings.NoteModelAlreadyTemplate.Replace("{name}", name)); break; }
                     await ChangeModel(model);

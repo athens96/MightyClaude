@@ -9,7 +9,7 @@ plugin from the catalog, and refresh the registered marketplaces.
 labels) and an install button per catalog row. Codex installs at user level only
 and offers no scope choice. Arguments are passed as a list through the shared
 runner; the plugin id and scope are validated against the values the browser just
-returned before they are used. A remote workspace never runs any operation.
+returned before they are used.
 
 **Marketplace refresh**: refreshes all registered Git-backed marketplaces (Codex:
 Git-only; Claude: all registered sources) that the current filter selects, one at
@@ -71,7 +71,7 @@ public sealed record ClaudePluginMarketplace(string Name, string SourceKind = "u
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `Status` | `string` | `ready` / `missing` / `unsupported` / `failed` / `cancelled` / `remote` |
+| `Status` | `string` | `ready` / `missing` / `unsupported` / `failed` / `cancelled` |
 | `Detail` | `string` | The macOS sentence for the status |
 | `CliVersion` | `string?` | Shown in the window header |
 | `Installed` | `IReadOnlyList<ClaudeInstalledPlugin>` | |
@@ -98,19 +98,7 @@ reshaping the shared models.
 
 | Windows | macOS | Reason |
 |---------|-------|--------|
-| `"이 PC의 설치는 변경하지 않습니다."` | `"이 Mac의 설치는 변경하지 않습니다."` | Windows devices are not Macs. |
-| `"이 PC의 Codex 설치 목록과 마켓플레이스 목록입니다."` | `"이 Mac의 Codex 설치 목록과 마켓플레이스 목록입니다."` | The same word, the same reason, in `CodexPluginStrings.FooterNote`. |
-
-The full sentence (`PluginStrings.DetailRemote`) reads:
-> 원격 워크스페이스의 플러그인은 해당 호스트에서 관리하세요. **이 PC의** 설치는 변경하지 않습니다.
-
-The macOS original reads "이 Mac의". The substitution is recorded here and the
-`Claude 플러그인 목록` row in `docs/windows-parity.md` is marked `확인 필요` for it.
-It is a word substitution, not a behaviour change, so it is not a `보류` row.
-
-The two sentences a remote workspace shows are the macOS originals, unchanged:
-`원격 워크스페이스에서는 관리할 수 없습니다.` and
-`원격 컴퓨터의 MightyClaude에서 플러그인을 관리하세요.`
+| `"이 PC의 Codex 설치 목록과 마켓플레이스 목록입니다."` | `"이 Mac의 Codex 설치 목록과 마켓플레이스 목록입니다."` | Windows devices are not Macs; the sentence is `CodexPluginStrings.FooterNote`. |
 
 ---
 
@@ -199,7 +187,6 @@ different: Claude's plugin JSON has a known first release, so it gates on
 | `failed` | malformed JSON or past a cap | `PluginStrings.DetailMalformed` |
 | `failed` | workspace path invalid / gone | `PluginStrings.DetailInvalidWorkspace` / `DetailMissingWorkspace` |
 | `cancelled` | a read requested after the window closed | `PluginStrings.DetailCancelled` |
-| `remote` | remote workspace | `PluginStrings.DetailRemote` |
 
 Install, `plugin marketplace add` and `plugin marketplace upgrade` belong to the
 marketplace feature. Install and marketplace refresh are now present.
@@ -259,7 +246,6 @@ reading the list can never update a plugin behind the user's back.
 | `failed` | malformed JSON or past a cap | `DetailMalformed` |
 | `failed` | workspace path invalid / gone | `DetailInvalidWorkspace` / `DetailMissingWorkspace` |
 | `cancelled` | a read requested after the window closed | `DetailCancelled` |
-| `remote` | remote workspace | `DetailRemote` |
 
 A malformed or oversized answer never becomes a ready-but-empty list: it is
 `failed`, and the window shows the reload copy.
@@ -353,8 +339,8 @@ and puts back the two hooks it set.
 
 The GUI smoke run records `claudePluginList`: it drives the real dialog with a
 fixture snapshot through the tabs, the marketplace filter, the search box and a
-reload, reads back the sentence a missing CLI produces and the two sentences a
-remote workspace shows, and puts back the two hooks it set.
+reload, reads back the sentence a missing CLI produces, and puts back the two
+hooks it set.
 
 New saved-state fields: none. The snapshot `Version` stays 1.
 
@@ -412,7 +398,7 @@ Every file this feature touched is inside `native/windows/**` or
 own freeze step (`Check the manifest-only freeze after the tag`) passes too.
 
 One CI note, so nobody reads it as this feature's doing: the `macos` job is red
-at the `Test Swift core and loopback remote execution` step. It is red the same
+at the `Test Swift core` step. It is red the same
 way at `ecbfb86`, the commit before any Codex plugin work, and at a commit that
 changed nothing but `.md` files. The cause is in `native/macos/**`, which this
 Seed's allow-list does not let this work touch.

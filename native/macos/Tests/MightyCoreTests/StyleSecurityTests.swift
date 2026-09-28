@@ -169,7 +169,7 @@ struct StyleSecurityTests {
         let approvals = [StyleApprovalRecord(styleId: "flow", source: .workspace, path: file.url.path, workspacePath: "/repo",
                                              hash: file.hash, state: "approved", decidedAt: Date())]
         let registry = StyleRegistry(styles: StyleRegistry.make(files: [file], approvals: approvals).styles)
-        let workspace = StyleWorkspaceRef(path: "/repo", isRemote: false)
+        let workspace = StyleWorkspaceRef(path: "/repo")
         // The pane still remembers the hash of the manifest it agreed to.
         #expect(registry.runnable("flow", workspace: workspace, hash: StyleHash.of(mine)) == nil)
         // Losing the style means losing the prefix, not wearing a new one.

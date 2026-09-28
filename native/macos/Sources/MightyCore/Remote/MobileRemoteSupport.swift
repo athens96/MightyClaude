@@ -113,8 +113,8 @@ public enum MobileRemoteSupport {
     /// `AppStore.guidedStyle(_:)` applies, Mighty view included. `viewMode` is
     /// the view the pane will be in, so a POST that enables Mighty and picks a
     /// style in one go is judged against the state it is switching to.
-    public static func guidedStylesAvailable(kind: String, provider: String, localWorkspace: Bool, viewMode: String) -> Bool {
-        kind == "claude" && provider == "claude" && localWorkspace && viewMode == "mighty"
+    public static func guidedStylesAvailable(kind: String, provider: String, viewMode: String) -> Bool {
+        kind == "claude" && provider == "claude" && viewMode == "mighty"
     }
 
     /// `options.styles`: the CLI plus the styles this pane may really pick.

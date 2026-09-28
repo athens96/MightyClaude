@@ -190,18 +190,6 @@ internal static class CodexPluginVerification
             "the Claude window still counts and lists every scope: " + claude.InstalledCount);
     }
 
-    // Remote workspace returns the remote status without running any commands.
-    internal static async Task RemoteWorkspaceRunsNothing()
-    {
-        var calls = 0;
-        var runner = new FakeRunner((_, _) => { calls++; return Ok(); });
-        var (reader, workspace, _) = Fixture(runner);
-        var snap = await reader.SnapshotAsync(new Workspace { Path = workspace, Remote = new RemoteReference("id", "peer", "Host") });
-        Check(snap.Status == ClaudePluginStatus.Remote, "remote: " + snap.Status);
-        Check(snap.Detail == PluginStrings.DetailRemote, "remote detail: " + snap.Detail);
-        Check(calls == 0, "no CLI calls for a remote workspace");
-    }
-
     // A second concurrent read joins the running read rather than starting a new one.
     internal static async Task SecondRequestJoinsTheRunningRead()
     {

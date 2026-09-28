@@ -50,11 +50,8 @@ struct RunSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(permissionLabel(currentSession.settings.permissionMode, provider: session.provider)).font(.system(size: 12, weight: .medium))
                         Text(permissionDescription(currentSession.settings.permissionMode, provider: session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
-                        if let reference = store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote {
-                            Text(L("settings.run.remoteAccountTemplate", ["host": reference.hostName])).font(.system(size: 11)).foregroundStyle(.secondary)
-                        }
                         if currentSession.settings.permissionMode != "fullAccess" {
-                            if (session.provider == "claude" || (session.provider == "codex" && currentSession.settings.permissionMode == "onRequest")), store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil {
+                            if session.provider == "claude" || (session.provider == "codex" && currentSession.settings.permissionMode == "onRequest") {
                                 Text(L("settings.run.approvalInApp")).font(.system(size: 11)).foregroundStyle(.secondary)
                             } else {
                                 Text(L("settings.run.approvalUnsupported")).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -155,11 +152,7 @@ struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Group {
-            if store.settingsShowsRemote {
-                RemoteConnectionView(onClose: { store.settingsShowsRemote = false })
-            } else { generalSettings }
-        }
+        generalSettings
     }
 
     private var generalSettings: some View {
@@ -195,14 +188,6 @@ struct AppSettingsView: View {
                         }
                     }
                     .toggleStyle(.switch).accessibilityIdentifier("settings-browser-engine")
-                }
-                Section(L("settings.remote.sectionTitle")) {
-                    Button { store.settingsShowsRemote = true } label: {
-                        Label(L("settings.remote.tailscaleButton"), systemImage: "network")
-                    }
-                    .accessibilityIdentifier("settings-remote")
-                    Text(L("settings.remote.description"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 // Per-workspace destination for URLs the agent opens. Writes to the
                 // same persisted store the open agent panes read (and the dialog's

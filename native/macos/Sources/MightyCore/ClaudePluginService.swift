@@ -33,7 +33,7 @@ public actor ClaudePluginService {
     }
 
     // Fake executables and deadlines are test-only; never accepted from the UI,
-    // a remote peer, a catalog entry, or a plugin's manifest.
+    // a catalog entry, or a plugin's manifest.
     init(environment: [String: String], executable: URL?, readTimeout: TimeInterval = 2,
          operationTimeout: TimeInterval = 5, maximumBytes: Int = 8 * 1024 * 1024) {
         configuration = Self.configuration(environment, executable: executable, readTimeout: readTimeout,
@@ -41,7 +41,6 @@ public actor ClaudePluginService {
     }
 
     public func snapshot(workspace: Workspace) async -> ClaudePluginSnapshot {
-        if workspace.remote != nil { return ClaudePluginSnapshot(status: "remote", detail: Self.remoteDetail) }
         guard !closing, !Task.isCancelled else { return ClaudePluginSnapshot(status: "cancelled", detail: "플러그인 조회를 취소했습니다.") }
         guard active == nil else { return ClaudePluginSnapshot(status: "busy", detail: "다른 플러그인 작업이 진행 중입니다.") }
         let configuration = configuration
@@ -83,7 +82,6 @@ public actor ClaudePluginService {
     }
 
     private func operation(workspace: Workspace, pluginID: String?, scope: String?, marketplace: String?) async -> ClaudePluginOperationResult {
-        if workspace.remote != nil { return ClaudePluginOperationResult(status: "remote", detail: Self.remoteDetail) }
         guard !closing, !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: "플러그인 작업을 취소했습니다.") }
         guard active == nil else { return ClaudePluginOperationResult(status: "busy", detail: "다른 플러그인 작업이 진행 중입니다.") }
         if let pluginID {
@@ -158,8 +156,6 @@ public actor ClaudePluginService {
         return ClaudePluginOperationResult(status: "failed", detail: "플러그인 작업을 완료하지 못했습니다.")
     }
 
-    private static let remoteDetail = "원격 워크스페이스의 플러그인은 해당 호스트에서 관리하세요. 이 Mac의 설치는 변경하지 않습니다."
-
     private static func configuration(_ supplied: [String: String], executable: URL?, readTimeout: TimeInterval,
                                       operationTimeout: TimeInterval, maximumBytes: Int) -> ClaudePluginConfiguration {
         var environment = supplied
@@ -172,7 +168,7 @@ public actor ClaudePluginService {
     }
 
     private static func localDirectory(_ workspace: Workspace) throws -> URL {
-        guard workspace.remote == nil, workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.utf8.count <= 16_384 else {
+        guard workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.utf8.count <= 16_384 else {
             throw ClaudePluginFailure(status: "failed", detail: "로컬 작업 폴더가 올바르지 않습니다.")
         }
         let url = URL(fileURLWithPath: workspace.path).resolvingSymlinksInPath().standardizedFileURL

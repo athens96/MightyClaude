@@ -210,7 +210,7 @@ public sealed partial class MainWindow
 
             var viewport = graphViewport is { ActualWidth: > 0 } v ? ((double W, double H)?)(v.ActualWidth, v.ActualHeight) : null;
             var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", new HashSet<string>(), graphResultFilesRunId, viewport);
-            var catalog = owner.Runtime(pane.Provider, pane.WorkspaceId)?.ModelCatalog?.Models;
+            var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderCatalog.Name(pane.Provider), AnimationsEnabled, catalog);
 
             graphCanvas.Children.Clear(); graphBodies.Clear(); graphCards.Clear(); graphBlockKinds.Clear();

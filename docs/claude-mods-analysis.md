@@ -38,7 +38,7 @@ my-mod/
 | 턴 | `turn.start`: `text`, `turnId`. `turn.complete`: `answer`, `durationMs`, `isAborted`, `turnId`, 선택적 `agentId`·`usage`, 종료 `reason`. |
 | 도구 | `tool.call`: `tool`, `tool_use_id`, 인자. `next(event)`가 권한 확인과 실제 실행을 이어간다. |
 | 사용자 입력 | `$.prompt.submit({ text })`, `$.turn.abort({ turnId })`가 있다. 외부 앱으로 제공되는 전용 RPC는 별도로 구현해야 한다. |
-| UI | `ui.render`, `ui.press` 등은 Claude가 제공하는 surface에 그리는 계약이다. Electron의 React DOM에 직접 마운트하는 API는 아니다. |
+| UI | `ui.render`, `ui.press` 등은 Claude가 제공하는 surface에 그리는 계약이다. 앱 화면에 직접 마운트하는 API는 아니다. |
 
 `HttpInit`에는 timeout이나 AbortSignal 옵션이 없다. 연결 오류로 실행 흐름을 붙잡지 않도록 전송 큐와 실패 처리를 앱 계약에 둔다. `on`, `$` 접근은 정적 검사되므로 `$` 전체를 동적으로 전달하거나 메서드를 임의 이름으로 치환하는 구현은 피한다.
 
@@ -63,8 +63,7 @@ my-mod/
 
 ```mermaid
 flowchart LR
-  UI[React 화면\n워크스페이스 · 실행 창] --> IPC[제한된 Electron IPC]
-  IPC --> Main[Electron main\n세션 · 프로세스 관리]
+  UI[네이티브 화면\n워크스페이스 · 실행 창] --> Main[앱 코어\n세션 · 프로세스 관리]
   Main --> CLI[Claude Code CLI\nworkspace별 cwd]
   CLI --> Mod[MightyClaude Mod\n라이프사이클 · 도구 이벤트]
   Mod --> HTTP[127.0.0.1 HTTP receiver\n실행별 임시 토큰]
@@ -73,7 +72,7 @@ flowchart LR
 ```
 
 1. **실행 창마다 독립된 실행 ID와 CLI 세션 ID**를 관리한다. 워크스페이스 경로를 `cwd`로 설정한다.
-2. Main이 receiver를 먼저 열고, 임시 token과 endpoint를 자식 CLI의 환경변수로 전달한다. 수신은 `127.0.0.1`에만 바인딩하고 실행 ID·토큰·메시지 크기를 검사한다.
+2. 앱 코어가 receiver를 먼저 열고, 임시 token과 endpoint를 자식 CLI의 환경변수로 전달한다. 수신은 `127.0.0.1`에만 바인딩하고 실행 ID·토큰·메시지 크기를 검사한다.
 3. Mod는 선택한 이벤트를 프로젝트의 versioned envelope로 변환한다. 초기 envelope는 `protocolVersion`, `runId`, `sequence`, `type`, `payload`면 충분하다. UI에 CLI 원본 이벤트를 직접 결합하지 않는다.
 4. 이벤트 전송 실패는 원래 `next(event)` 실행과 결과를 보존하면서 연결 상태로 보고한다. wildcard 전체 수집보다 필요한 네 이벤트부터 연결한다.
 5. 입력·승인·중단은 명시적인 세션 제어 계약으로 관리한다. Mod의 관측 hook이 도구 허가를 자동으로 반환하지 않도록 한다.

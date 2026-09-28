@@ -133,7 +133,6 @@ export default function HostScreen() {
                 <View style={styles.groupTitles}>
                   <Text numberOfLines={1} style={styles.workspaceName}>
                     {group.workspace.name}
-                    {group.workspace.remote ? ' · 원격' : ''}
                   </Text>
                   <Text numberOfLines={1} style={styles.workspacePath}>
                     {group.workspace.path}
@@ -173,7 +172,6 @@ export default function HostScreen() {
       <NewSessionSheet
         visible={creatingFor !== undefined}
         workspaceName={activeWorkspace?.workspace.name ?? ''}
-        workspaceRemote={activeWorkspace?.workspace.remote ?? false}
         busy={creating}
         onCancel={() => setCreatingFor(undefined)}
         onCreate={(choice) => void createSession(choice)}

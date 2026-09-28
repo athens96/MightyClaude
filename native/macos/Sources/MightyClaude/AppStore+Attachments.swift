@@ -8,7 +8,7 @@ extension AppStore {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return "실행 창을 선택하세요." }
         if session.kind == "shell" { return "명령 창에는 파일을 첨부할 수 없습니다. AI 실행 창을 사용하세요." }
         if !providerRuntime(session.provider, workspaceId: session.workspaceId).capabilities.attachments {
-            return "이 실행기는 첨부 파일을 지원하지 않습니다. 원격 앱의 연결과 버전을 확인하세요."
+            return "이 실행기는 첨부 파일을 지원하지 않습니다."
         }
         return nil
     }

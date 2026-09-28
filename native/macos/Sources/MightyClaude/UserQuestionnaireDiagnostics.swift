@@ -248,7 +248,7 @@ enum UserQuestionnaireDiagnostics {
     {"questions":[
       {"header":"대상 앱","multiSelect": false,"options":[
         {"description":"native/macos/ — 실제 배포 대상. .hiddenTitleBar의 타이틀바 safe area가 detail 컬럼 상단에 빈 띠로 남는 문제를 수정합니다.","label":"macOS 네이티브 앱 (Swift)"},
-        {"description":"src/ + electron/ — .native-mac 헤더 높이 100px / padding-top 24px를 조정합니다.","label":"Electron 참조 구현 (npm run dev)"},
+        {"description":"mobile/ — 폰 앱 헤더 높이와 상단 여백을 조정합니다.","label":"폰 앱 (Expo)"},
         {"description":"native/windows/ — 기본 WinUI 타이틀바 아래 root Grid의 Padding(12)과 브랜드 행 높이를 조정합니다.","label":"Windows 앱 (WinUI)"}],
         "question":"지금 보고 계신 화면이 어느 구현인가요?"},
       {"header":"수정 방향","multiSelect": false,"options":[

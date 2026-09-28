@@ -111,7 +111,6 @@ export interface MobileWorkspace {
   id: string;
   name: string;
   path: string;
-  remote: boolean;
 }
 
 export interface MobileSessionPreview {

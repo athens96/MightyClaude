@@ -42,7 +42,6 @@ internal static class SettingsSectionsVerification
     {
         var absent = new[]
         {
-            SettingsSections.RemoteConnection,
             SettingsSections.Styles,
             SettingsSections.MobileRemote,
             SettingsSections.Companion,

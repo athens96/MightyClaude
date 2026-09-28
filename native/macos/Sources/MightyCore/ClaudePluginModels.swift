@@ -45,7 +45,7 @@ public struct ClaudePluginMarketplace: Sendable, Equatable, Identifiable {
 }
 
 public struct ClaudePluginSnapshot: Sendable, Equatable {
-    /// ready, missing, unsupported, failed, busy, cancelled, or remote.
+    /// ready, missing, unsupported, failed, busy, or cancelled.
     public var status: String
     public var detail: String
     public var cliVersion: String?
@@ -63,7 +63,7 @@ public struct ClaudePluginSnapshot: Sendable, Equatable {
 }
 
 public struct ClaudePluginOperationResult: Sendable, Equatable {
-    /// succeeded, skipped, failed, busy, cancelled, or remote.
+    /// succeeded, skipped, failed, busy, or cancelled.
     public var status: String
     public var detail: String
     /// Bounded CLI output. Only show after an explicit diagnostics action.
