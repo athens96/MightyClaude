@@ -138,26 +138,26 @@ public sealed partial class MainWindow
             var workspaceId = Session.WorkspaceId;
             var untrusted = new StatusLineConfig("echo repo", 0, StatusLineStrings.SourceWorkspace, FromWorkspace: true);
             RenderStatusLine(null, untrusted, null);
-            Require(statusLineHost.Visibility == Visibility.Visible && StatusLineUntrusted == untrusted, "워크스페이스 statusLine 질문이 표시되지 않았습니다.");
+            Require(statusLineHost.Visibility == Visibility.Visible && StatusLineUntrusted == untrusted, "the workspace statusLine question is not shown");
             var question = statusLineHost.Children.OfType<StackPanel>().Single();
             var texts = Descendants(question).OfType<TextBlock>().Select(t => t.Text).ToList();
-            Require(texts.Contains(StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source)) && texts.Contains(StatusLineStrings.TrustNote), "statusLine 질문의 문구가 macOS와 다릅니다.");
+            Require(texts.Contains(StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source)) && texts.Contains(StatusLineStrings.TrustNote), "the statusLine question text differs from macOS");
             var answers = Descendants(question).OfType<Button>().Select(b => b.Content as string).ToList();
-            Require(answers.Contains(StatusLineStrings.TrustAllow) && answers.Contains(StatusLineStrings.TrustDeny), "허용 / 지금은 안 함 버튼이 없습니다.");
-            Require(!StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId), "허용하기 전에 워크스페이스 명령이 신뢰되었습니다.");
+            Require(answers.Contains(StatusLineStrings.TrustAllow) && answers.Contains(StatusLineStrings.TrustDeny), "the allow / not now buttons are missing");
+            Require(!StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId), "the workspace command was trusted before it was allowed");
 
             await TrustStatusLine(untrusted);
-            Require(StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId) && StatusLineUntrusted is null, "허용 후에도 질문이 남아 있습니다.");
-            Require(!StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted with { Command = "echo repo --changed" }, workspaceId), "바뀐 명령을 다시 묻지 않았습니다.");
+            Require(StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId) && StatusLineUntrusted is null, "the question stayed after allowing");
+            Require(!StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted with { Command = "echo repo --changed" }, workspaceId), "a changed command was not asked about again");
 
             var rendered = "\u001B[36mMighty\u001B[0m \u001B[1mbuild\u001B[0m\n2\n3\n4\n5\n6\n7\n8".Split('\n').Take(StatusLineSupport.MaximumLines).Select(AnsiText.Parse).ToList();
             var result = new StatusLineResult(rendered, null, 0, false);
             RenderStatusLine(untrusted, null, result);
             var rows = statusLineHost.Children.OfType<TextBlock>().ToList();
-            Require(rows.Count == StatusLineSupport.MaximumLines, "상태 줄이 최대 6줄로 제한되지 않았습니다.");
+            Require(rows.Count == StatusLineSupport.MaximumLines, "the status line was not limited to 6 lines");
             var segments = rows[0].Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().ToList();
-            Require(segments[0].Foreground is SolidColorBrush, "상태 줄 첫 구간에 터미널 색이 적용되지 않았습니다.");
-            Require(segments.Any(r => r.FontWeight.Weight >= Microsoft.UI.Text.FontWeights.SemiBold.Weight), "상태 줄의 굵은 글씨가 적용되지 않았습니다.");
+            Require(segments[0].Foreground is SolidColorBrush, "the terminal colour was not applied to the first status line segment");
+            Require(segments.Any(r => r.FontWeight.Weight >= Microsoft.UI.Text.FontWeights.SemiBold.Weight), "bold text was not applied to the status line");
             return true;
         }
 

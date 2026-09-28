@@ -31,7 +31,7 @@ public sealed class DesktopService : IAsyncDisposable
     public async Task InitializeAsync() { var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded; }
     private Task<Workspace> ResolveLocal(string id)
     {
-        lock (sync) if (!snapshot.Workspaces.Any(w => w.Id == id)) throw new ArgumentException("등록된 로컬 워크스페이스가 아닙니다.");
+        lock (sync) if (!snapshot.Workspaces.Any(w => w.Id == id)) throw new ArgumentException(Locale.Get("run.error.localWorkspaceNotRegistered"));
         return store.ResolveLocalAsync(id);
     }
     public async Task<Workspace> AddWorkspaceAsync(string path)
@@ -67,10 +67,10 @@ public sealed class DesktopService : IAsyncDisposable
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(closing, this);
-            if (!snapshot.Workspaces.Any(w => w.Id == request.WorkspaceId)) throw new ArgumentException("등록된 워크스페이스가 아닙니다.");
-            if (!snapshot.Sessions.Any(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind)) throw new ArgumentException("현재 워크스페이스의 실행 창이 아닙니다.");
+            if (!snapshot.Workspaces.Any(w => w.Id == request.WorkspaceId)) throw new ArgumentException(Locale.Get("run.error.workspaceNotRegistered"));
+            if (!snapshot.Sessions.Any(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind)) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
             route = new();
-            if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException("이미 실행 중인 창입니다.");
+            if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
             snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? s with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
             snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null)); _ = QueueSave();
@@ -81,7 +81,7 @@ public sealed class DesktopService : IAsyncDisposable
             Task started;
             lock (sync)
             {
-                if (closing || route.Cancelled) { Receive(RunEvent.State(request.SessionId, "stopped")); if (request.Attachments is { Count: > 0 }) throw new OperationCanceledException("첨부 전송이 취소되었습니다."); return; }
+                if (closing || route.Cancelled) { Receive(RunEvent.State(request.SessionId, "stopped")); if (request.Attachments is { Count: > 0 }) throw new OperationCanceledException(Locale.Get("run.error.attachmentSendCancelled")); return; }
                 route.Started = true; started = local.StartAsync(request);
             }
             await started;

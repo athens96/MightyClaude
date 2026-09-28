@@ -278,13 +278,13 @@ internal static class CodexPluginVerification
         };
 
         var actual = typeof(CodexPluginStrings)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
+            .GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.PropertyType == typeof(string))
+            .ToDictionary(f => f.Name, f => (string)f.GetValue(null)!);
 
-        var shared = typeof(PluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .ToDictionary(f => (string)f.GetRawConstantValue()!, f => f.Name);
+        var shared = typeof(PluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.PropertyType == typeof(string))
+            .ToDictionary(f => (string)f.GetValue(null)!, f => f.Name);
         foreach (var (name, value) in actual)
         {
             Check(value.Length > 0, "CodexPluginStrings." + name + " is empty");
@@ -443,9 +443,9 @@ internal static class CodexPluginVerification
 
         // No Codex Korean typed directly in WinUI.
         var plugins = File.ReadAllText(Path.Combine(winui, "MainWindow.Plugins.cs"));
-        foreach (var field in typeof(CodexPluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
-                     .Where(f => f.IsLiteral && f.FieldType == typeof(string)))
-            Check(!plugins.Contains("\"" + (string)field.GetRawConstantValue()! + "\""),
+        foreach (var field in typeof(CodexPluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static)
+                     .Where(f => f.PropertyType == typeof(string)))
+            Check(!plugins.Contains("\"" + (string)field.GetValue(null)! + "\""),
                 "CodexPluginStrings." + field.Name + " is typed into WinUI instead of read from Core");
 
         return Task.CompletedTask;

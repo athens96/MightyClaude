@@ -405,9 +405,9 @@ internal static class ClaudePluginVerification
         };
 
         var actual = typeof(PluginStrings)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
+            .GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.PropertyType == typeof(string))
+            .ToDictionary(f => f.Name, f => (string)f.GetValue(null)!);
 
         var seen = new Dictionary<string, string>();
         foreach (var (name, value) in actual)
@@ -468,9 +468,9 @@ internal static class ClaudePluginVerification
             "the footer sentence is the provider's, so the window must read it from ClaudePluginBrowser");
 
         // ...and no copy is typed into WinUI as a literal of its own.
-        foreach (var field in typeof(PluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
-                     .Where(f => f.IsLiteral && f.FieldType == typeof(string)))
-            Check(!source.Contains("\"" + (string)field.GetRawConstantValue()! + "\""),
+        foreach (var field in typeof(PluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static)
+                     .Where(f => f.PropertyType == typeof(string)))
+            Check(!source.Contains("\"" + (string)field.GetValue(null)! + "\""),
                 "PluginStrings." + field.Name + " is typed into WinUI instead of read from Core");
 
         // The title and the tab counts are Core's decision, not the window's.

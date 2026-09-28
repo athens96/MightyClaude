@@ -569,9 +569,9 @@ internal static class PluginMarketplaceVerification
 
         // Every sentence a mutation can report is a constant of one of the two
         // classes, so no result line is ever composed at the screen.
-        var known = typeof(PluginStrings).GetFields().Concat(typeof(CodexPluginStrings).GetFields())
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .Select(f => (string)f.GetRawConstantValue()!).ToHashSet(StringComparer.Ordinal);
+        var known = typeof(PluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static).Concat(typeof(CodexPluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static))
+            .Where(f => f.PropertyType == typeof(string))
+            .Select(f => (string)f.GetValue(null)!).ToHashSet(StringComparer.Ordinal);
         foreach (var sentence in new[]
                  {
                      PluginStrings.OperationBusy, PluginStrings.OperationCancelled, PluginStrings.OperationCancelledByUser,
@@ -630,10 +630,10 @@ internal static class PluginMarketplaceVerification
             "the window must refuse to close while an operation runs");
 
         // No Korean of its own: every visible word is a Core constant.
-        foreach (var field in typeof(PluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static)
-                     .Concat(typeof(CodexPluginStrings).GetFields(BindingFlags.Public | BindingFlags.Static))
-                     .Where(f => f.IsLiteral && f.FieldType == typeof(string)))
-            Check(!source.Contains("\"" + (string)field.GetRawConstantValue()! + "\""),
+        foreach (var field in typeof(PluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static)
+                     .Concat(typeof(CodexPluginStrings).GetProperties(BindingFlags.Public | BindingFlags.Static))
+                     .Where(f => f.PropertyType == typeof(string)))
+            Check(!source.Contains("\"" + (string)field.GetValue(null)! + "\""),
                 "a plugin sentence is typed into WinUI instead of read from Core: " + field.Name);
 
         // The smoke run records pluginMarketplace, drives the same window and
