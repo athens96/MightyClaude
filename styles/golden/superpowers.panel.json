@@ -1,0 +1,914 @@
+{
+  "afterFirstAction" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+        "icon" : "questionmark.bubble",
+        "id" : "brainstorming",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "브레인스토밍"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "구현 계획을 단계별 작업으로 작성합니다",
+        "icon" : "doc.text",
+        "id" : "writing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "계획을 직접 한 단계씩 실행합니다",
+        "icon" : "play.fill",
+        "id" : "executing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+        "icon" : "sparkles",
+        "id" : "subagent-driven-development",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "서브에이전트 개발"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verification-before-completion",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "완료 전 검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "finishing-a-development-branch",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "브랜치 완료"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+        "icon" : "hammer",
+        "id" : "systematic-debugging",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "디버깅"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "코드 리뷰를 요청합니다",
+        "icon" : "magnifyingglass",
+        "id" : "requesting-code-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "코드 리뷰 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "brainstorming",
+          "writing-plans",
+          "executing-plans",
+          "subagent-driven-development",
+          "verification-before-completion",
+          "finishing-a-development-branch",
+          "systematic-debugging",
+          "requesting-code-review"
+        ],
+        "id" : "loop",
+        "selected" : true,
+        "title" : "루프"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next" : [
+      "brainstorming"
+    ],
+    "phase" : {
+      "count" : 4,
+      "id" : "brainstorm",
+      "index" : 0,
+      "title" : "브레인스토밍"
+    },
+    "presentation" : {
+      "headerTitle" : "Superpowers · 브레인스토밍",
+      "icon" : "sparkles",
+      "source" : "bundled",
+      "tint" : "teal"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "sparkles",
+      "id" : "superpowers",
+      "name" : "Superpowers",
+      "source" : "bundled",
+      "tint" : "teal"
+    }
+  },
+  "capabilityOpen" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+        "icon" : "questionmark.bubble",
+        "id" : "brainstorming",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "브레인스토밍"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "구현 계획을 단계별 작업으로 작성합니다",
+        "icon" : "doc.text",
+        "id" : "writing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "계획을 직접 한 단계씩 실행합니다",
+        "icon" : "play.fill",
+        "id" : "executing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+        "icon" : "sparkles",
+        "id" : "subagent-driven-development",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "서브에이전트 개발"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verification-before-completion",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "완료 전 검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "finishing-a-development-branch",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "브랜치 완료"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+        "icon" : "hammer",
+        "id" : "systematic-debugging",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "디버깅"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "코드 리뷰를 요청합니다",
+        "icon" : "magnifyingglass",
+        "id" : "requesting-code-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "코드 리뷰 요청"
+      }
+    ],
+    "attachments" : [
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "DESIGN.local.md",
+        "readOnly" : true,
+        "title" : "DESIGN"
+      },
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "RETRO.local.md",
+        "readOnly" : true,
+        "title" : "RETRO"
+      }
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "brainstorming",
+          "writing-plans",
+          "executing-plans",
+          "subagent-driven-development",
+          "verification-before-completion",
+          "finishing-a-development-branch",
+          "systematic-debugging",
+          "requesting-code-review"
+        ],
+        "id" : "loop",
+        "selected" : true,
+        "title" : "루프"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next" : [
+      "brainstorming"
+    ],
+    "phase" : {
+      "count" : 4,
+      "id" : "brainstorm",
+      "index" : 0,
+      "title" : "브레인스토밍"
+    },
+    "presentation" : {
+      "headerTitle" : "Superpowers · 브레인스토밍",
+      "icon" : "sparkles",
+      "source" : "bundled",
+      "tint" : "teal"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "sparkles",
+      "id" : "superpowers",
+      "name" : "Superpowers",
+      "source" : "bundled",
+      "tint" : "teal"
+    }
+  },
+  "empty" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+        "icon" : "questionmark.bubble",
+        "id" : "brainstorming",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "브레인스토밍"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "구현 계획을 단계별 작업으로 작성합니다",
+        "icon" : "doc.text",
+        "id" : "writing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "계획을 직접 한 단계씩 실행합니다",
+        "icon" : "play.fill",
+        "id" : "executing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+        "icon" : "sparkles",
+        "id" : "subagent-driven-development",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "서브에이전트 개발"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verification-before-completion",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "완료 전 검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "finishing-a-development-branch",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "브랜치 완료"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+        "icon" : "hammer",
+        "id" : "systematic-debugging",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "디버깅"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "코드 리뷰를 요청합니다",
+        "icon" : "magnifyingglass",
+        "id" : "requesting-code-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "코드 리뷰 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "brainstorming",
+          "writing-plans",
+          "executing-plans",
+          "subagent-driven-development",
+          "verification-before-completion",
+          "finishing-a-development-branch",
+          "systematic-debugging",
+          "requesting-code-review"
+        ],
+        "id" : "loop",
+        "selected" : true,
+        "title" : "루프"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next" : [
+      "brainstorming"
+    ],
+    "phase" : {
+      "count" : 4,
+      "id" : "brainstorm",
+      "index" : 0,
+      "title" : "브레인스토밍"
+    },
+    "presentation" : {
+      "headerTitle" : "Superpowers · 브레인스토밍",
+      "icon" : "sparkles",
+      "source" : "bundled",
+      "tint" : "teal"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "sparkles",
+      "id" : "superpowers",
+      "name" : "Superpowers",
+      "source" : "bundled",
+      "tint" : "teal"
+    }
+  },
+  "firstGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+        "icon" : "questionmark.bubble",
+        "id" : "brainstorming",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "브레인스토밍"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "구현 계획을 단계별 작업으로 작성합니다",
+        "icon" : "doc.text",
+        "id" : "writing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "계획을 직접 한 단계씩 실행합니다",
+        "icon" : "play.fill",
+        "id" : "executing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+        "icon" : "sparkles",
+        "id" : "subagent-driven-development",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "서브에이전트 개발"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verification-before-completion",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "완료 전 검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "finishing-a-development-branch",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "브랜치 완료"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+        "icon" : "hammer",
+        "id" : "systematic-debugging",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "디버깅"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "코드 리뷰를 요청합니다",
+        "icon" : "magnifyingglass",
+        "id" : "requesting-code-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "코드 리뷰 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "brainstorming",
+          "writing-plans",
+          "executing-plans",
+          "subagent-driven-development",
+          "verification-before-completion",
+          "finishing-a-development-branch",
+          "systematic-debugging",
+          "requesting-code-review"
+        ],
+        "id" : "loop",
+        "selected" : true,
+        "title" : "루프"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next" : [
+      "brainstorming"
+    ],
+    "phase" : {
+      "count" : 4,
+      "id" : "brainstorm",
+      "index" : 0,
+      "title" : "브레인스토밍"
+    },
+    "presentation" : {
+      "headerTitle" : "Superpowers · 브레인스토밍",
+      "icon" : "sparkles",
+      "source" : "bundled",
+      "tint" : "teal"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "sparkles",
+      "id" : "superpowers",
+      "name" : "Superpowers",
+      "source" : "bundled",
+      "tint" : "teal"
+    }
+  },
+  "lastGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+        "icon" : "questionmark.bubble",
+        "id" : "brainstorming",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "브레인스토밍"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "구현 계획을 단계별 작업으로 작성합니다",
+        "icon" : "doc.text",
+        "id" : "writing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "계획을 직접 한 단계씩 실행합니다",
+        "icon" : "play.fill",
+        "id" : "executing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+        "icon" : "sparkles",
+        "id" : "subagent-driven-development",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "서브에이전트 개발"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verification-before-completion",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "완료 전 검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "finishing-a-development-branch",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "브랜치 완료"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+        "icon" : "hammer",
+        "id" : "systematic-debugging",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "디버깅"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "코드 리뷰를 요청합니다",
+        "icon" : "magnifyingglass",
+        "id" : "requesting-code-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "코드 리뷰 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "brainstorming",
+          "writing-plans",
+          "executing-plans",
+          "subagent-driven-development",
+          "verification-before-completion",
+          "finishing-a-development-branch",
+          "systematic-debugging",
+          "requesting-code-review"
+        ],
+        "id" : "loop",
+        "selected" : true,
+        "title" : "루프"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next" : [
+      "brainstorming"
+    ],
+    "phase" : {
+      "count" : 4,
+      "id" : "brainstorm",
+      "index" : 0,
+      "title" : "브레인스토밍"
+    },
+    "presentation" : {
+      "headerTitle" : "Superpowers · 브레인스토밍",
+      "icon" : "sparkles",
+      "source" : "bundled",
+      "tint" : "teal"
+    },
+    "setup" : {
+      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "sparkles",
+      "id" : "superpowers",
+      "name" : "Superpowers",
+      "source" : "bundled",
+      "tint" : "teal"
+    }
+  },
+  "notReady" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+        "icon" : "questionmark.bubble",
+        "id" : "brainstorming",
+        "prominent" : true,
+        "requiresText" : false,
+        "takesText" : true,
+        "title" : "브레인스토밍"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "구현 계획을 단계별 작업으로 작성합니다",
+        "icon" : "doc.text",
+        "id" : "writing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 작성"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "계획을 직접 한 단계씩 실행합니다",
+        "icon" : "play.fill",
+        "id" : "executing-plans",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "계획 실행"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+        "icon" : "sparkles",
+        "id" : "subagent-driven-development",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "서브에이전트 개발"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "완료 전 구현이 올바른지 체계적으로 검증합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verification-before-completion",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "완료 전 검증"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "개발 브랜치를 마무리하고 PR을 준비합니다",
+        "icon" : "arrow.triangle.2.circlepath",
+        "id" : "finishing-a-development-branch",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "브랜치 완료"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+        "icon" : "hammer",
+        "id" : "systematic-debugging",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "디버깅"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "코드 리뷰를 요청합니다",
+        "icon" : "magnifyingglass",
+        "id" : "requesting-code-review",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "코드 리뷰 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "brainstorming",
+          "writing-plans",
+          "executing-plans",
+          "subagent-driven-development",
+          "verification-before-completion",
+          "finishing-a-development-branch",
+          "systematic-debugging",
+          "requesting-code-review"
+        ],
+        "id" : "loop",
+        "selected" : true,
+        "title" : "루프"
+      }
+    ],
+    "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next" : [
+      "brainstorming"
+    ],
+    "phase" : {
+      "count" : 4,
+      "id" : "brainstorm",
+      "index" : 0,
+      "title" : "브레인스토밍"
+    },
+    "presentation" : {
+      "headerTitle" : "Superpowers · 브레인스토밍",
+      "icon" : "sparkles",
+      "source" : "bundled",
+      "tint" : "teal"
+    },
+    "setup" : {
+      "hint" : "Claude CLI 플러그인 명령으로 설치합니다. 터미널 실행 창이 열리고 명령이 채워집니다. Enter는 직접 누르세요.",
+      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "missing" : [
+        "Superpowers 플러그인이 설치되어 있지 않습니다"
+      ],
+      "ready" : false
+    },
+    "style" : {
+      "icon" : "sparkles",
+      "id" : "superpowers",
+      "name" : "Superpowers",
+      "source" : "bundled",
+      "tint" : "teal"
+    }
+  }
+}

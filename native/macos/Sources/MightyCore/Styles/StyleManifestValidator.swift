@@ -107,9 +107,19 @@ public enum StyleManifestValidator {
         switch manifest.rules.phase {
         case .none:
             guard manifest.phases.isEmpty else { throw StyleErrors.phaseRuleNone }
-        case .lastRecognisedAction(let fallback):
+        case .lastRecognisedAction(let fallback, let stateOverrides):
             guard !manifest.phases.isEmpty else { throw StyleErrors.unknownReference("rules.phase.default", fallback) }
             guard phaseIds.contains(fallback) else { throw StyleErrors.unknownReference("rules.phase.default", fallback) }
+            let fileSourceCount = manifest.stateSources?.files.count ?? 0
+            for (idx, override) in stateOverrides.enumerated() {
+                let opath = "rules.phase.stateOverrides[\(idx)]"
+                guard (0..<fileSourceCount).contains(override.sourceIndex) else {
+                    throw StyleErrors.unknownReference(opath + ".sourceIndex", String(override.sourceIndex))
+                }
+                guard phaseIds.contains(override.phase) else {
+                    throw StyleErrors.unknownReference(opath + ".phase", override.phase)
+                }
+            }
         }
 
         switch manifest.rules.next {

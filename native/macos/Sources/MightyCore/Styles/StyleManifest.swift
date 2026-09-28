@@ -27,6 +27,9 @@ public enum StyleLimits {
     public static let maximumMessageValue = 64
     /// A capability string projected to a screen (§1.8).
     public static let maximumCapabilityString = 80
+    /// §1.14: closed state-source arrays.
+    public static let maximumStateFileSources = 8
+    public static let maximumStateRunEventSources = 8
 }
 
 /// One refusal: the frozen code and the Korean line both surfaces show.
@@ -161,6 +164,12 @@ public enum StyleErrors {
     public static func idCollision(_ id: String, _ winner: StyleSource) -> StyleManifestError {
         code("E_ID_COLLISION", "이미 같은 id의 스타일이 있습니다: \(StyleText.safe(id)) (\(winner.rawValue)).")
     }
+    /// §1.14 state-source errors.
+    public static func stateParser(_ value: String) -> StyleManifestError { code("E_STATE_PARSER", "알 수 없는 파서입니다: \(StyleText.safe(value)).") }
+    public static func stateWidget(_ value: String) -> StyleManifestError { code("E_STATE_WIDGET", "알 수 없는 위젯 종류입니다: \(StyleText.safe(value)).") }
+    public static func stateAggregate(_ value: String) -> StyleManifestError { code("E_STATE_AGGREGATE", "알 수 없는 집계 방법입니다: \(StyleText.safe(value)).") }
+    public static func statePathEscape(_ value: String) -> StyleManifestError { code("E_STATE_PATH_ESCAPE", "경로가 워크스페이스를 벗어납니다: \(StyleText.safe(value)).") }
+    public static func stateRunEvent(_ value: String) -> StyleManifestError { code("E_STATE_RUN_EVENT", "알 수 없는 실행 이벤트입니다: \(StyleText.safe(value)).") }
 }
 
 /// The frozen code list of §2, read off the values `StyleErrors` actually
@@ -184,6 +193,8 @@ public enum StyleErrorCodes {
         StyleErrors.autoAllowQuestion, StyleErrors.autoAllowDuplicate(""), StyleErrors.placeholderInitial,
         StyleErrors.jobMatcherLiteral(""),
         StyleErrors.idCollision("", .user),
+        StyleErrors.stateParser(""), StyleErrors.stateWidget(""), StyleErrors.stateAggregate(""),
+        StyleErrors.statePathEscape(""), StyleErrors.stateRunEvent(""),
     ]
     public static let all: Set<String> = Set(produced.map(\.code))
 }
@@ -374,7 +385,30 @@ public struct StyleAutoAllowEntry: Sendable, Equatable {
     }
 }
 
-public enum StylePhaseRule: Sendable, Equatable { case none, lastRecognisedAction(default: String) }
+/// §1.14: a condition on a file state source that drives a phase override (closed vocabulary).
+public enum StylePhaseStateCondition: String, Sendable, Equatable, CaseIterable { case fileExists, allChecked }
+
+/// §1.14: one entry in `rules.phase.stateOverrides` — advances phase when condition holds.
+public struct StylePhaseStateOverride: Sendable, Equatable {
+    public var sourceIndex: Int
+    public var condition: StylePhaseStateCondition
+    public var phase: String
+    public init(sourceIndex: Int, condition: StylePhaseStateCondition, phase: String) {
+        self.sourceIndex = sourceIndex; self.condition = condition; self.phase = phase
+    }
+}
+
+/// §1.14: pre-computed file-source state the caller passes to the evaluator.
+public struct StyleFileSourceState: Sendable, Equatable {
+    public var exists: Bool
+    public var allChecked: Bool
+    public init(exists: Bool, allChecked: Bool) { self.exists = exists; self.allChecked = allChecked }
+}
+
+public enum StylePhaseRule: Sendable, Equatable {
+    case none
+    case lastRecognisedAction(default: String, stateOverrides: [StylePhaseStateOverride])
+}
 public enum StyleStartRule: Sendable, Equatable { case none, actions(phase: String, actions: [String], resetTitle: String?) }
 public enum StyleNextRule: Sendable, Equatable { case byPhase([String: [String]]), byGroup }
 public enum StyleEnterRule: Sendable, Equatable { case verbatim, rewriteBareDraftTo(action: String, phase: String) }
@@ -419,6 +453,51 @@ public struct StyleJobDeclaration: Sendable, Equatable {
     }
 }
 
+/// §1.14: the three parsers a file state source may name (closed).
+public enum StyleStateParser: String, Sendable, Equatable, CaseIterable { case markdownChecklist, json }
+
+/// §1.14: the two aggregates a run-event state source may name (closed).
+public enum StyleStateAggregate: String, Sendable, Equatable, CaseIterable { case count, lastValue }
+
+/// §1.14: the three widget kinds any state source may map to (closed).
+public enum StyleStateWidget: String, Sendable, Equatable, CaseIterable { case progressBar, list, label }
+
+/// §1.14: the run-event types a manifest may declare (closed).
+public enum StyleStateRunEvent: String, Sendable, Equatable, CaseIterable {
+    case subagentStart = "subagent.start"
+    case subagentFinish = "subagent.finish"
+    case toolCall = "tool.call"
+}
+
+/// §1.14: a workspace-file state source: reads a file and maps it to one widget.
+public struct StyleStateFileSource: Sendable, Equatable {
+    public var path: String
+    public var parser: StyleStateParser
+    public var widget: StyleStateWidget
+    public init(path: String, parser: StyleStateParser, widget: StyleStateWidget) {
+        self.path = path; self.parser = parser; self.widget = widget
+    }
+}
+
+/// §1.14: a run-event state source: aggregates in-session events and maps to one widget.
+public struct StyleStateRunEventSource: Sendable, Equatable {
+    public var event: StyleStateRunEvent
+    public var aggregate: StyleStateAggregate
+    public var widget: StyleStateWidget
+    public init(event: StyleStateRunEvent, aggregate: StyleStateAggregate, widget: StyleStateWidget) {
+        self.event = event; self.aggregate = aggregate; self.widget = widget
+    }
+}
+
+/// §1.14: the optional top-level `stateSources` block.
+public struct StyleStateSources: Sendable, Equatable {
+    public var files: [StyleStateFileSource]
+    public var runEvents: [StyleStateRunEventSource]
+    public init(files: [StyleStateFileSource] = [], runEvents: [StyleStateRunEventSource] = []) {
+        self.files = files; self.runEvents = runEvents
+    }
+}
+
 public struct StyleManifest: Sendable, Equatable {
     public var schema: Int
     public var id, name, summary, subtitle: String
@@ -436,16 +515,17 @@ public struct StyleManifest: Sendable, Equatable {
     public var autoAllow: [StyleAutoAllowEntry]
     public var presentation: StylePresentation
     public var job: StyleJobDeclaration?
+    public var stateSources: StyleStateSources?
     public init(schema: Int, id: String, name: String, summary: String, subtitle: String, placeholders: StylePlaceholders,
                 guidance: StyleGuidance, prerequisites: StylePrerequisites, install: StyleInstall?, phases: [StylePhase],
                 groups: [StyleGroup], actions: [StyleAction], aliases: [StyleAlias], recognition: StyleRecognition,
                 rules: StyleRules, capabilities: [String], autoAllow: [StyleAutoAllowEntry], presentation: StylePresentation,
-                job: StyleJobDeclaration? = nil) {
+                job: StyleJobDeclaration? = nil, stateSources: StyleStateSources? = nil) {
         self.schema = schema; self.id = id; self.name = name; self.summary = summary; self.subtitle = subtitle
         self.placeholders = placeholders; self.guidance = guidance; self.prerequisites = prerequisites; self.install = install
         self.phases = phases; self.groups = groups; self.actions = actions; self.aliases = aliases
         self.recognition = recognition; self.rules = rules; self.capabilities = capabilities
-        self.autoAllow = autoAllow; self.presentation = presentation; self.job = job
+        self.autoAllow = autoAllow; self.presentation = presentation; self.job = job; self.stateSources = stateSources
     }
 
     public func action(_ id: String) -> StyleAction? { actions.first { $0.id == id } }

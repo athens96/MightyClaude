@@ -7,7 +7,7 @@ struct StylesBundledTests {
         let directories = BundledStyleSource.directories()
         #expect(!directories.isEmpty, "번들 스타일 폴더를 찾지 못했습니다. Package.swift의 리소스 선언을 확인하세요.")
         let files = StyleSourceScanner.bundled()
-        #expect(files.count == 2 && files.allSatisfy { $0.source == .bundled })
+        #expect(files.count == 3 && files.allSatisfy { $0.source == .bundled })
         var ids: [String] = []
         for file in files {
             let manifest = try StyleManifestDecoder.decode(file.data, source: .bundled)
@@ -15,7 +15,7 @@ struct StylesBundledTests {
             ids.append(manifest.id)
             #expect(file.hash.count == 64)
         }
-        #expect(ids.sorted() == ["ouroboros", "paperthin"])
+        #expect(ids.sorted() == ["ouroboros", "paperthin", "superpowers"])
         let registry = StyleRegistry(styles: BundledStyles.shared.styles())
         #expect(registry.resolve("ouroboros")?.approval == .preApproved)
         #expect(registry.resolve("paperthin")?.manifest.actions.count == 28)

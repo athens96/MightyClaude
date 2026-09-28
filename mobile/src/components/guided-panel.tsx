@@ -8,7 +8,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import type { StyleAction, StylePanel } from '@/api/types';
+import type { StyleAction, StylePanel, StyleWidget } from '@/api/types';
 import { GuidedActionChip } from '@/components/guided-action-chip';
 import { ActionListSheet, InfoSheet } from '@/components/sheets';
 import { Button } from '@/components/ui';
@@ -137,6 +137,16 @@ export function GuidedPanel({
                 <Text style={styles.hint}>이 명령은 Mac에서 직접 실행하세요.</Text>
               </>
             ) : null}
+          </View>
+        ) : null}
+
+        {/* §1.14: the Mac read the style's declared state sources and computed these;
+            the phone draws the same three kinds, in the same order, and nothing else. */}
+        {model.widgets.length > 0 ? (
+          <View style={styles.widgets}>
+            {model.widgets.map((widget, index) => (
+              <StateWidget key={index} widget={widget} tint={tint} />
+            ))}
           </View>
         ) : null}
 
@@ -274,6 +284,43 @@ export function GuidedPanel({
 }
 
 /**
+ * One computed state widget. The kinds are closed — progress bar, list, label — so there
+ * is nothing to guess here: a payload carrying anything else was already dropped by
+ * `normalizeStylePanel`, and the Mac sends the values themselves, never a template.
+ */
+function StateWidget({ widget, tint }: { widget: StyleWidget; tint: string }) {
+  const styles = useStyles(makeStyles);
+  if (widget.kind === 'progressBar') {
+    const percent = Math.round(widget.value * 100);
+    // A checklist source sends its item count, so the bar says 3/7 rather than 43%.
+    const count =
+      widget.total !== undefined
+        ? `${Math.round(widget.value * widget.total)}/${widget.total}`
+        : `${percent}%`;
+    return (
+      <View accessible accessibilityLabel={count} style={styles.widgetRow}>
+        <View style={styles.widgetTrack}>
+          <View style={[styles.widgetFill, { backgroundColor: tint, width: `${percent}%` }]} />
+        </View>
+        <Text style={[styles.widgetCount, { color: tint }]}>{count}</Text>
+      </View>
+    );
+  }
+  if (widget.kind === 'list') {
+    return (
+      <View style={styles.widgetList}>
+        {widget.items.map((item, index) => (
+          <Text key={index} numberOfLines={1} style={styles.widgetItem}>
+            {item}
+          </Text>
+        ))}
+      </View>
+    );
+  }
+  return <Text style={styles.widgetLabel}>{widget.text}</Text>;
+}
+
+/**
  * The panel's closing lines, in order: the manifest's own guidance, then which of the
  * actions on screen would carry what is in the composer, then the app's own note that a
  * chip has more to say. They answer different questions — a style that writes guidance
@@ -347,6 +394,21 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: 1,
     },
     setup: { gap: 2 },
+    widgets: { gap: spacing.xs },
+    widgetRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
+    widgetTrack: {
+      backgroundColor: palette.border,
+      borderRadius: 3,
+      flex: 1,
+      height: 6,
+      overflow: 'hidden',
+    },
+    widgetFill: { borderRadius: 3, height: 6 },
+    widgetCount: { fontSize: 11, fontVariant: ['tabular-nums'], fontWeight: '700' },
+    widgetList: { gap: 1 },
+    widgetItem: { color: palette.textMuted, fontSize: 11 },
+    widgetLabel: { color: palette.textMuted, fontSize: 12 },
+
     command: {
       ...monoText,
       backgroundColor: palette.surfaceRaised,

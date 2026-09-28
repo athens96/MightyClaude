@@ -67,7 +67,7 @@ public struct StyleEvaluator: Sendable {
     /// Newest first until something recognised carries a phase; free text and
     /// phase-less actions never move the flow (§1.6).
     public func currentPhase(prompts: [String]) -> StylePhase? {
-        guard case .lastRecognisedAction(let fallback) = manifest.rules.phase else { return nil }
+        guard case .lastRecognisedAction(let fallback, _) = manifest.rules.phase else { return nil }
         for prompt in prompts.reversed() {
             switch recognised(inPrompt: prompt) {
             case .action(let id):
@@ -79,6 +79,31 @@ public struct StyleEvaluator: Sendable {
             }
         }
         return manifest.phase(fallback)
+    }
+
+    /// §1.14: command history combined with file-source state signals.
+    /// `fileSourceStates` is keyed by the `sourceIndex` from `stateOverrides`;
+    /// overrides only advance phase order — they never retreat it.
+    public func currentPhase(prompts: [String], fileSourceStates: [Int: StyleFileSourceState]) -> StylePhase? {
+        guard case .lastRecognisedAction(_, let overrides) = manifest.rules.phase, !overrides.isEmpty else {
+            return currentPhase(prompts: prompts)
+        }
+        let base = currentPhase(prompts: prompts)
+        let baseOrder = base.map { $0.order } ?? -1
+        var bestOrder = baseOrder
+        var bestPhase = base
+        for override in overrides {
+            guard let overridePhase = manifest.phase(override.phase) else { continue }
+            guard overridePhase.order > bestOrder else { continue }
+            guard let state = fileSourceStates[override.sourceIndex] else { continue }
+            let holds: Bool
+            switch override.condition {
+            case .fileExists: holds = state.exists
+            case .allChecked: holds = state.allChecked
+            }
+            if holds { bestOrder = overridePhase.order; bestPhase = overridePhase }
+        }
+        return bestPhase
     }
 
     /// The pane's own request history, which survives the log being trimmed.

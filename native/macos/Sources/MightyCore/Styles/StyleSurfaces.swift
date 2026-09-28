@@ -359,7 +359,7 @@ public enum StyleApprovalCard {
         }
         switch manifest.rules.phase {
         case .none: lines.append("단계 " + StyleChrome.separator + " 단계 개념이 없습니다.")
-        case .lastRecognisedAction(let fallback): lines.append("단계 " + StyleChrome.separator + " 마지막으로 인식된 행동, 없으면 " + fallback)
+        case .lastRecognisedAction(let fallback, _): lines.append("단계 " + StyleChrome.separator + " 마지막으로 인식된 행동, 없으면 " + fallback)
         }
         switch manifest.rules.next {
         case .byPhase(let map):

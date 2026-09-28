@@ -12,6 +12,7 @@ import type {
   StyleGroup,
   StylePanel,
   StylePhase,
+  StyleWidget,
 } from '@/api/types';
 
 /**
@@ -340,7 +341,41 @@ export function normalizeStylePanel(raw: unknown): StylePanel | undefined {
   if (recommended.length > 0 && known.has(recommended)) panel.recommended = recommended;
   const guidance = inlineText(raw.guidance, 160);
   if (guidance.length > 0) panel.guidance = guidance;
+  const widgets = parseWidgets(raw.widgets);
+  if (widgets.length > 0) panel.widgets = widgets;
   return panel;
+}
+
+/** §1.14: parse the computed widget array sent by the Mac. Unknown kinds are dropped. */
+function parseWidgets(raw: unknown): StyleWidget[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StyleWidget[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue;
+    const kind = typeof entry.kind === 'string' ? entry.kind : '';
+    if (kind === 'progressBar') {
+      const value = typeof entry.value === 'number' ? entry.value : undefined;
+      if (value === undefined || !isFinite(value)) continue;
+      const w: StyleWidget = { kind: 'progressBar', value: Math.min(1, Math.max(0, value)) };
+      const total = typeof entry.total === 'number' ? Math.floor(entry.total) : undefined;
+      if (total !== undefined && total > 0) w.total = total;
+      out.push(w);
+    } else if (kind === 'list') {
+      const items = Array.isArray(entry.items)
+        ? (entry.items as unknown[])
+            .map((it) => inlineText(it, 200))
+            .filter((it) => it.length > 0)
+            .slice(0, 100)
+        : [];
+      out.push({ kind: 'list', items });
+    } else if (kind === 'label') {
+      const text = inlineText(entry.text, 200);
+      if (text.length === 0) continue;
+      out.push({ kind: 'label', text });
+    }
+    // Unknown kinds are dropped, not guessed (closed vocabulary §1.14).
+  }
+  return out;
 }
 
 function dedupeById<T extends { id: string }>(entries: T[]): T[] {
@@ -647,6 +682,8 @@ export interface StyleViewModel {
   guidance?: string;
   /** Shown actions that carry the composer text, for the hint line. */
   takesText: StyleAction[];
+  /** Computed state widgets from the Mac, rendered in the panel (§1.14). */
+  widgets: StyleWidget[];
 }
 
 /**
@@ -690,6 +727,7 @@ export function styleViewModel(panel: StylePanel, selectedGroupId?: string): Sty
     rest: panel.actions.filter((action) => !drawn.has(action.id)),
     attachments: panel.attachments,
     takesText: shown.filter((action) => action.takesText),
+    widgets: panel.widgets ?? [],
   };
   const badge = sourceBadge(panel.presentation.source);
   if (badge) model.sourceBadge = badge;

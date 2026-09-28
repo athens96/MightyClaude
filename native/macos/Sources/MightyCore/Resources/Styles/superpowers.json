@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "id": "superpowers",
+  "name": "Superpowers",
+  "summary": "브레인스토밍 → 계획 → 실행 → 완료 루프",
+  "subtitle": "브레인스토밍 → 계획 → 실행 → 완료",
+  "placeholders": {
+    "idle": "아이디어나 다음 단계를 적고 위에서 행동을 고르세요…",
+    "answering": "직접 답하려면 여기에 적고 Enter…"
+  },
+  "guidance": {
+    "start": "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
+    "next": "{phase} 단계가 끝났습니다. 다음 단계를 고르거나 계속 진행하세요.",
+    "running": "{phase} 진행 중 · 질문이 오면 여기에 표시됩니다"
+  },
+  "prerequisites": {
+    "mode": "all",
+    "report": "first",
+    "probes": [
+      {
+        "kind": "plugin",
+        "prefix": "superpowers@",
+        "install": true,
+        "missing": "Superpowers 플러그인이 설치되어 있지 않습니다",
+        "hint": "Claude CLI 플러그인 명령으로 설치합니다. 터미널 실행 창이 열리고 명령이 채워집니다. Enter는 직접 누르세요."
+      }
+    ]
+  },
+  "install": {
+    "command": "claude plugin enable superpowers@claude-community",
+    "paneTitle": "Superpowers 설치"
+  },
+  "phases": [
+    { "id": "brainstorm", "title": "브레인스토밍", "order": 0 },
+    { "id": "plan",       "title": "계획",         "order": 1 },
+    { "id": "execute",    "title": "실행",          "order": 2 },
+    { "id": "finish",     "title": "완료",          "order": 3 }
+  ],
+  "groups": [
+    {
+      "id": "loop",
+      "title": "루프",
+      "actions": [
+        "brainstorming",
+        "writing-plans",
+        "executing-plans",
+        "subagent-driven-development",
+        "verification-before-completion",
+        "finishing-a-development-branch",
+        "systematic-debugging",
+        "requesting-code-review"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "brainstorming",
+      "title": "브레인스토밍",
+      "help": "아이디어를 구체적인 설계와 요구사항으로 발전시킵니다",
+      "prompt": "/superpowers:brainstorming {text}",
+      "takesText": true,
+      "foldText": "trimOnly",
+      "phase": "brainstorm",
+      "icon": "questionmark.bubble"
+    },
+    {
+      "id": "writing-plans",
+      "title": "계획 작성",
+      "help": "구현 계획을 단계별 작업으로 작성합니다",
+      "prompt": "/superpowers:writing-plans",
+      "takesText": false,
+      "phase": "plan",
+      "icon": "doc.text"
+    },
+    {
+      "id": "executing-plans",
+      "title": "계획 실행",
+      "help": "계획을 직접 한 단계씩 실행합니다",
+      "prompt": "/superpowers:executing-plans",
+      "takesText": false,
+      "phase": "execute",
+      "icon": "play.fill"
+    },
+    {
+      "id": "subagent-driven-development",
+      "title": "서브에이전트 개발",
+      "help": "서브에이전트를 통해 각 태스크를 병렬로 처리합니다",
+      "prompt": "/superpowers:subagent-driven-development",
+      "takesText": false,
+      "phase": "execute",
+      "icon": "sparkles"
+    },
+    {
+      "id": "verification-before-completion",
+      "title": "완료 전 검증",
+      "help": "완료 전 구현이 올바른지 체계적으로 검증합니다",
+      "prompt": "/superpowers:verification-before-completion",
+      "takesText": false,
+      "phase": "finish",
+      "icon": "checkmark.seal"
+    },
+    {
+      "id": "finishing-a-development-branch",
+      "title": "브랜치 완료",
+      "help": "개발 브랜치를 마무리하고 PR을 준비합니다",
+      "prompt": "/superpowers:finishing-a-development-branch",
+      "takesText": false,
+      "phase": "finish",
+      "icon": "arrow.triangle.2.circlepath"
+    },
+    {
+      "id": "systematic-debugging",
+      "title": "디버깅",
+      "help": "체계적인 방법으로 버그의 근본 원인을 찾습니다",
+      "prompt": "/superpowers:systematic-debugging",
+      "takesText": false,
+      "icon": "hammer"
+    },
+    {
+      "id": "requesting-code-review",
+      "title": "코드 리뷰 요청",
+      "help": "코드 리뷰를 요청합니다",
+      "prompt": "/superpowers:requesting-code-review",
+      "takesText": false,
+      "icon": "magnifyingglass"
+    }
+  ],
+  "aliases": [
+    { "name": "brain",    "phase": "brainstorm" },
+    { "name": "planning", "phase": "plan" },
+    { "name": "run",      "phase": "execute" },
+    { "name": "done",     "phase": "finish" }
+  ],
+  "recognition": { "prefixes": ["/superpowers:"], "lowercase": true },
+  "rules": {
+    "start": {
+      "kind": "actions",
+      "phase": "brainstorm",
+      "actions": ["brainstorming"],
+      "resetTitle": "새 아이디어"
+    },
+    "phase": {
+      "kind": "lastRecognisedAction",
+      "default": "brainstorm",
+      "stateOverrides": [
+        { "sourceIndex": 0, "condition": "fileExists", "phase": "execute" },
+        { "sourceIndex": 0, "condition": "allChecked", "phase": "finish" }
+      ]
+    },
+    "next": {
+      "kind": "byPhase",
+      "map": {
+        "brainstorm": ["writing-plans", "systematic-debugging"],
+        "plan":       ["executing-plans", "subagent-driven-development"],
+        "execute":    ["verification-before-completion", "systematic-debugging", "executing-plans"],
+        "finish":     ["verification-before-completion", "finishing-a-development-branch", "requesting-code-review"]
+      }
+    },
+    "enter": { "kind": "verbatim" },
+    "recommend": { "kind": "none" },
+    "initialGroup": { "kind": "fixed", "group": "loop" }
+  },
+  "capabilities": [],
+  "autoAllow": [],
+  "presentation": { "icon": "sparkles", "tint": "teal" },
+  "stateSources": {
+    "files": [
+      {
+        "path": "docs/superpowers/plans/*.md",
+        "parser": "markdownChecklist",
+        "widget": "progressBar"
+      }
+    ],
+    "runEvents": [
+      {
+        "event": "subagent.start",
+        "aggregate": "count",
+        "widget": "label"
+      }
+    ]
+  }
+}

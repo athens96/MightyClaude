@@ -209,11 +209,13 @@ public enum StyleManifestDecoder {
         let autoAllow = try self.autoAllow(reader.take("autoAllow"))
         let presentation = try self.presentation(reader.take("presentation"))
         let job = try self.job(reader.take("job"))
+        let stateSources = try self.stateSources(reader.take("stateSources"))
         try reader.finish()
         return StyleManifest(schema: 1, id: id, name: name, summary: summary, subtitle: subtitle, placeholders: placeholders,
                              guidance: guidance, prerequisites: prerequisites, install: install, phases: phases, groups: groups,
                              actions: actions, aliases: aliases, recognition: recognition, rules: rules,
-                             capabilities: capabilities, autoAllow: autoAllow, presentation: presentation, job: job)
+                             capabilities: capabilities, autoAllow: autoAllow, presentation: presentation, job: job,
+                             stateSources: stateSources)
     }
 
     private static func placeholders(_ value: Any?) throws -> StylePlaceholders {
@@ -473,6 +475,56 @@ public enum StyleManifestDecoder {
         return StyleJobDeclaration(open: open, close: close, whileOpen: whileOpen, guidance: guidance)
     }
 
+    // MARK: - §1.14 state sources
+
+    private static func stateSources(_ value: Any?) throws -> StyleStateSources? {
+        guard let value else { return nil }
+        var reader = try Reader(value, at: "stateSources")
+        let rawFiles = try array(reader.take("files") ?? [Any](), at: "stateSources.files",
+                                 maximum: StyleLimits.maximumStateFileSources)
+        let rawRunEvents = try array(reader.take("runEvents") ?? [Any](), at: "stateSources.runEvents",
+                                     maximum: StyleLimits.maximumStateRunEventSources)
+        try reader.finish()
+        var files: [StyleStateFileSource] = []
+        for (index, item) in rawFiles.enumerated() {
+            let path = "stateSources.files[\(index)]"
+            var r = try Reader(item, at: path)
+            let rawPath = try string(r.take("path"), at: path + ".path", range: 1...400)
+            let rawParser = try string(r.take("parser"), at: path + ".parser", range: 1...40)
+            let rawWidget = try string(r.take("widget"), at: path + ".widget", range: 1...40)
+            try r.finish()
+            guard StyleStateParser(rawValue: rawParser) != nil else { throw StyleErrors.stateParser(rawParser) }
+            guard StyleStateWidget(rawValue: rawWidget) != nil else { throw StyleErrors.stateWidget(rawWidget) }
+            try statePathBoundaryCheck(rawPath, at: path + ".path")
+            files.append(StyleStateFileSource(path: rawPath, parser: StyleStateParser(rawValue: rawParser)!,
+                                              widget: StyleStateWidget(rawValue: rawWidget)!))
+        }
+        var runEvents: [StyleStateRunEventSource] = []
+        for (index, item) in rawRunEvents.enumerated() {
+            let path = "stateSources.runEvents[\(index)]"
+            var r = try Reader(item, at: path)
+            let rawEvent = try string(r.take("event"), at: path + ".event", range: 1...40)
+            let rawAggregate = try string(r.take("aggregate"), at: path + ".aggregate", range: 1...40)
+            let rawWidget = try string(r.take("widget"), at: path + ".widget", range: 1...40)
+            try r.finish()
+            guard StyleStateRunEvent(rawValue: rawEvent) != nil else { throw StyleErrors.stateRunEvent(rawEvent) }
+            guard StyleStateAggregate(rawValue: rawAggregate) != nil else { throw StyleErrors.stateAggregate(rawAggregate) }
+            guard StyleStateWidget(rawValue: rawWidget) != nil else { throw StyleErrors.stateWidget(rawWidget) }
+            runEvents.append(StyleStateRunEventSource(event: StyleStateRunEvent(rawValue: rawEvent)!,
+                                                      aggregate: StyleStateAggregate(rawValue: rawAggregate)!,
+                                                      widget: StyleStateWidget(rawValue: rawWidget)!))
+        }
+        return StyleStateSources(files: files, runEvents: runEvents)
+    }
+
+    /// §1.14: workspace-relative paths only. Absolute paths and any `..`
+    /// component are rejected at parse time; symlinks are resolved at runtime.
+    private static func statePathBoundaryCheck(_ path: String, at location: String) throws {
+        guard !path.hasPrefix("/"), !path.hasPrefix("~") else { throw StyleErrors.statePathEscape(path) }
+        let components = path.components(separatedBy: "/")
+        guard !components.contains("..") else { throw StyleErrors.statePathEscape(path) }
+    }
+
     private static func rules(_ value: Any?) throws -> StyleRules {
         guard let value else { throw StyleErrors.missingField("rules") }
         var reader = try Reader(value, at: "rules")
@@ -515,8 +567,19 @@ public enum StyleManifestDecoder {
         case "none": try reader.finish(); return .none
         case "lastRecognisedAction":
             let fallback = try string(reader.take("default"), at: "rules.phase.default", range: 1...40)
+            var overrides: [StylePhaseStateOverride] = []
+            for (idx, item) in try array(reader.take("stateOverrides") ?? [Any](), at: "rules.phase.stateOverrides", maximum: 16).enumerated() {
+                let opath = "rules.phase.stateOverrides[\(idx)]"
+                var r = try Reader(item, at: opath)
+                let sourceIndex = try integer(r.take("sourceIndex"), at: opath + ".sourceIndex")
+                let rawCond = try string(r.take("condition"), at: opath + ".condition", range: 1...32)
+                guard let condition = StylePhaseStateCondition(rawValue: rawCond) else { throw StyleErrors.unknownRule(opath + ".condition", rawCond) }
+                let phase = try string(r.take("phase"), at: opath + ".phase", range: 1...40)
+                try r.finish()
+                overrides.append(StylePhaseStateOverride(sourceIndex: sourceIndex, condition: condition, phase: phase))
+            }
             try reader.finish()
-            return .lastRecognisedAction(default: fallback)
+            return .lastRecognisedAction(default: fallback, stateOverrides: overrides)
         default: throw StyleErrors.unknownRule("rules.phase", kind)
         }
     }
