@@ -33,6 +33,40 @@ enum StyleGolden {
         var firstGroup: StylePanel
         var lastGroup: StylePanel
         var capabilityOpen: StylePanel
+        /// §1.16: only for a style that declares state sources, so every other
+        /// golden keeps its bytes. The panel carries the reading's widgets as
+        /// they are; see `stateReading(for:)` for what is recorded.
+        var withState: StylePanel?
+    }
+
+    /// A plan three of seven items done, read by the engine's own checklist parser.
+    static let stateChecklist = "- [x] one\n- [x] two\n- [x] three\n- [ ] four\n- [ ] five\n- [ ] six\n- [ ] seven\n"
+
+    /// The pane's fixed events: two sub-agents started and one ordinary tool
+    /// call, so a `count` of `subagent.start` reads 2 and a `tool.call` 1.
+    static let stateRunEvents = [
+        StyleStateEngine.RunEventRecord(event: .subagentStart, value: "plan review"),
+        StyleStateEngine.RunEventRecord(event: .toolCall, value: "Read"),
+        StyleStateEngine.RunEventRecord(event: .subagentStart, value: "task 1"),
+    ]
+
+    /// The `withState` case, produced by the real engine: every declared file
+    /// source parses `stateChecklist` as if it were the current file, and the
+    /// run-event sources aggregate `stateRunEvents`. A label's text comes from
+    /// the app's locale, so the reading is made in Korean — the copy the
+    /// golden records and the phone test reads — whatever the machine runs.
+    static func stateReading(for manifest: StyleManifest) -> StyleStateReading? {
+        guard let sources = manifest.stateSources else { return nil }
+        let files = sources.files.map { StyleStateEngine.parse(stateChecklist, source: $0) }
+        return withKoreanLocale {
+            StyleStateEngine.reading(sources: sources, files: files, runEvents: stateRunEvents)
+        }
+    }
+
+    /// Korean for this task only: the process-wide preference stays untouched,
+    /// so suites that switch it in parallel (LocalizationTests) cannot race it.
+    static func withKoreanLocale<T>(_ body: () throws -> T) rethrows -> T {
+        try LocaleOverride.$language.withValue(.ko) { try body() }
     }
 
     /// Two items every style's golden carries, so the attachment shape is
@@ -51,16 +85,18 @@ enum StyleGolden {
                                               canInstall: manifest.install != nil)
         let open = Dictionary(uniqueKeysWithValues: manifest.capabilities.map { ($0, "open") })
         func make(prompts: [String] = [], group: String? = nil, states: [String: String] = casebookStates,
-                  items: [StyleAttachmentItem] = [], prerequisites: StylePrerequisiteResult = ready) -> StylePanel {
+                  items: [StyleAttachmentItem] = [], prerequisites: StylePrerequisiteResult = ready,
+                  state: StyleStateReading = .empty) -> StylePanel {
             StylePanelProjection.make(style: style, prompts: prompts, selectedGroupId: group,
-                                      capabilityStates: states, attachments: items, prerequisites: prerequisites)
+                                      capabilityStates: states, attachments: items, prerequisites: prerequisites, state: state)
         }
         return Projection(empty: make(),
                           afterFirstAction: make(prompts: [firstPrompt]),
                           notReady: make(prerequisites: missing),
                           firstGroup: make(group: manifest.groups.first?.id),
                           lastGroup: make(group: manifest.groups.last?.id),
-                          capabilityOpen: make(group: manifest.groups.last?.id, states: open, items: attachments))
+                          capabilityOpen: make(group: manifest.groups.last?.id, states: open, items: attachments),
+                          withState: stateReading(for: manifest).map { make(state: $0) })
     }
 
     static func serialise(_ projection: Projection) throws -> Data {

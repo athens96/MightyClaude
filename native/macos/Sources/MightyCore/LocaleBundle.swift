@@ -5,7 +5,15 @@ public enum AppLanguage: String, CaseIterable {
     case system, ko, en
 }
 
+/// A language forced for the current task only, so a test can read one copy
+/// without touching the process-wide preference other suites read at the same
+/// time. nil follows the preference.
+public enum LocaleOverride {
+    @TaskLocal public static var language: AppLanguage?
+}
+
 private func resolvedLanguage() -> String {
+    if let forced = LocaleOverride.language, forced != .system { return forced.rawValue }
     let pref = UserDefaults.standard.string(forKey: "language") ?? ""
     switch AppLanguage(rawValue: pref) ?? .system {
     case .ko: return "ko"

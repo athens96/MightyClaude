@@ -729,17 +729,27 @@ RunEventStateSource: {
 | `count` | 이 실행 창의 현재 세션에서 해당 이벤트가 발생한 횟수 |
 | `lastValue` | 가장 최근 이벤트의 값 — `tool.call`은 도구 이름, `subagent.*`는 서브에이전트 설명 |
 
+이벤트 값(도구 이름, 서브에이전트 설명)은 에이전트가 쓴 글이므로 파일 소스의 글과 똑같이 400자로 자르고 1.11의 금지 문자를 U+FFFD로 바꾼 뒤 집계한다(1.8).
+
 집계 범위는 **이 실행 창의 로그 중 이 스타일로 보낸 첫 요청 이후**로 고정되며, 과거 스타일이나 다른 실행 창의 이벤트는 섞이지 않는다. 서브에이전트 하나는 시작될 때 `subagent.start` 한 번, 끝 상태가 되면 `subagent.finish` 한 번으로 센다. 실행 이벤트를 `progressBar`로 그리면 `total` 없이 개수만 담는다.
 
 #### 1.16.4 위젯
 
-위젯 값은 7장 폰 페이로드 `panel.widgets` 배열로 전달되고, 폰은 아래 모양으로 그린다. Mac 단계 표시줄은 같은 상태로 단계를 정하지만, **Mac 패널은 아직 위젯을 그리지 않는다**(다음 단계에서 같은 모양으로 추가한다).
+위젯 값은 7장 폰 페이로드 `panel.widgets` 배열로 전달된다. Mac 패널과 폰은 **같은 캐시된 읽기**에서 같은 순서(파일 소스 먼저, 그다음 실행 이벤트, 각각 선언 순서)로, 아래 같은 모양으로 그린다. Mac은 `GuidedPanel`(`native/macos/Sources/MightyClaude/GuidedPanel.swift`의 `stateWidgets`)이 준비물 블록 아래·그룹 지도 위에 그리고, 폰은 `mobile/src/components/guided-panel.tsx`의 `StateWidget`이 같은 자리에 그린다. 그리는 쪽은 파일을 읽지 않는다 — 파일 소스는 메인 스레드 밖에서 읽어 캐시해 두고(§1.16.1), 패널은 `AppStore.styleState(_:for:)`가 돌려주는 캐시만 쓴다.
 
-| 이름 | 렌더링 (폰; Mac은 다음 단계) |
-|---|---|
-| `progressBar` | 가로 진행 막대 + `N/M` 숫자. 페이로드의 `value`는 완료 수, `total`은 전체 수(둘 다 정수)이고, `total`이 없으면 개수만 보인다 |
-| `list` | 항목 목록 (최대 8줄) |
-| `label` | 단일 텍스트 한 줄 |
+위젯 값을 화면 값으로 바꾸는 규칙은 한 곳씩에 있다 — Mac은 `MightyCore`의 `StyleWidgetPresentation`(`native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift`), 폰은 `mobile/src/lib/styles.ts`의 `parseWidgets`·`progressBarDisplay`. 두 쪽 테스트(`StyleWidgetPresentationTests`, `mobile/src/__tests__/styles.test.ts`의 "state widgets")가 같은 사례를 같은 기대값으로 확인하고, `styles/golden/superpowers.panel.json`의 `withState` 사례를 두 쪽이 함께 읽는다. 이 사례는 손으로 만든 값이 아니라 실제 엔진(`StyleStateEngine.reading`)이 매니페스트 자신의 `stateSources`를 고정 입력(체크리스트 3/7, 실행 이벤트 고정 목록)으로 읽은 결과이고, 라벨 문구가 앱 언어를 따르므로 기록·검증은 한국어로 고정해서 한다(`StyleGolden.withKoreanLocale`).
+
+| 이름 | 렌더링 (Mac · 폰 동일) | 비어 있을 때 |
+|---|---|---|
+| `progressBar` | 가로 진행 막대 + `N/M` 숫자. 페이로드의 `value`는 완료 수, `total`은 전체 수(둘 다 정수)다. 완료 수가 전체보다 크면 전체로 잘라 가득 찬 막대가 된다. `total`이 없으면(실행 이벤트) 개수만 보이고 막대는 비어 있다 | `0/0` — 빈 막대와 숫자를 그대로 그린다 |
+| `list` | 항목 목록, 최대 8줄, 항목마다 한 줄(넘치면 `…`)·200자. 빈 줄은 뺀다 | 빈 목록 — 자리는 지키고 아무것도 그리지 않는다 |
+| `label` | 단일 텍스트 한 줄(넘치면 `…`), 200자 | 빈 라벨 — 자리는 지키고 아무것도 그리지 않는다 |
+
+**줄 하나로 만드는 규칙.** 목록 항목과 라벨은 두 쪽이 같은 순서로 다듬는다: 폰 `inlineText`의 `UNSAFE_INLINE` 문자를 글 **어디에 있든** 지우고(C0·C1 제어 문자 — 줄바꿈·탭 포함 — 와 U+00AD, U+061C, U+200B–U+200C, U+200E–U+200F, U+2028–U+2029, U+202A–U+202E, U+2060, U+2066–U+2069, U+FEFF), 앞뒤 공백을 깎고, 200자로 자른다. 그래서 `"first\nsecond"`는 `"firstsecond"`로 붙는다. 이 집합은 1.11의 금지 문자 목록에서 U+200D(ZWJ)만 뺀 것이다 — 한 줄 안에서는 `👩‍💻` 같은 이모지를 한 글자로 묶는 연결자를 남긴다(Mac `StyleWidgetPresentation.isStrippedFromLine`). 여기서 "자"는 **유니코드 코드 포인트**다(Mac `unicodeScalars`, 폰 `Array.from`) — grapheme 단위가 아니므로 여러 코드 포인트로 된 이모지는 끝에서 잘릴 수 있지만, 두 쪽이 정확히 같은 곳에서 자른다.
+
+**빈 위젯.** 페이로드는 소스마다 위젯 하나를 지킨다. 그리는 쪽은 빈 목록·빈 라벨을 빼고 그리며, 그리고 남은 것이 없으면 위젯 블록 자체를 그리지 않는다(Mac `GuidedPanel`, 폰 `styleViewModel`).
+
+폰은 음수 개수의 막대를 버리고 음수 `total`은 `total` 없음으로 읽는다. Mac도 같다. 엔진은 음수를 만들지 않으므로 이는 손상된 페이로드에 대한 방어다.
 
 #### 1.16.5 `stateOverrides` — 파일 소스 상태로 단계 덮어쓰기
 

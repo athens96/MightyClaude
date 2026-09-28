@@ -43,7 +43,16 @@ struct StyleGoldenContractTests {
             try StyleGolden.check(StyleGolden.projection(for: style, casebookStates: [StyleCapabilityID.casebook: "absent"]), id: id)
         }
         let superpowers = StyleFixtures.bundled("superpowers")
-        try StyleGolden.check(StyleGolden.projection(for: superpowers), id: "superpowers")
+        let projection = StyleGolden.projection(for: superpowers)
+        // §1.16: the one bundled style with state sources records what the
+        // engine makes of its own declarations — the plan file as a bar and
+        // the `subagent.start` count as a label — and the file state moves it
+        // to the phase a current plan means.
+        let withState = try #require(projection.withState)
+        #expect(withState.widgets == [.progressBar(value: 3, total: 7), .label(text: "서브에이전트 2회 시작")])
+        #expect(withState.phase?.id == "execute")
+        #expect(StyleGolden.projection(for: StyleFixtures.bundled("paperthin")).withState == nil)
+        try StyleGolden.check(projection, id: "superpowers")
     }
 
     @Test func theGoldenSerialisationRulesAreFixed() throws {

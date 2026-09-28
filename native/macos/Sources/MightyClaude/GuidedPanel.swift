@@ -96,6 +96,8 @@ struct GuidedPanel: View {
         let chips = StyleChips.make(evaluator, phase: phase, group: group, startingNew: selection.startingNew,
                                     capabilityStates: states, running: running, jobOpen: jobOpen)
         let setup = store.stylePrerequisite(style, for: session)
+        // The cached reading only: file sources were read off the main actor.
+        let widgets = StyleWidgetPresentation.make(store.styleState(style, for: session).widgets).filter { !$0.isEmpty }
         return VStack(alignment: .leading, spacing: 8) {
             if !manifest.phases.isEmpty { stepper(chips.phaseId) }
             // A waiting question always wins: nothing else may hide it.
@@ -103,6 +105,7 @@ struct GuidedPanel: View {
                 AgentQuestionPanel(sessionId: session.id, request: request, questionnaire: questionnaire, onPrepare: onPrepare)
             } else {
                 if let setup, !setup.ready { setupBlock(setup) }
+                if !widgets.isEmpty { stateWidgets(widgets) }
                 if evaluator.drawsGroupMap() {
                     groupMap
                     // The chosen group's question belongs to the map (§6.1).
@@ -172,6 +175,46 @@ struct GuidedPanel: View {
             }
         }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-setup-\(session.id)")
+    }
+
+    // MARK: 4 · state widgets
+
+    /// The style's declared state sources, in payload order and in the shape
+    /// the phone draws them (§1.16.4). An empty list or label was already
+    /// left out; an empty bar still draws its track and `0/0`.
+    private func stateWidgets(_ widgets: [StyleWidgetPresentation]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(widgets.enumerated()), id: \.offset) { _, widget in stateWidget(widget) }
+        }
+        .accessibilityElement(children: .contain).accessibilityLabel(L("guidedPanel.stateAccessibility"))
+        .accessibilityIdentifier("mighty-state-\(session.id)")
+    }
+
+    @ViewBuilder private func stateWidget(_ widget: StyleWidgetPresentation) -> some View {
+        switch widget {
+        case .progressBar(let fraction, let text):
+            // Both numbers are counts, so the bar says 3/7 rather than 43%.
+            HStack(spacing: 6) {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Palette.border)
+                        Capsule().fill(Palette.accent).frame(width: proxy.size.width * fraction)
+                    }
+                }
+                .frame(height: 6)
+                Text(verbatim: text).font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(Palette.accent)
+            }
+            .accessibilityElement(children: .ignore).accessibilityLabel(L("guidedPanel.stateProgressAccessibility"))
+            .accessibilityValue(text)
+        case .list(let items):
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    Text(verbatim: item).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+        case .label(let text):
+            Text(verbatim: text).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        }
     }
 
     // MARK: 5 · group map

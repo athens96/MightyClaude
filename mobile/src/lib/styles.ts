@@ -32,6 +32,8 @@ export const MAX_STYLE_ACTIONS = 100;
 export const MAX_STYLE_GROUPS = 16;
 export const MAX_STYLE_ATTACHMENTS = 24;
 export const MAX_SETUP_MISSING = 16;
+/** A list widget draws at most this many lines, on the Mac too (§1.16.4). */
+export const MAX_WIDGET_LIST_ITEMS = 8;
 
 /** The two marks an action chip draws; a flag outside this set is dropped, not guessed. */
 export const ACTION_FLAGS = ['userInvoked', 'readOnly'] as const;
@@ -59,10 +61,14 @@ const UNSAFE_INLINE =
 const UNSAFE_BLOCK =
   /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g;
 
-/** One line of safe text, trimmed and cut; anything that is not a string becomes ''. */
+/**
+ * One line of safe text, trimmed and cut; anything that is not a string becomes ''. The
+ * cut counts code points (`Array.from`), as the Mac's `StyleWidgetPresentation` counts
+ * `unicodeScalars`, so both cut in one place and neither splits a surrogate pair.
+ */
 export function inlineText(value: unknown, limit: number): string {
   if (typeof value !== 'string') return '';
-  return value.replace(UNSAFE_INLINE, '').trim().slice(0, limit);
+  return Array.from(value.replace(UNSAFE_INLINE, '').trim()).slice(0, limit).join('');
 }
 
 /** Safe text that may span lines; used for block output and install commands. */
@@ -367,13 +373,14 @@ function parseWidgets(raw: unknown): StyleWidget[] {
         ? (entry.items as unknown[])
             .map((it) => inlineText(it, 200))
             .filter((it) => it.length > 0)
-            .slice(0, 100)
+            .slice(0, MAX_WIDGET_LIST_ITEMS)
         : [];
       out.push({ kind: 'list', items });
     } else if (kind === 'label') {
-      const text = inlineText(entry.text, 200);
-      if (text.length === 0) continue;
-      out.push({ kind: 'label', text });
+      // An empty label is a source with nothing to say yet: it keeps its place, one
+      // widget per declared source as on the Mac, and draws nothing.
+      if (typeof entry.text !== 'string') continue;
+      out.push({ kind: 'label', text: inlineText(entry.text, 200) });
     }
     // Unknown kinds are dropped, not guessed (closed vocabulary §1.16).
   }
@@ -701,7 +708,11 @@ export interface StyleViewModel {
   guidance?: string;
   /** Shown actions that carry the composer text, for the hint line. */
   takesText: StyleAction[];
-  /** Computed state widgets from the Mac, rendered in the panel (§1.14). */
+  /**
+   * Computed state widgets from the Mac that have something to draw (§1.16.4): an empty
+   * list or label keeps its place in the payload but is left out here, as the Mac panel
+   * leaves it out, and with nothing left the panel draws no widget block at all.
+   */
   widgets: StyleWidget[];
 }
 
@@ -746,7 +757,9 @@ export function styleViewModel(panel: StylePanel, selectedGroupId?: string): Sty
     rest: panel.actions.filter((action) => !drawn.has(action.id)),
     attachments: panel.attachments,
     takesText: shown.filter((action) => action.takesText),
-    widgets: panel.widgets ?? [],
+    widgets: (panel.widgets ?? []).filter((widget) =>
+      widget.kind === 'progressBar' ? true : widget.kind === 'list' ? widget.items.length > 0 : widget.text.length > 0,
+    ),
   };
   const badge = sourceBadge(panel.presentation.source);
   if (badge) model.sourceBadge = badge;
