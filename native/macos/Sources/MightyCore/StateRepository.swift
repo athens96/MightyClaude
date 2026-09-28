@@ -198,7 +198,8 @@ public actor StateRepository {
             if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
             session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
             session.mightyStyle = normalizedStyle(session, knownStyleIds: knownStyleIds)
-            if session.mightyStyle == nil { session.mightyStyleHash = nil }
+            if session.mightyStyle == nil { session.mightyStyleHash = nil; session.mightyStyleSince = nil }
+            if let since = session.mightyStyleSince, since.count > 64 || AgentRunTiming.parseTimestamp(since) == nil { session.mightyStyleSince = nil }
             session.graphRuns = session.graphRuns.map { MightyGraphSupport.normalized($0, restoring: restoring, budget: &graphBudget, provider: session.provider) }
             // A history the budget emptied is not "no history": drop the empty
             // array so the graph is rebuilt from the logs, as for old sessions.

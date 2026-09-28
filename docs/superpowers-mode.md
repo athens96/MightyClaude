@@ -19,13 +19,13 @@
 
 단계는 네 가지다: **브레인스토밍 → 계획 → 실행 → 완료**. 단계 결정 우선순위는 다음과 같다.
 
-1. **`stateOverrides`(파일 소스 상태) 우선** — `docs/superpowers/plans/*.md`에 일치하는 파일 중 체크리스트 항목이 하나 이상이고 모두 `[x]`이면 → **완료** 단계. 파일이 하나 이상 존재하면 → **실행** 단계.
+1. **`stateOverrides`(파일 소스 상태)는 앞으로만 옮긴다** — 현재 계획(`docs/superpowers/plans/*.md` 중 아래 mtime 조건을 넘는 가장 최근 파일)의 체크리스트 항목이 하나 이상이고 모두 `[x]`이면 → **완료** 단계, 현재 계획이 있으면 → **실행** 단계. 요청 기록이 이미 더 뒤 단계를 가리키면 그 단계를 유지한다.
 2. **과거 요청 인식** — 위 조건이 모두 거짓이면, 요청 기록에서 마지막으로 인식된 `/superpowers:<행동>`의 `phase`로 결정한다.
 3. **기본** — 인식된 것도 없으면 **브레인스토밍** 단계.
 
 이 규칙 덕분에 **새 세션은 항상 브레인스토밍에서 열리고**, 계획 파일이 생기면 실행으로 건너뛰며, 모든 항목을 체크하면 완료로 이동한다 — 사용자가 단계 버튼을 직접 누르지 않아도 된다.
 
-> 계획 파일의 mtime 조건: 단계 감지는 **이 실행 창의 현재 세션(run pane의 첫 번째 요청 이후)** 이전에 생성된 파일을 무시하지 않는다 — 엔진은 파일 존재만 판단하고 mtime 필터는 적용하지 않는다. 따라서 이전 세션에서 완료된 계획 파일이 남아 있으면, 새 세션에서도 "완료" 단계로 보일 수 있다. 이 경우 "새 아이디어" 칩을 눌러 브레인스토밍으로 수동으로 돌아갈 수 있다.
+> 계획 파일의 mtime 조건: 수정 시각이 **이 실행 창이 Superpowers 스타일로 보낸 첫 요청** 이후인 계획 파일만 현재 계획이다([mighty-styles.md](mighty-styles.md) §1.16.1). 이전 작업에서 남은 계획 파일은 단계를 움직이지 않으므로, 새 세션은 계획 파일이 남아 있어도 브레인스토밍에서 열린다. 같은 창에서 계획을 끝낸 뒤 새 아이디어를 시작하면 끝난 계획이 여전히 현재 계획이라 "완료"로 보인다 — 이때는 "새 아이디어" 칩으로 돌아간다.
 
 ## 화면
 
@@ -44,14 +44,14 @@ Enter 동작: **`verbatim`** — Superpowers 스타일은 Enter를 절대 가로
 
 ### 상태 위젯
 
-패널 아래쪽에 두 위젯이 표시된다.
+폰 패널 아래쪽에 두 위젯이 표시된다.
 
 | 소스 | 위젯 종류 | 표시 내용 |
 |---|---|---|
-| `docs/superpowers/plans/*.md` (markdownChecklist) | **진행 막대** (`progressBar`) | 체크리스트 완료 비율 (`완료 N/M`) |
+| `docs/superpowers/plans/*.md` (markdownChecklist) | **진행 막대** (`progressBar`) | 현재 계획의 완료 항목 수 / 전체 항목 수 (`N/M`) |
 | 서브에이전트 시작 이벤트 (count) | **라벨** (`label`) | 현재 세션에서 서브에이전트가 시작된 횟수 |
 
-위젯은 Mac 패널과 폰 화면에서 동일한 모양으로 그려진다. 계획 파일이 없으면 진행 막대는 비어 있는 상태로 그린다(숨기지 않는다).
+지금은 **폰 화면만** 위젯을 그린다. Mac은 같은 상태로 단계 표시줄을 정하지만(폰과 같은 단계가 나온다), Mac 패널에 위젯을 그리는 일은 다음 단계에서 한다. 현재 계획 파일이 없으면 진행 막대는 비어 있는 상태(`0/0`)로 그린다(숨기지 않는다).
 
 ### 그래프
 
@@ -82,7 +82,7 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 
 ## 범위
 
-- **v5 (구현)**: 스타일 선택, 4단계 표시줄, 전용 패널 버튼, 상태 소스(계획 파일 진행 막대 + 서브에이전트 카운트 라벨), Enter는 그대로(verbatim), 준비물 확인, Mac + 폰 양면.
+- **v5 (구현)**: 스타일 선택, 4단계 표시줄, 전용 패널 버튼, 상태 소스(계획 파일 진행 막대 + 서브에이전트 카운트 라벨), Enter는 그대로(verbatim), 준비물 확인, Mac + 폰 양면(상태 위젯 그리기는 폰만; Mac 위젯은 다음 단계).
 - **Enter 가로채기 없음**: 이 스타일은 어떤 상황에서도 사용자가 친 평문을 바꾸지 않는다. 버튼과 단계 표시줄이 안내하고, 사용자가 직접 고른다.
 - Claude 전용. Codex·Gemini는 Superpowers 스킬 구동 방식이 다르므로 이 스타일의 적격성 밖이다.
 
@@ -100,7 +100,7 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 
 ### 전체 스킬 인벤토리 (플러그인 버전 6.4.2)
 
-아래 목록은 `skills/` 디렉터리의 모든 폴더를 열거한 것이다. `superpowers.json`의 행동은 반드시 이 목록 안에 있어야 하며, `StylesSuperpowersTests.swift::buttonsSendInstalledPluginSkillCommands()`가 이를 검증한다.
+아래 목록은 `skills/` 디렉터리의 모든 폴더를 열거한 것이다. `superpowers.json`의 행동은 반드시 이 목록 안에 있어야 하며, `SuperpowersStyleTests.swift::buttonsSendInstalledPluginSkillCommands()`가 이를 검증한다.
 
 | 스킬 이름 | 소스 경로 | superpowers.json 사용 여부 |
 |---|---|---|
@@ -131,7 +131,8 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 | 범용 엔진(디코딩·검증·평가·상태 읽기·투영·레지스트리) | `native/macos/Sources/MightyCore/Styles/*.swift` |
 | 상태 읽기 및 stateOverrides 평가 | `native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift` |
 | 스타일 전환, 승인, 프롬프트 전송, 설치 터미널 | `native/macos/Sources/MightyClaude/AppStore+Styles.swift` |
-| 범용 패널, 행동 칩, 상태 위젯 렌더링 | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift` |
+| 범용 패널, 행동 칩 (Mac은 아직 상태 위젯을 그리지 않는다) | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift` |
+| 상태 읽기 엔진, 감시기 | `native/macos/Sources/MightyCore/Styles/StyleStateEngine.swift`, `native/macos/Sources/MightyClaude/StyleStateWatcher.swift` |
 | 폰 렌더링 (상태 위젯 포함) | `mobile/src/components/guided-panel.tsx`, `mobile/src/lib/styles.ts` |
-| 명령 인벤토리 검증 | `native/macos/Tests/MightyCoreTests/StylesSuperpowersTests.swift::buttonsSendInstalledPluginSkillCommands()` |
-| 테스트 | `native/macos/Tests/MightyCoreTests/StylesSuperpowersTests.swift`, `StylesBundledTests.swift` |
+| 명령 인벤토리 검증 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift::buttonsSendInstalledPluginSkillCommands()` |
+| 테스트 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift`, `StylesBundledTests.swift` |

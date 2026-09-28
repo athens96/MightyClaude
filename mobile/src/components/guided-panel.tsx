@@ -13,7 +13,7 @@ import { GuidedActionChip } from '@/components/guided-action-chip';
 import { ActionListSheet, InfoSheet } from '@/components/sheets';
 import { Button } from '@/components/ui';
 import { t } from '@/lib/i18n';
-import { styleViewModel, type StyleViewModel } from '@/lib/styles';
+import { progressBarDisplay, styleViewModel, type StyleViewModel } from '@/lib/styles';
 import { monoText, radius, spacing, tintColor, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
@@ -291,12 +291,9 @@ export function GuidedPanel({
 function StateWidget({ widget, tint }: { widget: StyleWidget; tint: string }) {
   const styles = useStyles(makeStyles);
   if (widget.kind === 'progressBar') {
-    const percent = Math.round(widget.value * 100);
-    // A checklist source sends its item count, so the bar says 3/7 rather than 43%.
-    const count =
-      widget.total !== undefined
-        ? `${Math.round(widget.value * widget.total)}/${widget.total}`
-        : `${percent}%`;
+    // Both numbers are counts, so the bar says 3/7 rather than 43% (§1.16.4).
+    const { fraction, text: count } = progressBarDisplay(widget);
+    const percent = Math.round(fraction * 100);
     return (
       <View accessible accessibilityLabel={count} style={styles.widgetRow}>
         <View style={styles.widgetTrack}>

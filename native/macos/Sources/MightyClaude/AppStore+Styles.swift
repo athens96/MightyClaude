@@ -22,6 +22,27 @@ struct StyleCapabilityKey: Hashable {
     var name: String
 }
 
+/// §1.16: what a pane's file sources were read for. A different style, a
+/// moved workspace or a new first request makes an older reading stale.
+struct StyleStateKey: Hashable {
+    var styleHash: String
+    var workspacePath: String
+    var since: String?
+}
+
+struct StyleFileReadingEntry: Equatable {
+    var key: StyleStateKey
+    var files: [StyleFileReading]
+}
+
+/// A read in flight. A read that has not answered within
+/// `AppStore.styleStateReadTimeout` no longer blocks the next one, and its
+/// late answer is dropped because its token is no longer the current one.
+struct StyleStateLoad {
+    var token = UUID()
+    var started = Date()
+}
+
 /// Mighty mode's guided styles: the registry and its trust store, the pane's
 /// binding to one manifest, the prompts its buttons send, the agent's
 /// questions answered from the composer, and the style's own auto-allow list.
@@ -85,6 +106,8 @@ extension AppStore {
             guard let style = guidedStyle(session) else { continue }
             refreshStyle(style, for: session)
         }
+        // A revoked or changed manifest may leave a workspace with nothing to watch.
+        pruneStyleStateWatchers()
     }
 
     /// The three sources read in one sweep, off the main actor.
@@ -106,6 +129,10 @@ extension AppStore {
         styleCapabilityLoading = styleCapabilityLoading.filter { $0.workspaceId != workspace.id }
         styleCapabilityAgain = styleCapabilityAgain.filter { $0.workspaceId != workspace.id }
         styleCasebooks.removeValue(forKey: workspace.id)
+        // The panes are already gone from the snapshot, so the readings are
+        // found by the workspace they were read in.
+        for (id, entry) in styleFileReadings where entry.key.workspacePath == workspace.path { forgetStyleState(id) }
+        styleStateWatchers.removeValue(forKey: workspace.path)
         stylePrerequisites = stylePrerequisites.filter { $0.key.workspacePath != workspace.path }
         stylePrerequisiteAgain = stylePrerequisiteAgain.filter { $0.workspacePath != workspace.path }
         // The rescan is what drops that workspace's discovered files, and with
@@ -155,11 +182,15 @@ extension AppStore {
         if style != nil, chosen == nil { return }
         updateSession(id) { session in
             guard session.kind == "claude", session.provider == "claude" else { return }
+            // A different style starts its state over at its own first request.
+            if session.mightyStyle != chosen?.id { session.mightyStyleSince = nil }
             session.mightyStyle = chosen?.id
             session.mightyStyleHash = chosen?.hash
         }
         guidedProgress.removeValue(forKey: id)
+        if chosen?.id != session.mightyStyle { forgetStyleState(id) }
         if let chosen, let updated = snapshot.sessions.first(where: { $0.id == id }) { refreshStyle(chosen, for: updated) }
+        pruneStyleStateWatchers()
         mobileObserve()
     }
 
@@ -167,6 +198,115 @@ extension AppStore {
     func refreshStyle(_ style: RegisteredStyle, for session: RunSession) {
         refreshStylePrerequisites(style, for: session)
         refreshStyleCapabilities(style, for: session)
+        refreshStyleState(style, for: session)
+    }
+
+    // MARK: State sources (§1.16)
+
+    /// Nil when the style declares no file source or the pane has no local
+    /// workspace: there is nothing on disk to read then.
+    func styleStateKey(_ style: RegisteredStyle, for session: RunSession) -> StyleStateKey? {
+        guard let sources = style.manifest.stateSources, !sources.files.isEmpty,
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return nil }
+        return StyleStateKey(styleHash: style.hash, workspacePath: workspace.path, since: session.mightyStyleSince)
+    }
+
+    /// The file readings for the pane as it stands; a reading made for another
+    /// style, workspace or first request is not this pane's and is not used.
+    private func styleFiles(_ style: RegisteredStyle, for session: RunSession) -> [StyleFileReading] {
+        guard let key = styleStateKey(style, for: session), let entry = styleFileReadings[session.id], entry.key == key else { return [] }
+        return entry.files
+    }
+
+    func styleStateIsLoaded(_ style: RegisteredStyle, for session: RunSession) -> Bool {
+        guard let key = styleStateKey(style, for: session) else { return true }
+        return styleFileReadings[session.id]?.key == key
+    }
+
+    /// The phase signals only: what the Mac pane's phase bar reads on every
+    /// render, so it is a lookup and never a disk read.
+    func styleFileStates(_ style: RegisteredStyle, for session: RunSession) -> [Int: StyleFileSourceState] {
+        guard let sources = style.manifest.stateSources else { return [:] }
+        return StyleStateEngine.reading(sources: sources, files: styleFiles(style, for: session), runEvents: []).fileSourceStates
+    }
+
+    /// Everything the sources produced for this pane: the cached file readings
+    /// with this pane's own run events. The phone panel and its digest both
+    /// read this, and its file states are the ones `styleFileStates` returns.
+    func styleState(_ style: RegisteredStyle, for session: RunSession) -> StyleStateReading {
+        guard let sources = style.manifest.stateSources else { return .empty }
+        let since = session.mightyStyleSince.flatMap(AgentRunTiming.parseTimestamp)
+        return StyleStateEngine.reading(sources: sources, files: styleFiles(style, for: session),
+                                        runEvents: StyleStateEngine.runEvents(from: session, since: since))
+    }
+
+    /// Reads the pane's file sources off the main actor. Asked for when the
+    /// style is chosen or restored, when a run ends, when the first request
+    /// sets where state starts, and when the workspace watcher sees a change
+    /// under a source's folder — not on a timer.
+    func refreshStyleState(_ style: RegisteredStyle, for session: RunSession) {
+        guard let key = styleStateKey(style, for: session), let sources = style.manifest.stateSources else { return }
+        watchStyleState(workspacePath: key.workspacePath)
+        let id = session.id
+        if let load = styleStateLoading[id], Date().timeIntervalSince(load.started) < Self.styleStateReadTimeout {
+            styleStateAgain.insert(id); return
+        }
+        let load = StyleStateLoad()
+        styleStateLoading[id] = load
+        let since = key.since.flatMap(AgentRunTiming.parseTimestamp)
+        Task.detached(priority: .utility) { [weak self] in
+            let files = StyleStateEngine.readFiles(sources, workspacePath: key.workspacePath, since: since)
+            await MainActor.run { [weak self] in
+                // A closed pane, or a read overtaken after a timeout, is not answered.
+                guard let self, self.styleStateLoading[id]?.token == load.token else { return }
+                self.styleStateLoading.removeValue(forKey: id)
+                let entry = StyleFileReadingEntry(key: key, files: files)
+                if self.styleFileReadings[id] != entry {
+                    self.styleFileReadings[id] = entry
+                    // The phone's panel carries this and it is not in the snapshot.
+                    self.mobileObserve()
+                }
+                if self.styleStateAgain.remove(id) != nil, let current = self.snapshot.sessions.first(where: { $0.id == id }),
+                   let style = self.guidedStyle(current) {
+                    self.refreshStyleState(style, for: current)
+                }
+            }
+        }
+    }
+
+    /// How long a read may run before a new request stops waiting for it.
+    static let styleStateReadTimeout: TimeInterval = 15
+
+    /// Drops everything kept for one pane: its reading, a read in flight and
+    /// a pending re-read. Called when the pane closes or leaves its style.
+    func forgetStyleState(_ id: String) {
+        styleFileReadings.removeValue(forKey: id)
+        styleStateLoading.removeValue(forKey: id)
+        styleStateAgain.remove(id)
+    }
+
+    /// Stops the watcher of every workspace where no pane runs a style with a
+    /// file source any more.
+    func pruneStyleStateWatchers() {
+        let needed = Set(snapshot.sessions.compactMap { session in guidedStyle(session).flatMap { styleStateKey($0, for: session)?.workspacePath } })
+        for path in styleStateWatchers.keys where !needed.contains(path) { styleStateWatchers.removeValue(forKey: path) }
+    }
+
+    private func watchStyleState(workspacePath: String) {
+        guard styleStateWatchers[workspacePath] == nil else { return }
+        styleStateWatchers[workspacePath] = StyleStateWatcher(path: workspacePath) { [weak self] paths in
+            Task { @MainActor [weak self] in self?.styleFilesChanged(workspacePath: workspacePath, paths: paths) }
+        }
+    }
+
+    /// Only panes whose sources can see the changed folder read again.
+    private func styleFilesChanged(workspacePath: String, paths: [String]) {
+        for session in snapshot.sessions {
+            guard let style = guidedStyle(session), let key = styleStateKey(style, for: session), key.workspacePath == workspacePath,
+                  let sources = style.manifest.stateSources,
+                  paths.contains(where: { StyleStateEngine.affects(sources, workspacePath: workspacePath, changedPath: $0) }) else { continue }
+            refreshStyleState(style, for: session)
+        }
     }
 
     // MARK: Prerequisites
