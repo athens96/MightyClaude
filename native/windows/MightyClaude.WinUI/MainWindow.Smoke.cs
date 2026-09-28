@@ -760,7 +760,7 @@ public sealed partial class MainWindow
             var doc = output.View.Document; doc.GetText(TextGetOptions.None, out var text);
             Require(output.View.IsReadOnly, "출력 갱신 후 읽기 전용 상태가 복원되지 않았습니다.");
             var start = text.IndexOf("첫 번째", StringComparison.Ordinal); var end = text.IndexOf("두 번째", StringComparison.Ordinal) + "두 번째 문단".Length;
-            Require(start >= 0 && end > start && !text.Contains("**문단**", StringComparison.Ordinal) && text.Contains("12.3초", StringComparison.Ordinal), "Markdown 또는 도구 경과시간이 표시되지 않았습니다.");
+            Require(start >= 0 && end > start && !text.Contains("**문단**", StringComparison.Ordinal) && text.Contains(Locale.Get("run.activity.durationSeconds", new Dictionary<string, string> { ["seconds"] = "12.3" }), StringComparison.Ordinal), "Markdown 또는 도구 경과시간이 표시되지 않았습니다.");
             doc.Selection.SetRange(start, end); doc.Selection.GetText(TextGetOptions.None, out var selected);
             await Change(p => p with { Logs = p.Logs.Append(new LogEntry(Wire.Id(), "assistant", "추가 응답", Wire.Now(), p.Provider)).ToList() }); Refresh();
             doc.Selection.GetText(TextGetOptions.None, out var retained); Require(selected == retained, "새 출력이 여러 문단의 선택 범위를 바꿨습니다."); Require(output.View.IsReadOnly, "추가 출력 후 읽기 전용 상태가 복원되지 않았습니다."); checks["crossParagraphSelectionSurvivesAppend"] = true;
