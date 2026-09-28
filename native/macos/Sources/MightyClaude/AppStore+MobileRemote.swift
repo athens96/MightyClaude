@@ -123,8 +123,8 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     func mobileRunNextQueued(sessionId: String) async throws {
         try await MainActor.run { try store.orClosing().mobileRunNextQueued(sessionId) }
     }
-    func mobileRename(sessionId: String, title: String) async throws {
-        try await MainActor.run { try store.orClosing().mobileRename(sessionId, title: title) }
+    func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {
+        try await MainActor.run { try store.orClosing().mobileRename(sessionId, title: title, titleMode: titleMode) }
     }
     func mobileClose(sessionId: String) async throws {
         try await MainActor.run { try store.orClosing().mobileClose(sessionId) }
@@ -277,7 +277,8 @@ extension AppStore {
             // and "cli" would invite the phone to offer pickers it cannot use.
             agentViewMode: session.kind == "shell" ? nil : mobileViewMode(session),
             mightyStyle: session.kind == "shell" ? nil : mobileStyle(session),
-            styleId: session.kind == "shell" ? nil : mobileStyleId(session))
+            styleId: session.kind == "shell" ? nil : mobileStyleId(session),
+            titleMode: session.titleMode ?? "auto")
     }
 
     func mobileViewMode(_ session: RunSession) -> String { MobileRemoteSupport.viewMode(session.agentViewMode) }
@@ -572,9 +573,13 @@ extension AppStore {
         runNextQueuedInput(id)
     }
 
-    func mobileRename(_ id: String, title: String) throws {
+    func mobileRename(_ id: String, title: String, titleMode: String?) throws {
         _ = try mobileCommandSession(id)
-        guard renameSession(id, to: title) else { throw MobileHostError.badRequest("실행 창 이름이 올바르지 않습니다.") }
+        if titleMode == "auto" {
+            setSessionAutoTitle(id)
+        } else {
+            guard renameSession(id, to: title) else { throw MobileHostError.badRequest("실행 창 이름이 올바르지 않습니다.") }
+        }
     }
 
     func mobileClose(_ id: String) throws {

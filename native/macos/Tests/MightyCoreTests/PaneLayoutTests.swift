@@ -175,7 +175,10 @@ struct PaneLayoutTests {
         let repository = StateRepository(directory: directory.appendingPathComponent("Profile"), legacyStateURL: nil)
         let first = try await repository.approveWorkspace(Workspace(id: "workspace", name: "Project", path: project.path))
         let second = try await repository.approveWorkspace(Workspace(id: "other", name: "Other", path: other.path))
-        let panes = [RunSession(id: "a", workspaceId: first.id, title: "A"), RunSession(id: "b", workspaceId: first.id, title: "B"), RunSession(id: "c", workspaceId: second.id, title: "C")]
+        var pA = RunSession(id: "a", workspaceId: first.id, title: "A"); pA.titleMode = "fixed"
+        var pB = RunSession(id: "b", workspaceId: first.id, title: "B"); pB.titleMode = "fixed"
+        var pC = RunSession(id: "c", workspaceId: second.id, title: "C"); pC.titleMode = "fixed"
+        let panes = [pA, pB, pC]
         let root = split(tabs("group-a", ["a"]), tabs("group-b", ["b", "c"]))
         let snapshot = AppSnapshot(workspaces: [first, second], sessions: panes, activeWorkspaceId: first.id, activeSessionId: "b", layout: "custom", paneLayouts: [first.id: root, second.id: tabs("group-c", ["c"]), "removed-workspace": tabs("orphan", ["a"])], paneLayoutModes: [first.id: "focus", second.id: "tabs", "removed-workspace": "columns"], paneLayoutActiveSessionIds: [first.id: "b", second.id: "c", "removed-workspace": "a"])
         try await repository.save(snapshot)

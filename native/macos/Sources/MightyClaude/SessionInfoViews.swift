@@ -217,7 +217,7 @@ struct SessionInfoView: View {
             HStack(spacing: 9) {
                 ProviderIcon(provider: session.provider, size: 20)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(session.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).help(session.title)
+                    Text(session.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).help(session.titleHelp)
                     Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
                         .accessibilityIdentifier("session-info-provider-\(sessionID)")
                 }

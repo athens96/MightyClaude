@@ -118,9 +118,10 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
         if let blockedReason { throw MobileHostError.conflict(blockedReason) }
         commands.append("run-next:\(sessionId)")
     }
-    func mobileRename(sessionId: String, title: String) async throws {
+    func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {
         lock.lock(); defer { lock.unlock() }
-        try known(sessionId); commands.append("rename:\(title)")
+        if titleMode == "auto" { try known(sessionId); commands.append("rename-auto:\(sessionId)") }
+        else { try known(sessionId); commands.append("rename:\(title)") }
     }
     func mobileClose(sessionId: String) async throws {
         lock.lock(); defer { lock.unlock() }

@@ -40,7 +40,8 @@ MobileSessionSummary {
   revision: number, updatedAt: ISO-8601,
   preview?: { kind, text },            // 마지막 기록 항목 (200자)
   pendingPermissions: number, pendingQuestions: number, queued: number,
-  resumeId?: string, terminal: boolean // terminal: 앱 안 로컬 터미널 창이라 모바일에서 명령 불가
+  resumeId?: string, terminal: boolean, // terminal: 앱 안 로컬 터미널 창이라 모바일에서 명령 불가
+  titleMode?: "auto" | "fixed"         // "auto"=요청 따름, "fixed"=직접 지정; 없으면 "auto"로 처리
 }
 ```
 
@@ -102,7 +103,7 @@ MobilePermission {
 | POST | `/m1/sessions/{id}/submit` | `{ text, mode?, attachments?: [uploadId] }` | 202 `{ protocol, accepted }` — `accepted`는 **실제로 일어난 일**이다. `mode: "queue"`면 조정하지 않고 대기열에 넣는다. `mode: "steer"`(또는 생략)면 조정을 시도하고, 조정할 수 없는 창(로컬 Claude가 아님, 턴이 이미 닫힘)이면 대기열로 가며 `queued`를 돌려준다. 실행 중이 아니면 `mode`와 상관없이 바로 시작하고 `started`를 돌려준다. 대기열이 가득 차면 409 |
 | POST | `/m1/sessions/{id}/queue/{itemId}/remove` | | `{ protocol, ok }` · 없는 항목 404 |
 | POST | `/m1/sessions/{id}/queue/run-next` | | `{ protocol, ok }` · 실행 중이거나 대기열이 비면 409 |
-| POST | `/m1/sessions/{id}/rename` | `{ title }` (앞뒤 공백 제거 후 1~80자) | `{ protocol, ok }` |
+| POST | `/m1/sessions/{id}/rename` | `{ title }` (앞뒤 공백 제거 후 1~80자) 또는 `{ title: "", titleMode: "auto" }` | `{ protocol, ok }` — `titleMode: "auto"`이면 `title`을 무시하고 제목을 자동 모드로 되돌린다; 오래된 폰이 `title`만 보내면 고정 이름으로 처리 |
 | POST | `/m1/sessions/{id}/close` | | `{ protocol, ok }` — 실행 중이면 Mac에서 닫을 때와 같이 중지 후 닫는다 |
 | GET | `/m1/sessions/{id}/entries?before=<entryId>&limit=<1..100>` | | `{ protocol, entries: [LogEntry], hasMore }` — `before`보다 오래된 항목을 시간순으로. `before`가 호스트 기록에 없으면(밀려남) 가장 오래된 쪽부터가 아니라 **빈 배열과 `hasMore: false`** |
 | POST | `/m1/sessions/{id}/settings` | `{ model?, permissionMode?, effort?, agentViewMode?, mightyStyle?, styleId? }` (하나 이상) | `{ protocol, ok }` · 실행 중이면 409 · 옵션에 없는 값 400 · `styleId`가 있으면 `mightyStyle`은 무시한다(아래 "스타일" 절) |

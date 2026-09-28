@@ -23,7 +23,9 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws
     func mobileRunNextQueued(sessionId: String) async throws
-    func mobileRename(sessionId: String, title: String) async throws
+    /// `titleMode` "auto" restores automatic titling; `title` is ignored in that case.
+    /// Nil (or any other value) treats the call as a fixed rename.
+    func mobileRename(sessionId: String, title: String, titleMode: String?) async throws
     func mobileClose(sessionId: String) async throws
     func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage
     func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws
@@ -631,8 +633,12 @@ public actor MobileRemoteService {
                     return reply(200, MobileOK())
                 case "rename":
                     let request = try decode(body, as: MobileRenameRequest.self)
-                    guard let title = MobileRemoteSupport.renameTitle(request.title) else { throw Failure(400, "이름은 앞뒤 공백을 뺀 1~\(MobileWire.maximumTitle)자여야 합니다.") }
-                    try await perform { try await delegate.mobileRename(sessionId: id, title: title) }
+                    if request.titleMode == "auto" {
+                        try await perform { try await delegate.mobileRename(sessionId: id, title: "", titleMode: "auto") }
+                    } else {
+                        guard let title = MobileRemoteSupport.renameTitle(request.title) else { throw Failure(400, "이름은 앞뒤 공백을 뺀 1~\(MobileWire.maximumTitle)자여야 합니다.") }
+                        try await perform { try await delegate.mobileRename(sessionId: id, title: title, titleMode: nil) }
+                    }
                     return reply(200, MobileOK())
                 case "close":
                     try await perform { try await delegate.mobileClose(sessionId: id) }

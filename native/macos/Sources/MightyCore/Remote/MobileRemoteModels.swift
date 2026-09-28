@@ -166,13 +166,16 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     /// The registered style this pane actually runs, or absent. `mightyStyle`
     /// keeps its three fixed words and carries `cli` for everything else (§7.2).
     public var styleId: String?
+    /// "auto" (title follows the latest request) or "fixed" (renamed by user).
+    /// Absent on older hosts; the phone treats absence as "auto".
+    public var titleMode: String?
     public init(id: String, workspaceId: String, title: String, kind: String, provider: String, model: String, status: String, revision: Int, updatedAt: String,
                 preview: MobilePreview? = nil, pendingPermissions: Int = 0, pendingQuestions: Int = 0, queued: Int = 0, resumeId: String? = nil, terminal: Bool = false,
-                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil) {
+                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil, titleMode: String? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.status = status
         self.revision = revision; self.updatedAt = updatedAt; self.preview = preview; self.pendingPermissions = pendingPermissions
         self.pendingQuestions = pendingQuestions; self.queued = queued; self.resumeId = resumeId; self.terminal = terminal
-        self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId
+        self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId; self.titleMode = titleMode
     }
 }
 
@@ -538,7 +541,14 @@ public struct MobileUploadResult: Codable, Sendable, Equatable {
     public var attachment: MobileUploadAttachment
     public init(attachment: MobileUploadAttachment) { self.attachment = attachment }
 }
-public struct MobileRenameRequest: Codable, Sendable { public var title: String; public init(title: String) { self.title = title } }
+public struct MobileRenameRequest: Codable, Sendable {
+    public var title: String
+    /// "auto" asks the host to restore automatic titling. When present the `title`
+    /// field is ignored and no length validation is performed. Absent on phones that
+    /// predate this field; the host treats absence as a fixed rename.
+    public var titleMode: String?
+    public init(title: String, titleMode: String? = nil) { self.title = title; self.titleMode = titleMode }
+}
 public struct MobileCommandRequest: Codable, Sendable { public var action: String; public init(action: String) { self.action = action } }
 public struct MobileSettingsRequest: Codable, Sendable, Equatable {
     public var model: String?

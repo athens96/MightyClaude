@@ -185,6 +185,8 @@ export interface MobileClient {
   runNext(sessionId: string, signal?: AbortSignal): Promise<OkResponse>;
   /** Renames the pane ("pane"); the title is trimmed to 1..80 characters. */
   rename(sessionId: string, title: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** Restores automatic titling for the pane ("pane"); sends `titleMode: "auto"`. */
+  setAutoTitle(sessionId: string, signal?: AbortSignal): Promise<OkResponse>;
   /** Closes the pane ("pane"); irreversible. */
   close(sessionId: string, signal?: AbortSignal): Promise<OkResponse>;
   /** One page of older log entries ("history"). */
@@ -349,6 +351,14 @@ export function createClient(channel: RelayChannel): MobileClient {
         signal,
       );
     },
+
+    setAutoTitle: (sessionId, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/rename`,
+        { title: '', titleMode: 'auto' },
+        signal,
+      ),
 
     close: (sessionId, signal) =>
       request<OkResponse>(

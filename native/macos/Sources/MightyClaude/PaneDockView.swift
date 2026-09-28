@@ -229,7 +229,7 @@ private struct PaneDockTab: View {
                     else if session.kind == "browser" || session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
-                Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125)
+                Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125).help(session.titleHelp)
                 if session.status == "running" { StatusDot(status: session.status) }
             }
             .padding(.leading, 10).padding(.trailing, 6)
