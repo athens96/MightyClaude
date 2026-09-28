@@ -398,8 +398,9 @@ public struct StylePhaseStateOverride: Sendable, Equatable {
     }
 }
 
-/// §1.14: pre-computed file-source state the caller passes to the evaluator.
-public struct StyleFileSourceState: Sendable, Equatable {
+/// §1.16: a file source's phase signals, as `StyleStateEngine` read them.
+/// `exists` means a *current* file matched (§1.16.5), not merely any file.
+public struct StyleFileSourceState: Sendable, Equatable, Hashable {
     public var exists: Bool
     public var allChecked: Bool
     public init(exists: Bool, allChecked: Bool) { self.exists = exists; self.allChecked = allChecked }

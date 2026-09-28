@@ -5,7 +5,7 @@ import Testing
 /// The equivalence oracle for the Superpowers bundle: the style is found,
 /// decoded, validated, offered by the picker, and its four phases each carry
 /// buttons that send a skill command the installed plugin actually ships.
-struct StylesSuperpowersTests {
+struct SuperpowersStyleTests {
     private var style: RegisteredStyle { StyleFixtures.bundled("superpowers") }
     private var evaluator: StyleEvaluator { style.evaluator }
     private var registry: StyleRegistry { StyleRegistry(styles: BundledStyles.shared.styles()) }
@@ -89,7 +89,7 @@ struct StylesSuperpowersTests {
     @Test func phaseStateOverridesAdvanceByFileSourceSignals() {
         // No commands, no state → brainstorm (default)
         #expect(evaluator.currentPhase(prompts: [], fileSourceStates: [:])?.id == "brainstorm")
-        // Plan file exists (mtime filtered by caller), no commands → execute
+        // Plan file qualifies (engine applied mtime rule before this call), no commands → execute
         let planExists = StyleFileSourceState(exists: true, allChecked: false)
         #expect(evaluator.currentPhase(prompts: [], fileSourceStates: [0: planExists])?.id == "execute")
         // Plan file exists and all items checked → finish
@@ -104,6 +104,12 @@ struct StylesSuperpowersTests {
         // Plan file stale / not present → no state advance
         let noPlan = StyleFileSourceState(exists: false, allChecked: false)
         #expect(evaluator.currentPhase(prompts: [], fileSourceStates: [0: noPlan])?.id == "brainstorm")
+        // §1.14 precedence case 1: plan command run, but no qualifying plan file → command phase wins
+        #expect(evaluator.currentPhase(prompts: ["/superpowers:writing-plans"],
+                                       fileSourceStates: [0: noPlan])?.id == "plan")
+        // §1.14 precedence case 2: qualifying plan present, but last command was brainstorm → state advances to execute
+        #expect(evaluator.currentPhase(prompts: ["/superpowers:brainstorming"],
+                                       fileSourceStates: [0: planExists])?.id == "execute")
         // Unknown sourceIndex key → no advance (silently ignored)
         #expect(evaluator.currentPhase(prompts: [], fileSourceStates: [99: planDone])?.id == "brainstorm")
         // Enter is still verbatim regardless of state
@@ -119,64 +125,31 @@ struct StylesSuperpowersTests {
         #expect(style.manifest.autoAllow.isEmpty)
     }
 
-    @Test func panelIncludesWidgetsWhenStateDataIsProvided() {
-        // A plan file with 2 of 4 items checked → execute phase + progress bar widget.
+    @Test func panelCarriesTheStateItWasGiven() throws {
+        // A current plan with 2 of 4 items checked → execute phase + a 2/4 bar.
         let planExists = StyleFileSourceState(exists: true, allChecked: false)
-        let progressWidget = StylePanel.Widget.progressBar(value: 2.0, total: 4)
-        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
-                                              capabilityStates: [:], attachments: [],
-                                              prerequisites: StylePrerequisiteResult(ready: true),
-                                              fileSourceStates: [0: planExists],
-                                              widgets: [progressWidget])
-        #expect(panel.phase?.id == "execute")
-        #expect(panel.widgets == [progressWidget])
+        let progress = StylePanel.Widget.progressBar(value: 2, total: 4)
+        let label = StylePanel.Widget.label(text: "서브에이전트 3회 시작")
+        func panel(_ state: StyleStateReading) -> StylePanel {
+            StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil, capabilityStates: [:], attachments: [],
+                                      prerequisites: StylePrerequisiteResult(ready: true), state: state)
+        }
+        let executing = panel(StyleStateReading(fileSourceStates: [0: planExists], widgets: [progress, label]))
+        #expect(executing.phase?.id == "execute")
+        #expect(executing.widgets == [progress, label])
+        // All items checked → finish.
+        let done = panel(StyleStateReading(fileSourceStates: [0: StyleFileSourceState(exists: true, allChecked: true)],
+                                           widgets: [.progressBar(value: 4, total: 4)]))
+        #expect(done.phase?.id == "finish")
+        // No state at all → brainstorm, and no widgets field.
+        let bare = panel(.empty)
+        #expect(bare.phase?.id == "brainstorm" && bare.widgets == nil)
 
-        // All items checked → finish phase + progress bar at 1.0
-        let planDone = StyleFileSourceState(exists: true, allChecked: true)
-        let doneWidget = StylePanel.Widget.progressBar(value: 1.0, total: 1)
-        let donePanel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
-                                                  capabilityStates: [:], attachments: [],
-                                                  prerequisites: StylePrerequisiteResult(ready: true),
-                                                  fileSourceStates: [0: planDone],
-                                                  widgets: [doneWidget])
-        #expect(donePanel.phase?.id == "finish")
-        #expect(donePanel.widgets == [doneWidget])
-
-        // Sub-agent count as a label widget in execute phase.
-        let subagentLabel = StylePanel.Widget.label(text: "서브에이전트 3회 실행됨")
-        let multiPanel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
-                                                   capabilityStates: [:], attachments: [],
-                                                   prerequisites: StylePrerequisiteResult(ready: true),
-                                                   fileSourceStates: [0: planExists],
-                                                   widgets: [progressWidget, subagentLabel])
-        #expect(multiPanel.widgets?.count == 2)
-        #expect(multiPanel.widgets?.first == progressWidget)
-
-        // No state sources → widgets is nil.
-        let barePanel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
-                                                  capabilityStates: [:], attachments: [],
-                                                  prerequisites: StylePrerequisiteResult(ready: true))
-        #expect(barePanel.widgets == nil)
-    }
-
-    @Test func goldenWidgetsScenarioMatchesExpected() throws {
-        // The golden does not contain state widgets (it uses the six fixed scenarios);
-        // this test confirms that the serialisation round-trip works for a widget panel.
-        let progressWidget = StylePanel.Widget.progressBar(value: 3.0, total: 5)
-        let labelWidget = StylePanel.Widget.label(text: "서브에이전트 2회")
-        let planExists = StyleFileSourceState(exists: true, allChecked: false)
-        let panel = StylePanelProjection.make(style: style, prompts: [], selectedGroupId: nil,
-                                              capabilityStates: [:], attachments: [],
-                                              prerequisites: StylePrerequisiteResult(ready: true),
-                                              fileSourceStates: [0: planExists],
-                                              widgets: [progressWidget, labelWidget])
-        let data = try StylePanelProjection.serialise(panel)
-        let decoded = try JSONDecoder().decode(StylePanel.self, from: data)
-        #expect(decoded.widgets == [progressWidget, labelWidget])
-        #expect(decoded.phase?.id == "execute")
-        // JSON contains widget kind keys.
+        // The payload round-trips, and the bar travels as two counts.
+        let data = try StylePanelProjection.serialise(executing)
+        #expect(try JSONDecoder().decode(StylePanel.self, from: data).widgets == [progress, label])
         let text = try #require(String(data: data, encoding: .utf8))
-        #expect(text.contains("\"progressBar\"") && text.contains("\"label\""))
+        #expect(text.contains("\"kind\" : \"progressBar\"") && text.contains("\"total\" : 4") && text.contains("\"value\" : 2"))
     }
 
     @Test func prerequisiteNamesTheInstalledPlugin() throws {

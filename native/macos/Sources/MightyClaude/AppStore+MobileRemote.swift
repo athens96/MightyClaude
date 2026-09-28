@@ -358,6 +358,7 @@ extension AppStore {
         // watched from a phone has never triggered that read.
         if stylePrerequisite(registered, for: session) == nil { refreshStylePrerequisites(registered, for: session) }
         if !styleCapabilitiesAreLoaded(registered, for: session) { refreshStyleCapabilities(registered, for: session) }
+        if !styleStateIsLoaded(registered, for: session) { refreshStyleState(registered, for: session) }
         let panel = mobileStylePanel(registered, for: session, runs: saved)
         let legacy = MobileLegacyStyleAdapter.payloads(style: registered, panel: panel, casebook: styleCasebooks[session.workspaceId])
         return MobileMighty(style: style, styleId: registered.id, runs: runs, panel: panel,
@@ -377,7 +378,9 @@ extension AppStore {
                                          attachments: styleChips(style, for: session),
                                          prerequisites: stylePrerequisite(style, for: session) ?? unknown,
                                          running: session.status == "running",
-                                         session: session)
+                                         session: session,
+                                         // §1.16: the same reading the Mac pane's phase bar uses.
+                                         state: styleState(style, for: session))
     }
 
     /// What a phone watching the Mighty view would notice change: the run and
@@ -400,7 +403,10 @@ extension AppStore {
         var prompts: [String] = []
         if let saved = session.graphRuns { prompts = saved.map(\.input) }
         else { prompts = session.logs.filter { $0.kind == "user" }.map(\.text) }
-        hasher.combine(style.evaluator.currentPhase(prompts: prompts)?.id)
+        // §1.16: what the state sources read moves the phase and the widgets.
+        let state = styleState(style, for: session)
+        hasher.combine(style.evaluator.currentPhase(prompts: prompts, fileSourceStates: state.fileSourceStates)?.id)
+        hasher.combine(state)
         // A sequence's chips disappear while it runs, and its guidance line
         // changes with it (§6.1).
         hasher.combine(session.status == "running")

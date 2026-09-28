@@ -346,7 +346,7 @@ export function normalizeStylePanel(raw: unknown): StylePanel | undefined {
   return panel;
 }
 
-/** §1.14: parse the computed widget array sent by the Mac. Unknown kinds are dropped. */
+/** §1.16: parse the computed widget array sent by the Mac. Unknown kinds are dropped. */
 function parseWidgets(raw: unknown): StyleWidget[] {
   if (!Array.isArray(raw)) return [];
   const out: StyleWidget[] = [];
@@ -354,11 +354,13 @@ function parseWidgets(raw: unknown): StyleWidget[] {
     if (!isRecord(entry)) continue;
     const kind = typeof entry.kind === 'string' ? entry.kind : '';
     if (kind === 'progressBar') {
-      const value = typeof entry.value === 'number' ? entry.value : undefined;
-      if (value === undefined || !isFinite(value)) continue;
-      const w: StyleWidget = { kind: 'progressBar', value: Math.min(1, Math.max(0, value)) };
-      const total = typeof entry.total === 'number' ? Math.floor(entry.total) : undefined;
-      if (total !== undefined && total > 0) w.total = total;
+      // Both are counts: `value` items done out of `total` (§1.16.4). A bar with no
+      // total is a bare count, as a run-event source sends it.
+      const value = wholeCount(entry.value);
+      if (value === undefined) continue;
+      const total = wholeCount(entry.total);
+      const w: StyleWidget = { kind: 'progressBar', value: total !== undefined ? Math.min(value, total) : value };
+      if (total !== undefined) w.total = total;
       out.push(w);
     } else if (kind === 'list') {
       const items = Array.isArray(entry.items)
@@ -373,9 +375,26 @@ function parseWidgets(raw: unknown): StyleWidget[] {
       if (text.length === 0) continue;
       out.push({ kind: 'label', text });
     }
-    // Unknown kinds are dropped, not guessed (closed vocabulary §1.14).
+    // Unknown kinds are dropped, not guessed (closed vocabulary §1.16).
   }
   return out;
+}
+
+/** A non-negative whole number, or undefined for anything else. */
+function wholeCount(raw: unknown): number | undefined {
+  if (typeof raw !== 'number' || !isFinite(raw) || raw < 0) return undefined;
+  return Math.floor(raw);
+}
+
+/**
+ * What a progress bar draws, computed in one place so the Mac and the phone read the
+ * payload the same way: the filled fraction and the `done/total` text. A bar with no
+ * total shows its count and an empty track; `0/0` (no current file) is empty too.
+ */
+export function progressBarDisplay(widget: { value: number; total?: number }): { fraction: number; text: string } {
+  if (widget.total === undefined) return { fraction: 0, text: String(widget.value) };
+  const fraction = widget.total > 0 ? Math.min(1, widget.value / widget.total) : 0;
+  return { fraction, text: `${widget.value}/${widget.total}` };
 }
 
 function dedupeById<T extends { id: string }>(entries: T[]): T[] {

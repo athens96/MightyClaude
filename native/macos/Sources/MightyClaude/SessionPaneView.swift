@@ -58,7 +58,8 @@ struct SessionPaneView: View {
     private var guidedPhase: StylePhase? {
         guard let style else { return nil }
         if guidedSelection.startingNew, case .actions(let start, _, _) = style.manifest.rules.start { return style.manifest.phase(start) }
-        return style.evaluator.currentPhase(session: session)
+        // §1.16: history plus the pane's state sources, as the phone panel reads them.
+        return style.evaluator.currentPhase(session: session, fileSourceStates: store.styleFileStates(style, for: session))
     }
     /// The precedence sweep of §1.10, built once per render rather than three
     /// times per visible request block — and only for a pane that really runs
@@ -567,6 +568,8 @@ struct SessionPaneView: View {
         .task(id: styleIdentity) { if let style { store.refreshStyle(style, for: session) } }
         // A run may have installed the plugin or written a new cycle folder.
         .onChange(of: running) { _, busy in if !busy, let style { store.refreshStyle(style, for: session) } }
+        // The first request in the style is where its state sources start (§1.16).
+        .onChange(of: session.mightyStyleSince) { _, _ in if let style { store.refreshStyleState(style, for: session) } }
         // A different style means a different catalogue: the group the user
         // was in and the reset chip both belong to the one they left.
         .onChange(of: session.mightyStyle) { _, _ in guidedSelection = GuidedSelection() }

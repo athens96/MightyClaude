@@ -7,6 +7,7 @@ import {
   normalizeStylePanel,
   ouroborosPhaseLabel,
   panelOf,
+  progressBarDisplay,
   sourceBadge,
   styleOptions,
   styleViewModel,
@@ -257,34 +258,52 @@ describe('sourceBadge', () => {
   });
 });
 
-describe('state widgets (§1.14)', () => {
+describe('state widgets (§1.16)', () => {
   it('normalizes all three widget kinds from the Mac payload', () => {
     const panel = normalizeStylePanel(
       panelPayload({
         widgets: [
-          { kind: 'progressBar', value: 0.6, total: 10 },
+          { kind: 'progressBar', value: 6, total: 10 },
           { kind: 'list', items: ['항목 1', '항목 2'] },
           { kind: 'label', text: '서브에이전트 3회' },
         ],
       }),
     )!;
     expect(panel.widgets).toHaveLength(3);
-    expect(panel.widgets![0]).toEqual({ kind: 'progressBar', value: 0.6, total: 10 });
+    expect(panel.widgets![0]).toEqual({ kind: 'progressBar', value: 6, total: 10 });
     expect(panel.widgets![1]).toEqual({ kind: 'list', items: ['항목 1', '항목 2'] });
     expect(panel.widgets![2]).toEqual({ kind: 'label', text: '서브에이전트 3회' });
   });
 
-  it('clamps progressBar value to [0, 1]', () => {
+  it('reads a progress bar as counts: value done out of total', () => {
+    // The exact shape the Mac's StyleStateEngine sends for a checklist with 3 of 7 checked.
     const panel = normalizeStylePanel(
       panelPayload({
         widgets: [
-          { kind: 'progressBar', value: 1.5 },
-          { kind: 'progressBar', value: -0.2 },
+          { kind: 'progressBar', value: 3, total: 7 },
+          { kind: 'progressBar', value: 9, total: 4 },
+          { kind: 'progressBar', value: 0, total: 0 },
+          { kind: 'progressBar', value: 5 },
+          { kind: 'progressBar', value: -1, total: 3 },
         ],
       }),
     )!;
-    expect(panel.widgets![0]).toEqual({ kind: 'progressBar', value: 1 });
-    expect(panel.widgets![1]).toEqual({ kind: 'progressBar', value: 0 });
+    expect(panel.widgets).toEqual([
+      { kind: 'progressBar', value: 3, total: 7 },
+      // More done than there are items is cut to the total, never past a full bar.
+      { kind: 'progressBar', value: 4, total: 4 },
+      // No current plan file: an empty bar, still drawn.
+      { kind: 'progressBar', value: 0, total: 0 },
+      // A run-event count has no total.
+      { kind: 'progressBar', value: 5 },
+    ]);
+    const [partial, full, empty, bare] = panel.widgets!.map((widget) =>
+      widget.kind === 'progressBar' ? progressBarDisplay(widget) : undefined,
+    );
+    expect(partial).toEqual({ fraction: 3 / 7, text: '3/7' });
+    expect(full).toEqual({ fraction: 1, text: '4/4' });
+    expect(empty).toEqual({ fraction: 0, text: '0/0' });
+    expect(bare).toEqual({ fraction: 0, text: '5' });
   });
 
   it('drops unknown widget kinds (closed vocabulary)', () => {
@@ -328,7 +347,7 @@ describe('state widgets (§1.14)', () => {
     const panel = normalizeStylePanel(
       panelPayload({
         widgets: [
-          { kind: 'progressBar', value: 0.5 },
+          { kind: 'progressBar', value: 2, total: 4 },
           { kind: 'list', items: ['a', 'b'] },
           { kind: 'label', text: '완료 2/4' },
         ],
@@ -336,7 +355,7 @@ describe('state widgets (§1.14)', () => {
     )!;
     const model = styleViewModel(panel);
     expect(model.widgets).toHaveLength(3);
-    expect(model.widgets[0]).toEqual({ kind: 'progressBar', value: 0.5 });
+    expect(model.widgets[0]).toEqual({ kind: 'progressBar', value: 2, total: 4 });
     expect(model.widgets[1]).toEqual({ kind: 'list', items: ['a', 'b'] });
     expect(model.widgets[2]).toEqual({ kind: 'label', text: '완료 2/4' });
   });

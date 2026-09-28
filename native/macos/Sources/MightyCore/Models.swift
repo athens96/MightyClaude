@@ -256,6 +256,10 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// back under the same id with different bytes does not silently rebind
     /// the pane to it (docs/mighty-styles.md §3.4).
     public var mightyStyleHash: String?
+    /// When this pane made its first request in its current style (§1.16):
+    /// only a state file modified after it is current, and run events before
+    /// it belong to another style. Cleared whenever the style changes.
+    public var mightyStyleSince: String?
     public var graphRuns: [MightyGraphRun]?
     public var graphBlockSizes: [String: MightyGraphBlockSize]?
     /// Per-session shared result card size set by dragging the latest result card.
@@ -271,7 +275,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes, graphResultSize, workspaceProfileKey, ownerSessionId, titleMode }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, workspaceProfileKey, ownerSessionId, titleMode }
     /// Full text of the most recent user log entry that would update the automatic title,
     /// for use as a tooltip when the title has been shortened.
     public var titleTooltip: String? {
@@ -307,6 +311,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         agentViewMode = try? c.decodeIfPresent(String.self, forKey: .agentViewMode)
         mightyStyle = try? c.decodeIfPresent(String.self, forKey: .mightyStyle)
         mightyStyleHash = try? c.decodeIfPresent(String.self, forKey: .mightyStyleHash)
+        mightyStyleSince = try? c.decodeIfPresent(String.self, forKey: .mightyStyleSince)
         graphRuns = try? c.decodeIfPresent([MightyGraphRun].self, forKey: .graphRuns)
         // Optional layout damage must not discard the saved conversation.
         graphBlockSizes = try? c.decodeIfPresent([String: MightyGraphBlockSize].self, forKey: .graphBlockSizes)

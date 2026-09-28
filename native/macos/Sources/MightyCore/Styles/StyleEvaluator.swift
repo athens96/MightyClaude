@@ -84,6 +84,9 @@ public struct StyleEvaluator: Sendable {
     /// §1.14: command history combined with file-source state signals.
     /// `fileSourceStates` is keyed by the `sourceIndex` from `stateOverrides`;
     /// overrides only advance phase order — they never retreat it.
+    /// Precedence when history and state disagree:
+    ///   • plan command run, no qualifying plan file (exists=false): command phase wins.
+    ///   • qualifying plan present (exists=true), last command was an earlier phase: state advances.
     public func currentPhase(prompts: [String], fileSourceStates: [Int: StyleFileSourceState]) -> StylePhase? {
         guard case .lastRecognisedAction(_, let overrides) = manifest.rules.phase, !overrides.isEmpty else {
             return currentPhase(prompts: prompts)
@@ -108,8 +111,15 @@ public struct StyleEvaluator: Sendable {
 
     /// The pane's own request history, which survives the log being trimmed.
     public func currentPhase(session: RunSession) -> StylePhase? {
+        currentPhase(session: session, fileSourceStates: [:])
+    }
+
+    /// The Mac pane's phase: its request history plus the state its declared
+    /// sources read (§1.16), the same pair the phone panel is projected from.
+    public func currentPhase(session: RunSession, fileSourceStates: [Int: StyleFileSourceState]) -> StylePhase? {
         let requests = (session.graphRuns ?? MightyGraphSupport.legacyRuns(session)).map(\.input)
-        return currentPhase(prompts: requests.isEmpty ? session.logs.filter { $0.kind == "user" }.map(\.text) : requests)
+        return currentPhase(prompts: requests.isEmpty ? session.logs.filter { $0.kind == "user" }.map(\.text) : requests,
+                            fileSourceStates: fileSourceStates)
     }
 
     public func startActions(phase: StylePhase?) -> [StyleAction] {

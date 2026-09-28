@@ -446,8 +446,9 @@ export interface StylePresentation {
 }
 
 /**
- * One rendered state widget — exactly three kinds, closed vocabulary (§1.14).
+ * One rendered state widget — exactly three kinds, closed vocabulary (§1.16).
  * The Mac evaluates state sources and sends the results; the phone just renders.
+ * A progress bar's `value` is the count done and `total` the whole count.
  */
 export type StyleWidget =
   | { kind: 'progressBar'; value: number; total?: number }

@@ -46,9 +46,11 @@ public struct StylePanel: Codable, Sendable, Equatable {
         public var icon: String?
         public var tint: StyleTint?
     }
-    /// §1.14: one computed widget value, matching the three closed kinds.
-    public enum Widget: Codable, Sendable, Equatable {
-        case progressBar(value: Double, total: Int?)
+    /// §1.16: one computed widget value, matching the three closed kinds.
+    /// A bar's `value` is the completed count and `total` the whole count;
+    /// a bar with no total (from run events) is a bare count.
+    public enum Widget: Codable, Sendable, Equatable, Hashable {
+        case progressBar(value: Int, total: Int?)
         case list(items: [String])
         case label(text: String)
 
@@ -58,7 +60,7 @@ public struct StylePanel: Codable, Sendable, Equatable {
             let kind = try c.decode(String.self, forKey: .kind)
             switch kind {
             case "progressBar":
-                let v = try c.decode(Double.self, forKey: .value)
+                let v = try c.decode(Int.self, forKey: .value)
                 let t = try c.decodeIfPresent(Int.self, forKey: .total)
                 self = .progressBar(value: v, total: t)
             case "list":
@@ -104,13 +106,11 @@ public enum StylePanelProjection {
                             prerequisites: StylePrerequisiteResult,
                             running: Bool = false,
                             session: RunSession? = nil,
-                            fileSourceStates: [Int: StyleFileSourceState] = [:],
-                            widgets: [StylePanel.Widget] = []) -> StylePanel {
+                            state: StyleStateReading = .empty) -> StylePanel {
         let manifest = style.manifest
         let evaluator = style.evaluator
-        let phase = fileSourceStates.isEmpty
-            ? evaluator.currentPhase(prompts: prompts)
-            : evaluator.currentPhase(prompts: prompts, fileSourceStates: fileSourceStates)
+        // §1.16: the same state the Mac pane's phase bar reads.
+        let phase = evaluator.currentPhase(prompts: prompts, fileSourceStates: state.fileSourceStates)
         let jobOpen = session.map { evaluator.isJobOpen(session: $0) } ?? false
         let ordered = manifest.orderedPhases
         let selected = selectedGroupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: capabilityStates)
@@ -146,7 +146,7 @@ public enum StylePanelProjection {
                           guidance: evaluator.guidanceLine(phase: phase, running: running, jobOpen: jobOpen),
                           presentation: StylePanel.Presentation(headerTitle: headerTitle, source: style.source,
                                                                 icon: manifest.presentation.icon?.rawValue, tint: manifest.presentation.tint),
-                          widgets: widgets.isEmpty ? nil : widgets)
+                          widgets: state.widgets.isEmpty ? nil : state.widgets)
     }
 
     /// Frozen with the tag so a golden stays byte-stable: UTF-8, keys sorted,

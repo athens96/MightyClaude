@@ -103,6 +103,13 @@ final class AppStore: ObservableObject {
     var stylePrerequisiteAgain: Set<StylePrerequisiteKey> = []
     var styleCapabilityLoading: Set<StyleCapabilityKey> = []
     var styleCapabilityAgain: Set<StyleCapabilityKey> = []
+    /// §1.16: what each pane's declared file sources last read, per pane id,
+    /// with the reads in flight, the ones asked for again, and one watcher per
+    /// workspace path that has a pane reading state.
+    @Published var styleFileReadings: [String: StyleFileReadingEntry] = [:]
+    var styleStateLoading: [String: StyleStateLoad] = [:]
+    var styleStateAgain: Set<String> = []
+    var styleStateWatchers: [String: StyleStateWatcher] = [:]
     var questionnaireCache: [String: UserQuestionnaire] = [:]
     @Published var cliAccounts: [String: CLIAccountStatus] = [:]
     @Published var cliAccountBusy = Set<String>()
@@ -440,6 +447,7 @@ final class AppStore: ObservableObject {
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
             draftRevisions.removeValue(forKey: id)
+            forgetStyleState(id); pruneStyleStateWatchers()
             if snapshot.activeSessionId == id {
                 snapshot.activeSessionId = previousGroup?.sessionIds.first(where: { candidate in snapshot.sessions.contains { $0.id == candidate } }) ?? activeSessions.first?.id
             }
@@ -463,6 +471,7 @@ final class AppStore: ObservableObject {
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.task.cancel()
                 draftRevisions.removeValue(forKey: session.id)
+                forgetStyleState(session.id)
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
             snapshot.workspaces.removeAll { $0.id == workspace.id }
@@ -693,7 +702,10 @@ final class AppStore: ObservableObject {
         let inputEntry = LogEntry(kind: "user", text: logText)
         let autoTitle: String? = (session.titleMode ?? "auto") == "auto" && session.kind != "shell" && session.kind != "browser"
             ? PaneTitle.shortened(input) : nil
+        // §1.16: the first request in the pane's style is where its state starts.
+        let startsStyle = guidedStyle(session) != nil && session.mightyStyleSince == nil
         updateSession(id) {
+            if startsStyle { $0.mightyStyleSince = inputEntry.timestamp }
             $0.beginGraphRun(input: logText, id: inputEntry.id, configuredModel: session.model)
             $0.logs.append(inputEntry); $0.logs = TranscriptRetention.trimmed($0.logs)
             if let shortened = autoTitle { $0.title = shortened }
