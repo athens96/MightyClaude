@@ -780,7 +780,7 @@ stateOverrides: [{
 
 실행 이벤트는 **현재 세션 범위**로만 읽을 수 있다. 집계는 `count`와 `lastValue` 두 가지 내장 집계뿐이다 — 임의 표현식을 적을 수 없다. 자유 트랜스크립트 스트림은 소스로 쓸 수 없다.
 
-이 설계는 §1.1의 "모르는 키는 거부한다" 원칙과 §4의 위협 모델을 그대로 이어받는다. 신뢰되지 않은 저장소 매니페스트가 `stateSources`를 선언해도, 어휘 폐쇄성이 유지되는 한 승인 화면이 보여 준 내용 그대로가 엔진이 실행하는 내용이다.
+이 설계는 §1.1의 "모르는 키는 거부한다" 원칙과 §4의 위협 모델을 그대로 이어받는다. 신뢰되지 않은 저장소 매니페스트가 `stateSources`를 선언해도, 어휘 폐쇄성이 유지되는 한 승인 화면이 보여 준 내용 그대로가 엔진이 실행하는 내용이다. 승인 카드(§4.4의 5번)는 Enter 규칙 바로 아래의 접히지 않는 **상태 읽기** 구역에 파일 소스마다 글롭 원문·파서·위젯, 실행 이벤트 소스마다 이벤트·집계·위젯, `stateOverrides`마다 옮겨 갈 단계·그 파일 소스의 글롭·조건을 선언 순서대로 한 줄씩 적는다(`StyleApprovalCard.stateLines`, 문구는 앱 언어를 따른다). `stateSources`가 없는 매니페스트에는 이 구역이 없다.
 
 새로 추가되는 오류 코드:
 
@@ -1008,11 +1008,12 @@ BundledStyleSource.directories() -> [URL]
 2. **자동 허용 목록** — 조립된 와이어 이름(`mcp__plugin_x__tool_y`)으로 한 줄씩. **접히지 않는다.** 비어 있으면 "자동 허용 없음"이라고 분명히 쓴다. 1.9의 소속 규칙은 남의 서버를 막을 뿐 그 플러그인 안의 쓰기·실행 도구를 막지 못하므로, 이 구역이 맨 위에 와야 한다.
 3. **설치 명령 원문**과 **"누르면 터미널 창에 채워지기만 하고 실행은 직접 Enter"** 안내(1.5). 단, 도구 모음(toolkit)은 예외로 확인 화면에서 직접 실행된다([docs/toolkit.md](toolkit.md)).
 4. **Enter 규칙.** `rewriteBareDraftTo`이면 `"이 실행 창의 첫 Enter는 <그 행동의 prompt 원문>의 {text} 자리에 들어갑니다"`를 **프롬프트 원문 그대로** 보여 준다. 사람 말 요약만으로는 보낼 바이트를 알 수 없다.
-5. `name` · `id` · `summary` · `subtitle`.
-6. 그룹 · 단계 · 별칭 · 인식 접두사.
-7. 나머지 규칙 다섯 개를 사람 말로 푼 요약과, 원본 JSON 조각.
-8. **행동 전부**: `title`, `help`, `scope`, flags, `takesText`, `requiresText`, `match`, 그리고 **프롬프트 템플릿 원문 그대로**. 100개면 100개 다. 접어 두되 "전부 펼치기"가 기본으로 보이게 한다.
-9. 아이콘 이름 · 색 이름 · placeholder · guidance 문자열.
+5. **상태 읽기**(v5, `stateSources`가 있을 때만). 엔진이 읽을 워크스페이스 파일 글롭과 파서, 실행 이벤트와 집계, 단계 덮어쓰기를 원문 그대로 한 줄씩. **접히지 않는다**(§1.16.6).
+6. `name` · `id` · `summary` · `subtitle`.
+7. 그룹 · 단계 · 별칭 · 인식 접두사.
+8. 나머지 규칙 다섯 개를 사람 말로 푼 요약과, 원본 JSON 조각.
+9. **행동 전부**: `title`, `help`, `scope`, flags, `takesText`, `requiresText`, `match`, 그리고 **프롬프트 템플릿 원문 그대로**. 100개면 100개 다. 접어 두되 "전부 펼치기"가 기본으로 보이게 한다.
+10. 아이콘 이름 · 색 이름 · placeholder · guidance 문자열.
 
 **`autoAllow`가 비어 있지 않으면** `[허용]`은 자동 허용 구역이 화면에 **실제로 보인 뒤에만** 활성화되고, 누르면 `"이 스타일은 도구 <N>개를 권한 창 없이 실행할 수 있게 됩니다"`를 그 목록과 함께 다시 확인한다.
 
@@ -1522,7 +1523,7 @@ docs/mobile-remote.md의 진화 규칙을 따른다: 기존 라우트·필드는
 
 capability는 **호스트가** 광고하고 폰은 그것을 읽을 뿐이다. 그래서 "폰이 새 스타일을 아는가"는 호스트가 알 수 없다. 해결은 **두 필드를 항상 함께 보내는 것**이다.
 
-- `mightyStyle` — 허용 값은 그대로 `cli` `ouroboros` `paperthin`(`MobileWire.mightyStyles`, `MobileRemoteModels.swift:53`). **내장 둘이 아닌 스타일에는 언제나 `cli`를 싣는다.**
+- `mightyStyle` — 허용 값은 그대로 `cli` `ouroboros` `paperthin`(`MobileWire.mightyStyles`, `MobileRemoteModels.swift:60`). **이 둘이 아닌 스타일에는 언제나 `cli`를 싣는다** — v5에 번들로 더해진 Superpowers도 어휘에 새 단어를 얻지 않고 `styleId: "superpowers"`로만 나간다.
 - `styleId` (신규, 선택) — 열린 문자열.
 
 **`styleId`는 `registry.runnable(...)`의 결과에서 나온다.** 실행 창이 실제로 그 스타일로 돌고 있지 않으면 — 미승인 · 취소 · 미등록 · 해시 불일치(3.4) — **언제나 `"cli"`다**. 저장된 `mightyStyle` 값은 폰에 나가지 않는다.
@@ -1648,7 +1649,7 @@ MobileStylePanel {
 
 태그 `mighty-style-engine-v1`이 다음을 얼린다.
 
-> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이며 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
+> **고정 이력.** `mighty-style-engine-v1`(2026-09-19)은 스타일 엔진을 처음 얼린 태그다. `mighty-style-engine-v2`(2026-09-20)는 같은 방식으로 다시 건 고정이다. v1 과 v2 사이에 스타일 엔진 파일(`native/macos/Sources/MightyCore/Styles/**`)·스키마·규칙 어휘는 **바뀌지 않았다.** 달라진 것은 입력창의 한글 직접 조합(`docs/hangul-fallback-composer.md`)과 적합성 코퍼스(`styles/conformance/`)뿐이고, 검사가 저장소 전체를 보기 때문에 앱 소스 변경을 담으려면 고정을 다시 걸어야 했다. 외부 도구가 v1 시점의 엔진 파일을 고정 사본으로 쓰는 것은 그대로 유효하다. `mighty-style-engine-v3`(2026-09-20)는 v2 이후 처음으로 엔진 쪽 파일(`StyleSurfaces.swift`의 연결 규칙, 폰의 `styles.ts`)을 바꾼 고정이다. `mighty-style-engine-v4`(2026-09-22)는 매니페스트의 선택적 `job` 선언(§1.13)과 오류 코드 `E_JOB_MATCHER_LITERAL`을 더한 고정이다. `mighty-style-engine-v5`는 상태 소스(`stateSources`, §1.16)와 `rules.phase.stateOverrides`, 오류 코드 `E_STATE_*` 다섯 개, 골든의 `withState` 사례, 폰 페이로드의 `panel.widgets`를 더한 고정이며 검사 스크립트와 CI의 기본 태그다. 각 고정의 두 커밋 SHA는 `docs/styles-followups.md` 머리에 있다.
 
 - **스키마 v1** — 1장의 모든 필드·타입·한도. `guidance`(1.7)와 `rules.start`(1.6)를 포함한다.
 - **규칙 어휘** — `StartRule` 2종, `PhaseRule` 2종, `NextRule` 2종, `EnterRule` 2종(제약 3개 포함), `RecommendRule` 2종, `InitialGroupRule` 2종.
@@ -1656,16 +1657,17 @@ MobileStylePanel {
 - **내장 기능 목록** — `paperthin.casebook` 하나. 그 상태 값 3개와 빈 상태 문구.
 - **팔레트** — 1.10의 9개 이름.
 - **아이콘 목록** — 1.10의 33개 이름.
-- **오류 코드 목록** — 2장의 **48개**.
+- **오류 코드 목록** — 2장의 **53개**(v5에서 `E_STATE_*` 다섯 개가 더해졌다).
 - **검증 순서** — 2장의 ⓪①②③④와 사전 스캔이 보는 다섯 가지.
-- **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 6가지**(8.4).
-- **폰 페이로드** — `MobileStylePanel`의 모양, `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
+- **투영의 모양과 직렬화 규칙** — `StylePanel`의 필드 구성(7.3), 실행 중 `next`·`guidance` 규칙(6.1의 7번), 8.4의 골든 직렬화 규칙(UTF-8, 키 사전순, 들여쓰기 2칸, `\/` 이스케이프 없음, 마지막 줄바꿈 1개), 그리고 골든의 **고정 입력 6가지**(8.4)와, `stateSources`를 선언한 스타일에만 붙는 `withState` 사례(§1.16.4).
+- **폰 페이로드** — `MobileStylePanel`의 모양(v5부터 `widgets` 포함), `style` capability, `styleId` 규칙, `/guided`의 새 필드, 와이어 어휘 `["cli","ouroboros","paperthin"]`.
+- **상태 소스 어휘**(v5) — 파서 2종, 집계 2종, 위젯 3종, 실행 이벤트 3종, `stateOverrides` 조건 2종과 각 한도(§1.16).
 - **터미널 입력 정책** — `TerminalInput`의 모양과 `autoRun`의 출처 규칙(1.5·5.7).
 
 ### 8.3 `scripts/check-style-freeze.sh`
 
 ```
-용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v4
+용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v5
 ```
 **태그 커밋의 모양.** 태그 `T`는 **`styles/FREEZE` 하나만 더하는 커밋**이고, 그 내용은 **`T`의 부모 `P`의 SHA 40자 한 줄**이다. `P`가 마지막 엔진 커밋이다. 자기 자신의 SHA를 담을 수는 없으므로(자기 참조) 부모를 담는다.
 

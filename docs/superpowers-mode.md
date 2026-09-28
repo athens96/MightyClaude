@@ -1,15 +1,15 @@
 # 마이티 모드 스타일: Superpowers
 
-상태: **v5 구현됨**. [Superpowers](https://github.com/obra/superpowers) 스킬 플러그인을 마이티 모드에서 UI로 구동하는 번들 스타일이다. 브레인스토밍 → 계획 작성 → 계획 실행 → 완료 루프를 패널 버튼과 단계 표시줄로 안내한다. Superpowers는 **번들 스타일**이 아니라 **워크스페이스·사용자 등록 스타일**로도 쓰이는 패턴과 달리, 앱에 **번들**로 내장(`native/macos/Sources/MightyCore/Resources/Styles/superpowers.json`)되며 사전 승인된다.
+상태: **v5 구현됨**. [Superpowers](https://github.com/obra/superpowers) 스킬 플러그인을 마이티 모드에서 UI로 구동하는 번들 스타일이다. 브레인스토밍 → 계획 작성 → 계획 실행 → 완료 루프를 패널 버튼과 단계 표시줄로 안내한다. 매니페스트는 앱에 **번들**로 들어 있고(`native/macos/Sources/MightyCore/Resources/Styles/superpowers.json`) 사전 승인되어 있다. 저장소(`.claude/mighty-styles/`)나 사용자 등록으로 들어오는 스타일과 달리 승인 카드를 거치지 않는다.
 
 이 스타일은 범용 마이티 스타일 엔진(**v5**)의 **상태 소스(stateSources)** 기능을 처음 쓰는 스타일이다. 계획 파일의 존재 여부와 체크리스트 완료 여부가 단계 표시줄에 반영된다. 매니페스트 스키마·검증·신뢰 모델·상태 소스 스키마의 전체 계약은 [mighty-styles.md](mighty-styles.md)에 있다(상태 소스는 §1.16). 이 문서는 그 스키마가 Superpowers에 어떻게 적용됐는지만 적는다.
 
 ## Superpowers가 실제로 동작하는 방식
 
-- Claude Code 플러그인 마켓플레이스에서 설치하는 **스킬 묶음**이다(`claude plugin enable superpowers@claude-community`).
+- Claude Code 플러그인 마켓플레이스 `claude-community`(GitHub `anthropics/claude-plugins-community`)에서 설치하는 **스킬 묶음**이다(`superpowers@claude-community`).
 - 각 스킬은 슬래시 명령(`/superpowers:brainstorming`, `/superpowers:writing-plans`, `/superpowers:executing-plans` 등)으로 부른다.
 - MCP 서버는 없다 — 모든 도구 호출이 실행 창의 권한 모드를 따른다. `autoAllow`는 빈 배열이다.
-- 계획 파일은 워크스페이스 안의 `docs/superpowers/plans/*.md` 글롭에 일치하는 마크다운 파일이다. 계획 작성 스킬이 이 경로에 파일을 만들고, 실행 스킬이 그 체크리스트를 채워 나간다.
+- 계획 파일은 워크스페이스 안의 `docs/superpowers/plans/*.md` 글롭에 일치하는 마크다운 파일이다. 계획 작성 스킬(`skills/writing-plans/SKILL.md`)이 `docs/superpowers/plans/YYYY-MM-DD-<기능 이름>.md`에 파일을 만들고 단계를 `- [ ]` 체크박스로 적는다. 실행 스킬(`executing-plans`, `subagent-driven-development`)의 문서는 진행을 할 일 목록과 기록으로 남기라고 할 뿐 계획 파일의 체크박스를 고치라고 하지 않는다. 그래서 진행 막대와 "완료" 단계는 에이전트가 계획 파일의 체크박스를 실제로 `[x]`로 바꿨을 때만 움직인다.
 
 ## 스타일 선택
 
@@ -17,28 +17,33 @@
 
 ## 단계 표시줄
 
-단계는 네 가지다: **브레인스토밍 → 계획 → 실행 → 완료**. 단계 결정 우선순위는 다음과 같다.
+단계는 네 가지다: **브레인스토밍 → 계획 → 실행 → 완료**. 단계는 [mighty-styles.md](mighty-styles.md) §1.16.5의 순서로 정한다.
 
-1. **`stateOverrides`(파일 소스 상태)는 앞으로만 옮긴다** — 현재 계획(`docs/superpowers/plans/*.md` 중 아래 mtime 조건을 넘는 가장 최근 파일)의 체크리스트 항목이 하나 이상이고 모두 `[x]`이면 → **완료** 단계, 현재 계획이 있으면 → **실행** 단계. 요청 기록이 이미 더 뒤 단계를 가리키면 그 단계를 유지한다.
-2. **과거 요청 인식** — 위 조건이 모두 거짓이면, 요청 기록에서 마지막으로 인식된 `/superpowers:<행동>`의 `phase`로 결정한다.
-3. **기본** — 인식된 것도 없으면 **브레인스토밍** 단계.
+1. **과거 요청 인식** — 요청 기록에서 마지막으로 인식된 `/superpowers:<행동>`의 `phase`. 인식된 것이 없으면 기본 단계 **브레인스토밍**.
+2. **`stateOverrides`(파일 소스 상태)** — 현재 계획(`docs/superpowers/plans/*.md` 중 아래 mtime 조건을 넘는 가장 최근 파일)이 있으면 **실행**, 그 체크리스트 항목이 하나 이상이고 모두 `[x]`이면 **완료**. 이 단계가 1의 단계보다 뒤일 때만 그리로 옮긴다 — 상태는 단계를 앞으로만 옮기고 뒤로 돌리지 않는다.
 
-이 규칙 덕분에 **새 세션은 항상 브레인스토밍에서 열리고**, 계획 파일이 생기면 실행으로 건너뛰며, 모든 항목을 체크하면 완료로 이동한다 — 사용자가 단계 버튼을 직접 누르지 않아도 된다.
+그래서 **새 세션은 브레인스토밍에서 열리고**, 현재 계획 파일이 생기면 실행으로, 모든 항목이 체크되면 완료로 옮겨 간다 — 사용자가 단계 버튼을 직접 누르지 않아도 된다.
 
-> 계획 파일의 mtime 조건: 수정 시각이 **이 실행 창이 Superpowers 스타일로 보낸 첫 요청** 이후인 계획 파일만 현재 계획이다([mighty-styles.md](mighty-styles.md) §1.16.1). 이전 작업에서 남은 계획 파일은 단계를 움직이지 않으므로, 새 세션은 계획 파일이 남아 있어도 브레인스토밍에서 열린다. 같은 창에서 계획을 끝낸 뒤 새 아이디어를 시작하면 끝난 계획이 여전히 현재 계획이라 "완료"로 보인다 — 이때는 "새 아이디어" 칩으로 돌아간다.
+> 계획 파일의 mtime 조건: 수정 시각이 **이 실행 창이 Superpowers 스타일로 보낸 첫 요청**(`RunSession.mightyStyleSince`) 이후인 계획 파일만 현재 계획이다([mighty-styles.md](mighty-styles.md) §1.16.1). 이전 작업에서 남은 계획 파일은 단계를 움직이지 않으므로, 새 세션은 계획 파일이 남아 있어도 브레인스토밍에서 열린다. 기준 시각은 스타일을 바꿀 때만 지워진다.
+>
+> **같은 창에서 계획을 끝낸 뒤의 새 아이디어.** 끝난 계획은 기준 시각 이후에 고쳐진 파일이라 여전히 현재 계획이고 모든 항목이 `[x]`이므로, 새 아이디어를 입력해도 단계 표시줄은 **완료**에 머문다(Enter는 글을 그대로 보낼 뿐 단계를 바꾸지 않는다). **"새 아이디어" 칩을 누르면** 패널이 브레인스토밍 단계와 **브레인스토밍** 버튼을 보여 준다. 그 버튼으로 요청을 보내면 칩 상태가 풀리고, 새 계획 파일이 생기기 전까지는 끝난 계획이 다시 단계를 **완료**로 올린다. 새 계획 파일이 생기면(가장 최근 파일이 현재 계획이다) 그 파일의 체크 상태를 따라 **실행**으로 돌아간다.
 
 ## 화면
 
 ### 입력창 = 단계별 전용 패널
 
-| 상태 | 입력창 |
-|---|---|
-| 시작 전 (브레인스토밍 단계) | **브레인스토밍** 버튼 하나 (→ `/superpowers:brainstorming <목표>`). 자유 텍스트와 함께 보낸다 |
-| 계획 단계 | **계획 작성** · **서브에이전트 개발** 버튼 |
-| 실행 단계 | **계획 실행** · **서브에이전트 개발** 버튼 + 보조 **디버깅** |
-| 완료 단계 | **완료 전 검증** · **브랜치 완료** · **코드 리뷰 요청** 버튼 |
+버튼은 `rules.start`와 `rules.next.byPhase`에서 온다. 시작 규칙의 단계(브레인스토밍)에서는 시작 버튼이 `next` 목록을 대신한다.
 
-"새 아이디어" 칩(`resetTitle`)이 모든 단계에 있다 — 누르면 브레인스토밍 단계로 돌아간다.
+| 단계 | 입력창 버튼 (앞의 것이 강조) |
+|---|---|
+| 브레인스토밍 (요청 전과 후 모두) | **브레인스토밍** (→ `/superpowers:brainstorming <입력 글>`) · **계획 작성** (→ `/superpowers:writing-plans <입력 글>`). 시작 버튼 줄이 `next`의 `brainstorm` 목록을 대신한다 |
+| 계획 | **계획 실행** · **서브에이전트 개발** |
+| 실행 | **완료 전 검증** · **디버깅** · **계획 실행** |
+| 완료 | **완료 전 검증** · **브랜치 완료** · **코드 리뷰 요청** |
+
+**계획 작성** 버튼은 브레인스토밍 단계의 시작 버튼 줄에 있다. Superpowers의 브레인스토밍 스킬도 끝에서 계획 작성으로 넘어가며, 계획 파일이 생기면 단계가 실행으로 옮겨 간다. **코드 리뷰 요청**은 완료 단계에만 있다.
+
+"새 아이디어" 칩(`resetTitle`)은 시작 버튼이 없는 단계(계획 · 실행 · 완료)에 있고, 요청이 실행 중일 때는 버튼 줄과 함께 사라진다. 누르면 브레인스토밍 버튼 줄을 보여 주고, 칩 자리에 되돌리기(취소) 버튼이 나온다.
 
 Enter 동작: **`verbatim`** — Superpowers 스타일은 Enter를 절대 가로채지 않는다. 사용자가 친 글은 그대로 요청으로 나간다. 패널은 다음 버튼을 **권고(advisory)**할 뿐이다.
 
@@ -72,13 +77,15 @@ Mac은 `GuidedPanel.swift`의 `stateWidgets`가, 폰은 `guided-panel.tsx`의 `S
 
 ### 권한
 
-`autoAllow`가 빈 배열이다 — Superpowers 플러그인은 MCP 서버를 제공하지 않는다. 모든 도구 허용 결정은 실행 창의 권한 모드를 따른다. `ToolSearch`도 없다(번들 스타일이지만 Superpowers 플러그인 probe의 `prefix`가 `superpowers@`이라 소속 규칙상 빈 배열이 유일하게 올바른 값이다).
+`autoAllow`가 빈 배열이다 — Superpowers 플러그인은 MCP 서버를 제공하지 않는다. 모든 도구 허용 결정은 실행 창의 권한 모드를 따른다. 소속 규칙(§1.9)상 `server`가 있는 항목은 `plugin_superpowers_` 서버의 도구여야 하는데 그런 서버가 없다. `server` 없이 쓸 수 있는 `ToolSearch`는 번들 매니페스트라 넣을 수는 있지만, Superpowers 스킬은 MCP 도구를 끌어올 일이 없어 넣지 않았다.
 
 ### 준비물
 
 Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으면 입력창이 설치 안내와 **[설치]** 버튼을 보여준다. **[설치]를 누르면 명령이 새 터미널 실행 창에 채워지기만 하고, 사용자가 직접 Enter를 눌러야 실행된다** — 모든 번들 스타일에 공통인 동작이다([mighty-styles.md](mighty-styles.md) §1.5).
 
-설치 명령: `claude plugin enable superpowers@claude-community`
+설치 명령: `claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community`
+
+마켓플레이스를 먼저 더하고 플러그인을 설치한다 — 새 Mac에는 `claude-community` 마켓플레이스도 플러그인도 없기 때문이다(Ouroboros의 `claude plugin marketplace add Q00/ouroboros && claude plugin install ouroboros@ouroboros`와 같은 모양). 마켓플레이스 원본은 `~/.claude/plugins/known_marketplaces.json`이 `claude-community`에 대해 기록한 GitHub 저장소 `anthropics/claude-plugins-community`다. 준비물 검사는 `~/.claude/plugins/installed_plugins.json`에 `superpowers@`로 시작하는 키가 있는지만 본다.
 
 ## 범위
 
@@ -129,12 +136,13 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 | 매니페스트(행동·단계·규칙·준비물·상태 소스·표현) | `native/macos/Sources/MightyCore/Resources/Styles/superpowers.json` |
 | 상태 소스 스키마 | [mighty-styles.md](mighty-styles.md) §1.16 |
 | 범용 엔진(디코딩·검증·평가·상태 읽기·투영·레지스트리) | `native/macos/Sources/MightyCore/Styles/*.swift` |
-| 상태 읽기 및 stateOverrides 평가 | `native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift` |
+| `stateOverrides` 평가(요청 기록 + 파일 소스 상태 → 단계) | `native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift` |
 | 스타일 전환, 승인, 프롬프트 전송, 설치 터미널 | `native/macos/Sources/MightyClaude/AppStore+Styles.swift` |
+| 승인 카드(비번들 스타일의 `stateSources`는 "상태 읽기" 구역에 글롭·파서·실행 이벤트·단계 덮어쓰기로 나온다) | `native/macos/Sources/MightyCore/Styles/StyleSurfaces.swift`의 `StyleApprovalCard`, `native/macos/Sources/MightyClaude/StyleApprovalSheet.swift` |
 | 범용 패널, 상태 위젯(`stateWidgets`), 행동 칩 | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift` |
 | 위젯 → 화면 값 (Mac) | `native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift` |
 | 상태 읽기 엔진, 감시기 | `native/macos/Sources/MightyCore/Styles/StyleStateEngine.swift`, `native/macos/Sources/MightyClaude/StyleStateWatcher.swift` |
 | 폰 렌더링 (상태 위젯 포함) | `mobile/src/components/guided-panel.tsx`, `mobile/src/lib/styles.ts` |
 | 명령 인벤토리 검증 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift::buttonsSendInstalledPluginSkillCommands()` |
-| 테스트 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift`, `StylesBundledTests.swift`, `StyleWidgetPresentationTests.swift`(폰 `styles.test.ts`와 같은 사례) |
+| 테스트 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift`, `StylesBundledTests.swift`, `StyleStateSourceTests.swift`, `StylePhaseFromStateTests.swift`, `StyleSurfacesTests.swift`(승인 카드의 상태 읽기 구역), `StyleWidgetPresentationTests.swift`(폰 `styles.test.ts`와 같은 사례) |
 | 골든 (상태 위젯 포함) | `styles/golden/superpowers.panel.json`의 `withState` 사례 — 실제 엔진(`StyleStateEngine.reading`)이 이 매니페스트의 `stateSources`를 고정 입력(3/7 체크리스트, 서브에이전트 시작 2번과 도구 호출 1번)으로 읽은 결과를 한국어로 기록한다: 진행 막대 `3/7`과 라벨 `서브에이전트 2회 시작`. Mac `StyleGoldenContractTests`·`StyleWidgetPresentationTests`와 폰 `styles.test.ts`·`guided-panel-widgets.test.ts`가 함께 읽는다 |

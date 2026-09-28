@@ -140,7 +140,7 @@ export function GuidedPanel({
           </View>
         ) : null}
 
-        {/* §1.14: the Mac read the style's declared state sources and computed these;
+        {/* §1.16: the Mac read the style's declared state sources and computed these;
             the phone draws the same three kinds, in the same order, and nothing else. */}
         {model.widgets.length > 0 ? (
           <View style={styles.widgets}>

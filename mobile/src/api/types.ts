@@ -473,7 +473,7 @@ export interface StylePanel {
   /** The panel's bottom line, with `{phase}` already substituted. */
   guidance?: string;
   presentation: StylePresentation;
-  /** Computed state widgets, at most one per source (§1.14). */
+  /** Computed state widgets, at most one per source (§1.16). */
   widgets?: StyleWidget[];
 }
 

@@ -27,7 +27,7 @@
     ]
   },
   "install": {
-    "command": "claude plugin enable superpowers@claude-community",
+    "command": "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
     "paneTitle": "Superpowers 설치"
   },
   "phases": [
@@ -136,7 +136,7 @@
     "start": {
       "kind": "actions",
       "phase": "brainstorm",
-      "actions": ["brainstorming"],
+      "actions": ["brainstorming", "writing-plans"],
       "resetTitle": "새 아이디어"
     },
     "phase": {

@@ -143,4 +143,33 @@ struct StyleSurfacesTests {
         // No install block at all when the manifest declares no command.
         #expect(!StyleApprovalCard.sections(repo).contains { $0.id == "install" })
     }
+
+    @Test func theApprovalCardShowsEveryStateSourceTheEngineWillRead() throws {
+        // §1.16.6: the card names each file glob with its parser, each run-event
+        // source with its aggregate, and each phase override — nothing folded.
+        let sections = LocaleOverride.$language.withValue(.ko) { StyleApprovalCard.sections(StyleFixtures.bundled("superpowers")) }
+        #expect(sections.map(\.id) == ["origin", "autoAllow", "install", "enter", "state", "identity", "structure", "rules", "actions", "presentation"])
+        let state = try #require(sections.first { $0.id == "state" })
+        #expect(state.title == "상태 읽기" && state.monospaced && !state.foldable)
+        #expect(state.lines == [
+            "파일 docs/superpowers/plans/*.md · 파서 markdownChecklist · 위젯 progressBar",
+            "실행 이벤트 subagent.start · 집계 count · 위젯 label",
+            "단계 execute ← docs/superpowers/plans/*.md fileExists",
+            "단계 finish ← docs/superpowers/plans/*.md allChecked",
+        ])
+
+        // An untrusted repository manifest gets the same block, in the app's language.
+        var manifest = try StyleManifestDecoder.decode(StyleFixtures.data(), source: .workspace)
+        manifest.stateSources = StyleStateSources(files: [StyleStateFileSource(path: "notes/*.json", parser: .json, widget: .list)],
+                                                  runEvents: [StyleStateRunEventSource(event: .toolCall, aggregate: .lastValue, widget: .label)])
+        let repo = RegisteredStyle(manifest: manifest, source: .workspace, path: "/repo/.claude/mighty-styles/flow.json",
+                                   workspacePath: "/repo", hash: String(repeating: "a", count: 64), approval: .pending)
+        let english = LocaleOverride.$language.withValue(.en) { StyleApprovalCard.sections(repo) }
+        #expect(english.first { $0.id == "state" }?.lines == [
+            "File notes/*.json · parser json · widget list",
+            "Run event tool.call · aggregate lastValue · widget label",
+        ])
+        // A manifest that declares no state sources has no such block.
+        #expect(!StyleApprovalCard.sections(StyleFixtures.bundled("ouroboros")).contains { $0.id == "state" })
+    }
 }

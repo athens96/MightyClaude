@@ -78,7 +78,7 @@ struct SuperpowersStyleTests {
         // An unrecognised request leaves the phase where it was.
         #expect(evaluator.currentPhase(prompts: ["안녕하세요"])?.id == "brainstorm")
 
-        #expect(evaluator.startActions(phase: phase("brainstorm")).map(\.id) == ["brainstorming"])
+        #expect(evaluator.startActions(phase: phase("brainstorm")).map(\.id) == ["brainstorming", "writing-plans"])
         #expect(evaluator.resetTitle == "새 아이디어")
         #expect(evaluator.nextActions(phase: phase("brainstorm"), group: nil).first?.id == "writing-plans")
         #expect(evaluator.nextActions(phase: phase("plan"), group: nil).map(\.id) == ["executing-plans", "subagent-driven-development"])
@@ -104,10 +104,10 @@ struct SuperpowersStyleTests {
         // Plan file stale / not present → no state advance
         let noPlan = StyleFileSourceState(exists: false, allChecked: false)
         #expect(evaluator.currentPhase(prompts: [], fileSourceStates: [0: noPlan])?.id == "brainstorm")
-        // §1.14 precedence case 1: plan command run, but no qualifying plan file → command phase wins
+        // §1.16 precedence case 1: plan command run, but no qualifying plan file → command phase wins
         #expect(evaluator.currentPhase(prompts: ["/superpowers:writing-plans"],
                                        fileSourceStates: [0: noPlan])?.id == "plan")
-        // §1.14 precedence case 2: qualifying plan present, but last command was brainstorm → state advances to execute
+        // §1.16 precedence case 2: qualifying plan present, but last command was brainstorm → state advances to execute
         #expect(evaluator.currentPhase(prompts: ["/superpowers:brainstorming"],
                                        fileSourceStates: [0: planExists])?.id == "execute")
         // Unknown sourceIndex key → no advance (silently ignored)
@@ -166,6 +166,11 @@ struct SuperpowersStyleTests {
         try FileManager.default.createDirectory(at: installed.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(#"{"version":2,"plugins":{"superpowers@claude-community":[{"installPath":"/x","scope":"user"}]}}"#.utf8).write(to: installed)
         #expect(ready(home))
-        #expect(manifest.install?.command == "claude plugin enable superpowers@claude-community")
+        // A fresh Mac has neither the marketplace nor the plugin: `enable` alone
+        // only switches on a plugin already installed. The marketplace source is
+        // the one `~/.claude/plugins/known_marketplaces.json` records for
+        // `claude-community`, the same shape as the Ouroboros manifest.
+        #expect(manifest.install?.command
+                == "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community")
     }
 }

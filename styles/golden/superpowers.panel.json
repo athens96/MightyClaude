@@ -120,7 +120,8 @@
     ],
     "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
     "next" : [
-      "brainstorming"
+      "brainstorming",
+      "writing-plans"
     ],
     "phase" : {
       "count" : 4,
@@ -135,7 +136,7 @@
       "tint" : "teal"
     },
     "setup" : {
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
 
       ],
@@ -281,7 +282,8 @@
     ],
     "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
     "next" : [
-      "brainstorming"
+      "brainstorming",
+      "writing-plans"
     ],
     "phase" : {
       "count" : 4,
@@ -296,7 +298,7 @@
       "tint" : "teal"
     },
     "setup" : {
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
 
       ],
@@ -431,7 +433,8 @@
     ],
     "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
     "next" : [
-      "brainstorming"
+      "brainstorming",
+      "writing-plans"
     ],
     "phase" : {
       "count" : 4,
@@ -446,7 +449,7 @@
       "tint" : "teal"
     },
     "setup" : {
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
 
       ],
@@ -581,7 +584,8 @@
     ],
     "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
     "next" : [
-      "brainstorming"
+      "brainstorming",
+      "writing-plans"
     ],
     "phase" : {
       "count" : 4,
@@ -596,7 +600,7 @@
       "tint" : "teal"
     },
     "setup" : {
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
 
       ],
@@ -731,7 +735,8 @@
     ],
     "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
     "next" : [
-      "brainstorming"
+      "brainstorming",
+      "writing-plans"
     ],
     "phase" : {
       "count" : 4,
@@ -746,7 +751,7 @@
       "tint" : "teal"
     },
     "setup" : {
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
 
       ],
@@ -881,7 +886,8 @@
     ],
     "guidance" : "무엇을 만들까요? 아이디어를 적으면 브레인스토밍으로 요구를 정리합니다.",
     "next" : [
-      "brainstorming"
+      "brainstorming",
+      "writing-plans"
     ],
     "phase" : {
       "count" : 4,
@@ -897,7 +903,7 @@
     },
     "setup" : {
       "hint" : "Claude CLI 플러그인 명령으로 설치합니다. 터미널 실행 창이 열리고 명령이 채워집니다. Enter는 직접 누르세요.",
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
         "Superpowers 플러그인이 설치되어 있지 않습니다"
       ],
@@ -1049,7 +1055,7 @@
       "tint" : "teal"
     },
     "setup" : {
-      "installCommand" : "claude plugin enable superpowers@claude-community",
+      "installCommand" : "claude plugin marketplace add anthropics/claude-plugins-community && claude plugin install superpowers@claude-community",
       "missing" : [
 
       ],
