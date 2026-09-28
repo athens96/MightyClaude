@@ -86,6 +86,42 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 - **Enter 가로채기 없음**: 이 스타일은 어떤 상황에서도 사용자가 친 평문을 바꾸지 않는다. 버튼과 단계 표시줄이 안내하고, 사용자가 직접 고른다.
 - Claude 전용. Codex·Gemini는 Superpowers 스킬 구동 방식이 다르므로 이 스타일의 적격성 밖이다.
 
+## 명령 인벤토리 (Command Inventory)
+
+`superpowers.json`의 모든 `actions[].prompt`는 `/superpowers:<스킬-이름>` 형식이다. 이 형식은 설치된 플러그인 파일에서 직접 도출됐다.
+
+### 호출 형식 근거
+
+플러그인 `.claude-plugin/plugin.json`은 이름·버전·저자만 담은 메타데이터이고, `commands/` 디렉터리는 없다. 스킬은 `package.json`의 `pi.skills: ["./skills"]` 선언으로 등록된다. Claude Code는 `<플러그인-이름>:<스킬-폴더-이름>` 형식의 슬래시 명령(`/superpowers:<스킬>`)으로 스킬을 부른다.
+
+- **근거 파일**: `.claude-plugin/plugin.json` (`name: "superpowers"`), `package.json` (`pi.skills: ["./skills"]`)
+- **플러그인 캐시 경로**: `~/.claude/plugins/cache/claude-community/superpowers/6.4.2/`
+- **설치 버전**: 6.4.2 (obra/superpowers, MIT)
+
+### 전체 스킬 인벤토리 (플러그인 버전 6.4.2)
+
+아래 목록은 `skills/` 디렉터리의 모든 폴더를 열거한 것이다. `superpowers.json`의 행동은 반드시 이 목록 안에 있어야 하며, `StylesSuperpowersTests.swift::buttonsSendInstalledPluginSkillCommands()`가 이를 검증한다.
+
+| 스킬 이름 | 소스 경로 | superpowers.json 사용 여부 |
+|---|---|---|
+| `brainstorming` | `skills/brainstorming/SKILL.md` | ✓ (브레인스토밍) |
+| `diagnosing-superpowers` | `skills/diagnosing-superpowers/SKILL.md` | — |
+| `dispatching-parallel-agents` | `skills/dispatching-parallel-agents/SKILL.md` | — |
+| `executing-plans` | `skills/executing-plans/SKILL.md` | ✓ (계획 실행) |
+| `finishing-a-development-branch` | `skills/finishing-a-development-branch/SKILL.md` | ✓ (브랜치 완료) |
+| `receiving-code-review` | `skills/receiving-code-review/SKILL.md` | — |
+| `requesting-code-review` | `skills/requesting-code-review/SKILL.md` | ✓ (코드 리뷰 요청) |
+| `subagent-driven-development` | `skills/subagent-driven-development/SKILL.md` | ✓ (서브에이전트 개발) |
+| `systematic-debugging` | `skills/systematic-debugging/SKILL.md` | ✓ (디버깅) |
+| `test-driven-development` | `skills/test-driven-development/SKILL.md` | — |
+| `using-git-worktrees` | `skills/using-git-worktrees/SKILL.md` | — |
+| `using-superpowers` | `skills/using-superpowers/SKILL.md` | — |
+| `verification-before-completion` | `skills/verification-before-completion/SKILL.md` | ✓ (완료 전 검증) |
+| `writing-plans` | `skills/writing-plans/SKILL.md` | ✓ (계획 작성) |
+| `writing-skills` | `skills/writing-skills/SKILL.md` | — |
+
+소스 경로는 플러그인 캐시 루트(`~/.claude/plugins/cache/claude-community/superpowers/6.4.2/`) 기준 상대 경로다.
+
 ## 구현 위치
 
 | 부분 | 파일 |
@@ -97,4 +133,5 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 | 스타일 전환, 승인, 프롬프트 전송, 설치 터미널 | `native/macos/Sources/MightyClaude/AppStore+Styles.swift` |
 | 범용 패널, 행동 칩, 상태 위젯 렌더링 | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift` |
 | 폰 렌더링 (상태 위젯 포함) | `mobile/src/components/guided-panel.tsx`, `mobile/src/lib/styles.ts` |
+| 명령 인벤토리 검증 | `native/macos/Tests/MightyCoreTests/StylesSuperpowersTests.swift::buttonsSendInstalledPluginSkillCommands()` |
 | 테스트 | `native/macos/Tests/MightyCoreTests/StylesSuperpowersTests.swift`, `StylesBundledTests.swift` |
