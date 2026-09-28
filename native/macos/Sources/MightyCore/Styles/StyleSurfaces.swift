@@ -308,6 +308,12 @@ public enum StyleApprovalCard {
                                                  lines: [install.command, installNotice], monospaced: true, foldable: false))
         }
         sections.append(StyleApprovalSection(id: "enter", title: "Enter 규칙", lines: enterLines(manifest), monospaced: true, foldable: false))
+        // What the engine will read in the workspace and the run log, and how
+        // that moves the phase, exactly as declared (§1.16.6).
+        if let sources = manifest.stateSources {
+            sections.append(StyleApprovalSection(id: "state", title: L("styles.approval.stateTitle"),
+                                                 lines: stateLines(sources, rule: manifest.rules.phase), monospaced: true, foldable: false))
+        }
         sections.append(StyleApprovalSection(id: "identity", title: "스타일",
                                              lines: ["이름 " + manifest.name, "id " + manifest.id, manifest.summary, manifest.subtitle],
                                              monospaced: false, foldable: false))
@@ -331,6 +337,24 @@ public enum StyleApprovalCard {
             let title = manifest.phase(phase)?.title ?? phase
             return ["이 실행 창의 첫 Enter는 다음 프롬프트의 {text} 자리에 들어갑니다 (단계: " + title + ")", prompt]
         }
+    }
+
+    /// Every file glob with its parser, every run-event source with its
+    /// aggregate, then every phase override, in declaration order (§1.16.6).
+    static func stateLines(_ sources: StyleStateSources, rule: StylePhaseRule) -> [String] {
+        var lines = sources.files.map {
+            L("styles.approval.stateFile", ["path": $0.path, "parser": $0.parser.rawValue, "widget": $0.widget.rawValue])
+        }
+        lines += sources.runEvents.map {
+            L("styles.approval.stateRunEvent", ["event": $0.event.rawValue, "aggregate": $0.aggregate.rawValue, "widget": $0.widget.rawValue])
+        }
+        if case .lastRecognisedAction(_, let overrides) = rule {
+            for override in overrides where sources.files.indices.contains(override.sourceIndex) {
+                lines.append(L("styles.approval.stateOverride", ["phase": override.phase, "path": sources.files[override.sourceIndex].path,
+                                                                 "condition": override.condition.rawValue]))
+            }
+        }
+        return lines
     }
 
     static func structureLines(_ manifest: StyleManifest) -> [String] {

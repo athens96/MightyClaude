@@ -81,7 +81,7 @@ public struct StyleEvaluator: Sendable {
         return manifest.phase(fallback)
     }
 
-    /// §1.14: command history combined with file-source state signals.
+    /// §1.16: command history combined with file-source state signals.
     /// `fileSourceStates` is keyed by the `sourceIndex` from `stateOverrides`;
     /// overrides only advance phase order — they never retreat it.
     /// Precedence when history and state disagree:

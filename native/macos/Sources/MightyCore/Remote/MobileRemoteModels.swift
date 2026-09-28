@@ -57,7 +57,7 @@ public enum MobileCapability {
 public enum MobileWire {
     public static let submitModes = ["steer", "queue"]
     public static let agentViewModes = ["plain", "mighty"]
-    public static let mightyStyles = ["cli", "ouroboros", "paperthin", "superpowers"]
+    public static let mightyStyles = ["cli", "ouroboros", "paperthin"]
     /// What `POST …/command` performs; the other actions the phone handles itself.
     public static let performedActions = ["clear", "usage", "help"]
     /// The Mac's `agentViewMode` is nil or "default" where the wire says "plain".

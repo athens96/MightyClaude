@@ -475,7 +475,7 @@ public enum StyleManifestDecoder {
         return StyleJobDeclaration(open: open, close: close, whileOpen: whileOpen, guidance: guidance)
     }
 
-    // MARK: - §1.14 state sources
+    // MARK: - §1.16 state sources
 
     private static func stateSources(_ value: Any?) throws -> StyleStateSources? {
         guard let value else { return nil }
@@ -517,7 +517,7 @@ public enum StyleManifestDecoder {
         return StyleStateSources(files: files, runEvents: runEvents)
     }
 
-    /// §1.14: workspace-relative paths only. Absolute paths and any `..`
+    /// §1.16: workspace-relative paths only. Absolute paths and any `..`
     /// component are rejected at parse time; symlinks are resolved at runtime.
     private static func statePathBoundaryCheck(_ path: String, at location: String) throws {
         guard !path.hasPrefix("/"), !path.hasPrefix("~") else { throw StyleErrors.statePathEscape(path) }

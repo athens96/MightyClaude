@@ -73,7 +73,7 @@ struct StyleManifestTests {
         cases.append(("E_PLACEHOLDER_INITIAL", f.data(f.flat, ["placeholders": "{\"idle\":\"i\",\"answering\":\"a\",\"initial\":\"first\"}"])))
         cases.append(("E_JOB_MATCHER_LITERAL", f.data(f.flat, [:], extra: [("job", "{\"open\":[{\"tool\":\"t\",\"contains\":\"a\",\"notContains\":\"b\"}],\"close\":[],\"whileOpen\":[]}")])))
 
-        // §1.14 state source errors
+        // §1.16 state source errors
         cases.append(("E_STATE_PARSER", f.data(f.flat, [:], extra: [("stateSources", "{\"files\":[{\"path\":\"PLAN.md\",\"parser\":\"pdf\",\"widget\":\"progressBar\"}]}")])))
         cases.append(("E_STATE_WIDGET", f.data(f.flat, [:], extra: [("stateSources", "{\"files\":[{\"path\":\"PLAN.md\",\"parser\":\"markdownChecklist\",\"widget\":\"spinner\"}]}")])))
         cases.append(("E_STATE_AGGREGATE", f.data(f.flat, [:], extra: [("stateSources", "{\"runEvents\":[{\"event\":\"subagent.start\",\"aggregate\":\"sum\",\"widget\":\"label\"}]}")])))

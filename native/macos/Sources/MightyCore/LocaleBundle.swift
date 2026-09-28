@@ -56,13 +56,25 @@ private func catalogs() -> (chosen: Catalog, korean: Catalog) {
     return (chosen, _ko!)
 }
 
-private func fill(_ template: String, _ subs: [String: String]) -> String {
+/// One pass over the template: a substituted value is never scanned again, so
+/// text that itself contains `{name}` (a manifest's glob, a user's title) is
+/// shown as written whatever order the dictionary yields its keys in.
+func fill(_ template: String, _ subs: [String: String]) -> String {
     guard !subs.isEmpty else { return template }
-    var result = template
-    for (key, value) in subs {
-        result = result.replacingOccurrences(of: "{\(key)}", with: value)
+    var result = ""
+    var rest = template[...]
+    while let open = rest.firstIndex(of: "{") {
+        result += rest[..<open]
+        let afterOpen = rest.index(after: open)
+        if let close = rest[afterOpen...].firstIndex(of: "}"), let value = subs[String(rest[afterOpen..<close])] {
+            result += value
+            rest = rest[rest.index(after: close)...]
+        } else {
+            result += "{"
+            rest = rest[afterOpen...]
+        }
     }
-    return result
+    return result + rest
 }
 
 /// Looks up a locale key in the current language, falls back to Korean, then to the key itself.

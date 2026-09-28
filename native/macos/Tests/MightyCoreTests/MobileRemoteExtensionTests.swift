@@ -1128,7 +1128,10 @@ struct MobileRemoteExtensionTests {
     @Test func theStyleFieldsRideBesideTheFixedVocabulary() throws {
         // `mightyStyle` keeps its three words; the truth travels in `styleId`,
         // so an old phone sees a plain CLI pane rather than a wrong one (§7.2).
-        #expect(MobileWire.mightyStyles == ["cli", "ouroboros", "paperthin", "superpowers"])
+        #expect(MobileWire.mightyStyles == ["cli", "ouroboros", "paperthin"])
+        // A third bundled style gets no word of its own: it reads "cli" here
+        // and travels as `styleId`, like any registered style.
+        #expect(MobileRemoteSupport.style("superpowers") == MobileWire.cliStyle)
         #expect(MobileCapability.all.contains("style"))
         let summary = try encoded(MobileSessionSummary(id: "s", workspaceId: "w", title: "t", kind: "claude", provider: "claude",
                                                        model: "default", status: "idle", revision: 1, updatedAt: "now",

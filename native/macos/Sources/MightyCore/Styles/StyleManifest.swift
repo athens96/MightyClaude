@@ -27,7 +27,7 @@ public enum StyleLimits {
     public static let maximumMessageValue = 64
     /// A capability string projected to a screen (§1.8).
     public static let maximumCapabilityString = 80
-    /// §1.14: closed state-source arrays.
+    /// §1.16: closed state-source arrays.
     public static let maximumStateFileSources = 8
     public static let maximumStateRunEventSources = 8
 }
@@ -164,7 +164,7 @@ public enum StyleErrors {
     public static func idCollision(_ id: String, _ winner: StyleSource) -> StyleManifestError {
         code("E_ID_COLLISION", "이미 같은 id의 스타일이 있습니다: \(StyleText.safe(id)) (\(winner.rawValue)).")
     }
-    /// §1.14 state-source errors.
+    /// §1.16 state-source errors.
     public static func stateParser(_ value: String) -> StyleManifestError { code("E_STATE_PARSER", "알 수 없는 파서입니다: \(StyleText.safe(value)).") }
     public static func stateWidget(_ value: String) -> StyleManifestError { code("E_STATE_WIDGET", "알 수 없는 위젯 종류입니다: \(StyleText.safe(value)).") }
     public static func stateAggregate(_ value: String) -> StyleManifestError { code("E_STATE_AGGREGATE", "알 수 없는 집계 방법입니다: \(StyleText.safe(value)).") }
@@ -385,10 +385,10 @@ public struct StyleAutoAllowEntry: Sendable, Equatable {
     }
 }
 
-/// §1.14: a condition on a file state source that drives a phase override (closed vocabulary).
+/// §1.16: a condition on a file state source that drives a phase override (closed vocabulary).
 public enum StylePhaseStateCondition: String, Sendable, Equatable, CaseIterable { case fileExists, allChecked }
 
-/// §1.14: one entry in `rules.phase.stateOverrides` — advances phase when condition holds.
+/// §1.16: one entry in `rules.phase.stateOverrides` — advances phase when condition holds.
 public struct StylePhaseStateOverride: Sendable, Equatable {
     public var sourceIndex: Int
     public var condition: StylePhaseStateCondition
@@ -454,23 +454,23 @@ public struct StyleJobDeclaration: Sendable, Equatable {
     }
 }
 
-/// §1.14: the three parsers a file state source may name (closed).
+/// §1.16: the three parsers a file state source may name (closed).
 public enum StyleStateParser: String, Sendable, Equatable, CaseIterable { case markdownChecklist, json }
 
-/// §1.14: the two aggregates a run-event state source may name (closed).
+/// §1.16: the two aggregates a run-event state source may name (closed).
 public enum StyleStateAggregate: String, Sendable, Equatable, CaseIterable { case count, lastValue }
 
-/// §1.14: the three widget kinds any state source may map to (closed).
+/// §1.16: the three widget kinds any state source may map to (closed).
 public enum StyleStateWidget: String, Sendable, Equatable, CaseIterable { case progressBar, list, label }
 
-/// §1.14: the run-event types a manifest may declare (closed).
+/// §1.16: the run-event types a manifest may declare (closed).
 public enum StyleStateRunEvent: String, Sendable, Equatable, CaseIterable {
     case subagentStart = "subagent.start"
     case subagentFinish = "subagent.finish"
     case toolCall = "tool.call"
 }
 
-/// §1.14: a workspace-file state source: reads a file and maps it to one widget.
+/// §1.16: a workspace-file state source: reads a file and maps it to one widget.
 public struct StyleStateFileSource: Sendable, Equatable {
     public var path: String
     public var parser: StyleStateParser
@@ -480,7 +480,7 @@ public struct StyleStateFileSource: Sendable, Equatable {
     }
 }
 
-/// §1.14: a run-event state source: aggregates in-session events and maps to one widget.
+/// §1.16: a run-event state source: aggregates in-session events and maps to one widget.
 public struct StyleStateRunEventSource: Sendable, Equatable {
     public var event: StyleStateRunEvent
     public var aggregate: StyleStateAggregate
@@ -490,7 +490,7 @@ public struct StyleStateRunEventSource: Sendable, Equatable {
     }
 }
 
-/// §1.14: the optional top-level `stateSources` block.
+/// §1.16: the optional top-level `stateSources` block.
 public struct StyleStateSources: Sendable, Equatable {
     public var files: [StyleStateFileSource]
     public var runEvents: [StyleStateRunEventSource]

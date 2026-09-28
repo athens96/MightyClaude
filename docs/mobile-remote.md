@@ -86,7 +86,7 @@ MobilePermission {
 | `activity.state` | `running` `waiting` `completed` `error` `stopped` |
 | `permissionMode` | 호스트가 `settings.options.permissionModes`로 알려 주는 id (프로바이더마다 다름) |
 | `agentViewMode` | `plain` `mighty` |
-| `mightyStyle` | `cli` `ouroboros` `paperthin` — 셋 고정. 내장 둘이 아닌 스타일에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
+| `mightyStyle` | `cli` `ouroboros` `paperthin` — 셋 고정. `ouroboros`·`paperthin`이 아닌 스타일(번들 Superpowers 포함)에는 언제나 `cli`가 실린다(진짜 값은 `styleId`, 아래 "스타일" 절) |
 | 블록 `kind` | `main` `agent` `task` `steer` `compact` `question` |
 | 블록 `status` | `running` `waiting` `completed` `error` `stopped` |
 | `accepted` | `started` `steered` `queued` |
@@ -173,7 +173,7 @@ MobileBlock { id, kind, title, status, summary?, output?, durationMs?, nodeModel
 
 **`styleId`와 `mightyStyle`이 함께 실리는 이유.** `capabilities`는 호스트가 광고하고 휴대폰은 읽기만 하므로, "휴대폰이 새 스타일 이름을 아는가"를 호스트는 알 수 없다. 그래서 두 필드를 **언제나 함께** 보낸다.
 
-- `mightyStyle`은 세 고정값(`cli`·`ouroboros`·`paperthin`) 안에서만 움직인다. 내장 둘이 아닌 스타일이 실제로 돌고 있어도 이 필드에는 언제나 `cli`가 실린다.
+- `mightyStyle`은 세 고정값(`cli`·`ouroboros`·`paperthin`) 안에서만 움직인다. `ouroboros`·`paperthin`이 아닌 스타일(번들 Superpowers 포함)이 실제로 돌고 있어도 이 필드에는 언제나 `cli`가 실린다.
 - `styleId`(신규, 선택)는 열린 문자열이다. 진짜 값은 언제나 여기 있다. **이 실행 창이 실제로 그 스타일로 돌고 있을 때만** 실제 id를 싣는다 — 미승인·취소·미등록·해시 불일치(마이티 스타일 계약 §3.4)는 모두 `"cli"`다. 저장된 값을 그대로 보내지 않는다: 미승인 스타일은 세션 요약 필드 하나로도 새어 나가지 않는다.
 - 구버전 휴대폰은 `styleId`를 모르고 무시하므로 그 실행 창을 그냥 일반 CLI로 본다.
 - 어긋날 때의 규칙은 하나뿐이다: **`styleId`가 있으면 `mightyStyle`은 무시한다.** `styleId`가 없고 `mightyStyle`만 있으면 그 값을 쓴다. 이 값이 붙는 자리는 `MobileSessionSummary.styleId?`, `MobileSettings.styleId`, `MobileMighty.styleId`다.
