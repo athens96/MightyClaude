@@ -41,7 +41,6 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
     public ClaudePluginSnapshot? Snapshot { get; private set; }
     public bool Loading { get; private set; }
 
-    public bool IsRemote => Workspace.Remote is not null;
     /// ClaudePluginView.providerLabel: the same header for both providers.
     public string Title => PluginStrings.TitleTemplate.Replace("{provider}", CliUpdateService.ProviderLabel(Provider));
     public bool IsReady => Snapshot?.Status == ClaudePluginStatus.Ready;
@@ -114,8 +113,6 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
 
     public string CancelLabel => IsCancelling ? PluginStrings.ButtonCancelling : PluginStrings.ButtonCancelOperation;
 
-    /// Why a change cannot be started right now, in the macOS words.
-    public string? BlockedReason => IsRemote ? PluginStrings.RemoteNote : null;
 
     /// Refresh uses the registered sources; Codex can upgrade Git-backed ones only.
     public IReadOnlyList<string> RefreshableMarketplaces =>
@@ -140,10 +137,10 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
         : PluginStrings.ButtonInstall;
 
     public bool CanInstall(string pluginId) =>
-        !InstalledInSelectedScope(pluginId) && !IsBusy && BlockedReason is null && IsReady;
+        !InstalledInSelectedScope(pluginId) && !IsBusy && IsReady;
 
     public bool CanRefreshMarketplaces =>
-        !IsBusy && BlockedReason is null && IsReady && RefreshableMarketplaces.Count > 0;
+        !IsBusy && IsReady && RefreshableMarketplaces.Count > 0;
 
     /// The result line, and the bounded CLI output behind 명령 실행 상세.
     public string? ResultText => LastResult?.Detail;
@@ -208,7 +205,6 @@ public sealed class ClaudePluginBrowser(string provider, Workspace workspace)
 
     private ClaudePluginOperationResult? Refuse()
     {
-        if (IsRemote) return new ClaudePluginOperationResult(ClaudePluginStatus.Remote, PluginStrings.RemoteNote);
         if (IsBusy) return new ClaudePluginOperationResult(ClaudePluginStatus.Busy, PluginStrings.OperationBusy);
         if (!IsReady) return new ClaudePluginOperationResult(ClaudePluginStatus.Failed, PluginStrings.LoadListFirst);
         return null;
@@ -408,7 +404,6 @@ public sealed record ClaudePluginSmokeOutcome
     [JsonPropertyName("installedSubtitle")] public string InstalledSubtitle { get; init; } = "";
     [JsonPropertyName("availableSubtitle")] public string AvailableSubtitle { get; init; } = "";
     [JsonPropertyName("reloadedFromStatus")] public string ReloadedFromStatus { get; init; } = "";
-    [JsonPropertyName("remoteSentences")] public IReadOnlyList<string> RemoteSentences { get; init; } = [];
     [JsonPropertyName("reads")] public int Reads { get; init; }
     [JsonPropertyName("mutatingControls")] public int MutatingControls { get; init; }
     [JsonPropertyName("restored")] public bool Restored { get; init; }

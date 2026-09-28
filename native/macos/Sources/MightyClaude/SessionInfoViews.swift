@@ -252,7 +252,6 @@ struct SessionInfoView: View {
                     }
                     if let workspace {
                         row("워크스페이스", workspace.name, key: "workspace")
-                        if let remote = workspace.remote { row("실행 컴퓨터", remote.hostName, key: "host") }
                         Text(workspace.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)

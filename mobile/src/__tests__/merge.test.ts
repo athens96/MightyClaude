@@ -34,8 +34,8 @@ function state(revision: number, sessions: MobileSessionSummary[] = []): MobileS
     revision,
     hostName: 'mac',
     workspaces: [
-      { id: 'w1', name: '작업1', path: '/a', remote: false },
-      { id: 'w2', name: '작업2', path: '/b', remote: true },
+      { id: 'w1', name: '작업1', path: '/a' },
+      { id: 'w2', name: '작업2', path: '/b' },
     ],
     sessions,
   };

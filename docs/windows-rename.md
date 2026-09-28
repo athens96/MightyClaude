@@ -24,7 +24,7 @@ macOS `AppStore+Rename.swift` · `RenameViews.swift`의 Windows 대응.
 4. 제어 문자(Unicode Cc 범주) 거부 — 중간 줄바꿈 포함
 
 규칙 4는 Windows 입력란에서는 닿지 않는다. 한 줄 `TextBox`가 줄바꿈을 먼저 버리기 때문이다.
-그래도 붙여넣기·복원·원격 제목 등 입력란을 거치지 않는 경로가 있어 규칙은 그대로 두고,
+그래도 붙여넣기·복원 등 입력란을 거치지 않는 경로가 있어 규칙은 그대로 두고,
 `rename …` Core.Tests 검사가 규칙과 문구를 증명한다. 스모크 검사는 입력란에서
 줄바꿈이 살아남지 못하는 것과 저장 버튼·문구가 Core 규칙과 언제나 일치하는 것을 본다.
 
@@ -72,7 +72,5 @@ macOS의 네 자리에 같은 항목이 붙는다.
 | `PaneDockDrag.swift:198` 탭 메뉴 | `MainWindow.Layout.cs`의 탭 `ContextFlyout`과 탭 더블 탭 |
 
 네 자리 모두 다른 대화상자가 열려 있으면 꺼진다 — `menu.Opening`에서 `IsEnabled = !dialogOpen`.
-원격 워크스페이스에도 조건 없이 보인다. macOS가 `이름 변경…`에는 경비를 걸지 않고
-`workspace.remote == nil`을 `Finder에서 보기`에만 걸기 때문이다.
 저장은 `DesktopService.RenameWorkspaceAsync`·`RenameSessionAsync`를 거치므로
 사이드바·탭·창이 같은 스냅샷에서 다시 그려진다. WinUI에는 새 문구 리터럴이 없다.

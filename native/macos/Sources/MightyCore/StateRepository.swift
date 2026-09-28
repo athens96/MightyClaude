@@ -43,23 +43,14 @@ public actor StateRepository {
 
     public func approveWorkspace(_ workspace: Workspace) throws -> Workspace {
         try ensureLoaded()
-        guard workspace.remote == nil, CoreValidation.identifier(workspace.id), workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.count <= 4096 else { throw MightyError("로컬 폴더 정보가 올바르지 않습니다.") }
+        guard CoreValidation.identifier(workspace.id), workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.count <= 4096 else { throw MightyError("로컬 폴더 정보가 올바르지 않습니다.") }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
         var resolved = workspace
         resolved.path = URL(fileURLWithPath: workspace.path).resolvingSymlinksInPath().path
-        if let existing = approved.values.first(where: { $0.remote == nil && $0.path == resolved.path }) { return existing }
+        if let existing = approved.values.first(where: { $0.path == resolved.path }) { return existing }
         approved[resolved.id] = resolved
         return resolved
-    }
-
-    public func approveRemoteWorkspace(connectionId: String, workspace: Workspace, hostName: String) throws -> Workspace {
-        try ensureLoaded()
-        guard CoreValidation.identifier(connectionId), CoreValidation.identifier(workspace.id), workspace.remote == nil, Self.absolutePath(workspace.path, remote: true) else { throw MightyError("원격 워크스페이스 정보가 올바르지 않습니다.") }
-        let existing = approved.values.first { $0.remote?.connectionId == connectionId && $0.remote?.workspaceId == workspace.id }
-        let item = Workspace(id: existing?.id ?? UUID().uuidString, name: String(workspace.name.prefix(120)), path: workspace.path, createdAt: existing?.createdAt ?? mightyTimestamp(), remote: RemoteWorkspaceReference(connectionId: connectionId, workspaceId: workspace.id, hostName: String(hostName.prefix(120))))
-        approved[item.id] = item
-        return item
     }
 
     public func workspace(id: String) throws -> Workspace {
@@ -69,7 +60,6 @@ public actor StateRepository {
     }
     public func resolveLocalWorkspace(id: String) throws -> Workspace {
         let item = try workspace(id: id)
-        guard item.remote == nil else { throw MightyError("원격 폴더는 연결된 호스트에서 실행해야 합니다.") }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
         return item
@@ -79,7 +69,7 @@ public actor StateRepository {
         try ensureLoaded()
         guard value.version == 1, value.workspaces.count <= 64, value.sessions.count <= 128 else { throw MightyError("저장할 상태가 올바르지 않습니다.") }
         for workspace in value.workspaces {
-            guard let known = approved[workspace.id], workspace.path == known.path, workspace.remote == known.remote else { throw MightyError("폴더 선택 또는 원격 가져오기로 승인한 워크스페이스만 저장할 수 있습니다.") }
+            guard let known = approved[workspace.id], workspace.path == known.path else { throw MightyError("폴더 선택으로 승인한 워크스페이스만 저장할 수 있습니다.") }
         }
         let result = Self.normalize(value, restoring: false)
         try persist(result)
@@ -95,16 +85,19 @@ public actor StateRepository {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
     }
 
-    public nonisolated static func absolutePath(_ path: String, remote: Bool) -> Bool {
+    public nonisolated static func absolutePath(_ path: String) -> Bool {
         guard path.count <= 4096, !path.contains("\0") else { return false }
-        return path.hasPrefix("/") || (remote && (path.hasPrefix("\\\\") || path.range(of: "^[A-Za-z]:[\\\\/]", options: .regularExpression) != nil))
+        return path.hasPrefix("/")
     }
 
     public nonisolated static func decodeSnapshot(_ data: Data, restoring: Bool = true) -> AppSnapshot {
         guard data.count <= maximumStateBytes, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], object["version"] as? Int == 1 else { return AppSnapshot() }
         let decoder = JSONDecoder()
         func decode<T: Decodable>(_ value: Any, _ type: T.Type) -> T? { guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }; return try? decoder.decode(type, from: data) }
-        let workspaces = ((object["workspaces"] as? [Any]) ?? []).prefix(64).compactMap { decode($0, Workspace.self) }
+        // A workspace saved with a "remote" value names a folder on another
+        // computer. It is dropped here, and normalize then drops everything
+        // keyed by its id, so its path never passes as a local folder.
+        let workspaces = ((object["workspaces"] as? [Any]) ?? []).prefix(64).filter { (($0 as? [String: Any])?["remote"]).map { $0 is NSNull } ?? true }.compactMap { decode($0, Workspace.self) }
         let sessions = ((object["sessions"] as? [Any]) ?? []).prefix(128).compactMap { decode($0, RunSession.self) }
         var paneLayouts: [String: PaneLayoutNode]?
         if let layouts = object["paneLayouts"] as? [String: Any] {
@@ -184,8 +177,7 @@ public actor StateRepository {
                                              knownStyleIds: Set<String>? = nil) -> AppSnapshot {
         var output = AppSnapshot(); var workspaceIds = Set<String>(); var sessionIds = Set<String>()
         for var workspace in value.workspaces.prefix(64) {
-            guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path, remote: workspace.remote != nil) else { continue }
-            if let remote = workspace.remote, !CoreValidation.identifier(remote.connectionId) || !CoreValidation.identifier(remote.workspaceId) || remote.hostName.isEmpty { continue }
+            guard CoreValidation.identifier(workspace.id), !workspaceIds.contains(workspace.id), absolutePath(workspace.path) else { continue }
             workspace.name = String(workspace.name.prefix(120)); workspaceIds.insert(workspace.id); output.workspaces.append(workspace)
         }
         // Shares are computed over the sessions that will survive, so a
@@ -278,7 +270,7 @@ public actor StateRepository {
     /// name, and saved auto-generated names are folded the same way. A title the
     /// user typed is left alone unless it exactly matches that generated form.
     public nonisolated static func legacyNumberedTitle(_ title: String) -> String {
-        let bases = ["Claude", "Codex", "Gemini", "터미널", "원격 명령"]
+        let bases = ["Claude", "Codex", "Gemini", "터미널"]
         for base in bases where title.hasPrefix(base + " ") {
             let suffix = title.dropFirst(base.count + 1)
             if !suffix.isEmpty, suffix.allSatisfy({ $0.isASCII && $0.isNumber }) { return base }

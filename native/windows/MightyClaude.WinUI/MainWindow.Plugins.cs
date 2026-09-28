@@ -237,7 +237,7 @@ public sealed partial class MainWindow
 
         async Task LoadPluginsAsync()
         {
-            if (browser.IsRemote || browser.Loading) return;
+            if (browser.Loading) return;
             browser.BeginLoad();
             RenderPlugins();
             ClaudePluginSnapshot snapshot;
@@ -285,15 +285,6 @@ public sealed partial class MainWindow
 
         var body = new StackPanel { Spacing = 10, Width = 700 };
         body.Children.Add(header);
-        if (browser.IsRemote)
-        {
-            var remote = new StackPanel { Spacing = 8, Margin = new Thickness(0, 28, 0, 28), HorizontalAlignment = HorizontalAlignment.Center };
-            AutomationProperties.SetAutomationId(remote, PluginAutomationId(provider, "remote-unavailable"));
-            remote.Children.Add(new TextBlock { Text = PluginStrings.RemoteTitle, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
-            remote.Children.Add(new TextBlock { Text = PluginStrings.RemoteNote, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap });
-            body.Children.Add(remote);
-        }
-        else
         {
             var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             tabs.Children.Add(installedTab);
@@ -309,7 +300,7 @@ public sealed partial class MainWindow
             body.Children.Add(status);
             body.Children.Add(diagnosticsToggle);
             body.Children.Add(diagnostics);
-            // Scope picker and explanation (always shown for non-remote workspaces).
+            // Scope picker and explanation.
             var pickerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             pickerRow.Children.Add(scopePicker);
             pickerRow.Children.Add(refreshBtn);
@@ -331,7 +322,7 @@ public sealed partial class MainWindow
             XamlRoot = root.XamlRoot,
         };
         AutomationProperties.SetAutomationId(dialog, PluginAutomationId(provider, "browser"));
-        dialog.Opened += (_, _) => { if (!browser.IsRemote) _ = LoadPluginsAsync(); };
+        dialog.Opened += (_, _) => _ = LoadPluginsAsync();
         // macOS keeps 닫기 disabled while an operation runs; a ContentDialog's
         // close button cannot be disabled, so the close itself is refused.
         dialog.Closing += (_, args) => { if (!browser.CanClose) args.Cancel = true; };
@@ -418,8 +409,8 @@ public sealed partial class MainWindow
 
     // Drives the real plugin window with a fixture snapshot: the two tabs with
     // their counts, the marketplace filter, the search box, a reload that reads
-    // again, the macOS sentence a missing CLI produces, and the two sentences a
-    // remote workspace shows. No claude process starts and no workspace changes.
+    // again, and the macOS sentence a missing CLI produces. No claude process
+    // starts and no workspace changes.
     // Puts back the two smoke hooks it set.
     internal async Task<ClaudePluginSmokeOutcome> RunClaudePluginSmoke()
     {
@@ -493,20 +484,6 @@ public sealed partial class MainWindow
             };
             await ShowPluginBrowser("claude", workspace);
 
-            // A remote workspace: the two macOS sentences and no read at all.
-            var remoteReads = reads;
-            var remoteSentences = new List<string>();
-            smokePluginDialog = surface =>
-            {
-                var panel = PluginControl<StackPanel>(surface.Dialog, "claude", "remote-unavailable");
-                remoteSentences.AddRange(panel.Children.OfType<TextBlock>().Select(t => t.Text));
-                return Task.CompletedTask;
-            };
-            await ShowPluginBrowser("claude", workspace with { Id = "smoke-remote", Remote = new RemoteReference("smoke", "peer", "Fixture host") });
-            Require(reads == remoteReads, "원격 워크스페이스에서 플러그인을 읽으려 했습니다.");
-            Require(remoteSentences.SequenceEqual([PluginStrings.RemoteTitle, PluginStrings.RemoteNote]),
-                "원격 워크스페이스의 두 문장이 macOS와 다릅니다.");
-
             outcome = new ClaudePluginSmokeOutcome
             {
                 Title = title,
@@ -519,7 +496,6 @@ public sealed partial class MainWindow
                 InstalledSubtitle = installedSubtitle,
                 AvailableSubtitle = availableSubtitle,
                 ReloadedFromStatus = reloadedStatus,
-                RemoteSentences = remoteSentences,
                 Reads = reads,
                 MutatingControls = mutating,
                 Restored = true,

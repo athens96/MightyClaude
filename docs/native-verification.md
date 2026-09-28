@@ -23,7 +23,6 @@
 - 배포 ZIP을 직접 내려받아 동봉 SHA-256과 비교했다. x64 669개·ARM64 665개 파일에서 실행 파일의 PE 아키텍처, .NET·WinUI 런타임, `resources.pri`, 아이콘, 라이선스, 숨김 Claude Mods 매니페스트와 소스 커밋을 확인했다. .NET SDK 10.0.401·Windows App SDK 2.4.0으로 생성된 서명 없는 폴더 패키지다.
 - 두 아키텍처의 밝은·어두운 테마 원본 PNG 4장을 직접 확인했다. 모든 픽셀의 알파가 255이며, 사이드바·탭·Markdown·입력창·컨텍스트 버튼이 정상적으로 읽힌다.
 - SHA-256: x64 `adab0415f6ec3a4b6b1cc7074ece4ed9d4fe0310d8f3c4fe221d7b852885a353`, ARM64 `b02cea143525b333e9dd8e2d6c6bdea0fd283d90d31be5691c87732941f4f44e`.
-- [동일 커밋의 참조 구현 CI](https://github.com/athens96/MightyClaude/actions/runs/35166591873)는 Mac·Windows 모두 성공했다. Windows에서는 75개 검사 통과·다른 플랫폼 전용 3개 생략, 타입 검사와 패키징이 통과했다.
 - Mac의 Swift 127개 검사는 통과했으나 이 CI 실행의 GUI 검증은 실행/중지 버튼의 접근성 탐색에서 실패했다. 따라서 위 성공 범위는 Windows 작업이며 전체 Native clients 실행 또는 Mac 배포의 성공을 의미하지 않는다. 별도 로컬 Mac 번들의 동일 기능 스모크는 통과했으며 CI 접근성 진단을 추가했다.
 
 아래는 각 구현 시점의 기록이다. 현재 Windows 배포 범위와 다운로드 방법은 [README](../README.md)를 기준으로 한다.
@@ -31,21 +30,19 @@
 ## 2026-09-17: Windows basic release preparation
 
 - Windows x64 and ARM64 WinUI sources compile on macOS with .NET 10.0.302, with zero warnings or errors. These checks compile C# only; actual Windows publish and GUI results are pending CI at this preparation checkpoint. Windows CI performs the complete publish and native GUI launch for each architecture.
-- C# Core regression checks passed: 27 passed and one Windows-only Job Object/console check skipped on macOS. Coverage includes structured tool timing, current context versus cumulative usage, damaged optional metadata, state restoration, authenticated Mods events, legacy-compatible remote delivery, real fixture child processes, cancellation and loopback HTTP. No model request was sent.
+- C# Core regression checks passed: 27 passed and one Windows-only Job Object/console check skipped on macOS. Coverage includes structured tool timing, current context versus cumulative usage, damaged optional metadata, state restoration, authenticated Mods events, real fixture child processes, cancellation and loopback HTTP. No model request was sent.
 - HTTP startup originally stalled while ASP.NET's default configuration providers watched the repository working directory. The embedded host now uses an empty builder, an explicit application content root and explicit Kestrel configuration. Its listener and request limits remain unchanged; the actual HTTP tests pass after the correction.
-- Swift Core: 127 tests passed across 17 suites on an isolated rerun. Two executable-fixture timeouts occurred during the first concurrent run; all 19 updater/account tests and then the full suite passed when rerun separately. The reference Electron check passed type checking, 75 tests (two skipped) and the production build.
+- Swift Core: 127 tests passed across 17 suites on an isolated rerun. Two executable-fixture timeouts occurred during the first concurrent run; all 19 updater/account tests and then the full suite passed when rerun separately.
 - Independent source reviews covered the Windows UI, Core event transport, startup and packaging. The Windows CI smoke uses a fresh profile and fake AI execution to check native composer retention, bounded height, one send/stop action, draft and attachment preservation, tool summaries, cross-paragraph selection and workspace docking. Its JSON report explicitly distinguishes these checks from physical keyboard/IME and pointer testing.
-- Windows basic scope includes CLI execution, native input/transcript, tabs/splits, context details and remote workspaces. The Mighty graph, pet, account island, CLI updater and local Claude permission approval UI remain macOS-only, as listed in the README. Windows distribution is an unsigned self-contained folder ZIP; the Visual C++ runtime prerequisite is documented.
+- Windows basic scope includes CLI execution, native input/transcript, tabs/splits and context details. The Mighty graph, pet, account island, CLI updater and local Claude permission approval UI remain macOS-only, as listed in the README. Windows distribution is an unsigned self-contained folder ZIP; the Visual C++ runtime prerequisite is documented.
 
 검증 환경: 2026-09-16, Apple Silicon macOS, Xcode Command Line Tools의 Swift 6.4와 .NET SDK 10.0.302.
 
 ## macOS
 
 - SwiftUI/AppKit 릴리스 앱 빌드 성공. `codesign --verify --deep --strict` 통과.
-- Swift 테스트: 핵심 로직 14개와 원격 연결 5개 통과. C# 호스트가 필요한 교차 언어 테스트 1개는 기본 실행에서 조건부 생략한다.
-- 검증 범위: 기존 상태 복사·손상 파일 보호, 모델/설정 검증, 세 프로바이더의 스트림 파싱, 실행 취소와 자식 프로세스 정리, Mods 인증, 원격 셸 실행·중지·연결 해제.
-- 원격 경계 검증: 잘못된 키·Origin·프로토콜 버전, 중복 HTTP 헤더, chunked 요청, 과대 요청, 리디렉션, 공용/LAN 주소 거부.
-- 교차 언어 검증: 별도로 실행한 실제 C# 원격 호스트에 Swift 클라이언트를 연결하여 셸 실행·출력 수신·중지를 확인했다. 기본 실행에서 생략되는 테스트도 이 호스트를 지정한 실행에서는 통과했다.
+- Swift 테스트: 핵심 로직 14개 통과.
+- 검증 범위: 기존 상태 복사·손상 파일 보호, 모델/설정 검증, 세 프로바이더의 스트림 파싱, 실행 취소와 자식 프로세스 정리, Mods 인증.
 - 실제 네이티브 창에서 Claude·Codex·Gemini·명령 창을 함께 표시하고, `printf` 완료와 `sleep` 중지, 설정을 저장한 후 새 저장소에서 읽기를 확인했다. 창 이미지를 직접 확인했다.
 - 정리 후 종료하도록 AppKit 종료 처리를 수정했다. 최종 릴리스 앱의 `--smoke-exit` 실행이 결과 파일 생성과 최종 저장 후 종료 코드 0으로 끝났다.
 - AppKit의 정상 종료 요청에서도 최종 저장과 종료 코드 0을 확인했다. 실제 ⌘Q 키 입력을 자동화한 검증은 아니다.
@@ -65,9 +62,9 @@ release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
 
 ## Windows
 
-C# 핵심 로직은 macOS에서도 실행 가능한 별도 프로젝트로 분리했다. 통합 검증 14개 묶음이 통과했고 Windows 전용 Job Object·Unicode 검증 1개는 이 Mac에서 생략됐다. 검증 범위는 세 프로바이더, 상태 가져오기·저장 보호, 실행 취소, Mods 인증·메타데이터, 원격 인증·허용 폴더·출력 커서·연결 유효기간·연결 키 교체를 포함한다.
+C# 핵심 로직은 macOS에서도 실행 가능한 별도 프로젝트로 분리했다. 통합 검증 14개 묶음이 통과했고 Windows 전용 Job Object·Unicode 검증 1개는 이 Mac에서 생략됐다. 검증 범위는 세 프로바이더, 상태 가져오기·저장 보호, 실행 취소, Mods 인증·메타데이터를 포함한다.
 
-별도의 독립 검토에서도 실행 중지 경합, 손상 상태 보호, 원격 응답의 종료 상태·커서 검증 등 8개 확인 항목이 통과했다.
+별도의 독립 검토에서도 실행 중지 경합, 손상 상태 보호 등 8개 확인 항목이 통과했다.
 
 WinUI 3의 C# 컴파일은 macOS에서 Windows 타깃으로 확인했다. 전체 패키징은 Windows SDK의 `mt.exe`(manifest 병합)와 `MakePri.exe`(PRI 리소스 생성)가 필요하여 이 Mac에서 완료하지 못했다. WinUI 화면·DPAPI·Windows Job Object의 실제 동작은 Windows에서 검증해야 한다.
 
@@ -86,7 +83,7 @@ dotnet run --project native/windows/MightyClaude.Core.Tests
 pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 ```
 
-`.github/workflows/native.yml`에 macOS/Windows 빌드와 검증을 추가했다. 이 작업에서 원격 CI를 실행하거나 배포하지는 않았다.
+`.github/workflows/native.yml`에 macOS/Windows 빌드와 검증을 추가했다. 이 작업에서 GitHub Actions CI를 실행하거나 배포하지는 않았다.
 
 ## 입력 영역 개선과 CLI 업데이트
 
@@ -112,14 +109,13 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 - Mac과 Windows의 입력창에 파일 선택·드래그 앤 드롭·이미지 붙여넣기, 미리보기와 개별 삭제, 첨부만 보내기를 연결했다. 첨부 초안은 메모리에 유지하며 요청이 수락된 뒤 해당 요청에 포함된 ID만 제거한다.
 - Swift 검사 29개 정의 중 28개가 통과했고 기존 C# 호스트 fixture 검사 1개는 조건부 생략했다. 새 검사는 MIME/크기/경로/base64 검증, 이모지 파일명과 BOM 텍스트, 안전한 임시 복사, 프로바이더별 입력과 재개 인자, 실행 종료·오류·취소 정리, 시작 수락 전 취소를 포함한다.
-- 원격 검사는 600 KiB 바이너리가 원래 내용 그대로 전달되는지, 구버전 호스트에는 POST가 발생하지 않는지, 잘못된 인증 및 다른 경로의 큰 요청은 본문을 보내기 전 거절되는지 확인했다. JSON의 슬래시 이스케이프로 base64 요청이 불필요하게 커지지 않는 것도 검사했다. 실제 모델 작업은 만들지 않았다.
 - Mac 최종 릴리스 빌드·서명 검증과 `/private/tmp/mighty-attachments-release-20260916/smoke-result.json`의 `passed=true`, 종료 코드 0을 확인했다. 파일 URL 및 드롭 provider, private pasteboard 이미지 붙여넣기, 첨부 전용 보내기, 제거·전체 제거·개수 제한, 첨부 데이터 미저장, 명령 창 거부를 검사했다. 주황·파랑 체크 이미지가 실제 첨부 썸네일로 보이는 화면을 확인했다.
 - 기존 네이티브 텍스트 붙여넣기와 동일 편집기 유지, 한 줄 높이·내용에 따른 증가·삭제 후 축소 검사도 통과했다. 사용자 시스템 클립보드는 읽거나 변경하지 않았다. 실제 파일 선택 창의 클릭·일반 Cmd+V 키 조합·한글 IME 조합은 자동화하지 않았다. 새 앱을 기존 사용자 프로필로 다시 열었다.
-- Windows 핵심 검증은 19개 묶음 통과·Windows 전용 1개 생략, 최종 WinUI C# 컴파일은 경고·오류 0건으로 통과했다. 세 프로바이더의 테스트 CLI에 첨부를 전달하고 실행 종료·오류·중지 시 사본 정리, 시작 실패·취소 시 수락 실패, 600 KB 원격 전달과 기능 광고 검사를 확인했다. `+`가 많은 base64도 JSON 이스케이프로 커지지 않도록 첨부 필드에 한정해 처리하고 회귀 검사했다. Windows 실제 파일 선택·드롭·클립보드 UI는 이 Mac에서 실행하지 않았다.
+- Windows 핵심 검증은 19개 묶음 통과·Windows 전용 1개 생략, 최종 WinUI C# 컴파일은 경고·오류 0건으로 통과했다. 세 프로바이더의 테스트 CLI에 첨부를 전달하고 실행 종료·오류·중지 시 사본 정리, 시작 실패·취소 시 수락 실패와 기능 광고 검사를 확인했다. `+`가 많은 base64도 JSON 이스케이프로 커지지 않도록 첨부 필드에 한정해 처리하고 회귀 검사했다. Windows 실제 파일 선택·드롭·클립보드 UI는 이 Mac에서 실행하지 않았다.
 
 ## Mac Ghostty 터미널
 
-- Mac 로컬 Shell 창을 Ghostty의 네이티브 AppKit/Metal 화면과 실제 PTY로 전환했다. AI 채팅과 Windows·원격 명령은 기존 실행 경로를 유지한다. [구현과 의존성](native-terminal.md)
+- Mac 로컬 Shell 창을 Ghostty의 네이티브 AppKit/Metal 화면과 실제 PTY로 전환했다. AI 채팅과 Windows 명령은 기존 실행 경로를 유지한다. [구현과 의존성](native-terminal.md)
 - 최종 릴리스의 `/private/tmp/mighty-ghostty-smoke4-20260916/terminal-smoke-result.json`은 `passed=true`, 프로세스 종료 코드는 0이었다. 실제 TTY, 셸 PID, 현재 폴더 유지와 OSC 7 폴더·제목 콜백, 방향키 기록 탐색, Ctrl+C로 전경 작업 중지 후 계속 입력을 확인했다.
 - ANSI 빨간 글자와 대체 화면을 직접 확인했고, 기본 화면으로 돌아온 뒤 기존 스크롤 기록이 유지됐다. 창 크기를 변경하자 PTY가 44행·150열에서 32행·105열로 바뀌며 화면 격자 콜백과 일치했다.
 - 열·그리드·집중 배치와 다른 워크스페이스를 오간 뒤 같은 셸 PID·폴더·화면 객체가 유지됐다. `exit` 후 종료 상태 표시, 다시 시작한 셸의 새 PID, 전경 프로세스가 실행 중인 창을 닫았을 때 셸과 자식 PID가 모두 사라지는 것을 확인했다.
@@ -150,27 +146,24 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 - 실제 유료 모델 작업은 실행하지 않았다. 파서·옵션·취소는 테스트용 CLI와 실제 셸 프로세스로 검증했다.
 - 최초 검증 시 Claude Code 2.1.263은 Mods 지원 기준 2.1.271보다 낮아 실행이 제한됐다. 이후 사용자의 요청으로 공식 `claude update`를 실행해 2.1.273으로 업데이트했고 `claude --version`과 격리된 설정 폴더에서 MightyClaude Mods 플러그인 검증 통과를 확인했다.
-- 실제 Tailscale 두 컴퓨터 간 통신은 확인하지 않았다. 전송·인증·실행 수명주기는 테스트 전용 루프백 연결에서 검증했다. 제품 모드에서는 루프백 예외를 켜지 않는다.
 - macOS 패키지는 로컬 ad-hoc 서명이다. 배포용 서명·공증·업데이트와 Windows 실기기 검증은 별도다.
 - 기본 너구리 아이콘·첨부 입력창·Ghostty 렌더러와 리소스를 포함한 macOS 앱 패키지의 디스크 사용량은 `du -sh` 기준 약 17M이다. 외부 CLI를 제외한 크기이며 시작 시간·메모리 사용량·실행 속도의 벤치마크는 아니다.
-
-기존 Electron 구현의 결과는 [이전 검증 기록](verification.md)에 남아 있다. 해당 결과를 네이티브 앱의 검증 결과로 사용하지 않는다.
 
 ## Agent Markdown, live activity and companion — 2026-09-16
 
 - Mac release build succeeded with the existing Command Line Tools linker warnings.
-- Swift Core: 43 PASS; 1 conditional C# fixture-host test skipped. Eight new activity tests cover direct Claude/Mods/Codex/Gemini events, tool identity and ordering, bounds, logical long Markdown messages, real child exit vs tool completion, authenticated Mods transport and old/new remote activity negotiation.
+- Swift Core: 43 PASS; 1 conditional C# fixture-host test skipped. Eight new activity tests cover direct Claude/Mods/Codex/Gemini events, tool identity and ordering, bounds, logical long Markdown messages, real child exit vs tool completion, authenticated Mods transport.
 - Mods: 6 Vitest tests passed, TypeScript no-emit check passed, and installed Claude Code validated all five observation hooks in an isolated config without sending an AI request.
 - Agent native smoke: Markdown headings/nested lists/quotes/code/table/link safety, unfinished fences, one completion per run, no success alert on tool completion or error, parallel waiting tools, agent/workspace focus, pet frames/import/path traversal rejection/settings persistence and actual status/settings views passed.
 - Existing composer/attachments/Enter/Shift+Enter and docking/PTY retention regression smokes passed. The docking test retained the same live shell PID while resizing to 18×88.
 - Generated superhero pet: nine rows, 57 used frames, 1536×1872 transparent WebP, no transparent RGB residue. Stable extraction corrected jump rescaling; a separately generated leftward row replaced the mirrored draft. Independent visual QA approved every row and cleared the expected stable-slot review warnings.
 - Runtime pet packages are under `assets/pets/mighty-raccoon`; previews and validation are under `artifacts/pet-run`. No Codex pet installation or original Amon project files were changed.
 - Native notification event deduplication and click routing are implemented. Test mode deliberately sends no system notification; actual banner delivery and permission-dialog behavior still depend on macOS notification permission and were not automatically exercised.
-- This feature was implemented and exercised in the native Mac client. Windows keeps its existing UI; shared Mods and remote changes retain its old protocol behavior.
+- This feature was implemented and exercised in the native Mac client. Windows keeps its existing UI.
 
 ## 2026-09-16: Local approvals, continuous selection and pet requests
 
-- Native tests: 51 definitions, 50 passed and 1 conditional .NET fixture-host skip. Seven permission tests cover original-input one-use allow/deny, stale and cancelled requests, initialization and input bounds, remote opt-out, actual fake-CLI stdio, and exit before initialize/result. No model request was sent.
+- Native tests: 51 definitions, 50 passed and 1 conditional .NET fixture-host skip. Seven permission tests cover original-input one-use allow/deny, stale and cancelled requests, initialization and input bounds, actual fake-CLI stdio, and exit before initialize/result. No model request was sent.
 - The installed Claude Code 2.1.273 accepted the official SDK stdio initialization with an isolated profile and zero prompt frames. Actual model-driven WebSearch and home-file access were not run; explicit CLI deny rules still apply. App approval forwarding remains local Claude only.
 - Native agent smoke passed: actual NSTextView mouse-down/drag/up across paragraphs, tool rows and messages; private-pasteboard copy; selection retention through append, earlier edits and pruning; Markdown tables/code/headings; pending-card deduplication and cleanup; pet input/activity separation and restoration; focus and notification deduplication.
 - Actual permission-card and pet screenshots were visually reviewed. Full request details are expanded by default. The pet shows submitted request and current task separately. Screenshots and the agent result are retained under `artifacts/agent-ui`.
@@ -178,7 +171,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 ## 2026-09-16: Composer, workspace tabs, elapsed time and permission modes
 
-- Swift native tests: 57 definitions, 56 passed and one conditional .NET fixture-host skip. New coverage includes request timing and workspace mode/selection isolation, plus Claude Auto schema, capability gating, persistence and remote compatibility. Fake Claude verifies `--permission-mode auto` with the existing host approval replies; a legacy remote receives no POST for unsupported Auto.
+- Swift native tests: 57 definitions, 56 passed and one conditional .NET fixture-host skip. New coverage includes request timing and workspace mode/selection isolation, plus Claude Auto schema, capability gating and persistence. Fake Claude verifies `--permission-mode auto` with the existing host approval replies.
 - Native composer presentation checks passed at 920, 540 and 315pt widths with a deliberately long model name: every control is 32pt high, vertical center spread is zero and all controls remain inside the window. Native menu style was changed to preserve the custom label layout, with accessibility labels combined so controls retain their full bounds.
 - Actual NSTextView insertion and Korean marked-text composition hide the placeholder immediately. Clearing restores it. Editor, delegate, focus and hit testing remain intact.
 - Embedded transcript disclosure, collapse, output append, width resize and continuous selection passed. A 28-line expanded tool ends at Y=744 and the next message begins at Y=788. The original reported overlap was not reproduced in baseline glyph geometry; suffix layout/display invalidation and document height synchronization were added, and the resulting real embedded views were visually checked.
@@ -200,7 +193,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 ## 2026-09-16: Single add menu and completed tool durations
 
 - Removed the workspace preset menu and per-group add/split menus. The workspace header owns the add menu; native tab docking and divider resizing remain. Latest native screenshots and layout smoke confirm merge, split, reorder, cancellation, draft/attachment retention and the same live terminal process still work.
-- Native tests: 64 definitions, 63 passed and one conditional .NET fixture-host skip. Tool duration tests cover all three providers, Mods/CLI duplicate and late events, waiting, stop, orphan results, bounded eviction, damaged optional metadata, disk restoration and actual remote HTTP delivery.
+- Native tests: 64 definitions, 63 passed and one conditional .NET fixture-host skip. Tool duration tests cover all three providers, Mods/CLI duplicate and late events, waiting, stop, orphan results, bounded eviction, damaged optional metadata and disk restoration.
 - The latest agent smoke confirms `12.3초` appears in the native transcript beside a completed tool summary, with selection/disclosure and overall request/pet clocks intact. The collapsed-tool screenshot was visually reviewed; the expanded screenshot intentionally shows the lower output and following paragraph.
 - Final agent and layout smoke suites passed without a model request or system notification. Independent source and visual reviews found no blockers. The packaged app passed deep signature verification and was installed and reopened after confirming no active AI child process.
 
@@ -209,8 +202,8 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 - A new baseline check clicked an empty AppStore-backed composer and sent its first native key. Plain text, focus and binding worked. A Korean first consonant disappeared when the store notified a view refresh during composition: `firstKoreanMarkedImmediately=true`, `firstKoreanMarkedAfterRender=false`. The screenshot showed the empty placeholder returning. This reproduces an input synchronization fault before any CLI submission.
 - The baseline layout smoke passed after tab renaming was added: actual native mouse merge/split/reorder and cancellation, draft/attachment retention, saved workspace layouts and the same live Ghostty PID. The screenshot confirms the extra top toolbar is hidden and native window controls remain visible.
 - The final native composer preserves the same editor, delegate, focus, marked range and selection through store refreshes. First-key and Korean composition tests pass without a leading space. Its own binding echo does not overwrite native text; an explicit external replacement waits for composition to end. The send button includes the first/final marked syllable and commits the input method before submission. Enter still confirms active composition; Shift+Enter inserts a newline. Private text/image paste and bounded automatic height checks pass.
-- Native titlebar hit testing and double-click events zoomed a 1100×760 window to the screen's 1800×1052 visible area, then restored its original frame. Sidebar settings opens remote settings in the same sheet; its size changes from 570×700 to 800×735 and back. Workspace/session renaming via native fields rejects blank/overlong names, supports emoji, persists both names and preserves session data and workspace paths.
-- Final native tests: 67 definitions, 66 passed and one conditional C# fixture-host skip. The three Git tests were discovered and passed under Swift Testing, including an actual temporary repository with untracked files. Git metadata is local and read-only; this does not test a second Tailscale computer.
+- Native titlebar hit testing and double-click events zoomed a 1100×760 window to the screen's 1800×1052 visible area, then restored its original frame. Sidebar settings opens settings in the same sheet; its size changes from 570×700 to 800×735 and back. Workspace/session renaming via native fields rejects blank/overlong names, supports emoji, persists both names and preserves session data and workspace paths.
+- Final native tests: 67 definitions, 66 passed and one conditional C# fixture-host skip. The three Git tests were discovered and passed under Swift Testing, including an actual temporary repository with untracked files. Git metadata is local and read-only.
 - Final agent, composer and layout smoke suites passed, with independent source and visual review. They use native synthetic events and NSTextInputClient composition calls, not physical keyboard automation. No AI request, OS notification, sharing activation or system clipboard modification was performed. Reports and screenshots are retained in `artifacts/agent-ui`.
 - The packaged candidate passed deep, strict code-signature verification and replaced `release/native-macos/MightyClaude.app`. The previous app was normally terminated after checking it had no active AI process; its state was backed up and the updated app reopened.
 
@@ -220,14 +213,14 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 - Read-only detection on this Mac recognizes Claude Code 2.1.273 as native, Codex 0.153.4 as a Homebrew cask and Gemini 0.43.0 as npm. All three have a recognized update path. No installed CLI was upgraded during these checks.
 - An initial GUI diagnostic incorrectly treated SwiftUI's accessibility press return value as the toggle outcome. The saved preference confirmed that the action had succeeded despite its return value. The diagnostic now dispatches once and checks the actual bound preference, without a second click.
 - Final isolated GUI smoke passed: default off, actual toggle changes, automatic once per startup, manual runs while automatic is off, repeated-action deduplication, failure continuation, active-provider/shared-host skipping, new-request blocking during update, and visible progress/results. Every update operation was injected with a fake; only installed version/method inspection used real CLIs. Reports and screenshots are in `artifacts/cli-updates`.
-- Existing full agent UI smoke also passed, including composer IME, transcript selection/disclosures, pet timing, renaming, titlebar zoom and Tailscale settings navigation. The final UI screenshots were visually reviewed. Runtime refresh now completes its state cleanup before its task finishes, so a refresh after updating cannot accidentally rejoin a completed stale probe.
+- Existing full agent UI smoke also passed, including composer IME, transcript selection/disclosures, pet timing, renaming, titlebar zoom and settings navigation. The final UI screenshots were visually reviewed. Runtime refresh now completes its state cleanup before its task finishes, so a refresh after updating cannot accidentally rejoin a completed stale probe.
 - The final app passed deep, strict signature verification and was installed into `release/native-macos/MightyClaude.app`. The previous app was normally closed after confirming no active AI process, its state was backed up, and the new app reopened. Automatic updates remain opt-in; verification did not enable them in the user's profile.
 
 ## 2026-09-16: Conversation context and account islands
 
-- Native tests: 96 definitions, 95 passed and one conditional .NET fixture-host skip. Seven new usage tests cover provider token scopes, duplicate snapshots, unknown context, Claude cache accounting and compaction, independently timestamped account limits, resilient persistence, authenticated Mods delivery and real remote transport using a fake Gemini executable. Nine account tests cover fake metadata-only Codex RPC, Claude HTTP/authentication boundaries, malformed quota, retry limits and process timeout cleanup.
+- Native tests: 96 definitions, 95 passed and one conditional .NET fixture-host skip. Seven new usage tests cover provider token scopes, duplicate snapshots, unknown context, Claude cache accounting and compaction, independently timestamped account limits, resilient persistence, authenticated Mods delivery using a fake Gemini executable. Nine account tests cover fake metadata-only Codex RPC, Claude HTTP/authentication boundaries, malformed quota, retry limits and process timeout cleanup.
 - TypeScript type checking passed. Eight Mods tests passed, and the installed Claude CLI accepted the plugin's six hooks, including direct `$.session.usage()` and `$.clock.now()` calls. Validation used an isolated profile, without model requests or login changes.
-- The complete agent GUI smoke passed with fixtures: context control alignment at 315/540/920-point widths, live session detail updates, fixed session routing, unknown values, both account island popovers, remote account separation and the independent floating-island preference. Existing composer IME, transcript selection/disclosure, pet timing, rename and titlebar checks also passed. The context detail popup's long-content clipping was corrected and its actual native viewport bounds verified.
+- The complete agent GUI smoke passed with fixtures: context control alignment at 315/540/920-point widths, live session detail updates, fixed session routing, unknown values, both account island popovers and the independent floating-island preference. Existing composer IME, transcript selection/disclosure, pet timing, rename and titlebar checks also passed. The context detail popup's long-content clipping was corrected and its actual native viewport bounds verified.
 - The final account-card popup reserves scrollbar width and restores the overall content proposal with trailing padding. Its actual NSClipView/card-boundary assertion passed, and independent visual review confirmed that percentages, labels and bars remain inside the cards. After screen unlock, the final complete GUI run passed with account-island diagnostics first, followed by all existing composer, session-detail and agent checks. The original composer diagnostic implementation is retained. `artifacts/session-usage/agent-smoke-result.json` is the final passing report; the earlier report is explicitly labeled as preceding the final quota-width correction.
 - Evidence is saved in `artifacts/session-usage`. Account/network verification uses fixtures; no model or real account API request was made by the tests. Current limitations are documented in `docs/session-usage.md`: Codex/Gemini context percentages and Gemini account quotas remain unavailable through the current connections.
 - The packaged app passed deep, strict signature verification. The old app was normally terminated after checking for active work, its state was backed up under `/private/tmp/mighty-session-island-state-*`, and the final verified build was installed into `release/native-macos/MightyClaude.app` and reopened.
@@ -252,10 +245,10 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 ## 2026-09-16: Claude plugin browser in Mighty mode
 
-- Ten new Core tests passed with fake executable fixtures. They cover installed scopes and other-project exclusion, exact plugin/scope/working-directory arguments, inherited versus exact-workspace installations, unknown/remote rejection, selected marketplace refresh, last-line JSON and command-consent failures, malformed/oversized output, duplicate admission, cancellation, subprocess timeout, missing/old CLI and empty catalogs. Working-directory verification uses filesystem identity so macOS `/var` and `/private/var` aliases do not produce false failures. No real plugin was installed or updated.
+- Ten new Core tests passed with fake executable fixtures. They cover installed scopes and other-project exclusion, exact plugin/scope/working-directory arguments, inherited versus exact-workspace installations, unknown rejection, selected marketplace refresh, last-line JSON and command-consent failures, malformed/oversized output, duplicate admission, cancellation, subprocess timeout, missing/old CLI and empty catalogs. Working-directory verification uses filesystem identity so macOS `/var` and `/private/var` aliases do not produce false failures. No real plugin was installed or updated.
 - A separate read-only executable used the actual `ClaudePluginService.snapshot` against the installed Claude Code 2.1.273. It returned `ready`, nine installed plugins, 2,582 available catalog entries and five registered marketplaces. Metadata counts and schema evidence are saved without copying the full plugin inventory, credentials or account data.
-- The complete native agent GUI smoke passed, including existing graph, composer, context/island, transcript and pet checks. The plugin fixture verifies native installed/catalog rows and action buttons, search/filter state, all three scope choices, success/failure, cancellation, duplicate prevention, explicit selected-market refresh and remote unavailability without local calls. It uses two isolated native windows to check that the same composer, Korean draft and attachment survive browser interactions. Search and scope values are assigned through the view model; install/refresh/cancel/close controls are activated through native accessibility actions.
-- Store admission rejects plugin changes during a Claude run, CLI updates, remote sharing/connection work, or after the workspace path changes. New Claude requests preserve their draft and attachments when blocked by an in-progress installation. Fixtures verify these boundaries; no AI request, real marketplace refresh or OS notification was sent. Reports, screenshots and build/test logs are in `artifacts/claude-plugins`.
+- The complete native agent GUI smoke passed, including existing graph, composer, context/island, transcript and pet checks. The plugin fixture verifies native installed/catalog rows and action buttons, search/filter state, all three scope choices, success/failure, cancellation, duplicate prevention, and explicit selected-market refresh. It uses two isolated native windows to check that the same composer, Korean draft and attachment survive browser interactions. Search and scope values are assigned through the view model; install/refresh/cancel/close controls are activated through native accessibility actions.
+- Store admission rejects plugin changes during a Claude run, CLI updates, or after the workspace path changes. New Claude requests preserve their draft and attachments when blocked by an in-progress installation. Fixtures verify these boundaries; no AI request, real marketplace refresh or OS notification was sent. Reports, screenshots and build/test logs are in `artifacts/claude-plugins`.
 - Independent source and screenshot reviews passed. The candidate passed deep, strict signature verification. After confirming no active AI child process, the prior app was normally terminated, its state backed up to `/private/tmp/mighty-plugin-state-bxcv16gw`, and the verified build installed into `release/native-macos/MightyClaude.app` and reopened. Existing plugin installations and CLI update preferences were not changed by deployment.
 
 ## 2026-09-17: Titlebar band, header focus button, expand glyph and background task blocks
@@ -266,7 +259,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 ## 2026-09-17: Reference links and the side bubble in Mighty mode
 
-- Mighty block text now links repo-relative and absolute file paths, `path:line` forms, relative Markdown links and `https://` addresses. Clicking a path opens a speech bubble docked on the right (or left) of the graph viewport that renders Markdown, shows HTML in a non-persistent `WKWebView` limited to `file:` navigation inside the document's directory, displays images, or shows text in monospace; larger-than-2 MiB and non-text files are directed to the default app. Paths resolve only to existing regular files under the workspace root after standardizing and resolving symlinks; anything else opens the bubble with a "not found in workspace" notice and reads nothing. Remote workspaces and the basic transcript create no links.
+- Mighty block text now links repo-relative and absolute file paths, `path:line` forms, relative Markdown links and `https://` addresses. Clicking a path opens a speech bubble docked on the right (or left) of the graph viewport that renders Markdown, shows HTML in a non-persistent `WKWebView` limited to `file:` navigation inside the document's directory, displays images, or shows text in monospace; larger-than-2 MiB and non-text files are directed to the default app. Paths resolve only to existing regular files under the workspace root after standardizing and resolving symlinks; anything else opens the bubble with a "not found in workspace" notice and reads nothing. The basic transcript creates no links.
 - `ReferenceLinkTests` (4 tests) cover detection (paths, `:line`, Korean adjacency, trailing punctuation, URL exclusion, version/`and/or` lookalikes, oversized paths), Markdown link classification, root containment including `..`, absolute-outside and symlink escapes, directory and missing-file rejection, preview kinds and the in-app link round trip. The full Core suite passed 142 of 144: `AccountUsageTests.codexProbeTimeoutStopsTheFakeChild` failed once on a missing fixture `pid` file under the parallel run and passed on two isolated re-runs (timing), and the pre-existing `CLIUpdateTests` Homebrew failure noted above remains. Built and tested with the Command Line Tools toolchain; `scripts/build-macos.sh` produced `release/native-macos/MightyClaude.app`. No GUI smoke or screenshot was taken, so the bubble's appearance, Esc handling and WKWebView rendering of generated diagrams are unverified in the running app.
 
 ## 2026-09-17: Per-block token usage in Mighty mode
@@ -277,7 +270,6 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 ## 2026-09-17: Resizable reference bubble and launch-time Keychain access
 
 - The reference bubble's width is dragged from the edge facing the diagram and its height from the bottom edge (double click restores 420pt / full graph height). Both values persist in `UserDefaults` and are clamped to the graph viewport, which the view reads through a size preference. No GUI smoke covers the drag handles yet.
-- `RemoteService.loadConnections` no longer reads the Keychain at startup. A saved connection is marked `keychainPending`, and its key is read the first time that connection is refreshed. This removes the per-launch macOS Keychain prompt that ad-hoc signed development builds trigger, because each rebuild has a different code signature and the login keychain treats it as a new application. `scripts/build-macos.sh` accepts `MIGHTY_CODESIGN_IDENTITY` for a stable local code-signing certificate so "Always Allow" persists across rebuilds; without it the prompt still appears once per build on first remote refresh. `RemoteTests`, `MightyGraphTests` and `ReferenceLinkTests` passed (21 tests); the full Core suite passed 145 of 146 with only the pre-existing `CLIUpdateTests` Homebrew case failing. The app was rebuilt and installed to `/Applications`.
 
 ## 2026-09-17: Bubble hit-testing and silent account keychain reads
 
@@ -298,7 +290,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 - Workspace/tab selection and pane docking publish layout, active IDs, view mode, and remembered selection together. Reselecting the same tab does not publish. Delayed composer focus is accepted only when its workspace, selected tab, and native first responder still match. A harness extracting the production methods verified coherent single-publication selection/docking, no-op/invalid selections, empty workspaces, and legacy companion-preference compatibility (`artifacts/input-pane/selection.log`).
 - Graphs compute the initial viewport before first rendering; clicks and inner scrolling also commit that position before delayed initialization can override it. Native transcript layout positions restored history before display, with a new pre-async assertion in `AgentTranscriptDiagnostics`. Extracted production camera functions passed centering and early-interaction checks (`artifacts/input-pane/camera.log`). The window-based transcript diagnostic was compiled but not run; visual flicker and physical keyboard input still require checking in the running app.
 - Removed the camera/account island, bottom button, settings toggle, controller-owned polling, and island diagnostics. The core usage service, per-session context/usage UI, desktop pet, and completion notifications remain. Legacy island preferences are ignored without resetting pet preferences.
-- The native debug build and 39 selected Core tests passed (`artifacts/input-pane/tests.log`). Three loopback/socket tests were excluded because this sandbox denies socket operations (`EPERM`): `remoteGraphUsesExplicitOptInAndPreservesParentAndEntries`, `authenticatedModUsageCrossesRealLoopbackWithoutPrompts`, and `actualRunnerAndRemoteClientCarryUsageFromFakeGemini`. Independent source review approved the fixes. No model prompts were sent for verification.
+- The native debug build and 39 selected Core tests passed (`artifacts/input-pane/tests.log`). Loopback/socket tests were excluded because this sandbox denies socket operations (`EPERM`). Independent source review approved the fixes. No model prompts were sent for verification.
 - Packaged the release app at `release/native-macos/MightyClaude.app` and verified its ad-hoc signature with `codesign --verify --deep --strict` and its Info.plist. Existing packaged icons were reused because `iconutil` fails in this environment, and separate debug symbols were disabled because sandboxed `dsymutil` fails. The installed `/Applications/MightyClaude.app` was not replaced: `/Applications` is outside this session's writable roots. The new binary's SHA-256 is `0eb672d101e238c3ea371c72f451cb99f926201d1476061e4959747acc9a9933`.
 
 ## 2026-09-17: New panes inherit the most recently used pane's settings
@@ -317,9 +309,9 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 ## 2026-09-17: Status bar account usage, persistent sidebar expansion, bare pane titles, provider glyphs
 
-- After the island removal, the bottom status bar carries account limits again in its own style: one 10pt capsule per provider with local AI panes (`세션 21% · 주간 60%`, orange at 90%+), backed by `AccountUsageStatusController` (`StatusBarUsage.swift`), which polls `AccountUsageService` every 60 seconds without Keychain prompts, prefers newer limits that a running session reported through Mods, and opens a popover with account/plan, progress bars, reset times, last-checked time, an interactive refresh and the Keychain permission button. Remote workspaces are excluded.
+- After the island removal, the bottom status bar carries account limits again in its own style: one 10pt capsule per provider with local AI panes (`세션 21% · 주간 60%`, orange at 90%+), backed by `AccountUsageStatusController` (`StatusBarUsage.swift`), which polls `AccountUsageService` every 60 seconds without Keychain prompts, prefers newer limits that a running session reported through Mods, and opens a popover with account/plan, progress bars, reset times, last-checked time, an interactive refresh and the Keychain permission button.
 - Sidebar workspaces keep their own open/closed state: a chevron button toggles the pane list, selecting a workspace opens its list without closing others, and the list is saved as `AppSnapshot.expandedWorkspaceIds` (nil in older state keeps the previous active-only behaviour). Normalization drops unknown workspace IDs.
-- New panes are named after the executor alone (Claude, Codex, Gemini, 터미널, 원격 명령). Saved auto-generated names such as "Claude 1" fold to the bare name on load (`StateRepository.legacyNumberedTitle`); titles the user typed are untouched unless they exactly match that generated form.
+- New panes are named after the executor alone (Claude, Codex, Gemini, 터미널). Saved auto-generated names such as "Claude 1" fold to the bare name on load (`StateRepository.legacyNumberedTitle`); titles the user typed are untouched unless they exactly match that generated form.
 - Provider glyphs (`ProviderIcon`, `ProviderIconImage`): Claude keeps the asterisk, Gemini uses SF `sparkle`, Codex draws a six-bar hexagonal knot; the same shapes feed the sidebar, tabs, composer pill, empty pane, transcript headers, session info and settings, and the add-pane menu through rendered NSImages.
 - `SnapshotPreferencesTests` (2 tests) cover expansion normalization and round trip and the title migration rules. The full Core suite passed 190 of 190. The 15:08 build was installed to `/Applications` and passed its own `--smoke-test`; the chips' appearance, the popover and the Codex glyph were not checked visually.
 
@@ -329,7 +321,7 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 ## 2026-09-17: Mid-turn messages and the request queue
 
-- Verified with Claude Code 2.1.274 that a second `{"type":"user"}` frame written to stdin while a `--input-format stream-json` turn is running is read between tool calls and answered in the same turn (one `result`, `num_turns` 2). `codex exec` reads its prompt once and closes stdin, so Codex, Gemini, remote workspaces and shell panes cannot take mid-turn input.
+- Verified with Claude Code 2.1.274 that a second `{"type":"user"}` frame written to stdin while a `--input-format stream-json` turn is running is read between tool calls and answered in the same turn (one `result`, `num_turns` 2). `codex exec` reads its prompt once and closes stdin, so Codex, Gemini and shell panes cannot take mid-turn input.
 - Local Claude panes therefore deliver composer text during a run through `ProcessRunner.steer` when the user presses ⌘Enter (`AppStore.submit(_:steering:)`); plain Enter and the send button queue it as the next request instead, which writes the frame on the permission channel's open stdin and adds a `steer` node under main; `SteeringGraphTests` covers the block lifecycle (running until the next root text answer, stopped on early finish, duplicate ids folded) and the stdin frame shape. Every other pane appends the text to an in-memory queue that drains on `completed`, clears on `stopped`, and pauses on `error`.
 
 ## 2026-09-17: Claude quota without the Keychain
@@ -339,19 +331,17 @@ pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release
 
 ## 2026-09-17: Mobile remote host (protocol m1)
 
-- `MobileRemoteService` is a second `HTTPServer` bound to the Tailscale IP with its own persisted key and long-poll revision bus; `AppStore+MobileRemote` turns snapshot/permission/queue changes into revisions and applies commands through the same paths the composer uses (`start`, `deferInput`, `stop`, `answerPermission`, `answerQuestionnaire`, `addSession`). `HTTPServer` now cancels the accept timer once a request is handed to its handler and applies a 60 s processing deadline so long-polls are not cut at 15 s.
+- `MobileRemoteService` is a second `HTTPServer` with its own persisted key and long-poll revision bus; `AppStore+MobileRemote` turns snapshot/permission/queue changes into revisions and applies commands through the same paths the composer uses (`start`, `deferInput`, `stop`, `answerPermission`, `answerQuestionnaire`, `addSession`). `HTTPServer` now cancels the accept timer once a request is handed to its handler and applies a 60 s processing deadline so long-polls are not cut at 15 s.
 - `MobileRemoteTests` runs the real listener on loopback: bearer/version/origin checks, long-poll wake-up through `notify`, structured permission cards, every command route, key persistence (0600) and revocation on regeneration, settings normalization.
 
-## 2026-09-17: Components section (Tailscale installer)
+## 2026-09-17: Components section
 
-- `TailscaleInstaller` inspects app bundle + CLI and maps `BackendState` to phases; installs via Homebrew cask with `NONINTERACTIVE=1`, falls back to the App Store page, opens the `tailscale login` URL, and runs `tailscale up`. `ComponentInstallerTests` drives it with fixture scripts (mode file for backend states, brew argument/env log, failure path, store fallback).
-- Settings gains 구성 요소 rows for Tailscale, each agent CLI (copyable install command when missing, CLI update when Claude Code is too old for Mods) and any `ComponentCatalog.requiredPlugins` entry (empty; the Mod is bundled).
+- Settings gains 구성 요소 rows for each agent CLI (copyable install command when missing, CLI update when Claude Code is too old for Mods) and any `ComponentCatalog.requiredPlugins` entry (empty; the Mod is bundled).
 
-## 2026-09-18: Relay transport replaces the Tailscale listener for phones
+## 2026-09-18: Relay transport for phone connections
 
 - `MobileRemoteService` no longer opens an HTTP listener. It keeps a control WebSocket to the relay (`relay/`), accepts one data socket per phone, runs the X25519 + HKDF + ChaCha20-Poly1305 handshake from docs/relay.md, checks the pairing key, and tunnels the m1 routes as `{id, method, path, body}` messages; `notify` pushes revision changes to connected phones.
 - `RelayChannelTests` covers key derivation, nonce layout, replay/reorder/direction rejection, tampering, keypair persistence (0600), offer round trip and endpoint normalization. `MobileRemoteTests` exercises the routes and long-poll through `route(...)`. `RelayIntegrationTests` starts the real Node relay (`relay/dist/server.js`) and drives host + phone through it: connected status, QR offer, handshake, auth, request, notify, ping, auth_error.
-- Tailscale installer and its settings row were removed; the desktop-to-desktop `/v1` share still uses Tailscale.
 
 ## 2026-09-18: Slash-command completion in the composer
 

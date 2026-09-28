@@ -24,7 +24,6 @@ public static class SettingsSections
 {
     // Slot ids, in the macOS order. Ids are stable; titles are not.
     public const string Display = "display";
-    public const string RemoteConnection = "remoteConnection";
     public const string PhaseModels = "phaseModels";
     public const string Styles = "styles";
     public const string Components = "components";
@@ -50,7 +49,6 @@ public static class SettingsSections
     public static IReadOnlyList<SettingsSectionSlot> MacOrder { get; } =
     [
         new(Display, DisplayTitle),
-        new(RemoteConnection, null),
         new(PhaseModels, PhaseModelsTitle),
         new(Styles, null),
         new(Components, ComponentSection.SectionTitle),

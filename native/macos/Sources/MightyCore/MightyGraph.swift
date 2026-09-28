@@ -364,8 +364,8 @@ extension RunSession {
             if ["error", "stopped"].contains(status) {
                 for agent in runs[index].agents.indices where !MightyGraphSupport.terminal(runs[index].agents[agent].status) { runs[index].agents[agent].status = status }
             }
-            // A legacy remote has no graph observation. Its real final log is
-            // still available, but no child identities are guessed from text.
+            // A run without a graph observation still has its real final log,
+            // but no child identities are guessed from text.
             if status == "completed", runs[index].sourceRunID == nil {
                 runs[index].finalOutput = runs[index].rootEntries.last(where: { $0.kind == "assistant" })?.text
             }

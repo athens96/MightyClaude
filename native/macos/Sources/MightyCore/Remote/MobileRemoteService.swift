@@ -42,7 +42,7 @@ public struct MobileReply: Sendable {
 }
 
 /// Phone access through a relay (docs/relay.md). The host dials out to the
-/// relay, so no port, VPN or Tailscale is needed; every client connection is
+/// relay, so no port, VPN or extra software is needed; every client connection is
 /// end-to-end encrypted and admitted only with the pairing key. The m1 REST
 /// routes are tunnelled as JSON request/response messages.
 public actor MobileRemoteService {

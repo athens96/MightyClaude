@@ -13,7 +13,7 @@
 | 5 | 9ffeb42 | Test Swift core | 4라운드(`f2dbbe2` 실행) 주석: 컴파일은 통과, 테스트 실행 중 `MightyCoreTests/StyleFixtures.swift:92: Fatal error: Unexpectedly found nil` — `BundledStyles.shared.style(id)!`가 nil. 러너의 SwiftPM은 리소스 번들 `MightyClaude_MightyCore.bundle`을 `.xctest` **안**(Contents/Resources)이 아니라 **옆**(.build/debug)에 두는데, `BundledStyleSource.searchRoots()`에는 `.xctest`의 부모 폴더가 없었다(로컬 Swift 6.4는 안에 복사하므로 통과) | `searchRoots()`에 `.xctest` 번들의 부모를 더함(확장자가 xctest일 때만 — `.app`의 부모는 여전히 제외). `StyleFixtures.bundled`는 nil이면 탐색한 폴더·파일 수·거절 목록을 적고 멈춰 다음 주석이 원인을 말하게 함 |
 | 5 결과 | ac6cbf8 | Check smoke result | **Test Swift core 초록(사상 처음)**, Build·Smoke test 초록. `::error title=macOS GUI smoke::` — `error=단일 실행·중지 버튼의 접근성 상태를 확인하지 못했습니다.; exceptionType=; passed=[]` | (없음 — 상한 5회 소진. 이 실패는 `306d8be` 이전에도 매번 났던 별개의 GUI 문제(아래 수정안 0 참고)이며, 화면 확인 멈춤 때 사용자에게 보고한다) |
 
-실패 단계: `macos` 작업(분리 전 `.github/workflows/native.yml`, 이 브랜치부터 `.github/workflows/native-macos.yml`)의 **Test Swift core and loopback remote execution**
+실패 단계: `macos` 작업(분리 전 `.github/workflows/native.yml`, 이 브랜치부터 `.github/workflows/native-macos.yml`)의 **Test Swift core**
 (`bash scripts/test-native-macos.sh`, 약 42초 뒤 exit 1, 40회 이상 연속 실패). 로컬에서는 같은 스크립트가 459개 검사를 모두 통과한다.
 3라운드(`f9ec5b1`)의 공개 주석으로 원인이 확정됐다 — 아래 '확정된 원인'. 그 아래의 '원인 후보' 표와
 증거 절은 확정 전의 기록으로 남겨 두되, 판정 칸을 실제 주석에 비추어 갱신했다.
@@ -22,7 +22,7 @@
 
 ## 확정된 원인 (3라운드 공개 주석, SHA `f9ec5b1`)
 
-`macos` 작업의 **Test Swift core and loopback remote execution** 단계가 남긴 공개 체크런 주석
+`macos` 작업의 **Test Swift core** 단계가 남긴 공개 체크런 주석
 (`::error title=macOS Swift tests::`, 자격 증명 없는 공개 REST API로 SHA를 통해 읽음):
 
 ```
@@ -92,7 +92,6 @@ return StylePrerequisiteResult(ready: false, missing: missing, hint: unmet.first
 | A | `CLIUpdateTests`의 셸 픽스처가 CI 러너의 낮은 CPU·IO에서 `metadataTimeout`을 넘겨 실패 | 낮음 | **아님** — 주석에 검사 실패가 하나도 없다(컴파일 단계에서 죽었다) |
 | B | 러너의 Xcode/Swift 버전과 Swift Testing 매크로 플러그인 경로 불일치로 빌드 단계에서 exit 1 | 중간 | **부분적으로 맞음** — 플러그인 경로가 아니라 러너의 더 오래된 **컴파일러**가 원인이다 |
 | C | `libghostty-spm` 등 SwiftPM 원격 의존성 해결 실패 | 낮음 | **아님** — 주석에 해결 실패가 없고 컴파일까지 진행됐다 |
-| D | 교차 언어 검사(`MIGHTY_NATIVE_PEER_MANIFEST`) | — | 배제 |
 | E | `RelayIntegrationTests`의 `relay/dist` 부재 | — | 배제 |
 
 ---
@@ -161,11 +160,6 @@ if [[ -f "$TESTING_PLUGIN" ]]; then
 
 `native/macos/Package.swift`가 `libghostty-spm`을 원격 의존성으로 선언한다. 러너에 패키지 캐시가 없는
 상태에서 네트워크나 태그 문제로 해결이 실패하면 검사 0개 실행 후 같은 단계가 exit 1로 끝난다.
-
-### D. 교차 언어 검사 — 배제
-
-`RemoteTests`의 교차 언어 검사는 `ProcessInfo.processInfo.environment["MIGHTY_NATIVE_PEER_MANIFEST"] != nil`
-일 때만 실행된다. CI에는 이 변수가 없어 skip되므로 실패 원인이 아니다.
 
 ### E. RelayIntegrationTests — 배제
 
@@ -239,7 +233,7 @@ CI 수준의 CPU·IO 부하와 러너 이미지 조합은 로컬에서 재현되
 아래 자료가 있어야 후보를 하나로 좁힐 수 있다. **토큰·자격증명·`***` 마스킹 값이 포함된 줄은 제외하고**
 필요한 부분만 발췌해 공유해 주세요.
 
-1. 실패한 **Test Swift core and loopback remote execution** 단계 출력의 첫 30줄 — 의존성 해결(`resolving …`)과
+1. 실패한 **Test Swift core** 단계 출력의 첫 30줄 — 의존성 해결(`resolving …`)과
    컴파일 오류(`error:`) 여부 확인용 (후보 B·C 판별).
 2. 같은 단계 출력에서 `CLIUpdateTests`, `homebrewUsesActualCaskOrFormulaAndOnlyNamedPackage`,
    `Test … failed`, `exited with signal`을 포함하는 줄 전부 (후보 A 판별).

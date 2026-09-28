@@ -274,7 +274,7 @@ public actor ProcessRunner {
         guard !shuttingDown else { throw MightyError("앱이 종료 중입니다.") }
         guard runs[request.sessionId] == nil else { throw MightyError("이 실행 창은 이미 실행 중입니다.") }
         guard runs.count < 16 else { throw MightyError("동시에 실행할 수 있는 창은 16개입니다.") }
-        guard workspace.id == request.workspaceId, workspace.remote == nil, StateRepository.absolutePath(workspace.path, remote: false) else { throw MightyError("이 컴퓨터의 승인된 워크스페이스에서 실행해야 합니다.") }
+        guard workspace.id == request.workspaceId, StateRepository.absolutePath(workspace.path) else { throw MightyError("이 컴퓨터의 승인된 워크스페이스에서 실행해야 합니다.") }
         var directory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &directory), directory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
         let run = ManagedProcess(request); runs[request.sessionId] = run

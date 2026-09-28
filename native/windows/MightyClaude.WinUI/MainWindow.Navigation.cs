@@ -54,7 +54,7 @@ public sealed partial class MainWindow
             var selected = s.Sessions.FirstOrDefault(p => p.WorkspaceId == id && p.Id == preferred)?.Id ?? PaneLayout.Groups(EffectiveLayout(s, id)).Select(g => g.SelectedSessionId).FirstOrDefault();
             return s with { ActiveWorkspaceId = id, ActiveSessionId = selected };
         });
-        Render(); if (!options.SmokeTest) await RefreshRemoteState();
+        Render();
     });
     private static MenuFlyoutItem MenuItem(string text, Func<Task> action)
     {

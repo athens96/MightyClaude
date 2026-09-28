@@ -19,7 +19,6 @@ struct SessionPaneView: View {
     private var running: Bool { session.status == "running" || store.pendingRuns.contains(session.id) }
     private var active: Bool { store.snapshot.activeSessionId == session.id }
     private var localTerminal: Bool { store.usesLocalTerminal(session) }
-    private var remoteCommand: Bool { session.kind == "shell" && store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil }
     private var runtime: ProviderRuntime { store.providerRuntime(session.provider, workspaceId: session.workspaceId) }
     private var models: [ModelOption] { store.modelOptions(for: session) }
     private var effortLevels: [String] { runtime.capabilities.effort ? ProviderOptions.effortLevels(provider: session.provider, model: session.model, catalog: runtime.modelCatalog, registeredModels: (session.provider == "codex" ? store.snapshot.modelDefaults?.codex : store.snapshot.modelDefaults?.claude)?.registeredModels ?? []) : [] }
@@ -27,14 +26,9 @@ struct SessionPaneView: View {
     private var attachments: [RunAttachment] { store.attachmentDrafts[session.id] ?? [] }
     private var importingAttachments: Bool { store.importingAttachments.contains(session.id) }
     private var blockedReason: String? {
-        if let reason = store.runBlockedReason(session, checkRuntime: store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil) { return reason }
-        // Local metadata is refreshed and validated by start preflight.
-        guard store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote != nil else { return nil }
-        if session.kind != "shell", session.settings.effort != "default", !effortLevels.contains(session.settings.effort) {
-            return "선택한 모델에서 저장된 사고 강도를 확인할 수 없습니다. Auto 또는 지원되는 강도를 선택하세요."
-        }
+        if let reason = store.runBlockedReason(session) { return reason }
         if session.kind != "shell" {
-            if !attachments.isEmpty, !runtime.capabilities.attachments { return "이 실행기는 첨부 파일을 지원하지 않습니다. 원격 앱을 업데이트하거나 첨부를 제거하세요." }
+            if !attachments.isEmpty, !runtime.capabilities.attachments { return "이 실행기는 첨부 파일을 지원하지 않습니다. 첨부를 제거하세요." }
             if !runtime.capabilities.permissionModes.contains(session.settings.permissionMode) { return "이 실행기가 저장된 권한 모드를 지원하지 않습니다. 작업 권한을 다시 선택하세요." }
             if session.settings.fastMode, !runtime.capabilities.fastMode { return "이 실행기는 Fast를 지원하지 않습니다. Fast를 끄고 실행하세요." }
             if session.settings.webSearch != "default", !runtime.capabilities.webSearch { return "이 실행기는 웹 검색 설정을 지원하지 않습니다. 더보기에서 미지원 설정을 해제하세요." }
@@ -59,7 +53,7 @@ struct SessionPaneView: View {
     private var styleHint: String { style?.manifest.subtitle ?? "자유 요청" }
     private var offersMightyStyle: Bool {
         session.kind == "claude" && session.provider == "claude" && session.agentViewMode == "mighty"
-            && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+            && store.snapshot.workspaces.contains { $0.id == session.workspaceId }
     }
     private var guidedPhase: StylePhase? {
         guard let style else { return nil }
@@ -121,8 +115,8 @@ struct SessionPaneView: View {
     /// Local Claude panes can show Claude's `statusLine`; the button flips
     /// the same preference as Settings › 화면 for every pane at once.
     private var showsStatusLineToggle: Bool {
-        session.kind == "claude" && session.provider == "claude" && !remoteCommand
-            && store.snapshot.workspaces.contains { $0.id == session.workspaceId && $0.remote == nil }
+        session.kind == "claude" && session.provider == "claude"
+            && store.snapshot.workspaces.contains { $0.id == session.workspaceId }
     }
     private var statusLineToggle: some View {
         let on = store.statusLineEnabled
@@ -261,11 +255,9 @@ struct SessionPaneView: View {
                     }
                 }
             }
-            if store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil {
-                Button(store.isRefreshingModels(for: session) ? "모델 목록 확인 중…" : "모델 목록 새로고침") {
-                    store.refreshModels(for: session.id, invalidate: true)
-                }.disabled(store.isRefreshingModels(for: session))
-            }
+            Button(store.isRefreshingModels(for: session) ? "모델 목록 확인 중…" : "모델 목록 새로고침") {
+                store.refreshModels(for: session.id, invalidate: true)
+            }.disabled(store.isRefreshingModels(for: session))
             Section("모델") {
                 ForEach(models) { model in
                     Button {
@@ -394,7 +386,7 @@ struct SessionPaneView: View {
                 MightyGraphView(sessionID: session.id, provider: session.provider, runs: session.mightyGraphRuns, draft: draft.wrappedValue, running: running,
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
-                    workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId && $0.remote == nil }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
+                    workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
                     styleTitles: styleTitles,
                     styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title,
                     catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models,
@@ -420,7 +412,7 @@ struct SessionPaneView: View {
                 if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 24, weight: .light)) }
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
             }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, 5)
-            Text(session.kind == "shell" ? (remoteCommand ? "원격 작업 폴더에서 명령 실행" : "작업 폴더에서 명령 실행") : "\(ProviderOptions.label(session.provider))와 작업을 시작하세요")
+            Text(session.kind == "shell" ? "작업 폴더에서 명령 실행" : "\(ProviderOptions.label(session.provider))와 작업을 시작하세요")
                 .font(.system(size: 16, weight: .medium))
             Text(session.kind == "shell" ? "명령마다 새 셸을 시작합니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다." : "프로젝트를 설명하거나, 수정할 내용을 입력하세요. 이 창의 대화는 다음 실행에서도 이어집니다.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
@@ -619,7 +611,7 @@ struct SessionPaneView: View {
                     .fixedSize(horizontal: true, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text(remoteCommand ? "원격 명령 · 요청마다 새 셸" : "명령 실행").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text("명령 실행").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 HStack(alignment: .center, spacing: 6) {

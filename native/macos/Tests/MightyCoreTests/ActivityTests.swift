@@ -288,41 +288,4 @@ struct ActivityTests {
         } catch { await bridge.stop(); throw error }
         await bridge.stop()
     }
-
-    @Test func remoteActivityNegotiationKeepsLegacyCursorAndTerminalStatus() async throws {
-        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let binary = try fakeGemini(directory)
-        let unavailable = URL(fileURLWithPath: "/usr/bin/false")
-        let providers = ProviderService(binaryOverrides: ["gemini": binary, "claude": unavailable, "codex": unavailable])
-        let repository = StateRepository(directory: directory.appendingPathComponent("state"), legacyStateURL: nil)
-        let workspace = try await repository.approveWorkspace(Workspace(name: "Fixture", path: directory.path))
-        try await repository.save(AppSnapshot(workspaces: [workspace]))
-        let host = RemoteService(repository: repository, providers: providers, pluginDirectory: directory, dataDirectory: directory.appendingPathComponent("remote"), onEvent: { _ in }, allowLoopbackForTests: true)
-        do {
-            let state = try await host.startSharing(workspaceIds: [workspace.id], port: 0)
-            let address = try #require(state.host.address); let token = try #require(state.host.token)
-            let target = try await RemoteTransport.resolve(ParsedRemoteAddress.parse(address), peers: [], allowLoopback: true)
-            let request = WireStart(request: StartRunRequest(sessionId: "client-pane", workspaceId: workspace.id, input: "fixture", provider: "gemini"))
-            let accepted = try JSONDecoder().decode(WireJob.self, from: await RemoteTransport.request(target, token: token, method: "POST", path: "/v1/runs", body: JSONEncoder().encode(request)))
-            let path = "/v1/runs/\(accepted.jobId)/events?cursor=0"
-            var modern: WirePoll?
-            for _ in 0..<1000 {
-                modern = try JSONDecoder().decode(WirePoll.self, from: await RemoteTransport.request(target, token: token, method: "GET", path: path))
-                if modern?.done == true { break }; try await Task.sleep(for: .milliseconds(30))
-            }
-            let complete = try #require(modern); #expect(complete.done)
-            #expect(complete.events.contains { $0.event.type == "activity" && $0.event.activity?.kind == "read" && $0.event.activity?.summary == "README.md" })
-            #expect(complete.events.contains { $0.event.activity?.kind == "read" && $0.event.activity?.state == "completed" && $0.event.activity?.durationMs != nil })
-            var legacy = URLRequest(url: URL(string: address + path)!)
-            legacy.setValue("Bearer " + token, forHTTPHeaderField: "Authorization"); legacy.setValue("1", forHTTPHeaderField: "x-mighty-remote-version")
-            let (data, response) = try await URLSession.shared.data(for: legacy)
-            #expect((response as? HTTPURLResponse)?.statusCode == 200)
-            let old = try JSONDecoder().decode(WirePoll.self, from: data)
-            #expect(old.events.map(\.cursor) == complete.events.map(\.cursor)); #expect(old.cursor == complete.cursor)
-            #expect(!old.events.contains { $0.event.type == "activity" })
-            #expect(old.events.last?.event.status == "completed")
-            #expect(old.events.contains { $0.event.entry?.activity?.summary == "README.md" })
-        } catch { await host.shutdown(); await providers.shutdown(); throw error }
-        await host.shutdown(); await providers.shutdown()
-    }
 }

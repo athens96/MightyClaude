@@ -211,23 +211,6 @@ internal static class ClaudePluginVerification
         Check(gone.Calls.Count == 0, "neither case started a process");
     }
 
-    // A remote workspace shows the two macOS sentences and runs nothing.
-    internal static async Task RemoteWorkspaceRunsNothing()
-    {
-        var runner = new FakeRunner((_, _) => throw new InvalidOperationException("a remote workspace must not run the CLI"));
-        var (reader, workspace, _) = Fixture(runner);
-        var remote = new Workspace { Path = workspace, Remote = new RemoteReference("connection", "peer", "Host") };
-        var snapshot = await reader.SnapshotAsync(remote);
-        Check(snapshot.Status == ClaudePluginStatus.Remote, "a remote workspace is remote: " + snapshot.Status);
-        Check(snapshot.Detail == PluginStrings.DetailRemote, "the remote sentence is the macOS one with the PC substitution");
-        Check(runner.Calls.Count == 0, "a remote workspace starts no process");
-
-        var browser = new ClaudePluginBrowser("claude", remote);
-        Check(browser.IsRemote, "the browser knows the workspace is remote");
-        browser.Apply(snapshot);
-        Check(browser.Snapshot!.Installed.Count == 0 && browser.Snapshot.Available.Count == 0, "a remote read lists nothing");
-    }
-
     // One read at a time: a second request joins the running read.
     internal static async Task SecondRequestJoinsTheRunningRead()
     {
@@ -350,8 +333,6 @@ internal static class ClaudePluginVerification
             ["ButtonClose"] = "닫기",
             ["DiagnosticsDisclosure"] = "명령 실행 상세",
             ["MarketplaceHelpLink"] = "마켓플레이스 추가 방법",
-            ["RemoteTitle"] = "원격 워크스페이스에서는 관리할 수 없습니다.",
-            ["RemoteNote"] = "원격 컴퓨터의 MightyClaude에서 플러그인을 관리하세요.",
             ["DirectInstall"] = "직접 설치",
             ["SubtitleTemplate"] = "{left} · {right}",
             ["ScopeLocal"] = "로컬 · 나만",
@@ -373,7 +354,6 @@ internal static class ClaudePluginVerification
             ["DetailNoMarketplaces"] = "등록된 마켓플레이스가 없습니다. Claude CLI에서 marketplace add로 등록한 뒤 목록을 다시 읽으세요.",
             // OS-bound substitution, recorded in docs/windows-plugins.md:
             // macOS reads "이 Mac의 설치는 변경하지 않습니다."
-            ["DetailRemote"] = "원격 워크스페이스의 플러그인은 해당 호스트에서 관리하세요. 이 PC의 설치는 변경하지 않습니다.",
             ["DetailCancelled"] = "플러그인 조회를 취소했습니다.",
             ["DetailFailed"] = "플러그인 목록을 읽지 못했습니다.",
             ["DetailInvalidWorkspace"] = "로컬 작업 폴더가 올바르지 않습니다.",
@@ -440,10 +420,6 @@ internal static class ClaudePluginVerification
         }
         foreach (var name in macOS.Keys) Check(actual.ContainsKey(name), "PluginStrings is missing " + name);
         Check(actual.Count == macOS.Count, "the copy table and the class must hold the same fields");
-
-        // The two sentences a remote workspace shows, and the one OS-bound word.
-        Check(PluginStrings.DetailRemote.Contains("이 PC의") && !PluginStrings.DetailRemote.Contains("Mac"),
-            "the remote sentence names the Windows PC, not a Mac");
         return Task.CompletedTask;
     }
 
@@ -484,8 +460,8 @@ internal static class ClaudePluginVerification
         // Every visible word is read from PluginStrings...
         foreach (var name in new[]
                  {
-                     "ButtonClose", "ButtonReload", "SearchPlaceholder", "FilterAll", "RemoteTitle",
-                     "RemoteNote", "ProgressLoading", "DiagnosticsDisclosure", "MarketplaceHelpLink",
+                     "ButtonClose", "ButtonReload", "SearchPlaceholder", "FilterAll",
+                     "ProgressLoading", "DiagnosticsDisclosure", "MarketplaceHelpLink",
                  })
             Check(source.Contains("PluginStrings." + name), "the window must read PluginStrings." + name);
         Check(source.Contains("browser.FooterNote"),

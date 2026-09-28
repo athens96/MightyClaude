@@ -8,14 +8,6 @@ public struct MightyError: LocalizedError, Sendable, Equatable {
     public var errorDescription: String? { message }
 }
 
-public struct RemoteWorkspaceReference: Codable, Sendable, Equatable {
-    public var connectionId: String
-    public var workspaceId: String
-    public var hostName: String
-    public init(connectionId: String, workspaceId: String, hostName: String) {
-        self.connectionId = connectionId; self.workspaceId = workspaceId; self.hostName = hostName
-    }
-}
 
 public struct RegisteredModelEntry: Codable, Sendable, Equatable {
     public var name: String
@@ -120,11 +112,10 @@ public struct Workspace: Codable, Sendable, Equatable, Identifiable {
     public var name: String
     public var path: String
     public var createdAt: String
-    public var remote: RemoteWorkspaceReference?
     /// Workspace-level model defaults override; nil means no workspace-level override.
     public var modelDefaults: ModelDefaultsConfig?
-    public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), remote: RemoteWorkspaceReference? = nil, modelDefaults: ModelDefaultsConfig? = nil) {
-        self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.remote = remote; self.modelDefaults = modelDefaults
+    public init(id: String = UUID().uuidString, name: String, path: String, createdAt: String = mightyTimestamp(), modelDefaults: ModelDefaultsConfig? = nil) {
+        self.id = id; self.name = name; self.path = path; self.createdAt = createdAt; self.modelDefaults = modelDefaults
     }
 }
 
@@ -342,7 +333,7 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     /// Sidebar workspaces whose pane list is open. nil (older state) means only
     /// the active workspace is open, which was the previous behaviour.
     public var expandedWorkspaceIds: [String]?
-    /// Phone access over Tailscale; nil means never enabled.
+    /// Phone access over the E2EE relay; nil means never enabled.
     public var mobileRemote: MobileRemoteSettings?
     /// App-level per-provider per-mode model defaults; nil means all modes use "default".
     /// The modeDefaults dicts are no longer written by macOS but are preserved for backwards compat.
@@ -553,8 +544,8 @@ public enum CoreValidation {
     }
     public static func validateCapabilities(_ request: StartRunRequest, capabilities caps: ProviderCapabilities) throws {
         let s = request.settings
-        guard caps.attachments || request.attachments.isEmpty else { throw MightyError("이 실행기가 첨부 파일을 지원하지 않습니다. 원격 앱을 업데이트하세요.") }
-        guard caps.permissionModes.contains(s.permissionMode), caps.effort || s.effort == "default", caps.maxTurns || s.maxTurns == nil, caps.maxBudgetUsd || s.maxBudgetUsd == nil, caps.fastMode || !s.fastMode, caps.webSearch || s.webSearch == "default", caps.networkAccess || !s.networkAccess, !s.networkAccess || (request.provider == "codex" && ["acceptEdits", "onRequest"].contains(s.permissionMode)), caps.resume || request.resumeId == nil else { throw MightyError("선택한 실행기가 이 실행 설정을 지원하지 않습니다. 실행기 또는 원격 앱을 확인해 주세요.") }
+        guard caps.attachments || request.attachments.isEmpty else { throw MightyError("이 실행기가 첨부 파일을 지원하지 않습니다.") }
+        guard caps.permissionModes.contains(s.permissionMode), caps.effort || s.effort == "default", caps.maxTurns || s.maxTurns == nil, caps.maxBudgetUsd || s.maxBudgetUsd == nil, caps.fastMode || !s.fastMode, caps.webSearch || s.webSearch == "default", caps.networkAccess || !s.networkAccess, !s.networkAccess || (request.provider == "codex" && ["acceptEdits", "onRequest"].contains(s.permissionMode)), caps.resume || request.resumeId == nil else { throw MightyError("선택한 실행기가 이 실행 설정을 지원하지 않습니다. 실행 설정을 확인해 주세요.") }
     }
     public static func isOfficialClaudeModel(_ value: String) -> Bool {
         ProviderOptions.fallbackCatalog("claude").models.contains { $0.value == value } || value.range(of: "^(?:(?:opus|sonnet|fable)\\[1m\\]|claude-(?:(?:opus|sonnet|haiku|fable)-[0-9]+(?:[-.][0-9]+)*|[0-9]+(?:-[0-9]+)*-(?:opus|sonnet|haiku|fable)(?:-[0-9]+)*)(?:\\[1m\\])?)$", options: .regularExpression) != nil

@@ -29,12 +29,11 @@ enum ClaudePluginDiagnostics {
     static func run(store: AppStore) async -> [String: Any] {
         var result: [String: Any] = ["passed": false, "realPluginInstallInvoked": false, "realMarketplaceRefreshInvoked": false, "aiRequestSent": false, "fixtureUsesTwoWindows": true]
         guard ProcessInfo.processInfo.arguments.contains("--profile"), !store.hasModal,
-              let workspace = store.activeWorkspace, workspace.remote == nil else {
+              let workspace = store.activeWorkspace else {
             result["error"] = "플러그인 검증에는 격리된 로컬 워크스페이스가 필요합니다."; return result
         }
         let originalSnapshot = store.snapshot, originalDrafts = store.drafts, originalAttachments = store.attachmentDrafts
         let originalBrowser = store.pluginBrowser, originalError = store.error
-        let originalRemote = store.remoteState, originalRemoteBusy = store.remoteBusy
         let originalUpdating = store.isUpdatingCLIs
         let previousWindow = NSApp.keyWindow
         let fixture = PluginFixtureService()
@@ -53,7 +52,6 @@ enum ClaudePluginDiagnostics {
             browserWindow.orderOut(nil); browserWindow.close(); composerWindow.orderOut(nil); composerWindow.close()
             store.pluginBrowser = originalBrowser; store.snapshot = originalSnapshot
             store.drafts = originalDrafts; store.attachmentDrafts = originalAttachments
-            store.remoteState = originalRemote; store.remoteBusy = originalRemoteBusy
             store.isUpdatingCLIs = originalUpdating; store.error = originalError
             previousWindow?.makeKeyAndOrderFront(nil)
         }
@@ -176,32 +174,14 @@ enum ClaudePluginDiagnostics {
             let beforeCalls = fixture.installs.count
             func rejected(_ target: Workspace) async throws {
                 let value = await store.performPluginMutation(workspace: target) { await fixture.install(id: "must-not-run", scope: "local", workspace: target) }
-                try require(["skipped", "remote"].contains(value.status) && fixture.installs.count == beforeCalls && !store.isManagingPlugins, "차단된 환경에서 플러그인을 변경했습니다.")
+                try require(value.status == "skipped" && fixture.installs.count == beforeCalls && !store.isManagingPlugins, "차단된 환경에서 플러그인을 변경했습니다.")
             }
             store.snapshot.sessions[index].status = "running"; try await rejected(workspace); store.snapshot.sessions[index].status = "idle"
             result["runningClaudeBlocked"] = true
             store.isUpdatingCLIs = true; try await rejected(workspace); store.isUpdatingCLIs = false
             result["CLIUpdateBlocked"] = true
-            store.remoteState.host.enabled = true; try await rejected(workspace); store.remoteState.host.enabled = false
-            store.remoteBusy = true; try await rejected(workspace); store.remoteBusy = false
-            result["remoteSharingAndConnectionBusyBlocked"] = true
-            let remote = Workspace(id: "plugin-remote-fixture", name: "Remote fixture", path: "/remote/fixture", remote: RemoteWorkspaceReference(connectionId: "fixture-connection", workspaceId: "host-workspace", hostName: "Fixture host"))
-            store.snapshot.workspaces.append(remote); try await rejected(remote)
             var stale = workspace; stale.path += "/moved"; try await rejected(stale)
-            result["remoteAndChangedWorkspaceBlocked"] = true
-            let beforeLoads = fixture.loads
-            let remoteModel = ClaudePluginBrowserModel(workspace: remote, load: { await fixture.snapshot() },
-                install: { id, scope in await fixture.install(id: id, scope: scope, workspace: remote) },
-                refresh: { await fixture.refresh($0) })
-            browserWindow.contentView = NSHostingView(rootView: ClaudePluginView(model: remoteModel, onClose: { [weak browserWindow] in browserWindow?.orderOut(nil) }).preferredColorScheme(.dark))
-            remoteModel.loadIfNeeded(); remoteModel.install(pluginID: PluginFixtureService.successID); remoteModel.refreshMarketplaces()
-            try await store.waitForSmoke(timeout: 3) { node(browserWindow, id: "claude-plugin-remote-unavailable") != nil }
-            try require(fixture.loads == beforeLoads && fixture.installs.count == beforeCalls && remoteModel.snapshot == nil, "원격 플러그인 화면에서 로컬 서비스가 호출되었습니다.")
-            result["remoteUIExplainsUnavailableWithoutLocalCalls"] = true
-            result["remoteScreenshot"] = try store.captureSmokeWindow(browserWindow, filename: "claude-plugins-remote.png").path
-            try press(browserWindow, id: "claude-plugin-close")
-            try await store.waitForSmoke(timeout: 3) { !browserWindow.isVisible }
-            await remoteModel.shutdown()
+            result["changedWorkspaceBlocked"] = true
             composerWindow.makeKeyAndOrderFront(nil)
             try require(ObjectIdentifier(try requireEditor(composerWindow, sessionID: session.id)) == inputIdentity && input.string == store.drafts[session.id] && input.string.hasSuffix(" · 추가 작성") && store.attachmentDrafts[session.id] == [attachment], "플러그인 창을 닫은 뒤 입력 또는 첨부가 변경되었습니다.")
             result["draftAndAttachmentSurviveBrowserClose"] = true

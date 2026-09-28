@@ -32,12 +32,11 @@ struct WorkspaceView: View {
         .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
         .toolbar(.hidden, for: .windowToolbar)
-        .task(id: store.activeWorkspace.map { $0.id + "|" + $0.path + "|" + String($0.remote != nil) }) {
+        .task(id: store.activeWorkspace.map { $0.id + "|" + $0.path }) {
             await gitState.observe(store.activeWorkspace)
         }
         .task { accountUsage.configure(store: store) }
-        .sheet(isPresented: $store.showSettings, onDismiss: { store.settingsShowsRemote = false }) { AppSettingsView().environmentObject(store) }
-        .sheet(isPresented: $store.showRemote) { RemoteConnectionView().environmentObject(store) }
+        .sheet(isPresented: $store.showSettings) { AppSettingsView().environmentObject(store) }
         .sheet(item: $store.renameTarget) { RenameSheet(target: $0).environmentObject(store) }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
         .sheet(item: $store.pluginBrowser) { browser in
@@ -121,10 +120,9 @@ struct WorkspaceView: View {
             HStack(spacing: 0) {
             Button { store.selectWorkspace(workspace.id) } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: workspace.remote == nil ? "folder" : "desktopcomputer").font(.system(size: 14)).foregroundStyle(selected ? Palette.accent : .secondary)
+                    Image(systemName: "folder").font(.system(size: 14)).foregroundStyle(selected ? Palette.accent : .secondary)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(workspace.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                        if let reference = workspace.remote { Text(reference.hostName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1) }
                     }
                     Spacer(minLength: 0)
                     if runningAgents > 0 {
@@ -155,9 +153,7 @@ struct WorkspaceView: View {
             .contextMenu {
                 Button("이름 변경…") { store.beginRenameWorkspace(workspace.id) }
                 Button("목록에서 제거", role: .destructive) { store.pendingRemoval = workspace }
-                if workspace.remote == nil {
-                    Button("Finder에서 보기") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
-                }
+                Button("Finder에서 보기") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
             }
             if expanded {
                 ForEach(sessions) { session in
@@ -200,10 +196,6 @@ struct WorkspaceView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(workspace.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
-                    if let remote = workspace.remote {
-                        Label(remote.hostName, systemImage: "network").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
-                            .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.accent.opacity(0.09), in: Capsule())
-                    }
                     Spacer(minLength: 0)
                 }
                 .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
@@ -233,7 +225,7 @@ struct WorkspaceView: View {
             }
             Divider()
             Button { addSession(in: workspace, kind: "shell") } label: {
-                Label(workspace.remote == nil ? "새 터미널" : "새 원격 명령", systemImage: "terminal")
+                Label("새 터미널", systemImage: "terminal")
             }
             Divider()
             Button { addSession(in: workspace, kind: "browser") } label: {
@@ -281,7 +273,6 @@ struct WorkspaceView: View {
                 .font(.system(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
             HStack(spacing: 10) {
                 Button { store.openWorkspace() } label: { Label("프로젝트 폴더 열기", systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
-                Button { store.showRemote = true } label: { Label("원격 연결", systemImage: "network").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.bordered)
             }.padding(.top, 8)
             Text("⌘O  폴더 열기   ·   ⌘N  실행 창 추가").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
             Spacer()
@@ -299,14 +290,8 @@ struct WorkspaceView: View {
 
     private var statusBar: some View {
         HStack(spacing: 7) {
-            if let workspace = store.activeWorkspace, workspace.remote != nil {
-                let connected = store.connection(for: workspace)?.status == "connected"
-                Circle().fill(connected ? Color.green.opacity(0.8) : Color.orange).frame(width: 5, height: 5)
-                Text(connected ? "원격 컴퓨터 연결됨" : "원격 컴퓨터 연결 끊김")
-            } else {
-                Image(systemName: "desktopcomputer").font(.system(size: 10))
-                Text("이 Mac에서 실행")
-            }
+            Image(systemName: "desktopcomputer").font(.system(size: 10))
+            Text("이 Mac에서 실행")
             Spacer()
             Text("\(store.activeSessions.count)개 실행 창")
             Text("·").padding(.horizontal, 3)

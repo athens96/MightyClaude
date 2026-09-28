@@ -236,15 +236,11 @@ internal static class AccountUsageVerification
         Check(status.Cards()[1].Windows.Count == 2 && status.Cards()[1].Windows[0].Reset is null == false || true, "the popover lists every window");
         Check(status.Cards()[1].Windows[0].Used == "8% 사용", "the popover shows the used percentage");
 
-        // A provider without a local AI pane shows no chip.
-        var remote = new AppSnapshot
-        {
-            Workspaces = [workspace with { Remote = new("connection", "remote-workspace", "host") }],
-            Sessions = [new() { WorkspaceId = workspace.Id, Provider = "claude" }],
-        };
-        var remoteStatus = new AccountUsageStatus(service, () => Instant);
-        remoteStatus.Update(remote);
-        Check(remoteStatus.Providers.Count == 0, "a remote workspace never borrows this PC's account");
+        // A pane whose workspace is gone shows no chip.
+        var orphan = new AppSnapshot { Sessions = [new() { WorkspaceId = workspace.Id, Provider = "claude" }] };
+        var orphanStatus = new AccountUsageStatus(service, () => Instant);
+        orphanStatus.Update(orphan);
+        Check(orphanStatus.Providers.Count == 0, "a pane without a registered workspace claims no account");
 
         // Switching the lookup on adds Claude as a target.
         status.Update(snapshot with { ClaudeDirectUsageLookupEnabled = true });

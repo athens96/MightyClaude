@@ -27,8 +27,6 @@ import { createKeyedMutex } from '@/lib/keyed-mutex';
 import { describeRelayTarget, type PairingPayload } from '@/lib/pairing';
 
 const INDEX_KEY = 'mightyclaude.hosts.v2.index';
-/** v1 (Tailscale) storage; dropped on first load of this build. */
-const LEGACY_INDEX_KEY = 'mightyclaude.hosts.index';
 
 export interface PairedHost {
   /** Storage-safe identifier derived from the relay `serverId`. */
@@ -211,7 +209,6 @@ export const useHostsStore = create<HostsState>((set, get) => ({
   },
 
   load: async () => {
-    await SecureStore.deleteItemAsync(LEGACY_INDEX_KEY).catch(() => undefined);
     const clientId = await ensureClientId(SecureStore);
     const hosts = parseIndex(await SecureStore.getItemAsync(INDEX_KEY));
     const keys: Record<string, string> = {};

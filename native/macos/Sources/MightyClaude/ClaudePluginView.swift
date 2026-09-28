@@ -38,11 +38,9 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     }
     var providerLabel: String { ProviderOptions.label(provider) }
     var supportedScopes: [String] { provider == "codex" ? ["user"] : ["local", "project", "user"] }
-    var isRemote: Bool { workspace.remote != nil }
     var isBusy: Bool { phase != "idle" || isCancelling }
     var isMutating: Bool { ["installing", "refreshing"].contains(phase) || isCancelling }
     var blockedReason: String? {
-        if isRemote { return "원격 컴퓨터의 MightyClaude에서 플러그인을 관리하세요." }
         return mutationBlockedReason()
     }
     var marketplaces: [String] {
@@ -79,11 +77,11 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
         }
     }
     func loadIfNeeded() {
-        guard !loaded, !closed, !isRemote else { return }
+        guard !loaded, !closed else { return }
         reload()
     }
     func reload() {
-        guard !closed, !isBusy, !isRemote else { return }
+        guard !closed, !isBusy else { return }
         loaded = true; phase = "loading"
         task = Task { [weak self] in
             guard let self else { return }
@@ -148,7 +146,7 @@ final class ClaudePluginBrowserModel: ObservableObject, Identifiable {
     }
     private func canMutate() -> Bool {
         if let reason = blockedReason {
-            lastResult = ClaudePluginOperationResult(status: isRemote ? "remote" : "busy", detail: reason); return false
+            lastResult = ClaudePluginOperationResult(status: "busy", detail: reason); return false
         }
         guard snapshot?.status == "ready" else {
             lastResult = ClaudePluginOperationResult(status: "failed", detail: "플러그인 목록을 먼저 불러오세요."); return false
@@ -195,17 +193,7 @@ struct ClaudePluginView: View {
                 Spacer(minLength: 12)
                 if let version = model.snapshot?.cliVersion { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
             }
-            if model.isRemote {
-                VStack(spacing: 12) {
-                    Image(systemName: "network.slash").font(.system(size: 30)).foregroundStyle(.secondary)
-                    Text("원격 워크스페이스에서는 관리할 수 없습니다.").font(.system(size: 14, weight: .medium))
-                    Text("원격 컴퓨터의 MightyClaude에서 플러그인을 관리하세요.").font(.system(size: 12)).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("\(model.provider)-plugin-remote-unavailable")
-            } else {
-                browser
-            }
+            browser
             HStack {
                 if model.isBusy {
                     ProgressView().controlSize(.small)

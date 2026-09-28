@@ -252,7 +252,7 @@ internal static class ToolPermissionVerification
 
     /// <summary>
     /// launch_arguments: the bar's own path gets host prompts over stdio; every
-    /// other path — remote workspaces, headless hosts, other CLIs — keeps
+    /// other path — headless hosts, other CLIs — keeps
     /// --permission-prompts none exactly as before.
     /// </summary>
     internal static Task HostPromptsOnlyWhereTheBarExists()

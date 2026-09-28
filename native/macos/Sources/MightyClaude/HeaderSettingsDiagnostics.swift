@@ -2,8 +2,8 @@ import AppKit
 import MightyCore
 
 extension AppStore {
-    /// Native window events and local accessibility actions only. Never starts
-    /// sharing, connects a remote computer, or submits a model request.
+    /// Native window events and local accessibility actions only. Never submits
+    /// a model request.
     func verifyHeaderSettingsSmoke(window: NSWindow) async throws -> [String: Any] {
         guard ProcessInfo.processInfo.arguments.contains("--profile"), !hasModal,
               let content = window.contentView, let screen = window.screen,
@@ -11,7 +11,7 @@ extension AppStore {
         var result: [String: Any] = ["passed": false]
         let originalFrame = window.frame
         defer {
-            showSettings = false; settingsShowsRemote = false
+            showSettings = false
             window.setFrame(originalFrame, display: true)
             if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) {
                 try? data.write(to: dataDirectory.appendingPathComponent("header-settings-result.json"), options: .atomic)
@@ -53,35 +53,13 @@ extension AppStore {
         }
         try await waitForSmoke(timeout: 3) { self.showSettings && window.attachedSheet != nil }
         guard let sheet = window.attachedSheet else { throw MightyError("설정 창이 없습니다.") }
-        try await waitForSmoke(timeout: 3) { self.headerSmokeElement(sheet, identifier: "settings-remote") != nil }
         try await Task.sleep(for: .milliseconds(150))
-        let settingsSize = sheet.frame.size
         result["settingsFrame"] = NSStringFromRect(sheet.frame)
-        guard let remote = headerSmokeElement(sheet, identifier: "settings-remote"), headerSmokePress(remote) else {
-            throw MightyError("설정의 Tailscale 버튼을 실행하지 못했습니다.")
-        }
-        try await waitForSmoke(timeout: 3) { self.settingsShowsRemote && self.headerSmokeElement(sheet, label: "설정으로 돌아가기") != nil }
-        guard !showRemote, window.attachedSheet === sheet else { throw MightyError("원격 설정이 중복 시트로 열렸습니다.") }
-        try await waitForSmoke(timeout: 3) { sheet.frame.width > settingsSize.width + 100 }
-        try await Task.sleep(for: .milliseconds(150))
-        result["remoteSettingsFrame"] = NSStringFromRect(sheet.frame)
-        result["remoteSettingsResizesSheet"] = true
         result["settingsGearOpensSheet"] = true
-        result["remoteSettingsUsesSameSheet"] = true
-        result["remoteSettingsScreenshot"] = try captureSmokeWindow(sheet, filename: "remote-settings.png").path
-        guard let back = headerSmokeElement(sheet, label: "설정으로 돌아가기"), headerSmokePress(back) else {
-            throw MightyError("원격 설정에서 일반 설정으로 돌아가지 못했습니다.")
-        }
-        try await waitForSmoke(timeout: 3) { !self.settingsShowsRemote && self.headerSmokeElement(sheet, identifier: "settings-remote") != nil }
-        guard showSettings, window.attachedSheet === sheet else { throw MightyError("돌아가기에서 설정 창 전체가 닫혔습니다.") }
-        try await waitForSmoke(timeout: 3) { abs(sheet.frame.width - settingsSize.width) < 2 && abs(sheet.frame.height - settingsSize.height) < 2 }
-        try await Task.sleep(for: .milliseconds(150))
-        result["restoredSettingsFrame"] = NSStringFromRect(sheet.frame)
-        result["settingsRestoresSheetSize"] = true
+        result["settingsScreenshot"] = try captureSmokeWindow(sheet, filename: "settings.png").path
         guard let close = headerSmokeElement(sheet, label: "닫기"), headerSmokePress(close) else { throw MightyError("설정 창 닫기 버튼을 실행하지 못했습니다.") }
         try await waitForSmoke(timeout: 3) { !self.showSettings && window.attachedSheet == nil }
-        guard !settingsShowsRemote, !showRemote else { throw MightyError("설정 닫기 후 원격 설정 상태가 남았습니다.") }
-        result["remoteBackAndClose"] = true
+        result["settingsClose"] = true
         result["passed"] = true
         return result
     }

@@ -27,12 +27,7 @@ internal static class SettingsVerification
         var selected = new RunSettings("high", "acceptEdits", FastMode: true, WebSearch: "cached", NetworkAccess: true);
         Check(Wire.Clone(selected) == selected, "Selected options were lost in wire round trip.");
         var oldCaps = JsonSerializer.Deserialize<ProviderCapabilities>("""{"effort":true,"permissionModes":["manual","acceptEdits"],"maxTurns":false,"maxBudgetUsd":false,"resume":true}""", Wire.Json)!;
-        Check(!oldCaps.FastMode && !oldCaps.WebSearch && !oldCaps.NetworkAccess, "Legacy hosts must not advertise new capabilities.");
-        foreach (var settings in new[] { new RunSettings(FastMode: true), new RunSettings(WebSearch: "disabled"), new RunSettings(PermissionMode: "acceptEdits", NetworkAccess: true), new RunSettings(PermissionMode: "fullAccess") })
-        {
-            Check(ProviderCatalog.RemoteSettingsProblem(settings, oldCaps) is not null, "A legacy host accepted an unsupported extension.");
-            Check(ProviderCatalog.RemoteSettingsProblem(settings, ProviderCatalog.Capabilities("codex")) is null, "Modern Codex capabilities rejected a supported option.");
-        }
+        Check(!oldCaps.FastMode && !oldCaps.WebSearch && !oldCaps.NetworkAccess, "Older capability payloads must not advertise new capabilities.");
 
         var request = new StartRunRequest("pane", "workspace", "claude", "argument fixture only", [], Provider: "codex");
         var defaults = ProviderCatalog.Arguments(request, "/fixture-plugin");

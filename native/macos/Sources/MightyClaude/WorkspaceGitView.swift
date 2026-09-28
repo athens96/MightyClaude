@@ -11,12 +11,12 @@ final class WorkspaceGitState: ObservableObject {
     private var cache: [String: WorkspaceGitInfo] = [:]
 
     func info(for workspace: Workspace) -> WorkspaceGitInfo? {
-        workspace.remote == nil && workspaceKey == workspace.id + "|" + workspace.path ? info : nil
+        workspaceKey == workspace.id + "|" + workspace.path ? info : nil
     }
 
     func observe(_ workspace: Workspace?) async {
         let generation = UUID(); self.generation = generation
-        guard let workspace, workspace.remote == nil else { workspaceKey = nil; info = nil; return }
+        guard let workspace else { workspaceKey = nil; info = nil; return }
         let key = workspace.id + "|" + workspace.path
         workspaceKey = key
         info = cache[key]

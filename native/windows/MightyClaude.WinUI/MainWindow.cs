@@ -28,7 +28,6 @@ public sealed partial class MainWindow : Window
     private readonly ComboBox layout = new() { Width = 105 };
     private readonly Dictionary<string, PaneView> views = [];
     private RuntimeInfo? runtime;
-    private RemoteState? remote;
     private bool rendering, canClose, closing;
     private readonly StartupOptions options;
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -64,7 +63,7 @@ public sealed partial class MainWindow : Window
         service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
-        // nowhere else — not the snapshot, not a remote peer.
+        // nowhere else — not the snapshot.
         service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = "저장 실패: " + ex.Message);
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -80,7 +79,7 @@ public sealed partial class MainWindow : Window
         var sideHost = new Grid { RowSpacing = 10 }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
         var navigation = new StackPanel { Spacing = 6 }; navigation.Children.Add(layout);
-        navigation.Children.Add(Button("원격 연결", OpenRemote)); navigation.Children.Add(Button("설정", OpenSettings)); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
+        navigation.Children.Add(Button("설정", OpenSettings)); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
         workspaces.SelectionChanged += async (_, _) => { if (!rendering && workspaces.SelectedItem is ListViewItem { Tag: string id }) await SelectWorkspace(id); };
         Grid.SetRow(sideHost, 1); root.Children.Add(sideHost); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
@@ -96,7 +95,7 @@ public sealed partial class MainWindow : Window
     }
     private async Task Initialize()
     {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await InitNotifierAsync(); await RefreshRuntime(); await RefreshRemoteState(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await InitNotifierAsync(); await RefreshRuntime(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
         try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; Render(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
     }
@@ -121,27 +120,19 @@ public sealed partial class MainWindow : Window
         await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException("먼저 워크스페이스를 추가하세요."); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? "명령" : ProviderCatalog.Name(provider) }; await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
     }
     private async Task RefreshRuntime() { await Act(async () => { status.Text = "설치된 실행기와 모델 메타데이터 확인 중…"; runtime = await service.Providers.GetRuntimeAsync(true); RefreshEnvironment(); }); }
-    private async Task RefreshRemoteState() { await Act(async () => { remote = await service.Remote.GetStateAsync(); RefreshEnvironment(); }); }
     private void RefreshEnvironment()
     {
-        var state = service.Snapshot;
         foreach (var pane in views.Values) pane.Refresh();
-        var workspace = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
-        status.Text = workspace?.Remote is { } link ? $"원격 · {link.HostName} · {workspace.Path} · {remote?.Connections.FirstOrDefault(c => c.Id == link.ConnectionId)?.Detail ?? "원격 연결에서 새로고침하세요."}" : runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
+        status.Text = runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
     }
-    private ProviderRuntime? Runtime(string provider, string workspaceId)
-    {
-        var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == workspaceId);
-        if (workspace?.Remote is { } reference) return remote?.Connections.FirstOrDefault(c => c.Id == reference.ConnectionId && c.Status == "connected")?.Runtime?.Providers.FirstOrDefault(p => p.Id == provider);
-        return runtime?.Providers.FirstOrDefault(p => p.Id == provider);
-    }
+    private ProviderRuntime? Runtime(string provider) => runtime?.Providers.FirstOrDefault(p => p.Id == provider);
     private void RenderSidebar()
     {
         var previous = rendering; rendering = true;
         var state = service.Snapshot; workspaces.Items.Clear();
         foreach (var workspace in state.Workspaces.Where(w => (w.Name + w.Path).Contains(search.Text, StringComparison.OrdinalIgnoreCase)))
         {
-            var label = new StackPanel { Spacing = 3 }; label.Children.Add(new TextBlock { Text = workspace.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }); label.Children.Add(new TextBlock { Text = workspace.Remote is null ? "이 컴퓨터" : "원격 · " + workspace.Remote.HostName, FontSize = 11, Opacity = .65 });
+            var label = new StackPanel { Spacing = 3 }; label.Children.Add(new TextBlock { Text = workspace.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }); label.Children.Add(new TextBlock { Text = "이 컴퓨터", FontSize = 11, Opacity = .65 });
             var item = new ListViewItem { Content = label, Tag = workspace.Id, ContextFlyout = WorkspaceMenu(workspace.Id) }; ToolTipService.SetToolTip(item, workspace.Path); workspaces.Items.Add(item); if (workspace.Id == state.ActiveWorkspaceId) workspaces.SelectedItem = item;
         }
         sessionLinks.Children.Clear(); sessionIndicators.Clear();
@@ -162,45 +153,8 @@ public sealed partial class MainWindow : Window
         // A closed session runs nothing more: end its refresher before dropping the pane.
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { views[stale].Refresher?.Close(); views.Remove(stale); }
         RenderPaneLayout(state);
-        var workspace = state.Workspaces.FirstOrDefault(w => w.Id == state.ActiveWorkspaceId);
-        status.Text = workspace?.Remote is { } link ? $"원격 · {link.HostName} · {workspace.Path} · {remote?.Connections.FirstOrDefault(c => c.Id == link.ConnectionId)?.Detail ?? "원격 연결에서 새로고침하세요."}" : runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
+        status.Text = runtime is null ? "실행기 확인 중…" : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
         rendering = false;
-    }
-    private async Task OpenRemote()
-    {
-        await Act(async () =>
-        {
-            remote = await service.Remote.GetStateAsync();
-            var content = new StackPanel { Spacing = 12, MinWidth = 520 }; var message = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            var dialog = new ContentDialog { Title = "원격 워크스페이스 · Tailscale", CloseButtonText = "닫기", XamlRoot = root.XamlRoot, Content = new ScrollViewer { Content = content, MaxHeight = 620 } };
-            async Task Change(Func<Task<RemoteState>> action) { try { remote = await action(); Draw(); Render(); } catch (Exception ex) { message.Text = ex.Message; } }
-            void Draw()
-            {
-                content.Children.Clear(); content.Children.Add(new TextBlock { Text = remote!.Tailscale.Detail, TextWrapping = TextWrapping.Wrap }); content.Children.Add(new TextBlock { Text = "연결 키를 받은 장치는 선택한 폴더에서 CLI와 shell 명령을 실행할 수 있습니다. 공유는 앱을 다시 열면 꺼집니다.", TextWrapping = TextWrapping.Wrap, Opacity = .7 }); content.Children.Add(message);
-                if (remote.Host.Enabled)
-                {
-                    content.Children.Add(new TextBlock { Text = $"공유 중 · {remote.Host.Address} · 실행 {remote.Host.ActiveRuns}개", TextWrapping = TextWrapping.Wrap });
-                    var key = new TextBox { Text = remote.Host.Token, IsReadOnly = true, Visibility = Visibility.Collapsed }; content.Children.Add(key);
-                    content.Children.Add(Button("연결 키 표시", () => { key.Visibility = key.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible; return Task.CompletedTask; }));
-                    content.Children.Add(Button("연결 키 복사", () => { Copy(remote.Host.Token ?? ""); return Task.CompletedTask; })); content.Children.Add(Button("공유 중지", () => Change(service.Remote.StopSharingAsync)));
-                }
-                else
-                {
-                    var choices = service.Snapshot.Workspaces.Where(w => w.Remote is null).Select(w => new CheckBox { Content = w.Name, Tag = w.Id }).ToList(); foreach (var choice in choices) content.Children.Add(choice);
-                    content.Children.Add(Button("선택한 폴더 공유 시작", () => Change(() => service.Remote.StartSharingAsync(new(choices.Where(c => c.IsChecked == true).Select(c => (string)c.Tag).ToArray())))));
-                }
-                content.Children.Add(new TextBlock { Text = "다른 컴퓨터에 연결", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 10, 0, 0) });
-                var name = new TextBox { Header = "이름", PlaceholderText = "작업용 PC" }; var address = new TextBox { Header = "Tailscale 주소", PlaceholderText = "http://100.x.x.x:43137" }; var token = new PasswordBox { Header = "연결 키" }; content.Children.Add(name); content.Children.Add(address); content.Children.Add(token);
-                content.Children.Add(Button("연결 저장", () => Change(() => service.Remote.ConnectAsync(new(name.Text, address.Text, token.Password)))));
-                foreach (var connection in remote.Connections)
-                {
-                    content.Children.Add(new TextBlock { Text = $"{connection.Name} · {connection.Status}\n{connection.Address}\n{connection.Detail}", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) });
-                    var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; buttons.Children.Add(Button("새로고침 / 재연결", () => Change(() => service.Remote.RefreshAsync(connection.Id)))); buttons.Children.Add(Button("연결 해제", () => Change(() => service.Remote.DisconnectAsync(connection.Id)))); content.Children.Add(buttons);
-                    if (connection.Status == "connected") foreach (var workspace in connection.Workspaces ?? []) content.Children.Add(Button("가져오기 · " + workspace.Name, async () => { try { await service.ImportRemoteAsync(connection.Id, workspace.Id); Render(); message.Text = "워크스페이스를 가져왔습니다."; } catch (Exception ex) { message.Text = ex.Message; } }));
-                }
-            }
-            Draw(); await dialog.ShowAsync(); Render();
-        });
     }
     private static void Copy(string value) { var data = new DataPackage(); data.SetText(value); Clipboard.SetContent(data); }
 
@@ -260,10 +214,8 @@ public sealed partial class MainWindow : Window
         {
             get
             {
-                var pane = Session; var current = owner.Runtime(pane.Provider, pane.WorkspaceId)?.Capabilities;
-                if (current is not null) return current;
-                var local = ProviderCatalog.Capabilities(pane.Provider);
-                return Workspace.Remote is null ? local : local with { PermissionModes = local.PermissionModes.Where(m => m != "fullAccess").ToArray(), FastMode = false, WebSearch = false, NetworkAccess = false, Attachments = false };
+                var pane = Session;
+                return owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             }
         }
         private static Button Pill(double maxWidth) => new() { MinWidth = 0, MaxWidth = maxWidth, MinHeight = 32, Height = 32, Padding = new Thickness(7, 0, 7, 0), CornerRadius = new CornerRadius(16), FontSize = 11, Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
@@ -366,25 +318,23 @@ public sealed partial class MainWindow : Window
         private Task PrimaryAction() => Session.Status == "running" || starting ? owner.Act(async () => { if (stopping) return; stopping = true; RefreshComposerState(); try { await owner.service.StopAsync(id); } finally { stopping = false; if (owner.service.Snapshot.Sessions.Any(p => p.Id == id)) Refresh(); } }) : Send();
         private void RefreshComposerState()
         {
-            var pane = Session; var busy = pane.Status == "running" || starting; var runtime = owner.Runtime(pane.Provider, pane.WorkspaceId); var workspace = Workspace;
-            var connection = workspace.Remote is { } reference ? owner.remote?.Connections.FirstOrDefault(c => c.Id == reference.ConnectionId) : null;
-            var connected = workspace.Remote is null || connection?.Status == "connected"; var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var pane = Session; var busy = pane.Status == "running" || starting; var runtime = owner.Runtime(pane.Provider); var workspace = Workspace;
+            var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var registeredModels = RegisteredModelsFor(pane.Provider, workspace, owner.service.Snapshot);
             var unsupportedEffort = pane.Kind == "claude" && pane.Settings.Effort != "default" && !ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels).Contains(pane.Settings.Effort);
-            var unsupportedSettings = pane.Kind == "claude" && workspace.Remote is not null ? ProviderCatalog.RemoteSettingsProblem(pane.Settings, runtime?.Capabilities) : null;
-            if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI 또는 원격 앱을 업데이트하거나 다른 권한을 선택하세요.";
-            if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = "이 실행기 또는 원격 호스트가 첨부를 지원하지 않습니다. 호스트를 업데이트하거나 첨부를 제거하세요.";
+            string? unsupportedSettings = null;
+            if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI를 업데이트하거나 다른 권한을 선택하세요.";
+            if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = "이 실행기가 첨부를 지원하지 않습니다. CLI를 업데이트하거나 첨부를 제거하세요.";
             var reason = busy ? ""
                 : attachmentsLoading ? "첨부 파일을 불러오는 중입니다."
-                : !connected ? $"{workspace.Remote!.HostName} 연결이 끊겼습니다. 원격 연결에서 다시 연결하세요. 초안은 작성할 수 있습니다."
                 : pane.Kind == "claude" && runtime?.Available != true ? (runtime?.Detail ?? "실행 환경을 새로고침하세요.") + " 초안은 작성할 수 있습니다."
                 : unsupportedEffort ? $"이 모델의 {pane.Settings.Effort} 지원 여부를 확인하지 못했습니다. Auto 또는 지원 강도를 선택하세요."
                 : unsupportedSettings ?? "";
             inputHint.Text = reason; inputHint.Visibility = reason.Length == 0 ? Visibility.Collapsed : Visibility.Visible; AutomationProperties.SetHelpText(input, reason.Length == 0 ? InputShortcuts : reason + " " + InputShortcuts);
-            permissionHint.Text = pane.Settings.PermissionMode == "fullAccess" ? "전체 권한 · 프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다." + (workspace.Remote is null ? "" : " 원격 호스트 계정의 권한으로 실행합니다.") : "";
+            permissionHint.Text = pane.Settings.PermissionMode == "fullAccess" ? "전체 권한 · 프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다." : "";
             permissionHint.Visibility = pane.Kind == "claude" && permissionHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             input.PlaceholderText = busy ? "다음 요청의 초안을 작성하세요" : pane.Kind == "shell" ? "실행할 명령을 입력하세요" : "무엇을 함께 만들까요?";
-            canSend = !busy && !attachmentsLoading && connected && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
+            canSend = !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; send.FontSize = busy ? 13 : 20;
             AutomationProperties.SetName(send, busy ? "실행 중지" : "보내기"); ToolTipService.SetToolTip(send, busy ? "실행 중지 · 초안은 유지됩니다" : "보내기 (Enter)");
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; context.Content = pane.SessionUsage?.ContextPercent is { } percent ? $"{percent:0}%" : "—";
@@ -440,13 +390,13 @@ public sealed partial class MainWindow : Window
         });
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });
-        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException("모델 이름이 올바르지 않습니다."); var pane = Session; var catalog = owner.Runtime(pane.Provider, pane.WorkspaceId)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
+        private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException("모델 이름이 올바르지 않습니다."); var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
         private static MenuFlyoutItem Item(string text, Func<Task> action, bool selected = false, string? help = null)
         {
             var item = new MenuFlyoutItem { Text = (selected ? "✓  " : "") + text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
         }
         private static string PermissionLabel(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용" : "기본 권한", "plan" => "계획", "acceptEdits" => provider == "codex" ? "프로젝트 수정" : "파일 수정 허용", "auto" => "Auto mode", "fullAccess" => "전체 권한", _ => mode };
-        private static string PermissionHelp(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용 샌드박스에서 실행하며 추가 승인은 요청하지 않습니다." : "CLI 기본 권한을 사용합니다. 승인이 필요한 작업은 거부되며 읽기 전용 샌드박스를 뜻하지 않습니다.", "plan" => "변경 전에 계획을 세웁니다.", "acceptEdits" => provider == "codex" ? "프로젝트 파일을 수정합니다. 명령의 네트워크 접근은 더 보기에서 별도로 허용합니다." : "파일 수정은 자동으로 허용하고 다른 작업에는 CLI 권한 정책을 적용합니다.", "auto" => "Claude가 작업 위험을 자동 판단합니다. 모델·제공자·관리자 정책이 적용됩니다. 이 Windows 실행기는 추가 확인이 필요한 작업은 거부합니다.", "fullAccess" => "프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다. 원격 실행은 호스트 계정의 권한을 사용합니다.", _ => "" };
+        private static string PermissionHelp(string provider, string mode) => mode switch { "manual" => provider == "codex" ? "읽기 전용 샌드박스에서 실행하며 추가 승인은 요청하지 않습니다." : "CLI 기본 권한을 사용합니다. 승인이 필요한 작업은 거부되며 읽기 전용 샌드박스를 뜻하지 않습니다.", "plan" => "변경 전에 계획을 세웁니다.", "acceptEdits" => provider == "codex" ? "프로젝트 파일을 수정합니다. 명령의 네트워크 접근은 더 보기에서 별도로 허용합니다." : "파일 수정은 자동으로 허용하고 다른 작업에는 CLI 권한 정책을 적용합니다.", "auto" => "Claude가 작업 위험을 자동 판단합니다. 모델·제공자·관리자 정책이 적용됩니다. 이 Windows 실행기는 추가 확인이 필요한 작업은 거부합니다.", "fullAccess" => "프로젝트 밖의 파일과 명령도 추가 승인 없이 실행할 수 있습니다.", _ => "" };
         /// Model names registered in saved state, for the effort list. Workspace
         /// entries come first and an app entry whose name is already present is
         /// skipped. Nothing here resolves a model — the pane's own model is used
@@ -530,13 +480,12 @@ public sealed partial class MainWindow : Window
         }
         internal void Refresh()
         {
-            var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider, pane.WorkspaceId); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
+            var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             label.Text = StateLabel(pane.Status); output.Update(pane, owner.service.Snapshot.Theme == "light"); RefreshElapsed();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);
-            var workspace = Workspace;
-            detail.Text = (workspace.Remote is null ? "이 컴퓨터" : "원격 · " + workspace.Remote.HostName) + (pane.Kind == "shell" ? " · shell 명령 실행" : $" · {(catalog.Source == "cli" ? "CLI에서 확인" : "기본 모델 목록")}" + (pane.ResumeId is null ? "" : " · 기존 대화 재개"));
+            detail.Text = "이 컴퓨터" + (pane.Kind == "shell" ? " · shell 명령 실행" : $" · {(catalog.Source == "cli" ? "CLI에서 확인" : "기본 모델 목록")}" + (pane.ResumeId is null ? "" : " · 기존 대화 재개"));
             RefreshComposerState(); ArrangeComposer();
             RequestStatusLineRefresh();
             updating = false;

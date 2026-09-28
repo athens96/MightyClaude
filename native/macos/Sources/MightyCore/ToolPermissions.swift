@@ -1,7 +1,7 @@
 import Foundation
 
-/// Ephemeral, single-call consent. Never persisted in a snapshot or forwarded
-/// to an older remote host. The original input stays inside the run's channel.
+/// Ephemeral, single-call consent. Never persisted in a snapshot. The original
+/// input stays inside the run's channel.
 public struct ToolPermissionRequest: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var runId: String

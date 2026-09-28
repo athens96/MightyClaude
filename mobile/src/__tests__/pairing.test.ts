@@ -1,6 +1,5 @@
 import { toBase64 } from '@/api/relay/crypto';
 import {
-  LEGACY_PAIRING_ERROR,
   describeRelayTarget,
   formatPairingUrl,
   isLocalRelayHost,
@@ -62,19 +61,6 @@ describe('parsePairingUrl (v2)', () => {
 });
 
 describe('parsePairingUrl (rejections)', () => {
-  it('rejects the v1 Tailscale pairing string with an upgrade hint', () => {
-    expect(
-      parsePairingUrl('mightyclaude://pair?v=1&host=100.64.1.2&port=43138&key=abc&name=Mac'),
-    ).toEqual({ ok: false, error: LEGACY_PAIRING_ERROR });
-  });
-
-  it('rejects a versionless v1 string (host/port form)', () => {
-    expect(parsePairingUrl('mightyclaude://pair?host=100.64.1.2&key=abc')).toEqual({
-      ok: false,
-      error: LEGACY_PAIRING_ERROR,
-    });
-  });
-
   it('rejects an unknown version', () => {
     expect(parsePairingUrl(url({ v: '3' }))).toEqual({
       ok: false,

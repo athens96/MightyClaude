@@ -220,7 +220,7 @@ final class AgentCompanion: ObservableObject {
         let candidates = permissions.compactMap { sessionId, requests -> CompanionApproval? in
             guard let request = requests.first(where: { $0.state == "pending" }),
                   let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), session.status == "running",
-                  store.snapshot.workspaces.first(where: { $0.id == session.workspaceId })?.remote == nil else { return nil }
+                  store.snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return nil }
             let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }?.name ?? ""
             return CompanionApproval(sessionId: sessionId, sessionTitle: session.title, workspaceName: workspace, request: request)
         }

@@ -36,11 +36,9 @@ struct StyleRegistryTests {
         let approvals = [StyleApprovalRecord(styleId: "flow", source: .user, path: "/data/styles/flow.json", hash: user.hash, state: "approved", decidedAt: Date()),
                          StyleApprovalRecord(styleId: "repo-flow", source: .workspace, path: mine.url.path, workspacePath: "/mine", hash: mine.hash, state: "approved", decidedAt: Date())]
         let registry = StyleRegistry(styles: StyleRegistry.make(files: [user, mine, theirs], approvals: approvals).styles)
-        let here = StyleWorkspaceRef(path: "/mine", isRemote: false)
+        let here = StyleWorkspaceRef(path: "/mine")
         #expect(registry.applicable(workspace: here).map(\.id).sorted() == ["flow", "repo-flow"])
         #expect(registry.applicable(workspace: nil).map(\.id) == ["flow"])
-        // A remote pane can use no workspace style at all (§3.1).
-        #expect(registry.applicable(workspace: StyleWorkspaceRef(path: "/mine", isRemote: true)).map(\.id) == ["flow"])
         #expect(registry.runnable("repo-flow", workspace: here, hash: mine.hash)?.id == "repo-flow")
         #expect(registry.runnable("repo-flow", workspace: here, hash: "0000") == nil)
         #expect(registry.runnable("repo-flow", workspace: here, hash: nil) == nil)

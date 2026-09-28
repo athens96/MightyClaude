@@ -52,7 +52,7 @@ extension AppStore {
     /// provider, feature on, not a smoke run.
     func statusLineApplies(to session: RunSession) -> Bool {
         guard statusLineEnabled, !smokeTesting, session.kind == "claude", session.provider == "claude",
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }), workspace.remote == nil else { return false }
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return false }
         return true
     }
 

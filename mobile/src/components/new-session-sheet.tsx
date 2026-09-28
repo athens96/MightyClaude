@@ -14,15 +14,12 @@ export interface NewSessionChoice {
 export function NewSessionSheet({
   visible,
   workspaceName,
-  workspaceRemote,
   busy,
   onCancel,
   onCreate,
 }: {
   visible: boolean;
   workspaceName: string;
-  /** A local workspace cannot host a shell pane the phone could use. */
-  workspaceRemote: boolean;
   busy: boolean;
   onCancel: () => void;
   onCreate: (choice: NewSessionChoice) => void;
@@ -32,8 +29,7 @@ export function NewSessionSheet({
   const [kind, setKind] = useState<SessionKind>('claude');
   const [provider, setProvider] = useState<Provider>('claude');
 
-  // The host answers 409 for `shell` on a local workspace, so the option is not offered.
-  const kinds: SessionKind[] = workspaceRemote ? ['claude', 'shell'] : ['claude'];
+  const kinds: SessionKind[] = ['claude'];
   const chosenKind = kinds.includes(kind) ? kind : 'claude';
 
   return (

@@ -46,7 +46,7 @@ public sealed partial class MainWindow
         {
             var pane = Session;
             var workspace = Workspace;
-            var runtime = owner.Runtime(pane.Provider, pane.WorkspaceId);
+            var runtime = owner.Runtime(pane.Provider);
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var usage = pane.SessionUsage;
             var option = catalog.Models.FirstOrDefault(m => m.Value == (usage?.Model ?? pane.Model));

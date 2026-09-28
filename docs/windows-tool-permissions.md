@@ -10,11 +10,11 @@ macOS(`ToolPermissions.swift`, `ToolPermissionBar.swift`)와 같은 화면·문�
 - 도구 입력이 64 KiB 표시 한도를 넘으면 거부한다. 전체를 보여 줄 수 없는 요청은 허용할 수 없다.
 - 허용 응답은 받은 입력을 그대로 돌려준다(`behavior: allow`, `updatedInput`, `toolUseID`). 설정 변경, 영구 규칙, 모드 변경은 어떤 응답에도 담지 않는다.
 - 실행을 멈추면 대기 중인 요청을 모두 취소로 끝낸다.
-- 요청은 저장 상태(`AppSnapshot`)에 쓰지 않고, 입력을 로그에 남기지 않고, 원격 호스트로 넘기지 않는다.
+- 요청은 저장 상태(`AppSnapshot`)에 쓰지 않고, 입력을 로그에 남기지 않는다.
 
 ## 승인 요청을 켜는 실행 경로
 
-Claude를 `--permission-prompts host`와 `--permission-prompt-tool stdio`로 시작하는 경로는 하나뿐이다: 승인 막대를 보여 줄 수 있는 실행 창에서 시작한 Claude 실행(`RunManager`에 승인 구독자가 있을 때). Codex·Gemini 실행, 원격 워크스페이스, 그 밖의 경로는 지금처럼 `--permission-prompts none`이다. `Core.Tests`의 `AutoPermissionVerification`이 구독자 없는 경로가 `none`으로 남는지 확인한다.
+Claude를 `--permission-prompts host`와 `--permission-prompt-tool stdio`로 시작하는 경로는 하나뿐이다: 승인 막대를 보여 줄 수 있는 실행 창에서 시작한 Claude 실행(`RunManager`에 승인 구독자가 있을 때). Codex·Gemini 실행과 그 밖의 경로는 지금처럼 `--permission-prompts none`이다. `Core.Tests`의 `AutoPermissionVerification`이 구독자 없는 경로가 `none`으로 남는지 확인한다.
 
 ## 이번 범위 밖 — 거부만 할 수 있는 요청
 

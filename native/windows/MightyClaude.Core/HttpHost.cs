@@ -19,7 +19,7 @@ public sealed class HttpHost : IAsyncDisposable
     {
         // This embedded server is configured only by the app. Default builders
         // read/watch appsettings in the caller's CWD, which may be a huge user
-        // checkout and must not influence a loopback or Tailscale listener.
+        // checkout and must not influence a loopback listener.
         var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();
         builder.WebHost.UseKestrelCore();
@@ -38,7 +38,7 @@ public sealed class HttpHost : IAsyncDisposable
     }
     public static async Task ReplyAsync(HttpContext context, int status, object value)
     {
-        context.Response.StatusCode = status; context.Response.ContentType = "application/json; charset=utf-8"; context.Response.Headers.CacheControl = "no-store"; context.Response.Headers.Connection = "close"; context.Response.Headers[RemoteNetwork.VersionHeader] = "1";
+        context.Response.StatusCode = status; context.Response.ContentType = "application/json; charset=utf-8"; context.Response.Headers.CacheControl = "no-store"; context.Response.Headers.Connection = "close";
         await context.Response.WriteAsync(JsonSerializer.Serialize(value, Wire.Json), context.RequestAborted);
     }
     public async ValueTask DisposeAsync() { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)); try { await app.StopAsync(timeout.Token); } catch (OperationCanceledException) { } await app.DisposeAsync(); }

@@ -6,15 +6,13 @@ An existing conversation opens at its latest message after the native viewport h
 
 Tool rows show an SF Symbol and the actual command, path or query. Clicking the disclosure shows bounded output. Older unstructured entries remain readable. Workspace and session rows show running AI requests separately from open shells.
 
-Completed tool rows also show their elapsed duration beside the summary (for example `250ms`, `1.2초` or `2분 3초`). The execution host measures from the first observed start/wait event to the first terminal event using a monotonic clock; repeated events do not reset it. The measurement includes permission waiting, survives saved history and travels with remote activity. A result without an observed start, including old history, does not invent a duration. The request timer in the pane and pet remains separate.
+Completed tool rows also show their elapsed duration beside the summary (for example `250ms`, `1.2초` or `2분 3초`). The app measures from the first observed start/wait event to the first terminal event using a monotonic clock; repeated events do not reset it. The measurement includes permission waiting, and survives saved history. A result without an observed start, including old history, does not invent a duration. The request timer in the pane and pet remains separate.
 
 ## Live activity
 
 Claude uses the bundled `mighty-bridge` Mods observation hooks and stream-json events. Codex and Gemini use their CLI JSON event streams. No provider transcript/log files are scanned for pet state. Tool events have stable IDs so a result updates its existing row, and late starts cannot revive completed tools. Whole-run completion comes from the child process lifecycle, not an individual tool or model turn.
 
-The remote protocol negotiates optional structured activity with `x-mighty-activity: 1`. Older clients keep the original event types. Remote hosts must be updated to expose detailed activity; regular running/completed state still works without it.
-
-A waiting indication means an explicit provider event (for example a Claude permission check or AskUserQuestion), not an inferred idle timeout. Local Claude runs now expose one-use tool approval cards. Remote runs and other providers keep their existing noninteractive execution permission settings.
+A waiting indication means an explicit provider event (for example a Claude permission check or AskUserQuestion), not an inferred idle timeout. Local Claude runs now expose one-use tool approval cards. Other providers keep their existing noninteractive execution permission settings.
 
 ## Pet and status UI
 
@@ -50,7 +48,7 @@ The default Mighty Raccoon is generated from the existing app icon as a full-bod
 
 The Claude selector uses Plan mode (`plan`), Always ask (`manual`), Accept file edits (`acceptEdits`), Auto mode (`auto`) and Bypass (`fullAccess`). Auto invokes Claude's risk classifier; it is separate from Bypass and does not change saved CLI rules. A supported CLI must be discovered before the app advertises Auto. Model/provider/admin eligibility is enforced by the CLI, and explicit asks or blocked actions can still need the approval UI. Existing sessions keep their chosen mode. See the official [permission modes](https://code.claude.com/docs/en/permission-modes) reference.
 
-Local Claude runs opt into the native SDK control channel with `--permission-prompts host --permission-prompt-tool stdio --input-format stream-json`. The app waits for the `initialize` acknowledgement, then sends the user message and keeps stdin open for approval replies until the result arrives. Metadata probes and remote-host runs retain `--permission-prompts none`; remote approval forwarding is not implemented.
+Local Claude runs opt into the native SDK control channel with `--permission-prompts host --permission-prompt-tool stdio --input-format stream-json`. The app waits for the `initialize` acknowledgement, then sends the user message and keeps stdin open for approval replies until the result arrives. Metadata probes retain `--permission-prompts none`.
 
 A `can_use_tool` control request is shown in readable form: a title for what the tool does, the model's `description`, and named fields such as the command, file path, old/new text or search pattern in code boxes (`ToolPermissionPresentation`); the exact JSON input stays available under **원본 JSON**, together with the decision reason and blocked path when present. Display never alters the input that approval returns. **Allow once** returns the unchanged original input for that request; **Deny** returns a rejection. The chosen permission mode and earlier Claude permission rules continue to apply. No `updatedPermissions`, persistent allow rule, home-directory allowlist or global settings change is sent. Pending approvals are memory-only and are cleared on cancellation, stop, pane close or process exit. Request and run IDs prevent a late click from approving a newer run in the same pane.
 

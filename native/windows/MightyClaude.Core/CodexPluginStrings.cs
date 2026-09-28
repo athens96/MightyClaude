@@ -42,8 +42,8 @@ public static class CodexPluginStrings
     // ---- Install and marketplace upgrade (CodexPluginService.swift) ----
     // Only the sentences Codex words differently live here. The shared ones
     // (OperationBusy, OperationCancelled, InstallBadIdOrScope, InstallUnconfirmed,
-    // MarketplaceBadName, MarketplaceNotRegistered, MarketplaceRefreshSucceeded,
-    // DetailRemote) are read from PluginStrings and never repeated.
+    // MarketplaceBadName, MarketplaceNotRegistered, MarketplaceRefreshSucceeded)
+    // are read from PluginStrings and never repeated.
     public const string InstallSkipped = "이미 사용자 범위에 설치되어 있습니다. 비활성 상태라면 Codex에서 활성화하세요.";
     public const string InstallNotFound = "현재 설치 가능한 마켓플레이스 목록에서 이 플러그인을 찾지 못했습니다. 목록과 설치 정책을 다시 확인하세요.";
     public const string InstallSucceeded = "플러그인을 사용자 범위에 설치했습니다. 새 Codex 세션부터 적용됩니다. 연결이 필요한 앱은 Codex에서 인증하세요.";

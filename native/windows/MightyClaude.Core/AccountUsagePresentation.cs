@@ -47,13 +47,12 @@ public sealed class AccountUsageStatus : IAsyncDisposable
 
     public AccountUsageSnapshot? Snapshot(string provider) { lock (gate) return snapshots.TryGetValue(provider, out var value) ? value : null; }
 
-    /// The providers with a local AI pane, in the macOS provider order. A remote
-    /// workspace never borrows this PC's account, and a shell pane has none.
+    /// The providers with an AI pane, in the macOS provider order. A shell pane has none.
     public static IReadOnlyList<string> LocalProviders(AppSnapshot snapshot)
     {
-        var local = snapshot.Workspaces.Where(w => w.Remote is null).Select(w => w.Id).ToHashSet();
+        var ids = snapshot.Workspaces.Select(w => w.Id).ToHashSet();
         return snapshot.Sessions
-            .Where(s => s.Kind != "shell" && local.Contains(s.WorkspaceId) && Wire.Providers.Contains(s.Provider))
+            .Where(s => s.Kind != "shell" && ids.Contains(s.WorkspaceId) && Wire.Providers.Contains(s.Provider))
             .Select(s => s.Provider).Distinct()
             .OrderBy(p => Array.IndexOf(Wire.Providers, p)).ToList();
     }
@@ -62,9 +61,9 @@ public sealed class AccountUsageStatus : IAsyncDisposable
     /// the direct lookup is off, and it is newer than any polled read.
     public static IReadOnlyDictionary<string, AccountUsageSnapshot> SessionReported(AppSnapshot snapshot, DateTimeOffset now)
     {
-        var local = snapshot.Workspaces.Where(w => w.Remote is null).Select(w => w.Id).ToHashSet();
+        var ids = snapshot.Workspaces.Select(w => w.Id).ToHashSet();
         var found = new Dictionary<string, AccountUsageSnapshot>();
-        foreach (var session in snapshot.Sessions.Where(s => local.Contains(s.WorkspaceId)))
+        foreach (var session in snapshot.Sessions.Where(s => ids.Contains(s.WorkspaceId)))
         {
             if (SessionUsageSupport.Normalize(session.SessionUsage) is not { } usage || usage.Provider != session.Provider || usage.RateLimits is not { Count: > 0 } limits) continue;
             var windows = limits.Where(r => r.PercentUsed is not null)

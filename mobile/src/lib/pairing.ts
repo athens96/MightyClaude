@@ -3,9 +3,6 @@ import { fromBase64, toBase64, KEY_LENGTH } from '@/api/relay/crypto';
 export const PAIRING_SCHEME = 'mightyclaude://pair';
 export const PAIRING_VERSION = 2;
 
-/** Shown when an older desktop build still emits the v1 Tailscale QR. */
-export const LEGACY_PAIRING_ERROR = '이 QR은 이전 방식입니다. Mac 앱을 업데이트하세요.';
-
 export interface PairingPayload {
   /** Relay routing key for this desktop. */
   serverId: string;
@@ -51,9 +48,6 @@ export function parsePairingUrl(raw: string): PairingParseResult {
   if (!params) return { ok: false, error: '페어링 주소 형식이 아닙니다.' };
 
   const version = params.get('v');
-  if (version === '1' || (version === null && params.has('host'))) {
-    return { ok: false, error: LEGACY_PAIRING_ERROR };
-  }
   if (version !== String(PAIRING_VERSION)) {
     return { ok: false, error: `지원하지 않는 페어링 버전입니다 (v=${version ?? '없음'}).` };
   }

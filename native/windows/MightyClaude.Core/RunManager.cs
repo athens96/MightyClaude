@@ -9,10 +9,9 @@ public interface IRunManager : IAsyncDisposable
 }
 /// <param name="permissionRequested">
 /// Set only by a host that can show the approval bar for this run. When it is
-/// null — remote workspaces and every headless path — Claude keeps launching
-/// with --permission-prompts none exactly as before. A request is handed to
-/// this callback alone: it is never an event, so it never reaches a snapshot
-/// or a remote peer.
+/// null — every headless path — Claude keeps launching with
+/// --permission-prompts none exactly as before. A request is handed to this
+/// callback alone: it is never an event, so it never reaches a snapshot.
 /// </param>
 public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null) : IRunManager
 {

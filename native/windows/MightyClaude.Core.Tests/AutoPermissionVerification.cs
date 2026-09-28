@@ -22,15 +22,12 @@ internal static class AutoPermissionVerification
         {
             var caps = ProviderCatalog.Capabilities("claude", version);
             Check(!caps.PermissionModes.Contains("auto"), "Unsupported CLI advertised Auto.");
-            Check(ProviderCatalog.RemoteSettingsProblem(selected, caps) is not null, "Legacy host accepted Auto.");
         }
         foreach (var version in new[] { "2.1.271", "2.1.273 (Claude Code)", "3.0.0" })
         {
             var caps = ProviderCatalog.Capabilities("claude", version);
             Check(caps.PermissionModes.Contains("auto"), "Supported CLI omitted Auto.");
-            Check(ProviderCatalog.RemoteSettingsProblem(selected, caps) is null, "Advertised Auto was refused.");
         }
-        Check(ProviderCatalog.RemoteSettingsProblem(selected, null) is not null, "Missing capabilities accepted Auto.");
         var args = ProviderCatalog.Arguments(request, "/tmp/plugin");
         Check(args[args.IndexOf("--permission-mode") + 1] == "auto", "Auto was translated into another mode.");
         Check(args[args.IndexOf("--permission-prompts") + 1] == "none", "Windows silently claimed an approval channel.");

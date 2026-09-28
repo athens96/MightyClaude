@@ -62,8 +62,8 @@ extension AppStore {
         if let reason = cliAccountBlockedReason(provider) { cliAccountMessages[provider] = reason; return }
         guard !cliAccountBusy.contains(provider) else { cliAccountMessages[provider] = "이미 처리 중입니다. 잠시 후 다시 시도하세요."; return }
         guard let command = CLIAccountSupport.loginCommand(provider: provider, option: option) else { return }
-        let workspace = (activeWorkspace?.remote == nil ? activeWorkspace : nil) ?? snapshot.workspaces.first { $0.remote == nil }
-        guard let workspace else { cliAccountMessages[provider] = "로그인 터미널을 열 로컬 워크스페이스가 없습니다. 프로젝트 폴더를 먼저 여세요."; return }
+        let workspace = activeWorkspace ?? snapshot.workspaces.first
+        guard let workspace else { cliAccountMessages[provider] = "로그인 터미널을 열 워크스페이스가 없습니다. 프로젝트 폴더를 먼저 여세요."; return }
         guard snapshot.sessions.count < 128 else { cliAccountMessages[provider] = "실행 창이 너무 많아 로그인 터미널을 열 수 없습니다."; return }
         // addSession refuses while a sheet is up, so Settings closes first and
         // comes back if the pane could not be added.

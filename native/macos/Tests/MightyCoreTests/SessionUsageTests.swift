@@ -165,31 +165,6 @@ struct SessionUsageTests {
         } catch { await bridge.stop(); throw error }
         await bridge.stop()
     }
-
-    @Test func actualRunnerAndRemoteClientCarryUsageFromFakeGemini() async throws {
-        let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
-        let binary = try gemini(root), unavailable = URL(fileURLWithPath: "/usr/bin/false")
-        let providers = ProviderService(binaryOverrides: ["claude": unavailable, "codex": unavailable, "gemini": binary])
-        let repository = StateRepository(directory: root.appendingPathComponent("host-state"), legacyStateURL: nil)
-        let workspace = try await repository.approveWorkspace(Workspace(name: "Remote usage", path: root.path))
-        try await repository.save(AppSnapshot(workspaces: [workspace]))
-        let received = UsageRecorder<RunEvent>()
-        let host = RemoteService(repository: repository, providers: providers, pluginDirectory: root, dataDirectory: root.appendingPathComponent("host-remote"), onEvent: { _ in }, allowLoopbackForTests: true)
-        let client = RemoteService(repository: StateRepository(directory: root.appendingPathComponent("client-state"), legacyStateURL: nil), providers: providers, pluginDirectory: root, dataDirectory: root.appendingPathComponent("client-remote"), onEvent: { received.append($0) }, allowLoopbackForTests: true)
-        do {
-            let shared = try await host.startSharing(workspaceIds: [workspace.id], port: 0)
-            let state = try await client.connectRemote(name: "Usage fixture", address: try #require(shared.host.address), token: try #require(shared.host.token))
-            let connection = try #require(state.connections.first)
-            let imported = try await client.importWorkspace(connectionId: connection.id, workspaceId: workspace.id)
-            try await client.start(request: StartRunRequest(sessionId: "remote-pane", workspaceId: imported.id, input: "fixture only", provider: "gemini"), workspace: imported)
-            try await wait { received.values().contains { $0.status == "completed" } }
-            let usage = try #require(received.values().last { $0.type == "usage" }?.usage)
-            #expect(usage.inputTokens == 1200 && usage.totalTokens == 1300 && usage.contextPercent == nil)
-            #expect(usage.providerSessionId == "gemini-fixture" && usage.model == "gemini-2.5-pro")
-            #expect(received.values().filter { $0.type == "usage" }.allSatisfy { $0.sessionId == "remote-pane" })
-        } catch { await client.shutdown(); await host.shutdown(); await providers.shutdown(); throw error }
-        await client.shutdown(); await host.shutdown(); await providers.shutdown()
-    }
 }
 
 struct RateLimitWindowLabelTests {

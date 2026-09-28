@@ -95,7 +95,6 @@ struct LocalizationTests {
             "settings.run.webSearchLabel",
             "settings.run.limitsTitle",
             "settings.run.applyButton",
-            "settings.run.remoteAccountTemplate",
             "permission.label.plan",
             "permission.claude.default",
             "permission.other.default",
@@ -109,12 +108,12 @@ struct LocalizationTests {
         }
     }
 
-    @Test func runSettingsTemplateSubstitutesHost() {
+    @Test func templatePlaceholdersAreSubstituted() {
         setLanguage("ko")
         defer { setLanguage(nil) }
-        let result = L("settings.run.remoteAccountTemplate", ["host": "mac-mini"])
-        #expect(result == "mac-mini의 계정 권한으로 실행합니다.")
-        #expect(!result.contains("{host}"))
+        let result = L("graph.header.agents", ["n": "3"])
+        #expect(result == "하위 에이전트 3")
+        #expect(!result.contains("{n}"))
     }
 
     @Test func resetCacheClearsLoadedCatalogs() {
