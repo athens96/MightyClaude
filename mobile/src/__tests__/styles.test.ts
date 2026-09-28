@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   blockText,
   guidedRequestFor,
   inlineText,
   isEmojiGlyph,
   legacyStylePanel,
+  MAX_WIDGET_LIST_ITEMS,
   normalizeStylePanel,
   ouroborosPhaseLabel,
   panelOf,
@@ -306,6 +309,94 @@ describe('state widgets (§1.16)', () => {
     expect(bare).toEqual({ fraction: 0, text: '5' });
   });
 
+  it('keeps an empty list and an empty label in place, one widget per source', () => {
+    // What the Mac sends for sources with nothing current yet (§1.16.1); the Mac's
+    // StyleWidgetPresentationTests asserts the same empty states.
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'progressBar', value: 0, total: 0 },
+          { kind: 'list', items: [] },
+          { kind: 'label', text: '' },
+        ],
+      }),
+    )!;
+    expect(panel.widgets).toEqual([
+      { kind: 'progressBar', value: 0, total: 0 },
+      { kind: 'list', items: [] },
+      { kind: 'label', text: '' },
+    ]);
+  });
+
+  it('cuts a list to the same eight lines the Mac draws, skipping blank ones', () => {
+    const items = ['  ', ...Array.from({ length: 12 }, (_, index) => `항목 ${index + 1}`)];
+    const panel = normalizeStylePanel(panelPayload({ widgets: [{ kind: 'list', items }] }))!;
+    expect(MAX_WIDGET_LIST_ITEMS).toBe(8);
+    expect(panel.widgets).toEqual([
+      { kind: 'list', items: ['항목 1', '항목 2', '항목 3', '항목 4', '항목 5', '항목 6', '항목 7', '항목 8'] },
+    ]);
+  });
+
+  it('reads the recorded Superpowers golden widgets the way the Mac presents them', () => {
+    // The same bytes StyleWidgetPresentationTests reads on the Mac (contract 8.4); read with
+    // `fs` because mobile/tsconfig.json has no `resolveJsonModule`.
+    const golden = join(__dirname, '..', '..', '..', 'styles', 'golden', 'superpowers.panel.json');
+    const recorded = JSON.parse(readFileSync(golden, 'utf8')) as Record<string, unknown>;
+    const panel = normalizeStylePanel(recorded.withState)!;
+    expect(panel.phase?.id).toBe('execute');
+    // What the engine makes of Superpowers' own declarations: the plan file as a bar and
+    // the `subagent.start` count as a label, recorded in Korean.
+    expect(panel.widgets).toEqual([
+      { kind: 'progressBar', value: 3, total: 7 },
+      { kind: 'label', text: '서브에이전트 2회 시작' },
+    ]);
+    const bar = panel.widgets?.[0];
+    expect(bar?.kind === 'progressBar' ? progressBarDisplay(bar) : undefined).toEqual({
+      fraction: 3 / 7,
+      text: '3/7',
+    });
+  });
+
+  it('closes up a line break inside a widget line rather than breaking the line', () => {
+    // Mirrors StyleWidgetPresentationTests.aLineBreakInsideTheTextClosesUpRatherThanBreakingTheLine.
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'label', text: 'first\nsecond' },
+          { kind: 'list', items: ['first\nsecond', 'a\tb'] },
+        ],
+      }),
+    )!;
+    expect(panel.widgets).toEqual([
+      { kind: 'label', text: 'firstsecond' },
+      { kind: 'list', items: ['firstsecond', 'ab'] },
+    ]);
+  });
+
+  it('strips bidi overrides and zero-width characters wherever they stand', () => {
+    // Mirrors StyleWidgetPresentationTests.bidiOverridesAndZeroWidthCharactersAreStrippedWhereverTheyStand.
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'label', text: 'ab\u202ec\u200bd' },
+          { kind: 'list', items: ['ab\u202ec\u200bd', '\u2066\ufeff\u00ad'] },
+        ],
+      }),
+    )!;
+    expect(panel.widgets).toEqual([
+      { kind: 'label', text: 'abcd' },
+      { kind: 'list', items: ['abcd'] },
+    ]);
+  });
+
+  it('cuts a widget line by code points, as the Mac counts unicodeScalars', () => {
+    // Mirrors StyleWidgetPresentationTests.theCutCountsCodePointsAsThePhonesArrayFromDoes.
+    const family = '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}';
+    const text = '가'.repeat(198) + family;
+    const panel = normalizeStylePanel(panelPayload({ widgets: [{ kind: 'label', text }] }))!;
+    expect(panel.widgets).toEqual([{ kind: 'label', text: '가'.repeat(198) + '\u{1F468}\u200d' }]);
+  });
+
   it('drops unknown widget kinds (closed vocabulary)', () => {
     const panel = normalizeStylePanel(
       panelPayload({
@@ -358,6 +449,24 @@ describe('state widgets (§1.16)', () => {
     expect(model.widgets[0]).toEqual({ kind: 'progressBar', value: 2, total: 4 });
     expect(model.widgets[1]).toEqual({ kind: 'list', items: ['a', 'b'] });
     expect(model.widgets[2]).toEqual({ kind: 'label', text: '완료 2/4' });
+  });
+
+  it('styleViewModel leaves out an empty list or label, as the Mac panel does', () => {
+    // The payload keeps one widget per source; only what has something to draw is drawn.
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'progressBar', value: 0, total: 0 },
+          { kind: 'list', items: [] },
+          { kind: 'label', text: '' },
+        ],
+      }),
+    )!;
+    expect(styleViewModel(panel).widgets).toEqual([{ kind: 'progressBar', value: 0, total: 0 }]);
+    const nothing = normalizeStylePanel(
+      panelPayload({ widgets: [{ kind: 'list', items: [] }, { kind: 'label', text: '' }] }),
+    )!;
+    expect(styleViewModel(nothing).widgets).toEqual([]);
   });
 
   it('styleViewModel returns an empty widgets array when none are present', () => {

@@ -341,15 +341,22 @@ public enum StyleStateEngine {
                   let at = fractional.date(from: entry.timestamp) ?? plain.date(from: entry.timestamp), at >= since else { continue }
             if activity.kind == "agent" {
                 guard subagentTools.contains(tool.lowercased()) else { continue }
-                records.append(RunEventRecord(event: .subagentStart, value: activity.summary))
+                let summary = eventValue(activity.summary)
+                records.append(RunEventRecord(event: .subagentStart, value: summary))
                 if MightyGraphSupport.terminal(activity.state) {
-                    records.append(RunEventRecord(event: .subagentFinish, value: activity.summary))
+                    records.append(RunEventRecord(event: .subagentFinish, value: summary))
                 }
             } else if toolKinds.contains(activity.kind) {
-                records.append(RunEventRecord(event: .toolCall, value: tool))
+                records.append(RunEventRecord(event: .toolCall, value: eventValue(tool)))
             }
         }
         return records
+    }
+
+    /// An event's value came from the agent, not through the approval card: it
+    /// is cut and cleaned exactly as a file source's text is (§1.8, §1.16.3).
+    private static func eventValue(_ value: String) -> String {
+        StyleText.replacingBanned(String(value.prefix(StyleLimits.maximumString)))
     }
 
     /// `count` and `lastValue`, each drawn by the widget the source names. A

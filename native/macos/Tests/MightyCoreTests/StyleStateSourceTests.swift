@@ -257,6 +257,19 @@ struct StyleStateSourceTests {
         #expect(reading.fileSourceStates.isEmpty)
     }
 
+    /// An event's value is the agent's text, so it is cleaned and cut as a
+    /// file source's is: banned characters become U+FFFD, 400 characters at most.
+    @Test func runEventValuesAreCleanedAndCutAsFileTextIs() {
+        let since = Date(timeIntervalSince1970: 1_800_000_000)
+        var session = RunSession(workspaceId: "w", title: "t")
+        session.logs = [
+            activity("Task", summary: "plan\u{202E}evil\nnext", at: since.addingTimeInterval(5)),
+            activity("Task", summary: String(repeating: "가", count: 500), at: since.addingTimeInterval(6)),
+        ]
+        let values = StyleStateEngine.runEvents(from: session, since: since).filter { $0.event == .subagentStart }.map(\.value)
+        #expect(values == ["plan\u{FFFD}evil\u{FFFD}next", String(repeating: "가", count: StyleLimits.maximumString)])
+    }
+
     @Test func everyDeclaredSourceDrawsOneWidgetInOrderEvenWhenEmpty() throws {
         let (root, _) = workspace("empty")
         defer { try? fm.removeItem(at: root.deletingLastPathComponent()) }

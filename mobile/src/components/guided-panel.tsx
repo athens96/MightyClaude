@@ -288,7 +288,7 @@ export function GuidedPanel({
  * is nothing to guess here: a payload carrying anything else was already dropped by
  * `normalizeStylePanel`, and the Mac sends the values themselves, never a template.
  */
-function StateWidget({ widget, tint }: { widget: StyleWidget; tint: string }) {
+export function StateWidget({ widget, tint }: { widget: StyleWidget; tint: string }) {
   const styles = useStyles(makeStyles);
   if (widget.kind === 'progressBar') {
     // Both numbers are counts, so the bar says 3/7 rather than 43% (§1.16.4).
@@ -303,6 +303,7 @@ function StateWidget({ widget, tint }: { widget: StyleWidget; tint: string }) {
       </View>
     );
   }
+  // An empty list or label never reaches here: `styleViewModel` left it out (§1.16.4).
   if (widget.kind === 'list') {
     return (
       <View style={styles.widgetList}>
@@ -314,7 +315,12 @@ function StateWidget({ widget, tint }: { widget: StyleWidget; tint: string }) {
       </View>
     );
   }
-  return <Text style={styles.widgetLabel}>{widget.text}</Text>;
+  // One line, as on the Mac (`.lineLimit(1)`): a long label ends in an ellipsis.
+  return (
+    <Text numberOfLines={1} ellipsizeMode="tail" style={styles.widgetLabel}>
+      {widget.text}
+    </Text>
+  );
 }
 
 /**

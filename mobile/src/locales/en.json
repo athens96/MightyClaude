@@ -179,6 +179,8 @@
   "guidedPanel.reloadHelp": "Reload",
   "guidedPanel.resetHelp": "Show starting-stage actions again",
   "guidedPanel.sourcePrefix": "Source: ",
+  "guidedPanel.stateAccessibility": "State",
+  "guidedPanel.stateProgressAccessibility": "Progress",
   "guidedPanel.stylesMenuAccessibility": "Request style",
   "guidedPanel.stylesMenuHelp": "Request style · CLI sends requests freely as usual. A style uses the phases and actions defined by its manifest.",
   "guidedPanel.viewContentsButton": "View Contents",

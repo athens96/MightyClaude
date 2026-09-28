@@ -179,6 +179,8 @@
   "guidedPanel.reloadHelp": "다시 읽기",
   "guidedPanel.resetHelp": "시작 단계의 행동을 다시 보여줍니다",
   "guidedPanel.sourcePrefix": "출처: ",
+  "guidedPanel.stateAccessibility": "상태",
+  "guidedPanel.stateProgressAccessibility": "진행",
   "guidedPanel.stylesMenuAccessibility": "요청 스타일",
   "guidedPanel.stylesMenuHelp": "요청 스타일 · CLI는 지금처럼 자유롭게 요청합니다. 스타일은 그 매니페스트가 정한 단계와 행동을 씁니다.",
   "guidedPanel.viewContentsButton": "내용 보기",

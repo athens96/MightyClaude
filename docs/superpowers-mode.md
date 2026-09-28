@@ -44,14 +44,14 @@ Enter 동작: **`verbatim`** — Superpowers 스타일은 Enter를 절대 가로
 
 ### 상태 위젯
 
-폰 패널 아래쪽에 두 위젯이 표시된다.
+Mac 패널과 폰 패널 모두 준비물 블록 아래·그룹 지도 위에 두 위젯을 같은 순서, 같은 모양으로 그린다([mighty-styles.md](mighty-styles.md) §1.16.4).
 
 | 소스 | 위젯 종류 | 표시 내용 |
 |---|---|---|
 | `docs/superpowers/plans/*.md` (markdownChecklist) | **진행 막대** (`progressBar`) | 현재 계획의 완료 항목 수 / 전체 항목 수 (`N/M`) |
 | 서브에이전트 시작 이벤트 (count) | **라벨** (`label`) | 현재 세션에서 서브에이전트가 시작된 횟수 |
 
-지금은 **폰 화면만** 위젯을 그린다. Mac은 같은 상태로 단계 표시줄을 정하지만(폰과 같은 단계가 나온다), Mac 패널에 위젯을 그리는 일은 다음 단계에서 한다. 현재 계획 파일이 없으면 진행 막대는 비어 있는 상태(`0/0`)로 그린다(숨기지 않는다).
+Mac은 `GuidedPanel.swift`의 `stateWidgets`가, 폰은 `guided-panel.tsx`의 `StateWidget`이 그린다. 둘 다 같은 캐시된 읽기(`AppStore.styleState(_:for:)`)에서 오고, 그리는 동안 파일을 읽지 않는다. 현재 계획 파일이 없으면 진행 막대는 비어 있는 상태(`0/0`)로 그린다(숨기지 않는다). 서브에이전트 라벨은 첫 요청 이후를 0회부터 센다.
 
 ### 그래프
 
@@ -82,7 +82,7 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 
 ## 범위
 
-- **v5 (구현)**: 스타일 선택, 4단계 표시줄, 전용 패널 버튼, 상태 소스(계획 파일 진행 막대 + 서브에이전트 카운트 라벨), Enter는 그대로(verbatim), 준비물 확인, Mac + 폰 양면(상태 위젯 그리기는 폰만; Mac 위젯은 다음 단계).
+- **v5 (구현)**: 스타일 선택, 4단계 표시줄, 전용 패널 버튼, 상태 소스(계획 파일 진행 막대 + 서브에이전트 카운트 라벨), Enter는 그대로(verbatim), 준비물 확인, Mac + 폰 양면(상태 위젯도 두 쪽이 같은 모양으로 그린다).
 - **Enter 가로채기 없음**: 이 스타일은 어떤 상황에서도 사용자가 친 평문을 바꾸지 않는다. 버튼과 단계 표시줄이 안내하고, 사용자가 직접 고른다.
 - Claude 전용. Codex·Gemini는 Superpowers 스킬 구동 방식이 다르므로 이 스타일의 적격성 밖이다.
 
@@ -131,8 +131,10 @@ Superpowers 플러그인(`superpowers@claude-community`)이 필요하다. 없으
 | 범용 엔진(디코딩·검증·평가·상태 읽기·투영·레지스트리) | `native/macos/Sources/MightyCore/Styles/*.swift` |
 | 상태 읽기 및 stateOverrides 평가 | `native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift` |
 | 스타일 전환, 승인, 프롬프트 전송, 설치 터미널 | `native/macos/Sources/MightyClaude/AppStore+Styles.swift` |
-| 범용 패널, 행동 칩 (Mac은 아직 상태 위젯을 그리지 않는다) | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift` |
+| 범용 패널, 상태 위젯(`stateWidgets`), 행동 칩 | `native/macos/Sources/MightyClaude/GuidedPanel.swift`, `GuidedActionChip.swift` |
+| 위젯 → 화면 값 (Mac) | `native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift` |
 | 상태 읽기 엔진, 감시기 | `native/macos/Sources/MightyCore/Styles/StyleStateEngine.swift`, `native/macos/Sources/MightyClaude/StyleStateWatcher.swift` |
 | 폰 렌더링 (상태 위젯 포함) | `mobile/src/components/guided-panel.tsx`, `mobile/src/lib/styles.ts` |
 | 명령 인벤토리 검증 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift::buttonsSendInstalledPluginSkillCommands()` |
-| 테스트 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift`, `StylesBundledTests.swift` |
+| 테스트 | `native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift`, `StylesBundledTests.swift`, `StyleWidgetPresentationTests.swift`(폰 `styles.test.ts`와 같은 사례) |
+| 골든 (상태 위젯 포함) | `styles/golden/superpowers.panel.json`의 `withState` 사례 — 실제 엔진(`StyleStateEngine.reading`)이 이 매니페스트의 `stateSources`를 고정 입력(3/7 체크리스트, 서브에이전트 시작 2번과 도구 호출 1번)으로 읽은 결과를 한국어로 기록한다: 진행 막대 `3/7`과 라벨 `서브에이전트 2회 시작`. Mac `StyleGoldenContractTests`·`StyleWidgetPresentationTests`와 폰 `styles.test.ts`·`guided-panel-widgets.test.ts`가 함께 읽는다 |
