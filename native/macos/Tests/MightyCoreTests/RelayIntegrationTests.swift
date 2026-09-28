@@ -18,7 +18,7 @@ private class StaticHost: MobileHostDelegate, @unchecked Sendable {
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String { "new" }
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws {}
     func mobileRunNextQueued(sessionId: String) async throws {}
-    func mobileRename(sessionId: String, title: String) async throws {}
+    func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {}
     func mobileClose(sessionId: String) async throws {}
     func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage { MobileEntriesPage(entries: [], hasMore: false) }
     func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws {}

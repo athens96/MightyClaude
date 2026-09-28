@@ -173,7 +173,7 @@ struct WorkspaceView: View {
                                 else if session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
                                 else { ProviderIcon(provider: session.provider, size: 10) }
                             }.foregroundStyle(.secondary).frame(width: 12)
-                            Text(session.title).font(.system(size: 11)).lineLimit(1)
+                            Text(session.title).font(.system(size: 11)).lineLimit(1).help(session.titleHelp)
                             Spacer(minLength: 0)
                             if permissionPending { Text("승인 대기").font(.system(size: 9, weight: .medium)).foregroundStyle(.orange) }
                             else if agentRunning { Text("작업 중").font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.accent) }

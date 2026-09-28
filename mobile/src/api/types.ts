@@ -143,6 +143,11 @@ export interface MobileSessionSummary {
    * and `styleId` wins over `mightyStyle` whenever both arrive (contract 7.2).
    */
   styleId?: string;
+  /**
+   * "auto" — title follows the latest request; "fixed" — user renamed it.
+   * Absent on older hosts; treat absence as "auto".
+   */
+  titleMode?: 'auto' | 'fixed';
 }
 
 export interface MobileState {

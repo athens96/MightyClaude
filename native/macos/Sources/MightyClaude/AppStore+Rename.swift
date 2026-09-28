@@ -1,4 +1,5 @@
 import Foundation
+import MightyCore
 
 extension AppStore {
     func beginRenameWorkspace(_ id: String) {
@@ -21,8 +22,15 @@ extension AppStore {
     @discardableResult
     func renameSession(_ id: String, to name: String) -> Bool {
         guard let name = Self.displayName(name), snapshot.sessions.contains(where: { $0.id == id }) else { return false }
-        updateSession(id) { $0.title = name }
+        updateSession(id) { $0.title = name; $0.titleMode = "fixed" }
         return true
+    }
+
+    func setSessionAutoTitle(_ id: String) {
+        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
+        let defaultTitle = ProviderOptions.label(session.provider)
+        let newTitle = PaneTitle.autoTitle(for: session, defaultTitle: defaultTitle)
+        updateSession(id) { $0.titleMode = "auto"; $0.title = newTitle }
     }
 
     private static func displayName(_ value: String) -> String? {

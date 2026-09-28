@@ -504,6 +504,23 @@ export default function SessionScreen() {
     [client, poll, sessionId],
   );
 
+  const setAutoTitle = useCallback(() => {
+    if (!client || !sessionId) return;
+    void (async () => {
+      setPaneBusy(true);
+      try {
+        await client.setAutoTitle(sessionId);
+        setRenaming(false);
+        showToast(t('pane.rename.automatic'), 'success');
+        poll.refresh();
+      } catch (error) {
+        showToast(describeError(error), 'error');
+      } finally {
+        setPaneBusy(false);
+      }
+    })();
+  }, [client, poll, sessionId]);
+
   const closePane = useCallback(() => {
     if (!client || !sessionId) return;
     void (async () => {
@@ -883,13 +900,22 @@ export default function SessionScreen() {
       <PromptDialog
         visible={renaming}
         title="이름 변경"
-        description="1~80자까지 쓸 수 있습니다."
+        description={
+          session?.titleMode === 'fixed'
+            ? `${t('pane.rename.modeFixed')} · 1~80자까지 쓸 수 있습니다.`
+            : `${t('pane.rename.automatic')} · 1~80자까지 쓸 수 있습니다.`
+        }
         initialValue={session?.title ?? ''}
         placeholder="실행 창 이름"
         confirmLabel="변경"
         busy={paneBusy}
         onConfirm={rename}
         onCancel={() => setRenaming(false)}
+        extraAction={
+          session?.titleMode === 'fixed'
+            ? { label: t('pane.rename.backToAutomatic'), onPress: setAutoTitle }
+            : undefined
+        }
       />
 
       <ConfirmDialog

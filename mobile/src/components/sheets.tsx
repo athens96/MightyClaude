@@ -115,6 +115,7 @@ export function PromptDialog({
   busy,
   onConfirm,
   onCancel,
+  extraAction,
 }: {
   visible: boolean;
   title: string;
@@ -125,6 +126,8 @@ export function PromptDialog({
   busy: boolean;
   onConfirm: (value: string) => void;
   onCancel: () => void;
+  /** An optional secondary action shown below the main buttons (e.g. "Back to automatic"). */
+  extraAction?: { label: string; onPress: () => void };
 }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
@@ -164,6 +167,9 @@ export function PromptDialog({
           onPress={() => onConfirm(trimmed)}
         />
       </View>
+      {extraAction ? (
+        <Button label={extraAction.label} tone="neutral" busy={busy} onPress={extraAction.onPress} />
+      ) : null}
     </Sheet>
   );
 }

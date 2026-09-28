@@ -274,10 +274,34 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     public var workspaceProfileKey: String?
     /// Present only on browser sessions owned by an agent pane (stage 2+).
     public var ownerSessionId: String?
+    /// Titling mode: "auto" follows the latest user request; "fixed" keeps the manually set name.
+    /// A nil value (older sessions) decodes as "auto".
+    public var titleMode: String?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes, graphResultSize, workspaceProfileKey, ownerSessionId }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, graphRuns, graphBlockSizes, graphResultSize, workspaceProfileKey, ownerSessionId, titleMode }
+    /// Full text of the most recent user log entry that would update the automatic title,
+    /// for use as a tooltip when the title has been shortened.
+    public var titleTooltip: String? {
+        for entry in logs.reversed() {
+            guard entry.kind == "user" else { continue }
+            // The log holds the typed input, then a blank line and one "첨부: " line per
+            // attachment; only the typed part titles the pane. An attachment-only entry
+            // starts with the marker and leaves nothing.
+            let text = entry.text.hasPrefix("첨부: ") ? "" : entry.text.components(separatedBy: "\n\n첨부: ")[0]
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            return trimmed
+        }
+        return nil
+    }
+    /// Hover text for the pane title: the full request behind an automatic agent title,
+    /// otherwise the title itself.
+    public var titleHelp: String {
+        guard kind == SessionKind.claude, (titleMode ?? "auto") == "auto" else { return title }
+        return titleTooltip ?? title
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); workspaceId = try c.decode(String.self, forKey: .workspaceId)
@@ -298,6 +322,7 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         graphResultSize = try? c.decodeIfPresent(MightyGraphBlockSize.self, forKey: .graphResultSize)
         workspaceProfileKey = try? c.decodeIfPresent(String.self, forKey: .workspaceProfileKey)
         ownerSessionId = try? c.decodeIfPresent(String.self, forKey: .ownerSessionId)
+        titleMode = try? c.decodeIfPresent(String.self, forKey: .titleMode)
     }
 }
 

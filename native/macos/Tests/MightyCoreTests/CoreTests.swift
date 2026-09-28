@@ -157,7 +157,7 @@ final class CoreTests {
         var state = try await repository.load()
         #expect((state.sessions.first?.provider) == ("claude")); #expect((state.sessions.first?.settings) == (RunSettings())); #expect((state.sessions.first?.status) == ("stopped"))
         #expect((try Data(contentsOf: legacy)) == (original))
-        state.sessions[0].title = "Native saved"; try await repository.save(state)
+        state.sessions[0].title = "Native saved"; state.sessions[0].titleMode = "fixed"; try await repository.save(state)
         let fresh = StateRepository(directory: native, legacyStateURL: legacy); let restored = try await fresh.load()
         #expect((restored.sessions.first?.title) == ("Native saved")); #expect((try Data(contentsOf: legacy)) == (original))
         state.workspaces[0].path = "/unapproved"

@@ -236,6 +236,14 @@ public actor StateRepository {
                 if restoring || session.status != "running" { session.runTiming?.interrupt() }
                 else { session.runTiming?.observe(at: date) }
             }
+            // Migration: retitle automatic agent panes from their most recent user request.
+            // A nil titleMode (saved before this feature) is treated as "auto".
+            if restoring && session.kind == SessionKind.claude {
+                let isAuto = session.titleMode == nil || session.titleMode == "auto"
+                if isAuto {
+                    session.title = PaneTitle.autoTitle(for: session, defaultTitle: ProviderOptions.label(session.provider))
+                }
+            }
             output.sessions.append(session)
         }
         output.activeWorkspaceId = value.activeWorkspaceId.flatMap { workspaceIds.contains($0) ? $0 : nil } ?? output.workspaces.first?.id

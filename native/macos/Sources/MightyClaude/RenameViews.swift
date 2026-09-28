@@ -1,3 +1,4 @@
+import MightyCore
 import SwiftUI
 
 struct RenameTarget: Identifiable {
@@ -43,6 +44,10 @@ struct RenameSheet: View {
             }
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
             HStack {
+                if target.kind == .session {
+                    Button(L("pane.rename.automatic")) { setAutomatic() }
+                        .accessibilityIdentifier("rename-automatic")
+                }
                 Spacer()
                 Button("취소") { store.renameTarget = nil }.keyboardShortcut(.cancelAction)
                 Button("저장") { save() }
@@ -64,5 +69,11 @@ struct RenameSheet: View {
             : store.renameSession(target.targetID, to: trimmedName)
         if saved { store.renameTarget = nil }
         else { saveError = "대상을 찾을 수 없습니다. 창을 닫고 다시 시도하세요." }
+    }
+
+    private func setAutomatic() {
+        guard store.renameTarget?.id == target.id else { return }
+        store.setSessionAutoTitle(target.targetID)
+        store.renameTarget = nil
     }
 }
