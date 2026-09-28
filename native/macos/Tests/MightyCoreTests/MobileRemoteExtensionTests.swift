@@ -94,8 +94,8 @@ struct MobileRemoteExtensionTests {
         #expect(mighty && !plain && !remote && !codex)
         // `options.styles` is the open list: the CLI plus what may be run.
         let options = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
-        #expect(options.map(\.id) == ["cli", "ouroboros", "paperthin"])
-        #expect(options.map(\.label) == ["cli", "Ouroboros", "Paperthin"])
+        #expect(options.map(\.id) == ["cli", "ouroboros", "paperthin", "superpowers"])
+        #expect(options.map(\.label) == ["cli", "Ouroboros", "Paperthin", "Superpowers"])
         #expect(options[0].source == nil && options[1].source == .bundled)
         #expect(MobileRemoteSupport.styleOptions([]).map(\.id) == ["cli"])
 
@@ -1129,7 +1129,7 @@ struct MobileRemoteExtensionTests {
     @Test func theStyleFieldsRideBesideTheFixedVocabulary() throws {
         // `mightyStyle` keeps its three words; the truth travels in `styleId`,
         // so an old phone sees a plain CLI pane rather than a wrong one (§7.2).
-        #expect(MobileWire.mightyStyles == ["cli", "ouroboros", "paperthin"])
+        #expect(MobileWire.mightyStyles == ["cli", "ouroboros", "paperthin", "superpowers"])
         #expect(MobileCapability.all.contains("style"))
         let summary = try encoded(MobileSessionSummary(id: "s", workspaceId: "w", title: "t", kind: "claude", provider: "claude",
                                                        model: "default", status: "idle", revision: 1, updatedAt: "now",
@@ -1157,7 +1157,7 @@ struct MobileRemoteExtensionTests {
 
     @Test func settingsCarryTheOpenStyleListAndAcceptOnlyItsMembers() throws {
         let styles = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
-        #expect(styles.map(\.id) == ["cli", "ouroboros", "paperthin"])
+        #expect(styles.map(\.id) == ["cli", "ouroboros", "paperthin", "superpowers"])
         #expect(styles[1].label == "Ouroboros" && styles[1].source == .bundled && styles[0].source == nil)
         let options = MobileSettingsOptions(models: [MobileOption(id: "default", label: "기본")],
                                             permissionModes: [MobileOption(id: "default", label: "기본")],

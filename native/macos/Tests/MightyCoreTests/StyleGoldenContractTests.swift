@@ -42,6 +42,8 @@ struct StyleGoldenContractTests {
             let style = StyleFixtures.bundled(id)
             try StyleGolden.check(StyleGolden.projection(for: style, casebookStates: [StyleCapabilityID.casebook: "absent"]), id: id)
         }
+        let superpowers = StyleFixtures.bundled("superpowers")
+        try StyleGolden.check(StyleGolden.projection(for: superpowers), id: "superpowers")
     }
 
     @Test func theGoldenSerialisationRulesAreFixed() throws {

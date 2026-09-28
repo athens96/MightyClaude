@@ -39,6 +39,7 @@
 | `autoAllow` | array | ✓ | ≤32, 비어 있어도 됨 | 1.9 |
 | `presentation` | object | ✓ | 1.10 | 스타일 단위 아이콘·색 |
 | `job` | object | — | 1.13 | 백그라운드 잡 선언 (선택). 없으면 오늘과 동일하게 동작 |
+| `stateSources` | object | — | 1.16 | 상태 소스 선언 (선택, **v5 추가**). 파일·실행 이벤트를 읽어 위젯에 투영 |
 
 **최상위·중첩을 통틀어 모르는 키는 거부한다**(`E_UNKNOWN_FIELD`). 이유 한 줄: 승인 화면이 "파일 내용 전부"를 보여 주기로 한 이상, 앱이 뜻을 모르는 필드는 보여 줄 수도 설명할 수도 없어 약속을 깨기 때문이다. 앞으로의 확장은 `schema` 값으로 받는다 — v2 파일은 절반만 읽히는 대신 "이 앱은 schema 1만 읽습니다"로 분명히 거부된다(폰·Windows가 나중에 같은 파일을 읽을 때도 같은 판정을 내린다).
 
@@ -679,6 +680,107 @@ JobMatcher: {
 
 `E_PROMPT_RECOGNITION` 확인: 28개 모두 `{text}`를 지운 프롬프트가 `/<id>`이고, `recognition` 접두사 `/`를 떼면 이름이 곧 `id`다. `match`가 필요 없다. 모든 `glyph`는 이모지 표현을 갖는 grapheme cluster 하나다(`♻️`·`🛣️`·`✂️`·`🗜️`·`🗂️`처럼 VS16이 붙은 것들도 클러스터 하나로 센다).
 
+### 1.16 상태 소스 (`stateSources`, v5)
+
+**v5 추가.** `schema: 1`이고 엔진이 `mighty-style-engine-v5` 이상일 때만 읽힌다. 이전 엔진은 이 필드를 모르는 키(`E_UNKNOWN_FIELD`)로 거부한다.
+
+`stateSources`는 선택적 최상위 필드다. 없으면 엔진은 상태를 읽지 않는다.
+
+```
+stateSources: {
+  "files":     [FileStateSource],     // 0–8개
+  "runEvents": [RunEventStateSource]  // 0–8개
+}
+
+FileStateSource: {
+  "path":   string,   // 1–400자, 워크스페이스 상대 경로 또는 glob. §1.16.1
+  "parser": string,   // 닫힌 집합: markdownChecklist | json
+  "widget": string    // 닫힌 집합: progressBar | list | label
+}
+
+RunEventStateSource: {
+  "event":     string,   // 닫힌 집합: subagent.start | subagent.finish | tool.call
+  "aggregate": string,   // 닫힌 집합: count | lastValue
+  "widget":    string    // 닫힌 집합: progressBar | list | label
+}
+```
+
+`files`와 `runEvents` 각각 최대 8개다. 어느 한 쪽만 있어도 되고, 둘 다 없는 `stateSources: {}` 블록도 허용한다.
+
+#### 1.16.1 파일 소스 경로 규칙
+
+경로는 **워크스페이스 상대 경로**이고, `/`나 `~`로 시작할 수 없으며 `..` 구성 요소를 포함할 수 없다(`E_STATE_PATH_ESCAPE`). 이 검사는 디코딩 시점(파싱 직후)에 하고, 심볼릭 링크 해소와 실제 경계 확인은 런타임에서 한다.
+
+글롭 형태를 허용한다. `*`는 같은 폴더 안의 이름과 일치하고, `**`는 임의 깊이에 일치한다. 런타임이 일치하는 파일 중 실제로 존재하고 워크스페이스 안에 있는 것을 파서에 넘긴다 — 일치 파일이 없으면 그 소스의 위젯은 비어 있는 상태로 그린다.
+
+#### 1.16.2 파서
+
+| 이름 | 무엇을 읽는가 | progressBar | list | label |
+|---|---|---|---|---|
+| `markdownChecklist` | `- [ ] 항목`(미완) · `- [x] 항목`(완료)의 체크리스트 | 완료/전체 비율 | 미완 항목 목록 | `완료 N/M` 형식 |
+| `json` | 배열 또는 키·값 쌍 | — | 배열 항목 목록 | 첫 번째 값의 문자열 |
+
+#### 1.16.3 실행 이벤트 집계
+
+| 이름 | 무엇을 세는가 |
+|---|---|
+| `count` | 이 실행 창의 현재 세션에서 해당 이벤트가 발생한 횟수 |
+| `lastValue` | 가장 최근 이벤트의 도구 이름 문자열 |
+
+집계 범위는 **이 실행 창의 현재 세션** 안으로 고정되며, 과거 실행이나 다른 실행 창의 이벤트는 섞이지 않는다.
+
+#### 1.16.4 위젯
+
+세 종류 모두 Mac 패널과 폰 화면에서 동일한 모양으로 그려지며, 7장 폰 페이로드의 `stateWidgets` 배열로 전달된다.
+
+| 이름 | 렌더링 (Mac · 폰 동일) |
+|---|---|
+| `progressBar` | 가로 진행 막대 + `N/M` 숫자 |
+| `list` | 항목 목록 (최대 8줄) |
+| `label` | 단일 텍스트 한 줄 |
+
+#### 1.16.5 `stateOverrides` — 파일 소스 상태로 단계 덮어쓰기
+
+`rules.phase.lastRecognisedAction`에 선택적 `stateOverrides` 배열을 추가할 수 있다.
+
+```
+stateOverrides: [{
+  "sourceIndex": int,    // stateSources.files의 인덱스 (0 기반)
+  "condition":   string, // 닫힌 집합: fileExists | allChecked
+  "phase":       string  // phases[].id
+}]
+```
+
+최대 16개. `sourceIndex`가 `stateSources.files`의 범위를 벗어나면 `E_UNKNOWN_REFERENCE`다. `condition`의 닫힌 집합 밖이면 `E_UNKNOWN_RULE`.
+
+단계 계산 순서:
+1. `stateOverrides`를 **배열 순서대로** 평가한다. 처음으로 조건이 참인 항목이 단계를 결정한다.
+2. 아무 조건도 참이 아니면, 과거 요청 인식으로 단계를 결정한다(기존 `lastRecognisedAction` 규칙).
+3. 인식된 것도 없으면 `default` 단계.
+
+`fileExists` — 그 파일 소스의 경로(또는 글롭)에 일치하는 파일이 하나 이상 있고 워크스페이스 안에 있으면 참.  
+`allChecked` — `markdownChecklist` 파서가 파일을 읽었고 체크리스트 항목이 하나 이상이며 모두 `[x]`이면 참. `json` 파서에는 이 조건을 쓸 수 없으며, 적용하면 항상 거짓으로 평가한다.
+
+#### 1.16.6 신뢰 모델과 어휘 폐쇄성
+
+`stateSources`가 도입하는 모든 어휘는 **닫힌 집합**이다. 파서 이름·집계 방법·위젯 종류·이벤트 종류·조건은 앱이 알고 있는 값만 허용하고, 식 언어나 템플릿이 없다. 모르는 값은 즉시 거부한다 — §2의 검증 흐름 그대로다.
+
+파일 소스 경로는 워크스페이스 상대 경로만 허용하고, 런타임에 심볼릭 링크를 따라 나간 결과도 워크스페이스 안인지 다시 확인한다. 절대 경로·`..`·홈 경로(`~`)는 파싱 단계에서 거부된다(`E_STATE_PATH_ESCAPE`).
+
+실행 이벤트는 **현재 세션 범위**로만 읽을 수 있다. 집계는 `count`와 `lastValue` 두 가지 내장 집계뿐이다 — 임의 표현식을 적을 수 없다. 자유 트랜스크립트 스트림은 소스로 쓸 수 없다.
+
+이 설계는 §1.1의 "모르는 키는 거부한다" 원칙과 §4의 위협 모델을 그대로 이어받는다. 신뢰되지 않은 저장소 매니페스트가 `stateSources`를 선언해도, 어휘 폐쇄성이 유지되는 한 승인 화면이 보여 준 내용 그대로가 엔진이 실행하는 내용이다.
+
+새로 추가되는 오류 코드:
+
+| 코드 | 한국어 메시지 |
+|---|---|
+| `E_STATE_PARSER` | 알 수 없는 파서입니다: `<값>`. |
+| `E_STATE_WIDGET` | 알 수 없는 위젯 종류입니다: `<값>`. |
+| `E_STATE_AGGREGATE` | 알 수 없는 집계 방법입니다: `<값>`. |
+| `E_STATE_PATH_ESCAPE` | 경로가 워크스페이스를 벗어납니다: `<값>`. |
+| `E_STATE_RUN_EVENT` | 알 수 없는 실행 이벤트입니다: `<값>`. |
+
 ---
 
 ## 2. 검증
@@ -753,6 +855,11 @@ JobMatcher: {
 | `E_PLACEHOLDER_INITIAL` | initial placeholder는 Enter 규칙이 rewriteBareDraftTo일 때만 쓸 수 있습니다. |
 | `E_JOB_MATCHER_LITERAL` | 매처에는 contains 또는 notContains 중 하나만 쓸 수 있습니다: `<경로>`. |
 | `E_ID_COLLISION` | 이미 같은 id의 스타일이 있습니다: `<id>` (`<우선 출처>`). |
+| `E_STATE_PARSER` | 알 수 없는 파서입니다: `<값>`. |
+| `E_STATE_WIDGET` | 알 수 없는 위젯 종류입니다: `<값>`. |
+| `E_STATE_AGGREGATE` | 알 수 없는 집계 방법입니다: `<값>`. |
+| `E_STATE_PATH_ESCAPE` | 경로가 워크스페이스를 벗어납니다: `<값>`. |
+| `E_STATE_RUN_EVENT` | 알 수 없는 실행 이벤트입니다: `<값>`. |
 
 **메시지에 끼워 넣는 값은 그 자체가 공격자의 글이다.** `<경로>`·`<값>`·`<도구>`·`<와이어 이름>`은 **64자로 자르고**(넘치면 마지막 한 자리가 `…`이므로 화면에 나가는 길이는 정확히 64다), 1.11의 금지 문자를 U+FFFD로 바꾼 뒤에 쓴다. `E_UNKNOWN_FIELD`의 `<경로>`는 매니페스트의 **키 이름**으로 조립되므로 특히 그렇다 — 승인도 되기 전에 20만 자짜리 키가 설정 화면의 거부 목록에 그대로 그려질 수 있다. 키 이름은 값 문자열과 똑같이 다루므로(1.11) 그 키는 애초에 `E_STRING_LENGTH`로 거부되지만, 메시지의 한도는 그것과 무관하게 걸린다. 같은 "자른 뒤 `…`"는 1.8의 80자 한도에도 그대로 적용된다.
 
@@ -1715,7 +1822,7 @@ scripts/check-style-freeze.sh                       # 0
 2. **중첩 그룹.** 그룹 안의 그룹이 없다. gstack처럼 행동이 30개를 넘는 카탈로그는 1단 그룹으로 평평해진다.
 3. **치환자 하나뿐.** `{text}` 외에 `{path}`·`{flag}` 같은 두 번째 입력 칸이 없다. `/oh-my-claudecode:execute <plan> --model opus`처럼 인자가 둘인 호출은 한 줄 자유 텍스트로 내려간다.
 4. **조건부 다음 행동.** `NextRule`은 단계 또는 그룹만 본다. "준비물이 미충족이면 설치 행동만", "케이스북이 `complete`면 다른 목록"은 못 쓴다.
-5. **상태를 읽는 단계 계산.** `PhaseRule`은 과거 요청 텍스트만 본다. MCP 도구의 응답(예: omc의 `state_get_status`)이나 파일 상태로 단계를 정할 수 없다. 그래서 루프형 스타일의 단계는 "마지막으로 부른 스킬"로만 읽힌다.
+5. **상태를 읽는 단계 계산.** ~~`PhaseRule`은 과거 요청 텍스트만 본다.~~ **v5에서 부분 해결.** `stateSources.files`의 `stateOverrides`를 통해 파일 존재 여부(`fileExists`)와 체크리스트 완료 여부(`allChecked`)로 단계를 덮어쓸 수 있다(1.16.5). MCP 도구 응답이나 자유 상태 표현식은 여전히 소스로 쓸 수 없다 — 어휘 폐쇄성(1.16.6)을 지키기 위해 의도한 제약이다.
 6. **루프 진행·중지.** 오래 도는 행동(`ralph`, `autopilot`, `re0-loop`)의 진행률이나 전용 중지 버튼을 선언할 수 없다. 취소도 그냥 또 하나의 행동이다.
 7. **토글형 행동.** `/freeze`↔`/unfreeze`, `/guard`↔`/careful`처럼 켜고 끄는 짝을 하나의 on/off로 표현할 수 없고 상태를 되읽을 수도 없다.
 8. **추천 규칙의 조합.** 내장 기능 하나의 상태만 본다. 둘을 조합하거나, 최근 사용 순으로 정렬하거나, 여러 개를 추천할 수 없다.

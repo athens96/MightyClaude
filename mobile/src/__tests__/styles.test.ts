@@ -257,6 +257,97 @@ describe('sourceBadge', () => {
   });
 });
 
+describe('state widgets (§1.14)', () => {
+  it('normalizes all three widget kinds from the Mac payload', () => {
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'progressBar', value: 0.6, total: 10 },
+          { kind: 'list', items: ['항목 1', '항목 2'] },
+          { kind: 'label', text: '서브에이전트 3회' },
+        ],
+      }),
+    )!;
+    expect(panel.widgets).toHaveLength(3);
+    expect(panel.widgets![0]).toEqual({ kind: 'progressBar', value: 0.6, total: 10 });
+    expect(panel.widgets![1]).toEqual({ kind: 'list', items: ['항목 1', '항목 2'] });
+    expect(panel.widgets![2]).toEqual({ kind: 'label', text: '서브에이전트 3회' });
+  });
+
+  it('clamps progressBar value to [0, 1]', () => {
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'progressBar', value: 1.5 },
+          { kind: 'progressBar', value: -0.2 },
+        ],
+      }),
+    )!;
+    expect(panel.widgets![0]).toEqual({ kind: 'progressBar', value: 1 });
+    expect(panel.widgets![1]).toEqual({ kind: 'progressBar', value: 0 });
+  });
+
+  it('drops unknown widget kinds (closed vocabulary)', () => {
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'spinner', value: 0.5 },
+          { kind: 'gauge', min: 0, max: 10 },
+          { kind: 'label', text: '유효' },
+        ],
+      }),
+    )!;
+    expect(panel.widgets).toHaveLength(1);
+    expect(panel.widgets![0]).toEqual({ kind: 'label', text: '유효' });
+  });
+
+  it('drops malformed widget entries', () => {
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          null,
+          { kind: 'progressBar' },
+          { kind: 'progressBar', value: 'many' },
+          { kind: 'label', text: 42 },
+          { kind: 'label', text: 'ok' },
+        ],
+      }),
+    )!;
+    expect(panel.widgets).toHaveLength(1);
+    expect(panel.widgets![0]).toEqual({ kind: 'label', text: 'ok' });
+  });
+
+  it('omits the widgets field when the array is empty or absent', () => {
+    const noWidgets = normalizeStylePanel(panelPayload())!;
+    expect(noWidgets.widgets).toBeUndefined();
+    const emptyWidgets = normalizeStylePanel(panelPayload({ widgets: [] }))!;
+    expect(emptyWidgets.widgets).toBeUndefined();
+  });
+
+  it('styleViewModel passes widgets through to the view model', () => {
+    const panel = normalizeStylePanel(
+      panelPayload({
+        widgets: [
+          { kind: 'progressBar', value: 0.5 },
+          { kind: 'list', items: ['a', 'b'] },
+          { kind: 'label', text: '완료 2/4' },
+        ],
+      }),
+    )!;
+    const model = styleViewModel(panel);
+    expect(model.widgets).toHaveLength(3);
+    expect(model.widgets[0]).toEqual({ kind: 'progressBar', value: 0.5 });
+    expect(model.widgets[1]).toEqual({ kind: 'list', items: ['a', 'b'] });
+    expect(model.widgets[2]).toEqual({ kind: 'label', text: '완료 2/4' });
+  });
+
+  it('styleViewModel returns an empty widgets array when none are present', () => {
+    const panel = normalizeStylePanel(panelPayload())!;
+    const model = styleViewModel(panel);
+    expect(model.widgets).toEqual([]);
+  });
+});
+
 describe('styleViewModel', () => {
   it('draws the next actions in order, the first of them prominent', () => {
     const panel = normalizeStylePanel(panelPayload({ groups: [] }))!;

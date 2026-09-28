@@ -442,6 +442,15 @@ export interface StylePresentation {
 }
 
 /**
+ * One rendered state widget — exactly three kinds, closed vocabulary (§1.14).
+ * The Mac evaluates state sources and sends the results; the phone just renders.
+ */
+export type StyleWidget =
+  | { kind: 'progressBar'; value: number; total?: number }
+  | { kind: 'list'; items: string[] }
+  | { kind: 'label'; text: string };
+
+/**
  * `MobileMighty.panel` — everything one guided pane draws. Present only when the pane is
  * actually running an approved or bundled style, so its absence means a plain CLI pane.
  */
@@ -459,6 +468,8 @@ export interface StylePanel {
   /** The panel's bottom line, with `{phase}` already substituted. */
   guidance?: string;
   presentation: StylePresentation;
+  /** Computed state widgets, at most one per source (§1.14). */
+  widgets?: StyleWidget[];
 }
 
 export interface MobileMighty {

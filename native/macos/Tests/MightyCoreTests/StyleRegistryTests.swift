@@ -75,7 +75,7 @@ struct StyleRegistryTests {
         #expect(quiet.styles[0].approval == .pending && quiet.requestTitle(forInput: "/go", workspace: nil) == nil)
         #expect(quiet.runnableInPrecedence(workspace: nil).isEmpty)
         // Precedence is `bundled` > `user` > `workspace`, id order within one.
-        #expect(bundles.runnableInPrecedence(workspace: nil).map(\.id) == ["ouroboros", "paperthin"])
+        #expect(bundles.runnableInPrecedence(workspace: nil).map(\.id) == ["ouroboros", "paperthin", "superpowers"])
     }
 
     @Test func savedStyleIsNormalisedByShapeAndOptionallyByKnownIds() throws {

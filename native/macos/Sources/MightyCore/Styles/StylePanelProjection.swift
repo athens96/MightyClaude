@@ -46,6 +46,42 @@ public struct StylePanel: Codable, Sendable, Equatable {
         public var icon: String?
         public var tint: StyleTint?
     }
+    /// §1.14: one computed widget value, matching the three closed kinds.
+    public enum Widget: Codable, Sendable, Equatable {
+        case progressBar(value: Double, total: Int?)
+        case list(items: [String])
+        case label(text: String)
+
+        enum CodingKeys: String, CodingKey { case kind, value, total, items, text }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let kind = try c.decode(String.self, forKey: .kind)
+            switch kind {
+            case "progressBar":
+                let v = try c.decode(Double.self, forKey: .value)
+                let t = try c.decodeIfPresent(Int.self, forKey: .total)
+                self = .progressBar(value: v, total: t)
+            case "list":
+                self = .list(items: try c.decode([String].self, forKey: .items))
+            case "label":
+                self = .label(text: try c.decode(String.self, forKey: .text))
+            default:
+                throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown widget kind: \(kind)")
+            }
+        }
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .progressBar(let v, let t):
+                try c.encode("progressBar", forKey: .kind); try c.encode(v, forKey: .value)
+                if let t { try c.encode(t, forKey: .total) }
+            case .list(let items):
+                try c.encode("list", forKey: .kind); try c.encode(items, forKey: .items)
+            case .label(let text):
+                try c.encode("label", forKey: .kind); try c.encode(text, forKey: .text)
+            }
+        }
+    }
     public var style: Style
     public var phase: Phase?
     public var groups: [Group]
@@ -56,6 +92,7 @@ public struct StylePanel: Codable, Sendable, Equatable {
     public var setup: Setup
     public var guidance: String?
     public var presentation: Presentation
+    public var widgets: [Widget]?
 }
 
 public enum StylePanelProjection {
@@ -66,10 +103,14 @@ public enum StylePanelProjection {
                             attachments: [StyleAttachmentItem],
                             prerequisites: StylePrerequisiteResult,
                             running: Bool = false,
-                            session: RunSession? = nil) -> StylePanel {
+                            session: RunSession? = nil,
+                            fileSourceStates: [Int: StyleFileSourceState] = [:],
+                            widgets: [StylePanel.Widget] = []) -> StylePanel {
         let manifest = style.manifest
         let evaluator = style.evaluator
-        let phase = evaluator.currentPhase(prompts: prompts)
+        let phase = fileSourceStates.isEmpty
+            ? evaluator.currentPhase(prompts: prompts)
+            : evaluator.currentPhase(prompts: prompts, fileSourceStates: fileSourceStates)
         let jobOpen = session.map { evaluator.isJobOpen(session: $0) } ?? false
         let ordered = manifest.orderedPhases
         let selected = selectedGroupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: capabilityStates)
@@ -104,7 +145,8 @@ public enum StylePanelProjection {
                                                   hint: prerequisites.hint, installCommand: manifest.install?.command),
                           guidance: evaluator.guidanceLine(phase: phase, running: running, jobOpen: jobOpen),
                           presentation: StylePanel.Presentation(headerTitle: headerTitle, source: style.source,
-                                                                icon: manifest.presentation.icon?.rawValue, tint: manifest.presentation.tint))
+                                                                icon: manifest.presentation.icon?.rawValue, tint: manifest.presentation.tint),
+                          widgets: widgets.isEmpty ? nil : widgets)
     }
 
     /// Frozen with the tag so a golden stays byte-stable: UTF-8, keys sorted,
