@@ -26,6 +26,10 @@ public final class CLIStreamParser {
     private var permissionStates: [String: String] = [:]
     private var lastTurn: AgentActivity?
     public private(set) var failed = false
+    /// The run's latest failure was a lost sign-in (`CLIAuthFailure`). Each
+    /// later failure or result replaces it, so a 401 the CLI recovered from
+    /// does not mark a run that failed for another reason.
+    public private(set) var authFailure = false
 
     public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil) {
         self.provider = provider; self.log = log; self.resume = resume
@@ -191,6 +195,11 @@ public final class CLIStreamParser {
         guard !data.isEmpty else { return }
         guard let object = try? JSONSerialization.jsonObject(with: data) else { log("output", String(String(decoding: data, as: UTF8.self).prefix(32_768))); return }
         guard var value = object as? [String: Any], let type = value["type"] as? String else { return }
+        // Read before the Bedrock rewrite below, which would hide the original text.
+        if provider == "claude", ExecutionGraphTracker.parentToolID(value) == nil, !ClaudeStream.isNotificationResult(value),
+           type == "result" || (type == "assistant" && (value["error"] as? String)?.isEmpty == false) {
+            authFailure = CLIAuthFailure.claude(value)
+        }
         // Normalize confirmed provider failures before both transcript and graph
         // consume them. Ordinary assistant text and tool results stay intact.
         if provider == "claude" { value = presentClaudeFailure(value, type: type) }
@@ -255,7 +264,14 @@ public final class CLIStreamParser {
                 default: break // Reasoning text is deliberately not copied.
                 }
             }
-            if type == "turn.failed" || type == "error" { failed = true; log("error", errorText(value["error"] ?? value["message"], fallback: "Codex 실행 중 오류가 발생했습니다.")) }
+            if type == "turn.failed" || type == "error" {
+                failed = true
+                let text = errorText(value["error"] ?? value["message"], fallback: "Codex 실행 중 오류가 발생했습니다.")
+                // A "Reconnecting…" notice is not the run's failure; it keeps the previous one.
+                if type == "turn.failed" || !CLIAuthFailure.isCodexRetryNotice(text) { authFailure = CLIAuthFailure.codex(text: text) }
+                log("error", text)
+            }
+            if type == "turn.completed" { authFailure = false }
         case "gemini":
             if type == "init" { resumeIfValid(value["session_id"]); turn("Gemini 응답 생성 중") }
             if type == "message", value["role"] as? String == "assistant", let text = value["content"] as? String {

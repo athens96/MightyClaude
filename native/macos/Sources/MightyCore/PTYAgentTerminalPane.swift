@@ -50,13 +50,15 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
     }
 
     /// `launched` is told after each command starts, so the app can show the pane.
-    public init(workingDirectory: URL, environment: [String: String] = ProviderService.runtimeEnvironment(), launched: @escaping @Sendable (PTYAgentTerminalPane) -> Void = { _ in }) {
+    /// `columns` is the tty width until the view first resizes it.
+    public init(workingDirectory: URL, environment: [String: String] = ProviderService.runtimeEnvironment(), columns: UInt16 = 80, launched: @escaping @Sendable (PTYAgentTerminalPane) -> Void = { _ in }) {
         self.workingDirectory = workingDirectory
         self.launched = launched
         var environment = environment
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
         self.environment = environment
+        size.ws_col = max(1, columns)
     }
 
     // MARK: - AgentTerminalPane

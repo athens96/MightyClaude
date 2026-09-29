@@ -516,10 +516,12 @@ extension AppStore {
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창에는 휴대폰에서 명령을 보낼 수 없습니다.") }
         guard !text.isEmpty || !attachments.isEmpty else { throw MightyError("보낼 내용이 없습니다.") }
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MightyError(reason) }
-        if session.status == "running" || pendingRuns.contains(id) {
+        let held = backgroundUpdateHolds(session)
+        if session.status == "running" || pendingRuns.contains(id) || held {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError("대기열이 가득 찼습니다.") }
             let item = QueuedInput(text: text, attachments: attachments)
-            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, steering: mode != "queue") }
+            if held { heldForUpdate.insert(id) }
+            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, steering: mode != "queue" && !held) }
             switch deferred.value {
             case .steering(let task): return .steering(task)
             case .queued: return .immediate(.queued)

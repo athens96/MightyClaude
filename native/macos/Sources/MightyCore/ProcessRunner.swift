@@ -530,7 +530,9 @@ public actor ProcessRunner {
             let summary = status == "completed" ? "응답 완료" : status == "stopped" ? "실행 중지" : "실행 오류"
             Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: run.request.provider, kind: "turn", state: status, summary: summary), emit: onEvent)
         }
-        onEvent(RunEvent(sessionId: run.request.sessionId, type: "status", status: status))
+        // The reason rides on the final status: only the run's last failure counts.
+        let reason = status == "error" && run.parser?.authFailure == true ? "auth" : nil
+        onEvent(RunEvent(sessionId: run.request.sessionId, type: "status", status: status, reason: reason))
         if runs[run.request.sessionId] === run { runs.removeValue(forKey: run.request.sessionId) }
         run.finalized = true
         let waiters = run.finalizationWaiters; run.finalizationWaiters.removeAll()

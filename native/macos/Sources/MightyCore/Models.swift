@@ -342,6 +342,9 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var paneLayoutModes: [String: String]?
     public var paneLayoutActiveSessionIds: [String: String]?
     public var autoUpdateCLIs: Bool?
+    /// Background plugin updates (Claude user-scope plugins, Codex
+    /// marketplaces). Mac only; nil means on, the default.
+    public var autoUpdatePlugins: Bool?
     /// Sidebar workspaces whose pane list is open. nil (older state) means only
     /// the active workspace is open, which was the previous behaviour.
     public var expandedWorkspaceIds: [String]?
@@ -352,7 +355,8 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var modelDefaults: ModelDefaultsConfig?
     /// Machine-wide per-phase / per-run Claude and Codex model knobs; nil means all phases use CLI defaults.
     public var phaseModels: PhaseModelHardcodedConfig?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil) {
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil) {
+        self.autoUpdatePlugins = autoUpdatePlugins
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds
@@ -408,11 +412,13 @@ public struct RunEvent: Codable, Sendable, Equatable {
     public var permission: ToolPermissionRequest?
     public var usage: SessionUsage?
     public var graph: ExecutionGraphNode?
-    public init(sessionId: String, type: String, entry: LogEntry? = nil, status: String? = nil, resumeId: String? = nil, activity: AgentActivity? = nil, permission: ToolPermissionRequest? = nil, usage: SessionUsage? = nil, graph: ExecutionGraphNode? = nil) {
+    /// Why a run ended in `error`, when the CLI said so: "auth" is a lost sign-in.
+    public var reason: String?
+    public init(sessionId: String, type: String, entry: LogEntry? = nil, status: String? = nil, resumeId: String? = nil, activity: AgentActivity? = nil, permission: ToolPermissionRequest? = nil, usage: SessionUsage? = nil, graph: ExecutionGraphNode? = nil, reason: String? = nil) {
         self.sessionId = sessionId; self.type = type; self.entry = entry; self.status = status; self.resumeId = resumeId; self.activity = activity; self.permission = permission; self.usage = usage
-        self.graph = graph
+        self.graph = graph; self.reason = reason
     }
-    enum CodingKeys: String, CodingKey { case sessionId, type, entry, status, resumeId, activity, permission, usage, graph }
+    enum CodingKeys: String, CodingKey { case sessionId, type, entry, status, resumeId, activity, permission, usage, graph, reason }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = try c.decode(String.self, forKey: .sessionId); type = try c.decode(String.self, forKey: .type)
@@ -421,6 +427,7 @@ public struct RunEvent: Codable, Sendable, Equatable {
         permission = try c.decodeIfPresent(ToolPermissionRequest.self, forKey: .permission)
         usage = try? c.decodeIfPresent(SessionUsage.self, forKey: .usage)
         graph = try? c.decodeIfPresent(ExecutionGraphNode.self, forKey: .graph)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
     }
 }
 

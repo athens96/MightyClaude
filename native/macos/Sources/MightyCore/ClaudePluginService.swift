@@ -17,6 +17,7 @@ private struct ClaudePluginFailure: Error, Sendable {
 private enum ClaudePluginTaskResult: Sendable {
     case snapshot(ClaudePluginSnapshot)
     case operation(ClaudePluginOperationResult)
+    case update(PluginAutoUpdateResult)
 }
 
 /// Uses only installed Claude Code's plugin subcommands. Catalog reads never
@@ -65,6 +66,72 @@ public actor ClaudePluginService {
 
     public func refreshMarketplace(name: String, workspace: Workspace) async -> ClaudePluginOperationResult {
         await operation(workspace: workspace, pluginID: nil, scope: nil, marketplace: name)
+    }
+
+    /// Updates the user-scope plugins, one at a time. Project and local plugins
+    /// belong to their projects and are left alone. Never passes -y/--yes: an
+    /// update whose marketplace changed the command it runs is left for the user
+    /// to approve in the plugin browser. No new update starts after `budget`
+    /// seconds. The app's own Mod is loaded with --plugin-dir, never listed here.
+    public func updateInstalled(workspace: Workspace, budget: TimeInterval = 300) async -> PluginAutoUpdateResult {
+        guard !closing, !Task.isCancelled else { return PluginAutoUpdateResult(status: "cancelled", detail: L("pluginAutoUpdate.cancelled")) }
+        guard active == nil else { return PluginAutoUpdateResult(status: "busy", detail: L("pluginAutoUpdate.busy")) }
+        let configuration = configuration
+        let task = Task<ClaudePluginTaskResult, Never> {
+            do {
+                let cwd = try Self.localDirectory(workspace)
+                let command = try await Self.command(configuration, cwd: cwd)
+                let snapshot = try await Self.readSnapshot(configuration, command: command, cwd: cwd)
+                var seen = Set<String>()
+                let targets = snapshot.installed.filter { $0.scope == "user" && $0.name != "mighty-bridge" && seen.insert($0.pluginID).inserted }
+                var result = PluginAutoUpdateResult(status: "succeeded", detail: "")
+                let started = Date()
+                var postponed = 0
+                for plugin in targets {
+                    try Task.checkCancellation()
+                    guard Date().timeIntervalSince(started) < budget else { postponed += 1; continue }
+                    let run = try await ProcessCapture.run(executable: command.executable, arguments: ["plugin", "update", plugin.pluginID, "--scope", "user", "--json"],
+                        environment: configuration.environment, cwd: cwd, timeout: configuration.operationTimeout, maximumBytes: 1024 * 1024)
+                    switch Self.updateOutcome(run) {
+                    case "needsApproval": result.needsApproval.append(plugin.pluginID)
+                    case "updated": result.updated.append(plugin.pluginID)
+                    default: result.failed.append(plugin.pluginID)
+                    }
+                }
+                if !result.failed.isEmpty { result.status = "failed" }
+                result.detail = Self.updateDetail(result, total: targets.count)
+                if postponed > 0 { result.detail += " " + L("pluginAutoUpdate.postponedTemplate", ["count": String(postponed)]) }
+                return .update(result)
+            } catch {
+                let failure = Self.failure(error)
+                return .update(PluginAutoUpdateResult(status: failure.status == "cancelled" ? "cancelled" : ["missing", "unsupported"].contains(failure.status) ? "skipped" : "failed", detail: failure.detail))
+            }
+        }
+        if case .update(let value) = await finish(task) { return value }
+        return PluginAutoUpdateResult(status: "failed", detail: L("pluginAutoUpdate.failed"))
+    }
+
+    /// `--json` prints one result line; the CLI may print a marketplace-declared
+    /// command before it, so only the last nonempty stdout line is read, as for
+    /// install. A shown command means the update waits for the user's consent.
+    /// Without that line only the exit code is left to go by.
+    static func updateOutcome(_ result: ProcessResult) -> String {
+        guard let line = String(data: result.stdout.prefix(1024 * 1024), encoding: .utf8)?
+                .split(whereSeparator: \.isNewline).last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }),
+              let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else {
+            return result.exitCode == 0 ? "updated" : "failed"
+        }
+        if json["shownCommand"] != nil { return "needsApproval" }
+        if let outcome = json["outcome"] as? String { return outcome == "ok" && result.exitCode == 0 ? "updated" : "failed" }
+        return result.exitCode == 0 ? "updated" : "failed"
+    }
+
+    static func updateDetail(_ result: PluginAutoUpdateResult, total: Int) -> String {
+        guard total > 0 else { return L("pluginAutoUpdate.none") }
+        var parts = [L("pluginAutoUpdate.checkedTemplate", ["count": String(total)])]
+        if !result.needsApproval.isEmpty { parts.append(L("pluginAutoUpdate.needsApprovalTemplate", ["plugins": result.needsApproval.joined(separator: ", ")])) }
+        if !result.failed.isEmpty { parts.append(L("pluginAutoUpdate.failedTemplate", ["plugins": result.failed.joined(separator: ", ")])) }
+        return parts.joined(separator: " ")
     }
 
     public func cancel() async {

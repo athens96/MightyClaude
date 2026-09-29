@@ -17,6 +17,7 @@ private struct CodexPluginFailure: Error, Sendable {
 private enum CodexPluginTaskResult: Sendable {
     case snapshot(ClaudePluginSnapshot)
     case operation(ClaudePluginOperationResult)
+    case update(PluginAutoUpdateResult)
 }
 
 /// Uses the installed Codex CLI plugin commands and its user-level registry.
@@ -64,6 +65,43 @@ public actor CodexPluginService {
 
     public func refreshMarketplace(name: String, workspace: Workspace) async -> ClaudePluginOperationResult {
         await operation(workspace: workspace, pluginID: nil, scope: nil, marketplace: name)
+    }
+
+    /// Upgrades every registered Git marketplace (`codex plugin marketplace
+    /// upgrade`), which is how Codex brings installed plugins up to date.
+    public func upgradeMarketplaces(workspace: Workspace) async -> PluginAutoUpdateResult {
+        guard !closing, !Task.isCancelled else { return PluginAutoUpdateResult(status: "cancelled", detail: L("pluginAutoUpdate.cancelled")) }
+        guard active == nil else { return PluginAutoUpdateResult(status: "busy", detail: L("pluginAutoUpdate.busy")) }
+        let configuration = configuration
+        let task = Task<CodexPluginTaskResult, Never> {
+            do {
+                let cwd = try Self.localDirectory(workspace)
+                let command = try await Self.command(configuration, cwd: cwd)
+                let snapshot = try await Self.readSnapshot(configuration, command: command, cwd: cwd)
+                try Task.checkCancellation()
+                guard snapshot.marketplaces.contains(where: { $0.sourceKind == "git" }) else {
+                    return .update(PluginAutoUpdateResult(status: "skipped", detail: L("pluginAutoUpdate.noGitMarketplaces")))
+                }
+                let result = try await ProcessCapture.run(executable: command.executable, arguments: ["plugin", "marketplace", "upgrade", "--json"],
+                    environment: configuration.environment, cwd: cwd, timeout: configuration.operationTimeout, maximumBytes: 1024 * 1024)
+                try Task.checkCancellation()
+                guard result.exitCode == 0 else { return .update(PluginAutoUpdateResult(status: "failed", detail: L("pluginAutoUpdate.failed"))) }
+                // The exit code decides; the JSON only adds detail. Unknown or
+                // missing keys from another CLI version are not a failure.
+                let json = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any]
+                let selected = (json?["selectedMarketplaces"] as? [Any])?.compactMap { $0 as? String } ?? []
+                if let errors = json?["errors"] as? [Any], !errors.isEmpty {
+                    return .update(PluginAutoUpdateResult(status: "failed", detail: L("pluginAutoUpdate.marketplaceErrorsTemplate", ["count": String(errors.count)]), failed: selected))
+                }
+                let detail = selected.isEmpty ? L("pluginAutoUpdate.marketplacesUpgraded") : L("pluginAutoUpdate.marketplacesTemplate", ["count": String(selected.count)])
+                return .update(PluginAutoUpdateResult(status: "succeeded", detail: detail, updated: selected))
+            } catch {
+                let failure = Self.failure(error)
+                return .update(PluginAutoUpdateResult(status: failure.status == "cancelled" ? "cancelled" : ["missing", "unsupported"].contains(failure.status) ? "skipped" : "failed", detail: failure.detail))
+            }
+        }
+        if case .update(let value) = await finish(task) { return value }
+        return PluginAutoUpdateResult(status: "failed", detail: L("pluginAutoUpdate.failed"))
     }
 
     public func cancel() async {

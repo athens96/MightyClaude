@@ -70,12 +70,14 @@ public enum CLIAccountSupport {
         return CLIAccountStatus(provider: "claude", loggedIn: loggedIn, method: method, account: email ?? organisation, plan: plan)
     }
 
+    /// The method label of a Codex API-key login, which a browser sign-in cannot renew.
+    public static let codexAPIKeyMethod = "API 키"
     /// `codex login status` text plus the account claims inside `auth.json`'s id token.
     public static func parseCodexStatus(text: String, authJSON: Data?) -> CLIAccountStatus {
         let lowered = text.lowercased()
         guard lowered.contains("logged in") || lowered.contains("not logged in") else { return CLIAccountStatus(provider: "codex", detail: "Codex 로그인 상태를 읽지 못했습니다.") }
         guard !lowered.contains("not logged in") else { return CLIAccountStatus(provider: "codex", loggedIn: false) }
-        let method = lowered.contains("chatgpt") ? "ChatGPT" : lowered.contains("api key") ? "API 키" : nil
+        let method = lowered.contains("chatgpt") ? "ChatGPT" : lowered.contains("api key") ? codexAPIKeyMethod : nil
         var account: String?, plan: String?
         if let authJSON, let object = try? JSONSerialization.jsonObject(with: authJSON) as? [String: Any],
            let tokens = object["tokens"] as? [String: Any], let idToken = tokens["id_token"] as? String, let claims = jwtClaims(idToken) {
@@ -191,6 +193,10 @@ public actor CLIAccountService {
     public func invalidateEnvironment() async {
         if fixedEnvironment == nil { await environmentResolver.invalidate(workspacePath: home.path) }
     }
+
+    /// The environment the status and logout commands run with, for a sign-in
+    /// the app runs in the background itself.
+    public func commandEnvironment() async -> [String: String] { await environmentSnapshot().values }
 
     public func status(provider: String) async -> CLIAccountStatus {
         let snapshot = await environmentSnapshot()

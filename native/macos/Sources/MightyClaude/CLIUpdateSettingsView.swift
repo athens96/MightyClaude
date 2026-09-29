@@ -13,10 +13,19 @@ struct CLIUpdateSettingsSection: View {
             .accessibilityIdentifier("cli-auto-update")
             Text(L("settings.cliUpdate.sectionDescriptionMac"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
+            Toggle(L("settings.cliUpdate.autoUpdatePluginsToggle"), isOn: Binding(
+                get: { store.snapshot.autoUpdatePlugins != false },
+                set: { store.snapshot.autoUpdatePlugins = $0 }
+            ))
+            .accessibilityIdentifier("plugin-auto-update")
+            Text(L("settings.cliUpdate.autoUpdatePluginsDescription"))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 if store.isUpdatingCLIs {
                     ProgressView().controlSize(.small)
-                    Text(store.updatingCLI.map { L("settings.cliUpdate.progressProviderTemplate", ["provider": ProviderOptions.label($0)]) } ?? L("settings.cliUpdate.progressInspecting"))
+                    Text(store.updatingCLI.map { L("settings.cliUpdate.progressProviderTemplate", ["provider": ProviderOptions.label($0)]) }
+                         ?? store.updatingPluginsFor.map { L("settings.cliUpdate.progressPluginsTemplate", ["provider": ProviderOptions.label($0)]) }
+                         ?? L("settings.cliUpdate.progressInspecting"))
                         .font(.system(size: 11)).accessibilityIdentifier("cli-update-progress")
                 } else if let finished = store.cliUpdateFinishedAt {
                     Text(L("settings.cliUpdate.lastRunTemplate", ["time": finished.formatted(date: .omitted, time: .shortened)]))
@@ -44,6 +53,20 @@ struct CLIUpdateSettingsSection: View {
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("cli-update-result-\(provider)")
+                }
+                if let result = store.pluginUpdateResults[provider] {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Image(systemName: icon(result.status == "succeeded" ? "updated" : result.status))
+                                .foregroundStyle(result.status == "failed" ? Color.orange : Color.secondary)
+                            Text(L("settings.cliUpdate.pluginRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status == "succeeded" ? "updated" : result.status)]))
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        Text(result.detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("plugin-update-result-\(provider)")
                 }
             }
         }
