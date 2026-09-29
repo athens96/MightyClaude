@@ -147,116 +147,175 @@ struct RunSettingsView: View {
     }
 }
 
+/// One entry of the settings sidebar; the right side shows its sections.
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general, models, styles, tools, cli, mobile, companion, about
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .general: L("settings.nav.general")
+        case .models: L("settings.nav.models")
+        case .styles: L("settings.nav.styles")
+        case .tools: L("settings.nav.tools")
+        case .cli: L("settings.nav.cli")
+        case .mobile: L("settings.nav.mobile")
+        case .companion: L("settings.nav.companion")
+        case .about: L("settings.nav.about")
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .models: "cpu"
+        case .styles: "paintpalette"
+        case .tools: "shippingbox"
+        case .cli: "terminal"
+        case .mobile: "iphone"
+        case .companion: "pawprint"
+        case .about: "info.circle"
+        }
+    }
+}
+
 struct AppSettingsView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("settingsPane") private var pane: SettingsPane = .general
 
     var body: some View {
-        generalSettings
-    }
-
-    private var generalSettings: some View {
         VStack(spacing: 0) {
             SheetHeading(title: L("settings.title"), subtitle: "macOS · SwiftUI", systemImage: "gearshape") { dismiss() }
-            Form {
-                Section(L("settings.display.sectionTitle")) {
-                    Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }.pickerStyle(.segmented)
-                    Picker(L("settings.display.languageLabel"), selection: Binding(
-                        get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
-                        set: { UserDefaults.standard.set($0.rawValue, forKey: "language") }
-                    )) {
-                        Text(L("settings.display.languageSystem")).tag(AppLanguage.system)
-                        Text(L("settings.display.languageKorean")).tag(AppLanguage.ko)
-                        Text(L("settings.display.languageEnglish")).tag(AppLanguage.en)
-                    }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
-                    Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(L("settings.display.statusLineToggle"))
-                            Text(L("settings.display.statusLineDescription"))
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
-                    Toggle(isOn: Binding(
-                        get: { CefBrowserEngine.isEnabledInSettings },
-                        set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(L("settings.display.browserToggle"))
-                            Text(L("settings.display.browserDescription"))
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.switch).accessibilityIdentifier("settings-browser-engine")
-                }
-                // Per-workspace destination for URLs the agent opens. Writes to the
-                // same persisted store the open agent panes read (and the dialog's
-                // "remember" writes), so a change here is in force on their very
-                // next open_url call and survives a restart.
-                Section(WebOpenChoiceCopy.settingTitle) {
-                    Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
-                        get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },
-                        set: { choice in
-                            store.objectWillChange.send()
-                            WebOpenChoiceStore.shared.applySetting(choice, forWorkspace: store.snapshot.activeWorkspaceId ?? "")
-                        }
-                    )) {
-                        ForEach(WebOpenSetting.allCases, id: \.self) { option in
-                            Text(WebOpenChoiceCopy.settingLabel(option)).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("settings-web-open-choice")
-                }
-                PhaseModelSettingsSection().environmentObject(store)
-                StyleSettingsSection().environmentObject(store)
-                ComponentsSettingsSection().environmentObject(store)
-                ToolkitSettingsSection().environmentObject(store)
-                MobileRemoteSettingsSection().environmentObject(store)
-                CLIUpdateSettingsSection().environmentObject(store)
-                CompanionSettingsSection(companion: store.companion)
-                Section {
-                    ForEach(ProviderOptions.ids, id: \.self) { id in
-                        let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name) }.font(.system(size: 13, weight: .medium))
-                                Spacer()
-                                Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
-                            }
-                            if let version = provider.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
-                            Text(provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                        }.padding(.vertical, 4)
-                    }
-                    HStack {
-                        Text(L("settings.providers.loginNote")).font(.system(size: 11)).foregroundStyle(.secondary)
-                        Spacer()
-                        Button(store.isRefreshingRuntime ? L("settings.providers.checkingButton") : L("settings.providers.checkButton")) { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
-                    }
-                } header: { Text(L("settings.providers.sectionTitleMac")) }
-                CLIAccountsSettingsSection()
-                if let mods = store.runtime?.mods {
-                    Section("Claude Mods") {
-                        Text(mods.detail).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
-                        LabeledContent(L("settings.claudeMods.compatLabel"), value: mods.minimumVersion)
-                    }
-                }
-                AppUpdateSettingsSection()
-                Section(L("settings.appInfo.sectionTitle")) {
-                    LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.2.0")
-                    Text(L("settings.appInfo.runtimeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
-                    LabeledContent(L("settings.appInfo.stateLocationLabel")) {
-                        Button(L("settings.appInfo.openFinderButton")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
-                    }
-                    Text(store.dataDirectory.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
-                }
-            }.formStyle(.grouped)
+            HStack(spacing: 0) {
+                sidebar
+                Divider()
+                Form { detail(pane) }
+                    .formStyle(.grouped)
+                    // A fresh form per entry starts at its top.
+                    .id(pane)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             Divider()
             HStack { Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }.padding(18)
         }
-        .frame(width: 570, height: 700)
+        .frame(width: 800, height: 700)
         // Opening Settings is one of the four moments the sources are re-read.
         .task { store.rescanStyles() }
+    }
+
+    private var sidebar: some View {
+        List(SettingsPane.allCases, selection: Binding(get: { pane }, set: { if let value = $0 { pane = value } })) { item in
+            Label(item.title, systemImage: item.symbol)
+                .padding(.vertical, 3)
+                .tag(item)
+                .accessibilityIdentifier("settings-nav-\(item.rawValue)")
+        }
+        .listStyle(.sidebar)
+        .frame(width: 200)
+    }
+
+    @ViewBuilder
+    private func detail(_ pane: SettingsPane) -> some View {
+        switch pane {
+        case .general:
+            Section(L("settings.display.sectionTitle")) {
+                Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }.pickerStyle(.segmented)
+                Picker(L("settings.display.languageLabel"), selection: Binding(
+                    get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
+                    set: { UserDefaults.standard.set($0.rawValue, forKey: "language") }
+                )) {
+                    Text(L("settings.display.languageSystem")).tag(AppLanguage.system)
+                    Text(L("settings.display.languageKorean")).tag(AppLanguage.ko)
+                    Text(L("settings.display.languageEnglish")).tag(AppLanguage.en)
+                }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
+                Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("settings.display.statusLineToggle"))
+                        Text(L("settings.display.statusLineDescription"))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch).accessibilityIdentifier("settings-status-line")
+                Toggle(isOn: Binding(
+                    get: { CefBrowserEngine.isEnabledInSettings },
+                    set: { store.objectWillChange.send(); CefBrowserEngine.isEnabledInSettings = $0 }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("settings.display.browserToggle"))
+                        Text(L("settings.display.browserDescription"))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch).accessibilityIdentifier("settings-browser-engine")
+            }
+            // Per-workspace destination for URLs the agent opens. Writes to the
+            // same persisted store the open agent panes read (and the dialog's
+            // "remember" writes), so a change here is in force on their very
+            // next open_url call and survives a restart.
+            Section(WebOpenChoiceCopy.settingTitle) {
+                Picker(WebOpenChoiceCopy.settingTitle, selection: Binding(
+                    get: { WebOpenChoiceStore.shared.setting(forWorkspace: store.snapshot.activeWorkspaceId ?? "") },
+                    set: { choice in
+                        store.objectWillChange.send()
+                        WebOpenChoiceStore.shared.applySetting(choice, forWorkspace: store.snapshot.activeWorkspaceId ?? "")
+                    }
+                )) {
+                    ForEach(WebOpenSetting.allCases, id: \.self) { option in
+                        Text(WebOpenChoiceCopy.settingLabel(option)).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("settings-web-open-choice")
+            }
+        case .models:
+            PhaseModelSettingsSection().environmentObject(store)
+        case .styles:
+            StyleSettingsSection().environmentObject(store)
+        case .tools:
+            ComponentsSettingsSection().environmentObject(store)
+            ToolkitSettingsSection().environmentObject(store)
+        case .cli:
+            Section {
+                ForEach(ProviderOptions.ids, id: \.self) { id in
+                    let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name) }.font(.system(size: 13, weight: .medium))
+                            Spacer()
+                            Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
+                        }
+                        if let version = provider.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
+                        Text(provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    }.padding(.vertical, 4)
+                }
+                HStack {
+                    Text(L("settings.providers.loginNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(store.isRefreshingRuntime ? L("settings.providers.checkingButton") : L("settings.providers.checkButton")) { Task { await store.refreshRuntime() } }.disabled(store.isRefreshingRuntime)
+                }
+            } header: { Text(L("settings.providers.sectionTitleMac")) }
+            CLIAccountsSettingsSection()
+            if let mods = store.runtime?.mods {
+                Section("Claude Mods") {
+                    Text(mods.detail).font(.system(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
+                    LabeledContent(L("settings.claudeMods.compatLabel"), value: mods.minimumVersion)
+                }
+            }
+            CLIUpdateSettingsSection().environmentObject(store)
+        case .mobile:
+            MobileRemoteSettingsSection().environmentObject(store)
+        case .companion:
+            CompanionSettingsSection(companion: store.companion)
+        case .about:
+            AppUpdateSettingsSection()
+            Section(L("settings.appInfo.sectionTitle")) {
+                LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.2.0")
+                Text(L("settings.appInfo.runtimeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                LabeledContent(L("settings.appInfo.stateLocationLabel")) {
+                    Button(L("settings.appInfo.openFinderButton")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
+                }
+                Text(store.dataDirectory.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
     }
 }
 
