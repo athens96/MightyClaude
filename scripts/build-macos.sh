@@ -46,7 +46,8 @@ cp "$PROJECT_ROOT/assets/icons/mightyclaude.png" "$APP_PATH/Contents/Resources/m
 if [ -d "$PROJECT_ROOT/assets/pets" ]; then
   ditto "$PROJECT_ROOT/assets/pets" "$APP_PATH/Contents/Resources/pets"
 fi
-ditto "$PROJECT_ROOT/mods/mighty-bridge" "$APP_PATH/Contents/Resources/mods/mighty-bridge"
+# tests/ holds the mod's dev-only checks (and node_modules after npm ci); never ship it.
+rsync -a --exclude /tests "$PROJECT_ROOT/mods/mighty-bridge/" "$APP_PATH/Contents/Resources/mods/mighty-bridge/"
 cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

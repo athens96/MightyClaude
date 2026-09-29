@@ -26,16 +26,10 @@ struct GraphParityVectorTests {
 
     /// Every case runs with the Korean locale: the committed display strings
     /// are the ko copy the Windows port must reproduce from its locale files.
+    /// Task-local, not the process-wide preference: LocalizationTests switches
+    /// that preference while this suite runs, and each would read the other's.
     private func withKoreanLocale<T>(_ body: () throws -> T) rethrows -> T {
-        let previous = UserDefaults.standard.string(forKey: "language")
-        UserDefaults.standard.set("ko", forKey: "language")
-        resetLocaleCache()
-        defer {
-            if let previous { UserDefaults.standard.set(previous, forKey: "language") }
-            else { UserDefaults.standard.removeObject(forKey: "language") }
-            resetLocaleCache()
-        }
-        return try body()
+        try LocaleOverride.$language.withValue(.ko) { try body() }
     }
 
     @Test func theFileMeetsEveryMinimumCount() throws {

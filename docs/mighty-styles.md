@@ -1639,7 +1639,7 @@ MobileStylePanel {
 5. `docs/mobile-remote.md`가 7장으로 갱신되고, `docs/ouroboros-mode.md`·`docs/paperthin-mode.md`의 "구현 위치" 표가 엔진을 가리킨다.
 6. **골든 기록 모드가 이미 존재한다**(8.4). 태그 이후에는 엔진 코드를 못 고치므로, 태그 이전에 들어 있어야 한다.
 7. **`StyleGoldenContractTests`가 이미 존재한다**(8.4). 태그 이후에 추가되는 매니페스트를 검사하는 것이 **태그 이전에 얼어붙은 코드**가 되게 하는 장치다.
-8. `scripts/check-style-freeze.sh`가 저장소에 있고 **macOS 워크플로가 그것을 부른다**(태그가 있을 때만 돌고, 없으면 건너뛴 줄을 찍는다). `styles/FREEZE`는 태그 커밋이 더하는 **유일한 파일**이고 내용은 그 커밋의 부모 SHA다(8.3).
+8. `scripts/check-style-freeze.sh`가 저장소에 있고 **고정 워크플로(`.github/workflows/style-freeze.yml`)가 그것을 부른다**(태그가 있을 때만 돌고, 없으면 건너뛴 줄을 찍는다). `styles/FREEZE`는 태그 커밋이 더하는 **유일한 파일**이고 내용은 그 커밋의 부모 SHA다(8.3).
 
 검증: `cd native/macos && swift test` 전부 통과, `cd mobile && npm run typecheck && npx jest` 전부 통과.
 
@@ -1679,13 +1679,12 @@ MobileStylePanel {
 
    하나라도 어긋나면 `종료 코드 2`와 `태그 <tag>가 FREEZE와 맞지 않습니다.`
 2. `git -c core.quotePath=false diff --no-renames --name-only <tag>..HEAD`를 읽는다.
-3. 각 경로를 **먼저 금지 목록**, 그다음 허용 목록에 대어 본다.
-   - 금지(먼저 본다): `styles/FREEZE`
-   - 허용: `styles/**` · `native/macos/Tests/MightyCoreTests/StylesThirdParty*Tests.swift` · `mobile/src/__tests__/styles-thirdparty-*.test.ts` · `docs/styles-followups.md`
-   - 허용(v3부터, Windows 전용 경로): `native/windows/**` · `scripts/build-windows.ps1` · `scripts/test-native-windows.ps1` · `.github/workflows/native-windows.yml` · `docs/windows-*.md`
-   - 테스트 두 글롭과 `docs/windows-*.md`의 `*`는 **경로 조각 하나**이므로 `/`를 넘지 않는다. `StylesThirdPartyEvil/DeepTests.swift`도 `docs/windows-x/y.md`도 바깥이다.
-4. 금지 목록에 걸리거나 허용 목록 밖의 경로가 하나라도 있으면 그 목록을 한 줄씩 찍고 `종료 코드 1`.
-5. 전부 안쪽이면 `OK: <N> files, all inside the manifest-only allow-list`와 `종료 코드 0`.
+3. 각 경로가 **고정된 엔진**에 속하는지 본다(v5부터는 금지 목록 방식이다).
+   - 고정: `styles/FREEZE` · `native/macos/Sources/MightyCore/Styles/**` · `native/macos/Sources/MightyCore/Resources/Styles/**`(번들 매니페스트) · 동등성 오라클 테스트 `native/macos/Tests/MightyCoreTests/Style*.swift`·`Styles*.swift`·`SuperpowersStyle*.swift` · 폰 렌더러 `mobile/src/lib/styles.ts`와 `mobile/src/__tests__/styles*.test.ts` · 이 계약 `docs/mighty-styles.md` · 이 검사 `scripts/check-style-freeze.sh`와 그것을 부르는 `.github/workflows/style-freeze.yml`
+   - 예외(고정 안쪽 이름이지만 허용): 제삼자 스타일의 테스트 `native/macos/Tests/MightyCoreTests/StylesThirdParty*Tests.swift` · `mobile/src/__tests__/styles-thirdparty-*.test.ts`
+   - 테스트 글롭의 `*`는 **경로 조각 하나**이므로 `/`를 넘지 않는다. `StylesThirdPartyEvil/DeepTests.swift`는 예외가 아니다.
+4. 고정된 경로가 하나라도 바뀌었으면 그 목록을 한 줄씩 찍고 `종료 코드 1`.
+5. 없으면 `OK: <N> files changed since <tag>, none in the frozen engine`와 `종료 코드 0`.
 
 **git이 실패하면 2다.** 저장소가 아니거나, 태그가 없거나, `diff`가 오류로 끝나면(부분 클론의 promisor 불통, 개체 손상) 검사는 **성립하지 않은 것**이지 통과가 아니다. 목록이 비어서 `OK: 0 files`를 찍는 것과 목록을 읽지 못한 것은 같은 상태가 아니다.
 
@@ -1693,12 +1692,7 @@ MobileStylePanel {
 
 **1번이 1번인 이유.** 태그의 존재만 보면 `git tag -f mighty-style-engine-v1 HEAD` 한 줄로 `git diff`가 비고 스크립트가 `OK: 0 files`를 찍는다 — 고정 장치가 스스로를 고정하지 못한다. 커밋 SHA를 저장소 안의 파일에 박아 두고, 그 파일 자체를 허용 목록 **밖**에 두고, 태그 커밋이 그 파일 하나만 담게 해야 태그를 옮기는 순간 셋 중 하나가 반드시 깨진다.
 
-**허용 목록을 좁힌 세 가지.**
-- `docs/**`를 뺐다. 이 계약·고정된 스키마·고정된 규칙 어휘가 전부 `docs/` 안에 있어서, 태그 이후에 문서를 고쳐 이미 한 일을 합법화할 수 있었다. 남는 것은 `docs/styles-followups.md`(10장의 기록) 하나뿐이고, 다른 문서 수정은 태그 **이전**의 별도 커밋으로 간다.
-- 테스트 글롭 `Styles*Tests.swift`를 `StylesThirdParty*Tests.swift`로 좁혔다. 앞의 글롭은 `StylesOuroborosTests`·`StylesPaperthinTests`·`StylesBundledTests`, 즉 **동등성 오라클 전체**를 태그 이후에 고칠 수 있게 한다. 태그 이후에 생기는 두 파일의 이름은 `StylesThirdPartyOhMyClaudecodeTests.swift` / `StylesThirdPartyGstackTests.swift`다.
-- jest 쪽도 같은 이유로 `styles-*.test.ts` → `styles-thirdparty-*.test.ts`다.
-
-**v3에서 넓힌 것과 넓히지 않은 것.** Windows 클라이언트 작업은 엔진을 건드리지 않으므로 위의 Windows 전용 경로를 허용한다. 검사는 경로 단위라서 파일의 일부만 허용할 수 없다. 그래서 CI 설정을 `native-macos.yml`과 `native-windows.yml`로 나눴고, 이 고정 검사를 돌리는 단계가 든 `native-macos.yml`과 이 계약(`docs/mighty-styles.md`)은 계속 허용 목록 **밖**이다 — 태그 이후에 검사 단계나 계약 문구를 고쳐 이미 한 일을 합법화할 수 없어야 한다. Windows 기능의 설명은 공용 문서가 아니라 `docs/windows-*.md`에 적는다.
+**v5에서 허용 목록을 금지 목록으로 바꾼 이유.** v4까지는 태그 이후의 diff가 매니페스트와 그 테스트(와 Windows 전용 경로)만 담아야 했다. 그러면 엔진과 상관없는 앱 개발도 전부 고정 위반이 되어, 태그 이후 macOS CI의 고정 단계가 언제나 실패했다. 지키려던 것은 엔진이므로 v5부터는 엔진·오라클·계약·검사 자신만 고정하고 나머지는 자유롭게 둔다. 좁힌 이유는 그대로 유지된다: 계약 문서(`docs/mighty-styles.md`)와 오라클 테스트(`StylesOuroborosTests` 등)는 고정 안쪽이라 태그 이후에 고쳐 이미 한 일을 합법화할 수 없고, 제삼자 스타일 테스트만 이름 글롭으로 예외다. 검사 단계는 `native-macos.yml`에서 떼어 고정 안쪽의 `style-freeze.yml`로 옮겼으므로 검사 단계를 고쳐 우회할 수도 없다.
 
 삭제·이름 변경도 `--name-only`에 잡히므로 엔진 파일을 지우는 것도 실패한다. 스크립트는 `DEVELOPER_DIR` 설정을 요구하지 않는다(`git`만 쓴다).
 

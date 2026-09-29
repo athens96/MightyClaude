@@ -167,7 +167,8 @@ struct TerminalPaneLifetimeTests {
         let pane = try #require(made.panes.first)
         let shown = TranscriptProbe()
         let subscription = pane.subscribe { shown.receive($0) }
-        #expect(await waitFor { shown.text.contains("started") })
+        // The command's own line, not the header that also names "started".
+        #expect(await waitFor { shown.text.contains("started\r\n") })
 
         // The terminal pane and its agent pane close: the view lets go, the token is revoked.
         pane.unsubscribe(subscription)

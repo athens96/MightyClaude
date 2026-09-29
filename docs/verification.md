@@ -9,5 +9,6 @@ Mac과 Windows 네이티브 앱을 검증하는 명령이다. 실제 결과와 �
 | C# 코어 | `dotnet run --project native/windows/MightyClaude.Core.Tests --configuration Release` | 같은 계약의 Windows 구현. Windows 전용 Job Object·콘솔 검사는 다른 운영체제에서 생략한다. |
 | Windows 앱 실행 | `pwsh ./scripts/build-windows.ps1 -Architecture x64 -Configuration Release` 후 `pwsh ./scripts/test-native-windows.ps1 -Executable <MightyClaude.exe>` | Windows에서만 실행한다. CI가 x64·ARM64 모두 새 프로필로 GUI 스모크를 실행한다. |
 | Mod 정적 검사 | 격리된 `CLAUDE_CONFIG_DIR`에서 `claude plugin validate ./mods/mighty-bridge` | Mighty bridge hook 인식. [Mods 분석](claude-mods-analysis.md) |
+| Mod 형식·단위 검사 | `cd mods/mighty-bridge/tests && npm ci && npm run check` (Node 22.6 이상) | `hooks/register.ts`의 strict TypeScript 검사와 `node --test` 단위 테스트 11개(하위 에이전트 그래프·사용량·기존 수신기 메타데이터 계약). macOS CI가 Swift 코어보다 먼저 실행하고, `tests/`는 Mac 앱 번들에 복사하지 않는다. |
 
 테스트는 사용자 워크스페이스 상태와 분리된 임시 프로필을 사용한다. CLI 로그인과 제공자 설정은 기존 환경을 사용하며 모델 요청은 보내지 않는다.

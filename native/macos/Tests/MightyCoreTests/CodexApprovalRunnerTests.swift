@@ -25,7 +25,7 @@ private final class CodexRunnerEvents: @unchecked Sendable {
         }
     }
 
-    private func fixture() throws -> Fixture {
+    private func fixture() async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-codex-runner-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let binary = root.appendingPathComponent("codex")
@@ -86,7 +86,9 @@ private final class CodexRunnerEvents: @unchecked Sendable {
         """#
         try Data(source.utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
-        let providers = ProviderService(binaryOverrides: ["codex": binary], environment: ["PATH": "/usr/bin:/bin"])
+        let environment = ["PATH": "/usr/bin:/bin"]
+        try await PythonFixture.warmUp(environment: environment)
+        let providers = ProviderService(binaryOverrides: ["codex": binary], environment: environment)
         let events = CodexRunnerEvents()
         let runner = ProcessRunner(providerService: providers, pluginDirectory: root) { events.append($0) }
         return Fixture(root: root, providers: providers, runner: runner, events: events)
@@ -104,7 +106,7 @@ private final class CodexRunnerEvents: @unchecked Sendable {
     }
 
     @Test func processApprovalRoundTripsKeepStaleRepliesOutAndDeliverLegacyOutput() async throws {
-        let fixture = try fixture()
+        let fixture = try await fixture()
         do {
             var previous: ToolPermissionRequest?
             for (index, allow) in [true, false].enumerated() {
@@ -149,7 +151,7 @@ private final class CodexRunnerEvents: @unchecked Sendable {
     }
 
     @Test func cleanEOFWithoutTurnCompletionIsAnError() async throws {
-        let fixture = try fixture()
+        let fixture = try await fixture()
         do {
             for marker in ["eof-before-turn", "eof-before-result"] {
                 let markerURL = fixture.root.appendingPathComponent(marker)
@@ -164,7 +166,7 @@ private final class CodexRunnerEvents: @unchecked Sendable {
     }
 
     @Test func noninteractiveStartRejectsApprovalModeBeforeLaunchingATurn() async throws {
-        let fixture = try fixture()
+        let fixture = try await fixture()
         do {
             await #expect(throws: MightyError.self) { try await fixture.runner.start(request: fixture.request(), workspace: fixture.workspace) }
             #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("run-started.json").path))

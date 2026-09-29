@@ -82,6 +82,11 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
         // Signals stay blocked across the fork until the child has reset their
         // handlers, so a stop or Ctrl+C that arrives early ends it rather than
         // running a handler it inherited from the app.
+        // The child closes its copy of `ready` once it leads the tty's
+        // foreground group with its handlers reset, just before exec.
+        var ready: [Int32] = [-1, -1]
+        guard Darwin.pipe(&ready) == 0 else { throw MightyError("Could not open a terminal (PTY) for the command: \(String(cString: strerror(errno))).") }
+        for fd in ready { _ = fcntl(fd, F_SETFD, FD_CLOEXEC) }
         var blocked = sigset_t(), previous = sigset_t(), none = sigset_t()
         sigfillset(&blocked); sigemptyset(&none)
         _ = pthread_sigmask(SIG_SETMASK, &blocked, &previous)
@@ -103,13 +108,10 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
         } }
         let forkError = errno
         _ = pthread_sigmask(SIG_SETMASK, &previous, nil)
-        guard pid > 0 else { throw MightyError("Could not open a terminal (PTY) for the command: \(String(cString: strerror(forkError))).") }
+        Darwin.close(ready[1])
+        guard pid > 0 else { Darwin.close(ready[0]); throw MightyError("Could not open a terminal (PTY) for the command: \(String(cString: strerror(forkError))).") }
         _ = fcntl(master, F_SETFD, FD_CLOEXEC)
         _ = fcntl(master, F_SETFL, fcntl(master, F_GETFL) | O_NONBLOCK)
-        // Return once the child leads the tty's foreground group, so a stop or
-        // Ctrl+C sent right away reaches it rather than a group not made yet.
-        for _ in 0..<2_000 where tcgetpgrp(master) != pid { usleep(500) }
-
         let reader = DispatchSource.makeReadSource(fileDescriptor: master, queue: io)
         reader.setEventHandler { [weak self] in self?.drain(handle) }
         reader.setCancelHandler { Darwin.close(master) }
@@ -124,6 +126,21 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
             while waitpid(pid, &status, 0) < 0 { if errno != EINTR { status = 127 << 8; break } }
             self?.io.async { self?.exited(handle, status: status) }
         }
+        // Return once the child leads the tty's foreground group, so a stop or
+        // Ctrl+C sent right away reaches it rather than a group not made yet.
+        // End of file on `ready` says so however long a busy machine takes to
+        // run the child; the bound only guards against a child that never runs.
+        // The reader is already attached: a command that ends at once keeps its output.
+        _ = fcntl(ready[0], F_SETFL, fcntl(ready[0], F_GETFL) | O_NONBLOCK)
+        let readyDeadline = ContinuousClock.now + .seconds(30)
+        var byte: UInt8 = 0
+        while ContinuousClock.now < readyDeadline {
+            let count = Darwin.read(ready[0], &byte, 1)
+            if count == 0 || (count < 0 && errno != EAGAIN && errno != EINTR) { break }
+            // A cancelled task's sleep returns at once; pause anyway rather than spin.
+            if Task.isCancelled { usleep(1_000) } else { try? await Task.sleep(nanoseconds: 1_000_000) }
+        }
+        Darwin.close(ready[0])
         launched(self)
     }
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # 용법: scripts/check-style-freeze.sh [<tag>]        # 기본 tag = mighty-style-engine-v5
 #
-# 태그 이후의 diff가 매니페스트와 그 테스트만 담고 있는지 본다
+# 태그 이후의 diff가 고정된 엔진 경로(3번)를 건드리지 않았는지 본다
 # (docs/mighty-styles.md §8.3). git만 쓰므로 DEVELOPER_DIR이 필요 없다.
 set -uo pipefail
 
@@ -56,40 +56,43 @@ segment_match() {
   return 0
 }
 
-# 3. 금지 목록을 먼저, 그다음 허용 목록.
-allowed() {
+# 3. 고정된 것은 엔진이다: 엔진 코드, 번들 매니페스트, 동등성 오라클 테스트, 폰 렌더러,
+#    이 계약 문서, 이 검사와 그것을 부르는 워크플로. 나머지 앱 개발은 태그와 상관없다.
+#    제삼자 스타일의 테스트 두 글롭만 오라클 이름 안에서 예외다.
+frozen() {
   case "$1" in
-    styles/FREEZE) return 1 ;;
-    styles/*) return 0 ;;
-    docs/styles-followups.md) return 0 ;;
-    native/windows/*) return 0 ;;
-    scripts/build-windows.ps1) return 0 ;;
-    scripts/test-native-windows.ps1) return 0 ;;
-    .github/workflows/native-windows.yml) return 0 ;;
+    styles/FREEZE) return 0 ;;
+    native/macos/Sources/MightyCore/Styles/*) return 0 ;;
+    native/macos/Sources/MightyCore/Resources/Styles/*) return 0 ;;
+    mobile/src/lib/styles.ts) return 0 ;;
+    docs/mighty-styles.md) return 0 ;;
+    scripts/check-style-freeze.sh) return 0 ;;
+    .github/workflows/style-freeze.yml) return 0 ;;
   esac
-  segment_match "$1" "docs/windows-" ".md" && return 0
-  segment_match "$1" "native/macos/Tests/MightyCoreTests/StylesThirdParty" "Tests.swift" && return 0
-  segment_match "$1" "mobile/src/__tests__/styles-thirdparty-" ".test.ts" && return 0
+  segment_match "$1" "native/macos/Tests/MightyCoreTests/StylesThirdParty" "Tests.swift" && return 1
+  segment_match "$1" "mobile/src/__tests__/styles-thirdparty-" ".test.ts" && return 1
+  segment_match "$1" "native/macos/Tests/MightyCoreTests/Style" ".swift" && return 0
+  segment_match "$1" "native/macos/Tests/MightyCoreTests/SuperpowersStyle" ".swift" && return 0
+  segment_match "$1" "mobile/src/__tests__/styles" ".test.ts" && return 0
   return 1
 }
 
-OUTSIDE=""
+FROZEN_CHANGED=""
 COUNT=0
 while IFS= read -r path; do
   [ -n "$path" ] || continue
-  if allowed "$path"; then
-    COUNT=$((COUNT + 1))
-  else
-    OUTSIDE="$OUTSIDE$path"$'\n'
+  COUNT=$((COUNT + 1))
+  if frozen "$path"; then
+    FROZEN_CHANGED="$FROZEN_CHANGED$path"$'\n'
   fi
 done <<< "$CHANGED"
 
-# 4. 하나라도 바깥이면 그 목록을 찍고 실패한다.
-if [ -n "$OUTSIDE" ]; then
-  echo "고정된 엔진 밖의 변경입니다:" >&2
-  printf '%s' "$OUTSIDE" >&2
+# 4. 고정된 경로가 하나라도 바뀌었으면 그 목록을 찍고 실패한다.
+if [ -n "$FROZEN_CHANGED" ]; then
+  echo "고정된 엔진의 변경입니다:" >&2
+  printf '%s' "$FROZEN_CHANGED" >&2
   exit 1
 fi
 
 # 5.
-echo "OK: ${COUNT} files, all inside the manifest-only allow-list"
+echo "OK: ${COUNT} files changed since ${TAG}, none in the frozen engine"

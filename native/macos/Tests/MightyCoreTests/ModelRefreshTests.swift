@@ -21,7 +21,7 @@ struct ModelRefreshTests {
     @Test func providerWideDiscardLeavesOtherProviderCached() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let folder = try workspace(root, "workspace", model: "old-model")
-        let service = service(root)
+        let service = try await service(root)
         for provider in ["claude", "codex"] { _ = await service.modelCatalog(provider: provider, workspacePath: folder.path) }
         try configure(folder, model: "new-model")
         await service.discardModelCatalogs(provider: "claude")
@@ -77,9 +77,10 @@ struct ModelRefreshTests {
     private func configure(_ folder: URL, model: String, delay: Double = 0) throws {
         try JSONSerialization.data(withJSONObject: ["model": model, "delay": delay]).write(to: folder.appendingPathComponent("catalog.json"), options: .atomic)
     }
-    private func service(_ root: URL) -> ProviderService {
+    private func service(_ root: URL) async throws -> ProviderService {
         var environment = ["PATH": "/usr/bin:/bin"]
         if let developerDirectory = ProcessInfo.processInfo.environment["DEVELOPER_DIR"] { environment["DEVELOPER_DIR"] = developerDirectory }
+        try await PythonFixture.warmUp(environment: environment)
         return ProviderService(binaryOverrides: ["claude": root.appendingPathComponent("claude"), "codex": root.appendingPathComponent("codex")], environment: environment)
     }
     private func calls(_ folder: URL, _ provider: String) -> Int {
@@ -96,7 +97,7 @@ struct ModelRefreshTests {
     @Test func workspaceCatalogsAndProviderRefreshesAreIsolated() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let a = try workspace(root, "a", model: "company/one"), b = try workspace(root, "b", model: "company/two")
-        let service = service(root)
+        let service = try await service(root)
         for provider in ["claude", "codex"] {
             let first = await service.modelCatalog(provider: provider, workspacePath: a.path)
             let second = await service.modelCatalog(provider: provider, workspacePath: b.path)
@@ -122,7 +123,7 @@ struct ModelRefreshTests {
     @Test func forcedDiscoverySupersedesOldWorkAndConcurrentRefreshesShareAProbe() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let folder = try workspace(root, "workspace", model: "old-model", delay: 0.5)
-        let service = service(root)
+        let service = try await service(root)
         let old = Task { await service.modelCatalog(provider: "codex", workspacePath: folder.path) }
         try await waitForStart(folder, provider: "codex", model: "old-model")
         try configure(folder, model: "new-model", delay: 0.2)
@@ -140,7 +141,7 @@ struct ModelRefreshTests {
     @Test func invalidationAndProbeFailureCannotReturnOldModels() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let folder = try workspace(root, "workspace", model: "old-model", delay: 0.5)
-        let service = service(root)
+        let service = try await service(root)
         let old = Task { await service.modelCatalog(provider: "claude", workspacePath: folder.path) }
         try await waitForStart(folder, provider: "claude", model: "old-model")
         await service.invalidateCaches()
@@ -153,7 +154,7 @@ struct ModelRefreshTests {
     @Test func authenticationInvalidationSupersedesEvenAnAlreadyForcedProbe() async throws {
         let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let folder = try workspace(root, "workspace", model: "account-one", delay: 0.5)
-        let service = service(root)
+        let service = try await service(root)
         let old = Task { await service.providerRuntime(provider: "codex", workspacePath: folder.path, forceRefresh: true) }
         try await waitForStart(folder, provider: "codex", model: "account-one")
         try configure(folder, model: "account-two")

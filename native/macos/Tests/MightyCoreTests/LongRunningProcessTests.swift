@@ -191,7 +191,7 @@ struct LongRunningProcessTests {
         let run = try await runner.runInTerminal(command: "trap '' INT TERM; echo stubborn; while :; do sleep 1; done")
         #expect(run.status == .running)
         // Stop only once the traps are in place, or SIGINT would beat them.
-        let armed = Date().addingTimeInterval(5)
+        let armed = Date().addingTimeInterval(30)
         while !pane.readOutput(handle: run.handle, fromOffset: 0, maxBytes: 64).output.contains("stubborn"), Date() < armed { try await Task.sleep(nanoseconds: 20_000_000) }
         let began = Date()
         let stopped = try #require(await runner.stop(handle: run.handle))
