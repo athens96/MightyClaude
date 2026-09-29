@@ -16,7 +16,9 @@ final class ClaudePluginTests {
             ["PATH": root.path + ":/usr/bin:/bin", "HOME": root.path, "FIXTURE_ROOT": root.path,
              "FORCE_AUTOUPDATE_PLUGINS": "1"]
         }
-        func service(readTimeout: TimeInterval = 3, operationTimeout: TimeInterval = 5, maximumBytes: Int = 8 * 1024 * 1024) -> ClaudePluginService {
+        // Reads get the app's own 20 s budget so a busy runner is not a failure;
+        // the timeout tests pass their own short operation budget.
+        func service(readTimeout: TimeInterval = 20, operationTimeout: TimeInterval = 60, maximumBytes: Int = 8 * 1024 * 1024) -> ClaudePluginService {
             ClaudePluginService(environment: environment, executable: executable, readTimeout: readTimeout,
                                 operationTimeout: operationTimeout, maximumBytes: maximumBytes)
         }

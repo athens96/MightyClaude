@@ -1,0 +1,16 @@
+{
+  "name": "mighty-bridge-tests",
+  "private": true,
+  "description": "Dev-only type-check and unit tests for the mighty-bridge Claude mod. Not shipped with the apps.",
+  "type": "module",
+  "engines": { "node": ">=22.6" },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node --experimental-strip-types --test \"*.test.ts\"",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}

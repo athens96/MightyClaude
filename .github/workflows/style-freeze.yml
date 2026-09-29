@@ -1,0 +1,23 @@
+name: Style engine freeze
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The check reads the tag and the history behind it.
+          fetch-depth: 0
+      - name: The frozen style engine is unchanged since the tag
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify refs/tags/mighty-style-engine-v5 >/dev/null; then
+            bash scripts/check-style-freeze.sh
+          else
+            echo "mighty-style-engine-v5 태그가 아직 없어 고정 검사를 건너뜁니다."
+          fi

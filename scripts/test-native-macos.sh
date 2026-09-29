@@ -34,7 +34,8 @@ def clean(line):
 
 nonempty = [clean(l) for l in open(sys.argv[1], errors="replace").read().splitlines() if l.strip()]
 errors = [l for l in nonempty if ': error:' in l][:12]
-failures = [l for l in nonempty if l.strip().startswith('✗')][:8]
+# Swift Testing marks a failure with U+2718; U+2717 is kept for other reporters.
+failures = [l for l in nonempty if l.strip().startswith(('✘', '✗'))][:8]
 # The contract: the last 30 non-empty lines of a failing run, with the compiler
 # errors and the failing checks hoisted in front of them.
 tail = nonempty[-30:]

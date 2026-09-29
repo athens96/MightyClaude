@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The freeze gate below reads the tag and the history behind it.
+          # The build number is the commit count, so the whole history is fetched.
           fetch-depth: 0
       - name: Report the selected Apple toolchain
         run: |
@@ -19,6 +19,14 @@ jobs:
           xcrun --find swift
           xcrun swift --version
           xcrun --sdk macosx --show-sdk-path
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mods/mighty-bridge/tests/package-lock.json
+      - name: Type-check and test the Claude mod
+        working-directory: mods/mighty-bridge/tests
+        run: npm ci --no-audit --no-fund && npm run check
       - name: Test Swift core
         run: bash scripts/test-native-macos.sh
       - name: Build SwiftUI application
@@ -67,14 +75,6 @@ jobs:
           name: MightyClaude-native-macos
           path: release/MightyClaude-macos.zip
           if-no-files-found: error
-      - name: Check the manifest-only freeze after the tag
-        run: |
-          set -euo pipefail
-          if git rev-parse -q --verify refs/tags/mighty-style-engine-v5 >/dev/null; then
-            bash scripts/check-style-freeze.sh
-          else
-            echo "mighty-style-engine-v5 태그가 아직 없어 고정 검사를 건너뜁니다."
-          fi
 
   sign-manifest:
     needs: macos
