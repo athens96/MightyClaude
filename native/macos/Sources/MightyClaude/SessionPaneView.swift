@@ -532,6 +532,7 @@ struct SessionPaneView: View {
                 .font(.system(size: 11)).lineSpacing(2)
                 .padding(.horizontal, 12)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("run-blocked-\(session.id)")
+                .background(AccessibilityStateProbe(identifier: "run-blocked-\(session.id)", enabled: true))
             }
             composerToolbar
             .padding(.horizontal, 10).padding(.bottom, statusLine == nil ? 10 : 4)
@@ -636,6 +637,7 @@ struct SessionPaneView: View {
                         .help(stopping ? "중지하는 중…" : "작업 중지")
                         .accessibilityLabel(stopping ? "중지하는 중" : "중지")
                         .accessibilityIdentifier("composer-stop-" + session.id)
+                        .background(AccessibilityStateProbe(identifier: "composer-stop-" + session.id, enabled: !stopping))
                     }
                     if !running || canSend {
                         Button { submitComposer() } label: {
@@ -647,6 +649,7 @@ struct SessionPaneView: View {
                         .help(running ? (steers ? "다음 요청으로 대기 (Enter) · 실행 중인 Claude에 바로 전달하려면 ⌘Enter" : "현재 작업이 끝난 뒤 실행 (Enter)") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")
                         .accessibilityLabel(running ? "대기열에 추가" : "보내기")
                         .accessibilityIdentifier("send-" + session.id)
+                        .background(AccessibilityStateProbe(identifier: "send-" + session.id, enabled: canSend))
                     }
                 }.fixedSize(horizontal: true, vertical: true)
             }.frame(width: geometry.size.width, height: ComposerToolbarMetrics.height, alignment: .leading)
