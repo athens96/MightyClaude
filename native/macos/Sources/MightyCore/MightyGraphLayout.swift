@@ -5,14 +5,34 @@ import Foundation
 /// subtree bounds, so expanding one card moves every following row with it.
 public struct MightyGraphLayout {
     public enum Content: Hashable {
-        case request(Int), agent(Int, Int), result(Int), resultFiles(Int), draft
+        /// `execution` is a run index and an `OuroborosExecutionLink.key`.
+        case request(Int), agent(Int, Int), result(Int), resultFiles(Int), execution(Int, String), draft
     }
     public struct Node: Identifiable {
         public let id: String
         public let content: Content
         public var frame: CGRect
         public var isResultFiles: Bool { if case .resultFiles = content { return true }; return false }
+        /// Attachments beside the flow: not resized, scrolled at once.
+        public var isAuxiliary: Bool {
+            switch content {
+            case .resultFiles, .execution: return true
+            default: return false
+            }
+        }
     }
+    /// A background execution's block, attached beside the request that started it.
+    public struct Execution: Hashable, Sendable {
+        public var runID: String
+        public var key: String
+        public init(runID: String, key: String) { self.runID = runID; self.key = key }
+    }
+    public static let executionSuffix = "ouroboros-execution:"
+    public static let executionWidth: CGFloat = 380
+    static let executionGap: CGFloat = 16
+    /// Collapsed, it holds the goal, progress, counts, one phase line, a
+    /// three-line note and the footer without clipping.
+    public static func executionHeight(expanded: Bool) -> CGFloat { expanded ? 470 : 290 }
     public struct Edge: Identifiable {
         public let source: String
         public let target: String
@@ -68,7 +88,7 @@ public struct MightyGraphLayout {
         (viewport != nil && sharedResultSize == nil) ? latestResultID(runs: runs) : nil
     }
 
-    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil) -> Self {
+    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, executions: [Execution] = []) -> Self {
         // The latest result card is the result of the last finished run in the list.
         let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
         let latestResultID = Self.latestResultID(runs: runs)
@@ -213,6 +233,24 @@ public struct MightyGraphLayout {
             // centerline. Only the trailing canvas extent grows horizontally.
             result.nodes.append(Node(id: panelID, content: .resultFiles(runIndex), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
+        }
+        // Execution blocks hang off their request's top, stacked, right of
+        // every card they would share rows with — attachments, like the file
+        // list: no edge, no centreline, and nothing already placed moves.
+        var nextY: [Int: CGFloat] = [:]
+        for execution in executions {
+            guard let runIndex = runs.firstIndex(where: { $0.id == execution.runID }),
+                  let request = result.nodes.first(where: { $0.content == .request(runIndex) }) else { continue }
+            let id = nodeID(runs[runIndex], suffix: executionSuffix + execution.key)
+            guard !result.nodes.contains(where: { $0.id == id }) else { continue }
+            let y = nextY[runIndex] ?? request.frame.minY
+            let height = executionHeight(expanded: expanded.contains(id))
+            let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? request.frame.maxX
+            let frame = CGRect(x: max(right, request.frame.maxX) + executionGap, y: y, width: executionWidth, height: height)
+            result.nodes.append(Node(id: id, content: .execution(runIndex, execution.key), frame: frame))
+            result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
+            result.size.height = max(result.size.height, frame.maxY + 24)
+            nextY[runIndex] = frame.maxY + executionGap
         }
         result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)
         return result

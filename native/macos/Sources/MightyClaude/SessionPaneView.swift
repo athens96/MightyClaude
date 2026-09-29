@@ -392,7 +392,8 @@ struct SessionPaneView: View {
                     styleName: style?.manifest.name, styleSource: style?.source, stylePhase: guidedPhase?.title,
                     catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models,
                     graphResultSize: session.graphResultSize,
-                    onSaveResultSize: { size in store.setGraphResultSize(session.id, size: size) }) {
+                    onSaveResultSize: { size in store.setGraphResultSize(session.id, size: size) },
+                    onOpenURL: { url in await store.openInAgentBrowser(url, agentPaneId: session.id) }) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {
