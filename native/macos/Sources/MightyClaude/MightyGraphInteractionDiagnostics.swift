@@ -376,6 +376,20 @@ enum MightyGraphInteractionDiagnostics {
             try require(calls.filter(\.1).count == 1, "완료 콜백이 한 번이 아닙니다.")
             try require(!changed(probe.frames[0].1.origin, anchor), "완료 시 모서리 위치 변경")
 
+            // A left side grows leftward and keeps the right side where it was.
+            let beforeLeft = currentSize
+            guard let leftFrame = probe.frames.first?.1 else { throw MightyError("크기 조절 블록이 없습니다.") }
+            let leftStart = CGPoint(x: leftFrame.minX + 1, y: leftFrame.midY)
+            let leftEnd = CGPoint(x: leftStart.x - 60, y: leftStart.y + 25)
+            try post(.leftMouseDown, at: leftStart)
+            try await store.waitForSmoke(timeout: 3) { probe.isResizing }
+            try post(.leftMouseDragged, at: leftEnd)
+            try await store.waitForSmoke(timeout: 3) { currentSize != beforeLeft }
+            try require(currentSize == CGSize(width: beforeLeft.width + 60 / zoom, height: beforeLeft.height), "왼쪽 변이 너비만 바꾸지 않았습니다.")
+            try require(abs((probe.frames.first?.1.maxX ?? 0) - leftFrame.maxX) < 0.5, "왼쪽 변 조절 중 오른쪽 변이 움직였습니다.")
+            try post(.leftMouseUp, at: leftEnd)
+            try await store.waitForSmoke(timeout: 3) { !probe.isResizing }
+
             let beforeCancel = currentSize
             let cancelStart = try await startDrag()
             try post(.leftMouseDragged, at: CGPoint(x: cancelStart.x + 50, y: cancelStart.y + 40))
@@ -422,7 +436,7 @@ enum MightyGraphInteractionDiagnostics {
             probe.dispose()
             try require(!probe.isResizing && currentSize == initialSize, "뷰 제거 취소")
             results.append(["zoom": zoom, "screenDelta": "90,60", "graphSize": NSStringFromSize(expected),
-                            "anchorPinned": true, "fixedOriginDelta": true, "wheelSuppressedDuringResize": true,
+                            "anchorPinned": true, "fixedOriginDelta": true, "leftSidePinsRightSide": true, "wheelSuppressedDuringResize": true,
                             "outsideMouseUpAndClamps": true, "escapeRestoresSize": true,
                             "selectedInnerScrollPreserved": true, "backgroundPanPreserved": true,
                             "resignAndDisposeCancel": true])

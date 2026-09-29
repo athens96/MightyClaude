@@ -26,6 +26,9 @@ struct MightyGraphView: View {
     var onSaveResultSize: (MightyGraphBlockSize?) -> Void = { _ in }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
+    /// The newest result's size only while its drag is in progress; the saved
+    /// pane-wide size is the truth before and after.
+    @ViewState private var liveResultSize: MightyGraphBlockSize?
     @ViewState private var reference: MightyGraphReference?
     @ViewState private var referenceOnLeft = false
     // Remembered across sessions and panes. Height 0 means "as tall as the graph".
@@ -64,7 +67,11 @@ struct MightyGraphView: View {
         return (title, "person.crop.square.filled.and.at.rectangle", .purple)
     }
 
-    private var layout: MightyGraphLayout { .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: graphResultSize) }
+    // The newest result takes the pane-wide saved size, so a drag in progress
+    // has to stand in for it or the card would only change on release.
+    private var layout: MightyGraphLayout {
+        .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize)
+    }
 
     var body: some View {
         let graph = layout
@@ -186,10 +193,10 @@ struct MightyGraphView: View {
     private func resize(_ id: String, _ size: CGSize, _ finished: Bool) {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
         resized[id] = value
-        if finished {
-            if id == MightyGraphLayout.latestResultID(runs: runs) { onSaveResultSize(value) }
-            else { onSaveBlockSize(id, value) }
-        }
+        if id == MightyGraphLayout.latestResultID(runs: runs) {
+            liveResultSize = finished ? nil : value
+            if finished { onSaveResultSize(value) }
+        } else if finished { onSaveBlockSize(id, value) }
     }
 
     private func resetSize(_ id: String) {

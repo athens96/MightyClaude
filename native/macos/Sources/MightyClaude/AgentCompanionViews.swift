@@ -142,7 +142,7 @@ struct CompanionOverlayView: View {
             }.buttonStyle(.plain).accessibilityLabel(companion.preferences.showsTask && bubble.isVisible ? "작업 말풍선 숨기기" : "작업 말풍선 보기").accessibilityIdentifier("pet-toggle-bubble")
                 .background(CompanionPetInteraction(motion: motion, row: animationRow, onClick: toggleBubble).allowsHitTesting(false))
                 .contextMenu { Button("펫 숨기기") { companion.preferences.enabled = false }; Button("에이전트 열기") { companion.focus(companion.shown?.id) } }
-        }.padding(8).frame(width: 282, height: companion.visibleApproval == nil ? CompanionPanel.baseHeight : CompanionPanel.tallHeight, alignment: .bottom)
+        }.padding(8).frame(width: panelSize.width, height: panelSize.height, alignment: .bottom)
             .onChange(of: CompanionBubbleIdentity(companion.shown), initial: true) { _, identity in bubble.synchronize(identity) }
             .onChange(of: animationRow) { _, _ in epoch = Date() }
             .onDisappear { motion.endAfterTeardown() }
@@ -153,6 +153,10 @@ struct CompanionOverlayView: View {
                     celebrating = false
                 }
             }
+    }
+    private var panelSize: CGSize {
+        let size = companion.bubbleSize
+        return CompanionBubbleLayout.panelSize(width: size.width, height: size.height, tall: companion.visibleApproval != nil)
     }
     private func toggleBubble() {
         guard !motion.isDragging else { return }
@@ -171,6 +175,7 @@ struct CompanionTaskBubble: View {
     let current: AgentPresence
     /// Set while a sideways drag is turning the page, so its mouse-up does not also open the agent.
     @ViewState private var turning = false
+    @ViewState private var measuredHeight: CGFloat = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
@@ -182,10 +187,16 @@ struct CompanionTaskBubble: View {
             }
             CompanionPager(companion: companion)
         }
-        .padding(12).foregroundStyle(.primary).frame(width: 258)
+        .padding(12).foregroundStyle(.primary)
+        .frame(width: size.resolvedWidth, height: size.resolvedHeight, alignment: .top)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.10)))
+        .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: measuredHeight, allowsHeight: true))
+        .background(GeometryReader { geo in Color.clear.onAppear { measuredHeight = geo.size.height }.onChange(of: geo.size.height) { _, new in measuredHeight = new } })
     }
+    private var size: CompanionBubbleSize { companion.bubbleSize }
+    /// A taller bubble shows more of the request and the work instead of padding.
+    private var lines: Int? { size.resolvedHeight == nil ? 2 : nil }
 
     /// On the bubble's own button only; the pager's chevrons stay plain clicks.
     private var pageDrag: some Gesture {
@@ -220,13 +231,14 @@ struct CompanionTaskBubble: View {
             if let input = current.input, !input.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
                     Text("요청").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, 2)
-                    Text(input).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(input).font(.system(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Divider()
             }
             HStack(alignment: .top, spacing: 6) {
                 Text("작업").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, 2)
-                Text(current.summary).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                Text(current.summary).font(.system(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
             }
         }
         .contentShape(Rectangle())
@@ -350,9 +362,11 @@ struct CompanionApprovalBubble: View {
             }.controlSize(.small).disabled(companion.approvalBusy)
             CompanionPager(companion: companion)
         }
-        .padding(12).frame(width: 258)
+        .padding(12).frame(width: CompanionBubbleLayout.approvalWidth(companion.bubbleSize.width))
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.orange.opacity(0.45)))
+        // The approval keeps its own height; its sides still set the shared width.
+        .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: nil, allowsHeight: false))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(approval.workspaceName.isEmpty ? "" : approval.workspaceName + " 워크스페이스의 ")\(approval.sessionTitle) 승인 요청: \(presentation.headline ?? approval.request.summary)")
         .accessibilityIdentifier("pet-approval-bubble")
@@ -400,8 +414,8 @@ private struct CompanionOptionRow: View {
 @MainActor
 final class CompanionPanel {
     // Room for the pager row under either bubble; the extra band is transparent.
-    static let baseHeight: CGFloat = 330
-    static let tallHeight: CGFloat = 494
+    static let baseHeight = CompanionBubbleLayout.baseHeight
+    static let tallHeight = CompanionBubbleLayout.tallHeight
     /// The pet and its padding; swipes below this line are over the pet, not a bubble.
     static let bubbleFloor: CGFloat = 143
     private let panel: NSPanel
@@ -444,16 +458,80 @@ final class CompanionPanel {
         if visible { panel.orderFrontRegardless() }
         else { CompanionPetInteraction.cancel(in: panel.contentView); panel.orderOut(nil) }
     }
-    /// Grow upward for an approval bubble; the pet keeps its bottom-left origin.
-    func setTall(_ tall: Bool) {
-        let height = tall ? Self.tallHeight : Self.baseHeight
-        guard abs(panel.frame.height - height) > 0.5 else { return }
-        panel.setFrame(NSRect(x: panel.frame.minX, y: panel.frame.minY, width: panel.frame.width, height: height), display: true)
+    /// Which side of the window stays where it is when its width changes.
+    enum Side { case left, right, center }
+    /// Sizes the window around the bubble. It always grows upward; sideways it
+    /// keeps `side` where it is, so a dragged edge follows the pointer.
+    func fit(bubble: CompanionBubbleSize, tall: Bool, keeping side: Side) {
+        let size = CompanionBubbleLayout.panelSize(width: bubble.width, height: bubble.height, tall: tall)
+        let frame = panel.frame
+        guard abs(frame.width - size.width) > 0.5 || abs(frame.height - size.height) > 0.5 else { return }
+        let x = switch side {
+        case .left: frame.minX
+        case .right: frame.maxX - size.width
+        case .center: frame.midX - size.width / 2
+        }
+        panel.setFrame(NSRect(x: x, y: frame.minY, width: size.width, height: size.height), display: true)
     }
     deinit { if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) } }
     func close() {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         scrollMonitor = nil
         CompanionPetInteraction.cancel(in: panel.contentView); panel.close()
+    }
+}
+
+/// Thin strips along the bubble's top, left and right edges that resize it.
+/// The bottom meets the pet, so it has none. They cover only the edges, so
+/// the bubble's own buttons keep every click. A double click restores the
+/// default size.
+struct CompanionBubbleResizer: View {
+    @ObservedObject var companion: AgentCompanion
+    /// The bubble's drawn height, the start of a first vertical drag.
+    let measuredHeight: CGFloat?
+    let allowsHeight: Bool
+    static let band: CGFloat = 6
+    @ViewState private var drag: (edges: ResizeEdges, start: NSPoint, size: CGSize)?
+
+    var body: some View {
+        ZStack {
+            strip(.left).frame(width: Self.band).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            strip(.right).frame(width: Self.band).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            if allowsHeight {
+                strip(.top).frame(height: Self.band).padding(.horizontal, Self.band * 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                strip([.left, .top]).frame(width: Self.band * 2, height: Self.band * 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                strip([.right, .top]).frame(width: Self.band * 2, height: Self.band * 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+        }
+        .onDisappear { if drag != nil { drag = nil; companion.cancelBubbleResize(keeping: .left) } }
+    }
+
+    private func strip(_ edges: ResizeEdges) -> some View {
+        Color.clear.contentShape(Rectangle())
+            .onHover { inside in (inside ? MightyGraphInteractionProbe.cursor(for: edges) : NSCursor.arrow).set() }
+            .onTapGesture(count: 2) { companion.resizeBubble(to: CompanionBubbleSize(), keeping: .center, finished: true) }
+            .gesture(DragGesture(minimumDistance: 1)
+                .onChanged { _ in resize(edges, finished: false) }
+                .onEnded { _ in resize(edges, finished: true) })
+    }
+
+    /// Measured in screen points from the pointer itself: the window moves
+    /// under it while it resizes, so view coordinates would feed back.
+    private func resize(_ edges: ResizeEdges, finished: Bool) {
+        let side: CompanionPanel.Side = edges.contains(.left) ? .right : .left
+        if drag == nil {
+            let size = companion.bubbleSize
+            drag = (edges, NSEvent.mouseLocation, CGSize(width: size.resolvedWidth, height: size.resolvedHeight ?? measuredHeight ?? CompanionBubbleLayout.minimum.height))
+        }
+        guard let current = drag else { return }
+        let now = NSEvent.mouseLocation
+        let delta = CGSize(width: now.x - current.start.x, height: current.start.y - now.y)
+        let size = edges.size(from: current.size, delta: delta, minimum: CompanionBubbleLayout.minimum, maximum: CompanionBubbleLayout.maximum)
+        // A sideways drag leaves a content-following height as it was.
+        let next = CompanionBubbleSize(width: size.width, height: edges.vertical ? size.height : companion.bubbleSize.height)
+        guard finished else { companion.resizeBubble(to: next, keeping: side, finished: false); return }
+        drag = nil
+        if size == current.size { companion.cancelBubbleResize(keeping: side) }
+        else { companion.resizeBubble(to: next, keeping: side, finished: true) }
     }
 }
