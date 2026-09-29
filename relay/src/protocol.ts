@@ -1,10 +1,13 @@
 /** Wire-level constants and query validation for `GET /ws`. */
 
+import { createHash } from 'node:crypto';
+
 export const WS_PATH = '/ws';
 export const PROTOCOL_VERSION = '1';
 
 export const SERVER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const CONNECTION_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+export const HOST_TOKEN_PATTERN = /^[A-Fa-f0-9]{32,64}$/;
 
 /** Close codes used by the relay (see docs/relay.md, "릴레이 와이어"). */
 export const CloseCode = {
@@ -12,6 +15,8 @@ export const CloseCode = {
   normal: 1000,
   /** Malformed or missing query parameters. */
   badRequest: 4400,
+  /** Host socket without a hostToken whose SHA-256 is the serverId. */
+  unauthorized: 4401,
   /** No host control socket, or unknown/expired connectionId. */
   notFound: 4404,
   /** Superseded by a newer host control socket. */
@@ -41,6 +46,11 @@ export interface SocketParams {
   readonly serverId: string;
   /** Present for every kind except `control`. */
   readonly connectionId: string | null;
+  /**
+   * The host secret carried by `control` and `host-data` sockets (null when
+   * absent, and always null for `client-data`). See `ownsServerId`.
+   */
+  readonly hostToken: string | null;
 }
 
 /** JSON notifications the relay pushes to the host control socket. */
@@ -73,13 +83,26 @@ export function parseSocketParams(query: URLSearchParams): ParseResult {
 
   if (role === 'client') {
     if (connectionId === null) return { ok: false, reason: 'missing connectionId' };
-    return { ok: true, params: { kind: 'client-data', serverId, connectionId } };
+    return { ok: true, params: { kind: 'client-data', serverId, connectionId, hostToken: null } };
   }
 
-  if (connectionId === null) {
-    return { ok: true, params: { kind: 'control', serverId, connectionId: null } };
+  const hostToken = query.get('hostToken');
+  if (hostToken !== null && !HOST_TOKEN_PATTERN.test(hostToken)) {
+    return { ok: false, reason: 'bad hostToken' };
   }
-  return { ok: true, params: { kind: 'host-data', serverId, connectionId } };
+  if (connectionId === null) {
+    return { ok: true, params: { kind: 'control', serverId, connectionId: null, hostToken } };
+  }
+  return { ok: true, params: { kind: 'host-data', serverId, connectionId, hostToken } };
+}
+
+/**
+ * A host socket speaks for `serverId` only when `serverId` is the lowercase hex
+ * SHA-256 of the UTF-8 `hostToken`. Nothing is remembered between connections.
+ */
+export function ownsServerId(serverId: string, hostToken: string | null): boolean {
+  if (hostToken === null) return false;
+  return createHash('sha256').update(hostToken, 'utf8').digest('hex') === serverId;
 }
 
 /**

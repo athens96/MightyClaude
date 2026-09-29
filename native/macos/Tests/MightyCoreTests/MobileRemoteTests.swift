@@ -764,6 +764,8 @@ struct MobileRemoteTests {
         await defaulted.shutdown()
         let sameHostId = await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").status().serverId
         #expect(sameHostId == status.serverId && CoreValidation.identifier(status.serverId))
+        // The relay serverId is derived from the host token, so the relay can check ownership.
+        #expect(status.serverId == RelayEndpoint.serverId(hostToken: try await service.loadOrCreateControlToken()))
         await service.shutdown()
     }
 

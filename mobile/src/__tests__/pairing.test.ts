@@ -51,6 +51,11 @@ describe('parsePairingUrl (v2)', () => {
     });
   });
 
+  it('accepts a serverId derived from the host token (64 lowercase hex)', () => {
+    const serverId = '60e05bd1b195af2f94112fa7197a5c88289058840ce7c6df9693756bc6250f55';
+    expect(parsePairingUrl(url({ sid: serverId }))).toMatchObject({ ok: true, value: { serverId } });
+  });
+
   it('round-trips through formatPairingUrl', () => {
     expect(parsePairingUrl(formatPairingUrl(payload))).toEqual({ ok: true, value: payload });
   });

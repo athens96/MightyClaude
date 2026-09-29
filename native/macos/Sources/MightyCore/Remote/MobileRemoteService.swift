@@ -56,6 +56,7 @@ public actor MobileRemoteService {
     private var settings = MobileRemoteSettings()
     private var key: String?
     private var keypair: RelayKeypair?
+    private var controlToken: String?
     private let hostId: String
     private var hostName: String
     private var appVersion: String
@@ -158,6 +159,34 @@ public actor MobileRemoteService {
 
     private var keyURL: URL { dataDirectory.appendingPathComponent("mobile-remote.key") }
     private var keypairURL: URL { dataDirectory.appendingPathComponent("relay-keypair.json") }
+    private var controlTokenURL: URL { dataDirectory.appendingPathComponent("relay-host-token.json") }
+
+    /// Loads or creates the relay host token (32 random bytes, hex). It is sent
+    /// as `hostToken` on the control socket and on every host data socket, and
+    /// the relay serverId is derived from it (`relayServerId()`), so the relay
+    /// can check on each connection that the socket belongs to this host.
+    func loadOrCreateControlToken() throws -> String {
+        if let controlToken { return controlToken }
+        if let saved = try? String(contentsOf: controlTokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           saved.range(of: "^[A-Fa-f0-9]{32,64}$", options: .regularExpression) != nil {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: controlTokenURL.path)
+            controlToken = saved; return saved
+        }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let result = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard result == errSecSuccess else { throw MightyError("릴레이 호스트 토큰을 생성하지 못했습니다.") }
+        let fresh = bytes.map { String(format: "%02x", $0) }.joined()
+        try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let temporary = dataDirectory.appendingPathComponent("relay-host-token.json." + UUID().uuidString)
+        guard FileManager.default.createFile(atPath: temporary.path, contents: Data(fresh.utf8), attributes: [.posixPermissions: 0o600]) else {
+            throw MightyError("릴레이 호스트 토큰을 저장하지 못했습니다.")
+        }
+        if FileManager.default.fileExists(atPath: controlTokenURL.path) { _ = try FileManager.default.replaceItemAt(controlTokenURL, withItemAt: temporary) }
+        else { try FileManager.default.moveItem(at: temporary, to: controlTokenURL) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: controlTokenURL.path)
+        controlToken = fresh
+        return fresh
+    }
 
     /// Loads the saved pairing key or mints one. Owner-only file; the value is
     /// the only secret a phone needs, so it never enters the login Keychain.
@@ -208,6 +237,9 @@ public actor MobileRemoteService {
             Task { await client.close(reason: reason) }
         }
     }
+    /// The id this host registers with the relay and puts in the pairing offer.
+    /// `hostId` stays the host's own identity (`auth_ok`, `/info`).
+    func relayServerId() throws -> String { RelayEndpoint.serverId(hostToken: try loadOrCreateControlToken()) }
     private func loadKeypair() throws -> RelayKeypair {
         if let keypair { return keypair }
         let loaded = try RelayKeypair.load(from: keypairURL)
@@ -221,7 +253,7 @@ public actor MobileRemoteService {
         let offer = (settings.enabled && relayConnected) ? offerIfAvailable() : nil
         statusSequence += 1
         return MobileHostStatus(enabled: settings.enabled, relayURL: settings.relayURL, relayConnected: relayConnected, clients: clients.count,
-                                serverId: hostId, publicKeyB64: (try? loadKeypair())?.publicKeyB64, key: offer?.pairingKey, pairingURL: offer?.url,
+                                serverId: (try? relayServerId()) ?? "", publicKeyB64: (try? loadKeypair())?.publicKeyB64, key: offer?.pairingKey, pairingURL: offer?.url,
                                 hostName: hostName, detail: detail, devices: deviceRegistry.infos(connected: Set(connectedDevices.values)),
                                 registryWarning: deviceRegistry.warning(), sequence: statusSequence)
     }
@@ -243,8 +275,8 @@ public actor MobileRemoteService {
         return status()
     }
     private func offerIfAvailable() -> MobilePairingOffer? {
-        guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let relay = relayURL else { return nil }
-        return MobilePairingOffer(serverId: hostId, publicKeyB64: keypair.publicKeyB64, relayURL: relay, pairingKey: key, name: hostName)
+        guard let key = try? loadOrCreateKey(), let keypair = try? loadKeypair(), let serverId = try? relayServerId(), let relay = relayURL else { return nil }
+        return MobilePairingOffer(serverId: serverId, publicKeyB64: keypair.publicKeyB64, relayURL: relay, pairingKey: key, name: hostName)
     }
     private func publish() { statusObserver?(status()) }
 
@@ -442,7 +474,9 @@ public actor MobileRemoteService {
         // The loop's own generation check is a separate hop; a start or stop
         // may have run in between, and a stale session must not take the socket.
         guard current == generation, !Task.isCancelled else { return false }
-        guard let relay = relayURL, let url = RelayEndpoint.socketURL(relay: relay, serverId: hostId, role: "server", connectionId: nil) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
+        let hostToken: String
+        do { hostToken = try loadOrCreateControlToken() } catch { lastRelayError = error.localizedDescription; return false }
+        guard let relay = relayURL, let url = RelayEndpoint.socketURL(relay: relay, serverId: RelayEndpoint.serverId(hostToken: hostToken), role: "server", connectionId: nil, hostToken: hostToken) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
         let socket = session.webSocketTask(with: url)
         socket.maximumMessageSize = 1024 * 1024
         controlSocket = socket
@@ -546,8 +580,8 @@ public actor MobileRemoteService {
     private func acceptClient(connectionId: String, generation current: Int) {
         guard clients[connectionId] == nil, clients.count < Self.maximumClients, unauthenticated.count < Self.maximumUnauthenticated,
               let delegate, let keypair = try? loadKeypair(), let pairingKey = try? loadOrCreateKey(),
-              let relay = relayURL,
-              let url = RelayEndpoint.socketURL(relay: relay, serverId: hostId, role: "server", connectionId: connectionId) else { return }
+              let relay = relayURL, let hostToken = try? loadOrCreateControlToken(),
+              let url = RelayEndpoint.socketURL(relay: relay, serverId: RelayEndpoint.serverId(hostToken: hostToken), role: "server", connectionId: connectionId, hostToken: hostToken) else { return }
         let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair,
                                          devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones)
         let client = RelayClientConnection(id: connectionId, url: url, session: session, identity: identity, delegate: delegate, router: self)

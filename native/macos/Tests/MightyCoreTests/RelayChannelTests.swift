@@ -60,4 +60,14 @@ struct RelayChannelTests {
         #expect(MobileRemoteService.validConnectionId("c-1234567") && !MobileRemoteService.validConnectionId("bad id"))
         #expect(MobileRemoteSettings(enabled: true, relayURL: "relay.example.com").normalized.relayURL == "wss://relay.example.com")
     }
+
+    @Test func serverIdIsTheSHA256OfTheHostToken() {
+        // The relay recomputes the same value (relay/src/protocol.ts, ownsServerId).
+        let token = String(repeating: "00", count: 32)
+        let serverId = RelayEndpoint.serverId(hostToken: token)
+        #expect(serverId == "60e05bd1b195af2f94112fa7197a5c88289058840ce7c6df9693756bc6250f55")
+        #expect(CoreValidation.identifier(serverId) && serverId != RelayEndpoint.serverId(hostToken: String(repeating: "01", count: 32)))
+        let url = RelayEndpoint.socketURL(relay: "ws://127.0.0.1:8787", serverId: serverId, role: "server", connectionId: "c-1234567", hostToken: token)
+        #expect(url?.absoluteString == "ws://127.0.0.1:8787/ws?serverId=\(serverId)&role=server&v=1&connectionId=c-1234567&hostToken=\(token)")
+    }
 }

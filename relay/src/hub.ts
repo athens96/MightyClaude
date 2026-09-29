@@ -3,6 +3,7 @@ import type { RawData, WebSocket } from 'ws';
 import type { RelayConfig } from './config.ts';
 import {
   CloseCode,
+  ownsServerId,
   sendableCloseCode,
   truncateReason,
   type ControlNotice,
@@ -63,6 +64,11 @@ export class RelayHub {
   /** Entry point for an accepted WebSocket with an already validated query. */
   handleSocket(ws: WebSocket, params: SocketParams): void {
     this.#track(ws);
+    if (params.kind !== 'client-data' && !ownsServerId(params.serverId, params.hostToken)) {
+      this.#untrack(ws);
+      closeSocket(ws, CloseCode.unauthorized, 'invalid or missing host token');
+      return;
+    }
     switch (params.kind) {
       case 'control':
         this.#handleControl(ws, params.serverId);

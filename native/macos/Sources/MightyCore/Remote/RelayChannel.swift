@@ -156,10 +156,18 @@ public enum RelayEndpoint {
         return origin
     }
 
-    static func socketURL(relay: String, serverId: String, role: String, connectionId: String?) -> URL? {
+    /// The serverId a host registers under and puts in its pairing offer: the
+    /// lowercase hex SHA-256 of its relay host token. The relay recomputes it on
+    /// every host socket, so only the holder of the token can speak for the id.
+    public static func serverId(hostToken: String) -> String {
+        SHA256.hash(data: Data(hostToken.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func socketURL(relay: String, serverId: String, role: String, connectionId: String?, hostToken: String? = nil) -> URL? {
         guard let origin = normalize(relay), var components = URLComponents(string: origin + "/ws") else { return nil }
         var items = [URLQueryItem(name: "serverId", value: serverId), URLQueryItem(name: "role", value: role), URLQueryItem(name: "v", value: "1")]
         if let connectionId { items.append(URLQueryItem(name: "connectionId", value: connectionId)) }
+        if let hostToken { items.append(URLQueryItem(name: "hostToken", value: hostToken)) }
         components.queryItems = items
         return components.url
     }
