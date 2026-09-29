@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Network
+import os
 
 /// The app-side view the mobile protocol exposes. Implemented by the app
 /// store's bridge; every method is called off the main actor and hops itself.
@@ -95,6 +96,8 @@ public actor MobileRemoteService {
     private var unauthenticated = Set<String>()
     public static let maximumUnauthenticated = 4
     private var statusObserver: (@Sendable (MobileHostStatus) -> Void)?
+    private var statusSequence = 0
+    private static let log = Logger(subsystem: "dev.mightyclaude.native", category: "mobile-remote")
     private let session: URLSession
     private let uploads: MobileUploadStore
     private let deviceRegistry: MobileDeviceRegistry
@@ -216,10 +219,11 @@ public actor MobileRemoteService {
 
     public func status() -> MobileHostStatus {
         let offer = (settings.enabled && relayConnected) ? offerIfAvailable() : nil
+        statusSequence += 1
         return MobileHostStatus(enabled: settings.enabled, relayURL: settings.relayURL, relayConnected: relayConnected, clients: clients.count,
                                 serverId: hostId, publicKeyB64: (try? loadKeypair())?.publicKeyB64, key: offer?.pairingKey, pairingURL: offer?.url,
                                 hostName: hostName, detail: detail, devices: deviceRegistry.infos(connected: Set(connectedDevices.values)),
-                                registryWarning: deviceRegistry.warning())
+                                registryWarning: deviceRegistry.warning(), sequence: statusSequence)
     }
 
     /// Revoking a phone rotates the pairing key and clears the entire registry.
@@ -278,10 +282,14 @@ public actor MobileRemoteService {
         watchNetwork()
         // With no network at all there is nothing to dial; the path watch
         // starts again the moment one appears, so no backoff spins meanwhile.
-        if !manual, networkPath?.satisfied == false { detail = L("settings.mobileRemote.detail.networkOffline"); publish(); return }
+        if !manual, networkPath?.satisfied == false {
+            Self.log.info("start: no network, waiting for one")
+            detail = L("settings.mobileRemote.detail.networkOffline"); publish(); return
+        }
         restarts += 1
         generation += 1
         let current = generation
+        Self.log.info("start: dialing the relay (generation \(current), manual \(manual))")
         detail = "릴레이에 연결하는 중…"
         publish()
         controlTask?.cancel()
@@ -411,6 +419,7 @@ public actor MobileRemoteService {
         pathWindow = RelayLinkPolicy.Window(); pathSettle = nil
         if let path = window.latest { networkPath = path }
         guard settings.enabled, !disposed, relayURL != nil else { return }
+        Self.log.info("network path settled: \(String(describing: action), privacy: .public)")
         switch action {
         case .none: break
         case .offline: await disconnect(reason: L("settings.mobileRemote.detail.networkOffline"))
@@ -446,6 +455,7 @@ public actor MobileRemoteService {
             // The ping was a suspension too: a stale session goes no further.
             guard current == generation, !Task.isCancelled else { throw CancellationError() }
             connected = true; relayConnected = true; lastRelayError = nil
+            Self.log.info("control socket open (generation \(current))")
             detail = "휴대폰에서 QR 코드를 스캔해 연결하세요."
             publish()
             // `receive()` alone never notices a socket the network left
@@ -487,6 +497,7 @@ public actor MobileRemoteService {
         // A newer generation may already own live clients; never touch its state.
         guard current == generation else { return connected }
         if !connected, lastRelayError == nil { lastRelayError = "릴레이에 연결하지 못했습니다." }
+        Self.log.info("control socket closed (generation \(current)): \(self.lastRelayError ?? "", privacy: .public)")
         if controlSocket === socket { controlSocket = nil }
         let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
         relayConnected = false
@@ -498,6 +509,7 @@ public actor MobileRemoteService {
     /// only the reason shown is left to the live generation.
     private func controlSocketUnresponsive(_ socket: URLSessionWebSocketTask, generation current: Int) {
         if current == generation { lastRelayError = L("settings.mobileRemote.detail.relayUnresponsive") }
+        Self.log.info("control socket unanswered ping (generation \(current))")
         socket.cancel(with: .goingAway, reason: nil)
     }
 
