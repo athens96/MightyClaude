@@ -521,6 +521,18 @@ struct SessionPaneView: View {
                 .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
                 .accessibilityIdentifier("input-method-problem-\(session.id)")
             }
+            if let provider = store.loginRequired[session.id] {
+                CLILoginRecoveryCard(provider: provider, sessionID: session.id)
+            }
+            if store.backgroundUpdateHolds(session) {
+                HStack(alignment: .top, spacing: 7) {
+                    ProgressView().controlSize(.mini).padding(.top, 1)
+                    Text(L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]))
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
+                .accessibilityElement(children: .combine).accessibilityIdentifier("background-update-\(session.id)")
+            }
             if let reason = blockedReason {
                 HStack(alignment: .top, spacing: 7) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)

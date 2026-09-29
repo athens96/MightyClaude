@@ -138,8 +138,14 @@ user's global CLI configuration.
 ### Saved execution time (macOS)
 
 Mac snapshots may include `autoUpdateCLIs`, an optional Boolean. Only explicit
-`true` enables CLI updates once at application startup; absent, null or malformed
-values leave this opt-in disabled. This preference is local to the Mac app profile.
+`true` enables background CLI updates: at application startup, then every six
+hours and after a provider that was busy has been idle for three minutes; absent,
+null or malformed values leave this opt-in disabled. Mac snapshots may also include
+`autoUpdatePlugins`, an optional Boolean; anything but explicit `false` keeps
+background plugin updates on (user-scope Claude plugins without accepting a changed
+marketplace command, and Codex Git marketplaces) while CLI updates are on. Both
+preferences are local to the Mac app profile, and an update applies from the next
+request.
 
 `RunSession.runTiming` is optional saved metadata. It contains ISO 8601 strings
 `startedAt`, `lastObservedAt`, optional `finishedAt`, and boolean `isApproximate`.

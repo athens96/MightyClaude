@@ -59,6 +59,17 @@ final class ClaudePluginTests {
           if [ "$mode" = 'failure' ]; then exit 7; fi
           exit 0
         fi
+        if [ "$1 $2" = 'plugin update' ]; then
+          if /usr/bin/grep -qx "$3" "$FIXTURE_ROOT/approval" 2>/dev/null; then
+            printf 'npx changed-command --flag\n'
+            printf '{"command":"update","outcome":"failed","pluginId":"%s","shownCommand":"npx changed-command --flag"}\n' "$3"
+            exit 1
+          fi
+          if [ "$mode" = 'failure' ]; then printf '{"command":"update","outcome":"failed","pluginId":"%s"}\n' "$3"; exit 9; fi
+          if [ "$mode" = 'plain' ]; then printf 'Updated %s\n' "$3"; exit 0; fi
+          printf '{"command":"update","outcome":"ok","pluginId":"%s"}\n' "$3"
+          exit 0
+        fi
         if [ "$1 $2 $3" = 'plugin marketplace update' ]; then
           printf 'Updated selected marketplace\n'
           if [ "$mode" = 'failure' ]; then exit 9; fi
@@ -241,5 +252,58 @@ final class ClaudePluginTests {
         #expect(result.marketplaces.isEmpty)
         #expect(f.read("mutations").isEmpty)
         await service.shutdown()
+    }
+
+    @Test func backgroundUpdateCoversUserPluginsOnlyAndNeverAcceptsCommands() async throws {
+        let f = try fixture()
+        try f.listing([
+            ["id": "format@sample", "scope": "user", "enabled": true],
+            ["id": "format@sample", "scope": "project", "projectPath": f.workspace.path, "enabled": true],
+            ["id": "lint@sample", "scope": "local", "projectPath": f.workspace.path, "enabled": true],
+            ["id": "review@sample", "scope": "user", "enabled": true],
+            ["id": "policy@sample", "scope": "managed", "enabled": true],
+            ["id": "mighty-bridge@local", "scope": "user", "enabled": true]
+        ])
+        try f.text("review@sample\n", "approval")
+        let service = f.service()
+        let result = await service.updateInstalled(workspace: f.workspace)
+        #expect(result.status == "succeeded")
+        #expect(result.updated == ["format@sample"])
+        #expect(result.needsApproval == ["review@sample"])
+        #expect(result.failed.isEmpty)
+        let mutations = Set(f.read("mutations").split(whereSeparator: \.isNewline).map(String.init))
+        #expect(mutations == ["mutation=plugin update format@sample --scope user --json", "mutation=plugin update review@sample --scope user --json"])
+        let arguments = f.read("commands").split(whereSeparator: \.isNewline)
+        #expect(!arguments.contains { $0 == "arg=-y" || $0 == "arg=--yes" || $0.contains("accept") })
+
+        try f.text("failure", "mode")
+        let failed = await service.updateInstalled(workspace: f.workspace)
+        #expect(failed.status == "failed")
+        #expect(failed.failed == ["format@sample"])
+        #expect(failed.needsApproval == ["review@sample"])
+
+        // No new update starts once the budget is spent.
+        try f.text("ok", "mode"); try Data().write(to: f.root.appendingPathComponent("mutations"))
+        let postponed = await service.updateInstalled(workspace: f.workspace, budget: 0)
+        #expect(postponed.status == "succeeded" && postponed.updated.isEmpty)
+        #expect(f.read("mutations").isEmpty)
+
+        try f.listing([])
+        #expect(await service.updateInstalled(workspace: f.workspace).status == "succeeded")
+        let missing = ClaudePluginService(environment: f.environment, executable: f.root.appendingPathComponent("missing"))
+        #expect(await missing.updateInstalled(workspace: f.workspace).status == "skipped")
+        await service.shutdown(); await missing.shutdown()
+    }
+
+    @Test func theLastJSONLineDecidesAndExitCodeOnlyWithoutIt() {
+        func outcome(_ code: Int32, _ stdout: String) -> String {
+            ClaudePluginService.updateOutcome(ProcessResult(exitCode: code, stdout: Data(stdout.utf8), stderr: Data()))
+        }
+        #expect(outcome(1, "npx something\n{\"command\":\"update\",\"outcome\":\"failed\",\"shownCommand\":\"npx something\"}\n\n") == "needsApproval")
+        #expect(outcome(0, "{\"command\":\"update\",\"outcome\":\"ok\"}\n") == "updated")
+        #expect(outcome(0, "{\"command\":\"update\",\"outcome\":\"failed\"}\n") == "failed")
+        #expect(outcome(3, "{\"command\":\"update\",\"outcome\":\"ok\"}\n") == "failed")
+        #expect(outcome(0, "Updated plugin\n") == "updated")
+        #expect(outcome(2, "network error\n") == "failed")
     }
 }

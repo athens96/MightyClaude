@@ -245,4 +245,27 @@ final class CodexPluginTests {
         #expect(f.read("mutations").isEmpty)
         await service.shutdown()
     }
+
+    @Test func backgroundUpgradeUsesAllMarketplacesAndValidatesItsResult() async throws {
+        let f = try fixture(); let service = f.service()
+        let result = await service.upgradeMarketplaces(workspace: f.workspace)
+        #expect(result.status == "succeeded")
+        #expect(result.updated == ["sample"])
+        #expect(f.read("mutations") == "mutation=plugin marketplace upgrade --json\n")
+        try f.json(["selectedMarketplaces": ["sample"], "upgradedRoots": [], "errors": ["fetch failed"]], "upgrade-response")
+        #expect(await service.upgradeMarketplaces(workspace: f.workspace).status == "failed")
+        // Exit 0 decides: other or missing keys, or no JSON at all, are no failure.
+        for response in [#"{"somethingNew":true}"#, #"{"selectedMarketplaces":"sample","errors":null}"#, "Upgraded all marketplaces"] {
+            try f.text(response, "upgrade-response")
+            #expect(await service.upgradeMarketplaces(workspace: f.workspace).status == "succeeded", "\(response)")
+        }
+        try f.text("failure", "mode")
+        #expect(await service.upgradeMarketplaces(workspace: f.workspace).status == "failed")
+        try f.text("ok", "mode")
+        try f.json(["marketplaces": [["name": "sample", "root": f.root.path, "marketplaceSource": ["sourceType": "local", "source": f.root.path]]]], "markets")
+        try Data().write(to: f.root.appendingPathComponent("mutations"))
+        #expect(await service.upgradeMarketplaces(workspace: f.workspace).status == "skipped")
+        #expect(f.read("mutations").isEmpty)
+        await service.shutdown()
+    }
 }

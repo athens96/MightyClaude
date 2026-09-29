@@ -62,7 +62,7 @@ extension AppStore {
         }
         guard !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: "플러그인 작업을 취소했습니다.") }
         isManagingPlugins = true
-        defer { isManagingPlugins = false }
+        defer { isManagingPlugins = false; resendAwaitingLoginRequests() }
         return await operation()
     }
 }

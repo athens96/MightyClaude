@@ -37,6 +37,7 @@ extension AppStore {
             claudeModelResetInProgress = false
             modelRefreshRevision &+= 1
             guard !ending else { return }
+            resendAwaitingLoginRequests()
             if contexts.isEmpty {
                 cliAccountMessages["claude"] = "모델 캐시를 초기화했습니다. 로컬 워크스페이스를 열면 목록을 새로 불러옵니다."
             } else if failed > 0 {

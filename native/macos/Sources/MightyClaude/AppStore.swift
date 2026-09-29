@@ -122,6 +122,32 @@ final class AppStore: ObservableObject {
     var cliLoginTasks: [String: Task<Void, Never>] = [:]
     var pendingTerminalInput: [String: TerminalInput] = [:]
     let cliAccountService = CLIAccountService()
+    /// Panes whose last run lost its CLI sign-in, pane id → provider
+    /// (AppStore+CLILoginRecovery.swift), and the one background sign-in per
+    /// provider their cards share.
+    @Published var loginRequired: [String: String] = [:]
+    @Published var backgroundLogins: [String: BackgroundLoginState] = [:]
+    var backgroundLoginJobs: [String: BackgroundLoginJob] = [:]
+    var loginRetries = CLILoginRetryBook()
+    /// Why a kept retry could not be resent, shown on its pane's card.
+    @Published var loginCardNotes: [String: String] = [:]
+    /// Retries held until an update, model reset or plugin change ends.
+    var awaitingLoginResend = Set<String>()
+    /// Each pane's request in flight, kept until its run ends so a lost
+    /// sign-in can resend it, with the pane's send generation at that time.
+    var inFlightRequests: [String: (request: CLILoginRetryRequest, generation: UInt64)] = [:]
+    var sendGenerations: [String: UInt64] = [:]
+    /// Background CLI and plugin updates (AppStore+CLIUpdates.swift).
+    var cliAutoUpdateSchedule = CLIAutoUpdateSchedule()
+    var cliAutoUpdateLoop: Task<Void, Never>?
+    /// When each provider last started or ended a run.
+    var providerLastActive: [String: Date] = [:]
+    /// An automatic pass is running: sends of the provider it works on queue.
+    @Published var automaticUpdateRunning = false
+    /// Panes whose queue waits for a background update step to end.
+    var heldForUpdate = Set<String>()
+    @Published var updatingPluginsFor: String?
+    @Published var pluginUpdateResults: [String: PluginAutoUpdateResult] = [:]
     /// Korean composition broke in a composer; shown until reconnected or dismissed.
     @Published var inputMethodProblem: InputMethodMonitor.Problem?
     var appUpdateServiceStorage: AppUpdateService?
@@ -343,7 +369,8 @@ final class AppStore: ObservableObject {
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return "워크스페이스를 선택하세요." }
-        if session.kind != "shell", updatingCLI == session.provider {
+        // A background update queues sends instead (`backgroundUpdateHolds`).
+        if session.kind != "shell", updatingCLI == session.provider, !automaticUpdateRunning {
             return "\(ProviderOptions.label(session.provider)) CLI를 업데이트하고 있습니다. 완료 후 전송하세요."
         }
         if session.kind != "shell", ["claude", "codex"].contains(session.provider), isManagingPlugins {
@@ -447,7 +474,7 @@ final class AppStore: ObservableObject {
             snapshot.sessions.removeAll { $0.id == id }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
-            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); guidedProgress.removeValue(forKey: id)
+            pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); forgetLoginRecovery(id); guidedProgress.removeValue(forKey: id)
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
             draftRevisions.removeValue(forKey: id)
@@ -471,7 +498,7 @@ final class AppStore: ObservableObject {
                 await runner.revokePaneMCPBinding(agentPaneId: session.id)
                 drafts.removeValue(forKey: session.id)
                 statusLines.removeValue(forKey: session.id)
-                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); guidedProgress.removeValue(forKey: session.id)
+                pendingTerminalInput.removeValue(forKey: session.id); cliLoginEnded(sessionID: session.id); forgetLoginRecovery(session.id); guidedProgress.removeValue(forKey: session.id)
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.task.cancel()
                 draftRevisions.removeValue(forKey: session.id)
@@ -565,8 +592,10 @@ final class AppStore: ObservableObject {
         let attachments = attachmentDrafts[id] ?? []
         guard !input.isEmpty || !attachments.isEmpty else { return }
         if let reason = runBlockedReason(session) { error = reason; return }
-        if session.status == "running" || pendingRuns.contains(id) {
-            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: steering)
+        let held = backgroundUpdateHolds(session)
+        if session.status == "running" || pendingRuns.contains(id) || held {
+            if held { heldForUpdate.insert(id) }
+            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: steering && !held)
             return
         }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
@@ -661,6 +690,8 @@ final class AppStore: ObservableObject {
             guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id),
                   let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
             let next = queue[0]
+            // Held for a background update, which drains the queue when it ends.
+            if backgroundUpdateHolds(session) { heldForUpdate.insert(id); return }
             if let reason = runBlockedReason(session) {
                 queuedInputs.removeValue(forKey: id)
                 updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청 \(queue.count)개를 실행할 수 없어 취소했습니다. \(reason)")) }
@@ -694,7 +725,9 @@ final class AppStore: ObservableObject {
         do { try CoreValidation.validate(admissionRequest) }
         catch { self.error = error.localizedDescription; return false }
         if let reason = runBlockedReason(session) { error = reason; return false }
+        if backgroundUpdateHolds(session) { error = L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]); return false }
         pendingRuns.insert(id)
+        requestSent(id, session: session, input: input, attachments: attachments)
         if restoringDraft != nil { drafts[id] = "" }
         let submittedRevision = draftRevisions[id, default: 0]
         // Reserve attachments with the input, so another Enter during metadata
@@ -796,6 +829,8 @@ final class AppStore: ObservableObject {
             default: break
             }
         }
+        receiveLoginSignal(event)
+        if event.type == "status", let provider = snapshot.sessions.first(where: { $0.id == event.sessionId })?.provider { providerLastActive[provider] = receivedAt }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
     }
@@ -892,6 +927,8 @@ final class AppStore: ObservableObject {
         await pluginBrowser?.shutdown()
         pluginBrowser = nil
         cliUpdateTask?.cancel()
+        cliAutoUpdateLoop?.cancel()
+        for provider in Array(backgroundLoginJobs.keys) { cancelBackgroundLogin(provider) }
         await cliUpdater.shutdown()
         await cliUpdateTask?.value
         toolPermissions.removeAll()

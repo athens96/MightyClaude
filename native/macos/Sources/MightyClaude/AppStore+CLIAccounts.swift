@@ -31,8 +31,8 @@ extension AppStore {
         if snapshot.sessions.contains(where: { $0.kind == "claude" && $0.provider == provider && ($0.status == "running" || pendingRuns.contains($0.id)) }) {
             return "\(ProviderOptions.label(provider)) 실행이 진행 중입니다. 끝난 뒤에 계정을 바꾸세요."
         }
-        if isUpdatingCLIs { return "CLI 업데이트가 끝난 뒤에 다시 시도하세요." }
-        return nil
+        // A sign-in terminal opened from here replaces itself.
+        return accountBusyReason(provider, ignoringTerminalLogin: true)
     }
 
     func logoutCLI(_ provider: String, thenLogin option: CLILoginOption? = nil) {
@@ -87,6 +87,9 @@ extension AppStore {
             return
         }
         cliLoginPending.insert(provider); cliLoginSessions[provider] = id
+        // This poll cannot see the terminal's command end, so only a status
+        // that turns from signed out to signed in may resend waiting requests.
+        let startedSignedOut = cliAccounts[provider]?.loggedIn == false
         // The poll lives here, not in the Settings view, which is closed now.
         let service = cliAccountService
         cliLoginTasks[provider] = Task { [weak self] in
@@ -100,7 +103,12 @@ extension AppStore {
                     self.cliAccounts[provider] = status
                     if status.loggedIn == true, status.accessVerified != false {
                         self.invalidateLocalModels(provider: provider)
-                        self.endCLILogin(provider); return true
+                        self.endCLILogin(provider)
+                        // Panes whose run lost this sign-in get their request back.
+                        if startedSignedOut, self.loginRequired.values.contains(provider) || !self.loginRetries.sessions(provider: provider).isEmpty {
+                            Task { await self.loginRestored(provider, status: status) }
+                        }
+                        return true
                     }
                     return false
                 }
