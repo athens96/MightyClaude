@@ -132,8 +132,11 @@ struct TerminalPaneLifetimeTests {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
         let pane = PTYAgentTerminalPane(workingDirectory: folder)
         let runner = AgentTerminalRunner(pane: pane, clock: SkipInitialWaitClock())
-        let run = try await runner.runInTerminal(command: "sleep 30")
+        // The shell handles an early Ctrl+C itself while it starts up; type it once
+        // the command has run, as a user at the terminal would see it.
+        let run = try await runner.runInTerminal(command: "echo started; exec sleep 30")
         #expect(run.status == .running)
+        #expect(await waitFor { pane.readOutput(handle: run.handle, fromOffset: 0, maxBytes: 1024).output.contains("started") })
         pane.sendUserInput("\u{03}")
         #expect(await waitFor(seconds: 3) { !pane.isRunning(handle: run.handle) })
         #expect(pane.terminationSignal(handle: run.handle) == SIGINT)
