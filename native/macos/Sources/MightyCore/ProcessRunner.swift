@@ -239,6 +239,11 @@ private final class ManagedProcess {
     var truncated = false
     let outputDecoder = UTF8StreamDecoder()
     let errorDecoder = UTF8StreamDecoder()
+    let startedAt = Date()
+    /// Where this Codex run writes its session records.
+    var codexHome: URL?
+    var codexSessions: CodexSessionWatcher?
+    var codexSessionTask: Task<Void, Never>?
     init(_ request: StartRunRequest) { self.request = request }
 }
 
@@ -327,6 +332,10 @@ public actor ProcessRunner {
                     arguments = prepared.arguments; standardInput = prepared.standardInput
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
+                if request.provider == "codex" {
+                    let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
+                    run.codexHome = CLIAccountSupport.codexHome(home: home, environment: environment)
+                }
                 if interactivePermissions {
                     run.permissions = ClaudePermissionChannel(runId: run.activityId, prompt: standardInput,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
@@ -495,6 +504,29 @@ public actor ProcessRunner {
         case .stderr(let data): emitLog(run, kind: "output", text: run.errorDecoder.push(data))
         case .exit(let code): await finish(run, code: code)
         }
+        watchCodexSessions(run)
+    }
+    /// Multi-agent v2 `codex exec` output does not name spawned threads, so
+    /// once the root thread is known its children are read from the session
+    /// records about once a second until the run ends. Files are read off
+    /// this actor; only the snapshots come back to it.
+    private func watchCodexSessions(_ run: ManagedProcess) {
+        guard run.codexSessions == nil, !run.finished, let home = run.codexHome, let thread = run.parser?.codexRootThread else { return }
+        let watcher = CodexSessionWatcher(codexHome: home, rootThread: thread, startedAt: run.startedAt, namespace: run.activityId)
+        run.codexSessions = watcher
+        run.codexSessionTask = Task.detached { [weak self, weak run] in
+            await CodexSessionWatcher.drive(sleep: { try await Task.sleep(for: .seconds(1)) }) {
+                let agents = watcher.poll()
+                guard let self, let run else { return false }
+                return await self.receiveCodexSessions(agents, run: run)
+            }
+        }
+    }
+    /// Snapshots already taken are delivered even while the run finishes;
+    /// the graph ignores them once it is final.
+    private func receiveCodexSessions(_ agents: [CodexSessionAgent], run: ManagedProcess) -> Bool {
+        if !agents.isEmpty { run.parser?.receiveCodexSessions(agents) }
+        return !run.finished
     }
     private func receiveMod(_ metadata: ModMetadata, run: ManagedProcess) {
         guard !run.finished, !run.stopping, !shuttingDown else { return }
@@ -523,6 +555,13 @@ public actor ProcessRunner {
         if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: "Mods 이벤트를 받지 못했습니다. CLI 출력만 표시하며 관리자 정책과 function hooks 설정을 확인해 주세요.") }
         await run.bridge?.stop()
         let status = run.stopping || shuttingDown ? "stopped" : code == 0 && !run.transportFailed && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
+        if let watcher = run.codexSessions {
+            // Stop the poll task, wait for a read in flight, then read what is
+            // left once. No pause first: an exited Codex writes nothing more.
+            run.codexSessionTask?.cancel()
+            await run.codexSessionTask?.value
+            run.parser?.receiveCodexSessions(await Task.detached { watcher.finish() }.value)
+        }
         run.parser?.finishActivities(stopped: status == "stopped")
         run.parser?.finishGraph(state: status)
         run.attachments?.cleanup(); run.attachments = nil

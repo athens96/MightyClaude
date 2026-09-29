@@ -1,7 +1,12 @@
 import Foundation
 
 /// Owned by CLIStreamParser on the runner actor. This observes public CLI/Mods
-/// events; it never reads another session's transcript or guesses child prompts.
+/// events and never guesses child prompts. The one other source is Codex's own
+/// session records for this run's subagents (`CodexSessionWatcher`): only
+/// children spawned from this run's root thread, only work done since the run
+/// started, and only readable parts. Sealed message bodies, role instructions
+/// and history a child copied from its parent are never shown; command output
+/// is, as for the root's exec items.
 final class ExecutionGraphTracker {
     private enum Owner: Equatable { case node(String), agent(String) }
     private struct PendingAgent {
@@ -16,7 +21,8 @@ final class ExecutionGraphTracker {
     private let configuredModel: String?
     private let emit: (ExecutionGraphNode) -> Void
     private var codexAgents: [String: String] = [:]
-    private var codexRootThread: String?
+    private(set) var codexRootThread: String?
+    private var codexSessionTurns: [String: Int] = [:]
     private var codexSettledCalls = Set<String>()
     private var codexCallOrder: [String] = []
     private var codexCallGenerations: [String: [String: Int]] = [:]
@@ -125,12 +131,13 @@ final class ExecutionGraphTracker {
         normalized.updatedAt = mightyTimestamp(); nodes[id] = normalized; emit(normalized)
     }
     private func append(_ entry: LogEntry, to id: String) {
-        update(id) { value in
-            if let index = value.entries.firstIndex(where: { $0.id == entry.id }) {
-                var replacement = entry; replacement.timestamp = value.entries[index].timestamp
-                value.entries[index] = replacement
-            } else { value.entries.append(entry) }
-        }
+        update(id) { Self.upsert(entry, into: &$0.entries) }
+    }
+    private static func upsert(_ entry: LogEntry, into entries: inout [LogEntry]) {
+        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            var replacement = entry; replacement.timestamp = entries[index].timestamp
+            entries[index] = replacement
+        } else { entries.append(entry) }
     }
     private func rememberTool(_ tool: String, owner: Owner) {
         if toolOwners[tool] == nil {
@@ -400,14 +407,62 @@ final class ExecutionGraphTracker {
         }
     }
 
+    // MARK: Codex session records
+    // Multi-agent v2 exec output names no spawned thread; the child's own
+    // session record does. Both paths share one node per thread ID.
+    func codexSession(_ agent: CodexSessionAgent) {
+        guard !finished, provider == "codex", agent.thread != codexRootThread, let id = ensureCodexAgent(thread: agent.thread) else { return }
+        setParent(id, owner: agent.parentThread == codexRootThread ? .node(mainID) : .agent(agent.parentThread))
+        let seenTurns = codexSessionTurns[agent.thread] ?? 0
+        codexSessionTurns[agent.thread] = max(seenTurns, agent.turns)
+        // A new turn on a settled child is new work, as with send_input.
+        let reopening = seenTurns > 0 && agent.turns > seenTurns && nodes[id].map { ExecutionGraphSupport.terminal($0.state) } == true
+        var replaced: [(previous: GraphTokenUsage, usage: GraphTokenUsage)] = []
+        for record in agent.usage {
+            guard let previous = noteUsage(record.usage, message: "codex-session:" + agent.thread + ":" + record.responseId, node: id,
+                                           model: record.model, activityIds: [], markedAsConfigured: false) else { continue }
+            replaced.append((previous, record.usage))
+        }
+        let records = replaced.isEmpty ? nil : buildResponseRecords(for: id)
+        // The child's records keep each turn's answer; add one only if they did not.
+        if reopening, let output = nodes[id]?.output, !output.isEmpty, !agent.entries.contains(where: { $0.kind == "assistant" && $0.text == output }) {
+            let generation = nodes[id]?.activityGeneration ?? 0
+            append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":answer:\(generation)"), kind: "assistant", text: output, provider: provider), to: id)
+        }
+        update(id, reopening: reopening) { node in
+            if let title = agent.title { node.title = title }
+            if node.input == nil, let input = agent.input { node.input = input }
+            // Snapshots carry only new or changed entries, so ones the size
+            // budget already trimmed are never added back as the newest.
+            for entry in agent.entries {
+                let known = node.entries.contains { $0.id == entry.id }
+                if !known, agent.answers.contains(entry.id), node.entries.contains(where: { $0.kind == "assistant" && $0.text == entry.text }) { continue }
+                Self.upsert(entry, into: &node.entries)
+            }
+            if reopening || agent.output != nil { node.output = agent.output }
+            node.state = agent.state
+            if let records {
+                node.usage = replaced.reduce(node.usage ?? GraphTokenUsage()) { $0 - $1.previous + $1.usage }
+                node.responseRecords = records
+            }
+        }
+    }
+
     /// One message is streamed as several events that all carry its usage, so
     /// a block adds each message once and keeps that message's latest figure.
     /// On first observation the model and activity IDs are recorded; subsequent
     /// events only update the usage figure (the re-sent response constraint).
     private func recordUsage(_ usage: GraphTokenUsage, message: String, node: String, model: String? = nil, activityIds: [String] = [], markedAsConfigured: Bool = false) {
-        guard nodes[node] != nil else { return }
+        guard let previous = noteUsage(usage, message: message, node: node, model: model, activityIds: activityIds, markedAsConfigured: markedAsConfigured) else { return }
+        let records = buildResponseRecords(for: node)
+        update(node) { $0.usage = ($0.usage ?? GraphTokenUsage()) - previous + usage; $0.responseRecords = records }
+    }
+    /// Remember one message's latest usage. Returns the figure it replaces,
+    /// or nil when nothing changed.
+    private func noteUsage(_ usage: GraphTokenUsage, message: String, node: String, model: String?, activityIds: [String], markedAsConfigured: Bool) -> GraphTokenUsage? {
+        guard nodes[node] != nil else { return nil }
         let previous = messageUsage[message]
-        guard previous != usage else { return }
+        guard previous != usage else { return nil }
         if previous == nil {
             messageOrder.append(message)
             if messageOrder.count > 1_024 { messageUsage.removeValue(forKey: messageOrder.removeFirst()) }
@@ -418,8 +473,7 @@ final class ExecutionGraphTracker {
             nodeResponseOrder[node]!.append(message)
         }
         messageUsage[message] = usage
-        let records = buildResponseRecords(for: node)
-        update(node) { $0.usage = ($0.usage ?? GraphTokenUsage()) - (previous ?? GraphTokenUsage()) + usage; $0.responseRecords = records }
+        return previous ?? GraphTokenUsage()
     }
 
     private func buildResponseRecords(for nodeId: String) -> [GraphResponseRecord] {

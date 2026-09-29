@@ -185,6 +185,10 @@ public final class CLIStreamParser {
     /// Called once after draining stdout and settling tools, before the runner
     /// publishes its terminal status. Child turns never invoke this themselves.
     public func finishGraph(state: String) { graphTracker?.finish(state: state) }
+    /// The Codex root thread once `thread.started` named it.
+    var codexRootThread: String? { graphTracker?.codexRootThread }
+    /// Subagents read from Codex's own session records.
+    func receiveCodexSessions(_ agents: [CodexSessionAgent]) { for agent in agents { graphTracker?.codexSession(agent) } }
     /// A follow-up the runner wrote to Claude's stdin during this turn.
     public func steer(id: String, text: String) { graphTracker?.steer(id: id, text: text) }
     func permissionActivity(_ request: ToolPermissionRequest, state: String) {
