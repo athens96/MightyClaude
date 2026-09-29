@@ -141,7 +141,7 @@ struct CompanionOverlayView: View {
                 }.frame(width: 125, height: 135)
             }.buttonStyle(.plain).accessibilityLabel(companion.preferences.showsTask && bubble.isVisible ? "작업 말풍선 숨기기" : "작업 말풍선 보기").accessibilityIdentifier("pet-toggle-bubble")
                 .background(CompanionPetInteraction(motion: motion, row: animationRow, onClick: toggleBubble).allowsHitTesting(false))
-                .contextMenu { Button("펫 숨기기") { companion.preferences.enabled = false }; Button("에이전트 열기") { companion.focus(companion.shown?.id) } }
+                .contextMenu { Button(L("menu.hidePet")) { companion.preferences.enabled = false }; Button(L("menu.openAgent")) { companion.focus(companion.shown?.id) } }
         }.padding(8).frame(width: panelSize.width, height: panelSize.height, alignment: .bottom)
             .onChange(of: CompanionBubbleIdentity(companion.shown), initial: true) { _, identity in bubble.synchronize(identity) }
             .onChange(of: animationRow) { _, _ in epoch = Date() }

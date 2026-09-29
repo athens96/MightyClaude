@@ -55,6 +55,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>MightyClaude</string>
 <key>CFBundleDisplayName</key><string>MightyClaude</string>
 <key>CFBundleIdentifier</key><string>dev.mightyclaude.native</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
 <key>CFBundleExecutable</key><string>MightyClaude</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>MightyClaude.icns</string>
@@ -66,6 +68,12 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict></plist>
 PLIST
+# The languages the app speaks, so AppKit draws its own menus (the app menu,
+# Edit, Window, Help) in the user's language instead of the fallback English.
+for language in ko en; do
+  mkdir -p "$APP_PATH/Contents/Resources/$language.lproj"
+  printf '"CFBundleDisplayName" = "MightyClaude";\n' > "$APP_PATH/Contents/Resources/$language.lproj/InfoPlist.strings"
+done
 # Version and update address: VERSION file (or MIGHTY_APP_VERSION), commit count
 # (or MIGHTY_BUILD_NUMBER), and the manifest URL the app checks (MIGHTY_UPDATE_URL).
 APP_VERSION="${MIGHTY_APP_VERSION:-$(tr -d '[:space:]' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo 0.1.0)}"
