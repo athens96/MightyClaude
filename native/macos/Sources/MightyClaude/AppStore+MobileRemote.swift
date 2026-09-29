@@ -179,8 +179,8 @@ extension AppStore {
             await mobileRemote.attach(bridge)
             await mobileRemote.setAppVersion(version)
             // The service reconnects on its own; the observer keeps the UI current.
-            await mobileRemote.observeStatus { [weak self] status in Task { @MainActor in self?.mobileStatus = status } }
-            mobileStatus = await mobileRemote.apply(settings: settings)
+            await mobileRemote.observeStatus { [weak self] status in Task { @MainActor in self?.showMobileStatus(status) } }
+            showMobileStatus(await mobileRemote.apply(settings: settings))
         }
     }
 
@@ -197,27 +197,34 @@ extension AppStore {
         settings = settings.normalized
         snapshot.mobileRemote = settings
         mobileBusy = true
-        Task { mobileStatus = await mobileRemote.apply(settings: settings); mobileBusy = false }
+        Task { showMobileStatus(await mobileRemote.apply(settings: settings)); mobileBusy = false }
     }
 
     func regenerateMobileKey() {
         mobileBusy = true
         Task {
             do { _ = try await mobileRemote.regenerateKey() } catch { self.error = error.localizedDescription }
-            mobileStatus = await mobileRemote.apply(settings: snapshot.mobileRemote ?? MobileRemoteSettings())
+            showMobileStatus(await mobileRemote.apply(settings: snapshot.mobileRemote ?? MobileRemoteSettings()))
             mobileBusy = false
         }
     }
 
-    func refreshMobileStatus() { Task { mobileStatus = await mobileRemote.status() } }
+    func refreshMobileStatus() { Task { showMobileStatus(await mobileRemote.status()) } }
+
+    /// Every status travels its own hop to the main actor, and those hops can
+    /// land out of order; an older one must never replace a newer one.
+    func showMobileStatus(_ status: MobileHostStatus) {
+        guard status.sequence >= mobileStatus.sequence else { return }
+        mobileStatus = status
+    }
 
     /// Unpairs one phone. The pairing key rotates with it, so the QR on screen
     /// changes and the revoked phone cannot pair again with the old one.
     func revokeMobileDevice(_ id: String) {
         mobileBusy = true
         Task {
-            do { mobileStatus = try await mobileRemote.revokeDevice(id) }
-            catch { self.error = error.localizedDescription; mobileStatus = await mobileRemote.status() }
+            do { showMobileStatus(try await mobileRemote.revokeDevice(id)) }
+            catch { self.error = error.localizedDescription; showMobileStatus(await mobileRemote.status()) }
             mobileBusy = false
         }
     }

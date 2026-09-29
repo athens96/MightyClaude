@@ -619,10 +619,13 @@ public struct MobileHostStatus: Codable, Sendable, Equatable {
     /// What went wrong with the device list file itself, if anything: the
     /// sheet has to say so, because the phones in it are no longer admitted.
     public var registryWarning: String?
-    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "", devices: [MobileDeviceInfo] = [], registryWarning: String? = nil) {
+    /// Rises with every status the host hands out. Statuses reach the screen
+    /// by separate hops that can land out of order; the higher one is newer.
+    public var sequence: Int
+    public init(enabled: Bool = false, relayURL: String = "", relayConnected: Bool = false, clients: Int = 0, serverId: String = "", publicKeyB64: String? = nil, key: String? = nil, pairingURL: String? = nil, hostName: String = "", detail: String = "", devices: [MobileDeviceInfo] = [], registryWarning: String? = nil, sequence: Int = 0) {
         self.enabled = enabled; self.relayURL = relayURL; self.relayConnected = relayConnected; self.clients = clients; self.serverId = serverId
         self.publicKeyB64 = publicKeyB64; self.key = key; self.pairingURL = pairingURL; self.hostName = hostName; self.detail = detail
-        self.devices = devices; self.registryWarning = registryWarning
+        self.devices = devices; self.registryWarning = registryWarning; self.sequence = sequence
     }
 }
 

@@ -247,6 +247,21 @@ struct MobileRemoteTests {
         return (service, directory)
     }
 
+    /// The settings sheet keeps whichever status is newest, so every status
+    /// handed out, pushed or asked for, must rank above the ones before it.
+    @Test func everyStatusRanksAboveTheOnesBeforeIt() async throws {
+        let (service, directory) = await service(FakeMobileHost())
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pushed = PushedStatuses()
+        await service.observeStatus { pushed.append($0.sequence) }
+        let first = await service.status().sequence
+        _ = await service.apply(settings: MobileRemoteSettings(enabled: false))
+        let last = await service.status().sequence
+        let sequences = [first] + pushed.values() + [last]
+        #expect(sequences.count >= 3)
+        #expect(sequences == sequences.sorted() && Set(sequences).count == sequences.count)
+    }
+
     /// A phone that slept through the end of a run still offers 중지; the
     /// answer has to say nothing was running, not pretend a stop was sent.
     @Test func stoppingAPaneWithNothingRunningAnswersStoppedFalse() async throws {
@@ -772,4 +787,11 @@ struct MobileRemoteTests {
         #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: MobileWire.plainViewMode))
         #expect(!MobileRemoteSupport.sendsMighty(kind: "shell", agentViewMode: "mighty"))
     }
+}
+
+private final class PushedStatuses: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sequences: [Int] = []
+    func append(_ value: Int) { lock.lock(); defer { lock.unlock() }; sequences.append(value) }
+    func values() -> [Int] { lock.lock(); defer { lock.unlock() }; return sequences }
 }

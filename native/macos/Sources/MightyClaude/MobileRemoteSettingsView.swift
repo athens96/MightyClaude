@@ -46,6 +46,14 @@ struct MobileRemoteSettingsSection: View {
                 }
             }
             Text(status.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                // What the host pushes can still go missing on the way; while
+                // this is on screen, read the host's own state now and then.
+                .task {
+                    while !Task.isCancelled {
+                        store.refreshMobileStatus()
+                        try? await Task.sleep(for: .seconds(3))
+                    }
+                }
             if settings.enabled, settings.effectiveRelayURL == nil {
                 Text(L("settings.mobileRemote.relayHint")).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
