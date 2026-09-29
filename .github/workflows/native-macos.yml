@@ -30,14 +30,18 @@ jobs:
       - name: Test Swift core
         run: bash scripts/test-native-macos.sh
       - name: Build SwiftUI application
+        # Runs even when the Swift tests failed, so one CI run reports both.
+        if: success() || failure()
         env:
           MIGHTY_UPDATE_URL: ${{ vars.MIGHTY_UPDATE_URL }}
           MIGHTY_UPDATE_PUBLIC_KEY: ${{ vars.MIGHTY_UPDATE_PUBLIC_KEY }}
         run: bash scripts/build-macos.sh
       - name: Smoke test isolated native profile
+        if: success() || failure()
         timeout-minutes: 3
         run: release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude --smoke-test --smoke-exit --profile "$RUNNER_TEMP/mighty-native-smoke"
       - name: Check smoke result
+        if: success() || failure()
         run: |
           python3 - <<'PY'
           import json, os, pathlib, sys
