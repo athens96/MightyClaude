@@ -52,11 +52,12 @@ public enum MightyGraphCamera {
     /// The next-request draft block, which is also the only block left once the
     /// run list empties.
     public static let pendingNodeID = "pending-input"
-    /// Blocks a user can select that are not a request: the draft block and a
-    /// result's attached file list. They are attachments to the diagram rather
-    /// than somewhere to put the camera after the whole document moved.
+    /// Blocks a user can select that are not a request: the draft block, a
+    /// result's attached file list and a background execution's block. They
+    /// are attachments to the diagram rather than somewhere to put the camera
+    /// after the whole document moved.
     public static func isAuxiliary(nodeID: String) -> Bool {
-        nodeID == pendingNodeID || nodeID.hasSuffix(":result-files")
+        nodeID == pendingNodeID || nodeID.hasSuffix(":result-files") || nodeID.contains(":" + MightyGraphLayout.executionSuffix)
     }
 
     /// Above its byte budget the live history drops its OLDEST runs, so every

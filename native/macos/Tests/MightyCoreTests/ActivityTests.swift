@@ -112,6 +112,20 @@ struct ActivityTests {
         #expect(!wire.contains("private reasoning")); #expect(!wire.contains("not-forwarded"))
     }
 
+    @Test func codexMCPResultsSurviveANullErrorAndAnErrorSurvivesANullResult() throws {
+        var activities: [AgentActivity] = []
+        let parser = CLIStreamParser(provider: "codex", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-one", activity: { activities.append($0) })
+        parser.push(try lines([
+            ["type": "item.completed", "item": ["id": "start", "type": "mcp_tool_call", "server": "ouroboros", "tool": "ouroboros_start_execute_seed",
+                                                "arguments": ["seed_path": "seed.yaml"], "status": "completed", "error": NSNull(),
+                                                "result": ["content": [["type": "text", "text": "Execution ID: exec_1"]]]]],
+            ["type": "item.completed", "item": ["id": "bad", "type": "mcp_tool_call", "server": "docs", "tool": "lookup", "arguments": ["query": "x"],
+                                                "status": "failed", "error": ["message": "boom"], "result": NSNull()]],
+        ])); parser.flush()
+        #expect(activities.contains { $0.toolName == "ouroboros.ouroboros_start_execute_seed" && $0.output == "Execution ID: exec_1" })
+        #expect(activities.contains { $0.toolName == "docs.lookup" && $0.state == "error" && $0.output == "boom" })
+    }
+
     @Test func geminiEventsPairToolIDsAndDoNotInferWaitingOrWholeTurnFailure() throws {
         var activities: [AgentActivity] = []; var logs: [String] = []
         let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in }, activityNamespace: "run-one", activity: { activities.append($0) })

@@ -51,10 +51,7 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.sessionID = sessionID
         view.expectedViewportSize = viewportSize
         view.selectedNodeID = selection
-        view.auxiliaryNodeIDs = Set(nodes.compactMap { node in
-            if case .resultFiles = node.content { return node.id }
-            return nil
-        })
+        view.auxiliaryNodeIDs = Set(nodes.filter(\.isAuxiliary).map(\.id))
         view.targetToken = targetToken
         view.targetFrame = targetFrame
         view.alignTop = alignTop
@@ -118,7 +115,8 @@ final class MightyGraphInteractionProbe: NSView {
     var expectedViewportSize: CGSize = .zero
     var panOffset: CGPoint = .zero
     var selectedNodeID: String?
-    /// Attached file lists scroll immediately and do not expose block resizing.
+    /// Attached file lists and execution blocks scroll immediately and do not
+    /// expose block resizing.
     var auxiliaryNodeIDs: Set<String> = []
     var onSelect: (String?) -> Void = { _ in }
     var onPan: (CGPoint) -> Void = { _ in }

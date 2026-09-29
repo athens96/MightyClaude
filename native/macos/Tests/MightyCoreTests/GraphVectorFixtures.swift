@@ -153,6 +153,7 @@ enum GraphVectors {
         case .agent: return "agent"
         case .result: return "result"
         case .resultFiles: return "resultFiles"
+        case .execution: return "execution"
         case .draft: return "draft"
         }
     }

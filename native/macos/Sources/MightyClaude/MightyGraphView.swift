@@ -24,6 +24,9 @@ struct MightyGraphView: View {
     var catalog: [ModelOption] = []
     var graphResultSize: MightyGraphBlockSize? = nil
     var onSaveResultSize: (MightyGraphBlockSize?) -> Void = { _ in }
+    /// Shows a background execution's dashboard where the workspace opens
+    /// web pages; false when nothing was shown (or the pane has closed).
+    var onOpenURL: @MainActor (URL) async -> Bool = { _ in false }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The newest result's size only while its drag is in progress; the saved
@@ -41,6 +44,7 @@ struct MightyGraphView: View {
     /// Counts history trims, so a second trim admits a second re-aim.
     @ViewState private var trimSequence = 0
     @StateObject private var resultFiles = MightyGraphResultFilesModel()
+    @StateObject private var ouroboros = MightyGraphOuroborosModel()
     @ViewState private var canvasViewport: CGSize?
 
     /// Kept out of the view body: long concatenations of conditionals are
@@ -69,12 +73,24 @@ struct MightyGraphView: View {
 
     // The newest result takes the pane-wide saved size, so a drag in progress
     // has to stand in for it or the card would only change on release.
-    private var layout: MightyGraphLayout {
-        .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize)
+    private var layout: MightyGraphLayout { layout(executionLinks) }
+    private func layout(_ links: [OuroborosExecutionLink]) -> MightyGraphLayout {
+        .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize,
+              executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) })
+    }
+
+    /// Background executions the pane's agents started; they outlive the
+    /// request that started them, so their blocks stay live after it settled.
+    private var executionLinks: [OuroborosExecutionLink] { OuroborosExecutionLinks.extract(from: runs) }
+    private static func executionNodeID(_ link: OuroborosExecutionLink) -> String {
+        MightyGraphBlockSize.nodeID(runID: link.runID, suffix: MightyGraphLayout.executionSuffix + link.key)
     }
 
     var body: some View {
-        let graph = layout
+        let links = executionLinks
+        let linksByKey = Dictionary(links.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let graph = layout(links)
+        let ouroborosRequest = MightyGraphOuroborosModel.Request(links: links, listKeys: Set(links.filter { expanded.contains(Self.executionNodeID($0)) }.map(\.key)))
         let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
         let questionCount = runs.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
         let taskCount = runs.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
@@ -117,7 +133,8 @@ struct MightyGraphView: View {
                                   else { bubbleWidth = Double(size.width); bubbleHeight = Double(size.height) }
                               },
                               onResize: resize, onResetSize: resetSize,
-                              onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id, card: card)
+                              onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id,
+                              card: { card($0, executions: linksByKey) })
                 // The whole id list, not just the last one: dropping the oldest
                 // runs moves every surviving card up without touching the last
                 // id, and nothing else would re-aim the camera.
@@ -151,6 +168,8 @@ struct MightyGraphView: View {
         .task(id: MightyGraphResultFilesModel.Request(sessionID: sessionID, runs: runs, root: workspaceRoot)) {
             await resultFiles.load(.init(sessionID: sessionID, runs: runs, root: workspaceRoot))
         }
+        // Cancelled when the graph leaves the screen or the pane closes.
+        .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
     }
 
     /// Every camera re-aim goes through one token sequence, so a second one
@@ -229,7 +248,9 @@ struct MightyGraphView: View {
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
-    @ViewBuilder private func card(_ node: MightyGraphLayout.Node) -> some View {
+    /// `executions` is this render's execution links by key, found once
+    /// rather than for every card.
+    @ViewBuilder private func card(_ node: MightyGraphLayout.Node, executions: [String: OuroborosExecutionLink]) -> some View {
         switch node.content {
         case .draft:
             VStack(alignment: .leading, spacing: 10) {
@@ -277,6 +298,16 @@ struct MightyGraphView: View {
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
                                        onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
+        case .execution(_, let key):
+            if let link = executions[key] {
+                MightyGraphOuroborosCard(nodeID: node.id, link: link, snapshot: ouroboros.snapshots[key], expanded: expanded.contains(node.id),
+                                         opening: ouroboros.opening.contains(key), openFailed: ouroboros.openFailed.contains(key),
+                                         onToggle: { if !expanded.insert(node.id).inserted { expanded.remove(node.id) } },
+                                         onOpenDashboard: {
+                                             onFocus()
+                                             ouroboros.openDashboard(link) { await onOpenURL($0) }
+                                         })
+            }
         }
     }
 
@@ -436,7 +467,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                         }
                         .frame(width: node.frame.width, height: node.frame.height)
                         .overlay(alignment: .bottomTrailing) {
-                            if !node.isResultFiles {
+                            if !node.isAuxiliary {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(selection == node.id ? Palette.accent : .secondary)

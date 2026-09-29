@@ -287,6 +287,7 @@ struct MightyGraphCameraTests {
         let files = MightyGraphBlockSize.nodeID(runID: "three", suffix: "result-files")
         #expect(MightyGraphCamera.isAuxiliary(nodeID: "pending-input"))
         #expect(MightyGraphCamera.isAuxiliary(nodeID: files))
+        #expect(MightyGraphCamera.isAuxiliary(nodeID: MightyGraphBlockSize.nodeID(runID: "three", suffix: MightyGraphLayout.executionSuffix + "exec_1")))
         #expect(!MightyGraphCamera.isAuxiliary(nodeID: requestID("three")))
         // The draft block and a result's file list are attachments, not places
         // to put the camera: both fall through to the newest request.

@@ -260,7 +260,10 @@ public final class CLIStreamParser {
                     }
                 case "mcp_tool_call":
                     let name = [item["server"] as? String, item["tool"] as? String].compactMap { $0 }.joined(separator: ".")
-                    tool(id: item["id"] as? String, name: name.isEmpty ? "MCP" : name, input: item["arguments"], state: state, output: ActivitySupport.output(item["error"] ?? item["result"]))
+                    // `codex exec --json` writes `"error": null` beside a result:
+                    // JSON null is NSNull, which `??` would take as present.
+                    let error = item["error"].flatMap { $0 is NSNull ? nil : $0 }
+                    tool(id: item["id"] as? String, name: name.isEmpty ? "MCP" : name, input: item["arguments"], state: state, output: ActivitySupport.output(error ?? item["result"]))
                 default: break // Reasoning text is deliberately not copied.
                 }
             }

@@ -46,9 +46,7 @@ extension AppStore {
         // browser engine off or missing, no pane is made and the page opens in
         // the system browser instead. The choice is read per call from the
         // persisted store Settings writes to.
-        let opener = AgentWebOpener(external: WorkspaceURLOpener()) { agentPaneId, _ in
-            await MainActor.run { self.canShowAgentBrowser(agentPaneId) ? AgentBrowserHandle(agentPaneId: agentPaneId, store: self) : nil }
-        }
+        let opener = makeAgentWebOpener()
         agentWebOpener = opener
         let webOpen = WebOpenService(store: .shared, presenter: webOpenPrompts, opener: opener, paneRegistry: .shared)
         // Each agent pane's terminal pane runs its commands under PTYs and shows
@@ -118,6 +116,25 @@ extension AppStore {
         agentBrowsers[agentPaneId] = engine
         engine.loadURL(url)
         return true
+    }
+
+    private func makeAgentWebOpener() -> AgentWebOpener {
+        AgentWebOpener(external: WorkspaceURLOpener()) { agentPaneId, _ in
+            await MainActor.run { self.canShowAgentBrowser(agentPaneId) ? AgentBrowserHandle(agentPaneId: agentPaneId, store: self) : nil }
+        }
+    }
+
+    /// The app itself opens a page for an agent pane (a background execution's
+    /// dashboard) the way an agent's open_url does: the workspace's remembered
+    /// choice without asking, the choice dialog otherwise. Nothing opens for a
+    /// pane that closed meanwhile; false when nothing was shown.
+    func openInAgentBrowser(_ url: URL, agentPaneId: String) async -> Bool {
+        guard !ending, let agent = snapshot.sessions.first(where: { $0.id == agentPaneId }) else { return false }
+        let service = WebOpenService(store: .shared, presenter: webOpenPrompts, opener: agentWebOpener ?? makeAgentWebOpener(), paneRegistry: .shared)
+        switch await service.open(url.absoluteString, workspaceId: agent.workspaceId, agentPaneId: agentPaneId, provider: agent.provider) {
+        case .opened, .openedExternallyInstead: return true
+        case .failed, .rejected: return false
+        }
     }
 
     /// Open an agent pane's terminal or browser pane to the right of the agent
