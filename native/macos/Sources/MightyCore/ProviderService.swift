@@ -198,9 +198,11 @@ public actor ProviderService {
         for key in keys { await invalidateModelCatalog(provider: provider, workspacePath: key.workspacePath) }
     }
 
-    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig = PhaseModelConfig(), paneMCPBinding: PaneMCPBinding? = nil) throws -> [String] {
+    /// `phaseModels` nil takes the request's own, which is how the app launches.
+    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig? = nil, paneMCPBinding: PaneMCPBinding? = nil) throws -> [String] {
         try CoreValidation.validate(request)
         let s = request.settings
+        let phaseModels = phaseModels ?? request.phaseModels
         switch request.provider {
         case "claude":
             let mode = s.permissionMode == "fullAccess" ? "bypassPermissions" : s.permissionMode
@@ -235,9 +237,10 @@ public actor ProviderService {
             let sandbox = s.permissionMode == "fullAccess" ? "danger-full-access" : ["acceptEdits", "onRequest"].contains(s.permissionMode) ? "workspace-write" : "read-only"
             var args = ["-c", "approval_policy=\"\(asks ? "on-request" : "never")\"", "-c", "sandbox_mode=\"\(sandbox)\"", "-c", "sandbox_workspace_write.network_access=\(s.networkAccess)", "-c", "features.fast_mode=\(s.fastMode)", "-c", "service_tier=\"\(s.fastMode ? "fast" : "default")\""]
             if s.webSearch != "default" { args += ["-c", "web_search=\"\(s.webSearch)\""] }
-            // Phase model knobs: review_model, agents.default_subagent_model, plan_mode_reasoning_effort.
+            // Phase model knobs: review_model, subagent model and effort, plan_mode_reasoning_effort.
             if phaseModels.codexReviewModel != "default" { args += ["-c", "review_model=\"\(phaseModels.codexReviewModel)\""] }
             if phaseModels.codexSubagentDefault != "default" { args += ["-c", "agents.default_subagent_model=\"\(phaseModels.codexSubagentDefault)\""] }
+            if phaseModels.codexSubagentEffort != "default" { args += ["-c", "agents.default_subagent_reasoning_effort=\"\(phaseModels.codexSubagentEffort)\""] }
             if phaseModels.codexPlanModeReasoningEffort != "default" { args += ["-c", "plan_mode_reasoning_effort=\"\(phaseModels.codexPlanModeReasoningEffort)\""] }
             if let binding = paneMCPBinding { args += binding.codexMCPArgs() }
             if asks {

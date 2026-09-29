@@ -3,6 +3,13 @@ import MightyCore
 
 extension AppStore {
     /// Writes a single Claude or Codex knob value to the machine-wide phase model settings.
+    /// The effort knobs, which older saved states do not have yet.
+    func setPhaseEffort(_ keyPath: WritableKeyPath<PhaseModelHardcodedConfig, String?>, value: String) {
+        var config = snapshot.phaseModels ?? PhaseModelHardcodedConfig()
+        config[keyPath: keyPath] = value == "default" ? nil : value
+        snapshot.phaseModels = config
+    }
+
     func setPhaseModelKnob(_ keyPath: WritableKeyPath<PhaseModelHardcodedConfig, String>, value: String) {
         var config = snapshot.phaseModels ?? PhaseModelHardcodedConfig()
         config[keyPath: keyPath] = value

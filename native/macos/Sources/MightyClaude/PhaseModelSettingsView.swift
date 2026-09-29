@@ -11,6 +11,9 @@ struct PhaseModelSettingsSection: View {
             Text(L("settings.phaseModels.description"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Text(L("settings.phaseModels.effortNote"))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             PhaseModelProviderBlock(provider: "claude").environmentObject(store)
             Divider()
             PhaseModelProviderBlock(provider: "codex").environmentObject(store)
@@ -64,15 +67,10 @@ private struct PhaseModelProviderBlock: View {
 
     private var claudePhaseRows: some View {
         Group {
-            phaseRow(label: L("settings.phaseModels.phase.planning"),
-                     selection: claudeRowValue(.planning),
-                     onPick: { store.applyClaudePhaseRow(.planning, value: $0) })
-            phaseRow(label: L("settings.phaseModels.phase.execution"),
-                     selection: claudeRowValue(.execution),
-                     onPick: { store.applyClaudePhaseRow(.execution, value: $0) })
-            phaseRow(label: L("settings.phaseModels.phase.subagents"),
-                     selection: claudeRowValue(.subagents),
-                     onPick: { store.applyClaudePhaseRow(.subagents, value: $0) })
+            phaseRow(.planning, model: ModelCell(selection: claudeRowValue(.planning)) { store.applyClaudePhaseRow(.planning, value: $0) }, effort: nil)
+            phaseRow(.execution, model: ModelCell(selection: claudeRowValue(.execution)) { store.applyClaudePhaseRow(.execution, value: $0) },
+                     effort: EffortCell(selection: phaseConfig.claudeMainEffort ?? "default") { store.setPhaseEffort(\.claudeMainEffort, value: $0) })
+            phaseRow(.subagents, model: ModelCell(selection: claudeRowValue(.subagents)) { store.applyClaudePhaseRow(.subagents, value: $0) }, effort: nil)
         }
     }
 
@@ -87,14 +85,17 @@ private struct PhaseModelProviderBlock: View {
 
     // MARK: - Codex phase rows
 
+    /// Codex's main model is chosen per pane, so planning and execution have
+    /// an effort here and no model.
     private var codexPhaseRows: some View {
         Group {
-            phaseRow(label: L("settings.phaseModels.phase.review"),
-                     selection: codexRowValue(.review),
-                     onPick: { store.applyCodexPhaseRow(.review, value: $0) })
-            phaseRow(label: L("settings.phaseModels.phase.subagents"),
-                     selection: codexRowValue(.subagents),
-                     onPick: { store.applyCodexPhaseRow(.subagents, value: $0) })
+            phaseRow(.planning, model: nil,
+                     effort: EffortCell(selection: phaseConfig.codexPlanModeReasoningEffort) { store.setPhaseModelKnob(\.codexPlanModeReasoningEffort, value: $0) })
+            phaseRow(.execution, model: nil,
+                     effort: EffortCell(selection: phaseConfig.codexMainEffort ?? "default") { store.setPhaseEffort(\.codexMainEffort, value: $0) })
+            phaseRow(.review, model: ModelCell(selection: codexRowValue(.review)) { store.applyCodexPhaseRow(.review, value: $0) }, effort: nil)
+            phaseRow(.subagents, model: ModelCell(selection: codexRowValue(.subagents)) { store.applyCodexPhaseRow(.subagents, value: $0) },
+                     effort: EffortCell(selection: phaseConfig.codexSubagentEffort ?? "default") { store.setPhaseEffort(\.codexSubagentEffort, value: $0) })
         }
     }
 
@@ -107,27 +108,87 @@ private struct PhaseModelProviderBlock: View {
         }
     }
 
-    // MARK: - Phase row picker
+    // MARK: - Phase row: version and effort
 
-    private func phaseRow(label: String, selection: String, onPick: @escaping (String) -> Void) -> some View {
-        HStack(spacing: 8) {
-            Text(label).font(.system(size: 11))
-            Spacer(minLength: 4)
-            Picker("", selection: Binding(get: { selection }, set: { if $0 != mixedSentinel { onPick($0) } })) {
-                Text(L("settings.phaseModels.defaultOption")).tag("default")
-                if selection == mixedSentinel {
-                    Text(L("settings.phaseModels.mixed")).tag(mixedSentinel)
-                }
-                ForEach(catalog.models.filter { $0.value != "default" }, id: \.value) { opt in
-                    Text(opt.displayName).tag(opt.value)
-                }
-                if !registered.isEmpty {
-                    Divider()
-                    ForEach(registered, id: \.name) { e in Text(verbatim: e.name).tag(e.name) }
-                }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(maxWidth: 200)
+    private struct ModelCell { let selection: String; let onPick: (String) -> Void }
+    private struct EffortCell { let selection: String; let onPick: (String) -> Void }
+
+    private func phaseTitle(_ phase: PhaseModelRouting.Phase) -> String {
+        switch phase {
+        case .planning: L("settings.phaseModels.phase.planning")
+        case .execution: L("settings.phaseModels.phase.execution")
+        case .review: L("settings.phaseModels.phase.review")
+        case .subagents: L("settings.phaseModels.phase.subagents")
         }
+    }
+
+    /// A phase with no knob for one of the two says so instead of offering a
+    /// choice the CLI would ignore.
+    private func phaseRow(_ phase: PhaseModelRouting.Phase, model: ModelCell?, effort: EffortCell?) -> some View {
+        HStack(spacing: 8) {
+            Text(phaseTitle(phase)).font(.system(size: 11))
+            Spacer(minLength: 4)
+            if let model {
+                Picker("", selection: Binding(get: { model.selection }, set: { if $0 != mixedSentinel { model.onPick($0) } })) {
+                    if model.selection == mixedSentinel { Text(L("settings.phaseModels.mixed")).tag(mixedSentinel) }
+                    modelOptions(current: model.selection)
+                }
+                .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220)
+                .accessibilityIdentifier("phaseModels-model-\(provider)-\(phase.rawValue)")
+            } else {
+                Text(L("settings.phaseModels.paneModel")).font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: 220, alignment: .trailing)
+            }
+            if let effort {
+                Picker("", selection: Binding(get: { effort.selection }, set: { effort.onPick($0) })) {
+                    Text(L("settings.phaseModels.defaultOption")).tag("default")
+                    ForEach(effortLevels(including: effort.selection), id: \.self) { Text(verbatim: $0).tag($0) }
+                }
+                .labelsHidden().pickerStyle(.menu).frame(width: 110)
+                .accessibilityIdentifier("phaseModels-effort-\(provider)-\(phase.rawValue)")
+            } else {
+                Text(L("settings.phaseModels.effortUnsupported")).font(.system(size: 10)).foregroundStyle(.tertiary).frame(width: 110, alignment: .leading)
+            }
+        }
+    }
+
+    private struct VersionEntry: Hashable { let value: String; let label: String }
+
+    /// An alias follows the newest model ("· 최신"); the version the CLI says it
+    /// stands for today is listed beside it to pin that one instead. A saved
+    /// version the CLI no longer lists stays selectable.
+    private func versionEntries(current: String) -> [VersionEntry] {
+        var seen = Set(["default", mixedSentinel] + registered.map(\.name))
+        var entries: [VersionEntry] = []
+        for option in catalog.models where option.value != "default" {
+            let resolved = option.resolvedModel.flatMap { $0.isEmpty || $0 == option.value ? nil : $0 }
+            if seen.insert(option.value).inserted {
+                entries.append(VersionEntry(value: option.value, label: resolved == nil ? option.displayName : L("settings.phaseModels.latestTemplate", ["name": option.displayName])))
+            }
+            if let resolved, seen.insert(resolved).inserted { entries.append(VersionEntry(value: resolved, label: resolved)) }
+        }
+        if !seen.contains(current) { entries.append(VersionEntry(value: current, label: current)) }
+        return entries
+    }
+
+    @ViewBuilder
+    private func modelOptions(current: String) -> some View {
+        Text(L("settings.phaseModels.defaultOption")).tag("default")
+        ForEach(versionEntries(current: current), id: \.self) { entry in Text(verbatim: entry.label).tag(entry.value) }
+        if !registered.isEmpty {
+            Divider()
+            ForEach(registered, id: \.name) { e in Text(verbatim: e.name).tag(e.name) }
+        }
+    }
+
+    /// The levels the CLI names; for Codex the ones its models advertise.
+    private func effortLevels(including current: String) -> [String] {
+        var levels = ProviderOptions.efforts
+        if provider == "codex" {
+            let advertised = Set(catalog.models.flatMap { $0.supportedEffortLevels ?? [] })
+            levels = advertised.isEmpty ? ["low", "medium", "high"] : ProviderOptions.efforts.filter(advertised.contains)
+        }
+        if current != "default", !levels.contains(current) { levels.append(current) }
+        return levels
     }
 
     // MARK: - Knob detail rows
@@ -146,7 +207,6 @@ private struct PhaseModelProviderBlock: View {
         Group {
             knobRow(label: L("settings.phaseModels.knob.codexReview"), keyPath: \.codexReviewModel)
             knobRow(label: L("settings.phaseModels.knob.codexSubagent"), keyPath: \.codexSubagentDefault)
-            effortRow
         }
     }
 
@@ -158,33 +218,9 @@ private struct PhaseModelProviderBlock: View {
                 get: { phaseConfig[keyPath: keyPath] },
                 set: { store.setPhaseModelKnob(keyPath, value: $0) }
             )) {
-                Text(L("settings.phaseModels.defaultOption")).tag("default")
-                ForEach(catalog.models.filter { $0.value != "default" }, id: \.value) { opt in
-                    Text(opt.displayName).tag(opt.value)
-                }
-                if !registered.isEmpty {
-                    Divider()
-                    ForEach(registered, id: \.name) { e in Text(verbatim: e.name).tag(e.name) }
-                }
+                modelOptions(current: phaseConfig[keyPath: keyPath])
             }
-            .labelsHidden().pickerStyle(.menu).frame(maxWidth: 200)
-        }
-    }
-
-    private var effortRow: some View {
-        HStack(spacing: 8) {
-            Text(L("settings.phaseModels.knob.codexPlanEffort")).font(.system(size: 11)).foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            Picker("", selection: Binding(
-                get: { phaseConfig.codexPlanModeReasoningEffort },
-                set: { store.setPhaseModelKnob(\.codexPlanModeReasoningEffort, value: $0) }
-            )) {
-                Text(L("settings.phaseModels.defaultOption")).tag("default")
-                ForEach(["low", "medium", "high"], id: \.self) { level in
-                    Text(level).tag(level)
-                }
-            }
-            .labelsHidden().pickerStyle(.menu).frame(maxWidth: 200)
+            .labelsHidden().pickerStyle(.menu).frame(maxWidth: 220)
         }
     }
 

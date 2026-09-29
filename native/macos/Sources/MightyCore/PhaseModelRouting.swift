@@ -20,7 +20,13 @@ public struct PhaseModelConfig: Sendable, Equatable {
     // Codex (hardcoded, per-run via -c)
     public var codexReviewModel: String              // review_model  →  review
     public var codexSubagentDefault: String          // agents.default_subagent_model  →  subagents
-    public var codexPlanModeReasoningEffort: String  // plan_mode_reasoning_effort  →  non-model / details-only
+    public var codexPlanModeReasoningEffort: String  // plan_mode_reasoning_effort  →  planning effort
+
+    // Effort, only where the CLI has a knob for it. The two main efforts are
+    // what a pane uses while its own effort is "default".
+    public var claudeMainEffort: String     // --effort  →  execution effort
+    public var codexMainEffort: String      // model_reasoning_effort  →  execution effort
+    public var codexSubagentEffort: String  // agents.default_subagent_reasoning_effort  →  subagent effort
 
     // omc (scanned; nil = not installed)
     public var omcAgents: [String: String]?     // camelCase agent key → model
@@ -37,6 +43,9 @@ public struct PhaseModelConfig: Sendable, Equatable {
         codexReviewModel: String = "default",
         codexSubagentDefault: String = "default",
         codexPlanModeReasoningEffort: String = "default",
+        claudeMainEffort: String = "default",
+        codexMainEffort: String = "default",
+        codexSubagentEffort: String = "default",
         omcAgents: [String: String]? = nil,
         ouroborosKeys: [String: String]? = nil
     ) {
@@ -48,8 +57,26 @@ public struct PhaseModelConfig: Sendable, Equatable {
         self.codexReviewModel = codexReviewModel
         self.codexSubagentDefault = codexSubagentDefault
         self.codexPlanModeReasoningEffort = codexPlanModeReasoningEffort
+        self.claudeMainEffort = claudeMainEffort
+        self.codexMainEffort = codexMainEffort
+        self.codexSubagentEffort = codexSubagentEffort
         self.omcAgents = omcAgents
         self.ouroborosKeys = ouroborosKeys
+    }
+}
+
+// MARK: - Effort
+
+public extension PhaseModelConfig {
+    /// The effort a run starts with: the pane's own, else the phase setting
+    /// for execution when the model the run will use takes that level.
+    func runEffort(provider: String, paneEffort: String, paneModel: String, catalog: ModelCatalog?, registeredModels: [RegisteredModelEntry]) -> String {
+        guard paneEffort == "default" else { return paneEffort }
+        let phase = provider == "claude" ? claudeMainEffort : provider == "codex" ? codexMainEffort : "default"
+        guard phase != "default" else { return "default" }
+        let model = provider == "claude" && paneModel == "default" ? claudeMain : paneModel
+        let levels = ProviderOptions.effortLevels(provider: provider, model: model, catalog: catalog, registeredModels: registeredModels)
+        return levels.contains(phase) ? phase : "default"
     }
 }
 

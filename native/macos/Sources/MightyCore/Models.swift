@@ -69,6 +69,10 @@ public struct PhaseModelHardcodedConfig: Codable, Sendable, Equatable {
     public var codexReviewModel: String
     public var codexSubagentDefault: String
     public var codexPlanModeReasoningEffort: String
+    /// Added after the first release, so optional: older saved states lack them.
+    public var claudeMainEffort: String?
+    public var codexMainEffort: String?
+    public var codexSubagentEffort: String?
 
     public init(
         claudeMain: String = "default",
@@ -101,6 +105,9 @@ public struct PhaseModelHardcodedConfig: Codable, Sendable, Equatable {
             codexReviewModel: codexReviewModel,
             codexSubagentDefault: codexSubagentDefault,
             codexPlanModeReasoningEffort: codexPlanModeReasoningEffort,
+            claudeMainEffort: claudeMainEffort ?? "default",
+            codexMainEffort: codexMainEffort ?? "default",
+            codexSubagentEffort: codexSubagentEffort ?? "default",
             omcAgents: omcAgents,
             ouroborosKeys: ouroborosKeys
         )
@@ -367,6 +374,8 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
     public var attachments: [RunAttachment]
     /// Registered model names for the provider — used by validateSelection; not persisted.
     public var registeredModels: [RegisteredModelEntry]
+    /// The Settings phase models the run starts with; not persisted.
+    public var phaseModels = PhaseModelConfig()
     public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = [], registeredModels: [RegisteredModelEntry] = []) {
         self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments; self.registeredModels = registeredModels
     }

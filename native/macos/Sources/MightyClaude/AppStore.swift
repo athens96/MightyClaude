@@ -725,10 +725,15 @@ final class AppStore: ObservableObject {
                       currentWorkspace.path == workspace.path else { throw CancellationError() }
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
                 let registered = providerRegisteredModels(current.provider)
-                let request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
+                var request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
                     let provider = providerRuntime(current.provider, workspaceId: workspace.id)
+                    // Settings > Models: pins and effort for every run of this provider.
+                    // The pane's own model and effort still win.
+                    request.phaseModels = (snapshot.phaseModels ?? PhaseModelHardcodedConfig()).toPhaseModelConfig(omcAgents: nil, ouroborosKeys: nil)
+                    request.settings.effort = request.phaseModels.runEffort(provider: current.provider, paneEffort: current.settings.effort, paneModel: current.model,
+                                                                            catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateSelection(request, catalog: provider.modelCatalog, registeredModels: registered)
                     try CoreValidation.validateCapabilities(request, capabilities: provider.capabilities)
                 }
