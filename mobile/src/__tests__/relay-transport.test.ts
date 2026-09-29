@@ -472,6 +472,21 @@ describe('RelayConnection against a fake host', () => {
     await relay.stop();
   });
 
+  it('dials again by itself after "호스트 오프라인" and gets in once the host is back', async () => {
+    const options: FakeOptions = { rejectWithCode: 4404 };
+    const relay = await startFakeRelay(options);
+    const connection = connect(relay, { autoReconnect: true });
+
+    const error = await connection.ready().catch((caught: unknown) => caught);
+    expect((error as RelayError).failure).toBe('host-offline');
+    expect((error as RelayError).needsRepair).toBe(false);
+
+    // The Mac's control socket is back on the relay; nobody touched the phone.
+    delete options.rejectWithCode;
+    await waitFor(() => connection.state === 'ready');
+    expect(relay.queries.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('keeps sending the pairing key alone when no clientId has been generated', async () => {
     const relay = await startFakeRelay({ issueDeviceToken: 'token-1' });
     const connection = connect(relay);

@@ -81,7 +81,11 @@ interface HostsState {
   /** Forgets a secret the host has refused for good; the entry stays, to be re-paired. */
   forgetSecrets: (id: string, detail?: string) => Promise<void>;
   removeHost: (id: string) => Promise<void>;
-  refreshReachability: (id: string) => Promise<void>;
+  /**
+   * Probes the host again. `quiet` keeps the shown reachability while the probe runs:
+   * the list's background retries must not flicker an offline row to "checking".
+   */
+  refreshReachability: (id: string, options?: { quiet?: boolean }) => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
@@ -331,7 +335,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
     });
   },
 
-  refreshReachability: async (id) => {
+  refreshReachability: async (id, options) => {
     const state = get();
     const host = state.hosts.find((entry) => entry.id === id);
     const secrets = secretsOf(state, id);
@@ -354,7 +358,9 @@ export const useHostsStore = create<HostsState>((set, get) => ({
       }));
       return;
     }
-    set((prev) => ({ status: { ...prev.status, [id]: { reachability: 'checking' } } }));
+    if (!options?.quiet) {
+      set((prev) => ({ status: { ...prev.status, [id]: { reachability: 'checking' } } }));
+    }
     try {
       const info = await probeHost(
         credentialsFor(host, secrets, state.clientIds[id] ?? state.clientId),

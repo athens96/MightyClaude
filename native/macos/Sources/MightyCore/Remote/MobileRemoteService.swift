@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Network
 
 /// The app-side view the mobile protocol exposes. Implemented by the app
 /// store's bridge; every method is called off the main actor and hops itself.
@@ -66,6 +67,28 @@ public actor MobileRemoteService {
     private var controlSocket: URLSessionWebSocketTask?
     private var relayConnected = false
     private var lastRelayError: String?
+    /// Times the relay was dialled; tests count reconnects with it.
+    private(set) var restarts = 0
+    /// Test seam: how often a connected control socket is pinged.
+    var keepaliveInterval = RelayLinkPolicy.keepaliveInterval
+    /// Test seam: awaited where `disconnect` waits on the phones, so a test can
+    /// land a stop inside a restart without timing an actor hop.
+    var disconnectPause: (@Sendable () async -> Void)?
+    /// Network changes (docs/relay.md "재접속"). Watched while the
+    /// remote is on; `networkPath` is the settled path the socket was dialled
+    /// on, `pathWindow` what was reported since, still waiting out the settle.
+    /// `pathWatchGeneration` changes whenever watching starts or stops, so a
+    /// report or settle from an earlier watch is dropped.
+    private let watchesNetwork: Bool
+    private(set) var watchingNetwork = false
+    private var pathWatchGeneration = 0
+    private var pathMonitor: NWPathMonitor?
+    private var pathUpdates: AsyncStream<RelayNetworkPath>.Continuation?
+    private var pathWatch: Task<Void, Never>?
+    private var pathSettle: Task<Void, Never>?
+    private var networkPath: RelayNetworkPath?
+    private var pathWindow = RelayLinkPolicy.Window()
+    private var pathPacing = RelayLinkPolicy.Pacing()
     private var clients: [String: RelayClientConnection] = [:]
     /// Connections still inside the handshake; capped separately so a peer who
     /// only knows the serverId cannot fill every slot by stalling.
@@ -96,8 +119,10 @@ public actor MobileRemoteService {
     /// user's field nor the default is usable.
     private var relayURL: String? { MobileRemoteSettings.effectiveRelay(user: settings.relayURL, fallback: defaultRelayURL) }
 
-    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.2.0", defaultRelayURL: String = MobileWire.defaultRelayURL) {
+    /// `watchesNetwork` is off in tests, which report paths through `networkPathChanged`.
+    public init(dataDirectory: URL, hostName: String, appVersion: String = "0.2.0", defaultRelayURL: String = MobileWire.defaultRelayURL, watchesNetwork: Bool = true) {
         self.dataDirectory = dataDirectory; self.hostName = hostName; self.appVersion = appVersion; self.defaultRelayURL = defaultRelayURL
+        self.watchesNetwork = watchesNetwork
         hostId = Self.stableHostId(dataDirectory)
         uploads = MobileUploadStore(directory: dataDirectory.appendingPathComponent("uploads", isDirectory: true))
         deviceRegistry = MobileDeviceRegistry(url: dataDirectory.appendingPathComponent("devices.json"))
@@ -111,6 +136,10 @@ public actor MobileRemoteService {
     /// Test seam; see `keyRotationFailure`.
     func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
+    /// Test seam; see `keepaliveInterval`.
+    func setKeepaliveInterval(_ value: TimeInterval) { keepaliveInterval = value }
+    /// Test seam; see `disconnectPause`.
+    func setDisconnectPause(_ value: (@Sendable () async -> Void)?) { disconnectPause = value }
     public func observeStatus(_ observer: @escaping @Sendable (MobileHostStatus) -> Void) { statusObserver = observer }
 
     private static func stableHostId(_ directory: URL) -> String {
@@ -237,13 +266,25 @@ public actor MobileRemoteService {
     }
 
     /// Keeps a control socket open to the relay and reconnects with backoff.
-    private func start() async {
+    /// `manual` (Settings "다시 연결") dials even when the path watch reports
+    /// no network: the report may be wrong, and dialling is what brings an
+    /// on-demand VPN up. Every other trigger waits for a network instead.
+    private func start(manual: Bool = false) async {
         guard !disposed else { return }
-        await stop(reason: "")
+        let mine = await disconnect(reason: "")
+        // `disconnect` waits on each phone's close. A stop, a switch-off, a
+        // shutdown or another start may have run meanwhile; the latest wins.
+        guard mine == generation, settings.enabled, !disposed, relayURL != nil else { return }
+        watchNetwork()
+        // With no network at all there is nothing to dial; the path watch
+        // starts again the moment one appears, so no backoff spins meanwhile.
+        if !manual, networkPath?.satisfied == false { detail = L("settings.mobileRemote.detail.networkOffline"); publish(); return }
+        restarts += 1
         generation += 1
         let current = generation
         detail = "릴레이에 연결하는 중…"
         publish()
+        controlTask?.cancel()
         controlTask = Task { [weak self] in
             var attempt = 0
             while !Task.isCancelled {
@@ -255,35 +296,133 @@ public actor MobileRemoteService {
                 // duplicate host) must back off like a failure, not retry at once.
                 attempt = ok && Date().timeIntervalSince(started) > 5 ? 0 : attempt + 1
                 let delay = min(30.0, pow(2.0, Double(attempt - 1)))
-                await self.setDisconnected(retryIn: delay)
+                await self.setDisconnected(retryIn: delay, generation: current)
                 try? await Task.sleep(for: .seconds(delay))
             }
         }
     }
 
     public func stop(reason: String = "모바일 리모트가 꺼져 있습니다.") async {
+        stopWatchingNetwork()
+        await disconnect(reason: reason)
+    }
+
+    /// Drops the control socket and every phone; the path watch keeps running.
+    /// Answers the generation it retired, which is stale by the time it returns
+    /// when something else stopped or started the host meanwhile.
+    @discardableResult
+    private func disconnect(reason: String) async -> Int {
         generation += 1
+        let mine = generation
         controlTask?.cancel(); controlTask = nil
         controlSocket?.cancel(with: .goingAway, reason: nil); controlSocket = nil
+        relayConnected = false
         let dropped = clients; clients.removeAll(); unauthenticated.removeAll(); connectedDevices.removeAll()
         for client in dropped.values { await client.close(reason: "host stopped") }
-        relayConnected = false
+        if let disconnectPause { await disconnectPause() }
+        guard mine == generation else { return mine }
         if !reason.isEmpty { detail = reason }
         resumeWaiters(scope: nil)
         publish()
+        return mine
     }
 
     /// Half-finished uploads are bytes nobody will ever claim, so the folder
     /// goes with the host.
     public func shutdown() async { disposed = true; await stop(reason: "앱이 종료 중입니다."); await uploads.shutdown() }
 
-    /// Reconnects now when enabled but offline (settings sheet, network change).
-    public func retryIfNeeded() async {
-        guard settings.enabled, !relayConnected, !disposed, relayURL != nil else { return }
-        await start()
+    /// Dials the relay again now, even when the control socket still looks
+    /// open or the path watch says there is no network: after a network change
+    /// the socket can be half-open, and it reports nothing until a ping goes
+    /// unanswered (Settings "다시 연결"). The relay replaces the older socket
+    /// for this host, so a fresh one is always safe.
+    public func reconnect() async {
+        guard settings.enabled, !disposed, relayURL != nil else { return }
+        await start(manual: true)
     }
 
-    private func setDisconnected(retryIn delay: TimeInterval) {
+    /// The same, after the path settles (wake from sleep): a wake that also
+    /// changes the network then reconnects once, not twice. Unlike a path
+    /// change it is never paced, and it still waits for a network.
+    public func reconnectSoon() {
+        guard watchingNetwork else { return }
+        pathWindow.force(now: Date())
+        schedulePathSettle()
+    }
+
+    // MARK: Network path
+
+    private func watchNetwork() {
+        guard !watchingNetwork else { return }
+        watchingNetwork = true
+        pathWatchGeneration += 1
+        guard watchesNetwork else { return }
+        let watch = pathWatchGeneration
+        let (stream, continuation) = AsyncStream.makeStream(of: RelayNetworkPath.self, bufferingPolicy: .bufferingNewest(8))
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { continuation.yield(RelayNetworkPath($0)) }
+        pathMonitor = monitor; pathUpdates = continuation
+        // One consumer keeps the reports in the order the monitor made them.
+        pathWatch = Task { [weak self] in
+            for await path in stream { await self?.networkPathChanged(path, watch: watch) }
+        }
+        monitor.start(queue: DispatchQueue(label: "MightyCore.RelayPath"))
+    }
+
+    private func stopWatchingNetwork() {
+        watchingNetwork = false
+        pathWatchGeneration += 1
+        pathMonitor?.cancel(); pathMonitor = nil
+        pathUpdates?.finish(); pathUpdates = nil
+        pathWatch?.cancel(); pathWatch = nil
+        pathSettle?.cancel(); pathSettle = nil
+        networkPath = nil; pathWindow = RelayLinkPolicy.Window(); pathPacing = RelayLinkPolicy.Pacing()
+    }
+
+    /// A path report from the monitor (`watch` set) or a test. Ignored unless
+    /// the watch it came from is still the current one. Acted on once reports
+    /// stop arriving for `RelayLinkPolicy.pathSettle`.
+    func networkPathChanged(_ path: RelayNetworkPath, watch: Int? = nil) {
+        guard watchingNetwork, watch == nil || watch == pathWatchGeneration else { return }
+        pathWindow.report(path, settled: networkPath, now: Date())
+        schedulePathSettle()
+    }
+
+    private func schedulePathSettle(after delay: TimeInterval? = nil) {
+        pathSettle?.cancel()
+        let watch = pathWatchGeneration, delay = delay ?? pathWindow.delay(now: Date())
+        pathSettle = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            await self?.settleNetworkPath(watch: watch)
+        }
+    }
+
+    private func settleNetworkPath(watch: Int) async {
+        guard watchingNetwork, watch == pathWatchGeneration, !pathWindow.isEmpty else { return }
+        let window = pathWindow
+        let action = RelayLinkPolicy.action(from: networkPath, window: window)
+        // A flapping link must not redial on every flap. The window stays open
+        // meanwhile, so later reports still count toward the decision.
+        if action == .reconnect, !window.forced {
+            let wait = pathPacing.wait(now: Date())
+            if wait > 0 { schedulePathSettle(after: wait); return }
+        }
+        pathWindow = RelayLinkPolicy.Window(); pathSettle = nil
+        if let path = window.latest { networkPath = path }
+        guard settings.enabled, !disposed, relayURL != nil else { return }
+        switch action {
+        case .none: break
+        case .offline: await disconnect(reason: L("settings.mobileRemote.detail.networkOffline"))
+        case .reconnect:
+            if !window.forced { pathPacing.record(now: Date()) }
+            await start()
+        }
+    }
+
+    private func setDisconnected(retryIn delay: TimeInterval, generation current: Int) {
+        // A loop an earlier start left behind must not speak for the live one.
+        guard current == generation else { return }
         relayConnected = false
         detail = (lastRelayError.map { $0 + " · " } ?? "릴레이와 연결이 끊겼습니다. ") + "\(Int(delay))초 후 다시 시도합니다."
         publish()
@@ -291,6 +430,9 @@ public actor MobileRemoteService {
 
     /// One control-socket session. Returns true when it connected at all.
     private func runControlSocket(generation current: Int) async -> Bool {
+        // The loop's own generation check is a separate hop; a start or stop
+        // may have run in between, and a stale session must not take the socket.
+        guard current == generation, !Task.isCancelled else { return false }
         guard let relay = relayURL, let url = RelayEndpoint.socketURL(relay: relay, serverId: hostId, role: "server", connectionId: nil) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
         let socket = session.webSocketTask(with: url)
         socket.maximumMessageSize = 1024 * 1024
@@ -301,10 +443,28 @@ public actor MobileRemoteService {
             // The relay stays silent until a phone shows up, so prove the
             // socket is open with a ping before reporting "connected".
             try await Self.ping(socket)
+            // The ping was a suspension too: a stale session goes no further.
+            guard current == generation, !Task.isCancelled else { throw CancellationError() }
             connected = true; relayConnected = true; lastRelayError = nil
             detail = "휴대폰에서 QR 코드를 스캔해 연결하세요."
             publish()
-            while !Task.isCancelled, generation == self.generation {
+            // `receive()` alone never notices a socket the network left
+            // half-open, while the relay has long dropped this host for not
+            // answering its pings. An unanswered ping of our own closes it, and
+            // the loop below then fails into the usual reconnect.
+            let keepalive = Task { [weak self, interval = keepaliveInterval] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(interval))
+                    guard !Task.isCancelled else { return }
+                    do { try await Self.ping(socket) } catch {
+                        guard !Task.isCancelled else { return }
+                        await self?.controlSocketUnresponsive(socket, generation: current)
+                        return
+                    }
+                }
+            }
+            defer { keepalive.cancel() }
+            while !Task.isCancelled, current == generation {
                 let message = try await socket.receive()
                 guard case .string(let text) = message, let data = text.data(using: .utf8),
                       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = object["type"] as? String else { continue }
@@ -313,17 +473,19 @@ public actor MobileRemoteService {
                     if let id = object["connectionId"] as? String, Self.validConnectionId(id) { acceptClient(connectionId: id, generation: current) }
                 case "disconnected":
                     if let id = object["connectionId"] as? String, let client = clients.removeValue(forKey: id) { await client.close(reason: "relay disconnected"); publish() }
-                case "ping":
-                    try? await socket.send(.string(#"{"type":"pong"}"#))
+                // No "ping" case: the relay pings with WebSocket control frames,
+                // which URLSession answers by itself and never hands to the app.
                 default: break
                 }
             }
         } catch {
-            if generation == self.generation { lastRelayError = Self.describe(error, socket: socket) }
+            // While connected, only the keepalive sets an error; it says why the
+            // socket was closed better than the cancellation it caused.
+            if current == generation, !(connected && lastRelayError != nil) { lastRelayError = Self.describe(error, socket: socket) }
         }
         socket.cancel(with: .normalClosure, reason: nil)
         // A newer generation may already own live clients; never touch its state.
-        guard generation == self.generation else { return connected }
+        guard current == generation else { return connected }
         if !connected, lastRelayError == nil { lastRelayError = "릴레이에 연결하지 못했습니다." }
         if controlSocket === socket { controlSocket = nil }
         let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
@@ -332,23 +494,27 @@ public actor MobileRemoteService {
         return connected
     }
 
+    /// The keepalive owns `socket`, so it is closed whoever owns the host now;
+    /// only the reason shown is left to the live generation.
+    private func controlSocketUnresponsive(_ socket: URLSessionWebSocketTask, generation current: Int) {
+        if current == generation { lastRelayError = L("settings.mobileRemote.detail.relayUnresponsive") }
+        socket.cancel(with: .goingAway, reason: nil)
+    }
+
+    /// Answers within 10 s either way. The deadline does not wait for the
+    /// ping's own callback: on a half-open socket that only fires once the
+    /// socket is torn down, which is what the caller does after this throws.
     private static func ping(_ socket: URLSessionWebSocketTask) async throws {
         let once = OnceFlag()
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    socket.sendPing { error in
-                        guard once.claim() else { return }
-                        if let error { continuation.resume(throwing: error) } else { continuation.resume() }
-                    }
-                }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.sendPing { error in
+                guard once.claim() else { return }
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(10))
-                throw MightyError("릴레이가 ping에 응답하지 않습니다.")
+            DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                guard once.claim() else { return }
+                continuation.resume(throwing: MightyError("릴레이가 ping에 응답하지 않습니다."))
             }
-            try await group.next()
-            group.cancelAll()
         }
     }
 

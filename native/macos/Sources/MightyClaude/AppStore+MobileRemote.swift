@@ -169,6 +169,11 @@ extension AppStore {
         $toolPermissions.sink { [weak self] value in self?.mobileObserve(permissions: value) }.store(in: &mobileSubscriptions)
         // `$statusLines` is deliberately not observed: see SessionFingerprint.
         $queuedInputs.sink { [weak self] value in self?.mobileObserve(queued: value) }.store(in: &mobileSubscriptions)
+        // Asleep, the Mac missed the relay's pings and its control socket may be
+        // gone on the relay's side while it still looks open here.
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+            .sink { [weak self] _ in guard let self else { return }; Task { await self.mobileRemote.reconnectSoon() } }
+            .store(in: &mobileSubscriptions)
         let settings = snapshot.mobileRemote ?? MobileRemoteSettings()
         Task {
             await mobileRemote.attach(bridge)
