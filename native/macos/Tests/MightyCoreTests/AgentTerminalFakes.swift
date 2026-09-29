@@ -21,8 +21,10 @@ final class SkipInitialWaitClock: AgentTerminalClock, @unchecked Sendable {
 }
 
 /// Poll `condition` every 20 ms until it holds or `seconds` pass; true once it holds.
+/// The default only bounds a condition that never comes: every caller expects it
+/// to hold, and it returns as soon as it does, so a busy CI runner gets room.
 @discardableResult
-func waitFor(seconds: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
+func waitFor(seconds: TimeInterval = 30, _ condition: () -> Bool) async -> Bool {
     let deadline = Date().addingTimeInterval(seconds)
     while !condition() {
         guard Date() < deadline else { return false }

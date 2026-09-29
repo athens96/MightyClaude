@@ -423,6 +423,9 @@ public actor MobileRemoteService {
         }
         timeout.cancel()
     }
+    /// Long polls parked on `scope` right now; lets a test notify only once a
+    /// poll is really waiting instead of guessing with a sleep.
+    func parkedPolls(scope: String) -> Int { waiters[scope]?.count ?? 0 }
     private func unregister(scope: String, id: UUID) {
         if let continuation = waiters[scope]?.removeValue(forKey: id) { continuation.resume() }
     }

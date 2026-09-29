@@ -100,25 +100,32 @@ struct StatusLineTests {
     @Test func runnerFeedsStdinCapturesColourAndEnforcesTimeout() async throws {
         let cwd = FileManager.default.temporaryDirectory.path
         let env = ["PATH": "/usr/bin:/bin"]
+        // Cases that are not about the timeout get room: the app's 8 s default is
+        // a product budget for a warm machine, and a shell pipeline on a busy CI
+        // runner took longer than that. The timeout itself is pinned by `slow`.
+        let roomy: TimeInterval = 60
         let echo = StatusLineConfig(command: #"printf '\033[36m%s\033[0m %s' "$(cat | sed -n 's/.*"display_name":"\([^"]*\)".*/\1/p')" "$PWD""#, source: "t")
-        let result = await StatusLineSupport.run(echo, payload: ["model": ["display_name": "Fable"]], cwd: cwd, environment: env)
+        let result = await StatusLineSupport.run(echo, payload: ["model": ["display_name": "Fable"]], cwd: cwd, environment: env, timeout: roomy)
         #expect(result.status == 0 && result.error == nil)
         #expect(result.lines.first?.first?.text == "Fable" && result.lines.first?.first?.foreground == .standard(6))
         #expect(result.plainText.hasSuffix(cwd) || result.plainText.contains(cwd))
         let slow = await StatusLineSupport.run(StatusLineConfig(command: "sleep 5; echo late", source: "t"), payload: [:], cwd: cwd, environment: env, timeout: 0.4)
         #expect(slow.timedOut && slow.lines.isEmpty && slow.error?.contains("제한 시간") == true)
-        let failing = await StatusLineSupport.run(StatusLineConfig(command: "echo oops >&2; exit 3", source: "t"), payload: [:], cwd: cwd, environment: env)
+        let failing = await StatusLineSupport.run(StatusLineConfig(command: "echo oops >&2; exit 3", source: "t"), payload: [:], cwd: cwd, environment: env, timeout: roomy)
         #expect(failing.status == 3 && failing.lines.isEmpty && failing.error == "oops")
-        let partial = await StatusLineSupport.run(StatusLineConfig(command: "echo shown; exit 1", source: "t"), payload: [:], cwd: cwd, environment: env)
+        let partial = await StatusLineSupport.run(StatusLineConfig(command: "echo shown; exit 1", source: "t"), payload: [:], cwd: cwd, environment: env, timeout: roomy)
         #expect(partial.status == 1 && partial.plainText == "shown" && partial.error == nil)
-        let flood = await StatusLineSupport.run(StatusLineConfig(command: "yes | head -c 200000", source: "t"), payload: [:], cwd: cwd, environment: env)
+        let flood = await StatusLineSupport.run(StatusLineConfig(command: "yes | head -c 200000", source: "t"), payload: [:], cwd: cwd, environment: env, timeout: roomy)
         #expect(flood.lines.count == StatusLineSupport.maximumLines)
         // A command that ignores stdin and exits at once must not hurt the host (SIGPIPE-safe write).
-        let ignoring = await StatusLineSupport.run(StatusLineConfig(command: "exit 0", source: "t"), payload: ["big": String(repeating: "x", count: 60_000)], cwd: cwd, environment: env)
+        let ignoring = await StatusLineSupport.run(StatusLineConfig(command: "exit 0", source: "t"), payload: ["big": String(repeating: "x", count: 60_000)], cwd: cwd, environment: env, timeout: roomy)
         #expect(ignoring.status == 0 && ignoring.lines.isEmpty && ignoring.error == nil)
         // A backgrounded grandchild holding stdout cannot hang the result past the drain.
+        // A hang would answer only at the 15 s timeout (the grandchild lives 20 s),
+        // so answering before 12 s proves the bounded drain; the old 5 s timeout
+        // and 4 s bound left no room for a slow shell start on a busy CI runner.
         let started = Date()
-        let background = await StatusLineSupport.run(StatusLineConfig(command: "sleep 20 & echo quick", source: "t"), payload: [:], cwd: cwd, environment: env, timeout: 5)
-        #expect(background.plainText == "quick" && Date().timeIntervalSince(started) < 4)
+        let background = await StatusLineSupport.run(StatusLineConfig(command: "sleep 20 & echo quick", source: "t"), payload: [:], cwd: cwd, environment: env, timeout: 15)
+        #expect(background.plainText == "quick" && !background.timedOut && Date().timeIntervalSince(started) < 12)
     }
 }

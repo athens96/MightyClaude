@@ -27,14 +27,17 @@ import Foundation
         }
         do {
             let port = try await server.start()
-            let base = ["--silent", "--max-time", "3", "--output", "/dev/null", "--write-out", "%{http_code}", "--request", "POST"]
+            // The server's framing answer is under test, not curl's latency: the
+            // first curl launch on a cold, busy CI runner can take seconds, and a
+            // curl that gives up prints 000 instead of the server's status.
+            let base = ["--silent", "--max-time", "30", "--output", "/dev/null", "--write-out", "%{http_code}", "--request", "POST"]
             let url = "http://127.0.0.1:\(port)/events"
             for headers in [
                 ["--header", "Content-Length: 0", "--header", "Content-Length: 1"],
                 ["--header", "Transfer-Encoding: chunked", "--data", "{}"],
                 ["--header", "Authorization: first", "--header", "Authorization: second", "--header", "Content-Length: 0"],
             ] {
-                let result = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/usr/bin/curl"), arguments: base + headers + [url], timeout: 4)
+                let result = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/usr/bin/curl"), arguments: base + headers + [url], timeout: 45)
                 #expect(String(decoding: result.stdout, as: UTF8.self) == "400")
             }
             #expect(calls.value == 0)

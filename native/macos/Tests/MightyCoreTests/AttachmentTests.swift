@@ -157,14 +157,18 @@ private final class AttachmentEvents: @unchecked Sendable {
     @Test func cancelledAttachmentAdmissionThrowsBeforeDraftCanBeCleared() async throws {
         let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
         let binary = root.appendingPathComponent("gemini")
-        try Data("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then sleep 0.4; printf '0.43.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n".utf8).write(to: binary)
+        // The version probe holds until released, so the stop lands while the
+        // admission is really pending instead of guessing 50 ms into a 0.4 s probe.
+        try Data("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then folder=\"$(/usr/bin/dirname \"$0\")\"; : > \"$folder/probing\"; while [ ! -e \"$folder/release\" ]; do /bin/sleep 0.05; done; printf '0.43.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n".utf8).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
         let service = ProviderService(binaryOverrides: ["gemini": binary]); let events = AttachmentEvents()
         let runner = ProcessRunner(providerService: service, pluginDirectory: root, onEvent: { events.add($0) })
         let workspace = Workspace(id: "space", name: "Fixture", path: root.path)
         let attachment = try AttachmentSupport.make(name: "image.png", data: png)
         let pending = Task { try await runner.start(request: StartRunRequest(sessionId: "cancelled", workspaceId: "space", input: "", provider: "gemini", attachments: [attachment]), workspace: workspace) }
-        try await Task.sleep(nanoseconds: 50_000_000); await runner.stop(id: "cancelled")
+        try await wait { FileManager.default.fileExists(atPath: root.appendingPathComponent("probing").path) }
+        await runner.stop(id: "cancelled")
+        try Data().write(to: root.appendingPathComponent("release"))
         do { try await pending.value; Issue.record("Cancelled attachment admission returned success") } catch { #expect(error is CancellationError) }
         #expect(!events.values().contains { $0.entry?.text.contains("BAD_LAUNCH") == true })
         await runner.shutdown(); await service.shutdown()

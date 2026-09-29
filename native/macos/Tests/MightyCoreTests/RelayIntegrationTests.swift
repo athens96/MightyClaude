@@ -132,8 +132,10 @@ struct RelayIntegrationTests {
         }
         throw MightyError("릴레이가 수신 포트에서 응답하지 않았습니다.")
     }
+    /// A cold node start on a busy machine can take seconds; the loop ends as
+    /// soon as /healthz answers, so the 30 s budget only matters when it never does.
     private func waitForHealthz(port: Int) async -> Bool {
-        for _ in 0..<50 {
+        for _ in 0..<300 {
             if let (data, _) = try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/healthz")!), String(decoding: data, as: UTF8.self) == "ok" { return true }
             try? await Task.sleep(for: .milliseconds(100))
         }
@@ -180,7 +182,8 @@ struct RelayIntegrationTests {
             await service.attach(delegate) // the service holds its delegate weakly, as the app store does
             _ = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:\(port)"))
             var status = await service.status()
-            for _ in 0..<50 where !status.relayConnected { try await Task.sleep(for: .milliseconds(100)); status = await service.status() }
+            // Waits on the connection itself; 30 s only bounds a relay that never answers.
+            for _ in 0..<300 where !status.relayConnected { try await Task.sleep(for: .milliseconds(100)); status = await service.status() }
             #expect(status.relayConnected)
             let offer = try #require(status.pairingURL.flatMap(MobilePairingOffer.parse))
             try await body(service, offer)
@@ -195,7 +198,7 @@ struct RelayIntegrationTests {
     /// step never races a socket that is still being torn down or set up.
     private func waitForClients(_ service: MobileRemoteService, count: Int) async -> Int {
         var clients = await service.status().clients
-        for _ in 0..<80 where clients != count {
+        for _ in 0..<400 where clients != count { // 20 s, ends as soon as the count settles
             try? await Task.sleep(for: .milliseconds(50))
             clients = await service.status().clients
         }

@@ -138,7 +138,7 @@ struct TerminalPaneLifetimeTests {
         #expect(run.status == .running)
         #expect(await waitFor { pane.readOutput(handle: run.handle, fromOffset: 0, maxBytes: 1024).output.contains("started") })
         pane.sendUserInput("\u{03}")
-        #expect(await waitFor(seconds: 3) { !pane.isRunning(handle: run.handle) })
+        #expect(await waitFor { !pane.isRunning(handle: run.handle) })
         #expect(pane.terminationSignal(handle: run.handle) == SIGINT)
     }
 
@@ -203,12 +203,19 @@ struct TerminalPaneLifetimeTests {
         _ = processes.makeOrReuseRunner(forAgentPane: "polite") { polite }
         _ = processes.makeOrReuseRunner(forAgentPane: "stubborn") { stubborn }
         try await polite.launch(command: "sleep 30", handle: "p")
-        try await stubborn.launch(command: "trap '' TERM; while :; do sleep 1; done", handle: "s")
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // Quit only once the trap is in place: a guessed 200 ms can be too short for a
+        // shell start on a busy CI runner, and SIGTERM would then beat the trap.
+        // The marker is split in the command so only the running shell prints it.
+        try await stubborn.launch(command: "trap '' TERM; echo ar\"\"med; while :; do sleep 1; done", handle: "s")
+        #expect(await waitFor(seconds: 30) { stubborn.readOutput(handle: "s", fromOffset: 0, maxBytes: 64).output.contains("armed") })
         let began = Date()
         await processes.terminateAll(graceSeconds: 0.5)
-        #expect(Date().timeIntervalSince(began) < 2)
-        let deadline = Date().addingTimeInterval(3)
+        // Quit promises the 0.5 s grace plus one 50 ms poll. The margin absorbs the
+        // polls and the resumed test queuing behind the rest of the suite on a busy
+        // CI runner; a quit that waited for the TERM-ignoring child would never
+        // return at all, so 5 s still catches it.
+        #expect(Date().timeIntervalSince(began) < 5)
+        let deadline = Date().addingTimeInterval(30)
         while (polite.isRunning(handle: "p") || stubborn.isRunning(handle: "s")), Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         #expect(polite.terminationSignal(handle: "p") == SIGTERM)
         #expect(stubborn.terminationSignal(handle: "s") == SIGKILL)

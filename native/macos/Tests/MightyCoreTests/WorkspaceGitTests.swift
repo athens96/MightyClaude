@@ -22,7 +22,12 @@ struct WorkspaceGitTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let git = "/Library/Developer/CommandLineTools/usr/bin/git"
-        let initialized = try await ProcessCapture.run(executable: URL(fileURLWithPath: git), arguments: ["init", "-b", "main", directory.path], cwd: directory, timeout: 3)
+        // Fixture setup, not a product budget: the first git launch on a cold CI
+        // runner loads git and its templates from disk while the rest of the suite
+        // runs, and took over 5 s there. The generous bound only matters on a
+        // stalled machine, and this launch also warms git up before
+        // `WorkspaceGitInfo.read` is held to its own 2 s product budget below.
+        let initialized = try await ProcessCapture.run(executable: URL(fileURLWithPath: git), arguments: ["init", "-b", "main", directory.path], cwd: directory, timeout: 120)
         #expect(initialized.exitCode == 0)
         let cleanResult = await WorkspaceGitInfo.read(path: directory.path)
         let clean = try #require(cleanResult)

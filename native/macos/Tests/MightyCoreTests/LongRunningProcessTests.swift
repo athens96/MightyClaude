@@ -213,6 +213,12 @@ struct LongRunningProcessTests {
         let stopped = try #require(await runner.stop(handle: run.handle))
         #expect(stopped.status == .done)
         #expect(stopped.signal == SIGINT)
-        #expect(Date().timeIntervalSince(began) < AgentTerminalRunner.sigintToSIGTERMSeconds)
+        // "Returns at once" is pinned exactly on the fake clock by
+        // stopSendsSIGINTAndReturnsAtOnceForACooperativeProcess. Here the real PTY
+        // has to deliver SIGINT and end the process with it (the signal above);
+        // the wall bound only has to show stop did not sit through the whole
+        // escalation. Bounding it by the 3 s SIGINT stage measured the suite's
+        // scheduling instead: under load it took 4.7 s and 5.1 s with SIGINT delivered.
+        #expect(Date().timeIntervalSince(began) < AgentTerminalRunner.sigintToSIGTERMSeconds + AgentTerminalRunner.sigtermToSIGKILLSeconds)
     }
 }
