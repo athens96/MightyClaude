@@ -230,6 +230,8 @@ final class ComposerTextView: NSTextView, InputSessionRecoveryInputTransaction {
     private var keyBeganWithMarkedText = false
     private var keyReceivedNativeText = false
     private var keyConsumedApplicationCommand = false
+    /// Rises with every click and key, so a deferred caret move yields to them.
+    private var pointerGeneration = 0
     var isUpdatingInput: Bool { inputMutationDepth > 0 }
 
     func prepareForSubmission() {
@@ -255,7 +257,34 @@ final class ComposerTextView: NSTextView, InputSessionRecoveryInputTransaction {
     }
 
     override func keyDown(with event: NSEvent) {
+        pointerGeneration &+= 1
         performNativeKeyEvent(event) { super.keyDown(with: event) }
+    }
+
+    /// A click that ends a Korean composition is the input method's: it
+    /// commits the syllable and AppKit never moves the caret. Once the commit
+    /// has landed, put the caret where the user clicked. Nothing is committed
+    /// or discarded here; a later key or click wins.
+    override func mouseDown(with event: NSEvent) {
+        pointerGeneration &+= 1
+        let composing = hasMarkedText()
+        let clicked = characterIndexForInsertion(at: convert(event.locationInWindow, from: nil))
+        super.mouseDown(with: event)
+        guard composing, event.clickCount == 1 else { return }
+        placeCaretAfterComposition(at: clicked, generation: pointerGeneration, attemptsLeft: 10)
+    }
+
+    private func placeCaretAfterComposition(at clicked: Int, generation: Int, attemptsLeft: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            guard let self, self.pointerGeneration == generation, self.window?.firstResponder === self else { return }
+            // Moving the caret before the commit lands would be undone by it.
+            if self.hasMarkedText() || self.isUpdatingInput {
+                if attemptsLeft > 0 { self.placeCaretAfterComposition(at: clicked, generation: generation, attemptsLeft: attemptsLeft - 1) }
+                return
+            }
+            guard let location = ComposerCaret.afterCompositionClick(clicked: clicked, length: (self.string as NSString).length, selection: self.selectedRange()) else { return }
+            self.setSelectedRange(NSRange(location: location, length: 0))
+        }
     }
 
     // NSTextView otherwise uses the first click in an inactive window only
