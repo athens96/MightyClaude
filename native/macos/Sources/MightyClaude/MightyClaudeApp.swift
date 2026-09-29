@@ -17,6 +17,8 @@ enum MightyClaudeLauncher {
         if CommandLine.arguments.contains(PaneMCPServerLocation.headlessArgument) {
             AgentIOMCPCommand.run()
         }
+        // Before AppKit reads the language it draws its own menus in.
+        AppLanguage.applyToSystemInterface()
         // SwiftUI creates its own AppKitApplication if NSApp does not exist.
         // NSPrincipalClass alone is ignored by App.main(), so establish our
         // CEF-compatible singleton before handing scene management to SwiftUI.
@@ -51,24 +53,24 @@ struct MightyClaudeApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("프로젝트 폴더 열기…") { store.openWorkspace() }
+                Button(L("menu.openProject")) { store.openWorkspace() }
                     .keyboardShortcut("o", modifiers: .command)
                     .disabled(!store.isLoaded || store.hasModal)
-                Button("새 Claude 실행 창") { store.addSession(kind: "claude") }
+                Button(L("menu.newClaudePane")) { store.addSession(kind: "claude") }
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
             }
-            CommandMenu("워크스페이스") {
-                Button("워크스페이스 검색") { store.focusSearch = true }
+            CommandMenu(L("menu.workspace")) {
+                Button(L("menu.searchWorkspaces")) { store.focusSearch = true }
                     .keyboardShortcut("k", modifiers: .command).disabled(!store.isLoaded || store.hasModal)
-                Button("터미널 실행 창 추가") { store.addSession(kind: "shell") }
+                Button(L("menu.addTerminalPane")) { store.addSession(kind: "shell") }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
                 Divider()
-                Button("입력기 다시 연결") { store.reconnectInputMethod(editor: nil) }
-                Button("입력기 진단 저장") { store.saveInputMethodDiagnostics() }
+                Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: nil) }
+                Button(L("menu.saveInputDiagnostics")) { store.saveInputMethodDiagnostics() }
                 Divider()
-                Button("설정…") { store.showSettings = true }
+                Button(L("menu.settings")) { store.showSettings = true }
                     .keyboardShortcut(",", modifiers: .command)
                     .disabled(!store.isLoaded || store.hasModal)
             }

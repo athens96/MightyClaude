@@ -151,9 +151,9 @@ struct WorkspaceView: View {
             .background(selected ? Palette.accent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
             .help(workspace.path)
             .contextMenu {
-                Button("이름 변경…") { store.beginRenameWorkspace(workspace.id) }
-                Button("목록에서 제거", role: .destructive) { store.pendingRemoval = workspace }
-                Button("Finder에서 보기") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
+                Button(L("menu.rename")) { store.beginRenameWorkspace(workspace.id) }
+                Button(L("workspace.menu.remove"), role: .destructive) { store.pendingRemoval = workspace }
+                Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
             }
             if expanded {
                 ForEach(sessions) { session in
@@ -182,8 +182,8 @@ struct WorkspaceView: View {
                     .accessibilityLabel("\(session.title), \(permissionPending ? "승인 대기" : Palette.status(session.status))")
                     .background(session.id == store.snapshot.activeSessionId ? Palette.subtle : Color.clear, in: RoundedRectangle(cornerRadius: 6))
                     .contextMenu {
-                        Button("이름 변경…") { store.beginRenameSession(session.id) }
-                        Button("실행 창 닫기", role: .destructive) { store.closeSession(session.id) }
+                        Button(L("menu.rename")) { store.beginRenameSession(session.id) }
+                        Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
                     }
                 }
                 workspaceAddMenu(workspace)

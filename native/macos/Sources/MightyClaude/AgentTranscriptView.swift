@@ -416,7 +416,7 @@ final class AgentTranscriptTextView: SelectableTextView {
         contextCode = index < (textStorage?.length ?? 0) ? textStorage?.attribute(AgentTranscriptFormat.codeAttribute, at: index, effectiveRange: nil) as? String : nil
         if contextCode != nil {
             menu.addItem(.separator())
-            let item = NSMenuItem(title: "코드 블록 복사", action: #selector(copyCode), keyEquivalent: "")
+            let item = NSMenuItem(title: L("menu.copyCodeBlock"), action: #selector(copyCode), keyEquivalent: "")
             item.target = self; menu.addItem(item)
         }
         return menu

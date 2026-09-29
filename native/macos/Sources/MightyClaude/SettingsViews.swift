@@ -221,12 +221,13 @@ struct AppSettingsView: View {
                 Picker(L("settings.display.themeLabel"), selection: $store.snapshot.theme) { Text(L("settings.display.themeDarkMac")).tag("dark"); Text(L("settings.display.themeLightMac")).tag("light") }.pickerStyle(.segmented)
                 Picker(L("settings.display.languageLabel"), selection: Binding(
                     get: { AppLanguage(rawValue: UserDefaults.standard.string(forKey: "language") ?? "system") ?? .system },
-                    set: { UserDefaults.standard.set($0.rawValue, forKey: "language") }
+                    set: { UserDefaults.standard.set($0.rawValue, forKey: "language"); AppLanguage.applyToSystemInterface() }
                 )) {
                     Text(L("settings.display.languageSystem")).tag(AppLanguage.system)
                     Text(L("settings.display.languageKorean")).tag(AppLanguage.ko)
                     Text(L("settings.display.languageEnglish")).tag(AppLanguage.en)
                 }.pickerStyle(.segmented).accessibilityIdentifier("settings-language")
+                Text(L("settings.display.languageMenuNote")).font(.system(size: 11)).foregroundStyle(.secondary)
                 Toggle(isOn: Binding(get: { store.statusLineEnabled }, set: { store.statusLineEnabled = $0 })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L("settings.display.statusLineToggle"))

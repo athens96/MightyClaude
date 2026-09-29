@@ -92,3 +92,31 @@ public func resetLocaleCache() {
     _ko = nil
     _en = nil
 }
+
+public extension AppLanguage {
+    static let systemInterfaceKey = "AppleLanguages"
+    private static let appliedMarker = "languageAppliedToSystemInterface"
+    private static let previousValue = "languagePreviousSystemInterface"
+
+    /// AppKit draws its own menus (the app menu, Edit, Window, Help) in the
+    /// language it reads from AppleLanguages once, at launch. A choice of 한국어
+    /// or English goes there too; 시스템 gives back what was there before,
+    /// including a language set for this app in System Settings. `domain` is
+    /// the defaults domain `defaults` writes to.
+    static func applyToSystemInterface(_ defaults: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) {
+        let own = domain.flatMap { defaults.persistentDomain(forName: $0)?[systemInterfaceKey] }
+        let choice = AppLanguage(rawValue: defaults.string(forKey: "language") ?? "") ?? .system
+        let applied = defaults.bool(forKey: appliedMarker)
+        switch choice {
+        case .system:
+            guard applied else { return }
+            if let previous = defaults.array(forKey: previousValue) { defaults.set(previous, forKey: systemInterfaceKey) }
+            else { defaults.removeObject(forKey: systemInterfaceKey) }
+            defaults.removeObject(forKey: previousValue); defaults.removeObject(forKey: appliedMarker)
+        case .ko, .en:
+            if !applied, let own = own as? [String] { defaults.set(own, forKey: previousValue) }
+            defaults.set([choice.rawValue], forKey: systemInterfaceKey)
+            defaults.set(true, forKey: appliedMarker)
+        }
+    }
+}

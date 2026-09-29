@@ -1,4 +1,5 @@
 import AppKit
+import MightyCore
 import SwiftUI
 
 /// Installed only over non-editable title/blank space. Native buttons and the
@@ -29,7 +30,7 @@ final class WorkspaceTitlebarView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard enabled, rename != nil else { return nil }
         let menu = NSMenu()
-        let item = NSMenuItem(title: "워크스페이스 이름 변경…", action: #selector(renameWorkspace), keyEquivalent: "")
+        let item = NSMenuItem(title: L("menu.renameWorkspace"), action: #selector(renameWorkspace), keyEquivalent: "")
         item.target = self; menu.addItem(item)
         return menu
     }

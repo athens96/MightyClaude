@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import MightyCore
 import SwiftUI
 
 extension NSView {
@@ -338,7 +339,7 @@ final class PaneDockTabHandleView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let store, !store.hasModal else { return nil }
         let menu = NSMenu()
-        for (title, action) in [("이름 변경…", #selector(renamePane)), ("집중 보기", #selector(focusPane)), ("탭 닫기", #selector(closePane))] {
+        for (title, action) in [(L("menu.rename"), #selector(renamePane)), (L("menu.focusPane"), #selector(focusPane)), (L("menu.closeTab"), #selector(closePane))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
         return menu
