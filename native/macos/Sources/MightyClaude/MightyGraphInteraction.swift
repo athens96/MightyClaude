@@ -157,14 +157,17 @@ final class MightyGraphInteractionProbe: NSView {
     var isResizing: Bool { resizeDrag != nil }
     private struct ResizeDrag {
         let id: String
+        let edges: ResizeEdges
         let initialFrame: CGRect
         let initialPoint: CGPoint
         let initialZoom: CGFloat
+        /// The viewport point of the corner opposite the dragged sides.
         let anchor: CGPoint
         var size: CGSize
         var changed = false
     }
-    private struct ResizeAnchor { let id: String; let point: CGPoint; let size: CGSize }
+    private struct ResizeAnchor { let id: String; let point: CGPoint; let unit: CGPoint; let size: CGSize }
+    private var hoverEdges: ResizeEdges = []
     private var resizeDrag: ResizeDrag?
     private var finishingAnchor: ResizeAnchor?
     private var pendingPanNotification = false
@@ -239,12 +242,15 @@ final class MightyGraphInteractionProbe: NSView {
         strandedRetriesLeft = Self.strandedRetries
         notifyIfStranded(frames, incomingZoom: newZoom, incomingPan: incomingPan)
         layoutFrames = frames; zoom = newZoom; panOffset = incomingPan
-        let anchor = resizeDrag.map { ResizeAnchor(id: $0.id, point: $0.anchor, size: $0.size) } ?? finishingAnchor
+        let anchor = resizeDrag.map { ResizeAnchor(id: $0.id, point: $0.anchor, unit: $0.edges.pinnedUnit, size: $0.size) } ?? finishingAnchor
         guard let anchor else { return }
         guard let frame = frames.first(where: { $0.0 == anchor.id })?.1 else {
             cancelInteraction(); finishingAnchor = nil; return
         }
-        let adjusted = CGPoint(x: anchor.point.x - frame.minX * zoom, y: anchor.point.y - frame.minY * zoom)
+        // Pin the corner opposite the dragged sides: dragging a left or top
+        // side moves that side, never the one across from it.
+        let adjusted = CGPoint(x: anchor.point.x - (frame.minX + anchor.unit.x * frame.width) * zoom,
+                               y: anchor.point.y - (frame.minY + anchor.unit.y * frame.height) * zoom)
         if adjusted != panOffset {
             panOffset = adjusted
             // Publishing a SwiftUI binding during updateNSView is undefined.
@@ -304,20 +310,52 @@ final class MightyGraphInteractionProbe: NSView {
         let side = max(16, 22 * zoom)
         return CGRect(x: frame.maxX - side, y: frame.maxY - side, width: side, height: side)
     }
-    private func beginResize(id: String, point: CGPoint, frame: CGRect) {
+    /// How far outside a block's border a press still grabs that side. Inside
+    /// it the strip is thin: the block's own scroller and text sit there.
+    var resizeBand: CGFloat { max(4, 6 * zoom) }
+    static let resizeBandInside: CGFloat = 2
+    static let minimumBlockSize = CGSize(width: 300, height: 140)
+    static let maximumBlockSize = CGSize(width: 1400, height: 1200)
+    /// The block and sides a press at `point` would resize: the bottom-right
+    /// handle first, then a band along each border.
+    func resizeTarget(at point: CGPoint) -> (id: String, frame: CGRect, edges: ResizeEdges)? {
+        for (id, frame) in frames.reversed() where !auxiliaryNodeIDs.contains(id) {
+            if frame.contains(point), resizeHandleRect(for: frame).contains(point) { return (id, frame, .bottomRight) }
+            let edges = ResizeEdges.at(point, frame: frame, outside: resizeBand, inside: Self.resizeBandInside)
+            if !edges.isEmpty { return (id, frame, edges) }
+        }
+        return nil
+    }
+    static func cursor(for edges: ResizeEdges) -> NSCursor {
+        if edges.horizontal && edges.vertical {
+            if #available(macOS 15.0, *) {
+                let position: NSCursor.FrameResizePosition = switch (edges.contains(.left), edges.contains(.top)) {
+                case (true, true): .topLeft
+                case (true, false): .bottomLeft
+                case (false, true): .topRight
+                case (false, false): .bottomRight
+                }
+                return NSCursor.frameResize(position: position, directions: .all)
+            }
+            return .crosshair
+        }
+        return edges.horizontal ? .resizeLeftRight : .resizeUpDown
+    }
+    private func beginResize(id: String, point: CGPoint, frame: CGRect, edges: ResizeEdges) {
         guard zoom.isFinite, zoom > 0, let graphFrame = layoutFrames.first(where: { $0.0 == id })?.1 else { return }
         finishingAnchor = nil
         gestureRoute = nil; gestureTarget = nil; discardedMomentum = false
-        resizeDrag = ResizeDrag(id: id, initialFrame: graphFrame, initialPoint: point, initialZoom: zoom,
-                                anchor: frame.origin, size: graphFrame.size)
+        let unit = edges.pinnedUnit
+        resizeDrag = ResizeDrag(id: id, edges: edges, initialFrame: graphFrame, initialPoint: point, initialZoom: zoom,
+                                anchor: CGPoint(x: frame.minX + unit.x * frame.width, y: frame.minY + unit.y * frame.height),
+                                size: graphFrame.size)
         window?.makeFirstResponder(self)
-        NSCursor.crosshair.push()
+        Self.cursor(for: edges).push()
     }
     private func resize(to point: CGPoint) {
         guard var drag = resizeDrag else { return }
-        let width = min(1400, max(300, drag.initialFrame.width + (point.x - drag.initialPoint.x) / drag.initialZoom))
-        let height = min(1200, max(140, drag.initialFrame.height + (point.y - drag.initialPoint.y) / drag.initialZoom))
-        let size = CGSize(width: width, height: height)
+        let size = drag.edges.size(from: drag.initialFrame.size, delta: CGSize(width: point.x - drag.initialPoint.x, height: point.y - drag.initialPoint.y),
+                                   zoom: drag.initialZoom, minimum: Self.minimumBlockSize, maximum: Self.maximumBlockSize)
         guard size != drag.size else { return }
         drag.size = size; drag.changed = true; resizeDrag = drag
         onResize(drag.id, size, false)
@@ -329,7 +367,7 @@ final class MightyGraphInteractionProbe: NSView {
         scheduleInitialPosition()
         guard drag.changed else { return }
         let size = cancelled ? drag.initialFrame.size : drag.size
-        finishingAnchor = ResizeAnchor(id: drag.id, point: drag.anchor, size: size)
+        finishingAnchor = ResizeAnchor(id: drag.id, point: drag.anchor, unit: drag.edges.pinnedUnit, size: size)
         onResize(drag.id, size, true)
     }
     private func beginOverlayResize(at point: CGPoint, frame: CGRect, onLeft: Bool) {
@@ -358,6 +396,35 @@ final class MightyGraphInteractionProbe: NSView {
         scheduleInitialPosition()
         guard drag.changed else { return }
         onOverlayResize(cancelled ? drag.initialSize : drag.size, true)
+    }
+
+    // Hovering a block's border shows which way it will resize. A tracking
+    // area of its own, so no other view is sent moves it never asked for.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+    override func mouseMoved(with event: NSEvent) { showResizeCursor(at: convert(event.locationInWindow, from: nil), event: event) }
+    override func mouseExited(with event: NSEvent) {
+        if !hoverEdges.isEmpty, !isResizing { NSCursor.arrow.set() }
+        hoverEdges = []
+    }
+
+    /// Sets the resize cursor over a block's border and gives the arrow back
+    /// once the pointer leaves it; text inside a block sets its own cursor.
+    private func showResizeCursor(at point: CGPoint, event: NSEvent) {
+        var edges: ResizeEdges = []
+        if !disposed, !isPanning, !isResizing, overlayResize == nil, event.window === window, window?.attachedSheet == nil,
+           bounds.intersection(visibleRect).contains(point), !(overlayFrame?.contains(point) ?? false),
+           let graphRoot, let content = window?.contentView,
+           let hit = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow),
+           hit === graphRoot || hit === graphRoot.superview || hit.isDescendant(of: graphRoot) {
+            edges = resizeTarget(at: point)?.edges ?? []
+        }
+        if !edges.isEmpty { Self.cursor(for: edges).set() }
+        else if !hoverEdges.isEmpty { NSCursor.arrow.set() }
+        hoverEdges = edges
     }
 
     func setPanOffset(_ value: CGPoint) {
@@ -513,11 +580,12 @@ final class MightyGraphInteractionProbe: NSView {
         let node = frames.first { $0.1.contains(point) }
         if event.type == .leftMouseDown {
             commitInteractionPosition(panOffset)
-            select(node?.0)
-            if let node, !auxiliaryNodeIDs.contains(node.0), resizeHandleRect(for: node.1).contains(point) {
-                beginResize(id: node.0, point: point, frame: node.1)
+            if let target = resizeTarget(at: point) {
+                select(target.id)
+                beginResize(id: target.id, point: point, frame: target.frame, edges: target.edges)
                 return nil
             }
+            select(node?.0)
             if node == nil {
                 window.makeFirstResponder(self)
                 isPanning = true; dragLocation = point; NSCursor.closedHand.push()

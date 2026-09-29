@@ -9,6 +9,18 @@ struct CompanionPreferences: Codable {
     var notifications = true
     var reducedMotion = false
     var selectedPet = "mighty-raccoon"
+    /// The bubble's size as the user left it; nil is the default width and a
+    /// height that follows the content.
+    var bubbleWidth: Double?
+    var bubbleHeight: Double?
+}
+
+/// nil width is the default one; nil height follows the bubble's content.
+struct CompanionBubbleSize: Equatable {
+    var width: CGFloat?
+    var height: CGFloat?
+    var resolvedWidth: CGFloat { CompanionBubbleLayout.clampedWidth(width) }
+    var resolvedHeight: CGFloat? { height.map(CompanionBubbleLayout.clampedHeight) }
 }
 
 /// The approval the pet bubble offers. Only local Claude panes raise these.
@@ -338,7 +350,31 @@ final class AgentCompanion: ObservableObject {
     }
     private func updateOverlay() {
         overlay?.setVisible(preferences.enabled && !stopped)
-        overlay?.setTall(visibleApproval != nil)
+        overlay?.fit(bubble: bubbleSize, tall: visibleApproval != nil, keeping: .left)
+    }
+
+    /// Only while an edge of the bubble is being dragged.
+    @Published private(set) var liveBubbleSize: CompanionBubbleSize?
+    var bubbleSize: CompanionBubbleSize {
+        liveBubbleSize ?? CompanionBubbleSize(width: preferences.bubbleWidth.map { CGFloat($0) }, height: preferences.bubbleHeight.map { CGFloat($0) })
+    }
+    /// Follows a drag of the bubble's edge. The window grows toward the side
+    /// being dragged and keeps the other one; the size is saved once, at the end.
+    func resizeBubble(to size: CompanionBubbleSize, keeping side: CompanionPanel.Side, finished: Bool) {
+        overlay?.fit(bubble: size, tall: visibleApproval != nil, keeping: side)
+        guard finished else { liveBubbleSize = size; return }
+        liveBubbleSize = nil
+        var next = preferences
+        next.bubbleWidth = size.width.map { Double($0) }
+        next.bubbleHeight = size.height.map { Double($0) }
+        preferences = next
+    }
+    /// A drag that ended where it began, or whose bubble went away, leaves
+    /// the saved size as it was.
+    func cancelBubbleResize(keeping side: CompanionPanel.Side) {
+        guard liveBubbleSize != nil else { return }
+        liveBubbleSize = nil
+        overlay?.fit(bubble: bubbleSize, tall: visibleApproval != nil, keeping: side)
     }
 }
 
