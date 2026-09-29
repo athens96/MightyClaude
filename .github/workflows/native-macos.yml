@@ -59,6 +59,20 @@ jobs:
               msg = f"error={error}; exceptionType={exc_type}; passed=[{passed_str}]"
               msg_enc = msg.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')[:1500]
               print(f'::error title=macOS GUI smoke::{msg_enc}', flush=True)
+              # The job log needs a login; annotations are public. Put the smoke's own
+              # diagnostics and a summary of the accessibility tree there too.
+              def notice(title, text):
+                  enc = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  for i in range(0, min(len(enc), 6000), 1400):
+                      print(f'::notice title={title} ({i // 1400 + 1})::{enc[i:i + 1400]}', flush=True)
+              notice('macOS GUI smoke result', json.dumps({k: v for k, v in result.items() if k not in ('passed',)}, ensure_ascii=False, sort_keys=True))
+              if tree.exists():
+                  nodes = json.loads(tree.read_text())
+                  ids = sorted({n.get('id') for n in nodes if n.get('id')})
+                  classes = {}
+                  for n in nodes: classes[n.get('class')] = classes.get(n.get('class'), 0) + 1
+                  top = sorted(classes.items(), key=lambda kv: -kv[1])[:25]
+                  notice('macOS GUI smoke accessibility', json.dumps({'nodes': len(nodes), 'maxDepth': max((n.get('depth', 0) for n in nodes), default=0), 'ids': ids[:120], 'classes': top}, ensure_ascii=False))
               sys.exit(1)
           PY
       - name: Upload isolated macOS GUI result and screenshots
