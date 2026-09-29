@@ -16,7 +16,7 @@ the old snapshot and saves a copy; it never overwrites the old file.
 
 ## Mobile protocol (m1) over the relay
 
-Phones reach the desktop through a relay (`relay/`, Node + `ws`) that both sides dial outbound; the relay only forwards ciphertext. The host keeps a control socket (`/ws?serverId=…&role=server&v=1`) and opens one data socket per phone (`…&connectionId=…`). On each data socket: plaintext `hello`/`ready` (X25519 keys + 16-byte nonces), HKDF-SHA256 (`mightyclaude-relay-v1`), then ChaCha20-Poly1305 frames `[12B nonce = direction ‖ 0,0,0 ‖ counter][ciphertext+tag]` with strictly increasing counters. The first encrypted message is `auth` carrying the pairing key; the host answers `auth_ok` or `auth_error`. Full text: `docs/relay.md`.
+Phones reach the desktop through a relay (`relay/`, Node + `ws`) that both sides dial outbound; the relay only forwards ciphertext. The host keeps a control socket (`/ws?serverId=…&role=server&v=1&hostToken=…`) and opens one data socket per phone (`…&connectionId=…`, same `hostToken`); `serverId` is the lowercase hex SHA-256 of `hostToken`, which the relay checks on every host socket (4401 otherwise). On each data socket: plaintext `hello`/`ready` (X25519 keys + 16-byte nonces), HKDF-SHA256 (`mightyclaude-relay-v1`), then ChaCha20-Poly1305 frames `[12B nonce = direction ‖ 0,0,0 ‖ counter][ciphertext+tag]` with strictly increasing counters. The first encrypted message is `auth` carrying the pairing key; the host answers `auth_ok` or `auth_error`. Full text: `docs/relay.md`.
 
 Requests travel as `{id, method, path, body?}` → `{id, status, body}`; the host also pushes `{type:"notify", scope, revision}` and answers `ping` with `pong`.
 
@@ -31,7 +31,7 @@ Requests travel as `{id, method, path, body?}` → `{id, status, body}`; the hos
 | POST | `/m1/sessions/{id}/answers` | `{requestId, runId, answers: {question: {selectedOptions, customText?}}}` |
 | POST | `/m1/workspaces/{id}/sessions` | `{kind, provider?}` → 201 `{sessionId}` |
 
-Pairing string: `mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url X25519 public key>&relay=<ws(s)://host[:port]>&key=<pairing key>&name=<host name>`. Keys live in `<data>/mobile-remote/` (`mobile-remote.key`, `relay-keypair.json`, owner-only). Limits: 64 KiB body, 32 KiB text, 8 in-flight requests per phone, 32 phones, 10 s maximum wait. Wire types: `MightyCore/Remote/MobileRemoteModels.swift`; crypto: `RelayChannel.swift`.
+Pairing string: `mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url X25519 public key>&relay=<ws(s)://host[:port]>&key=<pairing key>&name=<host name>`. Keys live in `<data>/mobile-remote/` (`mobile-remote.key`, `relay-keypair.json`, `relay-host-token.json`, owner-only). Limits: 64 KiB body, 32 KiB text, 8 in-flight requests per phone, 32 phones, 10 s maximum wait. Wire types: `MightyCore/Remote/MobileRemoteModels.swift`; crypto: `RelayChannel.swift`.
 
 ## Providers
 

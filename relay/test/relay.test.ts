@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { WebSocket } from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -14,6 +16,14 @@ interface FrameInfo {
 }
 
 const silent = (): void => {};
+
+const sha256Hex = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+
+/** A host secret and the serverId derived from it, as the Mac computes them. */
+function identity(label: string): { serverId: string; hostToken: string } {
+  const hostToken = sha256Hex(`host-secret:${label}`);
+  return { serverId: sha256Hex(hostToken), hostToken };
+}
 
 let relay: RelayHandle;
 const open: WebSocket[] = [];
@@ -41,6 +51,17 @@ function closed(ws: WebSocket): Promise<CloseInfo> {
     ws.once('close', (code: number, reason: Buffer) =>
       resolve({ code, reason: reason.toString('utf8') }),
     );
+  });
+}
+
+/** The close code, or 'open' if the socket is still up after `ms`. */
+function closeCode(ws: WebSocket, ms = 1000): Promise<number | 'open'> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('open'), ms);
+    ws.once('close', (code: number) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
   });
 }
 
@@ -72,15 +93,16 @@ function collect(ws: WebSocket, count: number): Promise<FrameInfo[]> {
 
 /** control + client + host data sockets, fully paired. */
 async function pair(
-  serverId: string,
+  label: string,
   connectionId: string,
 ): Promise<{ control: WebSocket; client: WebSocket; host: WebSocket }> {
-  const control = socket(relay, { serverId, role: 'server', v: '1' });
+  const { serverId, hostToken } = identity(label);
+  const control = socket(relay, { serverId, role: 'server', v: '1', hostToken });
   await opened(control);
   const client = socket(relay, { serverId, role: 'client', connectionId, v: '1' });
   await opened(client);
   await nextJson(control);
-  const host = socket(relay, { serverId, role: 'server', connectionId, v: '1' });
+  const host = socket(relay, { serverId, role: 'server', connectionId, v: '1', hostToken });
   await opened(host);
   return { control, client, host };
 }
@@ -162,9 +184,9 @@ describe('pairing', () => {
   });
 
   it('buffers client frames and flushes them in order', async () => {
-    const serverId = 'buffer-1';
+    const { serverId, hostToken } = identity('buffer-1');
     const connectionId = 'conn-00000002';
-    const control = socket(relay, { serverId, role: 'server', v: '1' });
+    const control = socket(relay, { serverId, role: 'server', v: '1', hostToken });
     await opened(control);
     const client = socket(relay, { serverId, role: 'client', connectionId, v: '1' });
     await opened(client);
@@ -175,7 +197,7 @@ describe('pairing', () => {
     client.send(Buffer.from([3]));
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    const host = socket(relay, { serverId, role: 'server', connectionId, v: '1' });
+    const host = socket(relay, { serverId, role: 'server', connectionId, v: '1', hostToken });
     const frames = collect(host, 3);
     await opened(host);
     const received = await frames;
@@ -195,10 +217,10 @@ describe('pairing', () => {
   });
 
   it('closes a host data socket 4404 for an unknown connectionId', async () => {
-    const serverId = 'unknown-1';
-    const control = socket(relay, { serverId, role: 'server', v: '1' });
+    const { serverId, hostToken } = identity('unknown-1');
+    const control = socket(relay, { serverId, role: 'server', v: '1', hostToken });
     await opened(control);
-    const host = socket(relay, { serverId, role: 'server', connectionId: 'conn-00000004', v: '1' });
+    const host = socket(relay, { serverId, role: 'server', connectionId: 'conn-00000004', v: '1', hostToken });
     expect((await closed(host)).code).toBe(4404);
   });
 
@@ -207,9 +229,9 @@ describe('pairing', () => {
     const short = await startRelay({ host: '127.0.0.1', port: 0, logger: silent });
     try {
       expect(short.config.attachTimeoutMs).toBe(250);
-      const serverId = 'slow-host';
+      const { serverId, hostToken } = identity('slow-host');
       const connectionId = 'conn-00000005';
-      const control = new WebSocket(url(short, { serverId, role: 'server', v: '1' }));
+      const control = new WebSocket(url(short, { serverId, role: 'server', v: '1', hostToken }));
       open.push(control);
       await opened(control);
       const client = new WebSocket(url(short, { serverId, role: 'client', connectionId, v: '1' }));
@@ -225,19 +247,19 @@ describe('pairing', () => {
 
 describe('control socket', () => {
   it('closes the previous control socket with 4409 and inherits pending state', async () => {
-    const serverId = 'dup-control';
+    const { serverId, hostToken } = identity('dup-control');
     const connectionId = 'conn-00000006';
-    const first = socket(relay, { serverId, role: 'server', v: '1' });
+    const first = socket(relay, { serverId, role: 'server', v: '1', hostToken });
     await opened(first);
     const client = socket(relay, { serverId, role: 'client', connectionId, v: '1' });
     await opened(client);
     expect(await nextJson(first)).toEqual({ type: 'connected', connectionId });
 
-    const second = socket(relay, { serverId, role: 'server', v: '1' });
+    const second = socket(relay, { serverId, role: 'server', v: '1', hostToken });
     await opened(second);
     expect((await closed(first)).code).toBe(4409);
 
-    const host = socket(relay, { serverId, role: 'server', connectionId, v: '1' });
+    const host = socket(relay, { serverId, role: 'server', connectionId, v: '1', hostToken });
     await opened(host);
     client.send('after-takeover');
     expect((await nextFrame(host)).data.toString('utf8')).toBe('after-takeover');
@@ -265,12 +287,94 @@ describe('control socket', () => {
     expect((await clientClosed).code).toBe(4410);
     expect((await hostClosed).code).toBe(4410);
   });
+
+  it('accepts a reconnect from the same host secret and closes the old control socket 4409', async () => {
+    const { serverId, hostToken } = identity('same-secret');
+    const first = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(first);
+    const second = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(second);
+    expect((await closed(first)).code).toBe(4409);
+  });
+});
+
+describe('host ownership', () => {
+  const stranger = identity('stranger').hostToken;
+
+  it('refuses a control socket for an unclaimed serverId without the matching token', async () => {
+    const { serverId, hostToken } = identity('squat-idle');
+
+    const absent = socket(relay, { serverId, role: 'server', v: '1' });
+    expect(await closeCode(absent)).toBe(4401);
+    const wrong = socket(relay, { serverId, role: 'server', v: '1', hostToken: stranger });
+    expect(await closeCode(wrong)).toBe(4401);
+    // A token is only good for the serverId it hashes to.
+    const borrowed = socket(relay, { serverId: sha256Hex('someone-else'), role: 'server', v: '1', hostToken });
+    expect(await closeCode(borrowed)).toBe(4401);
+
+    // Nothing was registered: a phone finds no host until the owner arrives.
+    const early = socket(relay, { serverId, role: 'client', connectionId: 'conn-squat-01', v: '1' });
+    expect(await closeCode(early)).toBe(4404);
+
+    const owner = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(owner);
+    const phone = socket(relay, { serverId, role: 'client', connectionId: 'conn-squat-02', v: '1' });
+    await opened(phone);
+    expect(await nextJson(owner)).toEqual({ type: 'connected', connectionId: 'conn-squat-02' });
+  });
+
+  it('refuses a control socket without the matching token right after the host left', async () => {
+    const { serverId, hostToken } = identity('squat-after');
+    const owner = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(owner);
+    const ownerClosed = closed(owner);
+    owner.close(1000, 'sleep');
+    await ownerClosed;
+
+    const absent = socket(relay, { serverId, role: 'server', v: '1' });
+    expect(await closeCode(absent)).toBe(4401);
+    const wrong = socket(relay, { serverId, role: 'server', v: '1', hostToken: stranger });
+    expect(await closeCode(wrong)).toBe(4401);
+
+    const back = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(back);
+    expect(await closeCode(back, 200)).toBe('open');
+  });
+
+  it('refuses a host data socket without the matching token and still pairs the real one', async () => {
+    const { serverId, hostToken } = identity('data-owner');
+    const connectionId = 'conn-owner-01';
+    const control = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(control);
+    const client = socket(relay, { serverId, role: 'client', connectionId, v: '1' });
+    await opened(client);
+    expect(await nextJson(control)).toEqual({ type: 'connected', connectionId });
+    client.send('for-the-host');
+
+    const absent = socket(relay, { serverId, role: 'server', connectionId, v: '1' });
+    expect(await closeCode(absent)).toBe(4401);
+    const wrong = socket(relay, { serverId, role: 'server', connectionId, v: '1', hostToken: stranger });
+    expect(await closeCode(wrong)).toBe(4401);
+
+    const host = socket(relay, { serverId, role: 'server', connectionId, v: '1', hostToken });
+    const first = nextFrame(host);
+    await opened(host);
+    expect((await first).data.toString('utf8')).toBe('for-the-host');
+    host.send('for-the-phone');
+    expect((await nextFrame(client)).data.toString('utf8')).toBe('for-the-phone');
+  });
+
+  it('closes 4400 on a malformed host token', async () => {
+    const { serverId } = identity('malformed');
+    const ws = socket(relay, { serverId, role: 'server', v: '1', hostToken: 'not-hex' });
+    expect((await closed(ws)).code).toBe(4400);
+  });
 });
 
 describe('limits', () => {
   it('rejects the 33rd concurrent connection with 4429', async () => {
-    const serverId = 'cap-1';
-    const control = socket(relay, { serverId, role: 'server', v: '1' });
+    const { serverId, hostToken } = identity('cap-1');
+    const control = socket(relay, { serverId, role: 'server', v: '1', hostToken });
     await opened(control);
 
     const clients = Array.from({ length: 32 }, (_unused, index) =>
@@ -293,9 +397,9 @@ describe('limits', () => {
   });
 
   it('closes 4413 when the client overruns the buffer before the host attaches', async () => {
-    const serverId = 'overflow-1';
+    const { serverId, hostToken } = identity('overflow-1');
     const connectionId = 'conn-00000009';
-    const control = socket(relay, { serverId, role: 'server', v: '1' });
+    const control = socket(relay, { serverId, role: 'server', v: '1', hostToken });
     await opened(control);
     const client = socket(relay, { serverId, role: 'client', connectionId, v: '1' });
     await opened(client);
@@ -313,16 +417,16 @@ describe('limits', () => {
       maxSocketBufferedBytes: 0,
     });
     try {
-      const serverId = 'sockbuf-hc';
+      const { serverId, hostToken } = identity('sockbuf-hc');
       const connectionId = 'conn-sockbuf-01';
-      const ctrl = new WebSocket(url(tinyRelay, { serverId, role: 'server', v: '1' }));
+      const ctrl = new WebSocket(url(tinyRelay, { serverId, role: 'server', v: '1', hostToken }));
       open.push(ctrl);
       await opened(ctrl);
       const cli = new WebSocket(url(tinyRelay, { serverId, role: 'client', connectionId, v: '1' }));
       open.push(cli);
       await opened(cli);
       await nextJson(ctrl);
-      const hst = new WebSocket(url(tinyRelay, { serverId, role: 'server', connectionId, v: '1' }));
+      const hst = new WebSocket(url(tinyRelay, { serverId, role: 'server', connectionId, v: '1', hostToken }));
       open.push(hst);
       await opened(hst);
 
@@ -344,16 +448,16 @@ describe('limits', () => {
       maxSocketBufferedBytes: 0,
     });
     try {
-      const serverId = 'sockbuf-ch';
+      const { serverId, hostToken } = identity('sockbuf-ch');
       const connectionId = 'conn-sockbuf-02';
-      const ctrl = new WebSocket(url(tinyRelay, { serverId, role: 'server', v: '1' }));
+      const ctrl = new WebSocket(url(tinyRelay, { serverId, role: 'server', v: '1', hostToken }));
       open.push(ctrl);
       await opened(ctrl);
       const cli = new WebSocket(url(tinyRelay, { serverId, role: 'client', connectionId, v: '1' }));
       open.push(cli);
       await opened(cli);
       await nextJson(ctrl);
-      const hst = new WebSocket(url(tinyRelay, { serverId, role: 'server', connectionId, v: '1' }));
+      const hst = new WebSocket(url(tinyRelay, { serverId, role: 'server', connectionId, v: '1', hostToken }));
       open.push(hst);
       await opened(hst);
 

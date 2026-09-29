@@ -14,11 +14,13 @@
 
 WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`.
 
+호스트 토큰: 호스트는 무작위 32바이트를 16진수 64자로 적은 `hostToken`을 `<데이터 폴더>/mobile-remote/relay-host-token.json`(0600)에 한 번 만들어 두고, 자기 `serverId`를 그 토큰에서 만든다: `serverId = hex(SHA-256(hostToken의 UTF-8 바이트))`(소문자 64자). 호스트 소켓(제어·데이터)은 모두 `hostToken`(`^[A-Fa-f0-9]{32,64}$`, 형식이 틀리면 4400)을 싣고, 릴레이는 연결마다 `SHA-256(hostToken)`이 `serverId`와 같은지 다시 계산해 다르거나 토큰이 없으면 4401로 닫는다. 릴레이는 토큰을 기억하지 않으므로 호스트가 떨어져 있든 릴레이가 재시작했든 확인 결과가 같다. 클라이언트 데이터 소켓은 토큰을 싣지 않는다.
+
 | 소켓 | 쿼리 | 동작 |
 |---|---|---|
-| 호스트 제어 | `serverId=…&role=server&v=1` | 호스트당 1개. 릴레이가 텍스트 JSON으로 알림: `{"type":"connected","connectionId"}`, `{"type":"disconnected","connectionId"}`. 새 제어 소켓이 오면 이전 제어 소켓은 코드 4409로 닫힌다 |
+| 호스트 제어 | `serverId=…&role=server&v=1&hostToken=…` | 호스트당 1개. 릴레이가 텍스트 JSON으로 알림: `{"type":"connected","connectionId"}`, `{"type":"disconnected","connectionId"}`. 새 제어 소켓이 오면 이전 제어 소켓은 코드 4409로 닫힌다 |
 | 클라이언트 데이터 | `serverId=…&role=client&connectionId=<uuid>&v=1` | 호스트 제어 소켓이 없으면 4404로 즉시 닫음. 있으면 제어 소켓에 `connected`를 보내고 호스트 데이터 소켓을 최대 10초 기다린다(그동안 프레임 64개까지 버퍼, 초과 시 4413). 시간 내 안 오면 4504 |
-| 호스트 데이터 | `serverId=…&role=server&connectionId=<uuid>&v=1` | 대기 중인 클라이언트가 없으면 4404. 있으면 두 소켓을 양방향으로 잇는다 |
+| 호스트 데이터 | `serverId=…&role=server&connectionId=<uuid>&v=1&hostToken=…` | 대기 중인 클라이언트가 없으면 4404. 있으면 두 소켓을 양방향으로 잇는다 |
 
 데이터 소켓의 프레임(텍스트·바이너리)은 그대로 상대에게 전달된다. 한쪽이 닫히면 다른 쪽도 같은 코드로 닫고 제어 소켓에 `disconnected`를 보낸다. `GET /healthz` → `200 ok`.
 
@@ -39,6 +41,7 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 |---|---|---|
 | 1000 | normal | 정상 종료 |
 | 4400 | badRequest | 쿼리 파라미터 오류 |
+| 4401 | unauthorized | 호스트 소켓의 `hostToken`이 없거나 `SHA-256(hostToken)`이 `serverId`와 다름 |
 | 4404 | notFound | 호스트 제어 소켓 없음, 또는 알 수 없는 connectionId |
 | 4409 | conflict | 새 제어 소켓으로 대체됨 |
 | 4410 | hostOffline | 호스트 제어 소켓 연결 끊김 |
@@ -87,6 +90,8 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
 ## 페어링
 
 QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&relay=<wss://host:port 또는 ws://>&key=<pairingKey>&name=<percent-encoded 이름>`.
+
+`sid`는 위의 호스트 토큰에서 만든 `serverId`다. 토큰에서 만들기 전의 `serverId`로 페어링한 휴대폰은 한 번 다시 페어링해야 한다.
 
 `pairingKey`는 기존 모바일 리모트 키(32B base64url)를 그대로 쓴다. 키를 다시 만들면 키로만 인증하던 휴대폰(구버전 앱)은 재페어링해야 하고, 기기 토큰을 받은 휴대폰은 그대로 접속한다. 공개키가 바뀌는 일은 없다(키쌍은 파일을 지우지 않는 한 유지).
 
