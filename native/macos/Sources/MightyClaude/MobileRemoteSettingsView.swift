@@ -39,8 +39,10 @@ struct MobileRemoteSettingsSection: View {
                      : settings.enabled ? L("settings.mobileRemote.statusConnecting") : L("settings.mobileRemote.statusOff"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-                if settings.enabled, !status.relayConnected {
-                    Button(L("settings.mobileRemote.reconnectButton")) { Task { await store.mobileRemote.retryIfNeeded(); store.refreshMobileStatus() } }.controlSize(.small).disabled(store.mobileBusy)
+                // Shown while connected too: a socket a network change left
+                // half-open still reads as connected until its ping times out.
+                if settings.enabled, settings.effectiveRelayURL != nil {
+                    Button(L("settings.mobileRemote.reconnectButton")) { Task { await store.mobileRemote.reconnect(); store.refreshMobileStatus() } }.controlSize(.small).disabled(store.mobileBusy)
                 }
             }
             Text(status.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

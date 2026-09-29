@@ -9,6 +9,7 @@ import { useLiveStore } from '@/store/live';
 import { countAttention } from '@/lib/merge';
 import { t } from '@/lib/i18n';
 import { needsOnboarding } from '@/lib/onboarding';
+import { retryUnreachableHosts, unreachableHostIds } from '@/lib/offline-retry';
 import { spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const reachabilityKeys: Record<Reachability, string> = {
@@ -109,6 +110,22 @@ export default function HostsScreen() {
   // when it comes back, as a pull would.
   useFocusEffect(
     useCallback(() => appForeground.subscribe(() => void refreshAll()), [refreshAll]),
+  );
+  // A host that dropped off for a moment (the Mac changed networks or slept) comes
+  // back on the list by itself instead of waiting for a pull.
+  useFocusEffect(
+    useCallback(
+      () =>
+        retryUnreachableHosts({
+          unreachable: () => {
+            const state = useHostsStore.getState();
+            return unreachableHostIds(state.hosts, state.status);
+          },
+          refresh: (id) => useHostsStore.getState().refreshReachability(id, { quiet: true }),
+          subscribe: (listener) => useHostsStore.subscribe(listener),
+        }),
+      [],
+    ),
   );
 
   return (

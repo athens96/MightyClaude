@@ -256,7 +256,8 @@ POST /m1/sessions/{id}/guided
 ## 데스크톱 구현
 
 - `MightyCore/Remote/RelayChannel.swift`: X25519·HKDF·ChaCha20-Poly1305 채널, 호스트 키쌍 파일, 페어링 오퍼.
-- `MightyCore/Remote/MobileRemoteService.swift`: 릴레이 제어 소켓과 재접속, 휴대폰별 데이터 소켓(핸드셰이크·인증·요청 처리), m1 라우팅, 리비전 대기·알림. 페어링 키는 `<데이터 폴더>/mobile-remote/mobile-remote.key`, 키쌍은 `relay-keypair.json`(모두 소유자만 읽기).
+- `MightyCore/Remote/RelayLink.swift`: 제어 소켓을 새로 여는 규칙(ping 간격, 네트워크 경로 변화 판단). 동작은 [relay.md](relay.md) "재접속".
+- `MightyCore/Remote/MobileRemoteService.swift`: 릴레이 제어 소켓과 재접속(ping·네트워크 변화·깨어남·수동), 휴대폰별 데이터 소켓(핸드셰이크·인증·요청 처리), m1 라우팅, 리비전 대기·알림. 페어링 키는 `<데이터 폴더>/mobile-remote/mobile-remote.key`, 키쌍은 `relay-keypair.json`(모두 소유자만 읽기).
 - `MightyClaude/AppStore+MobileRemote.swift`: 스냅샷·권한·대기열 변화를 리비전으로 바꾸고 명령을 실제 창에 적용하는 브리지.
 - 설정 화면의 **모바일 리모트** 절: 스위치, 릴레이 주소, 연결 상태, QR 코드, 키 다시 만들기, 구버전 앱 허용 스위치, 페어링된 기기 목록(이름·처음/마지막 접속·연결 중·새 기기 표시)과 기기별 해제.
 - `MightyCore/Remote/MobileRemoteSupport.swift`: 확장의 순수 규칙(이름·페이지·설정 검증, 상태줄·사용량 변환, 명령 매핑, 마이티 블록 투영과 리비전 요약, 안내형 프롬프트, `/guided`의 관문 판정 `guidedDecision`).

@@ -175,11 +175,12 @@ struct RelayIntegrationTests {
     /// `body` runs — and shut down afterwards on every path, a failed
     /// expectation and a thrown error included. `defer` cannot await, so the
     /// teardown is spelled out on both exits instead.
-    private func withHost(directory: URL, port: Int, delegate: StaticHost,
+    private func withHost(directory: URL, port: Int, delegate: StaticHost, watchesNetwork: Bool = true, keepalive: TimeInterval? = nil,
                           _ body: (MobileRemoteService, MobilePairingOffer) async throws -> Void) async throws {
-        let service = MobileRemoteService(dataDirectory: directory, hostName: "Relay Mac", appVersion: "1.2.3")
+        let service = MobileRemoteService(dataDirectory: directory, hostName: "Relay Mac", appVersion: "1.2.3", watchesNetwork: watchesNetwork)
         do {
             await service.attach(delegate) // the service holds its delegate weakly, as the app store does
+            if let keepalive { await service.setKeepaliveInterval(keepalive) }
             _ = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:\(port)"))
             var status = await service.status()
             // Waits on the connection itself; 30 s only bounds a relay that never answers.
@@ -435,4 +436,113 @@ struct RelayIntegrationTests {
         }
         withExtendedLifetime(host) {}
     }
+    /// Polls the host until `relayConnected` reads `connected`, for at most
+    /// `seconds`; answers what it read last.
+    private func waitForRelay(_ service: MobileRemoteService, connected: Bool, seconds: Double) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if await service.status().relayConnected == connected { return connected }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return await service.status().relayConnected
+    }
+
+    /// The bug: after a network change the relay drops the host for not
+    /// answering its pings, while the Mac's socket never errors and it keeps
+    /// reporting "connected" forever. A frozen relay plays that half-open
+    /// socket: nothing answers, nothing closes. The host's own ping must notice,
+    /// say why, and get back in once the relay answers again.
+    @Test(.enabled(if: RelayIntegrationTests.relayHarnessAvailable))
+    func hostNoticesARelayThatStoppedAnsweringAndGetsBackInWhenItAnswersAgain() async throws {
+        let script = try #require(Self.relayScript)
+        let node = try #require(Self.node)
+        let (relay, port) = try await startRelay(script: script, node: node)
+        defer { relay.stop() }
+        let pid = relay.pid
+        defer { _ = Darwin.kill(pid, SIGCONT) } // runs before stop(), so a failed run never leaves node frozen
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("relay-live-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = StaticHost()
+        let details = LockedDetails()
+        try await withHost(directory: directory, port: port, delegate: host, watchesNetwork: false, keepalive: 1) { service, offer in
+            await service.observeStatus { status in if !status.relayConnected { details.append(status.detail) } }
+            #expect(Darwin.kill(pid, SIGSTOP) == 0)
+            // One keepalive round plus the 10 s ping deadline; 40 s is the ceiling.
+            #expect(await waitForRelay(service, connected: false, seconds: 40) == false)
+            let unresponsive = L("settings.mobileRemote.detail.relayUnresponsive")
+            for _ in 0..<50 where !details.values.contains(where: { $0.contains(unresponsive) }) { try await Task.sleep(for: .milliseconds(100)) }
+            #expect(details.values.contains { $0.contains(unresponsive) })
+
+            #expect(Darwin.kill(pid, SIGCONT) == 0)
+            #expect(await waitForRelay(service, connected: true, seconds: 40))
+            // The relay routes a phone to the new control socket, not the dead one.
+            let paired = try await dial(offer: offer, frame: ["type": "auth", "pairingKey": offer.pairingKey, "clientId": "cGhvbmUtbGl2ZS0wMQ", "clientName": "Live phone"])
+            #expect(paired.reply["type"] as? String == "auth_ok")
+            paired.phone.close()
+        }
+        withExtendedLifetime(host) {}
+    }
+
+    /// A new network under a socket that still reads as connected: the host
+    /// dials again anyway, once for a burst of reports, and is back in.
+    @Test(.enabled(if: RelayIntegrationTests.relayHarnessAvailable))
+    func aNetworkChangeRedialsOnceEvenWhileTheSocketLooksConnected() async throws {
+        let script = try #require(Self.relayScript)
+        let node = try #require(Self.node)
+        let (relay, port) = try await startRelay(script: script, node: node)
+        defer { relay.stop() }
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("relay-path-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = StaticHost()
+        try await withHost(directory: directory, port: port, delegate: host, watchesNetwork: false) { service, _ in
+            let wifi = RelayNetworkPath(satisfied: true, interfaces: ["en0"], gateways: ["192.168.0.1"])
+            await service.networkPathChanged(wifi) // the first report only sets the baseline
+            try await Task.sleep(for: .seconds(RelayLinkPolicy.pathSettle + 1))
+            let before = await service.restarts
+            #expect(await service.status().relayConnected)
+
+            // A Wi-Fi switch: several reports inside the settle window.
+            await service.networkPathChanged(RelayNetworkPath(satisfied: false, interfaces: []))
+            await service.networkPathChanged(RelayNetworkPath(satisfied: true, interfaces: ["en0"], gateways: ["10.0.0.1"]))
+            await service.networkPathChanged(RelayNetworkPath(satisfied: true, interfaces: ["en0", "utun4"], gateways: ["10.0.0.1"]))
+            try await Task.sleep(for: .seconds(RelayLinkPolicy.pathSettle + 1.5))
+            #expect(await service.restarts == before + 1)
+            #expect(await waitForRelay(service, connected: true, seconds: 30))
+        }
+        withExtendedLifetime(host) {}
+    }
+
+    /// Settings "다시 연결" dials again even while the host believes it is
+    /// connected — exactly when a half-open socket needs it.
+    @Test(.enabled(if: RelayIntegrationTests.relayHarnessAvailable))
+    func manualReconnectDialsAgainWhileConnected() async throws {
+        let script = try #require(Self.relayScript)
+        let node = try #require(Self.node)
+        let (relay, port) = try await startRelay(script: script, node: node)
+        defer { relay.stop() }
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("relay-manual-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = StaticHost()
+        try await withHost(directory: directory, port: port, delegate: host, watchesNetwork: false) { service, offer in
+            let before = await service.restarts
+            await service.reconnect()
+            #expect(await service.restarts == before + 1)
+            #expect(await waitForRelay(service, connected: true, seconds: 30))
+            let paired = try await dial(offer: offer, frame: ["type": "auth", "pairingKey": offer.pairingKey, "clientId": "cGhvbmUtbWFudWFsLTE", "clientName": "Manual phone"])
+            #expect(paired.reply["type"] as? String == "auth_ok")
+            paired.phone.close()
+        }
+        withExtendedLifetime(host) {}
+    }
+}
+
+/// Status details the host published, collected from its observer's thread.
+private final class LockedDetails: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    func append(_ value: String) { lock.lock(); stored.append(value); lock.unlock() }
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return stored }
 }
