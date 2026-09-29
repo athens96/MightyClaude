@@ -337,6 +337,10 @@ final class AppStore: ObservableObject {
         return ProviderOptions.fallbackRuntime(provider)
     }
 
+    /// Only the GUI smoke's attachment check fills this: it sends nothing, so a runner
+    /// without the CLI must not block the pane and hide what the check looks at.
+    @Published var smokeProvidersTreatedAvailable: Set<String> = []
+
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
         guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return "워크스페이스를 선택하세요." }
         if session.kind != "shell", updatingCLI == session.provider {
@@ -347,7 +351,7 @@ final class AppStore: ObservableObject {
         }
         if session.kind != "shell", checkRuntime {
             let provider = providerRuntime(session.provider, workspaceId: session.workspaceId)
-            if !provider.available { return provider.detail.isEmpty ? "\(provider.name) CLI를 설치하고 로그인하세요." : provider.detail }
+            if !provider.available, !smokeProvidersTreatedAvailable.contains(session.provider) { return provider.detail.isEmpty ? "\(provider.name) CLI를 설치하고 로그인하세요." : provider.detail }
             if session.settings.permissionMode == "auto", !provider.capabilities.permissionModes.contains("auto") { return "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI를 업데이트하거나 다른 권한을 선택하세요." }
             if session.settings.permissionMode == "onRequest", !provider.capabilities.permissionModes.contains("onRequest") { return "승인 요청을 사용하려면 Codex CLI 0.153.4 이상으로 업데이트하세요." }
         }
@@ -1261,6 +1265,7 @@ final class AppStore: ObservableObject {
         let previousAttachments = attachmentDrafts[sessionId]
         let clipboard = NSPasteboard(name: NSPasteboard.Name("dev.mightyclaude.smoke.\(UUID().uuidString)"))
         defer {
+            smokeProvidersTreatedAvailable.removeAll()
             clipboard.clearContents()
             discardAttachments(sessionId)
             attachmentDrafts[sessionId] = previousAttachments
@@ -1271,6 +1276,9 @@ final class AppStore: ObservableObject {
             snapshot.paneLayoutActiveSessionIds = previousLayoutSelections
         }
         var diagnostic: [String: Any] = ["systemClipboardTouched": false, "aiRequestSent": false]
+        // Nothing is sent, so the check does not need the CLI itself; a runner without
+        // it would otherwise block the pane and keep send off for another reason.
+        if let provider = snapshot.sessions.first(where: { $0.id == sessionId })?.provider { smokeProvidersTreatedAvailable.insert(provider) }
         drafts[sessionId] = ""
         attachmentDrafts[sessionId] = []
         selectSession(sessionId)
