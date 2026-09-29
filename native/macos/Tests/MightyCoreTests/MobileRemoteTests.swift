@@ -187,12 +187,26 @@ struct MobileRemoteTests {
         let state = try await call(service, "GET", "/m1/state?since=0&wait=0")
         #expect(state.0 == 200 && state.1["revision"] as? Int == 1 && (state.1["sessions"] as? [[String: Any]])?.first?["pendingPermissions"] as? Int == 1)
         // Long-poll: blocks until notify raises the revision, well before `wait`.
+        // Notify only once the poll is really parked, not after a guessed sleep:
+        // on a busy CI runner the request may not even have started after 300 ms,
+        // and then the already-advanced path answers instead of the wake path.
         let started = Date()
-        async let waiting = call(service, "GET", "/m1/state?since=1&wait=5")
-        try await Task.sleep(for: .milliseconds(300))
+        let wait = MobileRemoteService.maximumWait
+        async let waiting = call(service, "GET", "/m1/state?since=1&wait=\(Int(wait))")
+        let parkBy = Date().addingTimeInterval(60)
+        while await service.parkedPolls(scope: "state") == 0, Date() < parkBy { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(await service.parkedPolls(scope: "state") == 1)
         host.bump(state: true, session: false); await service.notify(scope: "state", revision: 2)
+        #expect(await service.parkedPolls(scope: "state") == 0)
         let woken = try await waiting
-        #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2 && Date().timeIntervalSince(started) < 4)
+        // The requirement is "answers on notify, not when `wait` runs out". A poll
+        // nobody wakes answers only a full `wait` (the 10 s maximum) after it
+        // parked, and it parked after `started`, so any answer inside `wait`
+        // proves the wake. The bound is that wait itself rather than a latency
+        // guess: the wake needs only a few actor hops, which a starved CI runner
+        // delayed past the old 4 s bound, while a real miss can never beat it.
+        #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2)
+        #expect(Date().timeIntervalSince(started) < wait)
         let timedOut = try await call(service, "GET", "/m1/state?since=2&wait=1")
         #expect(timedOut.1["revision"] as? Int == 2)
         #expect(try await call(service, "GET", "/m1/state?since=abc").0 == 400)

@@ -219,13 +219,19 @@ final class CoreTests {
         #expect((result.exitCode) == (0)); #expect((String(decoding: result.stdout, as: UTF8.self)) == ("한국어 stdin\n"))
         let start = Date()
         do { _ = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30"], timeout: 0.15); Issue.record("Timeout not enforced") } catch { }
-        #expect((Date().timeIntervalSince(start)) < (3))
+        // Enforced means "well before the 30 s child ends". The deadline task and
+        // the resumed test both queue behind the rest of the suite on a busy CI
+        // runner (the fallback timer alone is timeout + 2 s), so 3 s was a latency
+        // guess; 10 s still fails any run that waits for the child.
+        #expect((Date().timeIntervalSince(start)) < (10))
         do { _ = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/usr/bin/yes"), arguments: [], timeout: 3, maximumBytes: 1024); Issue.record("Output cap not enforced") } catch { }
     }
 
     @Test func testProcessGroupCleansBackgroundChildWhenParentExits() async throws {
         let directory = try temporary(); let pidFile = directory.appendingPathComponent("child.pid")
-        let result = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30 & echo $! > child.pid; printf PARENT_DONE"], cwd: directory, timeout: 3)
+        // The group cleanup is checked below; the capture bound is not under test
+        // and only has to outlast a slow shell start on a busy CI runner.
+        let result = try await ProcessCapture.run(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", "sleep 30 & echo $! > child.pid; printf PARENT_DONE"], cwd: directory, timeout: 20)
         #expect((String(decoding: result.stdout, as: UTF8.self)) == ("PARENT_DONE"))
         let pid = try #require(Int32(String(contentsOf: pidFile).trimmingCharacters(in: .whitespacesAndNewlines)))
         try await waitUntil { Darwin.kill(pid, 0) != 0 }
@@ -293,7 +299,7 @@ final class CoreTests {
         for provider in ProviderOptions.ids {
             try await runner.start(request: StartRunRequest(sessionId: provider, workspaceId: workspace.id, input: "한글 prompt", provider: provider), workspace: workspace)
         }
-        try await waitUntil(timeout: 8) { ProviderOptions.ids.allSatisfy { events.hasStatus("completed", id: $0) } }
+        try await waitUntil { ProviderOptions.ids.allSatisfy { events.hasStatus("completed", id: $0) } }
         for provider in ProviderOptions.ids {
             #expect(events.values().contains { $0.sessionId == provider && $0.resumeId == provider + "-session" })
             #expect(events.values().contains { $0.sessionId == provider && $0.entry?.kind == "assistant" && $0.entry?.provider == provider })
@@ -304,14 +310,20 @@ final class CoreTests {
     }
 
     @Test func testCancelPendingDiscoveryDoesNotLaunchLaterOrOverwriteReplacement() async throws {
-        let binary = try script("if [ \"$1\" = \"--version\" ]; then sleep 0.4; printf '1.0.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n", name: "gemini")
+        // The version probe holds until the test releases it, so the stop lands
+        // while discovery is really pending and the replacement exists before the
+        // discovery returns. A guessed 50 ms inside a 0.4 s probe was a race on a
+        // busy CI runner: the start might not have begun, or already launched.
+        let binary = try script("if [ \"$1\" = \"--version\" ]; then folder=\"$(/usr/bin/dirname \"$0\")\"; : > \"$folder/probing\"; while [ ! -e \"$folder/release\" ]; do /bin/sleep 0.05; done; printf '1.0.0\\n'; exit 0; fi\nprintf BAD_LAUNCH\n", name: "gemini")
+        let probing = binary.deletingLastPathComponent().appendingPathComponent("probing"), release = binary.deletingLastPathComponent().appendingPathComponent("release")
         let directory = try temporary(); let events = EventRecorder(); let service = ProviderService(binaryOverrides: ["gemini": binary])
         let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
         let request = StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "Hello", provider: "gemini")
         let pending = Task { try await runner.start(request: request, workspace: workspace) }
-        try await Task.sleep(nanoseconds: 50_000_000); await runner.stop(id: "pane")
+        try await waitUntil { FileManager.default.fileExists(atPath: probing.path) }; await runner.stop(id: "pane")
         try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, kind: "shell", input: "printf REPLACEMENT"), workspace: workspace)
+        try Data().write(to: release)
         try await pending.value; try await waitUntil { events.hasStatus("completed", id: "pane") }
         #expect(!(events.values().contains { $0.entry?.text.contains("BAD_LAUNCH") == true }))
         #expect((events.values().filter { $0.status == "stopped" }.count) == (1))

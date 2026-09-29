@@ -14,7 +14,7 @@ struct ModGraphTests {
         ["version": 1, "runId": environment["MIGHTY_CLAUDE_RUN_ID"]!, "claudeSessionId": "graph-session", "event": event, "sequence": 1, "graph": graph]
     }
     private func post(_ environment: [String: String], _ payload: [String: Any], graph: Bool = true, headers: [String: String] = [:]) async throws -> Int {
-        var request = URLRequest(url: URL(string: environment["MIGHTY_CLAUDE_BRIDGE_URL"]!)!, timeoutInterval: 3)
+        var request = URLRequest(url: URL(string: environment["MIGHTY_CLAUDE_BRIDGE_URL"]!)!, timeoutInterval: 30) // not a latency test; a busy CI runner can take seconds to answer
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer " + environment["MIGHTY_CLAUDE_BRIDGE_TOKEN"]!, forHTTPHeaderField: "Authorization")

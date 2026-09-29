@@ -187,7 +187,11 @@ final class CLIUpdateTests {
         _ = try native(root, update: "printf '%s' \"$$\" > \"$FIXTURE_PID\"\n/bin/sleep 30\n")
         let service = CLIUpdateService(environment: environment(root), homeDirectory: root, updateTimeout: 0.5)
         let began = Date(); let result = await service.update(provider: "claude")
-        #expect(result.status == "failed"); #expect(Date().timeIntervalSince(began) < 3)
+        // Bounded means "well before the 30 s child ends". The 0.5 s deadline and
+        // the resumed test queue behind the rest of the suite on a busy CI runner
+        // (the capture's fallback timer alone is timeout + 2 s), so 3 s was a
+        // latency guess; 10 s still fails any update that waits for the child.
+        #expect(result.status == "failed"); #expect(Date().timeIntervalSince(began) < 10)
         let pid = try await waitForPID(root.appendingPathComponent("pid"))
         #expect(Darwin.kill(pid, 0) != 0)
         await service.shutdown()

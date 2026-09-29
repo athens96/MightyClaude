@@ -187,8 +187,9 @@ struct AccountUsageTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
         let capture = root.appendingPathComponent("rpc")
         // This case verifies the RPC exchange, not its latency. Parallel CI
-        // process fixtures can consume the old one-second scheduling budget.
-        let value = try await AccountUsageService.probeCodex(command: ProviderCommand(provider: "codex", executable: binary, version: "fixture"), environment: ["CAPTURE": capture.path], timeout: 5)
+        // process fixtures can consume the old one- and five-second budgets; the
+        // probe answers as soon as the limits arrive, so a long bound costs nothing.
+        let value = try await AccountUsageService.probeCodex(command: ProviderCommand(provider: "codex", executable: binary, version: "fixture"), environment: ["CAPTURE": capture.path], timeout: 30)
         #expect(value.windows.map(\.usedPercent) == [20, 45])
         let lines = try String(contentsOf: capture, encoding: .utf8).split(separator: "\n")
         let methods = try lines.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }.compactMap { $0["method"] as? String }
