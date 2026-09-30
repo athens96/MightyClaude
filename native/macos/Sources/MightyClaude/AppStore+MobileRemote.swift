@@ -142,6 +142,25 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
     func mobilePerformCommand(sessionId: String, action: String) async throws -> String? {
         try await MainActor.run { try store.orClosing().mobilePerformCommand(sessionId, action: action) }
     }
+    /// The phone's svg previews, drawn the way the files pane shows them
+    /// (`NSImage`), at twice the point size up to the pixel cap. Runs off the
+    /// main thread inside the preview read, and only for an svg that
+    /// references nothing outside itself (`svgLoadsExternalContent`, checked
+    /// again here); a size past `maximumVectorPoints` is not drawn.
+    var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? {
+        { data, maximumPixels in
+            guard !FilePreviewClassifier.svgLoadsExternalContent(data), let image = NSImage(data: data),
+                  FilePreviewClassifier.isDrawable(width: image.size.width, height: image.size.height) else { return nil }
+            let scale = min(2, Double(maximumPixels) / Double(max(image.size.width, image.size.height)))
+            let width = max(1, Int((image.size.width * scale).rounded())), height = max(1, Int((image.size.height * scale).rounded()))
+            guard let context = MobileWorkspaceFiles.context(width: width, height: height, opaque: false) else { return nil }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+            NSGraphicsContext.restoreGraphicsState()
+            return context.makeImage().map { ($0, image.size) }
+        }
+    }
 }
 
 private extension Optional where Wrapped == AppStore {

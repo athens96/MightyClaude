@@ -1,0 +1,780 @@
+[
+  {
+    "language": "swift",
+    "text": "import Foundation\n// A comment\nlet name = \"hi \\\"there\\\"\" /* block\ncomment */ + 42\nfunc f() -> Int { return 3.14 }",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 6
+      },
+      {
+        "kind": "comment",
+        "location": 18,
+        "length": 12
+      },
+      {
+        "kind": "keyword",
+        "location": 31,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 42,
+        "length": 14
+      },
+      {
+        "kind": "comment",
+        "location": 57,
+        "length": 19
+      },
+      {
+        "kind": "number",
+        "location": 79,
+        "length": 2
+      },
+      {
+        "kind": "keyword",
+        "location": 82,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 100,
+        "length": 6
+      },
+      {
+        "kind": "number",
+        "location": 107,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "swift",
+    "text": "let text = \"\"\"\nmulti \"line\"\n\"\"\"\nlet x2 = y1",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 11,
+        "length": 20
+      },
+      {
+        "kind": "keyword",
+        "location": 32,
+        "length": 3
+      }
+    ]
+  },
+  {
+    "language": "javascript",
+    "text": "const a = `tmpl\n${b}` + 'single' // note\nexport async function f() { return null; }",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 5
+      },
+      {
+        "kind": "string",
+        "location": 10,
+        "length": 11
+      },
+      {
+        "kind": "string",
+        "location": 24,
+        "length": 8
+      },
+      {
+        "kind": "comment",
+        "location": 33,
+        "length": 7
+      },
+      {
+        "kind": "keyword",
+        "location": 41,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 48,
+        "length": 5
+      },
+      {
+        "kind": "keyword",
+        "location": 54,
+        "length": 8
+      },
+      {
+        "kind": "keyword",
+        "location": 69,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 76,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "python",
+    "text": "# heading\ndef f(self):\n    \"\"\"doc\n    string\"\"\"\n    return None if x else 0x1F",
+    "tokens": [
+      {
+        "kind": "comment",
+        "location": 0,
+        "length": 9
+      },
+      {
+        "kind": "keyword",
+        "location": 10,
+        "length": 3
+      },
+      {
+        "kind": "keyword",
+        "location": 16,
+        "length": 4
+      },
+      {
+        "kind": "string",
+        "location": 27,
+        "length": 20
+      },
+      {
+        "kind": "keyword",
+        "location": 52,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 59,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 64,
+        "length": 2
+      },
+      {
+        "kind": "keyword",
+        "location": 69,
+        "length": 4
+      },
+      {
+        "kind": "number",
+        "location": 74,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "shell",
+    "text": "echo $# a#b # real comment\nif [ -n \"$X\" ]; then exit 1; fi",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 4
+      },
+      {
+        "kind": "comment",
+        "location": 12,
+        "length": 14
+      },
+      {
+        "kind": "keyword",
+        "location": 27,
+        "length": 2
+      },
+      {
+        "kind": "string",
+        "location": 35,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 43,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 48,
+        "length": 4
+      },
+      {
+        "kind": "number",
+        "location": 53,
+        "length": 1
+      },
+      {
+        "kind": "keyword",
+        "location": 56,
+        "length": 2
+      }
+    ]
+  },
+  {
+    "language": "sql",
+    "text": "SELECT id FROM users WHERE name = 'kim' -- who\nand Age > 30;",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 10,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 21,
+        "length": 5
+      },
+      {
+        "kind": "string",
+        "location": 34,
+        "length": 5
+      },
+      {
+        "kind": "comment",
+        "location": 40,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 47,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 57,
+        "length": 2
+      }
+    ]
+  },
+  {
+    "language": "dockerfile",
+    "text": "FROM node:22 AS build\nrun npm ci # install\nCOPY . /app",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 4
+      },
+      {
+        "kind": "number",
+        "location": 10,
+        "length": 2
+      },
+      {
+        "kind": "keyword",
+        "location": 13,
+        "length": 2
+      },
+      {
+        "kind": "keyword",
+        "location": 22,
+        "length": 3
+      },
+      {
+        "kind": "comment",
+        "location": 33,
+        "length": 9
+      },
+      {
+        "kind": "keyword",
+        "location": 43,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "makefile",
+    "text": "ifeq ($(OS),mac)\ninclude common.mk\nendif # done",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 17,
+        "length": 7
+      },
+      {
+        "kind": "keyword",
+        "location": 35,
+        "length": 5
+      },
+      {
+        "kind": "comment",
+        "location": 41,
+        "length": 6
+      }
+    ]
+  },
+  {
+    "language": "json",
+    "text": "{\"a\": true, \"b\": null, \"c\": [1, 2.5, -3], \"d\": \"x\\\"y\"}",
+    "tokens": [
+      {
+        "kind": "string",
+        "location": 1,
+        "length": 3
+      },
+      {
+        "kind": "keyword",
+        "location": 6,
+        "length": 4
+      },
+      {
+        "kind": "string",
+        "location": 12,
+        "length": 3
+      },
+      {
+        "kind": "keyword",
+        "location": 17,
+        "length": 4
+      },
+      {
+        "kind": "string",
+        "location": 23,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 29,
+        "length": 1
+      },
+      {
+        "kind": "number",
+        "location": 32,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 38,
+        "length": 1
+      },
+      {
+        "kind": "string",
+        "location": 42,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 47,
+        "length": 6
+      }
+    ]
+  },
+  {
+    "language": "yaml",
+    "text": "name: app # comment\nenabled: yes\ncount: 3",
+    "tokens": [
+      {
+        "kind": "comment",
+        "location": 10,
+        "length": 9
+      },
+      {
+        "kind": "keyword",
+        "location": 29,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 40,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "language": "toml",
+    "text": "[tool]\nflag = true # c\ntext = \"\"\"\nlong\n\"\"\"",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 14,
+        "length": 4
+      },
+      {
+        "kind": "comment",
+        "location": 19,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 30,
+        "length": 12
+      }
+    ]
+  },
+  {
+    "language": "html",
+    "text": "<!-- note -->\n<a href=\"x\">link</a>",
+    "tokens": [
+      {
+        "kind": "comment",
+        "location": 0,
+        "length": 13
+      },
+      {
+        "kind": "string",
+        "location": 22,
+        "length": 3
+      }
+    ]
+  },
+  {
+    "language": "css",
+    "text": "/* reset */ body { margin: 0 !important; display: none; }",
+    "tokens": [
+      {
+        "kind": "comment",
+        "location": 0,
+        "length": 11
+      },
+      {
+        "kind": "number",
+        "location": 27,
+        "length": 1
+      },
+      {
+        "kind": "keyword",
+        "location": 30,
+        "length": 9
+      },
+      {
+        "kind": "keyword",
+        "location": 50,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "rust",
+    "text": "fn f<'a>(s: &'a str) -> usize { let t = \"multi\nline\"; s.len() + 1 }",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 2
+      },
+      {
+        "kind": "keyword",
+        "location": 32,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 40,
+        "length": 12
+      },
+      {
+        "kind": "number",
+        "location": 64,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "language": "go",
+    "text": "package main\nimport \"fmt\"\nvar raw = `a\nb`\nfunc main() { fmt.Println('x', 7) }",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 7
+      },
+      {
+        "kind": "keyword",
+        "location": 13,
+        "length": 6
+      },
+      {
+        "kind": "string",
+        "location": 20,
+        "length": 5
+      },
+      {
+        "kind": "keyword",
+        "location": 26,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 36,
+        "length": 5
+      },
+      {
+        "kind": "keyword",
+        "location": 42,
+        "length": 4
+      },
+      {
+        "kind": "string",
+        "location": 68,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 73,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "language": "kotlin",
+    "text": "fun main() { val s = \"\"\"raw\"\"\" ; println(s) } // end",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 3
+      },
+      {
+        "kind": "keyword",
+        "location": 13,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 21,
+        "length": 9
+      },
+      {
+        "kind": "comment",
+        "location": 46,
+        "length": 6
+      }
+    ]
+  },
+  {
+    "language": "java",
+    "text": "public class A { int x = 0; /** doc */ String s = \"q\"; }",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 7,
+        "length": 5
+      },
+      {
+        "kind": "keyword",
+        "location": 17,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 25,
+        "length": 1
+      },
+      {
+        "kind": "comment",
+        "location": 28,
+        "length": 10
+      },
+      {
+        "kind": "string",
+        "location": 50,
+        "length": 3
+      }
+    ]
+  },
+  {
+    "language": "c",
+    "text": "#include <stdio.h>\nint main(void) { return NULL == 0 ? 1 : 0; } // c",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 19,
+        "length": 3
+      },
+      {
+        "kind": "keyword",
+        "location": 28,
+        "length": 4
+      },
+      {
+        "kind": "keyword",
+        "location": 36,
+        "length": 6
+      },
+      {
+        "kind": "keyword",
+        "location": 43,
+        "length": 4
+      },
+      {
+        "kind": "number",
+        "location": 51,
+        "length": 1
+      },
+      {
+        "kind": "number",
+        "location": 55,
+        "length": 1
+      },
+      {
+        "kind": "number",
+        "location": 59,
+        "length": 1
+      },
+      {
+        "kind": "comment",
+        "location": 64,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "gradle",
+    "text": "plugins { id \"app\" }\ndependencies { implementation(\"x:y:1.0\") }",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 7
+      },
+      {
+        "kind": "string",
+        "location": 13,
+        "length": 5
+      },
+      {
+        "kind": "keyword",
+        "location": 21,
+        "length": 12
+      },
+      {
+        "kind": "keyword",
+        "location": 36,
+        "length": 14
+      },
+      {
+        "kind": "string",
+        "location": 51,
+        "length": 9
+      }
+    ]
+  },
+  {
+    "language": "swift",
+    "text": "let 한글 = \"문자열 🎉\" // 주석 😀\nlet n = 42",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 9,
+        "length": 8
+      },
+      {
+        "kind": "comment",
+        "location": 18,
+        "length": 8
+      },
+      {
+        "kind": "keyword",
+        "location": 27,
+        "length": 3
+      },
+      {
+        "kind": "number",
+        "location": 35,
+        "length": 2
+      }
+    ]
+  },
+  {
+    "language": "javascript",
+    "text": "const s = \"unterminated\nconst t = 1;",
+    "tokens": [
+      {
+        "kind": "keyword",
+        "location": 0,
+        "length": 5
+      },
+      {
+        "kind": "string",
+        "location": 10,
+        "length": 13
+      },
+      {
+        "kind": "keyword",
+        "location": 24,
+        "length": 5
+      },
+      {
+        "kind": "number",
+        "location": 34,
+        "length": 1
+      }
+    ]
+  },
+  {
+    "language": "python",
+    "text": "x = \"a\" + 'b' #c\ny = 1e10",
+    "tokens": [
+      {
+        "kind": "string",
+        "location": 4,
+        "length": 3
+      },
+      {
+        "kind": "string",
+        "location": 10,
+        "length": 3
+      },
+      {
+        "kind": "comment",
+        "location": 14,
+        "length": 2
+      },
+      {
+        "kind": "number",
+        "location": 21,
+        "length": 4
+      }
+    ]
+  },
+  {
+    "language": "plain",
+    "text": "let x = \"not highlighted\" // 42",
+    "tokens": []
+  },
+  {
+    "language": "xml",
+    "text": "<?xml version=\"1.0\"?>\n<!-- a --><key>v</key>",
+    "tokens": [
+      {
+        "kind": "string",
+        "location": 14,
+        "length": 5
+      },
+      {
+        "kind": "comment",
+        "location": 22,
+        "length": 10
+      }
+    ]
+  }
+]

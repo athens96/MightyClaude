@@ -40,6 +40,19 @@ struct WorkspaceFilesTests {
         #expect(try WorkspaceFiles.list("src/inner", root: root).entries.map(\.relativePath) == ["src/inner/deep.swift"])
     }
 
+    @Test func enumerationStopsAtItsCeilingAndSaysTheListingIsTruncated() throws {
+        let (root, outside) = try makeRoot()
+        defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: outside) }
+        for index in 0..<30 { try write("x", "f\(index).txt", in: root) }
+        let capped = try WorkspaceFiles.list("", root: root, enumerationLimit: 12)
+        #expect(capped.entries.count == 12 && capped.truncated)
+        let exact = try WorkspaceFiles.list("", root: root, enumerationLimit: 30)
+        #expect(exact.entries.count == 30 && !exact.truncated)
+        #expect(WorkspaceFiles.maximumEnumeratedNames > WorkspaceFiles.maximumEntriesPerFolder)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("한글 폴더"), withIntermediateDirectories: true)
+        #expect(try WorkspaceFiles.list("", root: root).entries.first?.name == "한글 폴더")
+    }
+
     @Test func pureSortIsStable() {
         let entries = [
             WorkspaceFileEntry(name: "z10", relativePath: "z10", isDirectory: false),
