@@ -1,4 +1,16 @@
-import { FOLLOW_THRESHOLD, PULL_REFRESH_DISTANCE, PULL_START_SLACK, blocksProgressKey, entriesProgressKey, followAfterScroll, isNearBottom, pullPhase } from '@/lib/follow';
+import {
+  FOLLOW_THRESHOLD,
+  PULL_REFRESH_DISTANCE,
+  PULL_START_SLACK,
+  blocksProgressKey,
+  bottomOffset,
+  entriesProgressKey,
+  followAfterScroll,
+  isMeasured,
+  isNearBottom,
+  keyboardEvents,
+  pullPhase,
+} from '@/lib/follow';
 
 const at = (offsetY: number) => ({ contentHeight: 1000, viewportHeight: 400, offsetY });
 
@@ -24,6 +36,39 @@ describe('following the newest content', () => {
     expect(followAfterScroll(true, at(0), false)).toBe(true);
     // Reading higher up stays reading, even when a programmatic scroll lands at the end.
     expect(followAfterScroll(false, at(600), false)).toBe(false);
+  });
+});
+
+describe('where the newest content sits', () => {
+  it('is the measured content less the measured viewport', () => {
+    expect(bottomOffset({ contentHeight: 1000, viewportHeight: 400 })).toBe(600);
+    // A footer measured late moves the bottom with it.
+    expect(bottomOffset({ contentHeight: 1180, viewportHeight: 400 })).toBe(780);
+    // So does the keyboard shrinking the viewport.
+    expect(bottomOffset({ contentHeight: 1000, viewportHeight: 120 })).toBe(880);
+  });
+
+  it('is the top for a list shorter than the screen', () => {
+    expect(bottomOffset({ contentHeight: 200, viewportHeight: 400 })).toBe(0);
+    expect(bottomOffset({ contentHeight: 400, viewportHeight: 400 })).toBe(0);
+  });
+
+  it('is only trusted once both sizes have been reported', () => {
+    expect(isMeasured({ contentHeight: 0, viewportHeight: 400 })).toBe(false);
+    expect(isMeasured({ contentHeight: 1000, viewportHeight: 0 })).toBe(false);
+    expect(isMeasured({ contentHeight: 1000, viewportHeight: 400 })).toBe(true);
+  });
+
+  it('lands inside the follow threshold, so the jump itself keeps following on', () => {
+    const metrics = { contentHeight: 1234, viewportHeight: 567 };
+    expect(isNearBottom({ ...metrics, offsetY: bottomOffset(metrics) })).toBe(true);
+  });
+});
+
+describe('the keyboard events the composer follows', () => {
+  it('moves with the keyboard on iOS and after it on Android', () => {
+    expect(keyboardEvents('ios')).toEqual({ show: 'keyboardWillShow', hide: 'keyboardWillHide' });
+    expect(keyboardEvents('android')).toEqual({ show: 'keyboardDidShow', hide: 'keyboardDidHide' });
   });
 });
 
