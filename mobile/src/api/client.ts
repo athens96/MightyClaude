@@ -25,6 +25,8 @@ import {
   type CompletedUpload,
   type CreateSessionResponse,
   type EntriesPage,
+  type FileListing,
+  type FilePreview,
   type GuidedRequest,
   type HostInfo,
   type MessageCommandAction,
@@ -63,14 +65,17 @@ export interface PollOptions {
   signal?: AbortSignal;
 }
 
-/** An m1-level failure reported by the host with a `{ protocol, error }` body. */
+/** An m1-level failure reported by the host with a `{ protocol, error, code? }` body. */
 export class ApiError extends Error {
   readonly status: number;
+  /** A machine-readable reason, sent by the file routes (`FileErrorCode`). */
+  readonly code: string | undefined;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 
   /** 401 means the stored pairing key no longer matches the host. */
@@ -121,6 +126,14 @@ function pollQuery(options: PollOptions | undefined): string {
   if (options?.since !== undefined) params.set('since', String(options.since));
   params.set('wait', String(clampWait(options?.wait)));
   return `?${params.toString()}`;
+}
+
+function errorCodeFrom(body: unknown): string | undefined {
+  if (body !== null && typeof body === 'object' && 'code' in body) {
+    const value = (body as { code: unknown }).code;
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return undefined;
 }
 
 function errorMessageFrom(body: unknown, status: number): string {
@@ -239,6 +252,10 @@ export interface MobileClient {
     input: { kind: SessionKind; provider?: Provider },
     signal?: AbortSignal,
   ): Promise<CreateSessionResponse>;
+  /** One folder of a workspace, read-only ("files"); `""` is the workspace root. */
+  listFiles(workspaceId: string, path: string, signal?: AbortSignal): Promise<FileListing>;
+  /** One file's preview, read-only ("files"). */
+  filePreview(workspaceId: string, path: string, signal?: AbortSignal): Promise<FilePreview>;
 }
 
 class AbortedError extends Error {
@@ -272,7 +289,11 @@ export function createClient(channel: RelayChannel): MobileClient {
       : await inflight;
 
     if (response.status < 200 || response.status >= 300) {
-      throw new ApiError(response.status, errorMessageFrom(response.body, response.status));
+      throw new ApiError(
+        response.status,
+        errorMessageFrom(response.body, response.status),
+        errorCodeFrom(response.body),
+      );
     }
     if (response.body === null || response.body === undefined) {
       throw new ApiError(response.status, '응답을 해석할 수 없습니다.');
@@ -495,6 +516,22 @@ export function createClient(channel: RelayChannel): MobileClient {
         'POST',
         `/m1/workspaces/${encodeURIComponent(workspaceId)}/sessions`,
         input,
+        signal,
+      ),
+
+    listFiles: (workspaceId, path, signal) =>
+      request<FileListing>(
+        'GET',
+        `/m1/workspaces/${encodeURIComponent(workspaceId)}/files${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+        undefined,
+        signal,
+      ),
+
+    filePreview: (workspaceId, path, signal) =>
+      request<FilePreview>(
+        'GET',
+        `/m1/workspaces/${encodeURIComponent(workspaceId)}/file?path=${encodeURIComponent(path)}`,
+        undefined,
         signal,
       ),
   };
