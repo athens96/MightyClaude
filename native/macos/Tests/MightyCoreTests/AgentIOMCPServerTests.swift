@@ -252,6 +252,22 @@ private final class CountingHandler: AgentIORequestHandler, @unchecked Sendable 
         #expect(!args.contains { $0.hasPrefix("mcp_servers.\(name).env=") })
     }
 
+    /// Codex ignores MCP server instructions, so sign-ins and other prompts
+    /// would run in its own hidden shell unless the run says otherwise.
+    @Test func codexIsToldToRunPromptsInTheTerminalPane() throws {
+        let binding = testPaneBinding(token: "codex-fixture-token-0123456789", provider: "codex")
+        let request = StartRunRequest(sessionId: "a", workspaceId: "w", input: "hi", provider: "codex")
+        let home = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: home) }
+        let args = try ProviderService.arguments(request, pluginDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true), paneMCPBinding: binding, codexHome: home)
+        let setting = try #require(args.first { $0.hasPrefix("developer_instructions=") })
+        let value = try JSONDecoder().decode(String.self, from: Data(setting.dropFirst("developer_instructions=".count).utf8))
+        #expect(value == PaneMCPToolManifest.codexDeveloperInstructions)
+        #expect(value.contains("run_in_terminal") && value.contains("glab auth login"))
+        #expect(PaneMCPToolManifest.routingGuidance.hasSuffix(PaneMCPToolManifest.interactiveGuidance))
+        let noBinding = try ProviderService.arguments(request, pluginDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true))
+        #expect(!noBinding.contains { $0.hasPrefix("developer_instructions=") })
+    }
+
     @Test func aRunGetsTheTokenInItsEnvironmentNotItsArgvAndClosingRevokesIt() async throws {
         let folder = try shortTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: folder) }
         let claude = folder.appendingPathComponent("claude")

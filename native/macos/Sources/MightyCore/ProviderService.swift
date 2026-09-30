@@ -199,7 +199,9 @@ public actor ProviderService {
     }
 
     /// `phaseModels` nil takes the request's own, which is how the app launches.
-    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig? = nil, paneMCPBinding: PaneMCPBinding? = nil) throws -> [String] {
+    /// `codexHome` is where a Codex run's user config lives; nil resolves it
+    /// from this process's environment.
+    public nonisolated static func arguments(_ request: StartRunRequest, pluginDirectory: URL, allowPermissionPrompts: Bool = false, phaseModels: PhaseModelConfig? = nil, paneMCPBinding: PaneMCPBinding? = nil, codexHome: URL? = nil) throws -> [String] {
         try CoreValidation.validate(request)
         let s = request.settings
         let phaseModels = phaseModels ?? request.phaseModels
@@ -242,7 +244,11 @@ public actor ProviderService {
             if phaseModels.codexSubagentDefault != "default" { args += ["-c", "agents.default_subagent_model=\"\(phaseModels.codexSubagentDefault)\""] }
             if phaseModels.codexSubagentEffort != "default" { args += ["-c", "agents.default_subagent_reasoning_effort=\"\(phaseModels.codexSubagentEffort)\""] }
             if phaseModels.codexPlanModeReasoningEffort != "default" { args += ["-c", "plan_mode_reasoning_effort=\"\(phaseModels.codexPlanModeReasoningEffort)\""] }
-            if let binding = paneMCPBinding { args += binding.codexMCPArgs() }
+            if let binding = paneMCPBinding {
+                let home = codexHome ?? CLIAccountSupport.codexHome(home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment)
+                let user = CodexUserInstructions.effective(codexHome: home, workingDirectory: URL(fileURLWithPath: binding.workspacePath, isDirectory: true))
+                args += binding.codexMCPArgs(userInstructions: user)
+            }
             if asks {
                 // Never inherit delegated automatic approval from a user profile.
                 args += ["-c", "approvals_reviewer=\"user\""]

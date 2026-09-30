@@ -325,17 +325,17 @@ public actor ProcessRunner {
                     paneMCPBindings.bind(agentPaneId: request.sessionId, server: $0, workspaceId: workspace.id, workspacePath: workspace.path, provider: request.provider)
                 } : nil
                 if let paneBinding { boundPaneIds.insert(request.sessionId); environment.merge(paneBinding.environment) { _, new in new } }
-                if codexApprovals {
-                    arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding)
-                } else {
-                    let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions, paneMCPBinding: paneBinding)
-                    arguments = prepared.arguments; standardInput = prepared.standardInput
-                }
-                if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
                 if request.provider == "codex" {
                     let home = environment["HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.homeDirectoryForCurrentUser
                     run.codexHome = CLIAccountSupport.codexHome(home: home, environment: environment)
                 }
+                if codexApprovals {
+                    arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneBinding, codexHome: run.codexHome)
+                } else {
+                    let prepared = try ProviderInput.prepare(request, pluginDirectory: pluginDirectory, attachments: attachments, allowPermissionPrompts: interactivePermissions, paneMCPBinding: paneBinding, codexHome: run.codexHome)
+                    arguments = prepared.arguments; standardInput = prepared.standardInput
+                }
+                if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
                 if interactivePermissions {
                     run.permissions = ClaudePermissionChannel(runId: run.activityId, prompt: standardInput,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
