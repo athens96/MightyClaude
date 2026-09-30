@@ -15,6 +15,7 @@ struct SessionPaneView: View {
     @ViewState private var styleCandidate: StyleApprovalCandidate?
     @ViewState private var paletteIndex = 0
     @ViewState private var paletteDismissedFor: String?
+    @ViewState private var nextActionsMemo = NextActionsMemo()
 
     private var running: Bool { session.status == "running" || store.pendingRuns.contains(session.id) }
     private var active: Bool { store.snapshot.activeSessionId == session.id }
@@ -149,6 +150,10 @@ struct SessionPaneView: View {
             if localTerminal { LocalTerminalPane(session: session) }
             else {
                 output
+                if session.kind != "shell", !running, let next = nextActionsMemo.latest(in: session.logs) {
+                    NextActionButtons(sessionID: session.id, entryID: next.entryId, actions: next.actions) { fillComposer($0) }
+                        .disabled(store.hasModal)
+                }
                 ToolPermissionBar(sessionId: session.id)
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
                     WebOpenChoicePanel(request: request).id(request.id)
@@ -703,6 +708,18 @@ struct SessionPaneView: View {
         store.drafts[session.id] = text
     }
 
+    /// A `next:` suggestion goes into the composer, not out: the user edits it
+    /// and presses Enter. A draft already there is kept and the suggestion goes
+    /// on a new line after it. The slash palette stays shut for the result.
+    private func fillComposer(_ text: String) {
+        guard !store.hasModal, let editor = composerInput.editor else { return }
+        composerInput.fillDraft(text)
+        let filled = editor.string
+        paletteDismissedFor = filled
+        store.drafts[session.id] = filled
+        if let window = editor.window { window.makeFirstResponder(editor) }
+    }
+
     private func stopRun() {
         guard !stopping, running else { return }
         stopping = true
@@ -787,4 +804,19 @@ struct SessionPaneView: View {
 
 func effortLabel(_ effort: String) -> String {
     switch effort { case "low": return "Low"; case "medium": return "Medium"; case "high": return "High"; case "xhigh": return "XHigh"; case "max": return "Max"; default: return "Auto" }
+}
+
+/// The last reply's parsed `next:` options, kept while that reply's id and
+/// length stay the same so a render does not parse it again.
+@MainActor
+private final class NextActionsMemo {
+    private var key: String?
+    private var value: (entryId: String, actions: [NextAction])?
+
+    func latest(in logs: [LogEntry]) -> (entryId: String, actions: [NextAction])? {
+        guard let reply = logs.last(where: { $0.kind == "user" || $0.kind == "assistant" }), reply.kind == "assistant" else { return nil }
+        let key = "\(reply.id)#\(reply.text.utf8.count)"
+        if key != self.key { self.key = key; value = NextActions.latest(in: logs) }
+        return value
+    }
 }

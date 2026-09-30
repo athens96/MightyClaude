@@ -260,6 +260,8 @@
   "menu.showInFinder": "Show in Finder",
   "menu.workspace": "Workspace",
   "pane.copyButton": "Copy",
+  "pane.nextActions.fillHint": "Put it in the message box",
+  "pane.nextActions.label": "Suggested next steps",
   "pane.rename.automatic": "Automatic (follows request)",
   "pane.rename.backToAutomatic": "Back to automatic",
   "pane.rename.modeFixed": "Title fixed by rename",

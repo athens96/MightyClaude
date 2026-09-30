@@ -8,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -34,6 +35,7 @@ import { Composer } from '@/components/composer';
 import { LogEntryView } from '@/components/log-entry-view';
 import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
+import { NextActionChips } from '@/components/next-action-chips';
 import { PermissionCard } from '@/components/permission-card';
 import { QuestionnaireCard } from '@/components/questionnaire-card';
 import { QueuedList } from '@/components/queued-list';
@@ -62,6 +64,7 @@ import {
 import { t } from '@/lib/i18n';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
+import { fillDraft, latestNextActions } from '@/lib/next-actions';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
@@ -153,6 +156,7 @@ export default function SessionScreen() {
   const [closing, setClosing] = useState(false);
   const [picker, setPicker] = useState<SettingField | undefined>(undefined);
   const [text, setText] = useState('');
+  const composerInput = useRef<TextInput>(null);
   /** Set once the user picks a body themselves; until then the pane's own view decides. */
   const [chosenView, setChosenView] = useState<BodyView | undefined>(undefined);
   const [guidedAction, setGuidedAction] = useState<string | undefined>(undefined);
@@ -746,6 +750,34 @@ export default function SessionScreen() {
     if (!blocksShown) followLogProgress();
   }, [entriesProgress, blocksShown, followLogProgress]);
 
+  // The `next:` options of the last reply, once its turn is over and until a user
+  // message follows it: under that reply in the log, above the composer in the blocks
+  // view. A tap fills the composer and nothing is sent; a draft already there is kept
+  // and the option goes on a new line after it. A local terminal pane has no box to
+  // fill, so it gets none.
+  const terminalPane = session?.terminal ?? false;
+  const nextActions = useMemo(
+    () => (running || terminalPane ? undefined : latestNextActions(entries)),
+    [entries, running, terminalPane],
+  );
+  /** A fresh object per fill, so filling the same text twice still moves the caret. */
+  const [filled, setFilled] = useState<{ end: number } | undefined>(undefined);
+  const fillComposer = useCallback(
+    (value: string) => {
+      const next = fillDraft(text, value);
+      setText(next);
+      setFilled({ end: next.length });
+    },
+    [text],
+  );
+  // Once the filled text is on screen: focus and put the caret after it, one time only,
+  // so the box stays uncontrolled for selection and typing behaves normally.
+  useEffect(() => {
+    if (!filled) return;
+    composerInput.current?.focus();
+    composerInput.current?.setSelection(filled.end, filled.end);
+  }, [filled]);
+
   const runGuided = useCallback(
     (actionId: string) => {
       // `guidedAction` only disables the chips on the next render, so two taps inside one
@@ -888,7 +920,17 @@ export default function SessionScreen() {
               ref={logFollow.attach}
               data={entries}
               keyExtractor={(entry) => entry.id}
-              renderItem={({ item }) => <LogEntryView entry={item} />}
+              extraData={nextActions}
+              renderItem={({ item }) =>
+                nextActions?.entryId === item.id ? (
+                  <View>
+                    <LogEntryView entry={item} />
+                    <NextActionChips actions={nextActions.actions} onFill={fillComposer} />
+                  </View>
+                ) : (
+                  <LogEntryView entry={item} />
+                )
+              }
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="handled"
               maintainVisibleContentPosition={holdingPosition || logFollow.detached ? HOLD_FIRST_ROW : undefined}
@@ -945,6 +987,11 @@ export default function SessionScreen() {
             onRun={runGuided}
           />
         ) : null}
+        {blocksShown && nextActions ? (
+          <View style={styles.dockedNext}>
+            <NextActionChips actions={nextActions.actions} onFill={fillComposer} />
+          </View>
+        ) : null}
         <Composer
           text={text}
           onChangeText={setText}
@@ -958,6 +1005,7 @@ export default function SessionScreen() {
           onSend={send}
           onStop={stop}
           onCommand={onCommand}
+          inputRef={composerInput}
         />
       </View>
 
@@ -1051,6 +1099,7 @@ const makeStyles = (palette: Palette) =>
     listHeader: { flexGrow: 1 },
     body: { flex: 1 },
     footer: { gap: spacing.sm, paddingTop: spacing.sm },
+    dockedNext: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
     headerAction: { color: palette.text, fontSize: 22, paddingHorizontal: spacing.sm },
     menuTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },

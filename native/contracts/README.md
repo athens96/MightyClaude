@@ -195,6 +195,49 @@ Snapshots also retain optional `paneLayoutModes` and `paneLayoutActiveSessionIds
 dictionaries, keyed by workspace ID, so each workspace keeps its display mode
 and selected tab independently.
 
+## Next actions (`fixtures/next-actions.json`)
+
+Ouroboros replies end with a breadcrumb `◆ <state> → next: <actions>`. When the
+last assistant entry of a finished turn (no user entry after it, pane not
+running) carries one, both clients draw its options as buttons: the Mac under
+the transcript or graph, the phone under that reply in the log view and docked
+above the composer in the Mighty blocks view. A tap fills the composer and never
+sends. Parsers: `MightyCore/NextActions.swift` and `mobile/src/lib/next-actions.ts`.
+
+- Both parsers work on Unicode scalars (the phone's code points) and match
+  literally, with no normalization or canonical equivalence: a decomposed (NFD)
+  `또는` is not a separator and is not stripped. "Whitespace" is exactly
+  space, tab, CR, LF and U+3000; trimming removes only those (NEL, BOM and
+  NBSP stay in the text).
+- The text is split on LF. The line is the last one whose trimmed text starts
+  with `◆` and contains `→ next:` or `-> next:`; the options are the trimmed
+  text after the first marker.
+- Alternatives split on `, 또는 `, `, or `, ` 또는 `, ` or ` (ASCII case-insensitive),
+  never inside a backtick code span or parentheses. ` — ` splits only when
+  `or `/`또는 ` follows it (that word goes with the separator); any other
+  ` — ` and the text after it stay in the current option as a note.
+- Commas are ordered steps within one option, unless the whole list ends with
+  ` 중 선택`, ` 중에서 선택` or ` 중 하나`: that suffix is dropped and top-level
+  commas split too.
+- Each option is trimmed and loses a leading `또는`/`or` that whitespace follows;
+  empty ones are dropped. `label` is the option text. `fill` is the first code
+  span that is a command (trimmed, `ooo` or `/name[:sub]`, then a space, a tab
+  or the end), else a code span that is the whole option (trimmed), else the
+  label. An option whose fill is blank (a whitespace-only code span) is dropped,
+  then at most 4 are kept.
+- Buttons show and read the label without backticks (the label itself if that
+  would leave it blank); the visible text may be truncated.
+- A fill never loses the draft: a blank draft (after trimming) is replaced by
+  the fill, anything else keeps its text and gets the fill on a new line after
+  it (no separator is added when the draft already ends with `\n`), caret at
+  the end. On the Mac this is one undoable edit, and a Korean
+  composition in progress is committed first.
+
+`fixtures/next-actions.json` is `[{line, options: [{label, fill}]}]` with real
+breadcrumbs plus made-up edge cases (NFD `또는`, trailing NEL/BOM, a combining
+mark after ` or `, CRLF, U+3000, a blank code span); `NextActionsTests` (Swift)
+and `next-actions.test.ts` (jest) both read it and must agree with every case.
+
 ## Execution graph vectors (`graph-vectors.json`)
 
 `graph-vectors.json` is the shared execution-graph contract: one file that both

@@ -1,0 +1,409 @@
+[
+  {
+    "line": "◆ 보안 감사 실행 중(job_f262ce7427ef) → next: 상태 확인 요청, 또는 완료 후 `ooo evaluate orch_719eb1715c41`",
+    "options": [
+      {
+        "label": "상태 확인 요청",
+        "fill": "상태 확인 요청"
+      },
+      {
+        "label": "완료 후 `ooo evaluate orch_719eb1715c41`",
+        "fill": "ooo evaluate orch_719eb1715c41"
+      }
+    ]
+  },
+  {
+    "line": "◆ Seed 확정(seed_232dbab5627c) → next: 다듬기 1회(맥 테스트 명령 수정 포함) 또는 명령만 고친 뒤 `ooo run`",
+    "options": [
+      {
+        "label": "다듬기 1회(맥 테스트 명령 수정 포함)",
+        "fill": "다듬기 1회(맥 테스트 명령 수정 포함)"
+      },
+      {
+        "label": "명령만 고친 뒤 `ooo run`",
+        "fill": "ooo run"
+      }
+    ]
+  },
+  {
+    "line": "◆ 전부 main에 반영됨(`13b1d0d`), Windows CI 통과 / macOS CI는 기존부터 실패 → next: v5 태그 여부 결정, macOS CI 시간 초과 테스트 정리, mods 브리지 테스트 복원 중 선택",
+    "options": [
+      {
+        "label": "v5 태그 여부 결정",
+        "fill": "v5 태그 여부 결정"
+      },
+      {
+        "label": "macOS CI 시간 초과 테스트 정리",
+        "fill": "macOS CI 시간 초과 테스트 정리"
+      },
+      {
+        "label": "mods 브리지 테스트 복원",
+        "fill": "mods 브리지 테스트 복원"
+      }
+    ]
+  },
+  {
+    "line": "◆ 2라운드 완료, 0.2.3 배포됨 → next: 폰 재페어링, 그다음 릴레이 재배포 지시",
+    "options": [
+      {
+        "label": "폰 재페어링, 그다음 릴레이 재배포 지시",
+        "fill": "폰 재페어링, 그다음 릴레이 재배포 지시"
+      }
+    ]
+  },
+  {
+    "line": "◆ plugin pin refresh done locally (tag=387a68e), v5 run 2 at AC 1/9 → next: `/ouroboros:status` later for v5, or `/ouroboros:evaluate orch_f5b652767ff0` to formally check the plugin refresh",
+    "options": [
+      {
+        "label": "`/ouroboros:status` later for v5",
+        "fill": "/ouroboros:status"
+      },
+      {
+        "label": "`/ouroboros:evaluate orch_f5b652767ff0` to formally check the plugin refresh",
+        "fill": "/ouroboros:evaluate orch_f5b652767ff0"
+      }
+    ]
+  },
+  {
+    "line": "◆ Evaluation approved (0.86) at the screen-check stop → next: report screen problems and the smoke-check decision, then say go for the v4 tag — or `ooo evolve` to refine the Windows fallback test first",
+    "options": [
+      {
+        "label": "report screen problems and the smoke-check decision, then say go for the v4 tag",
+        "fill": "report screen problems and the smoke-check decision, then say go for the v4 tag"
+      },
+      {
+        "label": "`ooo evolve` to refine the Windows fallback test first",
+        "fill": "ooo evolve"
+      }
+    ]
+  },
+  {
+    "line": "◆ 시드 seed_0181335522a3 생성 완료(QA REVISE 0.62, 참고용) → next: 지적 사항을 반영해 시드를 다듬기, 또는 `ooo run ~/.ouroboros/seeds/seed_0181335522a3.yaml`로 실행(처음이면 `ooo setup` 먼저)",
+    "options": [
+      {
+        "label": "지적 사항을 반영해 시드를 다듬기",
+        "fill": "지적 사항을 반영해 시드를 다듬기"
+      },
+      {
+        "label": "`ooo run ~/.ouroboros/seeds/seed_0181335522a3.yaml`로 실행(처음이면 `ooo setup` 먼저)",
+        "fill": "ooo run ~/.ouroboros/seeds/seed_0181335522a3.yaml"
+      }
+    ]
+  },
+  {
+    "line": "◆ 시드 seed_0181335522a3 실행 대기 중(Ouroboros MCP 재연결 대기, 실행 미시작) → next: 재연결 후 자동으로 실행 시작, 또는 새 실행 창에서 `/ouroboros:run ~/.ouroboros/seeds/seed_0181335522a3.yaml`",
+    "options": [
+      {
+        "label": "재연결 후 자동으로 실행 시작",
+        "fill": "재연결 후 자동으로 실행 시작"
+      },
+      {
+        "label": "새 실행 창에서 `/ouroboros:run ~/.ouroboros/seeds/seed_0181335522a3.yaml`",
+        "fill": "/ouroboros:run ~/.ouroboros/seeds/seed_0181335522a3.yaml"
+      }
+    ]
+  },
+  {
+    "line": "◆ 시드 확정 (seed_e217b516b978 · QA 참고 0.74 REVISE) → next: \"시드 다듬어줘\"로 QA 지적 반영 1회, 또는 \"직접 구현해\"로 시드를 계약 삼아 구현 시작, 또는 `ooo run` (이 환경에서는 턴 종료 시 끊길 수 있음)",
+    "options": [
+      {
+        "label": "\"시드 다듬어줘\"로 QA 지적 반영 1회",
+        "fill": "\"시드 다듬어줘\"로 QA 지적 반영 1회"
+      },
+      {
+        "label": "\"직접 구현해\"로 시드를 계약 삼아 구현 시작",
+        "fill": "\"직접 구현해\"로 시드를 계약 삼아 구현 시작"
+      },
+      {
+        "label": "`ooo run` (이 환경에서는 턴 종료 시 끊길 수 있음)",
+        "fill": "ooo run"
+      }
+    ]
+  },
+  {
+    "line": "◆ Evaluation approved (9/9 · 화면 동작 미확인) → next: 결과를 받아들이고 ⌘Q로 새 빌드를 설치해 화면 확인, 또는 `ooo evolve`로 후속 목록(`docs/styles-followups.md`)을 다듬기 — 이 경우 새 고정 태그가 필요합니다",
+    "options": [
+      {
+        "label": "결과를 받아들이고 ⌘Q로 새 빌드를 설치해 화면 확인",
+        "fill": "결과를 받아들이고 ⌘Q로 새 빌드를 설치해 화면 확인"
+      },
+      {
+        "label": "`ooo evolve`로 후속 목록(`docs/styles-followups.md`)을 다듬기 — 이 경우 새 고정 태그가 필요합니다",
+        "fill": "ooo evolve"
+      }
+    ]
+  },
+  {
+    "line": "◆ 시드 seed_39cbe1259442 확정(QA 권고 REVISE 0.72, 저장됨) → next: 완료 기준 다듬기를 한 번 하거나, 그대로 `ooo run`으로 실행",
+    "options": [
+      {
+        "label": "완료 기준 다듬기를 한 번 하거나, 그대로 `ooo run`으로 실행",
+        "fill": "ooo run"
+      }
+    ]
+  },
+  {
+    "line": "◆ 실행 중(Deliver 0/9) · 첫 기능 커밋 97ed574 푸시됨, Windows x64·arm64 성공 · 평가는 실행 종료 뒤 자동 시작 → next: 실행이 끝난 뒤 `ooo status` 또는 `ooo evaluate`",
+    "options": [
+      {
+        "label": "실행이 끝난 뒤 `ooo status`",
+        "fill": "ooo status"
+      },
+      {
+        "label": "`ooo evaluate`",
+        "fill": "ooo evaluate"
+      }
+    ]
+  },
+  {
+    "line": "◆ Seed seed_71b75e855f18 v1.1.1 final (QA 0.82 advisory) → next: `ooo run` (new worktree /Users/young/Work/MightyClaude-reset, parallel with the UI-stage job job_ad8fc0dd1ab2)",
+    "options": [
+      {
+        "label": "`ooo run` (new worktree /Users/young/Work/MightyClaude-reset, parallel with the UI-stage job job_ad8fc0dd1ab2)",
+        "fill": "ooo run"
+      }
+    ]
+  },
+  {
+    "line": "◆ Evaluation approved → next: accept, or ooo evolve to iteratively refine",
+    "options": [
+      {
+        "label": "accept",
+        "fill": "accept"
+      },
+      {
+        "label": "ooo evolve to iteratively refine",
+        "fill": "ooo evolve to iteratively refine"
+      }
+    ]
+  },
+  {
+    "line": "◆ Source updated, versions raised and pushed → next: check CI for `a44f9ae`, or build and install 0.2.0",
+    "options": [
+      {
+        "label": "check CI for `a44f9ae`",
+        "fill": "check CI for `a44f9ae`"
+      },
+      {
+        "label": "build and install 0.2.0",
+        "fill": "build and install 0.2.0"
+      }
+    ]
+  },
+  {
+    "line": "◆ 실행 끝남, 검증 결과 요청 변경 (핵심 연결 부분 없음) → next: 1(단계별 마무리) / 2(Ouroboros 재실행) / 3(멈춤) 중 선택",
+    "options": [
+      {
+        "label": "1(단계별 마무리) / 2(Ouroboros 재실행) / 3(멈춤)",
+        "fill": "1(단계별 마무리) / 2(Ouroboros 재실행) / 3(멈춤)"
+      }
+    ]
+  },
+  {
+    "line": "◆ 세션 여유 충분 (약 1,500만 토큰) → next: 요금제 한도는 `/usage`로 확인, 0.2.1은 ⌘Q로 설치",
+    "options": [
+      {
+        "label": "요금제 한도는 `/usage`로 확인, 0.2.1은 ⌘Q로 설치",
+        "fill": "/usage"
+      }
+    ]
+  },
+  {
+    "line": "◆ One manual generation complete (layout now tested, blank-view guard added, 343 tests pass, screen unverified) → next: install with ⌘Q and check the four items; if something looks wrong, describe it and I will trace it",
+    "options": [
+      {
+        "label": "install with ⌘Q and check the four items; if something looks wrong, describe it and I will trace it",
+        "fill": "install with ⌘Q and check the four items; if something looks wrong, describe it and I will trace it"
+      }
+    ]
+  },
+  {
+    "line": "작업을 마쳤습니다.\n\n- 테스트 통과\n\n◆ 커밋 완료(abc1234) -> next: `ooo evaluate` 또는 푸시 지시\n",
+    "options": [
+      {
+        "label": "`ooo evaluate`",
+        "fill": "ooo evaluate"
+      },
+      {
+        "label": "푸시 지시",
+        "fill": "푸시 지시"
+      }
+    ]
+  },
+  {
+    "line": "◆ 리뷰 끝 → next: 문구 수정(1, 2번 또는 전부), 테스트 보강, 푸시 중 하나",
+    "options": [
+      {
+        "label": "문구 수정(1, 2번 또는 전부)",
+        "fill": "문구 수정(1, 2번 또는 전부)"
+      },
+      {
+        "label": "테스트 보강",
+        "fill": "테스트 보강"
+      },
+      {
+        "label": "푸시",
+        "fill": "푸시"
+      }
+    ]
+  },
+  {
+    "line": "◆ 목록 정리 → next: 가, 나, 다, 라, 마 중에서 선택",
+    "options": [
+      {
+        "label": "가",
+        "fill": "가"
+      },
+      {
+        "label": "나",
+        "fill": "나"
+      },
+      {
+        "label": "다",
+        "fill": "다"
+      },
+      {
+        "label": "라",
+        "fill": "라"
+      }
+    ]
+  },
+  {
+    "line": "◆ Done → next: `ooo run` OR ask for a refinement pass",
+    "options": [
+      {
+        "label": "`ooo run`",
+        "fill": "ooo run"
+      },
+      {
+        "label": "ask for a refinement pass",
+        "fill": "ask for a refinement pass"
+      }
+    ]
+  },
+  {
+    "line": "◆ 시드 확정 → next: `ooo run` — 처음이면 설정부터",
+    "options": [
+      {
+        "label": "`ooo run` — 처음이면 설정부터",
+        "fill": "ooo run"
+      }
+    ]
+  },
+  {
+    "line": "◆ 대기 중 (다음 단계 없음)",
+    "options": []
+  },
+  {
+    "line": "◆ 끝 → next:",
+    "options": []
+  },
+  {
+    "line": "◆ 확인 → next: 다듬기 \u1104\u1169\u1102\u1173\u11AB `ooo run`",
+    "options": [
+      {
+        "label": "다듬기 \u1104\u1169\u1102\u1173\u11AB `ooo run`",
+        "fill": "ooo run"
+      }
+    ]
+  },
+  {
+    "line": "◆ done → next: `ooo run` or polish\u0085",
+    "options": [
+      {
+        "label": "`ooo run`",
+        "fill": "ooo run"
+      },
+      {
+        "label": "polish\u0085",
+        "fill": "polish\u0085"
+      }
+    ]
+  },
+  {
+    "line": "◆ done → next: `ooo run` or polish\uFEFF",
+    "options": [
+      {
+        "label": "`ooo run`",
+        "fill": "ooo run"
+      },
+      {
+        "label": "polish\uFEFF",
+        "fill": "polish\uFEFF"
+      }
+    ]
+  },
+  {
+    "line": "\uFEFF◆ done → next: `ooo run`",
+    "options": []
+  },
+  {
+    "line": "◆ done → next: `ooo run` or \u0301polish",
+    "options": [
+      {
+        "label": "`ooo run`",
+        "fill": "ooo run"
+      },
+      {
+        "label": "\u0301polish",
+        "fill": "\u0301polish"
+      }
+    ]
+  },
+  {
+    "line": "끝\r\n◆ 완료 → next: `ooo run` 또는 다듬기\r\n",
+    "options": [
+      {
+        "label": "`ooo run`",
+        "fill": "ooo run"
+      },
+      {
+        "label": "다듬기",
+        "fill": "다듬기"
+      }
+    ]
+  },
+  {
+    "line": "◆ 완료 → next:\u3000`ooo run` 또는 다듬기\u3000",
+    "options": [
+      {
+        "label": "`ooo run`",
+        "fill": "ooo run"
+      },
+      {
+        "label": "다듬기",
+        "fill": "다듬기"
+      }
+    ]
+  },
+  {
+    "line": "◆ done → next: then `ooo\u00A0run`",
+    "options": [
+      {
+        "label": "then `ooo\u00A0run`",
+        "fill": "then `ooo\u00A0run`"
+      }
+    ]
+  },
+  {
+    "line": "◆ done → next: ` ` or a or b or c or d",
+    "options": [
+      {
+        "label": "a",
+        "fill": "a"
+      },
+      {
+        "label": "b",
+        "fill": "b"
+      },
+      {
+        "label": "c",
+        "fill": "c"
+      },
+      {
+        "label": "d",
+        "fill": "d"
+      }
+    ]
+  }
+]

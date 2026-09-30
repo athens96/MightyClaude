@@ -88,6 +88,7 @@ struct NativeComposerEditor: NSViewRepresentable {
             editor.onInputFinished = { [weak self] in self?.publishNativeText() }
             editor.onFlush = { [weak self] in self?.flushNativeText() }
             editor.onReplaceDraft = { [weak self] value in self?.replaceDraft(value) }
+            editor.onFillDraft = { [weak self] value in self?.fillDraft(value) }
         }
 
         func detach() {
@@ -101,6 +102,7 @@ struct NativeComposerEditor: NSViewRepresentable {
             editor?.onInputFinished = nil
             editor?.onFlush = nil
             editor?.onReplaceDraft = nil
+            editor?.onFillDraft = nil
             editor?.onPasteAttachments = nil
             editor?.onSubmit = nil
             editor?.canSubmit = { false }
@@ -165,14 +167,23 @@ struct NativeComposerEditor: NSViewRepresentable {
             if text.wrappedValue != value { text.wrappedValue = value }
         }
 
-        func replaceDraft(_ value: String) {
+        func replaceDraft(_ value: String) { applyExplicitEdit { $0.replaceNativeDraft(value) } }
+        /// A fill adds to the newest draft: a store value the editor has not
+        /// shown yet (deferred behind a composition, or not rendered) lands
+        /// first, so the fill never overwrites it.
+        func fillDraft(_ value: String) {
+            let pending = text.wrappedValue != observedModelText ? text.wrappedValue : deferredModelText
+            applyExplicitEdit { $0.fillNativeDraft(value, over: pending) }
+        }
+
+        private func applyExplicitEdit(_ edit: (ComposerTextView) -> Void) {
             // A new explicit command supersedes an older deferred model write.
             // Clear it before unmarkText can notify the delegate.
             deferredModelText = nil
             cancelPublication()
             observedModelText = text.wrappedValue
             applyingModel = true
-            editor?.replaceNativeDraft(value)
+            if let editor { edit(editor) }
             applyingModel = false
             flushNativeText()
         }
@@ -207,6 +218,7 @@ final class ComposerInputController {
     private var editorObservers: [UUID: (ComposerTextView?) -> Void] = [:]
     func prepareForSubmission() { editor?.prepareForSubmission() }
     func replaceDraft(_ text: String) { editor?.replaceDraft(text) }
+    func fillDraft(_ text: String) { editor?.fillDraft(text) }
     func observeEditor(_ observer: @escaping (ComposerTextView?) -> Void) -> UUID {
         let token = UUID(); editorObservers[token] = observer; observer(editor); return token
     }
@@ -221,6 +233,7 @@ final class ComposerTextView: NSTextView, InputSessionRecoveryInputTransaction {
     var onInputFinished: (() -> Void)?
     var onFlush: (() -> Void)?
     var onReplaceDraft: ((String) -> Void)?
+    var onFillDraft: ((String) -> Void)?
     var onPasteAttachments: ((NSPasteboard) -> Void)?
     var canSubmit: () -> Bool = { false }
     var onSubmit: ((Bool) -> Void)?
@@ -247,12 +260,46 @@ final class ComposerTextView: NSTextView, InputSessionRecoveryInputTransaction {
     }
 
     fileprivate func replaceNativeDraft(_ text: String) {
+        // An explicit edit wins over a pending caret move from an earlier click.
+        pointerGeneration &+= 1
         performInputTransaction {
             if hasMarkedText() { unmarkText(); inputContext?.discardMarkedText() }
             string = text
             undoManager?.removeAllActions()
             setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
             didChangeText()
+        }
+    }
+
+    func fillDraft(_ text: String) {
+        if let onFillDraft { onFillDraft(text) }
+        else { fillNativeDraft(text, over: nil); onFlush?() }
+    }
+
+    /// Adds a suggestion without losing the draft, as one undoable edit: a
+    /// blank draft is replaced, anything else gets the text on a new line
+    /// after it. A composition in progress is committed first, never dropped;
+    /// a newer store draft (`base`) then replaces the document before the fill.
+    fileprivate func fillNativeDraft(_ text: String, over base: String?) {
+        // An explicit edit wins over a pending caret move from an earlier click.
+        pointerGeneration &+= 1
+        performInputTransaction {
+            if hasMarkedText() { unmarkText(); inputContext?.discardMarkedText() }
+            if let base, string != base {
+                string = base
+                undoManager?.removeAllActions()
+            }
+            let length = (string as NSString).length
+            let insertion = NextActions.insertion(into: string, fill: text)
+            let range = insertion.replacesDraft ? NSRange(location: 0, length: length) : NSRange(location: length, length: 0)
+            breakUndoCoalescing()
+            if shouldChangeText(in: range, replacementString: insertion.text) {
+                textStorage?.replaceCharacters(in: range, with: NSAttributedString(string: insertion.text, attributes: typingAttributes))
+                didChangeText()
+            }
+            breakUndoCoalescing()
+            setSelectedRange(NSRange(location: (string as NSString).length, length: 0))
+            scrollRangeToVisible(selectedRange())
         }
     }
 
