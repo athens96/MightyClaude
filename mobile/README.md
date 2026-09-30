@@ -125,6 +125,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 | `status` | 상태 줄(최대 6줄)과 사용량 막대 |
 | `mighty` | 헤더의 `대화`/`블록` 전환, 요청별 블록 목록, Ouroboros·Paperthin 패널 |
 | `attachments` | 입력창의 `＋` 버튼(사진·파일), 첨부 칩, 청크 업로드 |
+| `files` | 호스트 화면의 워크스페이스마다 `파일` 버튼 → 읽기 전용 폴더 목록과 미리보기 |
 
 - 이전 기록은 호스트가 `hasOlder`라고 말할 때만 더 불러오고, `hasMore: false`이거나
   빈 배열(= `before`가 밀려남)이 오면 멈춥니다. 불러오는 동안 롱폴로 들어온 항목과
@@ -189,6 +190,20 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 - **첨부가 있는 요청은 조정(steer)할 수 없습니다.** 실행 중이면 `다음 요청`만 보이고,
   대기열로 들어간다고 적어 둡니다.
 - 화면을 떠나면 진행 중이던 업로드는 취소됩니다.
+
+### 워크스페이스 파일 (`files`)
+
+호스트 화면에서 워크스페이스 이름 옆 `파일`을 누르면 Mac 파일 창과 같은 규칙으로 그 워크스페이스를
+**읽기만** 합니다(`app/host/[hostId]/workspace/[workspaceId]/files.tsx`·`file.tsx`). 계약과 한도는
+`docs/mobile-remote.md`의 "파일", 화면 규칙은 `docs/file-pane.md`의 "휴대폰"에 있습니다.
+
+- 폴더는 한 번에 하나씩: 위쪽 경로 줄(누르면 그 폴더로), `상위 폴더` 줄. 뒤로 가기(머리줄 단추,
+  iOS 가장자리 밀기, Android 뒤로 버튼)는 루트까지 상위 폴더로 먼저 갑니다(`usePreventRemove`).
+  당겨서 새로 고침, 현재 폴더 안의 이름 필터.
+- 소스는 `src/lib/highlight.ts`(Mac `SourceHighlighter`를 그대로 옮긴 것, 공유 픽스처
+  `native/contracts/fixtures/source-highlight.json`)로 칠하고 `src/components/source-view.tsx`가
+  줄 번호와 함께 한 줄씩 그립니다.
+- 이미지는 `src/components/zoomable-image.tsx`(제스처 핸들러 + 코어 `Animated`, 새 의존성 없음).
 
 ### 기기 토큰
 

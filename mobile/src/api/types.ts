@@ -82,7 +82,8 @@ export type Capability =
   | 'mighty'
   | 'status'
   | 'attachments'
-  | 'style';
+  | 'style'
+  | 'files';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -95,6 +96,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'status',
   'attachments',
   'style',
+  'files',
 ] as const;
 
 export interface HostInfo {
@@ -623,3 +625,72 @@ export interface QuestionAnswer {
 
 /** Keys are the question text, values the chosen option labels. */
 export type QuestionAnswers = Record<string, QuestionAnswer>;
+
+// ------------------------------------------------------------------ files ("files")
+
+/** `GET /m1/workspaces/{id}/files`: a folder, at most this many entries. */
+export const MAX_FILE_ENTRIES = 2000;
+
+export type FileEntryKind = 'folder' | 'file' | 'symlink-folder' | 'symlink-file';
+
+export interface FileEntry {
+  name: string;
+  /** Under the workspace root, `/`-separated; what `path=` takes back. */
+  relativePath: string;
+  kind: FileEntryKind;
+  /** Bytes; files only. */
+  size?: number;
+  /** ISO-8601. */
+  modified?: string;
+  /** A heavy or generated folder the Mac dims (`node_modules`, `.git`, …). */
+  noise: boolean;
+}
+
+export interface FileListing {
+  protocol: number;
+  workspaceId: string;
+  path: string;
+  entries: FileEntry[];
+  truncated: boolean;
+}
+
+export type FilePreviewType = 'source' | 'markdown' | 'image' | 'unsupported';
+export type UnsupportedReason = 'binary' | 'notRegularFile' | 'tooLarge' | 'undecodable';
+
+/** `GET /m1/workspaces/{id}/file`: which optional fields are present follows `type`. */
+export interface FilePreview {
+  protocol: number;
+  workspaceId: string;
+  path: string;
+  name: string;
+  size: number;
+  modified?: string;
+  type: FilePreviewType;
+  /** `source` only: the Mac highlighter's language, `plain` for unhighlighted text. */
+  language?: string;
+  /** `source`/`markdown`: the decoding the Mac used, e.g. "UTF-8", "CP949 (EUC-KR)". */
+  encoding?: string;
+  text?: string;
+  /** Only the start of the file is in `text` (512 KiB, less when escaping would overflow). */
+  truncated?: boolean;
+  lineCount?: number;
+  /** `image`: the thumbnail's own format. */
+  mime?: 'image/jpeg' | 'image/png';
+  /** The image's own size: pixels, or points for svg and pdf. */
+  width?: number;
+  height?: number;
+  thumbnailWidth?: number;
+  thumbnailHeight?: number;
+  /** The thumbnail, base64 (at most 2048 px on its long side and 512 KiB). */
+  data?: string;
+  reason?: UnsupportedReason;
+}
+
+/** The `code` a refused file request carries beside its message. */
+export type FileErrorCode =
+  | 'workspaceNotFound'
+  | 'notFound'
+  | 'outsideWorkspace'
+  | 'notReadable'
+  | 'notDirectory'
+  | 'badPath';

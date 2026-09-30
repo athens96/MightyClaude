@@ -8,7 +8,10 @@ import { isAgentIOPane, type MobileState } from '@/api/types';
 import { Button, EmptyState, ErrorBanner } from '@/components/ui';
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
 import { SessionRow } from '@/components/session-row';
+import { useCapabilities } from '@/hooks/use-capabilities';
 import { useLongPoll } from '@/hooks/use-long-poll';
+import { hasCapability } from '@/lib/capabilities';
+import { t } from '@/lib/i18n';
 import { groupSessionsByWorkspace } from '@/lib/merge';
 import { useForgetRefusedSecret, useHostsStore } from '@/store/hosts';
 import { useHostClient, useHostState, useLiveStore } from '@/store/live';
@@ -26,6 +29,8 @@ export default function HostScreen() {
   const insets = useSafeAreaInsets();
   const [creatingFor, setCreatingFor] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
+  // A Mac older than the files routes never shows the button.
+  const canBrowseFiles = hasCapability(useCapabilities(hostId, client), 'files');
 
   const fetchPage = useCallback(
     (since: number | undefined, signal: AbortSignal) => {
@@ -138,6 +143,14 @@ export default function HostScreen() {
                     {group.workspace.path}
                   </Text>
                 </View>
+                {canBrowseFiles ? (
+                  <Button
+                    label={t('phone.files.open')}
+                    accessibilityLabel={t('phone.files.openLabel', { name: group.workspace.name })}
+                    compact
+                    onPress={() => router.push(`/host/${host.id}/workspace/${group.workspace.id}/files`)}
+                  />
+                ) : null}
                 <Button
                   label="새 창"
                   compact
