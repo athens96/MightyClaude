@@ -16,6 +16,11 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private DateTimeOffset refreshed;
     private Task? shutdown;
     public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : "Gemini CLI";
+    // Claude is official; Codex and Gemini are beta. The one Windows answer every beta
+    // badge asks — the badge sits beside Name and never becomes part of it.
+    public static bool IsBeta(string provider) => provider is "codex" or "gemini";
+    // Menu items and plain text rows cannot host the badge, so it rides in their text.
+    public static string BetaLabel(string provider, string text) => IsBeta(provider) ? text + " · " + Locale.Get("badge.beta") : text;
     public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "codex" ? ["manual", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
     public static ProviderCapabilities Capabilities(string provider, string? version = null) => new(provider != "gemini", PermissionModes(provider, provider == "claude" && SupportsMods(version)), provider == "claude", provider == "claude", true, provider == "codex", provider == "codex", provider == "codex", true);
     public static RunSettings NormalizeSettings(string provider, RunSettings? value)

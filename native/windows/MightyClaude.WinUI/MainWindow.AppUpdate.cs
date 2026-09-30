@@ -53,7 +53,7 @@ public sealed partial class MainWindow
         var stagedRoot = Path.GetFullPath(plan.StagedDirectory.TrimEnd(Path.DirectorySeparatorChar))
             + Path.DirectorySeparatorChar;
         if (!Path.GetFullPath(helperPath).StartsWith(stagedRoot, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("도우미가 스테이지된 폴더 안에 있지 않아 실행하지 않습니다.");
+            throw new InvalidOperationException(Locale.Get("settings.appUpdate.helperOutsideStage"));
         var info = new ProcessStartInfo(helperPath)
         {
             UseShellExecute = false,
@@ -88,7 +88,7 @@ public sealed partial class MainWindow
         var panel = new StackPanel { Spacing = 6 };
         panel.Children.Add(new TextBlock
         {
-            Text = AppUpdateStrings.CurrentVersionLabel + " · " + AppVersionText,
+            Text = AppUpdateStrings.CurrentVersionLabel + " · " + Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = AppVersionText }),
             FontSize = 12,
         });
 
@@ -219,7 +219,7 @@ public sealed partial class MainWindow
         {
             RenderAppUpdateSection();
             Require(status.Text == AppUpdateStrings.NoPublicKeyNotice && !button.IsEnabled,
-                "공개 키가 없는 빌드는 업데이트 확인을 제공하지 않아야 합니다.");
+                "a build without a public key must not offer an update check");
         }
 
         var statuses = new List<string>();
@@ -249,7 +249,7 @@ public sealed partial class MainWindow
             () => service.Snapshot.AppUpdateAutoCheck,
             value => service.UpdateAsync(s => s with { AppUpdateAutoCheck = value }));
 
-        Require(toggle.Header as string == AppUpdateStrings.AutoCheckToggle, "앱 업데이트 섹션에 자동 확인 스위치가 없습니다.");
+        Require(toggle.Header as string == AppUpdateStrings.AutoCheckToggle, "the app update section must show the automatic check switch");
         return outcome;
     }
 

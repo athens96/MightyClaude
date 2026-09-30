@@ -63,7 +63,7 @@ public sealed partial class MainWindow
     private MenuFlyout NewSessionMenu(string? groupId = null)
     {
         var menu = new MenuFlyout();
-        foreach (var provider in Wire.Providers) menu.Items.Add(MenuItem(ProviderCatalog.Name(provider), () => AddPane("claude", provider, groupId)));
+        foreach (var provider in Wire.Providers) menu.Items.Add(MenuItem(ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider)), () => AddPane("claude", provider, groupId)));
         menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem(Locale.Get("session.newTab.shell"), () => AddPane("shell", groupId: groupId)));
         menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem(Locale.Get("browser.newTab"), () => AddBrowserPane(groupId)));
         return menu;

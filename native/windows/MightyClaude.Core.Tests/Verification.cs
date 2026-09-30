@@ -124,6 +124,18 @@ internal static class Verification
             Check(ProviderCatalog.Arguments(new("p", "w", "claude", "secret", [], "sonnet", "claude", new("high", "manual", 3, 1.5)), "/plugin").Contains("--effort"));
             Check(ProviderCatalog.Efforts("codex", "default", ProviderCatalog.Fallback("codex")).Length == 0); Check(!ProviderCatalog.SupportsMods("2.1.263")); Check(ProviderCatalog.SupportsMods("2.1.271 (Claude Code)"));
         });
+        await Test("Codex and Gemini are beta, Claude is official, and Name never carries the badge", () =>
+        {
+            Check(!ProviderCatalog.IsBeta("claude") && ProviderCatalog.IsBeta("codex") && ProviderCatalog.IsBeta("gemini") && !ProviderCatalog.IsBeta("unknown"), "beta providers");
+            Check(Wire.Providers.Select(ProviderCatalog.Name).SequenceEqual(new[] { "Claude Code", "Codex CLI", "Gemini CLI" }), "provider names unchanged");
+            var badge = Locale.Get("badge.beta"); Check(badge is "베타" or "Beta", "badge text " + badge);
+            Check(Locale.Get("badge.betaAccessibility") is "베타 기능" or "Beta feature", "badge accessibility text");
+            Check(ProviderCatalog.BetaLabel("claude", "Claude Code") == "Claude Code", "official label untouched");
+            Check(ProviderCatalog.BetaLabel("codex", "Codex CLI") == "Codex CLI · " + badge && ProviderCatalog.BetaLabel("gemini", "Gemini CLI") == "Gemini CLI · " + badge, "beta labels");
+            var title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "MightyClaude" }); Check(title is "MightyClaude (베타)" or "MightyClaude (Beta)", "window title " + title);
+            var version = Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = "0.2.8" }); Check(version is "0.2.8 (베타)" or "0.2.8 (Beta)", "version line " + version);
+            return Task.CompletedTask;
+        });
         await Test("native profile imports a copy, preserves settings and drafts", async () =>
         {
             var legacy = Temp(); var native = Temp();

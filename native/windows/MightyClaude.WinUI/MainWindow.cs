@@ -24,6 +24,8 @@ public sealed partial class MainWindow : Window
     private readonly ListView workspaces = new() { SelectionMode = ListViewSelectionMode.Single };
     private readonly TextBox search = new() { Margin = new Thickness(0, 4, 0, 4) };
     private readonly TextBlock sessionsHeader = new() { FontSize = 11, Opacity = .6, Margin = new Thickness(0, 8, 0, 0) };
+    // The whole Windows app is a beta: the badge beside the sidebar brand.
+    private readonly TextBlock brandBeta = new() { FontSize = 10, Opacity = .75 };
     private readonly Button addFolderButton, settingsButton;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Opacity = .75 };
     private readonly TextBlock error = new() { Foreground = new SolidColorBrush(Colors.OrangeRed), TextWrapping = TextWrapping.Wrap };
@@ -46,7 +48,7 @@ public sealed partial class MainWindow : Window
     public MainWindow(StartupOptions options)
     {
         this.options = options;
-        Title = "MightyClaude"; AppWindow.Resize(new SizeInt32(1440, 920));
+        AppWindow.Resize(new SizeInt32(1440, 920));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MightyClaude.ico"));
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
@@ -73,7 +75,8 @@ public sealed partial class MainWindow : Window
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var brandImage = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 28, Height = 28 };
         AutomationProperties.SetAccessibilityView(brandImage, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        brand.Children.Add(brandImage); brand.Children.Add(new TextBlock { Text = "MightyClaude", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }); sidebar.Children.Add(brand);
+        brand.Children.Add(brandImage); brand.Children.Add(new TextBlock { Text = "MightyClaude", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        brand.Children.Add(new Border { Child = brandBeta, CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(110, 135, 135, 135)), Padding = new Thickness(6, 0, 6, 1), VerticalAlignment = VerticalAlignment.Center }); sidebar.Children.Add(brand);
         foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Tag = name });
         layout.SelectionChanged += async (_, _) => { if (!rendering && layout.SelectedItem is ComboBoxItem item) await ApplyLayoutPreset((string)item.Tag); };
         addFolderButton = Button("", PickFolder); sidebar.Children.Add(search); sidebar.Children.Add(addFolderButton); sidebar.Children.Add(workspaces);
@@ -105,6 +108,8 @@ public sealed partial class MainWindow : Window
     // so its text is set again once the preference is applied.
     private void ApplyChromeText()
     {
+        Title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "MightyClaude" });
+        brandBeta.Text = Locale.Get("badge.beta"); AutomationProperties.SetName(brandBeta, Locale.Get("badge.betaAccessibility"));
         search.PlaceholderText = Locale.Get("sidebar.searchPlaceholder");
         foreach (var item in layout.Items.OfType<ComboBoxItem>())
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
@@ -431,8 +436,8 @@ public sealed partial class MainWindow : Window
         private void RefreshMenus(RunSession pane, ModelCatalog catalog)
         {
             var caps = Capabilities;
-            Label(provider, pane.Provider == "claude" ? "Claude ⌄" : pane.Provider == "codex" ? "Codex ⌄" : "Gemini ⌄", Locale.Get("composer.label.runner"));
-            var providers = new MenuFlyout(); foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.Name(value), () => owner.Act(async () => { if (Session.Status == "running" || Session.Provider == value) return; await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); }), pane.Provider == value)); provider.Flyout = providers;
+            Label(provider, pane.Provider == "claude" ? "Claude ⌄" : pane.Provider == "codex" ? "Codex ⌄" : "Gemini ⌄", Locale.Get("composer.label.runner")); ToolTipService.SetToolTip(provider, ProviderCatalog.IsBeta(pane.Provider) ? ProviderCatalog.BetaLabel(pane.Provider, ProviderCatalog.Name(pane.Provider)) : null);
+            var providers = new MenuFlyout(); foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.BetaLabel(value, ProviderCatalog.Name(value)), () => owner.Act(async () => { if (Session.Status == "running" || Session.Provider == value) return; await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); }), pane.Provider == value)); provider.Flyout = providers;
             var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, (pane.Model == "default" ? Locale.Get("composer.model.default") : selectedModel?.DisplayName ?? pane.Model) + " ⌄", Locale.Get("composer.label.model")); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
             var models = new MenuFlyout(); foreach (var row in catalog.Models) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
             if (!catalog.Models.Any(m => m.Value == pane.Model)) models.Items.Add(Item(pane.Model, () => ChangeModel(pane.Model), true));

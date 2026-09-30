@@ -29,7 +29,7 @@ public sealed partial class MainWindow
         {
             if (pane.Kind != "claude") return;
             var providers = new MenuFlyoutSubItem { Text = Locale.Get("composer.label.runner") };
-            foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.Name(value), () => ChangeProvider(value), pane.Provider == value)); menu.Items.Add(providers);
+            foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.BetaLabel(value, ProviderCatalog.Name(value)), () => ChangeProvider(value), pane.Provider == value)); menu.Items.Add(providers);
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var models = new MenuFlyoutSubItem { Text = Locale.Get("composer.label.model") };
             foreach (var value in catalog.Models) models.Items.Add(Item(value.DisplayName, () => ChangeModel(value.Value), value.Value == pane.Model));
