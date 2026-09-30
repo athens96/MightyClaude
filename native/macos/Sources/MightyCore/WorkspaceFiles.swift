@@ -72,6 +72,10 @@ public struct WorkspaceOpenFile {
 public enum WorkspaceFiles {
     public static let noiseFolders: Set<String> = [".git", "node_modules", ".build", "build", "dist", "DerivedData", ".next", "Pods", ".venv", "__pycache__"]
     public static let maximumEntriesPerFolder = 5_000
+    /// Names read from one folder before the rest are left unread (and the
+    /// listing marked truncated): a folder of hundreds of thousands of files
+    /// is never checked and sorted whole, however often a phone asks for it.
+    public static let maximumEnumeratedNames = 20_000
     public static let maximumPathBytes = 4_096
 
     public static func isNoiseFolder(_ name: String) -> Bool { noiseFolders.contains(name) }
@@ -108,15 +112,24 @@ public enum WorkspaceFiles {
     }
 
     /// The folder's children, sorted, hidden files included. Children whose
-    /// real path leaves the root (or dangling symlinks) are left out.
-    public static func list(_ relativePath: String, root: URL) throws -> WorkspaceDirectoryListing {
+    /// real path leaves the root (or dangling symlinks) are left out. Only the
+    /// first `enumerationLimit` names on disk are looked at; past it the
+    /// listing is truncated.
+    public static func list(_ relativePath: String, root: URL, enumerationLimit: Int = maximumEnumeratedNames) throws -> WorkspaceDirectoryListing {
         guard let directory = resolve(relativePath, root: root) else { throw WorkspaceFileError.outsideRoot }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw WorkspaceFileError.notDirectory }
         let base = realRoot(root)
-        let names: [String]
-        do { names = try FileManager.default.contentsOfDirectory(atPath: directory.path) }
-        catch { throw WorkspaceFileError.unreadable(error.localizedDescription) }
+        var names: [String] = [], unread = false
+        guard let stream = opendir(directory.path) else { throw WorkspaceFileError.unreadable(String(cString: strerror(errno))) }
+        defer { closedir(stream) }
+        while let item = readdir(stream) {
+            let length = Int(item.pointee.d_namlen)
+            let name = withUnsafeBytes(of: item.pointee.d_name) { String(decoding: $0.prefix(length), as: UTF8.self) }
+            if name == "." || name == ".." { continue }
+            if names.count == enumerationLimit { unread = true; break }
+            names.append(name)
+        }
         var entries: [WorkspaceFileEntry] = []
         for name in names where !name.isEmpty && !name.contains("/") {
             let item = directory.appendingPathComponent(name)
@@ -129,7 +142,7 @@ public enum WorkspaceFiles {
                                               isDirectory: childIsDirectory.boolValue, isSymlink: isLink))
         }
         let ordered = sorted(entries)
-        return WorkspaceDirectoryListing(entries: Array(ordered.prefix(maximumEntriesPerFolder)), truncated: ordered.count > maximumEntriesPerFolder)
+        return WorkspaceDirectoryListing(entries: Array(ordered.prefix(maximumEntriesPerFolder)), truncated: unread || ordered.count > maximumEntriesPerFolder)
     }
 
     /// Opens the file at `relativePath` for reading: resolved under the root,
@@ -254,6 +267,12 @@ public enum FilePreviewClassifier {
     /// Bitmaps with more pixels than this are never decoded at full size, so
     /// they have no 1:1 or zoom.
     public static let maximumFullPixels = 100_000_000
+    /// Bitmaps with more pixels than this are not decoded at all, not even to
+    /// a thumbnail: a thumbnail of some formats still decodes every pixel.
+    public static let maximumDecodePixels = 250_000_000
+    /// An svg or pdf wider or taller than this many points is not drawn. Real
+    /// documents stay far below it; a file can claim 1e30 or infinity.
+    public static let maximumVectorPoints: Double = 10_000_000
     /// Zoom stops before the image is this many points on its long side.
     public static let maximumZoomPoints: Double = 16_384
     /// How much of a file is read to tell text from binary.
@@ -375,5 +394,167 @@ public enum FilePreviewClassifier {
     public static func readHead(_ handle: FileHandle) throws -> Data {
         try handle.seek(toOffset: 0)
         return try handle.read(upToCount: sniffBytes) ?? Data()
+    }
+}
+
+// MARK: Image sizes and svg references
+
+public extension FilePreviewClassifier {
+    /// width × height, or nil when either is not positive or the product overflows.
+    static func pixelCount(width: Int, height: Int) -> Int? {
+        guard width > 0, height > 0 else { return nil }
+        let (product, overflow) = width.multipliedReportingOverflow(by: height)
+        return overflow ? nil : product
+    }
+
+    /// Whether an svg's or pdf's size in points may be drawn and turned into
+    /// whole numbers: finite, positive and at most `maximumVectorPoints`.
+    static func isDrawable(width: Double, height: Double) -> Bool {
+        width.isFinite && height.isFinite && width > 0 && height > 0 && width <= maximumVectorPoints && height <= maximumVectorPoints
+    }
+
+    /// Whether drawing this svg could read anything but its own bytes. CoreSVG
+    /// (behind `NSImage`) follows `<image href>` to `file:` URLs, absolute
+    /// paths and bare relative ones (against the process's working folder),
+    /// so an svg is only drawn when this is false. Deliberately conservative,
+    /// on the text with numeric character references decoded and case folded:
+    /// any `href`/`src` value or CSS `url(` that is neither a `#fragment` nor a
+    /// non-svg `data:` URL, any `@import`, `image-set(`, `xml:base`,
+    /// `<!ENTITY`, DOCTYPE with an identifier or internal subset, CSS
+    /// backslash escape, declared encoding the check cannot read as ASCII, or
+    /// bytes that do not decode as text all count as external.
+    static func svgLoadsExternalContent(_ data: Data) -> Bool {
+        guard let decoded = decodeText(data, sample: false) else { return true }
+        let text = Array(SVGReferences.decodingCharacterReferences(decoded.text).lowercased().utf8)
+        if text.contains(UInt8(ascii: "\\")) { return true }
+        for token in ["<!entity", "@import", "image-set(", "xml:base"] where !SVGReferences.find(token, in: text).isEmpty { return true }
+        for start in SVGReferences.find("<!doctype", in: text) {
+            guard let end = text[start...].firstIndex(of: UInt8(ascii: ">")) else { return true }
+            let doctype = Array(text[start..<end])
+            if ["system", "public", "["].contains(where: { !SVGReferences.find($0, in: doctype).isEmpty }) { return true }
+        }
+        if !SVGReferences.readableDeclaration(text, bom: decoded.encoding) { return true }
+        for name in ["href", "src", "srcset"] {
+            for start in SVGReferences.find(name, in: text) {
+                var index = SVGReferences.skipSpace(text, start + name.utf8.count)
+                // Not followed by `=`: the word in running text, not an attribute.
+                guard index < text.count, text[index] == UInt8(ascii: "=") else { continue }
+                index += 1
+                if !SVGReferences.isLocal(text, from: index) { return true }
+            }
+        }
+        for start in SVGReferences.find("url(", in: text) where !SVGReferences.isLocal(text, from: start + 4) { return true }
+        return false
+    }
+}
+
+/// The byte-level pieces of `FilePreviewClassifier.svgLoadsExternalContent`.
+enum SVGReferences {
+    /// Every offset of `needle` in `text`.
+    static func find(_ needle: String, in text: [UInt8]) -> [Int] {
+        let pattern = Array(needle.utf8)
+        guard !pattern.isEmpty, text.count >= pattern.count else { return [] }
+        var found: [Int] = []
+        text.withUnsafeBytes { haystack in
+            pattern.withUnsafeBytes { wanted in
+                guard let base = haystack.baseAddress, let wantedBase = wanted.baseAddress else { return }
+                var offset = 0
+                while offset <= haystack.count - wanted.count,
+                      let hit = memmem(base + offset, haystack.count - offset, wantedBase, wanted.count) {
+                    let position = base.distance(to: UnsafeRawPointer(hit))
+                    found.append(position)
+                    offset = position + 1
+                }
+            }
+        }
+        return found
+    }
+
+    static func isSpace(_ byte: UInt8) -> Bool { byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D || byte == 0x0C }
+
+    static func skipSpace(_ text: [UInt8], _ start: Int) -> Int {
+        var index = start
+        while index < text.count, isSpace(text[index]) { index += 1 }
+        return index
+    }
+
+    /// Whether the reference starting at `start` (after `=` or `url(`, before
+    /// any space and quote) stays inside the document: `#fragment`, or a
+    /// `data:` URL whose media type is not svg, xml or html.
+    static func isLocal(_ text: [UInt8], from start: Int) -> Bool {
+        var index = skipSpace(text, start)
+        if index < text.count, text[index] == UInt8(ascii: "\"") || text[index] == UInt8(ascii: "'") { index = skipSpace(text, index + 1) }
+        guard index < text.count else { return false }
+        if text[index] == UInt8(ascii: "#") { return true }
+        let scheme = Array("data:".utf8)
+        guard text.count - index > scheme.count, Array(text[index..<(index + scheme.count)]) == scheme else { return false }
+        let rest = text[(index + scheme.count)...].prefix(256)
+        guard let comma = rest.firstIndex(of: UInt8(ascii: ",")) else { return false }
+        let media = Array(text[(index + scheme.count)..<comma].filter { !isSpace($0) })
+        return ["svg", "xml", "html"].allSatisfy { find($0, in: media).isEmpty }
+    }
+
+    /// An XML declaration's encoding is one whose markup is plain ASCII bytes
+    /// (or the byte order mark's own), so the scan above reads what the parser will.
+    static func readableDeclaration(_ text: [UInt8], bom: TextEncoding) -> Bool {
+        let start = skipSpace(text, 0)
+        let opening = Array("<?xml".utf8)
+        guard text.count - start >= opening.count, Array(text[start..<(start + opening.count)]) == opening else { return true }
+        let declaration = Array(text[start...].prefix(512))
+        guard let close = find("?>", in: declaration).first else { return false }
+        let head = Array(declaration[..<close])
+        guard let key = find("encoding", in: head).first else { return true }
+        var index = skipSpace(head, key + 8)
+        guard index < head.count, head[index] == UInt8(ascii: "=") else { return false }
+        index = skipSpace(head, index + 1)
+        guard index < head.count, head[index] == UInt8(ascii: "\"") || head[index] == UInt8(ascii: "'") else { return false }
+        let quote = head[index]
+        guard let end = head[(index + 1)...].firstIndex(of: quote) else { return false }
+        let name = String(decoding: head[(index + 1)..<end], as: UTF8.self)
+        var readable: Set<String> = ["utf-8", "utf8", "us-ascii", "ascii", "iso-8859-1", "latin1"]
+        switch bom {
+        case .utf16LE, .utf16BE: readable.formUnion(["utf-16", "utf-16le", "utf-16be"])
+        case .utf32LE, .utf32BE: readable.formUnion(["utf-32", "utf-32le", "utf-32be"])
+        case .utf8, .utf8BOM, .cp949: break
+        }
+        return readable.contains(name)
+    }
+
+    /// The text with `&#NN;`, `&#xHH;` and the five predefined entities
+    /// replaced by their characters, as the XML parser reads them.
+    static func decodingCharacterReferences(_ text: String) -> String {
+        guard text.contains("&") else { return text }
+        let scalars = Array(text.unicodeScalars)
+        var output = String.UnicodeScalarView()
+        var index = 0
+        while index < scalars.count {
+            if scalars[index] == "&", let (scalar, next) = reference(scalars, at: index + 1) {
+                output.append(scalar); index = next
+            } else {
+                output.append(scalars[index]); index += 1
+            }
+        }
+        return String(output)
+    }
+
+    private static func reference(_ scalars: [Unicode.Scalar], at start: Int) -> (Unicode.Scalar, Int)? {
+        var index = start
+        if index < scalars.count, scalars[index] == "#" {
+            index += 1
+            var radix: UInt32 = 10
+            if index < scalars.count, scalars[index] == "x" || scalars[index] == "X" { radix = 16; index += 1 }
+            var value: UInt32 = 0, digits = 0
+            while index < scalars.count, let digit = Character(scalars[index]).hexDigitValue, UInt32(digit) < radix {
+                value = min(value * radix + UInt32(digit), 0x11_0000)
+                digits += 1; index += 1
+            }
+            guard digits > 0, index < scalars.count, scalars[index] == ";", let scalar = Unicode.Scalar(value) else { return nil }
+            return (scalar, index + 1)
+        }
+        var name = ""
+        while index < scalars.count, name.count < 5, scalars[index].properties.isAlphabetic { name.unicodeScalars.append(scalars[index]); index += 1 }
+        guard index < scalars.count, scalars[index] == ";" else { return nil }
+        let named: [String: Unicode.Scalar] = ["amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'"]
+        return named[name.lowercased()].map { ($0, index + 1) }
     }
 }

@@ -34,6 +34,13 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileCommands(sessionId: String) async throws -> [MobileCommand]
     /// Returns the body of `usage`/`help`; nil when the action has no text.
     func mobilePerformCommand(sessionId: String, action: String) async throws -> String?
+    /// Draws an svg for a file preview; MightyCore has no AppKit to do it.
+    var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { get }
+}
+
+public extension MobileHostDelegate {
+    /// No drawing: an svg preview is `unsupported` ("undecodable").
+    var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { nil }
 }
 
 /// A routed reply: HTTP-like status plus a JSON body.
@@ -111,6 +118,14 @@ public actor MobileRemoteService {
     public static let concurrentAttachmentSubmits = 2
     private var submitPermits = MobileRemoteService.concurrentAttachmentSubmits
     private var submitWaiters: [CheckedContinuation<Void, Never>] = []
+    /// How many file previews may decode an image at once (up to 50 MB read
+    /// and 100 million pixels). Text previews and submits never take it.
+    public static let concurrentImagePreviews = 1
+    private var previewPermits = MobileRemoteService.concurrentImagePreviews
+    /// At most one waiter per phone: a newer preview replaces the older one.
+    private var previewWaiters: [(deviceId: String, continuation: CheckedContinuation<Bool, Never>)] = []
+    /// Previews waiting for the slot; read by tests.
+    var waitingPreviews: Int { previewWaiters.count }
     /// Test seam: the two steps a revoke can fail at — rotating the key and
     /// writing the list — are otherwise only reachable by breaking the
     /// filesystem halfway through. Never set outside tests.
@@ -644,10 +659,18 @@ public actor MobileRemoteService {
 
     // MARK: Routing (shared by the tunnel and tests)
 
-    private struct Failure: Error { let status: Int; let message: String; init(_ status: Int, _ message: String) { self.status = status; self.message = message } }
+    private struct Failure: Error {
+        let status: Int; let message: String
+        /// A machine-readable reason beside the message (the file routes' `code`).
+        var code: String?
+        init(_ status: Int, _ message: String, code: String? = nil) { self.status = status; self.message = message; self.code = code }
+        init(_ error: MobileFileError) { self.init(error.status, error.message, code: error.code) }
+    }
     private func reply<T: Encodable>(_ status: Int, _ value: T) -> MobileReply { MobileReply(status: status, body: (try? JSONEncoder().encode(value)) ?? Data("{}".utf8)) }
-    private func errorReply(_ status: Int, _ message: String) -> MobileReply {
-        MobileReply(status: status, body: (try? JSONSerialization.data(withJSONObject: ["protocol": 1, "error": String(message.prefix(1000))])) ?? Data("{}".utf8))
+    private func errorReply(_ status: Int, _ message: String, code: String? = nil) -> MobileReply {
+        var body: [String: Any] = ["protocol": 1, "error": String(message.prefix(1000))]
+        if let code { body["code"] = code }
+        return MobileReply(status: status, body: (try? JSONSerialization.data(withJSONObject: body)) ?? Data("{}".utf8))
     }
     private func decode<T: Decodable>(_ body: Data?, as type: T.Type, limit: Int? = nil) throws -> T {
         guard let body, body.count <= (limit ?? Self.bodyLimit) else { throw Failure(body == nil ? 400 : 413, body == nil ? "요청 본문이 필요합니다." : "요청이 너무 큽니다.") }
@@ -722,6 +745,24 @@ public actor MobileRemoteService {
     private func releaseSubmitSlot() {
         guard !submitWaiters.isEmpty else { submitPermits += 1; return }
         submitWaiters.removeFirst().resume()
+    }
+
+    /// The image previews' own slot, apart from the submits' so an upload never
+    /// waits behind a picture. False when a newer preview from the same phone
+    /// took this one's place in the queue: the phone has moved on, so the
+    /// older one is dropped rather than decoded for nobody.
+    private func acquirePreviewSlot(deviceId: String) async -> Bool {
+        if previewPermits > 0 { previewPermits -= 1; return true }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            if let older = previewWaiters.firstIndex(where: { $0.deviceId == deviceId }) {
+                previewWaiters.remove(at: older).continuation.resume(returning: false)
+            }
+            previewWaiters.append((deviceId, continuation))
+        }
+    }
+    private func releasePreviewSlot() {
+        guard !previewWaiters.isEmpty else { previewPermits += 1; return }
+        previewWaiters.removeFirst().continuation.resume(returning: true)
     }
 
     /// Serves one m1 request. `path` carries the route and query, `body` the
@@ -903,9 +944,57 @@ public actor MobileRemoteService {
                 let created = try await perform { try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider) }
                 return reply(201, MobileCreatedSession(sessionId: created))
             }
+            if method == "GET", route.count == 3, route[0] == "workspaces", ["files", "file"].contains(route[2]) {
+                return try await workspaceFile(listing: route[2] == "files", workspaceId: route[1], url: url, deviceId: deviceId, delegate: delegate)
+            }
             throw Failure(404, "모바일 경로를 찾을 수 없습니다.")
-        } catch let failure as Failure { return errorReply(failure.status, failure.message) }
+        } catch let failure as Failure { return errorReply(failure.status, failure.message, code: failure.code) }
         catch { return errorReply(500, error.localizedDescription) }
+    }
+}
+
+extension MobileRemoteService {
+    /// The read-only file routes (docs/mobile-remote.md "파일"). The folder and
+    /// the file are read off this actor. Only an image's decode waits for the
+    /// preview slot, and checks between its steps whether the phone gave up.
+    private func workspaceFile(listing: Bool, workspaceId: String, url: URLComponents, deviceId: String, delegate: MobileHostDelegate) async throws -> MobileReply {
+        guard CoreValidation.identifier(workspaceId) else { throw Failure(MobileFileError.workspaceNotFound) }
+        var raw: String?
+        for item in url.queryItems ?? [] {
+            guard item.name == "path", raw == nil else { throw Failure(400, "알 수 없는 질의입니다.") }
+            raw = item.value ?? ""
+        }
+        do {
+            let path = try MobileWorkspaceFiles.validatedPath(raw, allowRoot: listing)
+            guard let workspace = await delegate.mobileState().workspaces.first(where: { $0.id == workspaceId }) else { throw MobileFileError.workspaceNotFound }
+            // The root the Mac's own files pane uses (`AppStore.filePaneModel`).
+            let root = URL(fileURLWithPath: workspace.path, isDirectory: true)
+            if listing {
+                let body = try await Task.detached(priority: .userInitiated) {
+                    MobileWorkspaceFiles.encoded(try MobileWorkspaceFiles.listing(workspaceId: workspaceId, path: path, root: root))
+                }.value
+                return MobileReply(status: 200, body: body)
+            }
+            // Text (and every refusal) is finished here; an image comes back unread.
+            let prepared = try await Task.detached(priority: .userInitiated) { () throws -> (body: Data?, stage: MobileWorkspaceFiles.PreviewStage) in
+                let stage = try MobileWorkspaceFiles.prepare(workspaceId: workspaceId, path: path, root: root)
+                guard case .done(let preview) = stage else { return (nil, stage) }
+                return (MobileWorkspaceFiles.encoded(preview), stage)
+            }.value
+            if let body = prepared.body { return MobileReply(status: 200, body: body) }
+            guard case .image(let preview, let file) = prepared.stage else { throw MobileFileError.notReadable }
+            guard await acquirePreviewSlot(deviceId: deviceId) else { throw MobileFileError.superseded }
+            defer { releasePreviewSlot() }
+            try Task.checkCancellation()
+            let svg = delegate.mobileSVGRasterizer
+            let decode = Task.detached(priority: .userInitiated) { () throws -> Data? in
+                try MobileWorkspaceFiles.finish(preview, file: file, svg: svg, isCancelled: { Task.isCancelled }).map(MobileWorkspaceFiles.encoded)
+            }
+            guard let body = try await withTaskCancellationHandler(operation: { try await decode.value }, onCancel: { decode.cancel() }) else {
+                throw CancellationError()
+            }
+            return MobileReply(status: 200, body: body)
+        } catch let error as MobileFileError { throw Failure(error) }
     }
 }
 
@@ -945,6 +1034,9 @@ actor RelayClientConnection {
     private var outbound: [Data] = []
     private var writer: Task<Void, Never>?
     static let handshakeDeadline: TimeInterval = 10
+    /// A tunnelled request's path and query: a file route's 4,096-byte path
+    /// percent-encoded (three bytes each) plus the route, with room to spare.
+    static let maximumPathBytes = 16 * 1_024
 
     init(id: String, url: URL, session: URLSession, identity: RelayHostIdentity, delegate: MobileHostDelegate, router: MobileRemoteService) {
         self.id = id; self.url = url; self.session = session; self.identity = identity; self.delegate = delegate; self.router = router
@@ -984,7 +1076,11 @@ actor RelayClientConnection {
                     continue
                 }
                 guard let requestId = object["id"] as? String, requestId.count <= 64, let method = object["method"] as? String, ["GET", "POST"].contains(method),
-                      let path = object["path"] as? String, path.hasPrefix("/"), path.utf8.count <= 2048 else { continue }
+                      let path = object["path"] as? String, path.hasPrefix("/") else { continue }
+                // Answered rather than dropped: a phone would otherwise wait out its timeout.
+                guard path.utf8.count <= Self.maximumPathBytes else {
+                    send(["id": requestId, "status": 414, "body": ["protocol": 1, "error": "경로가 너무 깁니다.", "code": "badPath"]]); continue
+                }
                 guard inFlight < 8 else { send(["id": requestId, "status": 429, "body": ["protocol": 1, "error": "동시 요청이 너무 많습니다."]]); continue }
                 let body: Data? = (object["body"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
                 inFlight += 1

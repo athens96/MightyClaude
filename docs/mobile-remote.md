@@ -69,13 +69,13 @@ MobilePermission {
 
 페어링 문자열(QR 내용)은 relay.md의 v2 형식이다.
 
-제한: 요청 본문 64 KiB, `text` 32 KiB, 세션당 대기열 16개, 롱폴 `wait` 최대 10초, 연결당 동시 요청 8개, 호스트당 휴대폰 32대.
+제한: 요청 본문 64 KiB, `text` 32 KiB, 요청 경로(질의 포함) 16 KiB, 세션당 대기열 16개, 롱폴 `wait` 최대 10초, 연결당 동시 요청 8개, 호스트당 휴대폰 32대. 경로가 16 KiB를 넘는 요청은 버리지 않고 414 `{ protocol: 1, error, code: "badPath" }`로 답한다(휴대폰이 제한 시간까지 기다리지 않도록). 16 KiB는 파일 라우트의 4,096바이트 경로를 퍼센트 인코딩한 최대 길이(3배)에 라우트를 더하고도 남는다.
 
 ## m1 확장 (capabilities)
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`.
 
 공통 오류: 알 수 없는 실행 창·항목 404, 형식 오류·허용 값 밖의 문자열·필수 필드 누락 400, 지금 상태에서 할 수 없음 409, 크기 초과 413. 허용 값 밖의 값을 조용히 기본값으로 바꾸지 않는다.
 
@@ -114,6 +114,8 @@ MobilePermission {
 | POST | `/m1/uploads/{uploadId}/chunks/{index}` | `{ dataBase64 }` | `{ protocol, ok, received }` — 순서대로 0부터. 이 라우트만 본문 한도 300 KiB |
 | POST | `/m1/uploads/{uploadId}/complete` | | `{ protocol, attachment: { id, name, size } }` · 크기가 선언과 다르면 400 |
 | POST | `/m1/uploads/{uploadId}/cancel` | | `{ protocol, ok }` |
+| GET | `/m1/workspaces/{id}/files?path=<상대 경로>` | | `MobileFileListing` — 폴더 하나(`path` 없거나 빈 값이면 워크스페이스 루트). 아래 "파일" 절 |
+| GET | `/m1/workspaces/{id}/file?path=<상대 경로>` | | `MobileFilePreview` — 파일 하나의 미리보기. 아래 "파일" 절 |
 
 `POST /m1/workspaces/{id}/sessions`는 **로컬** 워크스페이스에서 `kind: "shell"`을 409로 거절한다(휴대폰에서 쓸 수 없는 창이 되기 때문).
 
@@ -245,6 +247,65 @@ POST /m1/sessions/{id}/guided
 
 **휴대폰은 스타일을 등록·승인·취소·재스캔할 수 없다.** 그 넷은 Mac에서만 한다(마이티 스타일 계약 §4.5). 휴대폰의 승인 여부는 오직 `styleId`·`options.styles`의 결과로만 드러난다.
 
+### 파일 (files)
+
+Mac 파일 창([file-pane.md](file-pane.md))을 휴대폰에서 **읽기 전용**으로 보는 두 라우트다. 아무것도 쓰지 않고, 편집·첨부·이름 바꾸기 라우트는 없다.
+
+```
+GET /m1/workspaces/{id}/files?path=<상대 경로>
+MobileFileListing {
+  protocol: 1, workspaceId, path,                      // path: 요청한 폴더("" = 루트)
+  entries: [{ name, relativePath,                      // relativePath: 루트 아래 "/"로 이은 경로. 그대로 path=에 되돌려 보낸다
+              kind: "folder" | "file" | "symlink-folder" | "symlink-file",
+              size?: number,                           // 바이트, 파일만(링크는 대상 파일의 크기)
+              modified?: ISO-8601,
+              noise: boolean }],                       // .git·node_modules 같은 잡음 폴더(Mac처럼 흐리게)
+  truncated: boolean                                   // 항목이 더 있었다
+}
+
+GET /m1/workspaces/{id}/file?path=<상대 경로>
+MobileFilePreview {
+  protocol: 1, workspaceId, path, name, size, modified?,
+  type: "source" | "markdown" | "image" | "unsupported",
+  // source·markdown
+  language?: string,        // source만: Mac 강조기의 언어(swift, javascript, …, 강조 없는 텍스트는 plain)
+  encoding?: string,        // "UTF-8" "UTF-8 BOM" "UTF-16 LE" "UTF-16 BE" "UTF-32 LE" "UTF-32 BE" "CP949 (EUC-KR)"
+  text?: string, truncated?: boolean, lineCount?: number,
+  // image
+  mime?: "image/jpeg" | "image/png",                   // 썸네일 자체의 형식
+  width?, height?,                                     // 원본 크기: 비트맵은 픽셀(회전 반영), svg·pdf는 포인트
+  thumbnailWidth?, thumbnailHeight?, data?: base64,
+  // unsupported
+  reason?: "binary" | "notRegularFile" | "tooLarge" | "undecodable"
+}
+```
+
+- 정렬·잡음 폴더·분류·인코딩은 Mac 파일 창과 같은 함수(`WorkspaceFiles`, `FilePreviewClassifier`)가 정한다: 폴더 먼저, 대소문자 무시·자연 정렬, 숨김 파일 포함. 텍스트는 BOM → UTF-8 → CP949 순서로 풀어 **UTF-8 문자열**로 보내고 `encoding`에 무엇으로 풀었는지 적는다. Markdown은 원문 그대로 보내고 휴대폰이 렌더링한다(131,072바이트가 넘으면 원본으로).
+- 이미지: 비트맵은 ImageIO로 긴 변 2,048픽셀 이하 썸네일을 만든다. 투명한 이미지는 PNG, 아니면(또는 PNG가 크면 흰 배경에 얹어) JPEG(품질 0.8)이고, 인코딩한 크기가 512 KiB를 넘으면 긴 변을 1,600 → 1,280 → 1,024 → 768 → 512 → 256으로 줄여 가며 다시 만든다. pdf는 첫 쪽을 흰 배경에, svg는 앱이 AppKit으로 그린 그림을(포인트 크기의 2배, 최대 2,048픽셀) 같은 규칙으로 보낸다. 50 MB보다 큰 이미지는 읽지 않고, 헤더의 가로×세로가 1억 픽셀(`FilePreviewClassifier.maximumFullPixels`)을 넘는 비트맵은 썸네일로도 풀지 않는다(둘 다 `unsupported`·`tooLarge`). 풀 수 없으면 `undecodable`. svg·pdf의 포인트 크기가 유한하지 않거나 0 이하이거나 한 변이 10,000,000포인트를 넘으면 그리지 않고 `undecodable`이다 — 정수로 바꾸기 전에 거른다.
+- **svg 규칙.** CoreSVG(`NSImage`)는 `<image href>`의 `file:` URL·절대 경로·맨 상대 경로(앱 프로세스의 작업 폴더 기준)를 따라가 읽으므로, 그리기 전에 파일 바이트를 보고 조금이라도 바깥을 부를 수 있으면 그리지 않고 `undecodable`로 답한다(`FilePreviewClassifier.svgLoadsExternalContent`). 텍스트로 풀고(BOM → UTF-8 → CP949, 풀리지 않으면 거부) 숫자 문자 참조(`&#…;`)와 기본 엔티티를 풀고 대소문자를 무시한 뒤, 다음 중 하나라도 있으면 거부한다: `#`으로 시작하지 않고 svg·xml·html이 아닌 `data:`도 아닌 `href`·`xlink:href`(접두어 무관)·`src`·`srcset` 값(따옴표 유무·`=` 앞뒤 공백 무관, 빈 값 포함), 같은 조건의 CSS `url(`, `@import`, `image-set(`, `xml:base`, `<!ENTITY`, 식별자(`SYSTEM`/`PUBLIC`)나 내부 부분집합(`[`)이 있는 DOCTYPE, CSS 역슬래시 이스케이프, ASCII로 읽을 수 없는 XML 선언 인코딩(UTF-7 등). 링크(`<a href="https://…">`)나 W3C DTD를 적은 svg도 거부되는 보수적 규칙이다.
+- 폴더·FIFO·소켓·장치 파일은 열어도 읽지 않고 `unsupported`·`notRegularFile`(크기·수정일만), 바이너리는 `binary`.
+
+**한도.** 폴더당 항목 2,000개(넘으면 `truncated: true`), 텍스트는 파일 앞 512 KiB. 응답 본문(JSON) 전체를 768 KiB 이하로 맞춘다 — 릴레이는 1 MiB가 넘는 프레임에서 연결을 끊고([relay.md](relay.md)) 내려받기에는 청크 방식이 없기 때문이다. 이스케이프로 커지는 텍스트(제어 문자 등)는 4분의 1씩 더 잘라 `truncated: true`로, 긴 경로로 커지는 목록은 뒤 항목을 덜어 `truncated: true`로 보낸다. 썸네일은 인코딩 전 512 KiB(base64 약 683 KiB). 폴더는 디스크에서 이름을 20,000개(`WorkspaceFiles.maximumEnumeratedNames`)까지만 읽고 그 너머는 읽지 않은 채 `truncated: true`로 답하므로, 수십만 개짜리 폴더를 거듭 요청해도 Mac이 전부 확인·정렬하지 않는다. **미리보기 자리.** 이미지(비트맵·pdf·svg)를 풀 때만 미리보기 전용 자리 하나(`concurrentImagePreviews`)를 잡는다. 텍스트 미리보기와 목록은 자리를 잡지 않고, 첨부가 있는 `submit`은 자기 자리 둘을 따로 쓰므로 업로드·첨부 보내기가 미리보기 뒤에서 기다리는 일은 없다. 자리를 기다리는 동안 같은 기기의 새 미리보기가 오면 먼저 기다리던 것은 풀지 않고 409 `superseded`로 끝낸다(휴대폰은 이미 다른 파일로 넘어갔다). 자리를 잡은 뒤와 썸네일 단계(읽기, 크기 사다리의 각 단계) 사이마다 요청이 취소됐는지 보고, 취소됐으면 더 풀지 않는다. 읽기는 모두 메인 스레드와 라우팅 액터 밖에서 한다.
+
+**보안 규칙.** 루트는 Mac의 파일 창과 같은 워크스페이스 폴더(`MobileState.workspaces[].path`)이고, Mac에 있는 워크스페이스만 된다. 경로 검사는 새로 만들지 않고 파일 창의 것을 그대로 쓴다: 목록은 `WorkspaceFiles.list`(심볼릭 링크를 풀어 실제 경로가 루트 밖이면 목록에서 뺀다), 파일은 `WorkspaceFiles.openFile`(`O_NOFOLLOW|O_NONBLOCK`으로 열고, 일반 파일인지 `fstat`로, 열린 파일의 실제 경로를 `F_GETPATH`로 다시 확인한 뒤 그 디스크립터로만 읽음). 그 앞에서 휴대폰의 `path`를 먼저 거른다: 절대 경로와 `..` 요소는 `outsideWorkspace`, NUL·4,096바이트 초과·빈 요소(`a//b`)·`.` 요소는 `badPath`. `path` 말고 다른 질의나 `path`가 두 번 오면 400.
+
+**오류.** 본문은 `{ protocol: 1, error, code }`다. `code`는 휴대폰이 자기 말로 바꿔 보여 주는 값이고 `error`는 한국어 문장이다.
+
+| 상태 | `code` | 뜻 |
+|---|---|---|
+| 404 | `workspaceNotFound` | Mac에 그런 워크스페이스가 없다 |
+| 404 | `notFound` | 그 경로에 아무것도 없다 |
+| 403 | `outsideWorkspace` | 절대 경로·`..`, 또는 루트 안 폴더에 바로 있는 링크인데 실제 경로가 루트 밖(끊어진 링크 포함) |
+| 403 | `notReadable` | 권한이 없는 등 읽을 수 없다 |
+| 400 | `notDirectory` | `files`에 파일 경로를 줬다 |
+| 400 | `badPath` | 형식이 틀린 경로, 또는 `file`에 빈 경로 |
+| 414 | `badPath` | 요청 경로(질의 포함)가 16 KiB를 넘는다(터널이 답한다) |
+| 409 | `superseded` | 같은 기기의 새 미리보기가 와서, 자리를 기다리던 이 요청은 건너뛰었다 |
+
+**존재 여부를 흘리지 않는다.** 루트 밖으로 나가는 링크 **아래**의 경로(`outdir/secret.txt`처럼 부모 폴더가 루트 안으로 풀리지 않는 경로)는 거기에 무엇이 있든 없든 똑같이 404 `notFound`다. `outsideWorkspace`는 루트 안으로 풀리는 폴더에 바로 들어 있는 항목(그 링크 자체)에만 쓴다 — 그 폴더의 목록으로 이미 보이는 것이다.
+
+`files` capability가 없는 호스트에는 두 라우트가 없으므로(404) 휴대폰은 `파일` 버튼을 보이지 않는다.
+
 ### 휴대폰에서 의도적으로 제외한 Mac 기능
 
 알림(푸시·로컬), 터미널 실행 창 조작, 워크스페이스 추가·이름 변경·제거, 그래프 배치·블록 크기 조절·참조 말풍선, CLI 계정 전환·CLI 업데이트·앱 자체 업데이트·앱 설정, 펫, 다국어, **스타일 등록·승인·취소·재스캔과 마이티 스타일 설정 화면**(Mac 전용).
@@ -265,9 +326,10 @@ POST /m1/sessions/{id}/guided
 - `MightyCore/Remote/MobileRemoteSupport.swift`: 확장의 순수 규칙(이름·페이지·설정 검증, 상태줄·사용량 변환, 명령 매핑, 마이티 블록 투영과 리비전 요약, 안내형 프롬프트, `/guided`의 관문 판정 `guidedDecision`).
 - `MightyCore/Remote/MobileUploadStore.swift`: 첨부 업로드 저장소(0700 폴더·0600 파일, 순서·크기 검증, 기기·실행 창 범위, 단일 사용, 10분 만료).
 - `MightyCore/Remote/MobileDeviceRegistry.swift`: 기기 토큰 등록부와 인증 판정(`devices.json`).
+- `MightyCore/Remote/MobileWorkspaceFiles.swift`: 파일 라우트의 경로 거르기, 목록·미리보기 모양, 응답 크기 맞추기, 썸네일(svg는 `MobileHostDelegate.mobileSVGRasterizer`로 앱이 그림).
 - `MightyCore/Styles/StylePanelProjection.swift`: `MobileMighty.panel`이 되는 `StylePanel`의 모양과 골든 직렬화. Mac 패널과 같은 함수가 만든다(스타일 엔진 계약: [mighty-styles.md](mighty-styles.md) §5.6·§7.3).
 - `MightyCore/Remote/MobileLegacyStyleAdapter.swift`: 내장 두 스타일의 `mighty.ouroboros`/`mighty.paperthin`을 같은 투영에서 만드는 레거시 어댑터.
 
 ## 모바일 앱
 
-`mobile/README.md`를 참고한다. 화면은 페어링(QR/링크 붙여넣기) → 호스트 → 워크스페이스·세션 목록 → 세션 상세(대화, 권한·질문 카드, 입력창, 중지)다. 마이티 보기의 범용 스타일 패널은 `mobile/src/lib/styles.ts`(정규화·뷰 모델)와 `mobile/src/components/guided-panel.tsx`·`guided-action-chip.tsx`가 그린다.
+`mobile/README.md`를 참고한다. 화면은 페어링(QR/링크 붙여넣기) → 호스트 → 워크스페이스·세션 목록 → 세션 상세(대화, 권한·질문 카드, 입력창, 중지)이고, 워크스페이스마다 읽기 전용 파일 목록 → 파일 미리보기가 있다. 마이티 보기의 범용 스타일 패널은 `mobile/src/lib/styles.ts`(정규화·뷰 모델)와 `mobile/src/components/guided-panel.tsx`·`guided-action-chip.tsx`가 그린다.

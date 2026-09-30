@@ -436,6 +436,44 @@ struct RelayIntegrationTests {
         }
         withExtendedLifetime(host) {}
     }
+    /// A file path at the route's own limit travels percent-encoded (a Hangul
+    /// syllable is nine bytes of it) and is answered; a path past the tunnel's
+    /// limit is answered 414 instead of dropped, so the phone never waits out
+    /// its timeout.
+    @Test(.enabled(if: RelayIntegrationTests.relayHarnessAvailable))
+    func longFilePathsAreAnsweredNeverDropped() async throws {
+        let script = try #require(Self.relayScript)
+        let node = try #require(Self.node)
+        let (relay, port) = try await startRelay(script: script, node: node)
+        defer { relay.stop() }
+        try #require(await waitForHealthz(port: port))
+
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("relay-paths-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = RecordingHost()
+        try await withHost(directory: directory, port: port, delegate: host) { _, offer in
+            let paired = try await dial(offer: offer, frame: ["type": "auth", "pairingKey": offer.pairingKey, "clientId": "cGhvbmUtaW50ZWctUEFU", "clientName": "Path phone"])
+            #expect(paired.reply["type"] as? String == "auth_ok")
+            let phone = paired.phone
+            defer { phone.close() }
+
+            let hangul = (0..<1_365).map { _ in "가" }.joined() // 4,095 bytes
+            let encoded = try #require(hangul.addingPercentEncoding(withAllowedCharacters: .alphanumerics))
+            let path = "/m1/workspaces/workspace-1/file?path=" + encoded
+            #expect(path.utf8.count > 12_000 && path.utf8.count <= RelayClientConnection.maximumPathBytes)
+            try await phone.send(["id": "p1", "method": "GET", "path": path])
+            let long = try await phone.receive()
+            #expect(long["id"] as? String == "p1" && long["status"] as? Int == 404)
+            #expect((long["body"] as? [String: Any])?["code"] as? String == "notFound")
+
+            try await phone.send(["id": "p2", "method": "GET", "path": path + String(repeating: "%EA%B0%80", count: 500)])
+            let tooLong = try await phone.receive()
+            #expect(tooLong["id"] as? String == "p2" && tooLong["status"] as? Int == 414)
+            #expect((tooLong["body"] as? [String: Any])?["code"] as? String == "badPath")
+        }
+        withExtendedLifetime(host) {}
+    }
+
     /// Polls the host until `relayConnected` reads `connected`, for at most
     /// `seconds`; answers what it read last.
     private func waitForRelay(_ service: MobileRemoteService, connected: Bool, seconds: Double) async -> Bool {
