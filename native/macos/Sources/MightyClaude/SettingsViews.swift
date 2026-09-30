@@ -36,6 +36,7 @@ struct RunSettingsView: View {
                 Text(L("settings.run.title")).font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
+                if ProviderOptions.isBeta(session.provider) { BetaBadge() }
             }.padding(16)
             Divider()
             ScrollView {
@@ -280,7 +281,7 @@ struct AppSettingsView: View {
                     let provider = store.runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name) }.font(.system(size: 13, weight: .medium))
+                            HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.system(size: 13, weight: .medium))
                             Spacer()
                             Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
                         }

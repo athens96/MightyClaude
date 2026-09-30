@@ -232,6 +232,7 @@ private struct PaneDockTab: View {
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
                 Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125).help(session.titleHelp)
+                if session.kind == "claude" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
                 if session.status == "running" { StatusDot(status: session.status) }
             }
             .padding(.leading, 10).padding(.trailing, 6)

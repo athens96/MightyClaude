@@ -218,8 +218,11 @@ struct SessionInfoView: View {
                 ProviderIcon(provider: session.provider, size: 20)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(session.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).help(session.titleHelp)
-                    Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("session-info-provider-\(sessionID)")
+                    HStack(spacing: 6) {
+                        Text(ProviderOptions.label(session.provider)).font(.system(size: 11)).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("session-info-provider-\(sessionID)")
+                        if ProviderOptions.isBeta(session.provider) { BetaBadge() }
+                    }
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: 4) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.system(size: 10)) }

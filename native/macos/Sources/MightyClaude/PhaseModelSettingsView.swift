@@ -43,7 +43,10 @@ private struct PhaseModelProviderBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
+            HStack(spacing: 6) {
+                Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
+                if ProviderOptions.isBeta(provider) { BetaBadge() }
+            }
             if provider == "claude" { claudePhaseRows } else { codexPhaseRows }
             Divider()
             if provider == "claude" { claudeKnobDetails } else { codexKnobDetails }

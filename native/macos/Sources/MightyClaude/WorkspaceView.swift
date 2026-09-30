@@ -171,6 +171,7 @@ struct WorkspaceView: View {
                                 else { ProviderIcon(provider: session.provider, size: 10) }
                             }.foregroundStyle(.secondary).frame(width: 12)
                             Text(session.title).font(.system(size: 11)).lineLimit(1).help(session.titleHelp)
+                            if session.kind == "claude" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
                             Spacer(minLength: 0)
                             if permissionPending { Text("승인 대기").font(.system(size: 9, weight: .medium)).foregroundStyle(.orange) }
                             else if agentRunning { Text("작업 중").font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.accent) }
@@ -180,7 +181,7 @@ struct WorkspaceView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(session.title), \(permissionPending ? "승인 대기" : Palette.status(session.status))")
+                    .accessibilityLabel("\(session.title)\(session.kind == "claude" && ProviderOptions.isBeta(session.provider) ? ", " + L("badge.betaAccessibility") : ""), \(permissionPending ? "승인 대기" : Palette.status(session.status))")
                     .background(session.id == store.snapshot.activeSessionId ? Palette.subtle : Color.clear, in: RoundedRectangle(cornerRadius: 6))
                     .contextMenu {
                         Button(L("menu.rename")) { store.beginRenameSession(session.id) }
@@ -226,7 +227,7 @@ struct WorkspaceView: View {
         Menu {
             ForEach(ProviderOptions.ids, id: \.self) { provider in
                 Button { addSession(in: workspace, kind: "claude", provider: provider) } label: {
-                    Label { Text("새 \(ProviderOptions.label(provider)) 실행 창") } icon: {
+                    Label { Text(ProviderOptions.betaTitle(provider, "새 \(ProviderOptions.label(provider)) 실행 창")) } icon: {
                         if let image = ProviderIconImage.image(provider: provider, pointSize: 12) { Image(nsImage: image) }
                         else { Image(systemName: Palette.symbol(provider)) }
                     }

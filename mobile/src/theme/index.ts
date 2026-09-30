@@ -221,6 +221,14 @@ export function providerLabel(provider: string): string {
 }
 
 /**
+ * Claude is official; Codex and Gemini are beta. The phone's one answer for every beta
+ * badge — the badge is drawn beside the name and never becomes part of `providerLabel`.
+ */
+export function providerIsBeta(provider: string): boolean {
+  return provider === 'codex' || provider === 'gemini';
+}
+
+/**
  * Tint for a Mighty block, mirroring the Mac: the request itself is the accent, and each
  * child kind keeps its own colour. A kind the contract does not list is neutral.
  */

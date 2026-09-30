@@ -242,6 +242,7 @@ struct StatusBarUsageDetails: View {
             HStack(spacing: 6) {
                 ProviderIcon(provider: provider, size: 12)
                 Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .semibold))
+                if ProviderOptions.isBeta(provider) { BetaBadge() }
                 Spacer()
                 if let usage, usage.accountLabel != nil || usage.plan != nil {
                     Text([usage.accountLabel, usage.plan].compactMap { $0 }.joined(separator: " · ")).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)

@@ -44,6 +44,7 @@ struct CLIUpdateSettingsSection: View {
                                 .foregroundStyle(result.status == "failed" ? Color.orange : Color.secondary)
                             Text(L("settings.cliUpdate.resultRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status)]))
                                 .font(.system(size: 11, weight: .medium))
+                            if ProviderOptions.isBeta(provider) { BetaBadge() }
                         }
                         if let before = result.beforeVersion, let after = result.afterVersion, before != after {
                             Text(L("settings.cliUpdate.versionChangeTemplate", ["before": before, "after": after])).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
@@ -61,6 +62,7 @@ struct CLIUpdateSettingsSection: View {
                                 .foregroundStyle(result.status == "failed" ? Color.orange : Color.secondary)
                             Text(L("settings.cliUpdate.pluginRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status == "succeeded" ? "updated" : result.status)]))
                                 .font(.system(size: 11, weight: .medium))
+                            if ProviderOptions.isBeta(provider) { BetaBadge() }
                         }
                         Text(result.detail).font(.system(size: 11)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)

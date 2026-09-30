@@ -36,7 +36,10 @@ struct CLIAccountsSettingsSection: View {
         HStack(alignment: .top, spacing: 8) {
             ProviderIcon(provider: provider, size: 14).frame(width: 18).padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
-                Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
+                HStack(spacing: 6) {
+                    Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
+                    if ProviderOptions.isBeta(provider) { BetaBadge() }
+                }
                 Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.system(size: 11)).foregroundStyle(status?.loggedIn == false ? Color.orange : Color.secondary).lineLimit(1).textSelection(.enabled)
                     .accessibilityIdentifier("cli-account-status-\(provider)")
                 if let status, !status.canSignOut, !status.detail.isEmpty, status.detail != status.summary {

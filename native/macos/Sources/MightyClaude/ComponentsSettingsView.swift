@@ -44,6 +44,7 @@ struct ComponentsSettingsSection: View {
             HStack(spacing: 8) {
                 icon(component)
                 Text(component.title).font(.system(size: 13, weight: .medium))
+                if ProviderOptions.isBeta(component.id) { BetaBadge() }
                 if let version = component.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
                 stateLabel(component.state)
