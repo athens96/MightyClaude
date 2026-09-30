@@ -71,17 +71,28 @@ public struct PaneMCPBinding: Sendable, Equatable, CustomStringConvertible, Cust
 
     /// The `-c mcp_servers.<name>.*` args for a Codex run. `env_vars` whitelists
     /// the two variables from the Codex process environment for the server.
-    func codexMCPArgs() -> [String] {
+    ///
+    /// `-c developer_instructions=` replaces the user's configured value, so
+    /// ours is appended after theirs, and when their value cannot be read the
+    /// flag is left out rather than clobbering it.
+    func codexMCPArgs(userInstructions: CodexUserInstructions.Setting) -> [String] {
         let name = PaneMCPBinding.serverName
-        return [
+        var args = [
             "-c", "mcp_servers.\(name).command=\(Self.tomlLiteral(server.executable.path))",
             "-c", "mcp_servers.\(name).args=\(Self.tomlLiteral(server.arguments))",
             "-c", "mcp_servers.\(name).env_vars=\(Self.tomlLiteral([Self.tokenEnvironmentKey, Self.socketEnvironmentKey]))"
         ]
+        let ours = PaneMCPToolManifest.codexDeveloperInstructions
+        switch userInstructions {
+        case .absent: args += ["-c", "developer_instructions=\(Self.tomlLiteral(ours))"]
+        case .value(let theirs): args += ["-c", "developer_instructions=\(Self.tomlLiteral(theirs + "\n\n" + ours))"]
+        case .unreadable: break
+        }
+        return args
     }
 
     /// JSON string and array literals are valid TOML basic strings and arrays.
-    private static func tomlLiteral<T: Encodable>(_ value: T) -> String {
+    static func tomlLiteral<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
         return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "\"\""
     }
@@ -180,7 +191,16 @@ public struct PaneMCPToolManifest {
     }
 
     /// Server-level instructions sent with `initialize`.
-    public static let routingGuidance = "Use run_in_terminal for commands the user should see and for long-running processes such as dev servers, watchers and long builds. Keep short internal work such as grep, file reads and quick build or test checks in your built-in Bash tool."
+    public static let routingGuidance = "Use run_in_terminal for commands the user should see and for long-running processes such as dev servers, watchers and long builds. Keep short internal work such as grep, file reads and quick build or test checks in your built-in Bash tool. " + interactiveGuidance
+
+    /// Commands that wait for the user must run where the user can answer them.
+    public static let interactiveGuidance = "Any command that asks the user something or waits for them to type, pick or approve (sign-ins such as glab auth login, gh auth login, codex login or claude auth login, a browser or SSO approval, a password or passphrase prompt) must be started with run_in_terminal so the user answers it in the terminal pane; then follow it with read_latest_output until it ends. Never drive such a prompt from your own shell session or by sending keystrokes to it."
+
+    /// Codex does not surface MCP server instructions to the model, so a Codex
+    /// run carries the same guidance as developer instructions.
+    public static var codexDeveloperInstructions: String {
+        "This app gives you a \(PaneMCPBinding.serverName) MCP server whose tools reach the user's terminal pane. " + routingGuidance
+    }
 
     public static let runInTerminal = Tool(
         name: "run_in_terminal",

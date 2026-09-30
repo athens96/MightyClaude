@@ -113,11 +113,11 @@ public struct ProviderInput {
         var data = try JSONSerialization.data(withJSONObject: ["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()], options: [.sortedKeys, .withoutEscapingSlashes])
         data.append(10); return data
     }
-    public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false, paneMCPBinding: PaneMCPBinding? = nil) throws -> ProviderInput {
+    public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false, paneMCPBinding: PaneMCPBinding? = nil, codexHome: URL? = nil) throws -> ProviderInput {
         guard request.provider != "codex" || request.settings.permissionMode != "onRequest" else {
             throw MightyError("Codex 승인 요청의 입력과 첨부는 app-server 연결로 전송해야 합니다.")
         }
-        var arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneMCPBinding)
+        var arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneMCPBinding, codexHome: codexHome)
         guard !request.attachments.isEmpty else {
             if request.provider == "claude", allowPermissionPrompts {
                 return ProviderInput(arguments: arguments, standardInput: try claudeUserMessage(request.input))
