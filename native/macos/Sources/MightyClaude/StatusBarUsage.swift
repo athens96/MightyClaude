@@ -50,7 +50,7 @@ final class AccountUsageStatusController: ObservableObject {
         guard !stopped else { return }
         let local = Set(snapshot.workspaces.map(\.id))
         var next: [String] = []
-        for session in snapshot.sessions where session.kind != "shell" && local.contains(session.workspaceId) && ProviderOptions.ids.contains(session.provider) {
+        for session in snapshot.sessions where session.kind != "shell" && !FilePaneKind.isFilePane(session.kind) && local.contains(session.workspaceId) && ProviderOptions.ids.contains(session.provider) {
             if !next.contains(session.provider) { next.append(session.provider) }
         }
         next.sort { (ProviderOptions.ids.firstIndex(of: $0) ?? 0) < (ProviderOptions.ids.firstIndex(of: $1) ?? 0) }

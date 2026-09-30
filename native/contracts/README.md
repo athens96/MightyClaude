@@ -195,6 +195,10 @@ Snapshots also retain optional `paneLayoutModes` and `paneLayoutActiveSessionIds
 dictionaries, keyed by workspace ID, so each workspace keeps its display mode
 and selected tab independently.
 
+The macOS files pane (`kind: "files"`, id `files:<workspaceId>`) is local to a
+running app: snapshots never store it and the relay pane list never carries it
+(docs/file-pane.md).
+
 ## Next actions (`fixtures/next-actions.json`)
 
 Ouroboros replies end with a breadcrumb `◆ <state> → next: <actions>`. When the

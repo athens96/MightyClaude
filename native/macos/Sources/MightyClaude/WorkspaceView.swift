@@ -167,6 +167,7 @@ struct WorkspaceView: View {
                             Group {
                                 if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
                                 else if session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
+                                else if session.kind == FilePaneKind.kind { Image(systemName: "folder").font(.system(size: 10)) }
                                 else { ProviderIcon(provider: session.provider, size: 10) }
                             }.foregroundStyle(.secondary).frame(width: 12)
                             Text(session.title).font(.system(size: 11)).lineLimit(1).help(session.titleHelp)
@@ -207,6 +208,14 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            Button { store.openFilePane(workspaceId: workspace.id) } label: {
+                Image(systemName: "folder").font(.system(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .disabled(store.hasModal)
+            .help(L("menu.showFiles") + " (⇧⌘E)")
+            .accessibilityLabel(L("menu.showFiles"))
+            .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
         }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 10)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-header-\(workspace.id)")

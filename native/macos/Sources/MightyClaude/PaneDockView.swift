@@ -177,6 +177,7 @@ private struct PaneDockGroup: View {
                     if selected.kind == "browser" { BrowserPaneView(session: selected).id(selected.id) }
                     else if selected.kind == AgentIOPaneKind.terminal { AgentTerminalPaneView(session: selected).id(selected.id) }
                     else if selected.kind == AgentIOPaneKind.browser { AgentBrowserPaneView(session: selected).id(selected.id) }
+                    else if selected.kind == FilePaneKind.kind { FilePaneView(session: selected).id(selected.id) }
                     else { SessionPaneView(session: selected).id(selected.id) }
                 } else { Color.clear }
             }
@@ -227,6 +228,7 @@ private struct PaneDockTab: View {
                 Group {
                     if session.kind == "shell" || session.kind == AgentIOPaneKind.terminal { Image(systemName: "terminal").font(.system(size: 10)) }
                     else if session.kind == "browser" || session.kind == AgentIOPaneKind.browser { Image(systemName: "globe").font(.system(size: 10)) }
+                    else if session.kind == FilePaneKind.kind { Image(systemName: "folder").font(.system(size: 10)) }
                     else { ProviderIcon(provider: session.provider, size: 10) }
                 }
                 Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125).help(session.titleHelp)

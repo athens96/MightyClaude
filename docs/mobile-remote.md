@@ -47,6 +47,8 @@ MobileSessionSummary {
 id `agent-terminal:<에이전트 창 id>`)과 에이전트가 앱 안에서 연 브라우저 창(`kind: "agent-browser"`,
 id `agent-browser:<에이전트 창 id>`). 둘 다 `terminal: true`로 실려서 휴대폰은 목록에만 올리고
 명령은 보내지 않는다(내용 렌더링은 범위 밖). 에이전트 창이 닫히면 두 창도 목록에서 사라진다.
+Mac의 읽기 전용 파일 창(`kind: "files"`, id `files:<워크스페이스 id>`)은 목록에 싣지 않으며, 그 id로 온 요청은
+찾을 수 없는 창으로 처리한다([file-pane.md](file-pane.md)).
 
 ```
 MobileSessionDetail {

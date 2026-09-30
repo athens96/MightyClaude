@@ -66,6 +66,9 @@ struct MightyClaudeApp: App {
                 Button(L("menu.addTerminalPane")) { store.addSession(kind: "shell") }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
+                Button(L("menu.showFiles")) { store.openFilePane() }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
                 Divider()
                 Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: nil) }
                 Button(L("menu.saveInputDiagnostics")) { store.saveInputMethodDiagnostics() }
