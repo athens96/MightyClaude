@@ -159,7 +159,7 @@ final class AgentCompanion: ObservableObject {
         submittedInputs = submittedInputs.filter { ids.contains($0.key) }
         activeRuns.formIntersection(ids)
         lastTouched = lastTouched.filter { ids.contains($0.key) }
-        agents = snapshot.sessions.filter { $0.kind != "shell" }.map { session in
+        agents = snapshot.sessions.filter { $0.kind != "shell" && !FilePaneKind.isFilePane($0.kind) }.map { session in
             let activity = activities[session.id]
             let live = session.status == "running"
             let state = live && activity?.state == "waiting" ? "waiting" : session.status

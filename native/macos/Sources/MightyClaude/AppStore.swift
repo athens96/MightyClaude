@@ -163,6 +163,10 @@ final class AppStore: ObservableObject {
     /// opened stays loaded while its pane is hidden behind a tab or closed, and
     /// the agent's next in-app open navigates this same engine.
     @Published var agentBrowsers: [String: CefBrowserEngine] = [:]
+    /// Each workspace's files pane state (opened folders, selection), kept
+    /// until quit so a closed files pane reopens as it was. Its preview is
+    /// released when the pane closes and read again when it reopens.
+    var filePaneModels: [String: FilePaneModel] = [:]
     /// URL choice dialogs waiting for an answer, each shown in the agent pane that asked.
     @Published var webOpenRequests: [WebOpenPromptRequest] = []
     /// The dialog's model: the open_url service presents to it and polls it.
@@ -298,6 +302,7 @@ final class AppStore: ObservableObject {
         else if arguments.contains("--agent-smoke-test") { Task { await runAgentSmokeTest() } }
         else if arguments.contains("--layout-smoke-test") { Task { await runLayoutSmokeTest() } }
         else if arguments.contains("--usage-reset-smoke-test") { Task { await runUsageResetSmokeTest() } }
+        else if arguments.contains("--files-smoke-test") { Task { await runFilesSmokeTest() } }
         else if terminalSmokeMode { Task { await runTerminalSmokeTest() } }
         else if arguments.contains("--smoke-test") { Task { await runSmokeTest() } }
     }
@@ -466,12 +471,14 @@ final class AppStore: ObservableObject {
 
     func closeSession(_ id: String) {
         guard closingSessions.insert(id).inserted else { return }
-        let workspaceId = snapshot.sessions.first(where: { $0.id == id })?.workspaceId
+        let closing = snapshot.sessions.first(where: { $0.id == id })
+        let workspaceId = closing?.workspaceId
         let previousGroup = workspaceId.flatMap { layoutForWorkspace($0)?.group(containing: id) }
         Task {
             await stop(id)
             await runner.revokePaneMCPBinding(agentPaneId: id)
             snapshot.sessions.removeAll { $0.id == id }
+            if let closing, FilePaneKind.isFilePane(closing.kind) { filePaneModels[closing.workspaceId]?.releasePreview() }
             drafts.removeValue(forKey: id)
             statusLines.removeValue(forKey: id)
             pendingTerminalInput.removeValue(forKey: id); cliLoginEnded(sessionID: id); forgetLoginRecovery(id); guidedProgress.removeValue(forKey: id)
@@ -507,6 +514,7 @@ final class AppStore: ObservableObject {
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
             snapshot.workspaces.removeAll { $0.id == workspace.id }
             forgetWorkspaceStyles(workspace)
+            filePaneModels.removeValue(forKey: workspace.id)
             snapshot.paneLayouts?.removeValue(forKey: workspace.id)
             snapshot.paneLayoutModes?.removeValue(forKey: workspace.id)
             snapshot.paneLayoutActiveSessionIds?.removeValue(forKey: workspace.id)

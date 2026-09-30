@@ -242,11 +242,13 @@ extension AppStore {
         var changedSessions: [String] = []
         // The order carries the agent-owned terminal and browser panes too, so
         // opening or closing one of them is a state change the phone hears about.
-        let paneOrder = snapshot.sessions.map(\.id) + AgentIOPaneRegistry.shared.extraPaneIds(agentSessions: snapshot.sessions)
+        // Files panes are Mac-only and never listed for the phone.
+        let phoneSessions = FilePaneKind.phoneVisible(snapshot.sessions)
+        let paneOrder = phoneSessions.map(\.id) + AgentIOPaneRegistry.shared.extraPaneIds(agentSessions: snapshot.sessions)
         var stateChanged = mobileTracking.workspaces != snapshot.workspaces || mobileTracking.order != paneOrder
         var nextSeen: [String: MobileRemoteTracking.SessionFingerprint] = [:]
         var nextSummaries: [String: MobileSessionSummary] = [:]
-        for session in snapshot.sessions {
+        for session in phoneSessions {
             let editable = MobileRemoteSupport.editable(status: session.status, pendingRun: pendingRuns.contains(session.id))
             let fingerprint = MobileRemoteTracking.SessionFingerprint(session, editable: editable, options: mobileOptionsDigest(session), mighty: mobileMightyDigest(session))
             let changed = mobileTracking.seen[session.id] != fingerprint
@@ -314,7 +316,7 @@ extension AppStore {
 
     func mobileState() -> MobileState {
         let revision = mobileTracking.stateRevision
-        var sessions = snapshot.sessions.map { mobileTracking.summaries[$0.id] ?? mobileSummary($0, revision: mobileTracking.sessionRevisions[$0.id, default: 1]) }
+        var sessions = FilePaneKind.phoneVisible(snapshot.sessions).map { mobileTracking.summaries[$0.id] ?? mobileSummary($0, revision: mobileTracking.sessionRevisions[$0.id, default: 1]) }
         sessions.append(contentsOf: AgentIOPaneRegistry.shared.extraPaneSummaries(
             agentSessions: snapshot.sessions,
             revision: revision,
@@ -325,8 +327,13 @@ extension AppStore {
                            sessions: sessions)
     }
 
+    /// A pane the phone may see and act on by id; files panes are Mac-only.
+    func mobilePane(_ id: String) -> RunSession? {
+        snapshot.sessions.first { $0.id == id && !FilePaneKind.isFilePane($0.kind) }
+    }
+
     func mobileSessionDetail(_ id: String) -> MobileSessionDetail? {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return nil }
+        guard let session = mobilePane(id) else { return nil }
         let revision = mobileTracking.sessionRevisions[id, default: 1]
         let summary = mobileTracking.summaries[id] ?? mobileSummary(session, revision: revision)
         let permissions = (toolPermissions[id] ?? []).filter { $0.state == "pending" }.map(MobilePermission.init(request:))
@@ -511,7 +518,7 @@ extension AppStore {
     /// Files never steer — `deferInput` holds that rule for the Mac composer
     /// too — so a request with attachments queues and is told `queued`.
     func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = []) throws -> MobileSubmitOutcome {
-        guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
+        guard !ending, !closingSessions.contains(id), let session = mobilePane(id),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창에는 휴대폰에서 명령을 보낼 수 없습니다.") }
         guard !text.isEmpty || !attachments.isEmpty else { throw MightyError("보낼 내용이 없습니다.") }
@@ -563,7 +570,7 @@ extension AppStore {
     /// The pane a phone command acts on: present, not closing, not a terminal.
     /// Unknown is 404, "not from a phone" is 409.
     private func mobileCommandSession(_ id: String) throws -> RunSession {
-        guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }) else {
+        guard !ending, !closingSessions.contains(id), let session = mobilePane(id) else {
             throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.")
         }
         guard !usesLocalTerminal(session) else { throw MobileHostError.conflict("로컬 터미널 창은 휴대폰에서 제어할 수 없습니다.") }
@@ -607,7 +614,7 @@ extension AppStore {
     }
 
     func mobileEntries(_ id: String, before: String, limit: Int) throws -> MobileEntriesPage {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
+        guard let session = mobilePane(id) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
         let page = MobileRemoteSupport.page(entries: session.logs, before: before, limit: limit)
         return MobileEntriesPage(entries: page.entries, hasMore: page.hasMore)
     }
@@ -628,7 +635,7 @@ extension AppStore {
         try mobileCheckApplicable(session, request: request)
         if let model = request.model, model != session.model {
             changeModel(id, to: model)
-            guard snapshot.sessions.first(where: { $0.id == id })?.model == model else { throw MobileHostError.conflict("모델을 바꾸지 못했습니다.") }
+            guard mobilePane(id)?.model == model else { throw MobileHostError.conflict("모델을 바꾸지 못했습니다.") }
         }
         if let mode = request.agentViewMode { try mobileApplyViewMode(id, mode: mode) }
         // `styleId` is the open field and wins outright; `mightyStyle` is then
@@ -658,10 +665,10 @@ extension AppStore {
     }
 
     private func mobileApplyViewMode(_ id: String, mode: String) throws {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
+        guard let session = mobilePane(id) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
         guard mobileViewMode(session) != mode else { return }
         setAgentViewMode(id, mode: mode == MobileWire.plainViewMode ? "default" : "mighty")
-        guard let updated = snapshot.sessions.first(where: { $0.id == id }), mobileViewMode(updated) == mode else {
+        guard let updated = mobilePane(id), mobileViewMode(updated) == mode else {
             throw MobileHostError.conflict("이 실행 창은 Mighty 보기를 지원하지 않습니다.")
         }
     }
@@ -672,22 +679,22 @@ extension AppStore {
     /// Mighty view on must not be read as "throw the stored style away".
     private func mobileApplyStyleId(_ id: String, styleId: String, shown: String) throws {
         guard styleId != shown else { return }
-        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
+        guard let session = mobilePane(id) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
         guard mobileStyleId(session) != styleId else { return }
         setMightyStyle(id, style: styleId == MobileWire.cliStyle ? nil : styleId)
-        guard let updated = snapshot.sessions.first(where: { $0.id == id }), mobileStyleId(updated) == styleId else {
+        guard let updated = mobilePane(id), mobileStyleId(updated) == styleId else {
             throw MobileHostError.conflict("이 실행 창에서는 이 스타일을 쓸 수 없습니다.")
         }
     }
 
     private func mobileApplyRunSettings(_ id: String, effort: String?, permissionMode: String?) throws {
-        guard effort != nil || permissionMode != nil, let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
+        guard effort != nil || permissionMode != nil, let session = mobilePane(id) else { return }
         var settings = session.settings
         if let effort { settings.effort = effort }
         if let permissionMode { settings.permissionMode = permissionMode }
         guard settings != session.settings else { return }
         let saved = mobileCapturingError { saveSettings(id, settings: settings) }
-        let applied = snapshot.sessions.first(where: { $0.id == id })?.settings
+        let applied = mobilePane(id)?.settings
         guard applied?.effort == settings.effort, applied?.permissionMode == settings.permissionMode else {
             throw MobileHostError.conflict(saved.failure ?? "실행 설정을 적용하지 못했습니다.")
         }
@@ -721,14 +728,14 @@ extension AppStore {
 
     /// Stop, permission and question routes act on an existing, non-terminal pane.
     func mobileValidateCommand(_ id: String) throws {
-        guard !ending, !closingSessions.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
+        guard !ending, !closingSessions.contains(id), let session = mobilePane(id) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
         guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창은 휴대폰에서 제어할 수 없습니다.") }
     }
 
     /// The same test `stop` applies before it does anything: a run in motion,
     /// or one still being started.
     func mobileHasRun(_ id: String) -> Bool {
-        snapshot.sessions.first(where: { $0.id == id })?.status == "running" || pendingRuns.contains(id)
+        mobilePane(id)?.status == "running" || pendingRuns.contains(id)
     }
 
     func mobilePendingRequest(sessionId: String, requestId: String, runId: String) throws -> ToolPermissionRequest {

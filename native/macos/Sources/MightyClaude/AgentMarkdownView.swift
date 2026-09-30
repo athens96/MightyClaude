@@ -41,13 +41,16 @@ final class AgentMarkdownDocument: NSObject {
         return cache
     }()
 
+    /// Longer sources are shown as one literal paragraph, not parsed.
+    static let maximumRenderBytes = 131_072
+
     private init(blocks: [AgentMarkdownBlock]) { self.blocks = blocks }
 
     static func parse(_ source: String) -> AgentMarkdownDocument {
         let key = source as NSString
         if let cached = cache.object(forKey: key) { return cached }
         let document: AgentMarkdownDocument
-        if source.utf8.count <= 131_072,
+        if source.utf8.count <= maximumRenderBytes,
            let parsed = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)) {
             var roots: [Builder] = []
             var nodes: [Int: Builder] = [:]
