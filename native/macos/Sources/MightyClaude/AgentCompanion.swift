@@ -392,7 +392,7 @@ final class CompletionNotifications: NSObject, UNUserNotificationCenterDelegate 
             let center = UNUserNotificationCenter.current()
             guard (await center.notificationSettings()).authorizationStatus == .authorized else { return }
             let content = UNMutableNotificationContent()
-            content.title = "MightyClaude · 작업 완료"
+            content.title = "Mighty Claude · 작업 완료"
             content.body = "\(title)의 작업이 완료되었습니다."
             content.sound = .default
             content.userInfo = ["sessionID": sessionID]

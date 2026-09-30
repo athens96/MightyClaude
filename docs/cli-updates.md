@@ -12,4 +12,4 @@
 
 공식 업데이트 방법: [Claude Code](https://code.claude.com/docs/en/setup#update-manually), [Codex CLI](https://learn.chatgpt.com/docs/codex/cli), [Gemini CLI](https://geminicli.com/docs/resources/faq/).
 
-이 기능은 CLI 프로그램을 업데이트한다. MightyClaude 앱 자체의 배포·업데이트 기능과 별개다. Windows 클라이언트의 자동 업데이트 UI는 아직 추가하지 않았다.
+이 기능은 CLI 프로그램을 업데이트한다. Mighty Claude 앱 자체의 배포·업데이트 기능과 별개다. Windows 클라이언트의 자동 업데이트 UI는 아직 추가하지 않았다.

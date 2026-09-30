@@ -1,6 +1,6 @@
 # NOTICE · 제3자 저작물 고지
 
-MightyClaude 자체는 MIT 라이선스로 배포됩니다(`LICENSE`). 아래 항목은 이 저장소가 참고하거나 포함한 제3자 저작물과 그 라이선스입니다.
+Mighty Claude 자체는 MIT 라이선스로 배포됩니다(`LICENSE`). 아래 항목은 이 저장소가 참고하거나 포함한 제3자 저작물과 그 라이선스입니다.
 
 ## Paseo — Apache License 2.0
 
@@ -28,7 +28,7 @@ MightyClaude 자체는 MIT 라이선스로 배포됩니다(`LICENSE`). 아래 �
 
 # NOTICE (English)
 
-MightyClaude itself is distributed under the MIT License (see `LICENSE`). This file lists third-party works this repository references or includes.
+Mighty Claude itself is distributed under the MIT License (see `LICENSE`). This file lists third-party works this repository references or includes.
 
 ## Paseo — Apache License 2.0
 

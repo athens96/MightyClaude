@@ -167,7 +167,7 @@ public sealed class ClaudePermissionChannel
         pending.Remove(requestId);
         pendingOrder.Remove(requestId);
         if (allow) SendSuccess(requestId, new { behavior = "allow", updatedInput = request.Input, toolUseID = request.Display.ToolUseId });
-        else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in MightyClaude.");
+        else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in Mighty Claude.");
         var display = request.Display with { State = allow ? "allowed" : "denied" };
         activity(display, allow ? "running" : "error"); emit(display);
     }

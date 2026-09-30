@@ -374,7 +374,7 @@ private final class CLIModelProbe: @unchecked Sendable {
                 let child = try NativeChildProcess(executable: command.executable, arguments: arguments, environment: env, cwd: workspace ?? FileManager.default.temporaryDirectory, stdout: { state.consume($0) }, stderr: { _ in }, exited: { _ in state.complete(nil) })
                 state.attach(child)
                 if claude { state.send(["type": "control_request", "request_id": state.requestId, "request": ["subtype": "initialize", "hooks": [:], "sdkMcpServers": []]]) }
-                else { state.send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "mighty_claude_native", "title": "MightyClaude", "version": "0.1.0"]]]) }
+                else { state.send(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "mighty_claude_native", "title": "Mighty Claude", "version": "0.1.0"]]]) }
                 let timeout = Task { do { try await Task.sleep(nanoseconds: 6_000_000_000); state.complete(nil) } catch { } }
                 let result = await state.wait(); timeout.cancel(); child.stop(); _ = await child.wait(timeout: 2)
                 return result ?? ProviderOptions.fallbackCatalog(command.provider)

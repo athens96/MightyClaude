@@ -132,7 +132,7 @@ internal static class Verification
             Check(Locale.Get("badge.betaAccessibility") is "베타 기능" or "Beta feature", "badge accessibility text");
             Check(ProviderCatalog.BetaLabel("claude", "Claude Code") == "Claude Code", "official label untouched");
             Check(ProviderCatalog.BetaLabel("codex", "Codex CLI") == "Codex CLI · " + badge && ProviderCatalog.BetaLabel("gemini", "Gemini CLI") == "Gemini CLI · " + badge, "beta labels");
-            var title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "MightyClaude" }); Check(title is "MightyClaude (베타)" or "MightyClaude (Beta)", "window title " + title);
+            var title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "Mighty Claude" }); Check(title is "Mighty Claude (베타)" or "Mighty Claude (Beta)", "window title " + title);
             var version = Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = "0.2.8" }); Check(version is "0.2.8 (베타)" or "0.2.8 (Beta)", "version line " + version);
             return Task.CompletedTask;
         });

@@ -44,7 +44,7 @@ final class AppStore: ObservableObject {
     /// Phone access (docs/mobile-remote.md): listener, revision tracking, UI status.
     @Published var mobileStatus = MobileHostStatus()
     @Published var mobileBusy = false
-    lazy var mobileRemote = MobileRemoteService(dataDirectory: dataDirectory.appendingPathComponent("mobile-remote", isDirectory: true), hostName: Host.current().localizedName ?? "MightyClaude Mac")
+    lazy var mobileRemote = MobileRemoteService(dataDirectory: dataDirectory.appendingPathComponent("mobile-remote", isDirectory: true), hostName: Host.current().localizedName ?? "Mighty Claude Mac")
     var mobileBridge: MobileRemoteBridge?
     var mobileTracking = MobileRemoteTracking()
     var mobileSubscriptions = Set<AnyCancellable>()
@@ -317,7 +317,7 @@ final class AppStore: ObservableObject {
         guard !missing.isEmpty else { return }
         for r in missing { ResourceHealthChecker.logWarning(r) }
         let names = missing.map { $0.resource }.joined(separator: ", ")
-        resourceWarning = "[MightyClaude] 리소스를 찾지 못했습니다: \(names) — 앱 재설치가 필요할 수 있습니다."
+        resourceWarning = "[Mighty Claude] 리소스를 찾지 못했습니다: \(names) — 앱 재설치가 필요할 수 있습니다."
     }
 
     var canManageCLIUpdates: Bool { isLoaded && !ending }

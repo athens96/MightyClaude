@@ -98,18 +98,18 @@ public enum SlashCommandCatalog {
                     app("permissions", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
                     app("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
                     app("cost", "이 실행 창의 토큰·비용 보기", action: .showUsage), app("usage", "이 실행 창의 토큰·비용 보기", action: .showUsage),
-                    app("config", "MightyClaude 설정 열기", action: .openSettings), rename, help]
+                    app("config", "Mighty Claude 설정 열기", action: .openSettings), rename, help]
         case "codex":
             return [app("plugins", "플러그인 마켓플레이스 열기", action: .openPlugins), model,
                     app("approvals", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
                     app("new", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
                     app("status", "이 실행 창의 토큰·비용 보기", action: .showUsage),
-                    app("settings", "MightyClaude 설정 열기", action: .openSettings), rename, help]
+                    app("settings", "Mighty Claude 설정 열기", action: .openSettings), rename, help]
         case "gemini":
             return [model, app("approval-mode", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
                     app("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
                     app("stats", "이 실행 창의 토큰·비용 보기", action: .showUsage),
-                    app("settings", "MightyClaude 설정 열기", action: .openSettings), rename, help]
+                    app("settings", "Mighty Claude 설정 열기", action: .openSettings), rename, help]
         default: return []
         }
     }

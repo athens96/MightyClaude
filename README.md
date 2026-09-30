@@ -1,6 +1,6 @@
-# MightyClaude
+# Mighty Claude
 
-<img src="assets/icons/mightyclaude.png" alt="MightyClaude 슈퍼 너구리" width="128" />
+<img src="assets/icons/mightyclaude.png" alt="Mighty Claude 너구리" width="128" />
 
 **Claude Code · Codex CLI · Gemini CLI를 하나의 워크스페이스에서 사용하는 네이티브 데스크톱 ADE입니다.**
 
@@ -77,7 +77,7 @@ MIGHTY_BROWSER_ENGINE=1 bash scripts/build-macos.sh
 
 설정의 **구성 요소**에서 에이전트 CLI 상태와 필요한 플러그인을 한 번에 확인하고 처리한다([docs/components.md](docs/components.md)).
 
-휴대폰(iOS·Android)에서는 `mobile/`의 Expo 앱으로 이 Mac의 MightyClaude에 접속해 워크스페이스·실행 창을 보고 요청·중지·권한 답변을 보낼 수 있다. Mac과 휴대폰이 `relay/`의 릴레이 서버를 통해 종단 간 암호화로 연결되므로 포트 개방이나 VPN이 필요 없다. 설정의 **모바일 리모트**에 릴레이 주소를 넣고 QR로 페어링한다. 자세한 내용은 [docs/mobile-remote.md](docs/mobile-remote.md)와 [docs/relay.md](docs/relay.md).
+휴대폰(iOS·Android)에서는 `mobile/`의 Expo 앱으로 이 Mac의 Mighty Claude에 접속해 워크스페이스·실행 창을 보고 요청·중지·권한 답변을 보낼 수 있다. Mac과 휴대폰이 `relay/`의 릴레이 서버를 통해 종단 간 암호화로 연결되므로 포트 개방이나 VPN이 필요 없다. 설정의 **모바일 리모트**에 릴레이 주소를 넣고 QR로 페어링한다. 자세한 내용은 [docs/mobile-remote.md](docs/mobile-remote.md)와 [docs/relay.md](docs/relay.md).
 
 `/Applications`에 설치한 앱을 갱신할 때는 `bash scripts/install-macos.sh`를 사용하세요. 실행 중인 앱이 종료될 때까지 기다렸다가 백업 후 교체하고 다시 실행합니다. 실행 중인 앱의 번들을 디스크에서 바꾸면 macOS 입력기 연결이 끊겨 한글 조합이 자소 단위로 풀립니다.
 
@@ -150,7 +150,7 @@ Mac 마이티 모드는 Claude와 Codex 실행 창에서 요청·메인 에이�
 
 입력창에는 CLI가 보고한 세션 컨텍스트를 표시하며, 확인할 수 없는 값은 추정해 채우지 않습니다. 컨텍스트 버튼을 누르면 해당 대화의 토큰·비용 등 사용량 상세를 확인할 수 있습니다. [세션·사용량](docs/session-usage.md)
 
-슈퍼 너구리 펫은 요청·현재 작업·경과 시간을 보여주고, 드래그 방향에 따라 걷거나 현재 작업에 맞는 동작을 합니다. 펫 클릭으로 말풍선을 토글하고, 말풍선을 누르면 해당 에이전트로 이동합니다. 완료 말풍선은 6초 후 숨깁니다. [펫과 알림](docs/agent-companion.md)
+Mighty Claude 너구리 펫은 요청·현재 작업·경과 시간을 보여주고, 드래그 방향에 따라 걷거나 현재 작업에 맞는 동작을 합니다. 펫 클릭으로 말풍선을 토글하고, 말풍선을 누르면 해당 에이전트로 이동합니다. 완료 말풍선은 6초 후 숨깁니다. [펫과 알림](docs/agent-companion.md)
 
 ## 데이터와 소스 구조
 

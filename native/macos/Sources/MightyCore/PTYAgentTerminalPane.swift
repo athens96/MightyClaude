@@ -104,7 +104,7 @@ public final class PTYAgentTerminalPane: AgentTerminalPane, @unchecked Sendable 
             var fd: Int32 = 3
             while fd < limit { _ = Darwin.close(fd); fd += 1 }
             if chdir(cwd) == 0 { _ = execve(args[0], args.baseAddress!, env.baseAddress!) }
-            let failure: StaticString = "MightyClaude could not start the command in the workspace folder.\r\n"
+            let failure: StaticString = "Mighty Claude could not start the command in the workspace folder.\r\n"
             _ = Darwin.write(STDERR_FILENO, failure.utf8Start, failure.utf8CodeUnitCount)
             _exit(127)
         } }

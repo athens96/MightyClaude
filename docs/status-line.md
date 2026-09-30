@@ -2,7 +2,7 @@
 
 Claude Code 터미널에서 입력창 아래에 보이는 정보 줄(oh-my-claudecode의 HUD 등)은 플러그인이나 Mods가 그리는 것이 아니라 `settings.json`의 `statusLine` 설정이 만든다. CLI는 화면을 그릴 때마다 그 명령을 실행하고, 세션 정보를 JSON으로 stdin에 넣어 준 뒤, 명령이 출력한 줄을 그대로 보여준다. Mods(function hooks)에는 이 정보가 흐르지 않고, 앱이 쓰는 비대화형 실행(`claude -p`)에서는 상태 줄 자체가 그려지지 않는다.
 
-그래서 MightyClaude는 **같은 명령을 같은 JSON으로 직접 실행**해 결과를 입력창 아래에 그린다. 특정 플러그인을 지원하는 것이 아니라 `statusLine`을 쓰는 모든 도구(oh-my-claudecode HUD, ccusage, 직접 만든 스크립트)가 그대로 동작한다.
+그래서 Mighty Claude는 **같은 명령을 같은 JSON으로 직접 실행**해 결과를 입력창 아래에 그린다. 특정 플러그인을 지원하는 것이 아니라 `statusLine`을 쓰는 모든 도구(oh-my-claudecode HUD, ccusage, 직접 만든 스크립트)가 그대로 동작한다.
 
 ## 어디서 읽나
 

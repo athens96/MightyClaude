@@ -33,7 +33,7 @@ struct MightyClaudeApp: App {
     @StateObject private var store = AppStore.shared
 
     var body: some Scene {
-        WindowGroup("MightyClaude", id: "workspace") {
+        WindowGroup("Mighty Claude", id: "workspace") {
             ZStack {
                 if store.isLoaded {
                     WorkspaceView()

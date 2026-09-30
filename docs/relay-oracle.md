@@ -1,6 +1,6 @@
 # Oracle Cloud Always Free에 릴레이 올리기
 
-MightyClaude 릴레이(`relay/`)를 Oracle Cloud Always Free 인스턴스에 올려, 휴대폰이 어느 네트워크에서든 Mac에 닿게 합니다. 끝나면 `https://<이름>.duckdns.org/healthz`가 `ok`를 돌려주고, Mac에 넣을 주소는 `wss://<이름>.duckdns.org`입니다.
+Mighty Claude 릴레이(`relay/`)를 Oracle Cloud Always Free 인스턴스에 올려, 휴대폰이 어느 네트워크에서든 Mac에 닿게 합니다. 끝나면 `https://<이름>.duckdns.org/healthz`가 `ok`를 돌려주고, Mac에 넣을 주소는 `wss://<이름>.duckdns.org`입니다.
 
 릴레이는 암호문만 전달하고 아무 비밀도 모릅니다(docs/relay.md). 서버에 둘 비밀값도 없습니다 — 인증서는 Caddy가 80·443 포트로 직접 받습니다.
 
@@ -85,7 +85,7 @@ bash MightyClaude/relay/deploy/oracle/setup.sh myrelay.duckdns.org
 
 ## 6. Mac에 넣기
 
-MightyClaude → **설정 → 모바일 리모트 → 릴레이**에 `wss://myrelay.duckdns.org`를 넣고 **적용**. QR이 뜨면 휴대폰으로 스캔합니다. 앱의 기본 릴레이는 `MobileWire.defaultRelayURL` 한 줄이고, 지금은 이 저장소 주인이 배포한 `wss://mightyclaude.duckdns.org`입니다. 칸을 비워 두면 그 주소를 쓰고, 칸에 넣은 주소가 항상 우선합니다.
+Mighty Claude → **설정 → 모바일 리모트 → 릴레이**에 `wss://myrelay.duckdns.org`를 넣고 **적용**. QR이 뜨면 휴대폰으로 스캔합니다. 앱의 기본 릴레이는 `MobileWire.defaultRelayURL` 한 줄이고, 지금은 이 저장소 주인이 배포한 `wss://mightyclaude.duckdns.org`입니다. 칸을 비워 두면 그 주소를 쓰고, 칸에 넣은 주소가 항상 우선합니다.
 
 ## 문제 해결
 

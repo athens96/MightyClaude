@@ -267,7 +267,7 @@ struct OpenURLChoiceOpenerTests {
         wiring.store.setChoice(.inApp, forWorkspace: "ws-1")
         let handler = AgentTerminalIOHandler(processes: AgentProcessRegistry(), panes: wiring.registry, webOpen: wiring.service)
         let response = await handler.handle(AgentIORequest(tool: "open_url", url: page.absoluteString), binding: testPaneBinding(pane: "agent-1", workspaceId: "ws-1"))
-        #expect(AgentIOMCPServer.describeOpen(response) == "Opened \(page.absoluteString) in the MightyClaude browser pane next to this agent pane.")
+        #expect(AgentIOMCPServer.describeOpen(response) == "Opened \(page.absoluteString) in the Mighty Claude browser pane next to this agent pane.")
     }
 
     @Test func aPageNothingAcceptsIsAnErrorForTheAgent() async {

@@ -19,7 +19,7 @@ extension AppStore {
             let html = """
             <!doctype html><meta charset="utf-8"><title>Browser \(name)</title>
             <style>body{background:\(color);color:white;font:28px system-ui;padding:32px}button{font:20px system-ui}</style>
-            <h1>MightyClaude browser \(name)</h1><p>페이지 렌더링 · JavaScript 실행 완료</p>
+            <h1>Mighty Claude browser \(name)</h1><p>페이지 렌더링 · JavaScript 실행 완료</p>
             <button onclick="document.body.append(' clicked')">실행 확인</button>
             <script>fetch('/loaded/\(name)',{cache:'no-store'});requestAnimationFrame(()=>requestAnimationFrame(()=>fetch('/rendered/\(name)',{cache:'no-store'})));</script>
             """
@@ -28,7 +28,7 @@ extension AppStore {
         let window = NSWindow(contentRect: NSRect(x: 80, y: 120, width: 1080, height: 700),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.title = "MightyClaude 브라우저 실행 검증"
+        window.title = "Mighty Claude 브라우저 실행 검증"
         var engines: [CefBrowserEngine] = []
         func mount(_ values: [CefBrowserEngine]) {
             window.contentView = NSHostingView(rootView: HStack(spacing: 2) {
