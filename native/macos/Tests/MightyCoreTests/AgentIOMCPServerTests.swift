@@ -263,7 +263,9 @@ private final class CountingHandler: AgentIORequestHandler, @unchecked Sendable 
         let value = try JSONDecoder().decode(String.self, from: Data(setting.dropFirst("developer_instructions=".count).utf8))
         #expect(value == PaneMCPToolManifest.codexDeveloperInstructions)
         #expect(value.contains("run_in_terminal") && value.contains("glab auth login"))
-        #expect(PaneMCPToolManifest.routingGuidance.hasSuffix(PaneMCPToolManifest.interactiveGuidance))
+        #expect(value.contains("open_url") && value.contains("xdg-open"))
+        #expect(PaneMCPToolManifest.routingGuidance.contains(PaneMCPToolManifest.interactiveGuidance))
+        #expect(PaneMCPToolManifest.routingGuidance.hasSuffix(PaneMCPToolManifest.webGuidance))
         let noBinding = try ProviderService.arguments(request, pluginDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true))
         #expect(!noBinding.contains { $0.hasPrefix("developer_instructions=") })
     }
@@ -410,6 +412,7 @@ struct AgentToolSurfaceTests {
         #expect(result["protocolVersion"] as? String == "2024-11-05")
         #expect((result["capabilities"] as? [String: Any])?["tools"] != nil)
         #expect(result["instructions"] as? String == PaneMCPToolManifest.routingGuidance)
+        #expect((result["instructions"] as? String)?.contains("open it with open_url") == true)
         let unknownVersion = json(server(RecordingTransport()).handle(line: #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}"#))
         #expect((unknownVersion?["result"] as? [String: Any])?["protocolVersion"] as? String == AgentIOMCPServer.latestProtocolVersion)
     }
