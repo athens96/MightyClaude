@@ -11,9 +11,9 @@ import {
 } from 'react-native';
 import { MAX_TITLE_LENGTH, type SettingOption } from '@/api/types';
 import { Button } from '@/components/ui';
-import { monoText, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { monoText, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
-/** Shared modal shell: dimmed backdrop, centred card, tap outside to dismiss. */
+/** Shared modal shell: dimmed backdrop, a centred sheet of paper, tap outside to dismiss. */
 export function Sheet({
   visible,
   onClose,
@@ -342,44 +342,32 @@ const makeStyles = (palette: Palette) =>
     },
     sheet: {
       backgroundColor: palette.surface,
-      borderColor: palette.border,
       borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
       gap: spacing.md,
-      padding: spacing.lg,
+      padding: spacing.xl,
     },
-    title: { color: palette.text, fontSize: 16, fontWeight: '700' },
-    note: { color: palette.textMuted, fontSize: 13 },
+    title: { ...typeScale.heading, color: palette.text, fontSize: 20, lineHeight: 26 },
+    note: { color: palette.textMuted, fontSize: 14, lineHeight: 20 },
     optionList: { maxHeight: 320 },
+    // Options are lines parted by hairlines; the chosen one takes the accent and a word.
     option: {
       alignItems: 'center',
-      borderColor: palette.border,
-      borderRadius: radius.md,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       gap: spacing.sm,
-      marginBottom: spacing.sm,
       minHeight: 44,
-      paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
     optionStacked: { alignItems: 'flex-start', flexDirection: 'column', gap: 2 },
-    optionDescription: { color: palette.textMuted, fontSize: 12 },
+    optionDescription: { color: palette.textMuted, fontSize: 12, lineHeight: 17 },
     optionLocked: { opacity: 0.45 },
     optionLabel: { color: palette.text, flex: 1, fontSize: 15 },
-    optionMark: { color: palette.accent, fontSize: 12, fontWeight: '700' },
-    optionBadge: {
-      borderColor: palette.warning,
-      borderRadius: radius.sm,
-      borderWidth: StyleSheet.hairlineWidth,
-      color: palette.warning,
-      fontSize: 10,
-      paddingHorizontal: spacing.xs,
-      paddingVertical: 1,
-    },
-    pressed: { opacity: 0.7 },
+    optionMark: { color: palette.accent, fontSize: 12, fontWeight: '600' },
+    optionBadge: { color: palette.warning, fontSize: 11, fontWeight: '500' },
+    pressed: { opacity: 0.6 },
     input: {
-      backgroundColor: palette.surfaceRaised,
+      backgroundColor: palette.background,
       borderColor: palette.border,
       borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,

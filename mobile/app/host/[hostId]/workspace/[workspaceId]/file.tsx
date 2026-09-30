@@ -19,7 +19,7 @@ import {
 import { t } from '@/lib/i18n';
 import { formatBytes } from '@/lib/uploads';
 import { useHostClient } from '@/store/live';
-import { spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
  * One file of the paired Mac's workspace, read-only, previewed the way the Mac files
@@ -208,7 +208,7 @@ const makeStyles = (palette: Palette) =>
     markdown: { padding: spacing.lg },
     unsupportedWrap: { padding: spacing.lg },
     unsupported: { gap: spacing.sm },
-    unsupportedTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
+    unsupportedTitle: { ...typeScale.heading, color: palette.text },
     unsupportedName: { color: palette.text, fontSize: 15 },
     unsupportedReason: { color: palette.textMuted, fontSize: 13 },
   });

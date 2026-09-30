@@ -103,34 +103,36 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    userWrap: { alignItems: 'flex-end', paddingVertical: spacing.xs },
+    // The user's turn is a soft paper slip on the right; the reply is prose on the page.
+    userWrap: { alignItems: 'flex-end', paddingVertical: spacing.sm },
     userBubble: {
       backgroundColor: palette.bubbleUser,
-      borderColor: palette.accentMuted,
       borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
       maxWidth: '85%',
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
+      paddingVertical: spacing.sm + 2,
     },
-    userText: { color: palette.text, fontSize: 15, lineHeight: 21 },
-    assistant: { paddingVertical: spacing.xs },
+    userText: { color: palette.text, fontSize: 15, lineHeight: 22 },
+    assistant: { paddingVertical: spacing.sm },
+    // Output, system and error lines: mono, set off by a thin rule instead of a box.
     mono: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.sm,
+      borderLeftColor: palette.border,
+      borderLeftWidth: 2,
       marginVertical: spacing.xs,
-      padding: spacing.sm,
+      paddingLeft: spacing.sm,
+      paddingVertical: 2,
     },
+    // Tool activity whispers: faint text, a small dot, no chrome.
     activity: {
       alignItems: 'flex-start',
       flexDirection: 'row',
       gap: spacing.sm,
-      paddingVertical: spacing.xs,
+      paddingVertical: 3,
     },
-    activityDot: { borderRadius: 3, height: 6, marginTop: 6, width: 6 },
+    activityDot: { borderRadius: radius.round, height: 5, marginTop: 7, width: 5 },
     activityBody: { flex: 1 },
-    activityTitle: { color: palette.textMuted, fontSize: 13 },
+    activityTitle: { color: palette.textFaint, fontSize: 13, lineHeight: 18 },
     activityOutput: { ...monoText, color: palette.textFaint, marginTop: 2 },
-    activityDuration: { color: palette.textFaint, fontSize: 11 },
-    activityState: { fontSize: 11, fontWeight: '600' },
+    activityDuration: { color: palette.textFaint, fontSize: 11, lineHeight: 18 },
+    activityState: { fontSize: 11, fontWeight: '500', lineHeight: 18 },
   });

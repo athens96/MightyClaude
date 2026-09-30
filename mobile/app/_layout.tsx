@@ -8,7 +8,7 @@ import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
 import { t } from '@/lib/i18n';
-import { darkPalette, useStyles, usePalette, type Palette } from '@/theme';
+import { darkPalette, serifFontFamily, useStyles, usePalette, type Palette } from '@/theme';
 
 // `@noble/*` reads `globalThis.crypto.getRandomValues`, which React Native lacks.
 installCryptoPolyfill();
@@ -29,7 +29,7 @@ export default function RootLayout() {
         ...base.colors,
         primary: palette.accent,
         background: palette.background,
-        card: palette.surface,
+        card: palette.background,
         text: palette.text,
         border: palette.border,
         notification: palette.accent,
@@ -49,9 +49,17 @@ export default function RootLayout() {
           <StatusBar style={dark ? 'light' : 'dark'} />
           <Stack
             screenOptions={{
+              // Paper all the way up: the header is the page itself, with no rule under it,
+              // and its title is set in the serif.
               headerStyle: { backgroundColor: palette.background },
+              headerShadowVisible: false,
               headerTintColor: palette.text,
-              headerTitleStyle: { color: palette.text, fontSize: 16 },
+              headerTitleStyle: {
+                color: palette.text,
+                fontFamily: serifFontFamily,
+                fontSize: 18,
+                fontWeight: '400',
+              },
               contentStyle: { backgroundColor: palette.background },
             }}
           >

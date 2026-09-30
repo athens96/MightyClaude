@@ -67,7 +67,7 @@ const makeStyles = (palette: Palette) =>
     wrap: {
       backgroundColor: palette.surface,
       borderColor: palette.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       borderWidth: StyleSheet.hairlineWidth,
       marginBottom: spacing.xs,
       overflow: 'hidden',
@@ -80,10 +80,10 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
-    pressed: { opacity: 0.7 },
+    pressed: { backgroundColor: palette.surfaceRaised },
     rowTop: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-    name: { color: palette.text, fontSize: 14, fontWeight: '700' },
+    name: { color: palette.text, fontSize: 14, fontWeight: '600' },
     hint: { color: palette.textFaint, flex: 1, fontSize: 12 },
     source: { color: palette.textFaint, fontSize: 11 },
-    description: { color: palette.textMuted, fontSize: 12 },
+    description: { color: palette.textMuted, fontSize: 12, lineHeight: 17 },
   });

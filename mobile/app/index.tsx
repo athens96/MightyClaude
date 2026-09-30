@@ -3,14 +3,14 @@ import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } fr
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appForeground } from '@/api/relay/foreground';
-import { Badge, Button, Card, EmptyState } from '@/components/ui';
+import { Badge, Button, EmptyState } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost, type Reachability } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
 import { countAttention } from '@/lib/merge';
 import { t } from '@/lib/i18n';
 import { needsOnboarding } from '@/lib/onboarding';
 import { retryUnreachableHosts, unreachableHostIds } from '@/lib/offline-retry';
-import { spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 const reachabilityKeys: Record<Reachability, string> = {
   unknown: 'phone.hosts.reachability.unknown',
@@ -65,22 +65,20 @@ function HostRow({ host }: { host: PairedHost }) {
       accessibilityRole="button"
       onPress={() => router.push(`/host/${host.id}`)}
       onLongPress={confirmRemove}
-      style={({ pressed }) => [pressed && styles.pressed]}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
-      <Card>
-        <View style={styles.rowTop}>
-          <Text numberOfLines={1} style={styles.hostName}>
-            {host.name}
-          </Text>
-          <Badge count={attention} />
-        </View>
-        <Text style={styles.address}>{hostAddress(host)}</Text>
-        <View style={styles.rowBottom}>
-          <View style={[styles.dot, { backgroundColor: color }]} />
-          <Text style={[styles.status, { color }]}>{t(reachabilityKeys[status])}</Text>
-          {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
-        </View>
-      </Card>
+      <View style={styles.rowTop}>
+        <Text numberOfLines={1} style={styles.hostName}>
+          {host.name}
+        </Text>
+        <Badge count={attention} />
+      </View>
+      <Text style={styles.address}>{hostAddress(host)}</Text>
+      <View style={styles.rowBottom}>
+        <View style={[styles.dot, { backgroundColor: color }]} />
+        <Text style={[styles.status, { color }]}>{t(reachabilityKeys[status])}</Text>
+        {host.appVersion ? <Text style={styles.meta}>· v{host.appVersion}</Text> : null}
+      </View>
     </Pressable>
   );
 }
@@ -171,28 +169,32 @@ export default function HostsScreen() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    list: { padding: spacing.lg },
-    separator: { height: spacing.md },
-    pressed: { opacity: 0.7 },
+    // Hosts are lines on the page, parted by hairlines — not a stack of cards.
+    list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+    separator: { backgroundColor: palette.border, height: StyleSheet.hairlineWidth },
+    row: { paddingVertical: spacing.lg },
+    pressed: { opacity: 0.6 },
     rowTop: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-    hostName: { color: palette.text, flex: 1, fontSize: 17, fontWeight: '700' },
+    hostName: { ...typeScale.heading, color: palette.text, flex: 1 },
     address: { color: palette.textMuted, fontSize: 13, marginTop: 2 },
     rowBottom: {
       alignItems: 'center',
       flexDirection: 'row',
-      gap: spacing.xs,
+      gap: 5,
       marginTop: spacing.sm,
     },
-    dot: { borderRadius: 4, height: 8, width: 8 },
-    status: { fontSize: 12, fontWeight: '600' },
+    dot: { borderRadius: radius.round, height: 6, width: 6 },
+    status: { fontSize: 12, fontWeight: '500' },
     meta: { color: palette.textFaint, fontSize: 12 },
     footer: {
       backgroundColor: palette.background,
       borderTopColor: palette.border,
       borderTopWidth: StyleSheet.hairlineWidth,
       bottom: 0,
+      gap: spacing.xs,
       left: 0,
-      padding: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
       position: 'absolute',
       right: 0,
     },

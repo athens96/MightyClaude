@@ -25,7 +25,7 @@ export interface Palette {
   onBadge: string;
   /** Dimming behind modals. */
   overlay: string;
-  /** Mighty block tints, mirroring the Mac's SwiftUI system colours. */
+  /** Mighty block tints: earthy takes on the Mac's SwiftUI system hues, kept apart by hue. */
   blockAgent: string;
   blockTask: string;
   blockSteer: string;
@@ -33,56 +33,62 @@ export interface Palette {
   blockQuestion: string;
 }
 
+/**
+ * "Warm paper": the Claude app's look. Ivory paper and ink by day, warm charcoal (never
+ * black) by night, and one terracotta accent kept for the primary action, the selected
+ * state, links and live indicators. Every text colour clears WCAG AA (4.5:1) on the
+ * background and surface it is drawn on; `palette-contrast.test.ts` holds that line.
+ */
 export const darkPalette: Palette = {
-  background: '#0d0d0f',
-  surface: '#17171b',
-  surfaceRaised: '#1f1f25',
-  border: '#2c2c34',
-  accent: '#d97757',
-  accentMuted: '#3a231b',
-  text: '#ededf0',
-  textMuted: '#9a9aa5',
-  textFaint: '#6a6a76',
-  success: '#5ab87c',
-  danger: '#e0625b',
-  dangerSurface: '#2a1614',
-  warning: '#d9a441',
-  grey: '#6a6a76',
-  bubbleUser: '#2a2118',
-  onAccent: '#1a0f08',
-  onBadge: '#14140f',
-  overlay: 'rgba(0,0,0,0.6)',
-  blockAgent: '#bf5af2',
-  blockTask: '#40c8e0',
-  blockSteer: '#ff9f0a',
-  blockCompact: '#66d4cf',
-  blockQuestion: '#5e5ce6',
+  background: '#262624',
+  surface: '#30302e',
+  surfaceRaised: '#3a3935',
+  border: '#45443f',
+  accent: '#dd7e5e',
+  accentMuted: '#3e302a',
+  text: '#f5f4ee',
+  textMuted: '#b5b3aa',
+  textFaint: '#a3a198',
+  success: '#9cbf72',
+  danger: '#e88a74',
+  dangerSurface: '#3f2c27',
+  warning: '#d6a850',
+  grey: '#a3a198',
+  bubbleUser: '#393834',
+  onAccent: '#1f1e1d',
+  onBadge: '#1f1e1d',
+  overlay: 'rgba(0,0,0,0.5)',
+  blockAgent: '#c79ad6',
+  blockTask: '#86b4d9',
+  blockSteer: '#ddaa5c',
+  blockCompact: '#86c4b0',
+  blockQuestion: '#a3a7e6',
 };
 
 export const lightPalette: Palette = {
-  background: '#faf9f7',
-  surface: '#ffffff',
-  surfaceRaised: '#f0eeea',
-  border: '#dbd6ce',
-  accent: '#b8542f',
-  accentMuted: '#f6e1d6',
-  text: '#1b1b1f',
-  textMuted: '#5c5c66',
-  textFaint: '#8a8a94',
-  success: '#2c7a4b',
-  danger: '#b3352d',
-  dangerSurface: '#fae4e1',
-  warning: '#9a6b16',
-  grey: '#8a8a94',
-  bubbleUser: '#f5e7dc',
+  background: '#f5f4ee',
+  surface: '#faf9f5',
+  surfaceRaised: '#edebe4',
+  border: '#dedad0',
+  accent: '#ae4e2b',
+  accentMuted: '#f4e4da',
+  text: '#1f1e1d',
+  textMuted: '#57564f',
+  textFaint: '#6c6a63',
+  success: '#48722a',
+  danger: '#b0392b',
+  dangerSurface: '#f5e3dd',
+  warning: '#8a6212',
+  grey: '#6c6a63',
+  bubbleUser: '#eae7de',
   onAccent: '#ffffff',
   onBadge: '#ffffff',
-  overlay: 'rgba(0,0,0,0.35)',
-  blockAgent: '#af52de',
-  blockTask: '#30b0c7',
-  blockSteer: '#ff9500',
-  blockCompact: '#00c7be',
-  blockQuestion: '#5856d6',
+  overlay: 'rgba(31,30,29,0.32)',
+  blockAgent: '#8a4e9e',
+  blockTask: '#2d6a8c',
+  blockSteer: '#8c5b0e',
+  blockCompact: '#2b6e5d',
+  blockQuestion: '#4f56a3',
 };
 
 /**
@@ -122,13 +128,27 @@ export const spacing = {
   md: 12,
   lg: 16,
   xl: 24,
+  xxl: 32,
 } as const;
 
+/** Small, quiet corners: paper is cut, not moulded. `round` is for dots and the send button. */
 export const radius = {
-  sm: 6,
-  md: 10,
-  lg: 14,
+  sm: 4,
+  md: 8,
+  lg: 12,
+  round: 999,
 } as const;
+
+/**
+ * The serif for screen titles, large headings, sheet titles and empty states. Georgia is
+ * on every iOS device; Android's `serif` is Noto Serif. Hangul has no glyphs in either
+ * and falls back to the system Korean face. Body, lists and controls stay system sans.
+ */
+export const serifFontFamily = Platform.select({
+  ios: 'Georgia',
+  android: 'serif',
+  default: 'Georgia, serif',
+});
 
 export const monoFontFamily = Platform.select({
   ios: 'Menlo',
@@ -141,6 +161,18 @@ export const monoText: TextStyle = {
   fontSize: 12,
   lineHeight: 18,
 };
+
+/**
+ * The type scale. The serif steps (display, title, heading) carry no weight of their own:
+ * the Claude look sets its headings in a regular serif rather than a bold sans.
+ */
+export const typeScale = {
+  display: { fontFamily: serifFontFamily, fontSize: 28, lineHeight: 34, fontWeight: '400' },
+  title: { fontFamily: serifFontFamily, fontSize: 22, lineHeight: 28, fontWeight: '400' },
+  heading: { fontFamily: serifFontFamily, fontSize: 18, lineHeight: 24, fontWeight: '400' },
+  body: { fontSize: 15, lineHeight: 22, fontWeight: '400' },
+  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
+} as const satisfies Record<string, TextStyle>;
 
 const statusLabels: Record<SessionStatus, string> = {
   idle: '대기',

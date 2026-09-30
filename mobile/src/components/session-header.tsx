@@ -11,6 +11,7 @@ import {
   optionLabel,
   radius,
   spacing,
+  typeScale,
   useStyles,
   usePalette,
   type Palette,
@@ -129,7 +130,9 @@ export function SessionHeader({
         <Text numberOfLines={2} style={styles.title}>
           {session.title || '제목 없음'}
         </Text>
-        <StatusChip status={session.status} />
+        <View style={styles.titleStatus}>
+          <StatusChip status={session.status} />
+        </View>
       </View>
       <View style={styles.metaRow}>
         <Text style={styles.meta}>{kindLabel(session.kind)}</Text>
@@ -188,22 +191,24 @@ const makeStyles = (palette: Palette) =>
       borderBottomColor: palette.border,
       borderBottomWidth: StyleSheet.hairlineWidth,
       gap: spacing.xs,
-      paddingBottom: spacing.md,
-      marginBottom: spacing.sm,
+      paddingBottom: spacing.lg,
+      marginBottom: spacing.md,
     },
     titleRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm },
-    title: { color: palette.text, flex: 1, fontSize: 16, fontWeight: '700' },
+    title: { ...typeScale.title, color: palette.text, flex: 1 },
+    // Sits the status on the serif title's first line.
+    titleStatus: { paddingTop: 3 },
     metaRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     meta: { color: palette.textFaint, fontSize: 12 },
     track: {
-      backgroundColor: palette.surfaceRaised,
-      borderRadius: radius.sm,
-      height: 4,
+      backgroundColor: palette.border,
+      borderRadius: radius.round,
+      height: 3,
       marginTop: spacing.xs,
       overflow: 'hidden',
     },
-    fill: { backgroundColor: palette.accent, height: 4 },
-    settings: { gap: spacing.xs, marginTop: spacing.xs },
+    fill: { backgroundColor: palette.accent, height: 3 },
+    settings: { gap: spacing.xs, marginTop: spacing.sm },
     settingChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     settingNote: { color: palette.textFaint, fontSize: 11 },
   });

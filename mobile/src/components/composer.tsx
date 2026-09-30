@@ -7,7 +7,7 @@ import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
 import { commandInsertion, commandQuery, filterCommands } from '@/lib/commands';
 import { formatBytes, type PickedFile, type UploadProgress } from '@/lib/uploads';
-import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 export interface ComposerAttachments {
   files: PickedFile[];
@@ -181,13 +181,16 @@ export function Composer({
           editable={!disabled}
         />
         <View style={styles.buttons}>
-          {running ? <Button label="중지" tone="danger" compact onPress={onStop} /> : null}
+          {running ? (
+            <Button label="중지" tone="danger" compact style={styles.send} onPress={onStop} />
+          ) : null}
           {running && submitModes && canSteer ? (
             <>
               <Button
                 label="바로 전달"
                 tone="primary"
                 compact
+                style={styles.send}
                 busy={sending}
                 disabled={blocked}
                 onPress={() => void submit('steer')}
@@ -196,6 +199,7 @@ export function Composer({
                 label="다음 요청"
                 tone="neutral"
                 compact
+                style={styles.send}
                 disabled={blocked || sending}
                 onPress={() => void submit('queue')}
               />
@@ -205,6 +209,7 @@ export function Composer({
               label="다음 요청"
               tone="primary"
               compact
+              style={styles.send}
               busy={sending}
               disabled={blocked}
               onPress={() => void submit('queue')}
@@ -214,6 +219,7 @@ export function Composer({
               label="전송"
               tone="primary"
               compact
+              style={[styles.send, styles.sendSolo]}
               busy={sending}
               disabled={blocked}
               onPress={() => void submit()}
@@ -252,42 +258,48 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     bar: {
       backgroundColor: palette.background,
-      borderTopColor: palette.border,
-      borderTopWidth: StyleSheet.hairlineWidth,
       gap: spacing.xs,
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.sm,
     },
     row: { alignItems: 'flex-end', flexDirection: 'row', gap: spacing.sm },
+    // A sheet of paper with a hairline edge; the terracotta send button is the one colour.
     input: {
       backgroundColor: palette.surface,
       borderColor: palette.border,
-      borderRadius: radius.md,
+      borderRadius: radius.lg,
       borderWidth: StyleSheet.hairlineWidth,
       color: palette.text,
       flex: 1,
       fontSize: 15,
+      lineHeight: 21,
       maxHeight: 140,
       minHeight: 44,
       paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
+      paddingBottom: spacing.sm + 2,
+      paddingTop: spacing.sm + 2,
     },
     buttons: { gap: spacing.xs },
+    send: { borderRadius: radius.round, minWidth: 64 },
+    // Alone, the send button stands as tall as the empty field beside it.
+    sendSolo: { minHeight: 44 },
     attach: {
       alignItems: 'center',
-      backgroundColor: palette.surfaceRaised,
-      borderRadius: radius.md,
+      borderColor: palette.border,
+      borderRadius: radius.round,
+      borderWidth: StyleSheet.hairlineWidth,
       height: 44,
       justifyContent: 'center',
-      width: 40,
+      width: 44,
     },
     attachDisabled: { opacity: 0.4 },
-    attachMark: { color: palette.text, fontSize: 18 },
+    attachMark: { color: palette.textMuted, fontSize: 18 },
     chips: { flexDirection: 'row', gap: spacing.xs, paddingVertical: 2 },
     chip: {
       alignItems: 'center',
-      backgroundColor: palette.surfaceRaised,
-      borderRadius: radius.sm,
+      borderColor: palette.border,
+      borderRadius: radius.md,
+      borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       gap: spacing.xs,
       maxWidth: 220,
@@ -299,7 +311,7 @@ const makeStyles = (palette: Palette) =>
     chipRemove: { color: palette.textMuted, fontSize: 12 },
     uploadRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     hint: { color: palette.textFaint, flex: 1, fontSize: 11 },
-    sheetTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
+    sheetTitle: { ...typeScale.heading, color: palette.text },
     terminalNote: {
       color: palette.warning,
       fontSize: 13,
@@ -307,5 +319,5 @@ const makeStyles = (palette: Palette) =>
       textAlign: 'center',
     },
     warning: { color: palette.danger, fontSize: 12 },
-    pressed: { opacity: 0.7 },
+    pressed: { opacity: 0.6 },
   });

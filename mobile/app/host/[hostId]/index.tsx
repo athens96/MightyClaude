@@ -16,7 +16,7 @@ import { groupSessionsByWorkspace } from '@/lib/merge';
 import { useForgetRefusedSecret, useHostsStore } from '@/store/hosts';
 import { useHostClient, useHostState, useLiveStore } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 export default function HostScreen() {
   const palette = usePalette();
@@ -196,11 +196,23 @@ export default function HostScreen() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    content: { gap: spacing.xl, padding: spacing.lg },
-    group: { gap: spacing.sm },
-    groupHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-    groupTitles: { flex: 1 },
-    workspaceName: { color: palette.text, fontSize: 15, fontWeight: '700' },
+    content: { gap: spacing.xxl, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+    group: { gap: 0 },
+    // A workspace is a section heading in the serif; its panes are the lines under it.
+    groupHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: spacing.sm,
+      paddingBottom: spacing.sm,
+    },
+    groupTitles: { flex: 1, gap: 2 },
+    workspaceName: { ...typeScale.heading, color: palette.text },
     workspacePath: { color: palette.textFaint, fontSize: 12 },
-    noSessions: { color: palette.textFaint, fontSize: 13, paddingVertical: spacing.sm },
+    noSessions: {
+      borderTopColor: palette.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      color: palette.textFaint,
+      fontSize: 13,
+      paddingVertical: spacing.md,
+    },
   });
