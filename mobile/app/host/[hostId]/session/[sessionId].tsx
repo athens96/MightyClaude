@@ -4,6 +4,7 @@ import {
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -59,7 +60,7 @@ import {
   retainDropped,
 } from '@/lib/history';
 import { t } from '@/lib/i18n';
-import { blocksProgressKey, entriesProgressKey } from '@/lib/follow';
+import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
@@ -89,6 +90,9 @@ function acceptedMessage(accepted: string): string {
 }
 
 const NO_ENTRIES: LogEntry[] = [];
+
+/** Index 1 is the first row: index 0 is the list header. */
+const HOLD_FIRST_ROW = { minIndexForVisible: 1 };
 
 /** A permission request is only unique within its run. */
 function requestKey(request: Pick<MobilePermission, 'id' | 'runId'>): string {
@@ -176,6 +180,14 @@ export default function SessionScreen() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const loadingOlderRef = useRef(false);
   const [exhausted, setExhausted] = useState(false);
+  /**
+   * The transcript holds the rows on screen in place while older ones go in above
+   * (`PREPEND_HOLD_MS`) and whenever the reader is further up (`detached`); held while it
+   * follows, it would fight every jump to the newest.
+   */
+  const [holdingPosition, setHoldingPosition] = useState(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
 
   const canQueue = hasCapability(capabilities, 'queue');
   const canPane = hasCapability(capabilities, 'pane');
@@ -285,11 +297,14 @@ export default function SessionScreen() {
     setOlder((prev) => retainDropped(prev, previous, live));
   }, [live]);
 
-  // Android reports only the "did" events; the composer drops its home-indicator inset
-  // while the keyboard is up, since the keyboard already covers that strip.
+  // The composer drops its home-indicator inset while the keyboard is up, since the
+  // keyboard already covers that strip. iOS says so before the keyboard moves, so the
+  // inset changes with it in one step; Android reports only the "did" events. The list
+  // shrinking under it is a layout change the follow hook answers by pinning again.
   useEffect(() => {
-    const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardShown(true));
-    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardShown(false));
+    const events = keyboardEvents(Platform.OS);
+    const shown = Keyboard.addListener(events.show, () => setKeyboardShown(true));
+    const hidden = Keyboard.addListener(events.hide, () => setKeyboardShown(false));
     return () => {
       shown.remove();
       hidden.remove();
@@ -321,6 +336,8 @@ export default function SessionScreen() {
     if (!before) return;
     loadingOlderRef.current = true;
     setLoadingOlder(true);
+    clearTimeout(holdTimer.current);
+    setHoldingPosition(true);
     try {
       const page = await client.entries(sessionId, { before, limit: ENTRY_PAGE_SIZE });
       const fetched = page.entries ?? [];
@@ -331,6 +348,8 @@ export default function SessionScreen() {
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
+      // The page's rows mount over the next few frames; the hold outlasts them.
+      holdTimer.current = setTimeout(() => setHoldingPosition(false), PREPEND_HOLD_MS);
     }
   }, [canLoadOlder, client, older, sessionId]);
 
@@ -857,6 +876,7 @@ export default function SessionScreen() {
             <MightyRunList
               runs={mighty.runs}
               contentContainerStyle={styles.list}
+              headerStyle={styles.listHeader}
               header={headerNode}
               footer={footerNode}
               listRef={blockFollow.attach}
@@ -871,8 +891,9 @@ export default function SessionScreen() {
               renderItem={({ item }) => <LogEntryView entry={item} />}
               contentContainerStyle={styles.list}
               keyboardShouldPersistTaps="handled"
-              maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
+              maintainVisibleContentPosition={holdingPosition || logFollow.detached ? HOLD_FIRST_ROW : undefined}
               ListHeaderComponent={headerNode}
+              ListHeaderComponentStyle={styles.listHeader}
               ListEmptyComponent={
                 <EmptyState title={poll.loading ? '불러오는 중…' : '기록이 없습니다'} />
               }
@@ -1024,7 +1045,10 @@ export default function SessionScreen() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
-    list: { padding: spacing.lg, paddingBottom: spacing.xl },
+    // A short transcript sits at the bottom, right above the composer, as in a chat: the
+    // header takes the spare room and stays at the top, the rows and footer end the list.
+    list: { flexGrow: 1, justifyContent: 'flex-end', padding: spacing.lg, paddingBottom: spacing.xl },
+    listHeader: { flexGrow: 1 },
     body: { flex: 1 },
     footer: { gap: spacing.sm, paddingTop: spacing.sm },
     headerAction: { color: palette.text, fontSize: 22, paddingHorizontal: spacing.sm },

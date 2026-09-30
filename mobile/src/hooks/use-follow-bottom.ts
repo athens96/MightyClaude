@@ -1,10 +1,13 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import {
   PULL_GIVE_UP,
   PULL_START_SLACK,
+  SETTLE_FRAMES,
+  bottomOffset,
   followAfterScroll,
+  isMeasured,
   isNearBottom,
   pullPhase,
   type PullPhase,
@@ -13,9 +16,10 @@ import {
 
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
 
-/** The one thing this needs from a list; every `FlatList` has it. */
+/** The two things this needs from a list; every `FlatList` has them. */
 export interface EndScrollable {
   scrollToEnd: (params?: { animated?: boolean | null }) => void;
+  scrollToOffset: (params: { offset: number; animated?: boolean | null }) => void;
 }
 
 /** Spread onto the list that should follow its newest content. */
@@ -50,6 +54,16 @@ function metricsOf(event: ScrollEvent): ScrollMetrics {
  * animated: an animation would send scroll events of its own half-way up the list. A
  * freshly mounted list starts out following, so switching views lands on the newest.
  *
+ * The jump goes to the real bottom — the content height and viewport height the list
+ * itself reported — rather than through `scrollToEnd`, which adds up estimated row
+ * heights and stops short of rows and a footer not measured yet. It is repeated for a
+ * couple of frames so it lands where the layout settles, not where it stood at first.
+ *
+ * `detached` is true while the user reads further up. A list that keeps its visible rows in
+ * place (`maintainVisibleContentPosition`) holds them only then: rows trimmed or put in
+ * above would otherwise slide under the reader, and a list that is following jumps to its
+ * newest content anyway, which the hold would fight.
+ *
  * With `onPull`, dragging further up from the very bottom refreshes. A gesture carries
  * it rather than scroll events or raw touches: Android reports no offset past the end,
  * and its scroll view cancels a view's own touches once it starts dragging. The gesture
@@ -67,41 +81,93 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
   const pullActive = useRef(false);
   const phaseRef = useRef<PullPhase>('idle');
   const [pull, setPull] = useState<PullPhase>('idle');
+  const settleFrame = useRef<number | null>(null);
+  const settleLeft = useRef(0);
+  /**
+   * `following`, turned around and made visible to render: true while the user reads
+   * further up. It changes only when following flips, not on every scroll event.
+   */
+  const [detached, setDetached] = useState(false);
+
+  const setFollowing = useCallback((next: boolean) => {
+    if (following.current === next) return;
+    following.current = next;
+    setDetached(!next);
+  }, []);
 
   const attach = useCallback((instance: EndScrollable | null) => {
     list.current = instance;
-    if (instance) following.current = true;
+    if (!instance) return;
+    setFollowing(true);
+    // A remounted list (switching views) reports its own sizes again; until it has, the
+    // last list's would send the jump to the wrong place.
+    metrics.current = { contentHeight: 0, viewportHeight: 0, offsetY: 0 };
+  }, [setFollowing]);
+
+  /** A finger on the list, or a flick still coasting: the user is reading. */
+  const reading = useCallback(
+    () => touching.current || dragging.current || coasting.current || pullStart.current !== null,
+    [],
+  );
+
+  const jump = useCallback(() => {
+    const target = list.current;
+    if (!target) return;
+    if (isMeasured(metrics.current)) target.scrollToOffset({ offset: bottomOffset(metrics.current), animated: false });
+    else target.scrollToEnd({ animated: false });
   }, []);
+
+  /** Jumps to the newest content now, then again on the next frames as the layout settles. */
+  const pin = useCallback(() => {
+    jump();
+    settleLeft.current = SETTLE_FRAMES;
+    if (settleFrame.current !== null) return;
+    const settle = () => {
+      settleFrame.current = null;
+      if (!following.current || reading()) return;
+      jump();
+      settleLeft.current -= 1;
+      if (settleLeft.current > 0) settleFrame.current = requestAnimationFrame(settle);
+    };
+    settleFrame.current = requestAnimationFrame(settle);
+  }, [jump, reading]);
+
+  useEffect(
+    () => () => {
+      if (settleFrame.current !== null) cancelAnimationFrame(settleFrame.current);
+    },
+    [],
+  );
 
   /** Back to the newest content, e.g. once the user has sent something. */
   const follow = useCallback(() => {
-    following.current = true;
-    list.current?.scrollToEnd({ animated: false });
-  }, []);
+    setFollowing(true);
+    pin();
+  }, [pin, setFollowing]);
 
   /**
    * Back to the newest content because the work moved on, unless the user's finger is on
    * the list or it is still coasting from a flick: then they are reading, and are left be.
    */
   const followProgress = useCallback(() => {
-    if (touching.current || dragging.current || coasting.current || pullStart.current !== null) return;
-    following.current = true;
-    list.current?.scrollToEnd({ animated: false });
-  }, []);
+    if (reading()) return;
+    setFollowing(true);
+    pin();
+  }, [pin, reading, setFollowing]);
 
   const props = useMemo<FollowBottomProps>(() => {
     const settle = (event: ScrollEvent) => {
       metrics.current = metricsOf(event);
-      following.current = followAfterScroll(following.current, metrics.current, true);
+      setFollowing(followAfterScroll(following.current, metrics.current, true));
     };
     const keepUp = () => {
-      if (following.current) list.current?.scrollToEnd({ animated: false });
+      if (following.current && !dragging.current && !coasting.current) pin();
     };
     return {
       onScroll: (event) => {
         metrics.current = metricsOf(event);
         const byUser = dragging.current || coasting.current;
-        following.current = followAfterScroll(following.current, metrics.current, byUser);
+        setFollowing(followAfterScroll(following.current, metrics.current, byUser));
         onScroll?.(event);
       },
       onScrollBeginDrag: () => {
@@ -138,7 +204,7 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
       },
       scrollEventThrottle: 64,
     };
-  }, [onScroll]);
+  }, [onScroll, pin, setFollowing]);
 
   const pullGesture = useMemo(() => {
     const toPhase = (next: PullPhase) => {
@@ -183,5 +249,5 @@ export function useFollowBottom(onScroll?: (event: ScrollEvent) => void, onPull?
       });
   }, [onPull]);
 
-  return { attach, follow, followProgress, props, pull, pullGesture };
+  return { attach, detached, follow, followProgress, props, pull, pullGesture };
 }

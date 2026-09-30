@@ -227,6 +227,7 @@ export function MightyRunList({
   header,
   footer,
   contentContainerStyle,
+  headerStyle,
   listRef,
   follow,
 }: {
@@ -234,6 +235,8 @@ export function MightyRunList({
   header?: ReactElement | null;
   footer?: ReactElement | null;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /** With a growing header in a bottom-anchored container, the runs sit above the composer. */
+  headerStyle?: StyleProp<ViewStyle>;
   listRef?: (list: EndScrollable | null) => void;
   follow?: FollowBottomProps;
 }) {
@@ -254,6 +257,7 @@ export function MightyRunList({
       contentContainerStyle={contentContainerStyle}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={header}
+      ListHeaderComponentStyle={headerStyle}
       ListEmptyComponent={
         <EmptyState title="요청이 없습니다" description="메시지를 보내면 블록이 쌓입니다." />
       }

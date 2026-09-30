@@ -25,6 +25,50 @@ export function followAfterScroll(following: boolean, metrics: ScrollMetrics, by
 }
 
 /**
+ * Where the newest content sits: the measured content height less the measured viewport,
+ * never above the top. The list's own `scrollToEnd` guesses from estimated row heights
+ * and can stop short of rows and a footer it has not measured yet; this reads the real
+ * sizes the list reported, so a jump here lands right above the composer.
+ */
+export function bottomOffset(metrics: Pick<ScrollMetrics, 'contentHeight' | 'viewportHeight'>): number {
+  return Math.max(0, metrics.contentHeight - metrics.viewportHeight);
+}
+
+/** Both sizes have been reported, so `bottomOffset` is a real position and not a guess. */
+export function isMeasured(metrics: Pick<ScrollMetrics, 'contentHeight' | 'viewportHeight'>): boolean {
+  return metrics.contentHeight > 0 && metrics.viewportHeight > 0;
+}
+
+/**
+ * How many frames a jump to the newest content is repeated for. Rows and the footer are
+ * measured a frame or two after they mount, and each measurement moves the bottom; the
+ * repeat lands on the final one instead of wherever the first jump stopped.
+ */
+export const SETTLE_FRAMES = 2;
+
+/**
+ * How long, after a page of older history lands, the list keeps the rows on screen where
+ * they are, even if the reader is back at the bottom by then. Otherwise the position is
+ * held only while the user reads further up: held while following, it would fight every
+ * jump to the newest content.
+ */
+export const PREPEND_HOLD_MS = 600;
+
+/**
+ * The keyboard events the composer follows. iOS announces the keyboard before it moves,
+ * so the composer's inset changes with it rather than a beat later; Android only reports
+ * the keyboard once it is there.
+ */
+export function keyboardEvents(os: string): {
+  show: 'keyboardWillShow' | 'keyboardDidShow';
+  hide: 'keyboardWillHide' | 'keyboardDidHide';
+} {
+  return os === 'ios'
+    ? { show: 'keyboardWillShow', hide: 'keyboardWillHide' }
+    : { show: 'keyboardDidShow', hide: 'keyboardDidHide' };
+}
+
+/**
  * Pulling past the newest content to refresh: a drag that starts at the bottom and
  * carries the finger this far further up. Starting anywhere else is an ordinary scroll.
  */
