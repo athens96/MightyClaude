@@ -70,6 +70,7 @@ const makeMarkdownStyles = (palette: Palette, size: number) =>
     th: { color: palette.text, flex: 0, fontWeight: '700', padding: spacing.xs, width: CELL_WIDTH },
     td: { color: palette.text, flex: 0, padding: spacing.xs, width: CELL_WIDTH },
     image: { borderRadius: radius.sm, marginBottom: spacing.sm },
+    image_alt: { color: palette.textMuted, fontStyle: 'italic' },
   });
 
 // Two fixed factories: `useStyles` caches by factory identity.
@@ -90,10 +91,25 @@ function codeRule(key: 'fence' | 'code_block'): RenderRules[string] {
   };
 }
 
+/**
+ * An image is never fetched: its alt text stands in, as in the Mac's messages. The
+ * library's own rule loads any http(s) address and turns every other source into
+ * `https://<src>`, so a result or a workspace file could make the phone call out.
+ */
+export const imageRule: NonNullable<RenderRules[string]> = (node, _children, _parent, styles) => {
+  const alt = typeof node.attributes?.alt === 'string' ? node.attributes.alt.trim() : '';
+  return alt ? (
+    <Text key={node.key} style={styles.image_alt}>
+      {alt}
+    </Text>
+  ) : null;
+};
+
 /** A table wider than the phone scrolls sideways instead of squeezing every column. */
-const rules: RenderRules = {
+export const rules: RenderRules = {
   fence: codeRule('fence'),
   code_block: codeRule('code_block'),
+  image: imageRule,
   table: (node, children, _parent, styles) => (
     <ScrollView key={node.key} horizontal showsHorizontalScrollIndicator>
       <View style={styles._VIEW_SAFE_table}>{children}</View>
@@ -102,7 +118,7 @@ const rules: RenderRules = {
 };
 
 /** The same rules with every run of prose selectable, so a long press can copy it. */
-const selectableRules: RenderRules = {
+export const selectableRules: RenderRules = {
   ...rules,
   textgroup: (node, children, _parent, styles) => (
     <Text key={node.key} selectable style={styles.textgroup}>
@@ -140,7 +156,7 @@ class MarkdownBoundary extends Component<BoundaryProps, { failed: boolean }> {
 
 /**
  * Markdown as the Mac's result wrote it: headings, lists, quotes, tables, code,
- * links and images. `compact` is the smaller size the Mighty blocks use;
+ * links, and images as their alt text. `compact` is the smaller size the Mighty blocks use;
  * `selectable` lets the prose be long-pressed and copied, as code always can.
  */
 export function AssistantMarkdown({
