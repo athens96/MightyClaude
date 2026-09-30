@@ -27,7 +27,7 @@ Claude·Codex 실행 창의 입력창에 `/`로 시작하는 글을 쓰면 그 �
 | 작업 권한 바꾸기 (이어서 모드를 고름) | `/permissions` | `/approvals` | `/approval-mode` |
 | 새 대화로 시작 | `/clear` | `/new` | `/clear` |
 | 이 실행 창의 토큰·비용 (세션 정보) | `/cost`, `/usage` | `/status` | `/stats` |
-| MightyClaude 설정 열기 | `/config` | `/settings` | `/settings` |
+| Mighty Claude 설정 열기 | `/config` | `/settings` | `/settings` |
 | 실행 창 이름 바꾸기 | `/rename` | `/rename` | `/rename` |
 | 앱 명령 목록을 실행 기록에 표시 | `/help` | `/help` | `/help` |
 

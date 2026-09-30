@@ -40,7 +40,7 @@ public final class AgentTerminalIOHandler: AgentIORequestHandler, @unchecked Sen
             switch await webOpen.open(url, workspaceId: binding.workspaceId, agentPaneId: binding.agentPaneId, provider: binding.provider) {
             case .opened(let destination, let opened): return AgentIOResponse(destination: destination.rawValue, url: opened.absoluteString)
             case .openedExternallyInstead(let opened): return AgentIOResponse(destination: WebOpenDestination.external.rawValue, url: opened.absoluteString, inAppUnavailable: true)
-            case .failed(let opened): return .failure("\(opened.absoluteString) could not be opened: neither the MightyClaude browser pane nor the system browser accepted it.")
+            case .failed(let opened): return .failure("\(opened.absoluteString) could not be opened: neither the Mighty Claude browser pane nor the system browser accepted it.")
             case .rejected(let reason): return .failure(WebOpenURLValidator.message(for: reason))
             }
         default:

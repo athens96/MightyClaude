@@ -1,4 +1,4 @@
-# MightyClaude 릴레이
+# Mighty Claude 릴레이
 
 휴대폰(Expo 앱)과 Mac 호스트가 **각자 바깥으로 접속**해 만나는 WebSocket 파이프다.
 포트 개방·VPN이 필요 없고, 릴레이는 `serverId`/`connectionId`로 소켓을 짝지어 프레임을 그대로 전달할 뿐이다.
@@ -79,4 +79,4 @@ Caddy는 인증서를 자동 발급하고 WebSocket 업그레이드를 그대로
 
 ## 라이선스
 
-이 릴레이는 MightyClaude의 일부로 MIT 라이선스입니다. 릴레이 구조는 Apache License 2.0으로 배포되는 Paseo를 참고해 설계했으며, 고지는 저장소 루트의 `NOTICE.md`를 참고하세요.
+이 릴레이는 Mighty Claude의 일부로 MIT 라이선스입니다. 릴레이 구조는 Apache License 2.0으로 배포되는 Paseo를 참고해 설계했으며, 고지는 저장소 루트의 `NOTICE.md`를 참고하세요.

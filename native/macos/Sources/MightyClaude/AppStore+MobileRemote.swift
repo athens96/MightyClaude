@@ -341,7 +341,7 @@ extension AppStore {
             revision: revision,
             updatedAt: mightyTimestamp()
         ))
-        return MobileState(revision: revision, hostName: Host.current().localizedName ?? "MightyClaude Mac",
+        return MobileState(revision: revision, hostName: Host.current().localizedName ?? "Mighty Claude Mac",
                            workspaces: snapshot.workspaces.map { MobileWorkspace(id: $0.id, name: $0.name, path: $0.path) },
                            sessions: sessions)
     }

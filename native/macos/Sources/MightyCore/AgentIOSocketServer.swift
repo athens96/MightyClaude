@@ -128,7 +128,7 @@ public protocol AgentIORequestHandler: Sendable {
 /// The socket lives in a 0700 directory, is 0600 itself, and only accepts
 /// peers running as the same user.
 public final class AgentIOSocketServer: @unchecked Sendable {
-    public static let unknownTokenMessage = "This agent pane is no longer connected to MightyClaude. Reopen the pane and try again."
+    public static let unknownTokenMessage = "This agent pane is no longer connected to Mighty Claude. Reopen the pane and try again."
 
     public let socketPath: String
     private let bindings: PaneMCPBindingRegistry
@@ -197,7 +197,7 @@ public final class AgentIOSocketServer: @unchecked Sendable {
                 if let binding = bindings.binding(forToken: envelope.token) {
                     response = await handler.handle(envelope.request, binding: binding)
                 } else { response = .failure(Self.unknownTokenMessage) }
-            } else { response = .failure("The request to MightyClaude was malformed.") }
+            } else { response = .failure("The request to Mighty Claude was malformed.") }
             var data = (try? JSONEncoder().encode(response)) ?? Data("{\"error\":\"encoding failed\"}".utf8)
             data.append(10)
             _ = AgentIOWire.writeAll(fd: client, data)
@@ -212,17 +212,17 @@ public enum AgentIOSocketClient {
     public static let responseTimeoutSeconds = 60
 
     public static func send(_ request: AgentIORequest, token: String, socketPath: String) -> AgentIOResponse {
-        guard var address = AgentIOWire.address(socketPath) else { return .failure("MightyClaude's agent socket path is invalid.") }
+        guard var address = AgentIOWire.address(socketPath) else { return .failure("Mighty Claude's agent socket path is invalid.") }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return .failure("Could not open a connection to MightyClaude.") }
+        guard fd >= 0 else { return .failure("Could not open a connection to Mighty Claude.") }
         defer { Darwin.close(fd) }
         AgentIOWire.setTimeouts(fd: fd, seconds: responseTimeoutSeconds)
         let connected = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-        guard connected == 0 else { return .failure("MightyClaude is not running or not accepting agent tool calls.") }
+        guard connected == 0 else { return .failure("Mighty Claude is not running or not accepting agent tool calls.") }
         guard var data = try? JSONEncoder().encode(AgentIOEnvelope(token: token, request: request)), data.count < AgentIOWire.maxMessageBytes else { return .failure("The request is too large.") }
         data.append(10)
-        guard AgentIOWire.writeAll(fd: fd, data) else { return .failure("Could not send the request to MightyClaude.") }
-        guard let line = AgentIOWire.readLine(fd: fd), let response = try? JSONDecoder().decode(AgentIOResponse.self, from: line) else { return .failure("MightyClaude did not answer the request.") }
+        guard AgentIOWire.writeAll(fd: fd, data) else { return .failure("Could not send the request to Mighty Claude.") }
+        guard let line = AgentIOWire.readLine(fd: fd), let response = try? JSONDecoder().decode(AgentIOResponse.self, from: line) else { return .failure("Mighty Claude did not answer the request.") }
         return response
     }
 }

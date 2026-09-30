@@ -423,7 +423,7 @@ final class CompanionPanel {
     nonisolated(unsafe) private var scrollMonitor: Any?
     init(companion: AgentCompanion) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 282, height: Self.baseHeight), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = "MightyClaude Pet"
+        panel.title = "Mighty Claude Pet"
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false

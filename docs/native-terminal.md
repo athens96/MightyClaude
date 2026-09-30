@@ -25,7 +25,7 @@ Mac의 로컬 Shell 실행 창은 Ghostty의 Metal 렌더러와 PTY를 사용하
 
 이 프로젝트에서 참고한 [Orca ADE의 공식 터미널 문서](https://www.onorca.dev/docs/terminal)는 xterm.js 기반이라고 명시한다. Ghostty는 테마·폰트·커서 설정 가져오기에 사용한다. 검색에 나타나는 동명의 다른 Orca 터미널 프로젝트와 구별해야 한다.
 
-MightyClaude는 사용자가 요청한 Ghostty 엔진을 직접 네이티브 앱에 연결한다. Ghostty의 [공식 구조 설명](https://ghostty.org/docs/about)에서 설명하는 C ABI, 네이티브 AppKit 화면과 Metal 렌더링을 사용한다.
+Mighty Claude는 사용자가 요청한 Ghostty 엔진을 직접 네이티브 앱에 연결한다. Ghostty의 [공식 구조 설명](https://ghostty.org/docs/about)에서 설명하는 C ABI, 네이티브 AppKit 화면과 Metal 렌더링을 사용한다.
 
 ## 의존성과 빌드
 

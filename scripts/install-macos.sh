@@ -43,7 +43,7 @@ if [ "$VERIFY_EXIT" -ne 0 ]; then
 fi
 
 if running; then
-  echo "MightyClaude가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
+  echo "Mighty Claude가 실행 중입니다. 앱을 종료(⌘Q)하면 교체합니다…"
   while running; do sleep 1; done
   # Let the input method and LaunchServices finish tearing down the old process.
   sleep 2

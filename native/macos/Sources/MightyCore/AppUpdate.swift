@@ -274,7 +274,7 @@ public actor AppUpdateService {
         if let folder, !app.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/") { throw MightyError("패키지의 앱 번들 위치가 올바르지 않습니다.") }
         guard let data = try? Data(contentsOf: plist), let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               info["CFBundleIdentifier"] as? String == expectedBundleIdentifier, let executable = info["CFBundleExecutable"] as? String, !executable.contains("/") else {
-            throw MightyError("패키지의 앱 번들이 MightyClaude가 아니거나 손상되었습니다.")
+            throw MightyError("패키지의 앱 번들이 Mighty Claude가 아니거나 손상되었습니다.")
         }
         let binary = binaryDirectory.appendingPathComponent(executable)
         guard (try? binary.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true, FileManager.default.isExecutableFile(atPath: binary.path) else {
@@ -307,7 +307,7 @@ public actor AppUpdateService {
         NEW="$DESTINATION.update-new"
         LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
-        if kill -0 "$PID" 2>/dev/null; then echo "MightyClaude가 종료되지 않아 업데이트를 건너뜁니다." >&2; exit 1; fi
+        if kill -0 "$PID" 2>/dev/null; then echo "Mighty Claude가 종료되지 않아 업데이트를 건너뜁니다." >&2; exit 1; fi
         sleep 2
         [ -d "$SOURCE" ] || { echo "설치할 앱이 없습니다: $SOURCE" >&2; exit 1; }
         rm -rf "$NEW"

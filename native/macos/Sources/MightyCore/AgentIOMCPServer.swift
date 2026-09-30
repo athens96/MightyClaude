@@ -117,7 +117,7 @@ public final class AgentIOMCPServer: @unchecked Sendable {
             return .reply(Self.result(id: id, [
                 "protocolVersion": version,
                 "capabilities": ["tools": ["listChanged": false]],
-                "serverInfo": ["name": PaneMCPBinding.serverName, "title": "MightyClaude terminal and web", "version": "1.0.0"],
+                "serverInfo": ["name": PaneMCPBinding.serverName, "title": "Mighty Claude terminal and web", "version": "1.0.0"],
                 "instructions": PaneMCPToolManifest.routingGuidance,
             ]))
         case "ping":
@@ -182,7 +182,7 @@ public final class AgentIOMCPServer: @unchecked Sendable {
             guard value.count <= WebOpenURLValidator.maxLength else { return Self.toolError("url is longer than 8192 characters.") }
             request.url = value
         }
-        guard let token, let socketPath else { return Self.toolError("This MCP server was started without a MightyClaude pane connection, so it cannot reach the app.") }
+        guard let token, let socketPath else { return Self.toolError("This MCP server was started without a Mighty Claude pane connection, so it cannot reach the app.") }
         let response = transport(request, token, socketPath)
         if let error = response.error { return Self.toolError(error) }
         return ["content": [["type": "text", "text": name == PaneMCPToolManifest.openURL.name ? Self.describeOpen(response) : Self.describeTerminal(response)]], "isError": false]
@@ -193,10 +193,10 @@ public final class AgentIOMCPServer: @unchecked Sendable {
     static func describeOpen(_ response: AgentIOResponse) -> String {
         let page = response.url ?? "the page"
         guard response.destination == WebOpenDestination.external.rawValue else {
-            return "Opened \(page) in the MightyClaude browser pane next to this agent pane."
+            return "Opened \(page) in the Mighty Claude browser pane next to this agent pane."
         }
         if response.inAppUnavailable == true {
-            return "Opened \(page) in the user's system browser. The in-app browser was chosen but could not show it (the MightyClaude browser pane is turned off in Settings or not available in this build)."
+            return "Opened \(page) in the user's system browser. The in-app browser was chosen but could not show it (the Mighty Claude browser pane is turned off in Settings or not available in this build)."
         }
         return "Opened \(page) in the user's system browser."
     }

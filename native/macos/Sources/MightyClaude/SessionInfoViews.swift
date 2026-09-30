@@ -291,7 +291,7 @@ struct SessionInfoView: View {
                     .accessibilityLabel("세션 ID").accessibilityValue(showsIdentifiers ? "펼침" : "접힘")
                     .accessibilityIdentifier("session-info-identifiers-\(sessionID)")
                     if showsIdentifiers {
-                        row("MightyClaude 세션 ID", session.id, key: "identity", monospaced: true)
+                        row("Mighty Claude 세션 ID", session.id, key: "identity", monospaced: true)
                         if let id = usage?.providerSessionId ?? session.resumeId { row("CLI 세션 ID", id, key: "cli-identity", monospaced: true) }
                     }
                     if let usage {

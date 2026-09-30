@@ -136,7 +136,7 @@ final class ClaudePermissionChannel {
         // no request left to approve. updatedInput is the original object.
         pending.removeValue(forKey: requestId)
         if allow { success(requestId, result: ["behavior": "allow", "updatedInput": request.input, "toolUseID": request.display.toolUseId]) }
-        else { deny(requestId, toolUseId: request.display.toolUseId, message: "The user denied this tool request in MightyClaude.") }
+        else { deny(requestId, toolUseId: request.display.toolUseId, message: "The user denied this tool request in Mighty Claude.") }
         var display = request.display; display.state = allow ? "allowed" : "denied"
         activity(display, allow ? "running" : "error"); emit(display)
     }

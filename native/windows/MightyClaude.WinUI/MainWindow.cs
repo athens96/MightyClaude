@@ -75,7 +75,7 @@ public sealed partial class MainWindow : Window
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var brandImage = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 28, Height = 28 };
         AutomationProperties.SetAccessibilityView(brandImage, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        brand.Children.Add(brandImage); brand.Children.Add(new TextBlock { Text = "MightyClaude", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        brand.Children.Add(brandImage); brand.Children.Add(new TextBlock { Text = "Mighty Claude", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         brand.Children.Add(new Border { Child = brandBeta, CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(110, 135, 135, 135)), Padding = new Thickness(6, 0, 6, 1), VerticalAlignment = VerticalAlignment.Center }); sidebar.Children.Add(brand);
         foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Tag = name });
         layout.SelectionChanged += async (_, _) => { if (!rendering && layout.SelectedItem is ComboBoxItem item) await ApplyLayoutPreset((string)item.Tag); };
@@ -108,7 +108,7 @@ public sealed partial class MainWindow : Window
     // so its text is set again once the preference is applied.
     private void ApplyChromeText()
     {
-        Title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "MightyClaude" });
+        Title = Locale.Get("window.title.betaTemplate", new Dictionary<string, string> { ["app"] = "Mighty Claude" });
         brandBeta.Text = Locale.Get("badge.beta"); AutomationProperties.SetName(brandBeta, Locale.Get("badge.betaAccessibility"));
         search.PlaceholderText = Locale.Get("sidebar.searchPlaceholder");
         foreach (var item in layout.Items.OfType<ComboBoxItem>())

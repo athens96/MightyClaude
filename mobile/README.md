@@ -1,6 +1,6 @@
-# MightyClaude Mobile
+# Mighty Claude Mobile
 
-데스크톱 MightyClaude를 휴대폰에서 원격 조종하는 React Native(Expo) 클라이언트입니다.
+데스크톱 Mighty Claude를 휴대폰에서 원격 조종하는 React Native(Expo) 클라이언트입니다.
 
 > **네이티브 다시 빌드 필요** — 이번 라운드에서 `expo-image-picker`, `expo-document-picker`,
 > `expo-file-system`이 의존성으로 들어왔습니다. 이미 만들어 둔 개발 빌드나 `android/`·`ios/`

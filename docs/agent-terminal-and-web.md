@@ -1,6 +1,6 @@
 # Agent Terminal and Web-Open Bridge
 
-Every Claude and Codex agent pane in MightyClaude gets a dedicated terminal pane and a URL-opening flow through a per-pane bundled stdio MCP server. This document explains the routing rules, the run/read/stop cycle, the URL choice card, pane lifetime, permission handling, and the per-pane token rules.
+Every Claude and Codex agent pane in Mighty Claude gets a dedicated terminal pane and a URL-opening flow through a per-pane bundled stdio MCP server. This document explains the routing rules, the run/read/stop cycle, the URL choice card, pane lifetime, permission handling, and the per-pane token rules.
 
 ---
 

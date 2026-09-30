@@ -69,7 +69,7 @@ CLI 탐색·모델 조회·실제 실행은 해당 작업 폴더의 로그인 �
 
 모델 고정값도 모두 초기화하려면 `--reset-models`를 추가합니다. 사용자 설정의 모델 선택·목록 제한·모델 ID 매핑과 셸의 Claude 모델 지정 변수를 함께 지웁니다. 예를 들어 `python3 scripts/reset-claude-bedrock.py --reset-models --apply`를 실행합니다. 프로젝트·조직의 관리 설정이나 기존 CLI 대화 파일은 수정하지 않습니다. 모델을 새로 선택하려면 새 Claude Code 세션을 시작하거나 `/setup-bedrock`에서 다시 설정합니다.
 
-파일 초기화는 이미 실행 중인 앱이나 터미널의 환경 변수를 지우지 않습니다. 현재 확인된 구성에서는 적용 성공 후 로그인할 터미널에서 `unset AWS_BEARER_TOKEN_BEDROCK CLAUDE_CODE_USE_BEDROCK AWS_REGION`을 실행하고 Claude Code를 새로 시작합니다. MightyClaude도 종료 후 다시 실행합니다. Bedrock 단기 키로 다시 설정할 때는 Claude Code에서 `/setup-bedrock`을 입력하여 API 키 방식과 발급 리전을 선택합니다. 마법사의 저장 위치와 동작은 [Claude Code Bedrock 설정 문서](https://code.claude.com/docs/en/amazon-bedrock#sign-in-with-bedrock)를 참고하세요.
+파일 초기화는 이미 실행 중인 앱이나 터미널의 환경 변수를 지우지 않습니다. 현재 확인된 구성에서는 적용 성공 후 로그인할 터미널에서 `unset AWS_BEARER_TOKEN_BEDROCK CLAUDE_CODE_USE_BEDROCK AWS_REGION`을 실행하고 Claude Code를 새로 시작합니다. Mighty Claude도 종료 후 다시 실행합니다. Bedrock 단기 키로 다시 설정할 때는 Claude Code에서 `/setup-bedrock`을 입력하여 API 키 방식과 발급 리전을 선택합니다. 마법사의 저장 위치와 동작은 [Claude Code Bedrock 설정 문서](https://code.claude.com/docs/en/amazon-bedrock#sign-in-with-bedrock)를 참고하세요.
 
 터미널에서도 인증이 실패하면 저장 위치 비교와 AWS 응답 확인을 분리해서 확인합니다.
 

@@ -21,6 +21,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../../assets/icons/MightyClaude.ico</ApplicationIcon>
     <AssemblyName>MightyClaude</AssemblyName>
+    <!-- What Windows shows for the exe (Task Manager, file properties); the file name stays MightyClaude.exe. -->
+    <AssemblyTitle>Mighty Claude</AssemblyTitle>
+    <Product>Mighty Claude</Product>
     <Version>0.2.0</Version>
     <RootNamespace>MightyClaude.WinUI</RootNamespace>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>

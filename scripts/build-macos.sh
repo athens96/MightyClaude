@@ -52,8 +52,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleName</key><string>MightyClaude</string>
-<key>CFBundleDisplayName</key><string>MightyClaude</string>
+<key>CFBundleName</key><string>Mighty Claude</string>
+<key>CFBundleDisplayName</key><string>Mighty Claude</string>
 <key>CFBundleIdentifier</key><string>dev.mightyclaude.native</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
@@ -72,7 +72,7 @@ PLIST
 # Edit, Window, Help) in the user's language instead of the fallback English.
 for language in ko en; do
   mkdir -p "$APP_PATH/Contents/Resources/$language.lproj"
-  printf '"CFBundleDisplayName" = "MightyClaude";\n' > "$APP_PATH/Contents/Resources/$language.lproj/InfoPlist.strings"
+  printf '"CFBundleDisplayName" = "Mighty Claude";\n' > "$APP_PATH/Contents/Resources/$language.lproj/InfoPlist.strings"
 done
 # Version and update address: VERSION file (or MIGHTY_APP_VERSION), commit count
 # (or MIGHTY_BUILD_NUMBER), and the manifest URL the app checks (MIGHTY_UPDATE_URL).
