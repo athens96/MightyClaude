@@ -294,6 +294,10 @@ final class FilePaneModel: ObservableObject {
         case image(FilePaneFileInfo, FilePaneImage)
         case unsupported(FilePaneFileInfo)
         case tooLargeImage(FilePaneFileInfo)
+        /// More pixels than `FilePreviewClassifier.maximumDecodePixels`: never decoded.
+        case tooManyPixels(FilePaneFileInfo)
+        /// An svg that could read files or addresses outside itself: never drawn.
+        case externalSVG(FilePaneFileInfo)
         case missing
         case failed
         case cancelled
@@ -328,6 +332,9 @@ final class FilePaneModel: ObservableObject {
         case .image(let info, let image): preview = .image(info, image)
         case .unsupported(let info): preview = .unsupported(info, reason: nil)
         case .tooLargeImage(let info): preview = .unsupported(info, reason: L("files.preview.tooLargeImage"))
+        case .tooManyPixels(let info):
+            preview = .unsupported(info, reason: L("files.preview.tooManyPixels", ["count": (FilePreviewClassifier.maximumDecodePixels / 1_000_000).formatted()]))
+        case .externalSVG(let info): preview = .unsupported(info, reason: L("files.preview.svgExternal"))
         case .missing: preview = .failed(L("files.preview.missing"))
         case .failed: preview = .failed(L("files.preview.failed"))
         case .cancelled: break
@@ -355,7 +362,7 @@ final class FilePaneModel: ObservableObject {
                   let data = try? file.handle.read(upToCount: FilePreviewClassifier.maximumImageBytes + 1) else { return .failed }
             guard data.count <= FilePreviewClassifier.maximumImageBytes else { return .tooLargeImage(info) }
             guard !Task.isCancelled else { return .cancelled }
-            return decodeImage(data, name: name).map { .image(info, $0) } ?? .unsupported(info)
+            return decodeImage(data, info: info)
         case .markdown, .source:
             guard let read = try? FilePreviewClassifier.readText(file.handle) else { return .failed }
             guard !Task.isCancelled else { return .cancelled }
@@ -384,22 +391,30 @@ final class FilePaneModel: ObservableObject {
                             wraps: lines.longest > SourceLines.wrapThreshold, truncated: read.truncated, highlightCapped: highlightCapped, encoding: read.encoding)
     }
 
-    private nonisolated static func decodeImage(_ data: Data, name: String) -> FilePaneImage? {
-        if ["svg", "pdf"].contains(FilePreviewClassifier.fileExtension(name)) {
-            guard let image = NSImage(data: data), image.size.width > 0, image.size.height > 0 else { return nil }
-            return FilePaneImage(display: image, full: image, size: image.size, isVector: true, fullSizeAllowed: true, data: Data())
+    /// svg and pdf through `NSImage`, only when the svg references nothing
+    /// outside itself and the size is finite and at most `maximumVectorPoints`
+    /// (the view turns it into whole numbers). A bitmap over the decode budget
+    /// is refused from its header, before any pixel is decoded.
+    private nonisolated static func decodeImage(_ data: Data, info: FilePaneFileInfo) -> Loaded {
+        let ext = FilePreviewClassifier.fileExtension(info.name)
+        if ["svg", "pdf"].contains(ext) {
+            if ext == "svg", FilePreviewClassifier.svgLoadsExternalContent(data) { return .externalSVG(info) }
+            guard let image = NSImage(data: data), FilePreviewClassifier.isDrawable(width: image.size.width, height: image.size.height) else { return .unsupported(info) }
+            return .image(info, FilePaneImage(display: image, full: image, size: image.size, isVector: true, fullSizeAllowed: true, data: Data()))
         }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
-              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue, width > 0, height > 0 else { return nil }
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue, width > 0, height > 0 else { return .unsupported(info) }
+        guard let pixels = FilePreviewClassifier.pixelCount(width: width, height: height),
+              pixels <= FilePreviewClassifier.maximumDecodePixels else { return .tooManyPixels(info) }
         let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
         let longest = max(width, height), small = longest <= FilePreviewClassifier.maximumFitPixels
-        guard let display = thumbnail(source, maximumPixels: min(longest, FilePreviewClassifier.maximumFitPixels)) else { return nil }
+        guard let display = thumbnail(source, maximumPixels: min(longest, FilePreviewClassifier.maximumFitPixels)) else { return .unsupported(info) }
         // A small bitmap's thumbnail is already its full size; only a large one keeps its bytes.
-        return FilePaneImage(display: display, full: small ? display : nil,
-                             size: orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height),
-                             isVector: false, fullSizeAllowed: width * height <= FilePreviewClassifier.maximumFullPixels, data: small ? Data() : data)
+        return .image(info, FilePaneImage(display: display, full: small ? display : nil,
+                                          size: orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height),
+                                          isVector: false, fullSizeAllowed: pixels <= FilePreviewClassifier.maximumFullPixels, data: small ? Data() : data))
     }
 
     /// The first frame, orientation applied, at most `maximumPixels` on its long side.
