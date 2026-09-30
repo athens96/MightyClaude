@@ -69,6 +69,7 @@ enum ComposerInputTransactionDiagnostics {
         fixture.coordinator.detach(); fixture.drain()
         report["dismantleFlushesLastNativeEditAndDetachesController"] = fixture.model == "last native edit" && controller.editor == nil && editor.delegate == nil
         report.merge(commandChecks()) { _, new in new }
+        report.merge(fillChecks()) { _, new in new }
         report.merge(standardDocumentChecks()) { _, new in new }
         return report
     }
@@ -251,6 +252,56 @@ enum ComposerInputTransactionDiagnostics {
             editor.doCommand(by: NSSelectorFromString("insertLineBreak:"))
         }
         report["nativeOptionReturnLineBreakCommandKeepsNewline"] = sends.isEmpty && editor.string == nativeLineBreakResult
+        return report
+    }
+
+    /// The `next:` fill path through the real coordinator: a Korean
+    /// composition is committed, never dropped, the fill is one undo step, and
+    /// a store draft the editor has not shown yet is kept under the fill.
+    private static func fillChecks() -> [String: Bool] {
+        let fixture = Fixture()
+        let editor = fixture.editor
+        editor.allowsUndo = true // as in NativeComposerEditor.makeNSView
+        // The pane's TextEditorHeightReader reads layoutManager, which puts the
+        // app's composer on TextKit 1; only there does an undo notify the delegate.
+        _ = editor.layoutManager
+        let window = FixtureWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = editor; window.fixtureResponder = editor
+        defer { fixture.coordinator.detach(); window.contentView = nil; window.close() }
+        guard let undo = editor.undoManager else { return ["fillUndoManagerAvailable": false] }
+        // Each key or button press is its own event, so its own undo group,
+        // without waiting for a run-loop turn.
+        undo.groupsByEvent = false
+        func event(_ body: () -> Void) { undo.beginUndoGrouping(); body(); undo.endUndoGrouping() }
+        func caretAtEnd() -> Bool { editor.selectedRange() == NSRange(location: (editor.string as NSString).length, length: 0) }
+        var report: [String: Bool] = [:]
+        editor.replaceDraft("한")
+        event { editor.setMarkedText("글", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 1, length: 0)) }
+        fixture.drain()
+        event { editor.fillDraft("/x") }
+        fixture.drain()
+        report["fillCommitsCompositionThenAppendsOnNewLine"] = editor.string == "한글\n/x" && !editor.hasMarkedText() && fixture.model == editor.string && caretAtEnd()
+        undo.undo(); fixture.drain()
+        report["fillIsOneUndoStepKeepingCommittedSyllable"] = editor.string == "한글" && fixture.model == editor.string
+        editor.replaceDraft(" \n")
+        event { editor.fillDraft("/x") }
+        fixture.drain()
+        let blankReplaced = editor.string == "/x" && fixture.model == "/x" && caretAtEnd()
+        undo.undo(); fixture.drain()
+        report["fillReplacesBlankDraftAndUndoRestoresIt"] = blankReplaced && editor.string == " \n" && fixture.model == editor.string
+        // A newer store draft resets the undo history, which an explicit
+        // group cannot survive; these two checks are about the document only.
+        editor.allowsUndo = false
+        editor.replaceDraft("")
+        editor.setMarkedText("한", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: 0, length: 0))
+        fixture.drain(); fixture.external("newer store draft")
+        let deferred = editor.hasMarkedText() && editor.string == "한"
+        editor.fillDraft("/x"); fixture.drain()
+        report["fillAppliesDeferredStoreDraftBeforeAppending"] = deferred && editor.string == "newer store draft\n/x" && fixture.model == editor.string && !editor.hasMarkedText() && caretAtEnd()
+        editor.replaceDraft("typed")
+        fixture.model = "unrendered store draft"
+        editor.fillDraft("/x"); fixture.drain()
+        report["fillAppliesUnrenderedStoreDraftBeforeAppending"] = editor.string == "unrendered store draft\n/x" && fixture.model == editor.string && caretAtEnd()
         return report
     }
 

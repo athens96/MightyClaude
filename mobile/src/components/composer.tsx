@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type Ref } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button } from '@/components/ui';
 import { CommandList } from '@/components/command-list';
@@ -32,6 +32,7 @@ export function Composer({
   onSend,
   onStop,
   onCommand,
+  inputRef,
 }: {
   /** Owned by the screen, so a guided panel can send and clear it too. */
   text: string;
@@ -51,6 +52,8 @@ export function Composer({
   onStop: () => void;
   /** A command the host wants the phone to handle (rename, settings, /usage…). */
   onCommand: (command: MobileCommand) => void;
+  /** Lets the screen focus the box after filling it, e.g. from a `next:` suggestion. */
+  inputRef?: Ref<TextInput>;
 }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
@@ -168,6 +171,7 @@ export function Composer({
           </Pressable>
         ) : null}
         <TextInput
+          ref={inputRef}
           value={text}
           onChangeText={onChangeText}
           placeholder="메시지를 입력하세요"

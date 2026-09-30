@@ -260,6 +260,8 @@
   "menu.showInFinder": "Finder에서 보기",
   "menu.workspace": "워크스페이스",
   "pane.copyButton": "복사",
+  "pane.nextActions.fillHint": "입력창에 넣기",
+  "pane.nextActions.label": "다음 작업 제안",
   "pane.rename.automatic": "자동 (요청 따름)",
   "pane.rename.backToAutomatic": "자동으로 되돌리기",
   "pane.rename.modeFixed": "이름을 직접 지정한 상태",
