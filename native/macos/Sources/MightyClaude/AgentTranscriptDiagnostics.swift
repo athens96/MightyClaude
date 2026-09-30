@@ -27,6 +27,32 @@ private struct TranscriptDiagnosticScroll: NSViewRepresentable {
     func updateNSView(_ view: NSScrollView, context: Context) {}
 }
 
+/// A graph block: a request preview above the transcript whose height can
+/// change after mounting, and the corner resize handle drawn over it.
+@MainActor
+private final class TranscriptDiagnosticBlockModel: ObservableObject {
+    @Published var previewHeight: CGFloat = 14
+}
+
+private struct TranscriptDiagnosticBlock: View {
+    let scroll: NSScrollView
+    @ObservedObject var model: TranscriptDiagnosticBlockModel
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("블록 높이 변화 검증").frame(maxWidth: .infinity).frame(height: 38)
+            Divider()
+            Color.clear.frame(height: model.previewHeight)
+            Divider()
+            TranscriptDiagnosticScroll(scroll: scroll)
+        }
+        .frame(width: 420, height: 380)
+        .overlay(alignment: .bottomTrailing) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 22, height: 22).padding(2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 /// Called only by the isolated agent smoke. No CLI requests or general
 /// pasteboard access; selection is exercised on the actual native renderer.
 @MainActor
@@ -43,6 +69,7 @@ enum AgentTranscriptDiagnostics {
         defer { window.orderOut(nil); window.close(); previousWindow?.makeKeyAndOrderFront(nil) }
         do {
             try await verifyRestoredHistory(report: &report, screenshotDirectory: screenshotDirectory)
+            try await verifyShrinkingBlockKeepsLastLines(report: &report, screenshotDirectory: screenshotDirectory)
             var entries = [
                 LogEntry(id: "answer-a", kind: "assistant", text: "## 선택 검증\n\n문단A: 첫 번째 문단을 연속 선택합니다.\n\n문단B: 다음 문단과 **강조 문구**도 함께 선택합니다.", provider: "claude"),
                 LogEntry(id: "tool-a", kind: "system", text: "swift test", activity: AgentActivity(id: "tool-a", provider: "claude", kind: "command", state: "running", summary: "swift test")),
@@ -258,6 +285,81 @@ enum AgentTranscriptDiagnostics {
         report["restoredHistorySelectionPreserved"] = editor.selectedRange() == selection && abs(clip.bounds.minY - manualOrigin) < 2
         guard report["restoredHistoryManualScrollPreserved"] as? Bool == true,
               report["restoredHistorySelectionPreserved"] as? Bool == true else { throw MightyError("복원 후 수동 스크롤 또는 선택 위치가 바뀌었습니다.") }
+    }
+
+    /// A graph block that gets shorter after mounting (the request preview
+    /// measuring itself, a live resize, a collapse) keeps a following reader
+    /// at the true bottom with the last line clear of the corner handle, and
+    /// leaves a reader who scrolled up where they were.
+    private static func verifyShrinkingBlockKeepsLastLines(report: inout [String: Any], screenshotDirectory: URL?) async throws {
+        let coordinator = AgentTranscriptCoordinator()
+        let scroll = coordinator.makeScrollView(sessionId: "shrinking-block-fixture")
+        guard let editor = coordinator.textView else { throw MightyError("블록 출력 뷰가 없습니다.") }
+        editor.bottomInset = AgentTranscriptView.cornerHandleBottomInset
+        let model = TranscriptDiagnosticBlockModel()
+        let window = NSWindow(contentRect: NSRect(x: 170, y: 150, width: 460, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "블록이 줄어도 마지막 줄 검증"
+        window.isReleasedWhenClosed = false
+        defer { window.orderOut(nil); window.close() }
+        var entries = (1...18).map { index in
+            LogEntry(id: "block-\(index)", kind: "assistant", text: "블록 응답 \(index): 결과 블록 안에서 여러 줄로 감기는 응답입니다. 마지막 줄은 블록이 줄어도 보여야 합니다.", provider: "claude")
+        }
+        coordinator.update(entries: entries, provider: "claude", running: true, dark: false)
+        window.contentView = NSHostingView(rootView: TranscriptDiagnosticBlock(scroll: scroll, model: model))
+        window.makeKeyAndOrderFront(nil)
+        func settle() async throws {
+            window.contentView?.layoutSubtreeIfNeeded()
+            scroll.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(80))
+            window.contentView?.layoutSubtreeIfNeeded()
+        }
+        let handle: CGFloat = 24 // 22pt glyph + 2pt padding
+        let clip = scroll.contentView
+        func lastLineClear() -> Bool {
+            guard let manager = editor.layoutManager, manager.numberOfGlyphs > 0 else { return false }
+            var line = manager.lineFragmentUsedRect(forGlyphAt: manager.numberOfGlyphs - 1, effectiveRange: nil)
+            line.origin.x += editor.textContainerOrigin.x
+            line.origin.y += editor.textContainerOrigin.y
+            let visible = clip.bounds
+            return line.minY >= visible.minY - 0.5 && line.maxY <= visible.maxY - handle + 0.5
+        }
+        func atTrueBottom() -> Bool {
+            abs(clip.bounds.minY - max(0, editor.bounds.height - clip.bounds.height)) < 2
+        }
+        try await settle()
+        let initialHeight = clip.bounds.height
+        report["shrinkingBlockStartsAtBottom"] = editor.bounds.height > initialHeight + 200 && atTrueBottom() && lastLineClear()
+        guard report["shrinkingBlockStartsAtBottom"] as? Bool == true else { throw MightyError("블록 출력이 처음에 마지막 줄을 보여 주지 않았습니다.") }
+
+        // The request preview reports its real height a turn later: 50pt more.
+        model.previewHeight += 50
+        try await settle()
+        let shrunkHeight = clip.bounds.height
+        report["shrinkingBlockStaysAtBottom"] = shrunkHeight < initialHeight - 45 && atTrueBottom() && lastLineClear()
+        report["shrinkingBlockGeometry"] = ["viewportBefore": initialHeight, "viewportAfter": shrunkHeight, "originY": clip.bounds.minY, "documentHeight": editor.bounds.height]
+        if let screenshotDirectory {
+            report["shrinkingBlockScreenshot"] = try capture(window, in: screenshotDirectory, name: "transcript-block-shrunk.png")
+        }
+        guard report["shrinkingBlockStaysAtBottom"] as? Bool == true else { throw MightyError("블록이 줄어든 뒤 마지막 줄이 가려졌습니다.") }
+
+        // Streaming still follows after a shrink larger than the follow slack.
+        entries[entries.count - 1].text += "\n\n스트리밍으로 이어지는 마지막 문단도 손잡이에 가리지 않습니다."
+        coordinator.update(entries: entries, provider: "claude", running: true, dark: false)
+        try await settle()
+        report["shrinkingBlockStreamingFollowsToBottom"] = atTrueBottom() && lastLineClear()
+        guard report["shrinkingBlockStreamingFollowsToBottom"] as? Bool == true else { throw MightyError("줄어든 블록에서 스트리밍이 마지막 줄을 따라가지 않았습니다.") }
+
+        // A reader who scrolled up keeps their place when the block shrinks.
+        // The wheel path itself is covered by the restored-history check.
+        editor.cancelInitialScroll()
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: max(0, editor.bounds.height - clip.bounds.height - 300)))
+        scroll.reflectScrolledClipView(clip)
+        let readingOrigin = clip.bounds.minY
+        guard readingOrigin < editor.bounds.height - clip.bounds.height - 60 else { throw MightyError("블록을 위로 스크롤하지 못했습니다.") }
+        model.previewHeight += 50
+        try await settle()
+        report["shrinkingBlockKeepsReaderPlace"] = abs(clip.bounds.minY - readingOrigin) < 2 && clip.bounds.height < shrunkHeight - 45
+        guard report["shrinkingBlockKeepsReaderPlace"] as? Bool == true else { throw MightyError("위로 스크롤한 위치가 블록이 줄 때 바뀌었습니다.") }
     }
 
     private static func capture(_ window: NSWindow, in directory: URL, name: String) throws -> String {

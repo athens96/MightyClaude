@@ -25,6 +25,9 @@ struct MightyGraphReferenceBubble: View {
     static let minimumWidth: CGFloat = 300
     static let minimumHeight: CGFloat = 200
     static let margin: CGFloat = 12
+    /// Added under the 14pt content padding so the corner resize glyph (22pt
+    /// plus 2pt padding) never covers the last line once scrolled to the end.
+    static let handleClearance: CGFloat = 16
 
     /// The panel size for stored preferences inside the space next to the graph.
     static func size(available: CGSize, storedWidth: Double, storedHeight: Double) -> CGSize {
@@ -119,14 +122,14 @@ struct MightyGraphReferenceBubble: View {
         case .loading:
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
         case .markdown(let source):
-            ScrollView { AgentMarkdownView(source: source).padding(14) }
+            ScrollView { AgentMarkdownView(source: source).padding(14).padding(.bottom, Self.handleClearance) }
         case .text(let text):
             ScrollView([.vertical, .horizontal]) {
                 Text(text).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading).padding(14)
+                    .frame(maxWidth: .infinity, alignment: .topLeading).padding(14).padding(.bottom, Self.handleClearance)
             }
         case .image(let image):
-            ScrollView([.vertical, .horizontal]) { Image(nsImage: image).resizable().scaledToFit().padding(14) }
+            ScrollView([.vertical, .horizontal]) { Image(nsImage: image).resizable().scaledToFit().padding(14).padding(.bottom, Self.handleClearance) }
         case .html(let url):
             MightyLocalWebPreview(url: url)
         case .tooLarge:
