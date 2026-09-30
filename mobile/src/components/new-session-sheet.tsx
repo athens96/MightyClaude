@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import type { Provider, SessionKind } from '@/api/types';
 import { Button, Chip } from '@/components/ui';
-import { kindLabel, providerLabel, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { kindLabel, providerIsBeta, providerLabel, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 const PROVIDERS: Provider[] = ['claude', 'codex', 'gemini'];
 
@@ -63,6 +63,7 @@ export function NewSessionSheet({
                   <Chip
                     key={value}
                     label={providerLabel(value)}
+                    beta={providerIsBeta(value)}
                     color={palette.accent}
                     selected={provider === value}
                     onPress={() => setProvider(value)}

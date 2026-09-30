@@ -256,8 +256,8 @@ struct SessionPaneView: View {
             Section("공급자") {
                 ForEach(ProviderOptions.ids, id: \.self) { provider in
                     Button { store.selectSession(session.id); store.changeProvider(session.id, to: provider) } label: {
-                        if provider == session.provider { Label(ProviderOptions.label(provider), systemImage: "checkmark") }
-                        else { Text(ProviderOptions.label(provider)) }
+                        if provider == session.provider { Label(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider)), systemImage: "checkmark") }
+                        else { Text(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider))) }
                     }
                 }
             }
@@ -279,8 +279,8 @@ struct SessionPaneView: View {
             ComposerPill(title: selectedModelName, provider: session.provider, chevron: true, maximumTextWidth: maximumTextWidth)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
-        .help("\(ProviderOptions.label(session.provider)) · \(selectedModelName)")
-        .accessibilityLabel("모델 및 공급자").accessibilityValue("\(ProviderOptions.label(session.provider)), \(selectedModelName)")
+        .help("\(ProviderOptions.betaTitle(session.provider, ProviderOptions.label(session.provider))) · \(selectedModelName)")
+        .accessibilityLabel("모델 및 공급자").accessibilityValue("\(ProviderOptions.label(session.provider))\(ProviderOptions.isBeta(session.provider) ? ", " + L("badge.betaAccessibility") : ""), \(selectedModelName)")
         .accessibilityIdentifier("composer-model-\(session.id)")
     }
 
@@ -419,8 +419,11 @@ struct SessionPaneView: View {
                 if session.kind == "shell" { Image(systemName: "terminal").font(.system(size: 24, weight: .light)) }
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
             }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, 5)
-            Text(session.kind == "shell" ? "작업 폴더에서 명령 실행" : "\(ProviderOptions.label(session.provider))와 작업을 시작하세요")
-                .font(.system(size: 16, weight: .medium))
+            HStack(spacing: 8) {
+                Text(session.kind == "shell" ? "작업 폴더에서 명령 실행" : "\(ProviderOptions.label(session.provider))와 작업을 시작하세요")
+                    .font(.system(size: 16, weight: .medium))
+                if session.kind != "shell" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
+            }
             Text(session.kind == "shell" ? "명령마다 새 셸을 시작합니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다." : "프로젝트를 설명하거나, 수정할 내용을 입력하세요. 이 창의 대화는 다음 실행에서도 이어집니다.")
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(24)

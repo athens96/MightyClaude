@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { t } from '@/lib/i18n';
 import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
 
 export type ButtonTone = 'primary' | 'neutral' | 'danger' | 'ghost';
@@ -110,12 +111,15 @@ export function Chip({
   color,
   selected = false,
   disabled = false,
+  beta = false,
   onPress,
 }: {
   label: string;
   color?: string;
   selected?: boolean;
   disabled?: boolean;
+  /** Draws the Beta badge after the label (see `providerIsBeta`). */
+  beta?: boolean;
   onPress?: () => void;
 }) {
   const palette = usePalette();
@@ -128,9 +132,11 @@ export function Chip({
         { borderColor: tint },
         selected && { backgroundColor: tint, borderColor: tint },
         disabled && styles.chipDisabled,
+        beta && styles.chipWithBadge,
       ]}
     >
       <Text style={[styles.chipLabel, { color: selected ? palette.onBadge : tint }]}>{label}</Text>
+      {beta ? <BetaBadge /> : null}
     </View>
   );
   if (!onPress) return content;
@@ -146,6 +152,20 @@ export function Chip({
     >
       {content}
     </Pressable>
+  );
+}
+
+/** The small capsule drawn after a beta provider's name; never part of the name itself. */
+export function BetaBadge() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View
+      accessible
+      accessibilityLabel={t('badge.betaAccessibility')}
+      style={styles.betaBadge}
+    >
+      <Text style={styles.betaBadgeLabel}>{t('badge.beta')}</Text>
+    </View>
   );
 }
 
@@ -214,6 +234,7 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: 3,
     },
     chipDisabled: { opacity: 0.4 },
+    chipWithBadge: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
     chipLabel: { fontSize: 12, fontWeight: '600' },
     badge: {
       alignItems: 'center',
@@ -224,6 +245,15 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: 1,
     },
     badgeLabel: { color: palette.onBadge, fontSize: 11, fontWeight: '700' },
+    betaBadge: {
+      backgroundColor: palette.surfaceRaised,
+      borderColor: palette.border,
+      borderRadius: 9,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+    },
+    betaBadgeLabel: { color: palette.textMuted, fontSize: 9, fontWeight: '600' },
     empty: { alignItems: 'center', gap: spacing.sm, padding: spacing.xl },
     emptyTitle: { color: palette.textMuted, fontSize: 15, fontWeight: '600' },
     emptyDescription: { color: palette.textFaint, fontSize: 13, textAlign: 'center' },

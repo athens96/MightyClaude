@@ -514,6 +514,11 @@ public enum ProviderOptions {
     }
     public static func normalizeProvider(_ value: String) -> String { ids.contains(value) ? value : "claude" }
     public static func label(_ id: String) -> String { ["claude": "Claude", "codex": "Codex", "gemini": "Gemini"][id] ?? "Claude" }
+    /// Claude is official; Codex and Gemini are beta. The one Mac answer every beta badge asks.
+    /// The badge is drawn beside the name and never becomes part of `label`.
+    public static func isBeta(_ id: String) -> Bool { id == "codex" || id == "gemini" }
+    /// Menu rows cannot host the badge view, so there the badge rides in the row's text.
+    public static func betaTitle(_ id: String, _ text: String) -> String { isBeta(id) ? text + " · " + L("badge.beta") : text }
     public static func fallbackCatalog(_ id: String) -> ModelCatalog {
         let names = id == "codex" ? ["default", "gpt-5.6-sol", "gpt-6-astra"] : id == "gemini" ? ["default", "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"] : ["default", "best", "fable", "opus", "sonnet", "haiku", "opusplan"]
         return ModelCatalog(models: names.map { ModelOption(value: $0, displayName: $0 == "default" ? "\(label(id)) 설정 따름" : $0, description: $0 == "default" ? (id == "claude" ? "현재 Claude CLI의 기본 모델을 사용합니다. 재개한 대화의 이전 모델 선택은 해제됩니다." : "CLI 설정 또는 재개한 세션의 모델을 사용합니다.") : "공식 모델 이름 예시 · 사용 가능 여부는 CLI 계정과 제공자 설정에 따릅니다.", supportsEffort: $0 == "haiku" ? false : nil) }, detail: "공식 모델 이름 예시입니다. 사용 가능 여부에는 CLI 계정·제공자 설정이 적용됩니다.")

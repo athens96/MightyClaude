@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { providerMarkOutline } from '@/lib/provider-marks';
-import { providerColorsFor, providerLabel, radius, spacing, usePalette } from '@/theme';
+import { BetaBadge } from '@/components/ui';
+import { providerColorsFor, providerIsBeta, providerLabel, radius, spacing, usePalette } from '@/theme';
 
 /**
  * The providers' own marks in their brand colours — the same outlines the Mac app draws
@@ -46,7 +47,7 @@ export function ProviderMark({ provider, size = 12 }: { provider: string; size?:
   );
 }
 
-/** Mark plus the provider's name, tinted with its first brand colour. */
+/** Mark plus the provider's name, tinted with its first brand colour, then the Beta badge for a beta provider. */
 export function ProviderTag({ provider }: { provider: string }) {
   const palette = usePalette();
   const [tint = palette.textMuted] = providerColorsFor(palette, provider);
@@ -54,6 +55,7 @@ export function ProviderTag({ provider }: { provider: string }) {
     <View style={[styles.tag, { borderColor: tint }]}>
       <ProviderMark provider={provider} size={10} />
       <Text style={[styles.tagLabel, { color: tint }]}>{providerLabel(provider)}</Text>
+      {providerIsBeta(provider) ? <BetaBadge /> : null}
     </View>
   );
 }
