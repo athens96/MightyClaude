@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -22,6 +23,7 @@ import {
   type LogEntry,
   type MessageCommandAction,
   type MobileCommand,
+  type MobilePermission,
   type MobileSessionDetail,
   type QuestionAnswers,
   type SettingsPatch,
@@ -32,6 +34,7 @@ import { LogEntryView } from '@/components/log-entry-view';
 import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
 import { PermissionCard } from '@/components/permission-card';
+import { QuestionnaireCard } from '@/components/questionnaire-card';
 import { QueuedList } from '@/components/queued-list';
 import {
   SessionHeader,
@@ -87,6 +90,11 @@ function acceptedMessage(accepted: string): string {
 
 const NO_ENTRIES: LogEntry[] = [];
 
+/** A permission request is only unique within its run. */
+function requestKey(request: Pick<MobilePermission, 'id' | 'runId'>): string {
+  return `${request.runId}:${request.id}`;
+}
+
 /** Which body the screen shows: the transcript, or the Mighty block list. */
 type BodyView = 'log' | 'blocks';
 
@@ -119,9 +127,20 @@ export default function SessionScreen() {
   const capabilities = useCapabilities(hostId, client);
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
+  const { height: windowHeight } = useWindowDimensions();
   const [keyboardShown, setKeyboardShown] = useState(false);
   const [sending, setSending] = useState(false);
   const [deciding, setDeciding] = useState(false);
+  /**
+   * `deciding` only disables the cards on the next render, and it is back to false before
+   * the refresh drops the request, so the ref is what holds the door against a second tap.
+   */
+  const decidingRef = useRef(false);
+  /**
+   * Requests (`requestKey`) answered or cancelled here that the detail still lists. Their
+   * card stays off screen until the host drops them, so it cannot be sent a second time.
+   */
+  const [settledRequests, setSettledRequests] = useState<ReadonlySet<string>>(() => new Set());
   const [paneBusy, setPaneBusy] = useState(false);
   const [queueBusy, setQueueBusy] = useState(false);
   const [savingSetting, setSavingSetting] = useState(false);
@@ -415,38 +434,49 @@ export default function SessionScreen() {
     })();
   }, [client, detailRevision, poll, sessionId]);
 
+  const settle = useCallback((key: string) => {
+    setSettledRequests((prev) => new Set(prev).add(key));
+  }, []);
+
+  /** `done` replaces the allow/deny toast, e.g. for a questionnaire's 취소. */
   const decide = useCallback(
-    async (requestId: string, runId: string, allow: boolean) => {
-      if (!client || !sessionId) return;
+    async (requestId: string, runId: string, allow: boolean, done?: string) => {
+      if (!client || !sessionId || decidingRef.current) return;
+      decidingRef.current = true;
       setDeciding(true);
       try {
         await client.respondPermission(sessionId, { requestId, runId, allow });
-        showToast(allow ? '허용했습니다' : '거부했습니다', 'success');
+        settle(requestKey({ id: requestId, runId }));
+        showToast(done ?? (allow ? '허용했습니다' : '거부했습니다'), 'success');
         poll.refresh();
       } catch (error) {
         showToast(describeError(error), 'error');
       } finally {
+        decidingRef.current = false;
         setDeciding(false);
       }
     },
-    [client, poll, sessionId],
+    [client, poll, sessionId, settle],
   );
 
   const answer = useCallback(
     async (requestId: string, runId: string, answers: QuestionAnswers) => {
-      if (!client || !sessionId) return;
+      if (!client || !sessionId || decidingRef.current) return;
+      decidingRef.current = true;
       setDeciding(true);
       try {
         await client.answer(sessionId, { requestId, runId, answers });
+        settle(requestKey({ id: requestId, runId }));
         showToast('답변을 보냈습니다', 'success');
         poll.refresh();
       } catch (error) {
         showToast(describeError(error), 'error');
       } finally {
+        decidingRef.current = false;
         setDeciding(false);
       }
     },
-    [client, poll, sessionId],
+    [client, poll, sessionId, settle],
   );
 
   const removeQueued = useCallback(
@@ -657,10 +687,29 @@ export default function SessionScreen() {
   useEffect(() => {
     setGuidedGroup(undefined);
   }, [panelStyleId]);
-  // An AskUserQuestion card is the one thing the pane is waiting on: the guided panel
-  // steps aside for it rather than offering a second thing to press.
-  const questionPending =
-    detail?.permissions.some((permission) => permission.questionnaire !== undefined) ?? false;
+  // An AskUserQuestion card is the one thing the pane is waiting on: it is docked right
+  // above the composer, as on the Mac, and the guided panel steps aside for it rather
+  // than offering a second thing to press. Ordinary permission cards stay in the list.
+  const questionRequests = useMemo(
+    () =>
+      detail?.permissions.filter(
+        (permission) => permission.questionnaire !== undefined && !settledRequests.has(requestKey(permission)),
+      ) ?? [],
+    [detail?.permissions, settledRequests],
+  );
+  // Once the host no longer lists a settled request its key has done its job.
+  useEffect(() => {
+    const listed = new Set(detail?.permissions.map(requestKey));
+    setSettledRequests((prev) => {
+      const kept = [...prev].filter((key) => listed.has(key));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [detail?.permissions]);
+  const questionRequest = questionRequests[0];
+  const questionPending = questionRequest !== undefined;
+  // With the keyboard up (typing a "직접 입력" answer) the body gets less room, so the
+  // transcript above keeps a strip of its own.
+  const questionBodyHeight = Math.round(Math.min(320, windowHeight * (keyboardShown ? 0.22 : 0.4)));
   const view: BodyView = chosenView ?? defaultView(mighty);
   const blocksShown = view === 'blocks' && Boolean(mighty);
   const pull = blocksShown ? blockFollow.pull : logFollow.pull;
@@ -747,15 +796,16 @@ export default function SessionScreen() {
 
   const footerNode = detail ? (
     <View style={styles.footer}>
-      {detail.permissions.map((permission) => (
-        <PermissionCard
-          key={permission.id}
-          permission={permission}
-          busy={deciding}
-          onDecide={(allow) => void decide(permission.id, permission.runId, allow)}
-          onAnswer={(answers) => void answer(permission.id, permission.runId, answers)}
-        />
-      ))}
+      {detail.permissions
+        .filter((permission) => permission.questionnaire === undefined)
+        .map((permission) => (
+          <PermissionCard
+            key={permission.id}
+            permission={permission}
+            busy={deciding}
+            onDecide={(allow) => void decide(permission.id, permission.runId, allow)}
+          />
+        ))}
 
       <QueuedList
         items={detail.queued}
@@ -848,6 +898,20 @@ export default function SessionScreen() {
       ) : null}
 
       <View style={{ paddingBottom: (keyboardShown ? 0 : insets.bottom) + spacing.sm }}>
+        {questionRequest?.questionnaire ? (
+          <QuestionnaireCard
+            key={requestKey(questionRequest)}
+            permission={questionRequest}
+            questionnaire={questionRequest.questionnaire}
+            busy={deciding}
+            waiting={questionRequests.length}
+            maxBodyHeight={questionBodyHeight}
+            onCancel={() =>
+              void decide(questionRequest.id, questionRequest.runId, false, t('phone.questionnaire.cancelled'))
+            }
+            onAnswer={(answers) => void answer(questionRequest.id, questionRequest.runId, answers)}
+          />
+        ) : null}
         {!questionPending && panel ? (
           <GuidedPanel
             panel={panel}
