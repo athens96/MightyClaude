@@ -384,7 +384,7 @@ struct MightyGraphView: View {
                 AgentTranscriptView(sessionId: "graph-\(sessionID)-\(node.id)", provider: provider,
                     running: !MightyGraphLayout.terminal(status), entries: content, onFocus: onFocus,
                     onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) },
-                    records: records, childBlocks: childBlocks, catalog: catalog)
+                    records: records, childBlocks: childBlocks, catalog: catalog, clearsCornerHandle: true)
             }
         }
         .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))

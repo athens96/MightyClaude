@@ -14,11 +14,19 @@ struct AgentTranscriptView: NSViewRepresentable {
     var records: [GraphResponseRecord] = []
     var childBlocks: [String: GraphChildBlock] = [:]
     var catalog: [ModelOption] = []
+    /// Graph blocks draw a resize handle over their bottom-right corner; keep
+    /// room under the last line so the handle never covers it.
+    var clearsCornerHandle = false
     @Environment(\.colorScheme) private var colorScheme
+
+    /// The corner handle's 22pt glyph plus its 2pt padding, and a little air.
+    static let cornerHandleBottomInset: CGFloat = 30
 
     func makeCoordinator() -> AgentTranscriptCoordinator { AgentTranscriptCoordinator() }
     func makeNSView(context: Context) -> NSScrollView {
-        context.coordinator.makeScrollView(sessionId: sessionId)
+        let scroll = context.coordinator.makeScrollView(sessionId: sessionId)
+        if clearsCornerHandle { context.coordinator.textView?.bottomInset = Self.cornerHandleBottomInset }
+        return scroll
     }
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.textView?.onFocus = onFocus
@@ -138,7 +146,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         editor.isVerticallyResizable = true; editor.isHorizontallyResizable = false
         editor.minSize = .zero; editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.autoresizingMask = [.width]
-        editor.textContainerInset = NSSize(width: 15, height: 15)
+        editor.textContainerInset = NSSize(width: 15, height: AgentTranscriptTextView.topInset)
         editor.linkTextAttributes = [.foregroundColor: AgentTranscriptFormat.accent, .cursor: NSCursor.pointingHand]
         editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor, .foregroundColor: NSColor.selectedTextColor]
         editor.setAccessibilityIdentifier("transcript-\(sessionId)")
@@ -219,6 +227,39 @@ private final class AgentTranscriptScrollView: NSScrollView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit { NotificationCenter.default.removeObserver(self) }
 
+    private var keepingViewport = false
+
+    /// A block that gets shorter (a request preview measuring itself, a live
+    /// resize, a collapse) keeps its top fixed in the flipped document, so
+    /// its last lines would slide out of view. A reader who was following the
+    /// bottom stays at the bottom; one who scrolled up is left where they were.
+    override func tile() {
+        // A drag selection owns the viewport until it ends.
+        guard !keepingViewport, let transcript = documentView as? AgentTranscriptTextView, !transcript.isTrackingSelection else { super.tile(); return }
+        let before = contentView.bounds
+        let previousDocumentHeight = transcript.bounds.height
+        super.tile()
+        let after = contentView.bounds
+        guard abs(after.height - before.height) > 0.5 || abs(after.width - before.width) > 0.5 else { return }
+        keepingViewport = true
+        defer { keepingViewport = false }
+        // The document is at least as tall as the viewport; refit it to the
+        // new viewport before measuring where its bottom is.
+        transcript.fitDocumentHeight()
+        guard TranscriptViewport.originAfterResize(previousOriginY: before.minY, previousVisibleHeight: before.height,
+                                                   previousDocumentHeight: previousDocumentHeight,
+                                                   visibleHeight: contentView.bounds.height,
+                                                   documentHeight: transcript.bounds.height) != nil else { return }
+        // Scrolling can show a legacy scroller, which narrows the viewport and
+        // reflows the text taller; settle once more so the bottom stays true.
+        for _ in 0..<2 {
+            let settled = contentView.bounds.size
+            transcript.scrollToBottom()
+            guard contentView.bounds.size != settled else { break }
+            transcript.fitDocumentHeight()
+        }
+    }
+
     override func layout() {
         super.layout()
         // NSScrollView has now tiled its final clip viewport. Position the
@@ -250,6 +291,22 @@ final class AgentTranscriptTextView: SelectableTextView {
     private var initialScrollPending = true
     private var initialScrollScheduled = false
     private var positioningInitialScroll = false
+    static let topInset: CGFloat = 15
+
+    /// Space under the last line. NSTextView insets are symmetric, so the
+    /// total is split across the inset and the origin is pinned to the top.
+    var bottomInset: CGFloat = 15 {
+        didSet {
+            guard bottomInset != oldValue else { return }
+            textContainerInset = NSSize(width: textContainerInset.width, height: (Self.topInset + bottomInset) / 2)
+            fitDocumentHeight()
+        }
+    }
+
+    override var textContainerOrigin: NSPoint {
+        let origin = super.textContainerOrigin
+        return NSPoint(x: origin.x, y: origin.y - (textContainerInset.height - Self.topInset))
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = abs(newSize.width - frame.width) > 0.5
@@ -278,10 +335,22 @@ final class AgentTranscriptTextView: SelectableTextView {
         positioningInitialScroll = true
         defer { positioningInitialScroll = false }
         synchronizeDocumentLayout(invalidatingFrom: 0)
-        let clip = scroll.contentView
-        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: max(0, bounds.height - clip.bounds.height)))
-        scroll.reflectScrolledClipView(clip)
+        scrollToBottom()
         return true
+    }
+
+    /// Shows the very end of the document, bottom inset included.
+    func scrollToBottom() {
+        guard let scroll = enclosingScrollView else { return }
+        let clip = scroll.contentView
+        let y = TranscriptViewport.bottomOriginY(visibleHeight: clip.bounds.height, documentHeight: bounds.height)
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
+        scroll.reflectScrolledClipView(clip)
+    }
+
+    /// Re-measures the document height without reflowing any text.
+    func fitDocumentHeight() {
+        synchronizeDocumentLayout(invalidatingFrom: textStorage?.length ?? 0)
     }
 
     /// Restored text can arrive before the native view has a window or its
@@ -330,7 +399,8 @@ final class AgentTranscriptTextView: SelectableTextView {
         let clip = enclosingScrollView?.contentView
         let origin = clip?.bounds.origin ?? .zero
         let visibleHeight = clip?.bounds.height ?? 0
-        let follow = previous.value.length == 0 || (ranges.allSatisfy { $0.length == 0 } && origin.y + visibleHeight >= bounds.height - 36)
+        let follow = previous.value.length == 0 || (ranges.allSatisfy { $0.length == 0 }
+            && TranscriptViewport.isFollowing(originY: origin.y, visibleHeight: visibleHeight, documentHeight: bounds.height))
         let topIndex = characterIndexForInsertion(at: NSPoint(x: textContainerInset.width + 2, y: origin.y + 2))
         let top = previous.anchor(at: topIndex)
         let offset = origin.y - lineY(at: topIndex)
@@ -367,7 +437,7 @@ final class AgentTranscriptTextView: SelectableTextView {
         }
         setSelectedRanges(restored.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : restored, affinity: selectionAffinity, stillSelecting: false)
         if let container = textContainer { layoutManager?.ensureLayout(for: container) }
-        if follow { scrollRangeToVisible(NSRange(location: next.value.length, length: 0)) }
+        if follow { scrollToBottom() }
         else if let clip {
             let index = next.position(of: top, from: previous)
             let y = min(max(0, lineY(at: index) + offset), max(0, bounds.height - clip.bounds.height))
