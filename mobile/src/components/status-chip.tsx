@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { radius, spacing, statusColor, statusLabel, usePalette } from '@/theme';
+import { radius, statusColor, statusLabel, usePalette } from '@/theme';
 
 /**
- * Status pill; the running state pulses so activity is visible at a glance. The status
+ * Status as a coloured dot and its word — no pill, no border; the running state pulses so activity is visible at a glance. The status
  * arrives as a string: one the contract does not list is drawn in the neutral colour
  * with its own text rather than being forced into a known state.
  */
@@ -38,7 +38,7 @@ export function StatusChip({ status }: { status: string }) {
 
   const color = statusColor(palette, status);
   return (
-    <View style={[styles.chip, { borderColor: color }]}>
+    <View style={styles.chip}>
       <Animated.View style={[styles.dot, { backgroundColor: color, opacity: pulse }]} />
       <Text style={[styles.label, { color }]}>{statusLabel(status)}</Text>
     </View>
@@ -48,13 +48,10 @@ export function StatusChip({ status }: { status: string }) {
 const styles = StyleSheet.create({
   chip: {
     alignItems: 'center',
-    borderRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
+    gap: 5,
     paddingVertical: 3,
   },
-  dot: { borderRadius: 3, height: 6, width: 6 },
-  label: { fontSize: 11, fontWeight: '700' },
+  dot: { borderRadius: radius.round, height: 6, width: 6 },
+  label: { fontSize: 12, fontWeight: '500' },
 });

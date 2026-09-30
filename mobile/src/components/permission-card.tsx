@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { MobilePermission } from '@/api/types';
 import { Button, Card } from '@/components/ui';
-import { monoText, spacing, useStyles, type Palette } from '@/theme';
+import { monoText, radius, spacing, typeScale, useStyles, type Palette } from '@/theme';
 
 /**
  * A tool the pane wants to run, waiting for 허용 or 거부. An AskUserQuestion request is
@@ -57,14 +57,21 @@ export function PermissionCard({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    card: { borderColor: palette.accent, gap: spacing.sm, marginVertical: spacing.sm },
-    tool: { color: palette.accent, fontSize: 12, fontWeight: '700' },
-    title: { color: palette.text, fontSize: 16, fontWeight: '700' },
-    headline: { color: palette.textMuted, fontSize: 13 },
+    // A flat sheet marked by a thin terracotta rule: the one place the log asks for a decision.
+    card: {
+      borderLeftColor: palette.accent,
+      borderLeftWidth: 2,
+      borderRadius: radius.md,
+      gap: spacing.sm,
+      marginVertical: spacing.sm,
+    },
+    tool: { color: palette.textMuted, fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
+    title: { ...typeScale.heading, color: palette.text },
+    headline: { color: palette.textMuted, fontSize: 14, lineHeight: 20 },
     field: { gap: 2 },
     fieldLabel: { color: palette.textFaint, fontSize: 12 },
     fieldValue: { ...monoText, color: palette.text },
-    summary: { color: palette.textMuted, fontSize: 13 },
+    summary: { color: palette.textMuted, fontSize: 14, lineHeight: 20 },
     actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
     action: { flex: 1 },
   });

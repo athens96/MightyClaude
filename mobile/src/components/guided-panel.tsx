@@ -115,7 +115,7 @@ export function GuidedPanel({
                 />
               );
             })}
-            <Text style={[styles.stepCount, { borderColor: tint, color: tint }]}>
+            <Text style={[styles.stepCount, { color: tint }]}>
               {`${model.phase.index + 1}/${model.phase.count}`}
             </Text>
           </View>
@@ -361,39 +361,29 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     panel: {
       backgroundColor: palette.surface,
-      borderRadius: radius.md,
-      gap: spacing.xs,
+      borderRadius: radius.lg,
+      gap: spacing.sm,
       marginHorizontal: spacing.lg,
       marginBottom: spacing.xs,
-      padding: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
     },
     headRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     body: { gap: spacing.xs },
     busyRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
-    headTitle: { flex: 1, fontSize: 13, fontWeight: '700' },
-    sourceBadge: {
-      borderColor: palette.warning,
-      borderRadius: radius.sm,
-      borderWidth: StyleSheet.hairlineWidth,
-      color: palette.warning,
-      fontSize: 10,
-      paddingHorizontal: spacing.xs,
-      paddingVertical: 1,
-    },
+    headTitle: { flex: 1, fontSize: 13, fontWeight: '600' },
+    sourceBadge: { color: palette.warning, fontSize: 11, fontWeight: '500' },
     busyText: { flexShrink: 1 },
     stepper: { alignItems: 'center', flexDirection: 'row', gap: 4, paddingVertical: 2 },
-    step: { backgroundColor: palette.border, borderRadius: 2, flex: 1, height: 4 },
+    step: { backgroundColor: palette.border, borderRadius: radius.round, flex: 1, height: 3 },
     stepDone: { opacity: 0.45 },
-    stepCurrent: { borderRadius: 4, flex: 1.6, height: 8 },
+    stepCurrent: { flex: 1.6, height: 6 },
     stepCount: {
-      borderRadius: radius.sm,
-      borderWidth: 1,
       flexShrink: 0,
       fontSize: 12,
       fontVariant: ['tabular-nums'],
-      fontWeight: '700',
+      fontWeight: '600',
       marginLeft: spacing.xs,
-      paddingHorizontal: spacing.xs,
       paddingVertical: 1,
     },
     setup: { gap: 2 },
@@ -401,28 +391,28 @@ const makeStyles = (palette: Palette) =>
     widgetRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
     widgetTrack: {
       backgroundColor: palette.border,
-      borderRadius: 3,
+      borderRadius: radius.round,
       flex: 1,
-      height: 6,
+      height: 4,
       overflow: 'hidden',
     },
-    widgetFill: { borderRadius: 3, height: 6 },
-    widgetCount: { fontSize: 11, fontVariant: ['tabular-nums'], fontWeight: '700' },
+    widgetFill: { borderRadius: radius.round, height: 4 },
+    widgetCount: { fontSize: 11, fontVariant: ['tabular-nums'], fontWeight: '600' },
     widgetList: { gap: 1 },
     widgetItem: { color: palette.textMuted, fontSize: 11 },
     widgetLabel: { color: palette.textMuted, fontSize: 12 },
 
     command: {
       ...monoText,
-      backgroundColor: palette.surfaceRaised,
+      backgroundColor: palette.background,
       borderRadius: radius.sm,
       color: palette.text,
-      padding: spacing.xs,
+      padding: spacing.sm,
     },
     map: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     cell: {
       borderColor: palette.border,
-      borderRadius: radius.sm,
+      borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,
       flexGrow: 1,
       flexBasis: '46%',
@@ -430,11 +420,11 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.sm,
       paddingVertical: spacing.xs,
     },
-    cellTitle: { color: palette.text, fontSize: 12, fontWeight: '700' },
+    cellTitle: { color: palette.text, fontSize: 12, fontWeight: '600' },
     cellAxis: { color: palette.textFaint, fontSize: 10 },
     question: { color: palette.textMuted, fontSize: 12 },
     attachments: {
-      backgroundColor: palette.surfaceRaised,
+      backgroundColor: palette.background,
       borderRadius: radius.sm,
       padding: spacing.xs,
     },
@@ -446,5 +436,5 @@ const makeStyles = (palette: Palette) =>
     actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     hint: { color: palette.textFaint, fontSize: 11 },
     warning: { color: palette.warning, fontSize: 12 },
-    pressed: { opacity: 0.7 },
+    pressed: { opacity: 0.6 },
   });

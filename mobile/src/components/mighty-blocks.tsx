@@ -34,6 +34,7 @@ import {
   spacing,
   statusColor,
   statusLabel,
+  typeScale,
   useStyles,
   usePalette,
   type Palette,
@@ -131,8 +132,8 @@ function BlockDetails({ block, runInput }: { block: MobileBlock; runInput: strin
 
 /**
  * The run's final answer, set apart from the blocks the way the Mac's result block
- * is: an accent frame and heading, turned to the status colour when the run ended in
- * an error or was stopped. A long answer shows its head until asked for the rest.
+ * is: a sheet of lighter paper with an accent rule and a serif heading, turned to the
+ * status colour when the run ended in an error or was stopped. A long answer shows its head until asked for the rest.
  */
 function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
   const palette = usePalette();
@@ -142,7 +143,7 @@ function ResultCard({ run, text }: { run: MobileMightyRun; text: string }) {
   const tint = run.status === 'completed' ? palette.accent : statusColor(palette, run.status);
 
   return (
-    <View style={[styles.resultCard, { borderColor: tint }]}>
+    <View style={[styles.resultCard, { borderLeftColor: tint }]}>
       <Text style={[styles.resultHeading, { color: tint }]}>{t('phone.blocks.finalResult')}</Text>
       <AssistantMarkdown selectable text={full ? text : preview} />
       {folded ? (
@@ -268,63 +269,59 @@ export function MightyRunList({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    listItem: { paddingBottom: spacing.sm },
+    listItem: { paddingBottom: spacing.xs },
+    // A request is a section of the page, parted from the next by a hairline.
     run: {
-      backgroundColor: palette.surface,
-      borderColor: palette.border,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      overflow: 'hidden',
+      borderBottomColor: palette.border,
+      borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    runHead: { gap: spacing.xs, padding: spacing.md },
+    runHead: { gap: spacing.xs, paddingVertical: spacing.md },
     runTitleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     runChevron: { color: palette.textFaint, fontSize: 12 },
-    runTitle: { color: palette.text, flex: 1, fontSize: 14, fontWeight: '700' },
-    runPreview: { color: palette.textMuted, fontSize: 13 },
+    runTitle: { color: palette.text, flex: 1, fontSize: 15, fontWeight: '600' },
+    runPreview: { color: palette.textMuted, fontSize: 13, lineHeight: 19 },
     runCount: { color: palette.textFaint, fontSize: 11 },
     blocks: {
-      borderTopColor: palette.border,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      gap: spacing.xs,
-      padding: spacing.sm,
+      gap: spacing.sm,
+      paddingBottom: spacing.md,
     },
+    // A block keeps its kind's hue only as a thin rule and its mark.
     block: {
-      backgroundColor: palette.surfaceRaised,
-      borderLeftWidth: 3,
-      borderRadius: radius.sm,
+      borderLeftWidth: 2,
       overflow: 'hidden',
     },
     blockHead: {
       alignItems: 'flex-start',
       flexDirection: 'row',
       gap: spacing.sm,
-      padding: spacing.sm,
+      minHeight: 44,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.sm,
     },
     mark: { fontSize: 13, marginTop: 1, width: 14 },
     blockBody: { flex: 1, gap: 2 },
-    blockTitle: { color: palette.text, fontSize: 13, fontWeight: '600' },
+    blockTitle: { color: palette.text, fontSize: 13, fontWeight: '500' },
     blockMeta: { color: palette.textFaint, fontSize: 11 },
-    blockSummary: { color: palette.textMuted, fontSize: 12 },
-    blockStatus: { fontSize: 11, fontWeight: '700' },
-    toggle: { color: palette.accent, fontSize: 11, marginTop: 2 },
+    blockSummary: { color: palette.textMuted, fontSize: 12, lineHeight: 17 },
+    blockStatus: { fontSize: 11, fontWeight: '500' },
+    toggle: { color: palette.accent, fontSize: 12, marginTop: 2 },
     details: {
-      backgroundColor: palette.surface,
-      borderTopColor: palette.border,
-      borderTopWidth: StyleSheet.hairlineWidth,
       gap: spacing.sm,
-      padding: spacing.sm,
+      paddingBottom: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      paddingTop: spacing.xs,
     },
     section: { gap: 2 },
-    sectionLabel: { color: palette.textFaint, fontSize: 11, fontWeight: '700' },
+    sectionLabel: { color: palette.textFaint, fontSize: 11, fontWeight: '600' },
     activityLine: { ...monoText, color: palette.textMuted },
     resultCard: {
       backgroundColor: palette.surface,
+      borderLeftWidth: 2,
       borderRadius: radius.md,
-      borderWidth: 1.5,
       gap: spacing.xs,
       marginTop: spacing.xs,
       padding: spacing.md,
     },
-    resultHeading: { fontSize: 13, fontWeight: '800' },
-    pressed: { opacity: 0.7 },
+    resultHeading: { ...typeScale.heading, fontSize: 16, lineHeight: 22 },
+    pressed: { opacity: 0.6 },
   });

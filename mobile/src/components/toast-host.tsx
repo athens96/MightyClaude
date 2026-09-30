@@ -22,7 +22,8 @@ export function ToastHost() {
     <View pointerEvents="box-none" style={[styles.host, { bottom: insets.bottom + spacing.xl }]}>
       {toasts.map((toast) => (
         <Pressable key={toast.id} onPress={() => dismiss(toast.id)}>
-          <View style={[styles.toast, { borderColor: toneColor[toast.tone] }]}>
+          <View style={styles.toast}>
+            <View style={[styles.dot, { backgroundColor: toneColor[toast.tone] }]} />
             <Text style={styles.message}>{toast.message}</Text>
           </View>
         </Pressable>
@@ -37,15 +38,22 @@ const makeStyles = (palette: Palette) =>
       alignItems: 'center',
       gap: spacing.sm,
       left: 0,
+      paddingHorizontal: spacing.lg,
       position: 'absolute',
       right: 0,
     },
+    // A slip of paper with a hairline edge; the tone is a dot beside the words.
     toast: {
+      alignItems: 'center',
       backgroundColor: palette.surfaceRaised,
-      borderRadius: radius.md,
-      borderWidth: 1,
+      borderColor: palette.border,
+      borderRadius: radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: spacing.sm,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
     },
-    message: { color: palette.text, fontSize: 14 },
+    dot: { borderRadius: radius.round, height: 6, width: 6 },
+    message: { color: palette.text, flexShrink: 1, fontSize: 14, lineHeight: 20 },
   });

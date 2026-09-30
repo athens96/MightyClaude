@@ -2,7 +2,7 @@ import { Component, useMemo, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import Markdown, { MarkdownIt, type RenderRules } from 'react-native-markdown-display';
 import { isOpenableLink, prepareMarkdown } from '@/lib/markdown';
-import { monoFontFamily, radius, spacing, useStyles, type Palette } from '@/theme';
+import { monoFontFamily, radius, serifFontFamily, spacing, useStyles, type Palette } from '@/theme';
 
 /**
  * One parser for every result on the phone: bare URLs become links, a single
@@ -14,60 +14,82 @@ const parser = MarkdownIt({ html: false, linkify: true, breaks: true, typographe
 /** A table cell's fixed width, so the columns line up across rows inside the sideways scroller. */
 const CELL_WIDTH = 140;
 
+/**
+ * The reply reads as prose on the page: generous leading, the two top heading levels in
+ * the serif, code on a slightly darker paper, quotes set off by a thin rule. The accent
+ * is kept for links.
+ */
 const makeMarkdownStyles = (palette: Palette, size: number) =>
   StyleSheet.create({
-    body: { color: palette.text, fontSize: size, lineHeight: Math.round(size * 1.45) },
-    heading1: { color: palette.text, fontSize: size + 4, fontWeight: '700', marginBottom: spacing.xs },
-    heading2: { color: palette.text, fontSize: size + 2, fontWeight: '700', marginBottom: spacing.xs },
-    heading3: { color: palette.text, fontSize: size, fontWeight: '700', marginBottom: spacing.xs },
+    body: { color: palette.text, fontSize: size, lineHeight: Math.round(size * 1.53) },
+    heading1: {
+      color: palette.text,
+      fontFamily: serifFontFamily,
+      fontSize: size + 6,
+      fontWeight: '400',
+      lineHeight: Math.round((size + 6) * 1.3),
+      marginBottom: spacing.sm,
+      marginTop: spacing.xs,
+    },
+    heading2: {
+      color: palette.text,
+      fontFamily: serifFontFamily,
+      fontSize: size + 3,
+      fontWeight: '400',
+      lineHeight: Math.round((size + 3) * 1.3),
+      marginBottom: spacing.xs,
+      marginTop: spacing.xs,
+    },
+    heading3: { color: palette.text, fontSize: size, fontWeight: '600', marginBottom: spacing.xs },
     heading4: { color: palette.text, fontSize: size, fontWeight: '600', marginBottom: spacing.xs },
     heading5: { color: palette.textMuted, fontSize: size - 1, fontWeight: '600', marginBottom: spacing.xs },
     heading6: { color: palette.textMuted, fontSize: size - 2, fontWeight: '600', marginBottom: spacing.xs },
     em: { fontStyle: 'italic' },
     s: { textDecorationLine: 'line-through' },
     paragraph: { marginBottom: spacing.sm, marginTop: 0 },
-    strong: { fontWeight: '700' },
+    strong: { fontWeight: '600' },
     link: { color: palette.accent, textDecorationLine: 'underline' },
     bullet_list: { marginBottom: spacing.sm },
     ordered_list: { marginBottom: spacing.sm },
     code_inline: {
       backgroundColor: palette.surfaceRaised,
       borderRadius: radius.sm,
-      color: palette.accent,
+      color: palette.text,
       fontFamily: monoFontFamily,
-      fontSize: 13,
+      fontSize: size - 2,
     },
     code_block: {
       backgroundColor: palette.surfaceRaised,
-      borderColor: palette.border,
-      borderRadius: radius.sm,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: radius.md,
+      borderWidth: 0,
       color: palette.text,
       fontFamily: monoFontFamily,
       fontSize: 12,
-      padding: spacing.sm,
+      lineHeight: 18,
+      padding: spacing.md,
     },
     fence: {
       backgroundColor: palette.surfaceRaised,
-      borderColor: palette.border,
-      borderRadius: radius.sm,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: radius.md,
+      borderWidth: 0,
       color: palette.text,
       fontFamily: monoFontFamily,
       fontSize: 12,
-      padding: spacing.sm,
+      lineHeight: 18,
+      padding: spacing.md,
     },
     blockquote: {
-      backgroundColor: palette.surface,
-      borderLeftColor: palette.accent,
-      borderLeftWidth: 3,
-      paddingHorizontal: spacing.sm,
+      backgroundColor: 'transparent',
+      borderLeftColor: palette.border,
+      borderLeftWidth: 2,
+      marginBottom: spacing.sm,
+      paddingHorizontal: spacing.md,
     },
-    hr: { backgroundColor: palette.border, height: StyleSheet.hairlineWidth },
+    hr: { backgroundColor: palette.border, height: StyleSheet.hairlineWidth, marginVertical: spacing.md },
     table: { borderColor: palette.border, borderRadius: radius.sm, borderWidth: StyleSheet.hairlineWidth, marginBottom: spacing.sm },
     thead: { backgroundColor: palette.surfaceRaised },
     tr: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: palette.border, flexDirection: 'row' },
-    th: { color: palette.text, flex: 0, fontWeight: '700', padding: spacing.xs, width: CELL_WIDTH },
+    th: { color: palette.text, flex: 0, fontWeight: '600', padding: spacing.xs, width: CELL_WIDTH },
     td: { color: palette.text, flex: 0, padding: spacing.xs, width: CELL_WIDTH },
     image: { borderRadius: radius.sm, marginBottom: spacing.sm },
     image_alt: { color: palette.textMuted, fontStyle: 'italic' },

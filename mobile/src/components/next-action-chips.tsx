@@ -46,15 +46,15 @@ export function NextActionChips({
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingBottom: spacing.xs },
+    // Suggestions in ink on a hairline: an offer, not a call to action.
     chip: {
-      backgroundColor: palette.surface,
-      borderColor: palette.accent,
+      borderColor: palette.border,
       borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,
       maxWidth: '100%',
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs + 2,
     },
-    label: { color: palette.accent, fontSize: 13 },
-    pressed: { opacity: 0.7 },
+    label: { color: palette.text, fontSize: 13, lineHeight: 18 },
+    pressed: { backgroundColor: palette.surfaceRaised },
   });

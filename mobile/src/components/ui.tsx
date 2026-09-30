@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { t } from '@/lib/i18n';
-import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 export type ButtonTone = 'primary' | 'neutral' | 'danger' | 'ghost';
 
@@ -26,14 +26,18 @@ interface ButtonProps {
   accessibilityLabel?: string;
 }
 
+/**
+ * One filled button — the terracotta primary. Neutral is an outline, ghost is plain text,
+ * and danger is brick text on its own soft tint rather than a second loud fill.
+ */
 function toneBackground(palette: Palette, tone: ButtonTone): string {
   switch (tone) {
     case 'primary':
       return palette.accent;
     case 'neutral':
-      return palette.surfaceRaised;
+      return 'transparent';
     case 'danger':
-      return palette.danger;
+      return palette.dangerSurface;
     case 'ghost':
       return 'transparent';
   }
@@ -42,8 +46,9 @@ function toneBackground(palette: Palette, tone: ButtonTone): string {
 function toneText(palette: Palette, tone: ButtonTone): string {
   switch (tone) {
     case 'primary':
-    case 'danger':
       return palette.onAccent;
+    case 'danger':
+      return palette.danger;
     case 'neutral':
       return palette.text;
     case 'ghost':
@@ -78,7 +83,7 @@ export function Button({
         styles.button,
         compact && styles.buttonCompact,
         { backgroundColor: toneBackground(palette, tone) },
-        tone === 'ghost' && styles.buttonGhost,
+        tone === 'neutral' && styles.buttonOutline,
         inactive && styles.buttonDisabled,
         pressed && styles.buttonPressed,
         style,
@@ -125,17 +130,18 @@ export function Chip({
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const tint = color ?? palette.textMuted;
+  // Quiet by default: a hairline and muted text. Selected earns the tint as a border, a
+  // soft wash and a leading dot — the dot, so the state never rests on colour alone.
   const content = (
     <View
       style={[
         styles.chip,
-        { borderColor: tint },
-        selected && { backgroundColor: tint, borderColor: tint },
+        selected && { backgroundColor: palette.accentMuted, borderColor: tint },
         disabled && styles.chipDisabled,
-        beta && styles.chipWithBadge,
       ]}
     >
-      <Text style={[styles.chipLabel, { color: selected ? palette.onBadge : tint }]}>{label}</Text>
+      {selected ? <View style={[styles.chipDot, { backgroundColor: tint }]} /> : null}
+      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>{label}</Text>
       {beta ? <BetaBadge /> : null}
     </View>
   );
@@ -169,13 +175,16 @@ export function BetaBadge() {
   );
 }
 
+/** A count that needs the user: a dot and the number beside it, never a filled pill. */
 export function Badge({ count, color }: { count: number; color?: string }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   if (count <= 0) return null;
+  const tint = color ?? palette.accent;
   return (
-    <View style={[styles.badge, { backgroundColor: color ?? palette.accent }]}>
-      <Text style={styles.badgeLabel}>{count}</Text>
+    <View style={styles.badge}>
+      <View style={[styles.badgeDot, { backgroundColor: tint }]} />
+      <Text style={[styles.badgeLabel, { color: tint }]}>{count}</Text>
     </View>
   );
 }
@@ -212,57 +221,54 @@ const makeStyles = (palette: Palette) =>
       minHeight: 34,
       paddingHorizontal: spacing.md,
     },
-    buttonGhost: {
+    buttonOutline: {
       borderColor: palette.border,
       borderWidth: StyleSheet.hairlineWidth,
     },
     buttonDisabled: { opacity: 0.4 },
-    buttonPressed: { opacity: 0.75 },
+    buttonPressed: { opacity: 0.7 },
     buttonLabel: { fontSize: 15, fontWeight: '600' },
-    buttonLabelCompact: { fontSize: 13 },
+    buttonLabelCompact: { fontSize: 14 },
+    // A flat sheet of slightly lighter paper: no border, no shadow.
     card: {
       backgroundColor: palette.surface,
-      borderColor: palette.border,
       borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
       padding: spacing.lg,
     },
     chip: {
+      alignItems: 'center',
+      borderColor: palette.border,
       borderRadius: radius.sm,
       borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: spacing.xs,
       paddingHorizontal: spacing.sm,
       paddingVertical: 3,
     },
     chipDisabled: { opacity: 0.4 },
-    chipWithBadge: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
-    chipLabel: { fontSize: 12, fontWeight: '600' },
-    badge: {
-      alignItems: 'center',
-      borderRadius: 9,
-      justifyContent: 'center',
-      minWidth: 18,
-      paddingHorizontal: 5,
-      paddingVertical: 1,
-    },
-    badgeLabel: { color: palette.onBadge, fontSize: 11, fontWeight: '700' },
+    chipDot: { borderRadius: radius.round, height: 5, width: 5 },
+    chipLabel: { color: palette.textMuted, fontSize: 12, fontWeight: '500' },
+    chipLabelSelected: { color: palette.text, fontWeight: '600' },
+    badge: { alignItems: 'center', flexDirection: 'row', gap: 3 },
+    badgeDot: { borderRadius: radius.round, height: 6, width: 6 },
+    badgeLabel: { fontSize: 12, fontVariant: ['tabular-nums'], fontWeight: '600' },
     betaBadge: {
-      backgroundColor: palette.surfaceRaised,
       borderColor: palette.border,
-      borderRadius: 9,
+      borderRadius: radius.sm,
       borderWidth: StyleSheet.hairlineWidth,
-      paddingHorizontal: 5,
-      paddingVertical: 1,
+      paddingHorizontal: 4,
     },
-    betaBadgeLabel: { color: palette.textMuted, fontSize: 9, fontWeight: '600' },
-    empty: { alignItems: 'center', gap: spacing.sm, padding: spacing.xl },
-    emptyTitle: { color: palette.textMuted, fontSize: 15, fontWeight: '600' },
-    emptyDescription: { color: palette.textFaint, fontSize: 13, textAlign: 'center' },
+    betaBadgeLabel: { color: palette.textMuted, fontSize: 9, fontWeight: '500', letterSpacing: 0.3 },
+    empty: { alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl, paddingVertical: spacing.xxl },
+    emptyTitle: { ...typeScale.heading, color: palette.text, textAlign: 'center' },
+    emptyDescription: { color: palette.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
     errorBanner: {
       backgroundColor: palette.dangerSurface,
       borderRadius: radius.md,
       marginHorizontal: spacing.lg,
       marginTop: spacing.sm,
-      padding: spacing.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
     },
-    errorBannerText: { color: palette.danger, fontSize: 13 },
+    errorBannerText: { color: palette.danger, fontSize: 13, lineHeight: 18 },
   });

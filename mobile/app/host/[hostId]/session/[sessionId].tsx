@@ -71,7 +71,7 @@ import { sendWithAttachments, type SendRequest } from '@/lib/send';
 import { useForgetRefusedSecret } from '@/store/hosts';
 import { useHostClient, useLiveStore, useSessionCommands, useSessionDetail } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
  * The host reports what actually happened, not what was asked for: "다음 요청" on a pane
@@ -1100,10 +1100,10 @@ const makeStyles = (palette: Palette) =>
     body: { flex: 1 },
     footer: { gap: spacing.sm, paddingTop: spacing.sm },
     dockedNext: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
-    headerAction: { color: palette.text, fontSize: 22, paddingHorizontal: spacing.sm },
-    menuTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
+    headerAction: { color: palette.textMuted, fontSize: 22, paddingHorizontal: spacing.sm },
+    menuTitle: { ...typeScale.heading, color: palette.text },
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     olderText: { color: palette.textFaint, fontSize: 12, paddingVertical: spacing.xs },
     pullRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
-    viewSwitch: { flexDirection: 'row', gap: spacing.xs, paddingVertical: spacing.xs },
+    viewSwitch: { flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.sm, paddingTop: spacing.xs },
   });

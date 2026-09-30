@@ -86,10 +86,10 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     wrap: {
       backgroundColor: palette.surface,
-      borderRadius: radius.sm,
+      borderRadius: radius.md,
       gap: spacing.xs,
-      marginTop: spacing.xs,
-      padding: spacing.sm,
+      marginTop: spacing.sm,
+      padding: spacing.md,
     },
     line: { ...monoText, color: palette.textMuted },
     segmentDefault: { color: palette.textMuted },
@@ -99,10 +99,10 @@ const makeStyles = (palette: Palette) =>
     limitLabel: { color: palette.textMuted, flex: 1, fontSize: 11 },
     limitValue: { color: palette.textFaint, fontSize: 11 },
     limitTrack: {
-      backgroundColor: palette.surfaceRaised,
-      borderRadius: radius.sm,
-      height: 4,
+      backgroundColor: palette.border,
+      borderRadius: radius.round,
+      height: 3,
       overflow: 'hidden',
     },
-    limitFill: { backgroundColor: palette.accent, height: 4 },
+    limitFill: { backgroundColor: palette.accent, height: 3 },
   });

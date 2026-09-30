@@ -3,7 +3,7 @@ import { isAgentIOPane, type MobileSessionSummary } from '@/api/types';
 import { Badge } from '@/components/ui';
 import { ProviderTag } from '@/components/provider-mark';
 import { StatusChip } from '@/components/status-chip';
-import { kindLabel, monoText, radius, spacing, useStyles, type Palette } from '@/theme';
+import { kindLabel, monoText, spacing, useStyles, type Palette } from '@/theme';
 
 export function SessionRow({
   session,
@@ -49,17 +49,16 @@ export function SessionRow({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
+    // A line on the page: a hairline above, room around it, no box.
     row: {
-      backgroundColor: palette.surface,
-      borderColor: palette.border,
-      borderRadius: radius.md,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderTopColor: palette.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
       gap: spacing.xs,
-      padding: spacing.md,
+      paddingVertical: spacing.md,
     },
-    pressed: { opacity: 0.7 },
+    pressed: { opacity: 0.6 },
     header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-    title: { color: palette.text, flex: 1, fontSize: 15, fontWeight: '600' },
+    title: { color: palette.text, flex: 1, fontSize: 15, fontWeight: '500' },
     metaRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     meta: { color: palette.textFaint, fontSize: 12 },
     terminalTag: { color: palette.warning, fontSize: 12 },

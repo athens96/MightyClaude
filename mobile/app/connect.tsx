@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { t } from '@/lib/i18n';
 import { CONNECT_STEPS } from '@/lib/onboarding';
-import { radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { radius, serifFontFamily, spacing, typeScale, useStyles, type Palette } from '@/theme';
 
 function StepRow({ index, titleKey, bodyKey }: { index: number; titleKey: string; bodyKey: string }) {
   const styles = useStyles(makeStyles);
@@ -47,27 +47,29 @@ export default function ConnectScreen() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     container: {
-      gap: spacing.xl,
-      padding: spacing.lg,
+      gap: spacing.xxl,
+      paddingHorizontal: spacing.xl,
+      paddingTop: spacing.xl,
     },
     title: {
+      ...typeScale.display,
       color: palette.text,
-      fontSize: 22,
-      fontWeight: '700',
       textAlign: 'center',
     },
-    steps: { gap: spacing.lg },
+    steps: { gap: spacing.xl },
     step: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.md },
+    // The step number is a serif numeral in a hairline ring — a page marker, not a button.
     badge: {
       alignItems: 'center',
-      backgroundColor: palette.accent,
-      borderRadius: 999,
+      borderColor: palette.border,
+      borderRadius: radius.round,
+      borderWidth: StyleSheet.hairlineWidth,
       height: 32,
       justifyContent: 'center',
       width: 32,
     },
-    badgeText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-    stepContent: { flex: 1, gap: spacing.xs },
+    badgeText: { color: palette.textMuted, fontFamily: serifFontFamily, fontSize: 16 },
+    stepContent: { flex: 1, gap: spacing.xs, paddingTop: 5 },
     stepTitle: { color: palette.text, fontSize: 16, fontWeight: '600' },
-    stepBody: { color: palette.textMuted, fontSize: 14 },
+    stepBody: { color: palette.textMuted, fontSize: 14, lineHeight: 21 },
   });

@@ -90,7 +90,7 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     chip: {
       alignItems: 'center',
-      borderRadius: radius.sm,
+      borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
       gap: 4,
@@ -99,7 +99,7 @@ const makeStyles = (palette: Palette) =>
       paddingVertical: spacing.xs,
     },
     glyph: { fontSize: 12 },
-    title: { fontSize: 13, fontWeight: '600' },
+    title: { fontSize: 13, fontWeight: '500' },
     mark: { color: palette.textFaint, fontSize: 10 },
     locked: { opacity: 0.45 },
     pressed: { opacity: 0.7 },

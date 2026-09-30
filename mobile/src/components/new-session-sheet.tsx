@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import type { Provider, SessionKind } from '@/api/types';
 import { Button, Chip } from '@/components/ui';
-import { kindLabel, providerIsBeta, providerLabel, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { kindLabel, providerIsBeta, providerLabel, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 const PROVIDERS: Provider[] = ['claude', 'codex', 'gemini'];
 
@@ -101,14 +101,12 @@ const makeStyles = (palette: Palette) =>
     },
     sheet: {
       backgroundColor: palette.surface,
-      borderColor: palette.border,
       borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
       gap: spacing.md,
-      padding: spacing.lg,
+      padding: spacing.xl,
     },
-    title: { color: palette.text, fontSize: 16, fontWeight: '700' },
-    label: { color: palette.textMuted, fontSize: 13 },
+    title: { ...typeScale.heading, color: palette.text, fontSize: 20, lineHeight: 26 },
+    label: { color: palette.textMuted, fontSize: 13, fontWeight: '500' },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
     actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
     action: { flex: 1 },
