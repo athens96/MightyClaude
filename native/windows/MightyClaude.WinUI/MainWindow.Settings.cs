@@ -842,7 +842,7 @@ public sealed partial class MainWindow
         foreach (var item in runtime?.Providers ?? [])
             panel.Children.Add(new TextBlock
             {
-                Text = item.Name + " · " + (item.Available ? item.Version : item.Detail),
+                Text = ProviderCatalog.BetaLabel(item.Id, item.Name) + " · " + (item.Available ? item.Version : item.Detail),
                 TextWrapping = TextWrapping.Wrap,
                 FontSize = 12,
             });
