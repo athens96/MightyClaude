@@ -104,6 +104,8 @@ struct CodexUserInstructionsArgumentTests {
         try write("developer_instructions = \"Always answer in Korean.\"\n", to: home.appendingPathComponent("config.toml"))
         let value = try #require(try developerInstructions(home: home, workspace: workspace))
         #expect(value == "Always answer in Korean.\n\n" + PaneMCPToolManifest.codexDeveloperInstructions)
+        // Ours, ending with the open_url rule for web pages, follows the user's.
+        #expect(value.hasSuffix(PaneMCPToolManifest.webGuidance) && value.contains("open_url"))
     }
 
     @Test func noUserValueSendsOursAlone() throws {

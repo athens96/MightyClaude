@@ -191,10 +191,14 @@ public struct PaneMCPToolManifest {
     }
 
     /// Server-level instructions sent with `initialize`.
-    public static let routingGuidance = "Use run_in_terminal for commands the user should see and for long-running processes such as dev servers, watchers and long builds. Keep short internal work such as grep, file reads and quick build or test checks in your built-in Bash tool. " + interactiveGuidance
+    public static let routingGuidance = "Use run_in_terminal for commands the user should see and for long-running processes such as dev servers, watchers and long builds. Keep short internal work such as grep, file reads and quick build or test checks in your built-in Bash tool. " + interactiveGuidance + " " + webGuidance
 
     /// Commands that wait for the user must run where the user can answer them.
     public static let interactiveGuidance = "Any command that asks the user something or waits for them to type, pick or approve (sign-ins such as glab auth login, gh auth login, codex login or claude auth login, a browser or SSO approval, a password or passphrase prompt) must be started with run_in_terminal so the user answers it in the terminal pane; then follow it with read_latest_output until it ends. Never drive such a prompt from your own shell session or by sending keystrokes to it."
+
+    /// Web pages open where the user chose for this workspace, not wherever
+    /// a shell command happens to send them.
+    public static let webGuidance = "When the user asks you to show or open a web page, open it with open_url, which shows it in the app's browser pane or the system browser as the user chose for this workspace; never open web pages with shell commands such as open, xdg-open or osascript."
 
     /// Codex does not surface MCP server instructions to the model, so a Codex
     /// run carries the same guidance as developer instructions.
