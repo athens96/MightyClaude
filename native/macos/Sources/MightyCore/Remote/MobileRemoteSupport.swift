@@ -39,6 +39,19 @@ public enum MobileRemoteSupport {
         return (page, older.count > page.count)
     }
 
+    /// The phone's contract has no pictures: an `image` entry reaches it as
+    /// the `system` line naming them, without references, so neither picture
+    /// bytes nor cache names travel over the relay.
+    public static func phoneEntries(_ entries: [LogEntry]) -> [LogEntry] {
+        entries.map { original in
+            guard original.kind == "image" || original.images != nil else { return original }
+            var entry = original
+            entry.kind = original.kind == "image" ? "system" : original.kind
+            entry.images = nil
+            return entry
+        }
+    }
+
     /// Whether the detail's newest-80 window leaves anything behind it.
     public static func hasOlder(entryCount: Int) -> Bool { entryCount > MobileSessionDetail.maximumEntries }
 

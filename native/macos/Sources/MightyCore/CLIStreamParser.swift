@@ -12,8 +12,7 @@ public final class CLIStreamParser {
     private let graphTracker: ExecutionGraphTracker?
     private let activityNamespace: String
     private let activityClock: () -> TimeInterval
-    private var buffer = Data()
-    private var dropping = false
+    private var lines: LineSplitter
     private var seen: [String] = []
     private var assistantSeen = false
     private var lastResume: String?
@@ -30,9 +29,29 @@ public final class CLIStreamParser {
     /// later failure or result replaces it, so a 401 the CLI recovered from
     /// does not mark a run that failed for another reason.
     public private(set) var authFailure = false
+    /// One stdout line larger than this is dropped with a notice. Lines carry
+    /// whole base64 pictures (twice, for Claude's tool_use_result echo), so
+    /// the cap leaves room for a picture at `AgentImageSupport.maximumImageBytes`.
+    public static let maximumLineBytes = 64 * 1_048_576
+    /// Gemini's stream never carries pictures, so its lines get a smaller cap.
+    /// Codex approval runs use `CodexApprovalChannel.maximumFrameBytes`.
+    public static func maximumLineBytes(provider: String) -> Int { provider == "gemini" ? 8 * 1_048_576 : maximumLineBytes }
+    private let maximumLineBytes: Int
+    /// Where pictures from tool results are kept; nil drops them, as before.
+    private let imageCache: AgentImageCache?
+    /// The workspace, for pictures an item names only by path.
+    private let imageRoot: URL?
+    private let imageEntry: ((LogEntry) -> Void)?
+    private var storedImages = 0
+    private var imageLimitNoted = false
+    /// Pictures the line being consumed carried, prepared off the actor.
+    private var preparedImages: AgentPreparedImages = [:]
 
-    public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil) {
+    public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil,
+                images: AgentImageCache? = nil, imageRoot: URL? = nil, imageEntry: ((LogEntry) -> Void)? = nil, maximumLineBytes: Int = CLIStreamParser.maximumLineBytes) {
         self.provider = provider; self.log = log; self.resume = resume
+        self.imageCache = images; self.imageRoot = imageRoot; self.imageEntry = imageEntry; self.maximumLineBytes = maximumLineBytes
+        lines = LineSplitter(maximumLineBytes: maximumLineBytes)
         self.activityNamespace = activityNamespace; self.activity = activity; self.control = control; self.result = result
         usageTracker = SessionUsageTracker(provider: provider, callback: usage)
         graphTracker = MightyGraphSupport.providers.contains(provider) ? graph.map { ExecutionGraphTracker(runID: activityNamespace, input: graphInput, provider: provider, configuredModel: configuredModel, emit: $0) } : nil
@@ -44,20 +63,27 @@ public final class CLIStreamParser {
     }
     public func push(_ string: String) { push(Data(string.utf8)) }
     public func push(_ data: Data) {
-        for byte in data {
-            if byte == 10 {
-                if !dropping { consume(buffer) }
-                buffer.removeAll(keepingCapacity: true); dropping = false
-            } else if !dropping {
-                if buffer.count >= 1024 * 1024 {
-                    buffer.removeAll(keepingCapacity: false); dropping = true; log("system", "너무 긴 출력 한 줄을 생략했습니다.")
-                } else { buffer.append(byte) }
+        for item in lines.push(data) {
+            switch item {
+            case .line(let line): consume(AgentOutputLine(line))
+            case .tooLong: lineTooLong()
             }
         }
     }
     public func flush() {
-        if !dropping && !buffer.isEmpty { consume(buffer) }
-        buffer.removeAll(); flushText()
+        if let line = lines.finish() { consume(AgentOutputLine(line)) }
+        flushText()
+    }
+    /// A line the runner already cut and parsed (`AgentOutputLines`).
+    func receive(_ line: AgentOutputLine) { consume(line) }
+    func lineTooLong() { log("system", "너무 긴 출력 한 줄을 생략했습니다.") }
+    /// A Codex app-server event the approval channel mapped to the exec shape.
+    func receive(object: [String: Any]) { consume(data: nil, object: object) }
+    /// Lets the approval channel's mapped events use the pictures their frame
+    /// carried.
+    func withPreparedImages(_ images: AgentPreparedImages, _ body: () -> Void) {
+        preparedImages = images; defer { preparedImages = [:] }
+        body()
     }
     private func flushText() {
         if !pendingText.isEmpty { log("assistant", pendingText) }
@@ -100,6 +126,80 @@ public final class CLIStreamParser {
         guard !seen.contains(key) else { return }
         seen.append(key); if seen.count > 512 { seen.removeFirst() }
         assistantSeen = true; log("assistant", content)
+    }
+
+    /// Keep each picture a tool or message returned and show it after the
+    /// tool's row: a child's in its graph block, the request's in the log.
+    /// The base64 never leaves this function; only references do.
+    private func images(_ payloads: [(mediaType: String, base64: String)], key: String, toolID: String?, parentToolID: String? = nil, child: Bool) {
+        guard let imageCache, !payloads.isEmpty else { return }
+        var refs: [AgentImageRef] = []
+        var failure: AgentImageError?
+        let previous = toolID.flatMap { toolActivities[ActivitySupport.id(namespace: activityNamespace, key: $0)] }
+        let source = [previous?.toolName, previous?.summary].compactMap { $0 }.filter { !$0.isEmpty }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: " · ")
+        let readPath = ["read", "read_file"].contains(previous?.toolName?.lowercased() ?? "") && previous?.summary.hasPrefix("/") == true ? previous?.summary : nil
+        for payload in payloads.prefix(AgentImageSupport.maximumImagesPerEntry) {
+            guard storedImages < AgentImageSupport.maximumImagesPerRun else {
+                if !imageLimitNoted, !child { imageLimitNoted = true; log("system", L("images.tooMany", ["count": "\(AgentImageSupport.maximumImagesPerRun)"])) }
+                break
+            }
+            do {
+                let picture = try prepared(payload.base64)?.get() ?? imageCache.prepare(base64: payload.base64, mediaType: payload.mediaType)
+                refs.append(picture.ref(source: source.isEmpty ? L("images.source.agent") : source, path: readPath))
+                storedImages += 1
+            } catch { failure = error as? AgentImageError ?? .undecodable }
+        }
+        if let failure, !child { log("system", Self.imageFailure(failure)) }
+        emitImages(refs, key: key, toolID: toolID, parentToolID: parentToolID, source: source)
+    }
+    /// The prepared result a marker stands for; nil for ordinary base64.
+    private func prepared(_ base64: String) -> Result<AgentImagePrepared, AgentImageError>? {
+        AgentOutputLines.isMarker(base64) ? preparedImages[base64] ?? .failure(.undecodable) : nil
+    }
+    private func emitImages(_ refs: [AgentImageRef], key: String, toolID: String?, parentToolID: String? = nil, source: String) {
+        guard !refs.isEmpty else { return }
+        let entry = LogEntry(id: ActivitySupport.id(namespace: activityNamespace, key: "image:" + key + ":" + refs.map(\.hash).joined()),
+                             kind: "image", text: AgentImageSupport.entryText(refs, source: source.isEmpty ? L("images.source.agent") : source),
+                             provider: provider, images: refs)
+        if graphTracker?.images(entry, toolID: toolID, parentToolID: parentToolID) == true { return }
+        imageEntry?(entry)
+    }
+    static func imageFailure(_ error: AgentImageError) -> String {
+        switch error {
+        case .tooLarge: return L("images.failed.tooLarge", ["limit": "\(AgentImageSupport.maximumImageBytes / 1_048_576)"])
+        case .externalSVG: return L("images.failed.externalSVG")
+        case .tooManyPixels: return L("images.failed.tooManyPixels")
+        case .unsupportedType: return L("images.failed.unsupported")
+        case .empty, .undecodable, .invalidEncoding: return L("images.failed.undecodable")
+        }
+    }
+    /// Codex `image_generation`: the payload for `images` (a marker standing
+    /// for the prepared picture), or nil when the base64 itself is unusable.
+    private func generatedImage(_ result: String) -> String? {
+        if let prepared = prepared(result) {
+            if case .failure(let error) = prepared, [.invalidEncoding, .tooLarge, .empty].contains(error) { return nil }
+            return result
+        }
+        guard let imageCache, let data = try? AgentImageSupport.decodeBase64(result) else { return nil }
+        let key = AgentOutputLines.marker + "generated"
+        do { preparedImages[key] = .success(try imageCache.prepare(data, mediaType: "image/png")) }
+        catch { preparedImages[key] = .failure(error as? AgentImageError ?? .undecodable) }
+        return key
+    }
+    /// A picture an item names only by path (Codex `image_view`): read under
+    /// the Markdown path rule, never from anywhere else.
+    private func pathImage(_ path: String?, key: String) {
+        guard let imageCache, let path, !path.isEmpty else { return }
+        guard storedImages < AgentImageSupport.maximumImagesPerRun else { return }
+        guard case .file(let url, let root) = AgentImagePaths.locate(path, workspaceRoot: imageRoot) else {
+            log("system", L("images.failed.outside", ["path": ActivitySupport.clean(path, maximumBytes: 512, singleLine: true)])); return
+        }
+        do {
+            let data = try AgentImagePaths.read(url, root: root)
+            let ref = try imageCache.store(data, mediaType: AgentImageSupport.mediaType(forFileName: url.lastPathComponent) ?? "image/png", source: url.lastPathComponent, path: url.path)
+            storedImages += 1
+            emitImages([ref], key: key, toolID: nil, source: url.lastPathComponent)
+        } catch { log("system", Self.imageFailure(error as? AgentImageError ?? .undecodable)) }
     }
 
     private func turn(_ summary: String, state: String = "running") {
@@ -195,9 +295,21 @@ public final class CLIStreamParser {
         permissionStates[ActivitySupport.id(namespace: activityNamespace, key: request.toolUseId)] = state
         tool(id: request.toolUseId, name: request.toolName, state: state, summary: request.summary)
     }
-    private func consume(_ data: Data) {
-        guard !data.isEmpty else { return }
-        guard let object = try? JSONSerialization.jsonObject(with: data) else { log("output", String(String(decoding: data, as: UTF8.self).prefix(32_768))); return }
+    private func consume(_ line: AgentOutputLine) {
+        guard !line.data.isEmpty else { return }
+        preparedImages = line.images; defer { preparedImages = [:] }
+        consume(data: line.data, object: line.object)
+    }
+    /// `data` is the raw line, nil for an event mapped from another shape.
+    private func consume(data: Data?, object: Any?) {
+        guard let object else {
+            // Only the shown prefix is decoded, however long the line is.
+            guard let data else { return }
+            let head = data.prefix(32_771)
+            var text = String(decoding: head, as: UTF8.self)
+            if head.count < data.count, text.last == "\u{FFFD}" { text.removeLast() }
+            log("output", String(text.prefix(32_768))); return
+        }
         guard var value = object as? [String: Any], let type = value["type"] as? String else { return }
         // Read before the Bedrock rewrite below, which would hide the original text.
         if provider == "claude", ExecutionGraphTracker.parentToolID(value) == nil, !ClaudeStream.isNotificationResult(value),
@@ -212,7 +324,10 @@ public final class CLIStreamParser {
         graphTracker?.consume(value)
         switch provider {
         case "claude":
-            if ["control_request", "control_response", "control_cancel_request"].contains(type) { control?(data); return }
+            if ["control_request", "control_response", "control_cancel_request"].contains(type) {
+                if let data { control?(data) }
+                return
+            }
             if !claudeChild { resumeIfValid(value["session_id"]) }
             if type == "system", value["subtype"] as? String == "permission_denied" {
                 tool(id: value["tool_use_id"] as? String, name: value["tool_name"] as? String, state: "error", output: errorText(value["message"], fallback: "Claude 권한 규칙 또는 선택한 모드에서 거부했습니다."))
@@ -225,9 +340,15 @@ public final class CLIStreamParser {
                     let name = block["name"] as? String
                     tool(id: block["id"] as? String, name: name, input: block["input"], state: name == "AskUserQuestion" ? "waiting" : "running")
                 }
+                images(AgentImageSupport.payloads(in: blocks.filter { $0["type"] as? String == "image" }), key: (value["uuid"] as? String) ?? (message["id"] as? String) ?? "message",
+                       toolID: nil, parentToolID: ExecutionGraphTracker.parentToolID(value), child: claudeChild)
             } else if type == "user", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
                 for block in blocks where block["type"] as? String == "tool_result" {
                     tool(id: block["tool_use_id"] as? String, state: block["is_error"] as? Bool == true ? "error" : "completed", output: ActivitySupport.output(block["content"]))
+                    if let toolID = block["tool_use_id"] as? String, !toolID.isEmpty, toolID.utf8.count <= 512 {
+                        images(AgentImageSupport.payloads(in: block["content"]), key: toolID, toolID: toolID,
+                               parentToolID: ExecutionGraphTracker.parentToolID(value), child: claudeChild)
+                    }
                 }
             } else if type == "result" {
                 guard !claudeChild else { return }
@@ -268,6 +389,18 @@ public final class CLIStreamParser {
                     // JSON null is NSNull, which `??` would take as present.
                     let error = item["error"].flatMap { $0 is NSNull ? nil : $0 }
                     tool(id: item["id"] as? String, name: name.isEmpty ? "MCP" : name, input: item["arguments"], state: state, output: ActivitySupport.output(error ?? item["result"]))
+                    if ended, let id = item["id"] as? String, !id.isEmpty, id.utf8.count <= 512 { images(AgentImageSupport.payloads(in: item["result"]), key: id, toolID: id, child: false) }
+                case "image_view":
+                    // The agent looked at a local picture; only its path is reported.
+                    if ended, let id = item["id"] as? String { pathImage(item["path"] as? String, key: id) }
+                case "image_generation":
+                    if ended, let id = item["id"] as? String, !id.isEmpty, id.utf8.count <= 512 {
+                        // `result` is the picture in base64, decoded once; a saved
+                        // file is the fallback when it is not.
+                        if let result = item["result"] as? String, !result.isEmpty, imageCache != nil, let picture = generatedImage(result) {
+                            images([("image/png", picture)], key: id, toolID: nil, child: false)
+                        } else { pathImage((item["saved_path"] ?? item["savedPath"]) as? String, key: id) }
+                    }
                 default: break // Reasoning text is deliberately not copied.
                 }
             }

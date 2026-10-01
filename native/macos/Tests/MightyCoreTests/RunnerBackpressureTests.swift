@@ -81,7 +81,7 @@ struct RunnerBackpressureTests {
     }
 
     @Test func theBudgetBlocksAtItsLimitAndResumesOnRelease() {
-        let budget = ChildOutputBudget(limit: 100)
+        let budget = ChildOutputBudget(limit: 100, allowance: ChildOutputAllowance(limit: 1_000))
         budget.acquire(60)
         let reader = Blocking { budget.acquire(50) }
         #expect(!reader.returns(within: 0.3))
@@ -90,7 +90,7 @@ struct RunnerBackpressureTests {
     }
 
     @Test func closingTheBudgetFreesABlockedReaderForGood() {
-        let budget = ChildOutputBudget(limit: 100)
+        let budget = ChildOutputBudget(limit: 100, allowance: ChildOutputAllowance(limit: 1_000))
         budget.acquire(100)
         let reader = Blocking { budget.acquire(1) }
         #expect(!reader.returns(within: 0.3))
@@ -101,12 +101,38 @@ struct RunnerBackpressureTests {
     }
 
     @Test func aChunkLargerThanTheBudgetPassesWhenNothingIsPending() {
-        let budget = ChildOutputBudget(limit: 100)
+        let budget = ChildOutputBudget(limit: 100, allowance: ChildOutputAllowance(limit: 1_000))
         #expect(Blocking { budget.acquire(500) }.returns(within: 5))
         let next = Blocking { budget.acquire(1) }
         #expect(!next.returns(within: 0.3))
         budget.release(500)
         #expect(next.returns(within: 5))
+    }
+
+    /// Unfinished lines of every run share one allowance: past it a run that
+    /// holds part of a line waits, unless it holds the most.
+    @Test func theSharedAllowanceBlocksAndResumes() {
+        let allowance = ChildOutputAllowance(limit: 100)
+        let large = ChildOutputBudget(limit: 1_000, allowance: allowance)
+        let small = ChildOutputBudget(limit: 1_000, allowance: allowance)
+        let idle = ChildOutputBudget(limit: 1_000, allowance: allowance)
+        large.acquire(10); large.release(10, held: 80)
+        small.acquire(10); small.release(10, held: 30)
+        #expect(allowance.heldBytes == 110)
+        let waiting = Blocking { small.acquire(5) }
+        #expect(!waiting.returns(within: 0.3))
+        // The largest holder goes on, so its line can end; a run holding
+        // nothing is not held back either.
+        #expect(Blocking { large.acquire(5) }.returns(within: 5))
+        #expect(Blocking { idle.acquire(5) }.returns(within: 5))
+        #expect(!waiting.returned)
+        // The long line ended: back under the allowance.
+        large.release(15, held: 0)
+        #expect(allowance.heldBytes == 30)
+        #expect(waiting.returns(within: 5))
+        // A run that stops lets go of what it held.
+        small.close()
+        #expect(allowance.heldBytes == 0)
     }
 
     @Test func stopEndsAFloodingRunWithASlowConsumerWithinSeconds() async throws {
@@ -318,6 +344,42 @@ struct RunnerBackpressureTests {
             stray = try #require(Int32(String(contentsOf: directory.appendingPathComponent("stray.pid"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
             // Its pipe is closed: the next write fails (SIGPIPE / EPIPE) and it ends.
             try await wait { Darwin.kill(stray, 0) != 0 }
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
+    /// A stop that times out cancels the consumer; the unterminated last line
+    /// it already holds is still handed on.
+    @Test func aTimedOutStopKeepsTheUnterminatedLastLine() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = directory.appendingPathComponent("gemini")
+        let source = #"""
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then printf '0.20.0\n'; exit 0; fi
+        /bin/cat > /dev/null
+        printf '%s\n' '{"type":"init","session_id":"fixture-session"}'
+        printf '%s' '{"type":"message","role":"assistant","content":"tail"}'
+        /bin/sleep 0.5
+        /usr/bin/head -c 8000000 /dev/zero | /usr/bin/tr '\0' 'x' >&2
+        exec /bin/sleep 30
+        """#
+        try Data(source.utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
+        let service = ProviderService(binaryOverrides: ["gemini": binary])
+        let events = BackpressureRecorder()
+        // Each stderr chunk stalls the consumer longer than stop waits for
+        // the child (3 s), so the reader is still blocked and stop times out.
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0); if $0.entry?.kind == "output" { sleep(4) } })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        do {
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "go", provider: "gemini"), workspace: workspace)
+            try await wait { events.values().contains { $0.entry?.kind == "output" } }
+            await stop(runner)
+            let values = events.values()
+            #expect(values.last(where: { $0.type == "status" })?.status == "stopped")
+            let tail = values.firstIndex { $0.entry?.kind == "assistant" && $0.entry?.text == "tail" }
+            let stopped = values.lastIndex { $0.type == "status" && $0.status == "stopped" }
+            #expect(tail != nil && stopped != nil && tail! < stopped!)
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await runner.shutdown(); await service.shutdown()
     }

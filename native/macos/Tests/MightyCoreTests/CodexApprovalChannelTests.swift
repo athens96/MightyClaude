@@ -14,7 +14,7 @@ import Foundation
         init(resume: String? = nil, network: Bool = false) throws {
             let request = StartRunRequest(sessionId: "session", workspaceId: "workspace", input: "private prompt", provider: "codex", settings: .init(permissionMode: "onRequest", networkAccess: network), resumeId: resume)
             channel = CodexApprovalChannel(runId: "run", request: request, workspacePath: "/work", attachments: try AttachmentPreparation([]),
-                write: { [weak self] in self?.writes.append(Self.object($0)) }, event: { [weak self] in self?.events.append(Self.object($0)) },
+                write: { [weak self] in self?.writes.append(Self.object($0)) }, event: { [weak self] in self?.events.append($0) },
                 emit: { [weak self] in self?.cards.append($0) }, activity: { _, _ in }, warning: { [weak self] in self?.warnings.append($0) },
                 fail: { [weak self] in self?.errors.append($0) }, completed: { [weak self] in self?.completions += 1 })
         }

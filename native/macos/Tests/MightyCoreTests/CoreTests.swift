@@ -207,7 +207,9 @@ final class CoreTests {
 
     @Test func testGeminiParserGroupsDeltasAndBoundsMalformedOutput() throws {
         var logs: [String] = []
-        let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in })
+        // A small line cap keeps the over-long line below cheap to build; the
+        // drop-and-notice path is the same at the production cap.
+        let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in }, maximumLineBytes: 1024 * 1024)
         parser.push(try jsonLines([["type": "message", "role": "user", "content": "secret prompt"], ["type": "message", "role": "assistant", "delta": true, "content": "안녕"], ["type": "message", "role": "assistant", "delta": true, "content": "하세요"], ["type": "error", "severity": "warning", "message": "Retrying"], ["type": "result", "status": "success"]])); parser.flush()
         #expect((logs) == (["안녕하세요", "Retrying"])); #expect(!(parser.failed))
         parser.push(String(repeating: "x", count: 1024 * 1024 + 1)); parser.push("\nplain warning\n{\"type\":\"result\",\"status\":\"error\",\"error\":{\"message\":\"Quota\"}}\n"); parser.flush()

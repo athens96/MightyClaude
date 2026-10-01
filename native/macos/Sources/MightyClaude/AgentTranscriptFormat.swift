@@ -7,13 +7,17 @@ import MightyCore
 enum AgentTranscriptFormat {
     static let accent = NSColor(calibratedRed: 0.86, green: 0.65, blue: 0.55, alpha: 1)
     static let codeAttribute = NSAttributedString.Key("MightyTranscriptCode")
+    /// The `AgentImageKey.id` of a picture's attachment character.
+    static let imageAttribute = NSAttributedString.Key("MightyTranscriptImage")
 
     /// `references` turns file paths and addresses into links. Only the Mighty
     /// graph opts in; the basic transcript keeps model text as plain text.
+    /// `imageRoot` is the workspace Markdown pictures may be read from
+    /// (`AgentImagePaths`); without it only the temporary folders qualify.
     static func entry(_ entry: LogEntry, provider: String, running: Bool, expanded: Bool, references: Bool = false,
                       records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:],
-                      catalog: [ModelOption] = []) -> NSAttributedString {
-        let builder = Builder(references: references)
+                      catalog: [ModelOption] = [], imageRoot: URL? = nil) -> NSAttributedString {
+        let builder = Builder(references: references, imageRoot: imageRoot)
         if let activity = entry.activity {
             let live = running && ["running", "waiting"].contains(activity.state)
             let color = activity.state == "error" ? NSColor.systemRed : live ? accent : .secondaryLabelColor
@@ -57,6 +61,10 @@ enum AgentTranscriptFormat {
             builder.paragraph(line, spacing: 12, box: builder.box(background: accent.withAlphaComponent(0.07), border: .clear))
         } else if entry.kind == "output" {
             builder.code(entry.text, language: nil)
+        } else if entry.kind == "image", let refs = entry.images, !refs.isEmpty {
+            // A tool's pictures, in order, under its row; the entry text names them.
+            for ref in refs { builder.paragraph(AgentImageAttachmentCell.attachment(.stored(ref), caption: ref.source), spacing: 4) }
+            builder.paragraph(NSAttributedString(string: entry.text), font: .systemFont(ofSize: 10), color: .secondaryLabelColor, spacing: 7)
         } else {
             let color: NSColor = entry.kind == "error" ? .systemRed : .secondaryLabelColor
             let line = NSMutableAttributedString(attributedString: symbol(entry.kind == "error" ? "exclamationmark.circle" : "info.circle", color: color))
@@ -87,7 +95,26 @@ enum AgentTranscriptFormat {
     @MainActor private final class Builder {
         let result = NSMutableAttributedString(string: "")
         let references: Bool
-        init(references: Bool) { self.references = references }
+        let imageRoot: URL?
+        init(references: Bool, imageRoot: URL?) { self.references = references; self.imageRoot = imageRoot }
+
+        /// A Markdown picture: drawn when its target passes the path rule or is
+        /// a data URI; an http(s) target stays a link and is never fetched.
+        func markdownImage(_ target: String, alt: String, font: NSFont) -> NSAttributedString {
+            let location = AgentImagePaths.locate(target, workspaceRoot: imageRoot)
+            if let key = AgentImageKey(location) { return AgentImageAttachmentCell.attachment(key, caption: alt) }
+            let label = alt.isEmpty ? String(target.prefix(120)) : alt
+            let result = NSMutableAttributedString(string: label, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+            let note: String
+            if case .remote(let url) = location {
+                if AgentMarkdownDocument.safeLink(url) {
+                    result.addAttributes([.link: url, .foregroundColor: AgentTranscriptFormat.accent], range: NSRange(location: 0, length: result.length))
+                }
+                note = L("images.remote")
+            } else { note = L("images.refused") }
+            result.append(NSAttributedString(string: " (" + note + ")", attributes: [.font: NSFont.systemFont(ofSize: max(10, font.pointSize - 2)), .foregroundColor: NSColor.secondaryLabelColor]))
+            return result
+        }
 
         /// Plain text, with file paths and addresses linked when enabled.
         func appendText(_ string: String, attributes: [NSAttributedString.Key: Any], to target: NSMutableAttributedString) {
@@ -146,6 +173,10 @@ enum AgentTranscriptFormat {
                 if intent?.contains(.strikethrough) == true { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
                 if let link = run.link, AgentMarkdownDocument.safeLink(link) { attributes[.link] = link; attributes[.foregroundColor] = AgentTranscriptFormat.accent }
                 let text = String(source[run.range].characters)
+                if let target = run.imageSource {
+                    result.append(markdownImage(target, alt: text, font: font))
+                    continue
+                }
                 if attributes[.link] == nil, references, let path = run.referencePath, let url = ReferenceLinkSupport.referenceURL(path: path, line: nil) {
                     attributes[.link] = url; attributes[.foregroundColor] = AgentTranscriptFormat.accent; attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
                     result.append(NSAttributedString(string: text, attributes: attributes))

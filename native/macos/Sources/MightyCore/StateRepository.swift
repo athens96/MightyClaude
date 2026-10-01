@@ -152,12 +152,12 @@ public actor StateRepository {
     /// session whose estimate fell short would be trimmed with budget to spare.
     static func approximateLogBytes(_ logs: [LogEntry]) -> Int {
         guard !logs.isEmpty else { return 0 }
-        let bytes = logs.reduce(0) { $0 + $1.text.utf8.count + ($1.activity.map { $0.summary.utf8.count + ($0.toolName?.utf8.count ?? 0) + ($0.output?.utf8.count ?? 0) } ?? 0) + 256 }
+        let bytes = logs.reduce(0) { $0 + $1.text.utf8.count + ($1.activity.map { $0.summary.utf8.count + ($0.toolName?.utf8.count ?? 0) + ($0.output?.utf8.count ?? 0) } ?? 0) + AgentImageSupport.approximateBytes($1.images) + 256 }
         return bytes + bytes / 4 + 4096
     }
     static func approximateGraphBytes(_ runs: [MightyGraphRun]) -> Int {
         guard !runs.isEmpty else { return 0 }
-        func entryBytes(_ values: [LogEntry]) -> Int { values.reduce(0) { $0 + 1024 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) } }
+        func entryBytes(_ values: [LogEntry]) -> Int { values.reduce(0) { $0 + 1024 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) + AgentImageSupport.approximateBytes($1.images) } }
         let bytes = runs.reduce(0) { total, run in
             total + 2048 + run.id.utf8.count * 2 + (run.sourceRunID?.utf8.count ?? 0) + run.input.utf8.count + (run.finalOutput?.utf8.count ?? 0) * 3 + entryBytes(run.rootEntries)
                 + run.agents.reduce(0) { $0 + 1536 + $1.id.utf8.count * 2 + ($1.parentID?.utf8.count ?? 0) + $1.title.utf8.count + $1.input.utf8.count + entryBytes($1.entries) }
@@ -208,8 +208,11 @@ public actor StateRepository {
             // array so the graph is rebuilt from the logs, as for old sessions.
             if let runs = session.graphRuns, runs.isEmpty, !session.logs.isEmpty { session.graphRuns = nil }
             session.logs = TranscriptRetention.trimmed(session.logs).compactMap { entry in
-                guard CoreValidation.identifier(entry.id), ["user", "assistant", "system", "output", "error"].contains(entry.kind), logBudget > 0 else { return nil }
+                guard CoreValidation.identifier(entry.id), LogEntryKinds.stored.contains(entry.kind), logBudget > 0 else { return nil }
                 var log = entry; log.text = ActivitySupport.prefixUTF8(log.text, maximumBytes: min(log.kind == "assistant" ? 131_072 : 32_768, logBudget)); logBudget -= log.text.utf8.count
+                // Pictures stay references; the cache, not the profile, holds their bytes.
+                log.images = log.kind == "image" ? AgentImageSupport.normalized(log.images) : nil
+                logBudget -= AgentImageSupport.approximateBytes(log.images)
                 if let provider = log.provider, !ProviderOptions.ids.contains(provider) { log.provider = nil }
                 if let activity = log.activity {
                     log.activity = ActivitySupport.normalized(activity, restoring: restoring)

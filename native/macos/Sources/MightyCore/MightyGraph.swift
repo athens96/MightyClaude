@@ -240,7 +240,7 @@ public enum MightyGraphSupport {
         return normalized(kept, restoring: false, budget: &budget)
     }
     private static func entryBytes(_ values: [LogEntry]) -> Int {
-        values.reduce(0) { $0 + 512 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) }
+        values.reduce(0) { $0 + 512 + $1.text.utf8.count + ($1.activity?.output?.utf8.count ?? 0) + ($1.activity?.summary.utf8.count ?? 0) + AgentImageSupport.approximateBytes($1.images) }
     }
     private static func bounded(_ text: String, maximum: Int, budget: inout Int) -> String {
         let value = ActivitySupport.clean(text, maximumBytes: min(maximum, max(0, budget)))
@@ -252,9 +252,11 @@ public enum MightyGraphSupport {
         let result: [LogEntry] = values.suffix(100).reversed().compactMap { original in
             let overhead = 256 + original.id.utf8.count + original.timestamp.utf8.count
             guard budget >= overhead, CoreValidation.identifier(original.id), ids.insert(original.id).inserted,
-                  ["user", "assistant", "system", "output", "error"].contains(original.kind) else { return nil }
+                  LogEntryKinds.stored.contains(original.kind) else { return nil }
             budget -= overhead
             var entry = original
+            entry.images = entry.kind == "image" ? AgentImageSupport.normalized(entry.images) : nil
+            budget -= AgentImageSupport.approximateBytes(entry.images)
             entry.text = bounded(entry.text, maximum: 32_768, budget: &budget)
             if let activity = entry.activity {
                 entry.activity = ActivitySupport.normalized(activity, restoring: restoring)

@@ -256,7 +256,7 @@ public struct MobileSessionDetail: Codable, Sendable, Equatable {
     public static let maximumEntries = 80
     public init(revision: Int, session: MobileSessionSummary, entries: [LogEntry], permissions: [MobilePermission] = [], queued: [MobileQueuedItem] = [], usage: MobileUsage? = nil, elapsedSeconds: Double? = nil,
                 hasOlder: Bool? = nil, settings: MobileSettings? = nil, mighty: MobileMighty? = nil, statusLine: MobileStatusLine? = nil, rateLimits: [MobileRateLimit]? = nil) {
-        self.revision = revision; self.session = session; self.entries = entries; self.permissions = permissions; self.queued = queued; self.usage = usage; self.elapsedSeconds = elapsedSeconds
+        self.revision = revision; self.session = session; self.entries = MobileRemoteSupport.phoneEntries(entries); self.permissions = permissions; self.queued = queued; self.usage = usage; self.elapsedSeconds = elapsedSeconds
         self.hasOlder = hasOlder; self.settings = settings; self.mighty = mighty; self.statusLine = statusLine; self.rateLimits = rateLimits
     }
 }
@@ -476,7 +476,7 @@ public struct MobileEntriesPage: Codable, Sendable, Equatable {
     public var `protocol`: Int = 1
     public var entries: [LogEntry]
     public var hasMore: Bool
-    public init(entries: [LogEntry], hasMore: Bool) { self.entries = entries; self.hasMore = hasMore }
+    public init(entries: [LogEntry], hasMore: Bool) { self.entries = MobileRemoteSupport.phoneEntries(entries); self.hasMore = hasMore }
 }
 
 public struct MobileCommandResult: Codable, Sendable, Equatable {

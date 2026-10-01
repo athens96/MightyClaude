@@ -258,28 +258,67 @@ public enum ProcessCapture {
 
 private enum ChildEvent: Sendable { case stdout(Data), stderr(Data), exit(Int32) }
 
-/// Bytes read from a child's pipes that the runner has not handed to the
-/// parser yet. The pipe reader waits while the budget is spent, so a slow
-/// consumer makes the child block on a full pipe instead of the runner
-/// dropping its output. An unfinished line the parser holds is not counted.
+/// Bytes of unfinished lines that every run's line splitter holds, process
+/// wide. Each run's splitter may grow one line up to its provider's line cap
+/// (`CLIStreamParser.maximumLineBytes(provider:)`); this bounds them together.
+final class ChildOutputAllowance: @unchecked Sendable {
+    static let shared = ChildOutputAllowance(limit: 256 * 1_048_576)
+    let limit: Int
+    /// Guards every budget that shares this allowance, and this allowance.
+    fileprivate let condition = NSCondition()
+    fileprivate var held: [ObjectIdentifier: Int] = [:]
+    fileprivate var total = 0
+    init(limit: Int) { self.limit = limit }
+    var heldBytes: Int { condition.lock(); defer { condition.unlock() }; return total }
+    /// Past the allowance, a run holding part of a line waits unless it holds
+    /// the most: that one goes on until its line ends or is cut at the line
+    /// cap, so the waiting always ends. A run holding nothing still passes, so
+    /// the total can exceed the allowance by about one line in progress plus
+    /// each run's own budget.
+    fileprivate func mustWait(_ id: ObjectIdentifier) -> Bool {
+        guard total > limit, let mine = held[id] else { return false }
+        return mine < (held.values.max() ?? 0)
+    }
+    fileprivate func set(_ id: ObjectIdentifier, _ bytes: Int) {
+        total += bytes - (held[id] ?? 0)
+        if bytes > 0 { held[id] = bytes } else { held.removeValue(forKey: id) }
+    }
+}
+
+/// Bytes read from a child's pipes that the runner has not handed to its
+/// line splitter yet. The pipe reader waits while the budget is spent, or
+/// while the shared allowance for unfinished lines is (`ChildOutputAllowance`),
+/// so a slow consumer makes the child block on a full pipe instead of the
+/// runner dropping its output. Lines already cut are parsed and handed on at
+/// once; only the unfinished one is held across chunks.
 final class ChildOutputBudget: @unchecked Sendable {
-    private let condition = NSCondition()
+    private let allowance: ChildOutputAllowance
+    private var condition: NSCondition { allowance.condition }
     private let limit: Int
     private var pending = 0
     private var closed = false
-    init(limit: Int) { self.limit = limit }
+    init(limit: Int, allowance: ChildOutputAllowance = .shared) { self.limit = limit; self.allowance = allowance }
     /// Blocks the reading thread until `count` more bytes fit. A chunk larger
     /// than the whole budget passes once nothing else is pending.
     func acquire(_ count: Int) {
         condition.lock(); defer { condition.unlock() }
-        while !closed, pending > 0, pending + count > limit { condition.wait() }
+        while !closed, (pending > 0 && pending + count > limit) || allowance.mustWait(ObjectIdentifier(self)) { condition.wait() }
         if !closed { pending += count }
     }
-    func release(_ count: Int) {
-        condition.lock(); pending = max(0, pending - count); condition.broadcast(); condition.unlock()
+    /// `count` bytes were handled; the splitter now holds `held` bytes of an
+    /// unfinished line.
+    func release(_ count: Int, held: Int = 0) {
+        condition.lock(); defer { condition.unlock() }
+        pending = max(0, pending - count)
+        if !closed { allowance.set(ObjectIdentifier(self), held) }
+        condition.broadcast()
     }
-    /// Nobody consumes any more (stopped, cancelled, gone): never wait again.
-    func close() { condition.lock(); closed = true; condition.broadcast(); condition.unlock() }
+    /// Nobody consumes any more (stopped, cancelled, gone): never wait again,
+    /// and whatever the splitter held is let go.
+    func close() {
+        condition.lock(); defer { condition.unlock() }
+        closed = true; allowance.set(ObjectIdentifier(self), 0); condition.broadcast()
+    }
 }
 
 /// Each live run's child and output consumer by pane, readable without the
@@ -358,8 +397,8 @@ private final class ManagedProcess {
     var parser: CLIStreamParser?
     var permissions: ClaudePermissionChannel?
     var codexPermissions: CodexApprovalChannel?
-    /// At most this much read output not yet handed to the parser per run;
-    /// see `ChildOutputBudget`.
+    /// At most this much read output not yet handed to the line splitter per
+    /// run; see `ChildOutputBudget`.
     let outputBudget = ChildOutputBudget(limit: 4 * 1_048_576)
     var receivedClaudeResult = false
     var permissionInitializationTask: Task<Void, Never>?
@@ -396,10 +435,12 @@ public actor ProcessRunner {
     private let paneMCPBindings: PaneMCPBindingRegistry
     /// Panes this runner minted tokens for, so shutdown revokes only its own.
     private var boundPaneIds = Set<String>()
+    /// Where pictures from tool results are kept; nil leaves them out.
+    private let imageCache: AgentImageCache?
     /// Live children, signalled without this actor; see `LiveRunRegistry`.
     private let liveRuns: LiveRunRegistry
 
-    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), liveRuns: LiveRunRegistry = LiveRunRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.liveRuns = liveRuns; self.onEvent = onEvent }
+    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.onEvent = onEvent }
 
     /// Ends the pane's child right away, without waiting for this actor; the
     /// run's bookkeeping still needs `stop(id:)`. False when nothing ran.
@@ -506,11 +547,16 @@ public actor ProcessRunner {
                         // final graph snapshots still precede terminal status.
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "graph", graph: node))
-                    }, graphInput: request.input)
+                    }, graphInput: request.input,
+                    images: imageCache, imageRoot: URL(fileURLWithPath: workspace.path, isDirectory: true),
+                    imageEntry: { [weak run, onEvent] entry in
+                        guard let run, !run.finalized else { return }
+                        onEvent(RunEvent(sessionId: run.request.sessionId, type: "log", entry: entry))
+                    })
                 if codexApprovals {
                     run.codexPermissions = CodexApprovalChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
-                        event: { [weak run] data in guard let run, !run.finished else { return }; run.parser?.push(data) },
+                        event: { [weak run] object in guard let run, !run.finished else { return }; run.parser?.receive(object: object) },
                         emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
                         activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
                         warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
@@ -531,12 +577,20 @@ public actor ProcessRunner {
             onEvent(RunEvent(sessionId: request.sessionId, type: "status", status: "running"))
             if request.kind == "claude" { Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: request.provider, kind: "turn", state: "running", summary: "\(ProviderOptions.label(request.provider)) 실행 중"), emit: onEvent) }
             emitLog(run, kind: "system", text: request.kind == "shell" ? "명령 실행 · 비대화형 셸" : "\(ProviderOptions.label(request.provider)) CLI 실행")
+            // A parser-driven run's stdout is cut into lines and parsed here,
+            // off the actor every pane shares, with large lines' pictures
+            // already decoded and cached; only finished lines hop onto it, in
+            // order. A shell run's output goes through as it arrives.
+            let lineLimit: Int? = run.codexPermissions != nil ? CodexApprovalChannel.maximumFrameBytes : run.parser != nil ? CLIStreamParser.maximumLineBytes(provider: request.provider) : nil
+            let cache = imageCache
             // Below every user-facing caller (user-initiated): on this actor,
             // a stop, a steer or a permission answer goes ahead of the chunks
             // it queues, and a medium caller (a Task started from a plain
-            // queue) is not starved either. A stop from even lower signals
-            // first anyway.
-            run.task = Task(priority: .medium) { [weak self, weak run] in
+            // queue) is not starved either. Utility would run the parser about
+            // half as fast; a stop from even lower signals first anyway.
+            run.task = Task.detached(priority: .medium) { [weak self, weak run] in
+                var lines = lineLimit.map { AgentOutputLines(maximumLineBytes: $0, cache: cache) }
+                var exited = false
                 for await event in stream.stream {
                     // Nobody handles output any more: later yields return
                     // `.terminated` and the readers never wait again.
@@ -544,9 +598,22 @@ public actor ProcessRunner {
                     // A cancelled stream still hands out what it buffered;
                     // a stop that cancels this task means drop the rest.
                     if Task.isCancelled { break }
-                    await self.receive(event, run: run)
-                    switch event { case .stdout(let data), .stderr(let data): budget.release(data.count); case .exit: break }
+                    switch event {
+                    case .stdout(let data) where lines != nil:
+                        let items = lines!.push(data)
+                        if !items.isEmpty { await self.receive(items, run: run) }
+                    case .exit:
+                        exited = true
+                        if let rest = lines?.finish(), !rest.isEmpty { await self.receive(rest, run: run) }
+                        await self.receive(event, run: run)
+                    default: await self.receive(event, run: run)
+                    }
+                    switch event { case .stdout(let data), .stderr(let data): budget.release(data.count, held: lines?.heldBytes ?? 0); case .exit: break }
                 }
+                // A stop cancelled this task before the exit event: still hand
+                // on the unterminated last line it holds.
+                budget.close()
+                if !exited, let self, let run, let rest = lines?.finish(), !rest.isEmpty { await self.receive(rest, run: run) }
             }
             liveRuns.register(request.sessionId, child: child, consumer: run.task)
             if run.permissions != nil || run.codexPermissions != nil {
@@ -646,6 +713,25 @@ public actor ProcessRunner {
             emit(RunEvent(sessionId: run.request.sessionId, type: "log", entry: LogEntry(kind: kind, text: String(value[offset..<end]), provider: run.request.kind == "claude" ? run.request.provider : nil)))
             offset = end
         }
+    }
+    /// Lines `AgentOutputLines` cut and parsed off the actor.
+    private func receive(_ items: [AgentOutputLines.Item], run: ManagedProcess) {
+        guard !run.finished else { return }
+        for item in items {
+            if let channel = run.codexPermissions {
+                switch item {
+                case .line(let line):
+                    if let parser = run.parser { parser.withPreparedImages(line.images) { channel.receive(line) } } else { channel.receive(line) }
+                case .tooLong: channel.frameTooLarge()
+                }
+            } else if let parser = run.parser {
+                switch item {
+                case .line(let line): parser.receive(line)
+                case .tooLong: parser.lineTooLong()
+                }
+            }
+        }
+        watchCodexSessions(run)
     }
     private func receive(_ event: ChildEvent, run: ManagedProcess) async {
         guard !run.finished else { return }
@@ -749,7 +835,8 @@ public actor ProcessRunner {
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
         if let child = run.child {
             // Usually signalled already, before the caller reached this actor;
-            // the consumer's deadline comes with the signal.
+            // the consumer's deadline comes with the signal. Cancelled, it
+            // still hands on the unterminated line its splitter holds, so wait.
             if !liveRuns.signal(id, child: child) { child.stop(); LiveRunRegistry.cancelConsumerAfterExit(child, consumer: run.task) }
             await run.task?.value
             if !run.finished { await finish(run, code: -1) } else { await waitForFinalization(run) }

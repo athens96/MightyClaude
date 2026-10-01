@@ -9,9 +9,16 @@ enum MightyReferencePathAttribute: CodableAttributedStringKey {
     typealias Value = String
     static let name = "MightyReferencePath"
 }
+/// A Markdown image's target, kept as plain data. Only the transcript draws
+/// it, and only after `AgentImagePaths` allows it; nothing is fetched.
+enum MightyImageSourceAttribute: CodableAttributedStringKey {
+    typealias Value = String
+    static let name = "MightyImageSource"
+}
 extension AttributeScopes {
     struct MightyAttributes: AttributeScope {
         let referencePath: MightyReferencePathAttribute
+        let imageSource: MightyImageSourceAttribute
         let foundation: FoundationAttributes
     }
     var mighty: MightyAttributes.Type { MightyAttributes.self }
@@ -100,7 +107,14 @@ final class AgentMarkdownDocument: NSObject {
                 if let path = ReferenceLinkSupport.localPath(link) { result[run.range].referencePath = path }
             }
             // Image alt text remains readable; messages never fetch image URLs
-            // or load local files merely because the model mentioned them.
+            // or load local files merely because the model mentioned them. The
+            // target is kept for the transcript's own path rule.
+            if let image = run.imageURL {
+                // An absolute local target is kept decoded (`/tmp/스크린샷 1.png`,
+                // not `/tmp/%EC…`); a relative one is decoded by the path rule.
+                result[run.range].imageSource = ReferenceLinkSupport.localPath(image).flatMap { $0.hasPrefix("/") ? $0 : nil } ?? image.absoluteString
+                result[run.range].link = nil
+            }
             result[run.range].imageURL = nil
         }
         return result

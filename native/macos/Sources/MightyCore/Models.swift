@@ -212,10 +212,13 @@ public struct LogEntry: Codable, Sendable, Equatable, Identifiable {
     public var timestamp: String
     public var provider: String?
     public var activity: AgentActivity?
-    public init(id: String = UUID().uuidString, kind: String, text: String, timestamp: String = mightyTimestamp(), provider: String? = nil, activity: AgentActivity? = nil) {
-        self.id = id; self.kind = kind; self.text = text; self.timestamp = timestamp; self.provider = provider; self.activity = activity
+    /// Pictures an `image` entry shows, by reference (`AgentImageRef`); `text`
+    /// names them for readers that draw no pictures.
+    public var images: [AgentImageRef]?
+    public init(id: String = UUID().uuidString, kind: String, text: String, timestamp: String = mightyTimestamp(), provider: String? = nil, activity: AgentActivity? = nil, images: [AgentImageRef]? = nil) {
+        self.id = id; self.kind = kind; self.text = text; self.timestamp = timestamp; self.provider = provider; self.activity = activity; self.images = images
     }
-    enum CodingKeys: String, CodingKey { case id, kind, text, timestamp, provider, activity }
+    enum CodingKeys: String, CodingKey { case id, kind, text, timestamp, provider, activity, images }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id); kind = try c.decode(String.self, forKey: .kind)
@@ -223,7 +226,13 @@ public struct LogEntry: Codable, Sendable, Equatable, Identifiable {
         provider = try c.decodeIfPresent(String.self, forKey: .provider)
         // Damaged optional metadata must not erase the surrounding saved log.
         activity = try? c.decodeIfPresent(AgentActivity.self, forKey: .activity)
+        images = AgentImageSupport.normalized(try? c.decodeIfPresent([AgentImageRef].self, forKey: .images))
     }
+}
+
+public enum LogEntryKinds {
+    /// Every kind a transcript, a graph block or a saved profile keeps.
+    public static let stored = ["user", "assistant", "system", "output", "error", "image"]
 }
 
 /// The pane kinds Core stores. "claude" and "shell" run a CLI; "browser" is a

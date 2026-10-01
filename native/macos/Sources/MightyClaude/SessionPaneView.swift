@@ -404,9 +404,9 @@ struct SessionPaneView: View {
             } else if session.logs.isEmpty {
                 ScrollView { emptyOutput }
             } else {
-                AgentTranscriptView(sessionId: session.id, provider: session.provider, running: running, entries: session.logs) {
-                    store.selectSession(session.id)
-                }
+                AgentTranscriptView(sessionId: session.id, provider: session.provider, running: running, entries: session.logs,
+                                    onFocus: { store.selectSession(session.id) },
+                                    imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) })
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
