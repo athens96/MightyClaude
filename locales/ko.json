@@ -952,5 +952,9 @@
   "wire.startRun.invalidSettings": "실행 설정이 올바르지 않습니다.",
   "wire.startRun.unsupportedSettings": "실행기가 지원하지 않는 설정입니다.",
   "workspace.location.thisComputer": "이 컴퓨터",
-  "workspace.menu.remove": "목록에서 제거"
+  "workspace.menu.remove": "목록에서 제거",
+  "workspace.addPane": "창 추가",
+  "workspace.addPaneHelp": "이 워크스페이스에 에이전트·터미널·브라우저 창을 추가합니다",
+  "workspace.addPaneAccessibility": "{workspace}에 창 추가",
+  "workspace.newTerminal": "새 터미널"
 }

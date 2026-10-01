@@ -235,7 +235,7 @@ struct WorkspaceView: View {
             }
             Divider()
             Button { addSession(in: workspace, kind: "shell") } label: {
-                Label("새 터미널", systemImage: "terminal")
+                Label(L("workspace.newTerminal"), systemImage: "terminal")
             }
             Divider()
             Button { addSession(in: workspace, kind: "browser") } label: {
@@ -245,7 +245,7 @@ struct WorkspaceView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).frame(width: 12)
-                Text("에이전트 추가").font(.system(size: 11))
+                Text(L("workspace.addPane")).font(.system(size: 11))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.accent)
@@ -255,8 +255,8 @@ struct WorkspaceView: View {
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
         .disabled(store.hasModal)
-        .help("이 워크스페이스에 Claude · Codex · Gemini 실행 창이나 터미널 추가")
-        .accessibilityLabel("\(workspace.name)에 실행 창 추가")
+        .help(L("workspace.addPaneHelp"))
+        .accessibilityLabel(L("workspace.addPaneAccessibility", ["workspace": workspace.name]))
         .accessibilityIdentifier("workspace-add-session-\(workspace.id)")
     }
 
