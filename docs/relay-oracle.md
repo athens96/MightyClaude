@@ -54,14 +54,20 @@ bash relay/deploy/oracle/provision.sh --profile mighty --domain mighty-young-rel
 
 토큰은 필요 없습니다(예약 IP라 주소가 바뀌지 않으므로).
 
-## 4. Oracle 보안 목록에서 80·443 열기
+## 4. Oracle 보안 목록에서 80·443·3478 열기
 
 **Instance → Primary VNIC의 Subnet → Security Lists → Default Security List → Add Ingress Rules**:
 
-| Source CIDR | IP Protocol | Destination Port Range |
-|---|---|---|
-| 0.0.0.0/0 | TCP | 80 |
-| 0.0.0.0/0 | TCP | 443 |
+| Source CIDR | IP Protocol | Destination Port Range | 쓰는 곳 |
+|---|---|---|---|
+| 0.0.0.0/0 | TCP | 80 | Let's Encrypt 인증 |
+| 0.0.0.0/0 | TCP | 443 | wss 릴레이 |
+| 0.0.0.0/0 | UDP | 3478 | TURN 신호 |
+| 0.0.0.0/0 | TCP | 3478 | TURN 신호(UDP가 막힌 망) |
+| 0.0.0.0/0 | UDP | 49160-49200 | TURN 중계(미디어) |
+
+콘솔에서 누르는 대신 `bash relay/deploy/oracle/open-turn-port.sh --profile mighty`로
+3478과 중계 포트를 한 번에 열 수 있습니다(OCI 로그인 세션 필요).
 
 (OS 안의 방화벽은 다음 단계의 스크립트가 엽니다.)
 
@@ -95,7 +101,7 @@ Mighty Claude → **설정 → 모바일 리모트 → 릴레이**에 `wss://myr
 | `curl`이 멈춤(타임아웃) | 4단계 보안 목록. Ubuntu라면 `sudo iptables -L INPUT -n --line-numbers`에서 80·443 ACCEPT가 REJECT보다 위에 있는지 |
 | 인증서 오류(`acme`) | 80 포트가 밖에서 열려 있어야 Let's Encrypt가 확인합니다. 같은 이름으로 너무 자주 재발급하면 한도에 걸리니 한 시간쯤 기다렸다 다시 |
 | `healthz`가 502 | `sudo docker compose … logs relay` |
-| 재부팅 뒤 | 두 컨테이너는 `restart: unless-stopped`라 저절로 다시 뜹니다 |
+| 재부팅 뒤 | 세 컨테이너(relay·caddy·coturn)는 `restart: unless-stopped`라 저절로 다시 뜹니다 |
 | 이 컴퓨터에서 22번이 막힘(회사 보안 프로그램 등) | 새 인스턴스는 SSH가 필요 없습니다. 이미 있는 인스턴스에 들어가야 하면 콘솔의 Cloud Shell에서 `ssh`하거나, 무료 Network Load Balancer에 TCP 2222 → 인스턴스 22 리스너를 잠시 만들고 보안 목록에 2222를 연 뒤 `ssh -p 2222 ubuntu@<NLB IP>`로 들어가서, 끝나면 둘 다 지웁니다 |
 
 ## 업데이트
@@ -106,3 +112,58 @@ bash relay/deploy/oracle/setup.sh
 ```
 
 (두 번째부터는 이름을 생략하면 `.env`에 적힌 이름을 씁니다.)
+
+## TURN(coturn) 배포와 확인 — 원격 화면 BETA
+
+원격 화면 기능의 TURN 대체 경로는 같은 VM의 coturn이 맡습니다. coturn의
+`use-auth-secret`은 그 VM에만 있고, 릴레이가 1시간짜리 HMAC 자격증명을 발급합니다
+(`docs/relay.md`의 "TURN 자격증명 발급"). Mac도 휴대폰도 시크릿을 받지 않습니다.
+
+### 도구
+
+| 명령 | 하는 일 |
+|---|---|
+| `bash relay/deploy/oracle/preflight.sh` | 배포 전 관문. 인스턴스 메타데이터에서 shape·OCPU·메모리를 읽고, A1이 아니면 실제 외부 전송 속도를 재서 TURN(합계 8 Mbps)을 감당하는지 판단 |
+| `bash relay/deploy/oracle/setup.sh <도메인>` | VM에서 실행. 릴레이·Caddy·coturn을 올리고 OS 방화벽에 3478과 중계 포트 49160-49200을 열며, coturn이 인증을 요구하는지 배포 직후 확인 |
+| `bash relay/deploy/oracle/verify-live.sh` | Mac에서 실행. 살아 있는 배포를 R1~R7로 확인(아래) |
+| `bash relay/deploy/oracle/open-turn-port.sh --profile mighty` | Oracle 보안 목록에 UDP/TCP 3478과 UDP 49160-49200을 추가. **OCI 로그인 세션이 필요** |
+
+`verify-live.sh`가 보는 것: R1 `/healthz`, R2 wss 제어 소켓의 `turn-credentials`
+발급, R3 컨테이너 상태, R4 coturn이 인증을 요구하는지, R5 릴레이가 발급한
+자격증명으로 Allocate 성공 + 중계 포트가 49160-49200 안인지, R6 iptables,
+R7 위조 serverId가 4401로 끊기는지(보안 라운드 F-01).
+
+### 2026-10-01 배포 상태
+
+- 릴레이 재배포 완료: TURN 자격증명 발급과 보안 라운드 호스트 인증이 라이브.
+- coturn 라이브: realm `mightyclaude.duckdns.org`, 중계 포트 49160-49200,
+  세션당 2 Mbps·합계 8 Mbps 할당량, 사설·링크로컬·메타데이터 대역 거부.
+- OS 방화벽(iptables): UDP/TCP 3478과 UDP 49160-49200 열림, 재부팅에도 유지.
+- `verify-live.sh`의 R1~R7 전부 통과.
+
+**남은 한 가지(사용자 작업).** Oracle 클라우드 보안 목록(VCN)이 아직 UDP 3478을
+막고 있습니다. 밖에서 보낸 STUN 패킷이 VM에 한 개도 도착하지 않는 것으로
+확인했고(`tcpdump`), VM 안의 coturn과 OS 방화벽은 정상입니다. 보안 목록을 바꾸려면
+브라우저 로그인이 필요한 OCI 세션이 있어야 해서 대신 해 드릴 수 없습니다:
+
+```bash
+oci session authenticate --profile-name mighty --region ap-singapore-1
+bash relay/deploy/oracle/open-turn-port.sh --profile mighty
+bash relay/deploy/oracle/verify-live.sh     # PENDING 줄이 ok로 바뀝니다
+```
+
+**pre-flight 결과(그대로 보고).** 지금 VM은 A1이 아니라
+`VM.Standard.E2.1.Micro`(1 OCPU·1 GB)이고, 메타데이터가 0.5 Gbps라고 적어 둔 것과
+달리 실제 외부 전송 속도는 세 번 재서 53.6~53.9 Mbps로 묶여 있습니다. 즉 사용자가
+걱정한 "~50 Mbps Micro"가 맞습니다. TURN이 쓰는 대역폭(세션당 2 Mbps, 합계
+8 Mbps)에는 충분해서 pre-flight는 측정값 기준으로 통과시키지만, shape 기준으로는
+통과가 아닙니다. A1으로 올리려면 OCI 로그인 뒤 A1 용량이 날 때
+`provision.sh`를 다시 돌려 새 인스턴스를 만들어야 합니다(공인 IP 재지정 포함).
+
+### 함정: coturn이 설정 파일을 읽지 못하면 공개 중계가 된다
+
+`coturn/coturn` 이미지는 `nobody:nogroup`(65534)으로 돌기 때문에 `600 root` 파일은
+읽지 못합니다. 그러면 coturn은 멈추지 않고 경고 한 줄(`Cannot find config file`)만
+남기고 **기본 설정으로**, 즉 인증·할당량·거부 대역이 전혀 없는 공개 중계로 떠
+버립니다. 그래서 `setup.sh`는 설정 파일을 `root:65534 640`으로 기록하고, 배포 직후
+자격증명 없는 Allocate가 401로 거절되는지 직접 확인한 뒤 아니면 coturn을 멈춥니다.
