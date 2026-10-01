@@ -952,5 +952,9 @@
   "wire.startRun.invalidSettings": "Run settings are invalid.",
   "wire.startRun.unsupportedSettings": "The runner does not support these settings.",
   "workspace.location.thisComputer": "This computer",
-  "workspace.menu.remove": "Remove from List"
+  "workspace.menu.remove": "Remove from List",
+  "workspace.addPane": "Add Pane",
+  "workspace.addPaneHelp": "Add an agent, terminal or browser pane to this workspace",
+  "workspace.addPaneAccessibility": "Add a pane to {workspace}",
+  "workspace.newTerminal": "New Terminal"
 }
