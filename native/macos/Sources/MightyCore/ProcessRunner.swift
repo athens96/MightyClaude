@@ -13,8 +13,20 @@ final class NativeChildProcess: @unchecked Sendable {
     private let lock = NSLock()
     private let writer = DispatchQueue(label: "dev.mightyclaude.stdin")
     private var stdinFD: Int32 = -1
+    /// Set under `lock` when a close is requested, before the writer queue
+    /// runs it, so `inputIsOpen` never waits on that queue.
+    private var inputClosing = false
     private var stopping = false
     private var exitedAt: Date?
+    private var abandoned = false
+    /// After the child exits, its pipes are read for one more second. Time the
+    /// consumer kept a reader waiting counts as idle only past this much.
+    static let maximumDrainCredit: TimeInterval = 30
+    /// At most this much is read from one pipe after the child exits.
+    static let maximumBytesAfterExit = 16 * 1_048_576
+    /// A process outside the child's group still wrote when reading stopped
+    /// at one of the limits above; the rest of its output was not read.
+    var outputAbandoned: Bool { lock.lock(); defer { lock.unlock() }; return abandoned }
     private var result: Int32?
     private var waiters: [UUID: CheckedContinuation<Int32, Never>] = [:]
     private(set) var pid: pid_t = 0
@@ -94,15 +106,38 @@ final class NativeChildProcess: @unchecked Sendable {
         DispatchQueue.global(qos: .utility).async { [self] in
             defer { Darwin.close(fd); group.leave() }
             var bytes = [UInt8](repeating: 0, count: 16_384)
+            // Time the callback held this thread after the child exited. A
+            // consumer applying backpressure is not the pipe idling, so up to
+            // `maximumDrainCredit` of that wait does not count against the
+            // one-second drain after exit. A writer outside the child's group
+            // (a detached daemon holding the inherited pipe) keeps the consumer
+            // busy forever, so the credit is capped and the bytes read after
+            // exit are bounded too; past either, the pipe is closed and the
+            // writer gets EPIPE.
+            var handing: TimeInterval = 0
+            var afterExit = 0
             while true {
-                lock.lock(); let ended = exitedAt; lock.unlock()
-                if let ended, Date().timeIntervalSince(ended) > 1 { return }
+                lock.lock(); let ended = exitedAt; let stopped = stopping; lock.unlock()
+                if let ended {
+                    let credit = stopped ? 0 : min(handing, Self.maximumDrainCredit)
+                    let overBytes = afterExit > Self.maximumBytesAfterExit
+                    if overBytes || Date().timeIntervalSince(ended) - credit > 1 {
+                        if overBytes || handing > Self.maximumDrainCredit { lock.lock(); abandoned = true; lock.unlock() }
+                        return
+                    }
+                }
                 var descriptor = pollfd(fd: fd, events: Int16(POLLIN | POLLHUP), revents: 0)
                 let ready = Darwin.poll(&descriptor, 1, 100)
                 if ready < 0 { if errno == EINTR { continue }; return }
                 if ready == 0 { continue }
                 let count = Darwin.read(fd, &bytes, bytes.count)
-                if count > 0 { callback(Data(bytes.prefix(count))) }
+                if count > 0 {
+                    let began = Date()
+                    if ended != nil { afterExit += count }
+                    callback(Data(bytes.prefix(count)))
+                    lock.lock(); let exited = exitedAt; lock.unlock()
+                    if let exited { handing += max(0, Date().timeIntervalSince(max(began, exited))) }
+                }
                 else if count == 0 { return }
                 else if errno != EAGAIN && errno != EINTR { return }
             }
@@ -110,6 +145,7 @@ final class NativeChildProcess: @unchecked Sendable {
     }
 
     func write(_ data: Data, closeAfter: Bool = false) {
+        if closeAfter { lock.lock(); inputClosing = true; lock.unlock() }
         writer.async { [self] in
             guard stdinFD >= 0 else { return }
             let began = Date()
@@ -129,14 +165,18 @@ final class NativeChildProcess: @unchecked Sendable {
             if closeAfter { Darwin.close(stdinFD); stdinFD = -1 }
         }
     }
-    func closeInput() { writer.async { [self] in if stdinFD >= 0 { Darwin.close(stdinFD); stdinFD = -1 } } }
-    /// Whether a write would still reach the child. Checked on the writer
-    /// queue after any queued close, so a just-exited child reports false.
+    func closeInput() {
+        lock.lock(); inputClosing = true; lock.unlock()
+        writer.async { [self] in if stdinFD >= 0 { Darwin.close(stdinFD); stdinFD = -1 } }
+    }
+    /// Whether a write would still reach the child: no close requested (even
+    /// one still queued), not stopping, not exited. Read under the lock only,
+    /// never on the writer queue: a write blocked on a full stdin pipe (up to
+    /// its 10 s timeout) must not stall the caller, which is the runner's actor
+    /// that also drains the child's stdout, or the two would wait on each other.
     var inputIsOpen: Bool {
-        writer.sync { [self] in
-            lock.lock(); let ended = stopping || exitedAt != nil; lock.unlock()
-            return stdinFD >= 0 && !ended
-        }
+        lock.lock(); defer { lock.unlock() }
+        return !inputClosing && !stopping && exitedAt == nil
     }
     private func terminateGroup() {
         guard pid > 0, Darwin.kill(-pid, 0) == 0 else { return }
@@ -206,16 +246,30 @@ public enum ProcessCapture {
 
 private enum ChildEvent: Sendable { case stdout(Data), stderr(Data), exit(Int32) }
 
-/// Pipe callbacks run off-actor. Remember any dropped RPC chunk even if a later
-/// burst also evicts the event that first exposed it.
-private final class ChildOutputIntegrity: @unchecked Sendable {
-    private let lock = NSLock()
-    private var lost = false
-    func record(_ result: AsyncStream<ChildEvent>.Continuation.YieldResult) {
-        if case .dropped = result { lock.lock(); lost = true; lock.unlock() }
+/// Bytes read from a child's pipes that the runner has not handed to the
+/// parser yet. The pipe reader waits while the budget is spent, so a slow
+/// consumer makes the child block on a full pipe instead of the runner
+/// dropping its output. An unfinished line the parser holds is not counted.
+final class ChildOutputBudget: @unchecked Sendable {
+    private let condition = NSCondition()
+    private let limit: Int
+    private var pending = 0
+    private var closed = false
+    init(limit: Int) { self.limit = limit }
+    /// Blocks the reading thread until `count` more bytes fit. A chunk larger
+    /// than the whole budget passes once nothing else is pending.
+    func acquire(_ count: Int) {
+        condition.lock(); defer { condition.unlock() }
+        while !closed, pending > 0, pending + count > limit { condition.wait() }
+        if !closed { pending += count }
     }
-    var hasLoss: Bool { lock.lock(); defer { lock.unlock() }; return lost }
+    func release(_ count: Int) {
+        condition.lock(); pending = max(0, pending - count); condition.broadcast(); condition.unlock()
+    }
+    /// Nobody consumes any more (stopped, cancelled, gone): never wait again.
+    func close() { condition.lock(); closed = true; condition.broadcast(); condition.unlock() }
 }
+
 private final class ManagedProcess {
     let request: StartRunRequest
     let activityId = UUID().uuidString
@@ -224,8 +278,9 @@ private final class ManagedProcess {
     var parser: CLIStreamParser?
     var permissions: ClaudePermissionChannel?
     var codexPermissions: CodexApprovalChannel?
-    let outputIntegrity = ChildOutputIntegrity()
-    var transportFailed = false
+    /// At most this much read output not yet handed to the parser per run;
+    /// see `ChildOutputBudget`.
+    let outputBudget = ChildOutputBudget(limit: 4 * 1_048_576)
     var receivedClaudeResult = false
     var permissionInitializationTask: Task<Void, Never>?
     var attachments: AttachmentPreparation?
@@ -377,15 +432,28 @@ public actor ProcessRunner {
                         completed: { [weak run] in run?.permissionInitializationTask?.cancel(); run?.child?.closeInput() })
                 }
             }
-            let stream = AsyncStream<ChildEvent>.makeStream(bufferingPolicy: .bufferingNewest(256))
-            let integrity = run.outputIntegrity
-            let child = try NativeChildProcess(executable: executable, arguments: arguments, environment: environment, cwd: URL(fileURLWithPath: workspace.path), stdout: { integrity.record(stream.continuation.yield(.stdout($0))) }, stderr: { integrity.record(stream.continuation.yield(.stderr($0))) }, exited: { integrity.record(stream.continuation.yield(.exit($0))); stream.continuation.finish() })
+            // Unbounded, but never more than the run's budget: the readers wait
+            // for the consumer instead of evicting chunks it has not seen.
+            let stream = AsyncStream<ChildEvent>.makeStream(bufferingPolicy: .unbounded)
+            let continuation = stream.continuation
+            let budget = run.outputBudget
+            continuation.onTermination = { _ in budget.close() }
+            let child = try NativeChildProcess(executable: executable, arguments: arguments, environment: environment, cwd: URL(fileURLWithPath: workspace.path), stdout: { budget.acquire($0.count); continuation.yield(.stdout($0)) }, stderr: { budget.acquire($0.count); continuation.yield(.stderr($0)) }, exited: { continuation.yield(.exit($0)); continuation.finish() })
             run.child = child
             onEvent(RunEvent(sessionId: request.sessionId, type: "status", status: "running"))
             if request.kind == "claude" { Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: request.provider, kind: "turn", state: "running", summary: "\(ProviderOptions.label(request.provider)) 실행 중"), emit: onEvent) }
             emitLog(run, kind: "system", text: request.kind == "shell" ? "명령 실행 · 비대화형 셸" : "\(ProviderOptions.label(request.provider)) CLI 실행")
             run.task = Task { [weak self, weak run] in
-                for await event in stream.stream { guard let self, let run else { return }; await self.receive(event, run: run) }
+                for await event in stream.stream {
+                    // Nobody handles output any more: later yields return
+                    // `.terminated` and the readers never wait again.
+                    guard let self, let run else { continuation.finish(); budget.close(); return }
+                    // A cancelled stream still hands out what it buffered;
+                    // a stop that cancels this task means drop the rest.
+                    if Task.isCancelled { break }
+                    await self.receive(event, run: run)
+                    switch event { case .stdout(let data), .stderr(let data): budget.release(data.count); case .exit: break }
+                }
             }
             if run.permissions != nil || run.codexPermissions != nil {
                 run.permissions?.start(); run.codexPermissions?.start()
@@ -425,7 +493,7 @@ public actor ProcessRunner {
     /// card from a previous execution of the same pane can never grant access.
     public func respondToPermission(sessionId: String, runId: String, requestId: String, allow: Bool) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
-              !run.stopping, !run.finished, run.codexPermissions == nil || !run.outputIntegrity.hasLoss else {
+              !run.stopping, !run.finished else {
             throw MightyError("승인 요청의 실행이 이미 종료되었거나 변경되었습니다.")
         }
         if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
@@ -487,15 +555,6 @@ public actor ProcessRunner {
     }
     private func receive(_ event: ChildEvent, run: ManagedProcess) async {
         guard !run.finished else { return }
-        if run.codexPermissions != nil, run.outputIntegrity.hasLoss, !run.transportFailed {
-            run.transportFailed = true
-            emitLog(run, kind: "error", text: "Codex 출력이 처리 한도를 초과해 승인 연결을 중단했습니다. 실행을 다시 시작하세요.")
-            run.codexPermissions?.cancelAll(); run.child?.stop()
-        }
-        if run.transportFailed {
-            if case .exit(let code) = event { await finish(run, code: code) }
-            return
-        }
         switch event {
         case .stdout(let data):
             if let permissions = run.codexPermissions { permissions.receive(data) }
@@ -543,6 +602,8 @@ public actor ProcessRunner {
         guard !run.finished else { return }
         run.codexPermissions?.flush()
         run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); emitLog(run, kind: "output", text: run.errorDecoder.flush())
+        // The run still ends by its exit code; only the stray writer's rest is lost.
+        if run.child?.outputAbandoned == true, !run.stopping, !shuttingDown { emitLog(run, kind: "system", text: L("run.notice.outputAbandoned")) }
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
         let incompletePermissionRun = run.permissions != nil && (run.permissions?.initialized != true || !run.receivedClaudeResult)
         if incompletePermissionRun, !run.stopping, !shuttingDown, run.permissions?.failed != true {
@@ -554,7 +615,7 @@ public actor ProcessRunner {
         }
         if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: "Mods 이벤트를 받지 못했습니다. CLI 출력만 표시하며 관리자 정책과 function hooks 설정을 확인해 주세요.") }
         await run.bridge?.stop()
-        let status = run.stopping || shuttingDown ? "stopped" : code == 0 && !run.transportFailed && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
+        let status = run.stopping || shuttingDown ? "stopped" : code == 0 && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
         if let watcher = run.codexSessions {
             // Stop the poll task, wait for a read in flight, then read what is
             // left once. No pause first: an exited Codex writes nothing more.
@@ -586,7 +647,20 @@ public actor ProcessRunner {
         if run.finished { await waitForFinalization(run); return }
         run.stopping = true
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
-        if let child = run.child { child.stop(); let code = await child.wait(timeout: 3); if code == -1 { run.task?.cancel() } else { await run.task?.value }; if !run.finished { await finish(run, code: -1) } else { await waitForFinalization(run) } }
+        if let child = run.child {
+            child.stop()
+            // A slow consumer can still have up to the run's budget queued:
+            // it gets one more second after the exit (none when the exit timed
+            // out), then is cancelled and drops the rest. The deadline runs
+            // off this actor, which the consumer keeps busy.
+            let task = run.task
+            let deadline = Task.detached {
+                if await child.wait(timeout: 3) != -1 { do { try await Task.sleep(for: .seconds(1)) } catch { return } }
+                task?.cancel()
+            }
+            await task?.value; deadline.cancel()
+            if !run.finished { await finish(run, code: -1) } else { await waitForFinalization(run) }
+        }
         else { await cancelPending(run) }
     }
     public func shutdown() async { shuttingDown = true; for id in Array(runs.keys) { await stop(id: id) }; for id in boundPaneIds { paneMCPBindings.revoke(agentPaneId: id) }; boundPaneIds.removeAll() }

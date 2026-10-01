@@ -555,6 +555,7 @@
   "run.error.stopTimeout": "Process termination is taking longer than expected.",
   "run.error.tooManyConcurrent": "Too many concurrent runs (limit is 16).",
   "run.error.workspaceNotRegistered": "Not a registered workspace.",
+  "run.notice.outputAbandoned": "Another process kept writing after the command ended, so reading stopped. Its later output is not shown.",
   "run.warning.noModEvents": "No Mod events received. The displayed response is CLI output.",
   "session.title.shell": "Shell",
   "settings.appInfo.openFinderButton": "Open in Finder",
