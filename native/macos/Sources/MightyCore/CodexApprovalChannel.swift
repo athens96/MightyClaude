@@ -4,7 +4,10 @@ import CoreFoundation
 /// One app-server thread/turn, owned by ProcessRunner's actor. Only explicit,
 /// single-call user decisions leave this channel; no session or policy grants.
 final class CodexApprovalChannel {
-    static let maximumFrameBytes = 4 * 1024 * 1024
+    /// An MCP tool result frame carries its pictures as base64 (a browser
+    /// screenshot is easily several MB), so the bound sits above a picture
+    /// at `AgentImageSupport.maximumImageBytes`, not at a few megabytes.
+    static let maximumFrameBytes = 32 * 1024 * 1024
     static let maximumInputBytes = 65_536
     static let maximumPending = 16
     private struct Pending { let rpcID: Any; var display: ToolPermissionRequest }
@@ -13,13 +16,13 @@ final class CodexApprovalChannel {
     private let workspacePath: String
     private let attachments: AttachmentPreparation
     private let write: (Data) -> Void
-    private let event: (Data) -> Void
+    private let event: ([String: Any]) -> Void
     private let emit: (ToolPermissionRequest) -> Void
     private let activity: (ToolPermissionRequest, String) -> Void
     private let warning: (String) -> Void
     private let fail: (String) -> Void
     private let completed: () -> Void
-    private var buffer = Data()
+    private var lines = LineSplitter(maximumLineBytes: CodexApprovalChannel.maximumFrameBytes)
     private var pending: [String: Pending] = [:]
     private var seen = Set<String>()
     private var files: [String: [String: Any]] = [:]
@@ -37,7 +40,7 @@ final class CodexApprovalChannel {
     private(set) var failed = false
 
     init(runId: String, request: StartRunRequest, workspacePath: String, attachments: AttachmentPreparation,
-         write: @escaping (Data) -> Void, event: @escaping (Data) -> Void,
+         write: @escaping (Data) -> Void, event: @escaping ([String: Any]) -> Void,
          emit: @escaping (ToolPermissionRequest) -> Void, activity: @escaping (ToolPermissionRequest, String) -> Void,
          warning: @escaping (String) -> Void, fail: @escaping (String) -> Void, completed: @escaping () -> Void) {
         self.runId = runId; self.request = request; self.workspacePath = workspacePath; self.attachments = attachments
@@ -57,25 +60,25 @@ final class CodexApprovalChannel {
     func receive(_ data: Data) {
         guard !closed else { return }
         // Bound incomplete frames even when a peer streams data without newlines.
-        for byte in data {
-            if byte == 10 {
-                let frame = buffer; buffer.removeAll(keepingCapacity: true)
-                if !frame.isEmpty { receiveFrame(frame) }
-                if closed { return }
-            } else {
-                guard buffer.count < Self.maximumFrameBytes else { failClosed("Codex 응답 프레임 크기 제한을 초과했습니다."); return }
-                buffer.append(byte)
+        for item in lines.push(data) {
+            switch item {
+            case .line(let frame): receiveFrame(AgentOutputLine(frame).object)
+            case .tooLong: frameTooLarge()
             }
+            if closed { return }
         }
     }
+    /// A frame the runner already cut and parsed (`AgentOutputLines`).
+    func receive(_ line: AgentOutputLine) { guard !closed else { return }; receiveFrame(line.object) }
+    func frameTooLarge() { failClosed("Codex 응답 프레임 크기 제한을 초과했습니다.") }
     /// EOF is not success: a terminal turn/completed notification is required.
     func flush() {
         guard !closed else { return }
-        if !buffer.isEmpty { let frame = buffer; buffer.removeAll(); receiveFrame(frame) }
+        if let frame = lines.finish() { receiveFrame(AgentOutputLine(frame).object) }
         if !closed { failClosed("Codex 승인 채널이 응답 완료 전에 종료되었습니다.") }
     }
-    private func receiveFrame(_ data: Data) {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    private func receiveFrame(_ object: Any?) {
+        guard let obj = object as? [String: Any] else {
             failClosed("Codex 승인 채널 응답 형식이 올바르지 않습니다."); return
         }
         if let method = obj["method"] as? String {
@@ -215,7 +218,7 @@ final class CodexApprovalChannel {
         value.state = "cancelled"; activity(value, "stopped"); emit(value)
     }
     func cancelAll() {
-        guard !closed else { return }; closed = true; buffer.removeAll(); files.removeAll(); rpc.removeAll()
+        guard !closed else { return }; closed = true; _ = lines.finish(); files.removeAll(); rpc.removeAll()
         let asks = Array(pending.values); pending.removeAll()
         for ask in asks { var value = ask.display; value.state = "cancelled"; activity(value, "stopped"); emit(value) }
     }
@@ -227,7 +230,8 @@ final class CodexApprovalChannel {
     private func reply(_ id: Any, _ result: [String: Any]) { send(["id": id, "result": result]) }
     private func rpcError(_ id: Any, _ message: String) { send(["id": id, "error": ["code": -32601, "message": message]]) }
     private func send(_ obj: [String: Any]) { if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys, .withoutEscapingSlashes]) { write(data + Data([10])) } }
-    private func legacy(_ obj: [String: Any]) { if let data = try? JSONSerialization.data(withJSONObject: obj) { event(data + Data([10])) } }
+    /// Handed to the parser as a value: never serialized and scanned again.
+    private func legacy(_ obj: [String: Any]) { event(obj) }
     private static func idKey(_ raw: Any?) -> String? {
         if let text = raw as? String, !text.isEmpty, text.utf8.count <= 256 { return "s:" + text }
         if let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite, number.doubleValue.rounded() == number.doubleValue { return "n:" + number.stringValue }
@@ -241,10 +245,10 @@ final class CodexApprovalChannel {
         }.joined()
     }
     private static func legacyItem(_ raw: [String: Any]) -> [String: Any]? {
-        let types = ["agentMessage": "agent_message", "commandExecution": "command_execution", "fileChange": "file_change", "mcpToolCall": "mcp_tool_call", "webSearch": "web_search", "collabAgentToolCall": "collab_agent_tool_call", "contextCompaction": "context_compaction"]
+        let types = ["agentMessage": "agent_message", "commandExecution": "command_execution", "fileChange": "file_change", "mcpToolCall": "mcp_tool_call", "webSearch": "web_search", "collabAgentToolCall": "collab_agent_tool_call", "contextCompaction": "context_compaction", "imageView": "image_view", "imageGeneration": "image_generation"]
         guard let type = raw["type"] as? String, let mapped = types[type] else { return nil }
         var item = raw; item["type"] = mapped
-        for (source, target) in ["aggregatedOutput": "aggregated_output", "exitCode": "exit_code", "senderThreadId": "sender_thread_id", "receiverThreadIds": "receiver_thread_ids", "agentsStates": "agents_states"] { if let value = item.removeValue(forKey: source) { item[target] = value } }
+        for (source, target) in ["aggregatedOutput": "aggregated_output", "exitCode": "exit_code", "senderThreadId": "sender_thread_id", "receiverThreadIds": "receiver_thread_ids", "agentsStates": "agents_states", "savedPath": "saved_path"] { if let value = item.removeValue(forKey: source) { item[target] = value } }
         if let status = item["status"] as? String, status == "inProgress" { item["status"] = "in_progress" }
         if type == "collabAgentToolCall", let tool = item["tool"] as? String { item["tool"] = ["spawnAgent": "spawn_agent", "sendInput": "send_input", "closeAgent": "close_agent", "wait": "wait"][tool] ?? tool }
         return item

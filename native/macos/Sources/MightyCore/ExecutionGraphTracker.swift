@@ -581,6 +581,25 @@ final class ExecutionGraphTracker {
         }
         return true
     }
+    /// Pictures a tool or message returned. A child's tool's pictures join
+    /// that child's block and return true; the request's own go to the
+    /// transcript (false). A child not yet bound to a block keeps its pictures
+    /// out of main logs. When the tool's owner is unknown (evicted, or never
+    /// seen) the line's spawning tool names the child instead, so a child's
+    /// picture never falls into the main transcript.
+    func images(_ entry: LogEntry, toolID: String?, parentToolID: String? = nil) -> Bool {
+        guard !finished else { return false }
+        if let owner = toolID.flatMap({ toolOwners[$0] }), owner != .node(mainID) {
+            guard let id = nodeID(owner) else { return true }
+            if id != mainID { append(entry, to: id); return true }
+        }
+        if let parentToolID {
+            let child = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: parentToolID)
+            if nodes[child] != nil { append(entry, to: child) }
+            return true
+        }
+        return false
+    }
     private func boundedPending(_ pending: PendingAgent, agent: String) -> PendingAgent {
         let metadata = pending.metadata
         let temporary = ExecutionGraphNode(id: ExecutionGraphSupport.identifier(runID, "pending:" + agent), runId: runID,

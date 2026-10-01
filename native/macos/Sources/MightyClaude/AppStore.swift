@@ -194,6 +194,8 @@ final class AppStore: ObservableObject {
 
     let dataDirectory: URL
     let repository: StateRepository
+    /// Pictures agents showed, by hash, under the data directory.
+    let imageCache: AgentImageCache
     let fileStore = ModelSettingsFileStore()
     let providers = ProviderService()
     let pluginDirectory: URL
@@ -240,7 +242,7 @@ final class AppStore: ObservableObject {
     /// batch, so a flood of output never queues ahead of a click.
     private let runEvents = RunEventBatcher(batchLimit: 32)
 
-    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, liveRuns: liveRuns) { [weak self, runEvents] event in
+    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, imageCache: imageCache, liveRuns: liveRuns) { [weak self, runEvents] event in
         if runEvents.push(event) { Task { @MainActor in self?.applyRunEvents() } }
     }
 
@@ -262,6 +264,8 @@ final class AppStore: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         dataDirectory = profile.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? support.appendingPathComponent("MightyClaude Native", isDirectory: true)
         repository = StateRepository(directory: dataDirectory, legacyStateURL: profile == nil ? StateRepository.defaultLegacyStateURL() : nil)
+        imageCache = AgentImageCache(directory: dataDirectory.appendingPathComponent("image-cache", isDirectory: true))
+        AgentImageLibrary.shared.cache = imageCache
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("mods/mighty-bridge", isDirectory: true)
         pluginDirectory = bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil } ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("mods/mighty-bridge")
     }
@@ -874,6 +878,8 @@ final class AppStore: ObservableObject {
         if event.type == "status", let provider = snapshot.sessions.first(where: { $0.id == event.sessionId })?.provider { providerLastActive[provider] = receivedAt }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
+        // Files a finished run wrote may now be readable pictures.
+        if event.type == "status", ["completed", "error", "stopped"].contains(event.status ?? "") { AgentImageLibrary.shared.forgetMissingFiles() }
     }
 
     func toggleTheme() { snapshot.theme = snapshot.theme == "light" ? "dark" : "light" }

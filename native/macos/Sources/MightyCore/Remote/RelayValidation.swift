@@ -23,7 +23,7 @@ enum RemoteValidation {
         case "log":
             guard let entry = value.entry else { return false }
             if let activity = entry.activity, !ActivitySupport.valid(activity) { return false }
-            return CoreValidation.identifier(entry.id) && ["user", "assistant", "system", "output", "error"].contains(entry.kind) && entry.text.utf8.count <= 131_072 && (entry.provider == nil || ProviderOptions.ids.contains(entry.provider!))
+            return CoreValidation.identifier(entry.id) && LogEntryKinds.stored.contains(entry.kind) && entry.text.utf8.count <= 131_072 && (entry.provider == nil || ProviderOptions.ids.contains(entry.provider!))
         default: return false
         }
     }

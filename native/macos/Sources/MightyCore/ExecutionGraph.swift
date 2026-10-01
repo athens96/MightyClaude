@@ -146,12 +146,13 @@ public enum ExecutionGraphSupport {
         var entries: [LogEntry] = []
         for var entry in node.entries.suffix(maximumEntries).reversed() {
             guard CoreValidation.identifier(entry.id), seen.insert(entry.id).inserted,
-                  ["user", "assistant", "system", "output", "error"].contains(entry.kind),
+                  LogEntryKinds.stored.contains(entry.kind),
                   entry.provider.map(ProviderOptions.ids.contains) ?? true,
                   entry.timestamp.utf8.count <= 80, AgentRunTiming.parseTimestamp(entry.timestamp) != nil,
                   remaining > 256 else { continue }
             entry.activity = entry.activity.flatMap { ActivitySupport.normalized($0, restoring: restoring) }
-            let metadata = entry.id.utf8.count + entry.timestamp.utf8.count + entry.kind.utf8.count + (entry.provider?.utf8.count ?? 0)
+            entry.images = entry.kind == "image" ? AgentImageSupport.normalized(entry.images) : nil
+            let metadata = entry.id.utf8.count + entry.timestamp.utf8.count + entry.kind.utf8.count + (entry.provider?.utf8.count ?? 0) + AgentImageSupport.approximateBytes(entry.images)
             var activityBytes = entry.activity.map { $0.id.utf8.count + $0.kind.utf8.count + $0.state.utf8.count + $0.provider.utf8.count + $0.summary.utf8.count + ($0.toolName?.utf8.count ?? 0) + ($0.output?.utf8.count ?? 0) } ?? 0
             if metadata + activityBytes >= remaining { entry.activity = nil; activityBytes = 0 }
             let available = max(0, remaining - metadata - activityBytes)

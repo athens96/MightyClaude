@@ -17,6 +17,8 @@ struct AgentTranscriptView: NSViewRepresentable {
     /// Graph blocks draw a resize handle over their bottom-right corner; keep
     /// room under the last line so the handle never covers it.
     var clearsCornerHandle = false
+    /// The workspace Markdown pictures may be read from; see `AgentImagePaths`.
+    var imageRoot: URL? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     /// The corner handle's 22pt glyph plus its 2pt padding, and a little air.
@@ -31,7 +33,7 @@ struct AgentTranscriptView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.textView?.onFocus = onFocus
         context.coordinator.onReference = onReference
-        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog)
+        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot)
     }
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: AgentTranscriptCoordinator) {
         coordinator.onReference = nil
@@ -110,6 +112,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var records: [GraphResponseRecord]
         var childBlocks: [String: GraphChildBlock]
         var catalog: [ModelOption]
+        var imageRoot: URL?
     }
     private struct Cached {
         let entry: LogEntry
@@ -121,6 +124,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let records: [GraphResponseRecord]
         let childBlocks: [String: GraphChildBlock]
         let catalog: [ModelOption]
+        let imageRoot: URL?
         let value: NSAttributedString
     }
     var onReference: ((String, Int?) -> Void)?
@@ -159,12 +163,26 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         scroll.autohidesScrollers = true
         scroll.documentView = editor
         textView = editor; scrollView = scroll
+        NotificationCenter.default.addObserver(self, selector: #selector(imageDidLoad(_:)), name: AgentImageLibrary.didLoad, object: nil)
         return scroll
     }
 
+    /// Pictures finished loading (posted once per batch): lay out and redraw
+    /// only their attachment characters. Cells read the library when they
+    /// draw, so nothing else of the transcript is rebuilt.
+    @objc private func imageDidLoad(_ notification: Notification) {
+        guard let ids = notification.userInfo?[AgentImageLibrary.idsKey] as? Set<String>, !ids.isEmpty,
+              let editor = textView, let storage = editor.textStorage, let manager = editor.layoutManager, storage.length > 0 else { return }
+        storage.enumerateAttribute(AgentTranscriptFormat.imageAttribute, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let id = value as? String, ids.contains(id) else { return }
+            manager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+            manager.invalidateDisplay(forCharacterRange: range)
+        }
+    }
+
     func update(entries: [LogEntry], provider: String, running: Bool, dark: Bool, references: Bool = false,
-                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = []) {
-        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog)
+                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil) {
+        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot)
         applyLatest()
     }
 
@@ -182,10 +200,10 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
             if let old = cache[entry.id], old.entry == entry, old.provider == input.provider,
                old.running == input.running, old.dark == input.dark, old.expanded == isExpanded, old.references == input.references,
                old.records == input.records, old.childBlocks == input.childBlocks,
-               old.catalog == input.catalog { value = old.value }
+               old.catalog == input.catalog, old.imageRoot == input.imageRoot { value = old.value }
             else {
-                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog)
-                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, value: value)
+                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot)
+                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, value: value)
             }
             segments.append(.init(id: entry.id, range: NSRange(location: output.length, length: value.length), value: value))
             output.append(value)
@@ -193,6 +211,12 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let document = AgentTranscriptDocument(value: output, segments: segments)
         editor.replaceDocument(document)
         applied = input
+    }
+
+    /// A picture opens larger; its context menu has the other actions.
+    func textView(_ textView: NSTextView, clickedOn cell: any NSTextAttachmentCellProtocol, in cellFrame: NSRect, at charIndex: Int) {
+        guard let cell = cell as? AgentImageAttachmentCell else { return }
+        AgentImageActions.open(cell.key)
     }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -482,6 +506,11 @@ final class AgentTranscriptTextView: SelectableTextView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
         let point = convert(event.locationInWindow, from: nil)
+        if let picture = imageCell(at: point) {
+            let items = AgentImageActions.menuItems(picture.key)
+            for (offset, item) in items.enumerated() { menu.insertItem(item, at: offset) }
+            menu.insertItem(.separator(), at: items.count)
+        }
         let index = characterIndexForInsertion(at: point)
         contextCode = index < (textStorage?.length ?? 0) ? textStorage?.attribute(AgentTranscriptFormat.codeAttribute, at: index, effectiveRange: nil) as? String : nil
         if contextCode != nil {
@@ -490,6 +519,19 @@ final class AgentTranscriptTextView: SelectableTextView {
             item.target = self; menu.addItem(item)
         }
         return menu
+    }
+
+    /// The picture drawn under a point in view coordinates, if any.
+    func imageCell(at point: NSPoint) -> AgentImageAttachmentCell? {
+        guard let manager = layoutManager, let container = textContainer, let storage = textStorage, storage.length > 0 else { return nil }
+        let local = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        var fraction: CGFloat = 0
+        let glyph = manager.glyphIndex(for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
+        guard glyph < manager.numberOfGlyphs,
+              manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container).contains(local) else { return nil }
+        let index = manager.characterIndexForGlyph(at: glyph)
+        guard index < storage.length, let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? NSTextAttachment else { return nil }
+        return attachment.attachmentCell as? AgentImageAttachmentCell
     }
 
     @objc private func copyCode() {
