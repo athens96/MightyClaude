@@ -64,6 +64,17 @@ python3 scripts/make-update-manifest.py --macos release/MightyClaude-macos.zip \
 - `MIGHTY_UPDATE_URL`을 주면 `MightyUpdateManifestURL`로 Info.plist에 들어가 **유일한** 주소가 된다. 빌드에 이 값이 있으면 설정 화면에 읽기 전용으로 표시되며, 사용자 입력 칸은 나타나지 않는다. 빌드에 없을 때만 설정 화면에서 주소를 입력할 수 있다.
 - GitHub Actions는 저장소 변수 `MIGHTY_UPDATE_URL`(앱이 확인할 latest.json 주소), `MIGHTY_UPDATE_PUBLIC_KEY`(공개 키), `MIGHTY_DOWNLOAD_BASE`(패키지를 올릴 폴더의 루트 주소, 여기에 `/<버전>`이 붙는다)와 시크릿 `MIGHTY_UPDATE_SIGNING_KEY`(개인 키 파일 내용)를 읽는다. `MIGHTY_DOWNLOAD_BASE`가 없으면 manifest 단계를 건너뛰고, 있으면 macOS 아티팩트에 `MightyClaude-macos.zip`, `latest.json`, `latest.unsigned.json`을 담는다.
 
+## 크기 게이트
+
+앱은 512 MiB보다 큰 패키지를 아예 받지 않으므로(`AppUpdate.maximumPackageBytes`), 그보다 커진 릴리스는 기존 설치본이 업데이트할 수 없는 죽은 패키지가 된다. 그래서 **패키징 직후, 아무것도 올리기 전에** 480 MiB 게이트를 돌린다. 번들 브라우저 엔진과 WebRTC 프레임워크가 릴리스마다 조금씩 커져도 다음 빌드가 갑자기 설치 불가가 되지 않도록 512 MiB 상한보다 일찍 막는다.
+
+```bash
+ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
+scripts/check-release-size.sh release/MightyClaude-macos.zip   # 480 MiB를 넘으면 0이 아닌 코드로 끝난다
+```
+
+인자 없이 부르면 `release/MightyClaude-macos.zip`을 본다. 게이트가 실패하면 올리지 않고 패키지를 줄인다(번들 리소스·프레임워크부터). `.github/workflows/native-macos.yml`도 패키징 단계와 아티팩트 업로드 사이에서 같은 스크립트를 돌린다. `scripts/tests/test-release-size-gate.sh`가 479 MiB·481 MiB 희소 파일로 이 경계를 확인한다.
+
 ## Cloudflare에 올리기
 
 R2 공개 버킷이나 Pages 어느 쪽이든 같은 폴더 구조면 된다.
@@ -73,7 +84,7 @@ mightyclaude/latest.json                      ← MIGHTY_UPDATE_URL
 mightyclaude/0.2.0/MightyClaude-macos.zip     ← latest.json의 macos.url
 ```
 
-새 버전을 낼 때: `VERSION`을 올리고 → 빌드·패키징 → `make-update-manifest.py`로 `latest.json` 생성 → 패키지를 버전 폴더에, `latest.json`을 고정 위치에 업로드. `latest.json`은 캐시가 길게 잡히지 않도록 `Cache-Control: no-cache` 정도로 둔다.
+새 버전을 낼 때: `VERSION`을 올리고 → 빌드·패키징 → `scripts/check-release-size.sh`로 크기 게이트 통과 → `make-update-manifest.py`로 `latest.json` 생성 → 패키지를 버전 폴더에, `latest.json`을 고정 위치에 업로드. `latest.json`은 캐시가 길게 잡히지 않도록 `Cache-Control: no-cache` 정도로 둔다.
 
 ## 한계
 

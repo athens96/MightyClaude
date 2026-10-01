@@ -88,6 +88,8 @@ jobs:
           if-no-files-found: warn
       - name: Package macOS app with executable modes and hidden resources
         run: ditto -c -k --sequesterRsrc --keepParent release/native-macos/MightyClaude.app release/MightyClaude-macos.zip
+      - name: Gate the release package size before upload
+        run: scripts/check-release-size.sh release/MightyClaude-macos.zip
       - uses: actions/upload-artifact@v4
         with:
           name: MightyClaude-native-macos
