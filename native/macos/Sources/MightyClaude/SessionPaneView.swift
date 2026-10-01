@@ -124,7 +124,7 @@ struct SessionPaneView: View {
         let on = store.statusLineEnabled
         return Button { store.statusLineEnabled.toggle() } label: {
             Image(systemName: on ? "rectangle.bottomthird.inset.filled" : "rectangle").font(.system(size: 12)).frame(width: 16, height: 32)
-                .foregroundStyle(on ? Palette.accent : Color.secondary)
+                .foregroundStyle(on ? Palette.accent : Palette.ink2)
         }
         .buttonStyle(.plain)
         .help(on ? "상태 줄 숨기기 · settings.json의 statusLine 출력을 입력창 아래에 보여주는 중" : "상태 줄 보이기 · settings.json의 statusLine 출력을 입력창 아래에 표시")
@@ -146,7 +146,6 @@ struct SessionPaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             if localTerminal { LocalTerminalPane(session: session) }
             else {
                 output
@@ -158,7 +157,6 @@ struct SessionPaneView: View {
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
                     WebOpenChoicePanel(request: request).id(request.id)
                 }
-                Divider()
                 composer
             }
         }
@@ -181,69 +179,133 @@ struct SessionPaneView: View {
         store.selectSession(session.id)
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) {
-                HStack(spacing: 2) {
-                    agentModeButton("기본", mode: "default", symbol: "text.alignleft")
-                    agentModeButton("마이티", mode: "mighty", symbol: "point.3.connected.trianglepath.dotted")
-                }
-                .padding(2).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
-                if session.agentViewMode == "mighty", ["claude", "codex"].contains(session.provider) {
-                    Button { store.openPluginBrowser(sessionID: session.id) } label: {
-                        Image(systemName: "puzzlepiece.extension").font(.system(size: 12))
-                            .frame(width: 26, height: 24)
-                    }
-                    .buttonStyle(.plain).disabled(store.hasModal)
-                    .help("\(ProviderOptions.label(session.provider)) 플러그인 · 설치 목록 및 마켓플레이스")
-                    .accessibilityLabel("\(ProviderOptions.label(session.provider)) 플러그인")
-                    .accessibilityIdentifier("mighty-plugins-\(session.id)")
-                }
-            }
-            if session.kind != "shell" { AgentSessionElapsedView(companion: store.companion, sessionID: session.id).fixedSize(horizontal: true, vertical: false) }
-            Spacer(minLength: 2)
-            if store.agentTerminals[session.id] != nil {
-                Button { store.openAgentTerminalPane(session.id, select: true) } label: {
-                    Image(systemName: "terminal").font(.system(size: 12)).frame(width: 22, height: 24)
-                }
-                .buttonStyle(.plain).disabled(store.hasModal)
-                .help(L("agentTerminal.terminalPane.open")).accessibilityLabel(L("agentTerminal.terminalPane.open"))
-                .accessibilityIdentifier("agent-terminal-open-\(session.id)")
-            }
-            HStack(spacing: 4) { StatusDot(status: session.status); Text(Palette.status(session.status)).font(.system(size: 9)) }.foregroundStyle(.secondary)
-            Menu {
-                Button("이름 변경…") { store.beginRenameSession(session.id) }.disabled(store.hasModal)
-                Button(store.activePaneLayoutMode == "focus" ? "이전 배치로 보기" : "집중 보기") { store.togglePaneFocus(session.id) }
-                if localTerminal {
-                    Button("이전 명령 실행 기록…") { store.terminalHistorySession = session }
-                }
-                Button("실행 기록 복사") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(session.logs.map { "[\(role($0))] \($0.text)" }.joined(separator: "\n\n"), forType: .string)
-                }.disabled(session.logs.isEmpty)
-                if session.kind != "shell" {
-                    Button("새 대화로 시작") { store.resetConversation(session.id) }.disabled(running || session.resumeId == nil)
-                }
-                Divider()
-                Button("실행 창 닫기", role: .destructive) { store.closeSession(session.id) }
-            } label: { Image(systemName: "ellipsis").font(.system(size: 12)) }
-            .menuStyle(.borderlessButton).frame(width: 18).help("실행 창 메뉴")
+    /// The pane as concept D draws it: the shell keeps the slim ink bar; an agent pane
+    /// gets the hero, filled in its status colour.
+    @ViewBuilder private var header: some View {
+        if session.kind == "shell" {
+            SlimPaneHeader(kind: SessionKind.shell, title: session.title,
+                           subtitle: localTerminal ? L("dashboard.kind.shell") + " · " + L("phone.card.localTerminal") : L("dashboard.kind.shell"),
+                           status: Palette.status(session.status)) { paneMenu(ink: Palette.onStatus) }
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
+        } else {
+            hero
         }
-        .padding(.horizontal, 13).padding(.vertical, 7)
-        .contentShape(Rectangle())
-        .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
     }
 
-    private func agentModeButton(_ title: String, mode: String, symbol: String) -> some View {
+    /// The card the hero reads: the pane as the dashboard sees it, running while a
+    /// request is still being started. The hero never shows the last activity line, so
+    /// the log scan behind it is skipped on every streamed redraw.
+    private var heroCard: WorkDashboard.Card {
+        var shown = session
+        if running { shown.status = "running" }
+        return WorkDashboard.card(shown, permissions: store.toolPermissions[session.id], activity: false)
+    }
+
+    private var hero: some View {
+        let card = heroCard
+        let ink = Palette.heroInk(card.tone)
+        let usageModel = session.sessionUsage?.provider == session.provider ? session.sessionUsage?.model : nil
+        let model = card.model ?? usageModel
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(session.title).font(Palette.heading(17)).lineLimit(1).truncationMode(.tail)
+                    .help(session.titleTooltip ?? session.title)
+                    .accessibilityAddTraits(.isHeader)
+                HeroStatusPill(text: card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : Palette.status(card.status), ink: ink)
+                Spacer(minLength: 6)
+                heroControls(ink: ink)
+            }
+            HStack(alignment: .bottom, spacing: 12) {
+                PaneHeroFigures(sessionID: session.id, figures: PaneHero.figures(session), running: running)
+                Spacer(minLength: 6)
+                HStack(spacing: 4) {
+                    Text(ProviderOptions.label(session.provider))
+                    if ProviderOptions.isBeta(session.provider) { BetaBadge() }
+                    if let model { Text("· " + model).truncationMode(.middle) }
+                }
+                .font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                .help(model.map { "\(ProviderOptions.label(session.provider)) · \($0)" } ?? ProviderOptions.label(session.provider))
+            }
+        }
+        .foregroundStyle(ink)
+        .padding(.horizontal, 15).padding(.top, 11).padding(.bottom, 12)
+        .background(Palette.heroFill(card.tone), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 4)
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pane-hero-\(session.id)")
+    }
+
+    @ViewBuilder private func heroControls(ink: Color) -> some View {
+        if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) {
+            HStack(spacing: 2) {
+                agentModeButton("기본", mode: "default", symbol: "text.alignleft", ink: ink)
+                agentModeButton("마이티", mode: "mighty", symbol: "point.3.connected.trianglepath.dotted", ink: ink)
+            }
+            .padding(2).background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .fixedSize()
+            if session.agentViewMode == "mighty", ["claude", "codex"].contains(session.provider) {
+                Button { store.openPluginBrowser(sessionID: session.id) } label: {
+                    Image(systemName: "puzzlepiece.extension").font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 24).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).disabled(store.hasModal)
+                .help("\(ProviderOptions.label(session.provider)) 플러그인 · 설치 목록 및 마켓플레이스")
+                .accessibilityLabel("\(ProviderOptions.label(session.provider)) 플러그인")
+                .accessibilityIdentifier("mighty-plugins-\(session.id)")
+            }
+        }
+        if store.agentTerminals[session.id] != nil {
+            Button { store.openAgentTerminalPane(session.id, select: true) } label: {
+                Image(systemName: "terminal").font(.system(size: 12, weight: .semibold)).frame(width: 22, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).disabled(store.hasModal)
+            .help(L("agentTerminal.terminalPane.open")).accessibilityLabel(L("agentTerminal.terminalPane.open"))
+            .accessibilityIdentifier("agent-terminal-open-\(session.id)")
+        }
+        paneMenu(ink: ink)
+    }
+
+    private func paneMenu(ink: Color) -> some View {
+        Menu {
+            Button("이름 변경…") { store.beginRenameSession(session.id) }.disabled(store.hasModal)
+            Button(store.activePaneLayoutMode == "focus" ? "이전 배치로 보기" : "집중 보기") { store.togglePaneFocus(session.id) }
+            if localTerminal {
+                Button("이전 명령 실행 기록…") { store.terminalHistorySession = session }
+            }
+            Button("실행 기록 복사") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(session.logs.map { "[\(role($0))] \($0.text)" }.joined(separator: "\n\n"), forType: .string)
+            }.disabled(session.logs.isEmpty)
+            if session.kind != "shell" {
+                Button("새 대화로 시작") { store.resetConversation(session.id) }.disabled(running || session.resumeId == nil)
+            }
+            Divider()
+            Button("실행 창 닫기", role: .destructive) { store.closeSession(session.id) }
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
+                .frame(width: 22, height: 24).contentShape(Rectangle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .help("실행 창 메뉴").accessibilityLabel("실행 창 메뉴")
+    }
+
+    /// One side of the hero's 기본 | 마이티 switch: the chosen side is a white chip, the
+    /// other keeps the hero's ink on the darker track.
+    private func agentModeButton(_ title: String, mode: String, symbol: String, ink: Color) -> some View {
         let selected = (session.agentViewMode ?? "default") == mode
         return Button {
             store.selectSession(session.id)
             store.setAgentViewMode(session.id, mode: mode)
         } label: {
             Label(title, systemImage: symbol)
-                .font(.system(size: 10, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 7).padding(.vertical, 4)
-                .background(selected ? Palette.accent.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                .font(.system(size: 11, weight: selected ? .bold : .semibold))
+                .foregroundStyle(selected ? Palette.ink : ink)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(selected ? Palette.panel : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title) 모드")
@@ -386,9 +448,13 @@ struct SessionPaneView: View {
         store.saveSettings(session.id, settings: settings)
     }
 
+    private var showsMightyGraph: Bool {
+        session.kind == "claude" && MightyGraphSupport.providers.contains(session.provider) && session.agentViewMode == "mighty"
+    }
+
     private var output: some View {
         Group {
-            if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider), session.agentViewMode == "mighty" {
+            if showsMightyGraph {
                 let retained = session.mightyGraphRuns
                 let history = store.graphHistory(for: session, retained: retained)
                 MightyGraphView(sessionID: session.id, provider: session.provider, runs: history.runs + retained, draft: draft.wrappedValue, running: running,
@@ -403,7 +469,9 @@ struct SessionPaneView: View {
                     onOpenURL: { url in await store.openInAgentBrowser(url, agentPaneId: session.id) },
                     // A pane with no request and no session to read has no history block.
                     retainedStart: history.runs.count, history: retained.isEmpty && session.resumeId == nil ? nil : history,
-                    onLoadOlder: { store.loadOlderGraphHistory(session.id) }) {
+                    onLoadOlder: { store.loadOlderGraphHistory(session.id) },
+                    viewMode: session.mightyViewMode,
+                    onViewMode: { store.setGraphViewMode(session.id, mode: $0) }) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {
@@ -411,11 +479,14 @@ struct SessionPaneView: View {
             } else {
                 AgentTranscriptView(sessionId: session.id, provider: session.provider, running: running, entries: session.logs,
                                     onFocus: { store.selectSession(session.id) },
-                                    imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) })
+                                    imageRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
+                                    cards: true)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 12)
+        // Concept D: the conversation sits on the raised grey, its replies on white cards.
+        .background(showsMightyGraph ? Color.clear : Palette.raised)
     }
 
     private var emptyOutput: some View {
@@ -430,7 +501,7 @@ struct SessionPaneView: View {
                 if session.kind != "shell" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
             }
             Text(session.kind == "shell" ? "명령마다 새 셸을 시작합니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다." : "프로젝트를 설명하거나, 수정할 내용을 입력하세요. 이 창의 대화는 다음 실행에서도 이어집니다.")
-                .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(Palette.ink2).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
     }
 
@@ -450,7 +521,7 @@ struct SessionPaneView: View {
                         .padding(.horizontal, 12)
                 } else if store.styleNeedsRechoosing(session) {
                     Text("이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요")
-                        .font(.system(size: 10)).foregroundStyle(.orange).padding(.horizontal, 12)
+                        .font(.system(size: 10)).foregroundStyle(Palette.waitText).padding(.horizontal, 12)
                         .accessibilityIdentifier("mighty-style-changed-\(session.id)")
                 }
                 if let style {
@@ -504,7 +575,7 @@ struct SessionPaneView: View {
             if importingAttachments {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text("첨부 파일 읽는 중…").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("첨부 파일 읽는 중…").font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 }.padding(.horizontal, 12)
             }
             if let attachmentError = store.attachmentErrors[session.id] {
@@ -514,16 +585,16 @@ struct SessionPaneView: View {
                     Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
                         .buttonStyle(.plain).accessibilityLabel("첨부 안내 닫기")
                 }
-                .font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 12)
+                .font(.system(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, 12)
                 .accessibilityIdentifier("attachment-error-\(session.id)")
             }
             if let problem = store.inputMethodProblem, composerFocused {
                 HStack(alignment: .top, spacing: 7) {
-                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? .green : .orange).padding(.top, 1)
+                    Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? Palette.doneText : Palette.waitText).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(problem.recoveryState == .reconnected ? "입력기 연결을 확인했습니다" : "입력기 연결 상태를 확인해 주세요").fontWeight(.medium)
                         Text(problem.recoveryState.message)
-                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                         if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
                     }
                     Spacer(minLength: 4)
@@ -542,7 +613,7 @@ struct SessionPaneView: View {
                 HStack(alignment: .top, spacing: 7) {
                     ProgressView().controlSize(.mini).padding(.top, 1)
                     Text(L("settings.cliUpdate.backgroundUpdateQueued", ["provider": ProviderOptions.label(session.provider)]))
-                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                 }
                 .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
                 .accessibilityElement(children: .combine).accessibilityIdentifier("background-update-\(session.id)")
@@ -552,7 +623,7 @@ struct SessionPaneView: View {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("입력 가능 · 실행 준비 필요").fontWeight(.medium)
-                        Text(reason).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(reason).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .font(.system(size: 11)).lineSpacing(2)
@@ -567,8 +638,11 @@ struct SessionPaneView: View {
                                onTrust: { store.trustStatusLine($0, sessionID: session.id) }, onDismiss: { store.dismissUntrustedStatusLine(sessionID: session.id) })
             }
         }
-        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 15))
-        .overlay { RoundedRectangle(cornerRadius: 15).stroke(attachmentDropTargeted || composerFocused ? Palette.accent.opacity(0.8) : Palette.border, lineWidth: attachmentDropTargeted || composerFocused ? 1.25 : 1).allowsHitTesting(false) }
+        // Concept D: a white rounded card with the D border; the accent ring while focused.
+        // The shadow is the card shape's own, so the IME text view inside is never
+        // drawn through a shadow pass.
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.panel).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(attachmentDropTargeted || composerFocused ? Palette.accent.opacity(0.8) : Palette.border, lineWidth: attachmentDropTargeted || composerFocused ? 1.5 : 1).allowsHitTesting(false) }
         .onDrop(of: [.fileURL], isTargeted: $attachmentDropTargeted) { providers in
             store.importAttachments(session.id, providers: providers)
             return !providers.isEmpty
@@ -641,12 +715,12 @@ struct SessionPaneView: View {
                     .fixedSize(horizontal: true, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text("명령 실행").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    Text("명령 실행").font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 HStack(alignment: .center, spacing: 6) {
                     if session.resumeId != nil {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(.secondary).help("이전 대화를 이어갑니다.").accessibilityLabel("대화 이어짐")
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(Palette.ink2).help("이전 대화를 이어갑니다.").accessibilityLabel("대화 이어짐")
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
                     if showsStatusLineToggle { statusLineToggle }
@@ -654,10 +728,12 @@ struct SessionPaneView: View {
                         // With text waiting, stop shrinks beside the send button
                         // so Enter and the arrow keep meaning "send".
                         let compact = canSend
+                        // Concept D: stop is the red square, send the round run blue.
                         Button(action: stopRun) {
                             Image(systemName: "stop.fill").font(.system(size: compact ? 10 : 12, weight: .semibold)).frame(width: compact ? 28 : 32, height: compact ? 28 : 32)
-                                .foregroundStyle(compact ? Palette.accent : Palette.canvas)
-                                .background(compact ? Palette.accent.opacity(0.14) : Palette.accent, in: Circle()).contentShape(Circle())
+                                .foregroundStyle(Palette.onStatus)
+                                .background(Palette.err, in: RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
+                                .contentShape(RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
                         }
                         .buttonStyle(.plain).disabled(stopping)
                         .help(stopping ? "중지하는 중…" : "작업 중지")
@@ -668,8 +744,8 @@ struct SessionPaneView: View {
                     if !running || canSend {
                         Button { submitComposer() } label: {
                             Image(systemName: running ? "text.badge.plus" : "arrow.up").font(.system(size: running ? 13 : 14, weight: .semibold)).frame(width: 32, height: 32)
-                                .foregroundStyle(canSend ? Palette.canvas : Color.secondary)
-                                .background(canSend ? Palette.accent : Color.primary.opacity(0.08), in: Circle()).contentShape(Circle())
+                                .foregroundStyle(canSend ? Palette.onStatus : Palette.ink2)
+                                .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
                         }
                         .buttonStyle(.plain).disabled(!canSend)
                         .help(running ? (steers ? "다음 요청으로 대기 (Enter) · 실행 중인 Claude에 바로 전달하려면 ⌘Enter" : "현재 작업이 끝난 뒤 실행 (Enter)") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")

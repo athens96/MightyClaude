@@ -156,7 +156,7 @@ struct SessionContextRing: View {
         guard let value = usage?.contextPercent, value.isFinite else { return nil }
         return value
     }
-    private var tint: Color { (percent ?? 0) >= 95 ? .orange : Palette.accent }
+    private var tint: Color { (percent ?? 0) >= 95 ? Palette.waitText : Palette.accent }
 
     var body: some View {
         ZStack {

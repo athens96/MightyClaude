@@ -13,7 +13,7 @@ struct ComponentsSettingsSection: View {
             ForEach(store.components) { component in row(component) }
             if let message = store.componentMessage {
                 HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: store.componentMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle").foregroundStyle(store.componentMessageIsError ? Color.orange : Color.green).padding(.top, 1)
+                    Image(systemName: store.componentMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle").foregroundStyle(store.componentMessageIsError ? Palette.waitText : Palette.doneText).padding(.top, 1)
                     Text(message).font(.system(size: 11)).foregroundStyle(store.componentMessageIsError ? .primary : .secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 .accessibilityIdentifier("components-message")
@@ -80,10 +80,10 @@ struct ComponentsSettingsSection: View {
 
     private func stateLabel(_ state: String) -> some View {
         let (text, color): (String, Color) = switch state {
-        case "installed": (L("settings.components.statusInstalled"), .green)
-        case "missing": (L("settings.components.statusMissing"), .orange)
-        case "attention": (L("settings.components.statusAttention"), .orange)
-        case "unsupported": (L("settings.components.statusUnsupported"), .red)
+        case "installed": (L("settings.components.statusInstalled"), Palette.doneText)
+        case "missing": (L("settings.components.statusMissing"), Palette.waitText)
+        case "attention": (L("settings.components.statusAttention"), Palette.waitText)
+        case "unsupported": (L("settings.components.statusUnsupported"), Palette.errText)
         default: (L("settings.components.statusChecking"), .secondary)
         }
         return Text(text).font(.system(size: 10, weight: .medium)).foregroundStyle(color)
@@ -109,7 +109,7 @@ struct ToolkitSettingsSection: View {
         Section {
             if let err = store.toolkitFileError {
                 HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.orange).padding(.top, 1)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.waitText).padding(.top, 1)
                     Text(L("settings.toolkit.errorBanner") + " " + err).font(.system(size: 11)).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
             }
@@ -154,12 +154,12 @@ struct ToolkitSettingsSection: View {
                 if entry.source == .bundled {
                     Text(L("settings.toolkit.bundledBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.horizontal, 4).padding(.vertical, 1).background(Color.secondary.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 3))
                 } else if approval != nil {
-                    Text(L("settings.toolkit.approvedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(.green).padding(.horizontal, 4).padding(.vertical, 1).background(Color.green.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 3))
+                    Text(L("settings.toolkit.approvedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText).padding(.horizontal, 4).padding(.vertical, 1).background(Palette.doneSoft).clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 Spacer()
                 Text(isInstalled ? L("settings.toolkit.statusInstalled") : L("settings.toolkit.statusMissing"))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(isInstalled ? Color.green : Color.orange)
+                    .foregroundStyle(isInstalled ? Palette.doneText : Palette.waitText)
             }
             if entry.source == .user {
                 HStack(spacing: 6) {
@@ -256,8 +256,8 @@ struct ToolkitSettingsSection: View {
 
     @ViewBuilder private func verdictIcon(_ verdict: ToolkitRunItem.Verdict) -> some View {
         switch verdict {
-        case .installed: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.system(size: 11))
-        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red).font(.system(size: 11))
+        case .installed: Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.doneText).font(.system(size: 11))
+        case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.errText).font(.system(size: 11))
         case .skipped: Image(systemName: "minus.circle").foregroundStyle(.secondary).font(.system(size: 11))
         }
     }
@@ -272,8 +272,8 @@ struct ToolkitSettingsSection: View {
 
     private func verdictColor(_ verdict: ToolkitRunItem.Verdict) -> Color {
         switch verdict {
-        case .installed: .green
-        case .failed: .red
+        case .installed: Palette.doneText
+        case .failed: Palette.errText
         case .skipped: .secondary
         }
     }

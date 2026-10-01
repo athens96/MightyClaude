@@ -3,6 +3,8 @@ import MightyCore
 
 /// The options after `next:` in the last finished reply's `◆` breadcrumb,
 /// drawn right under the transcript. A tap fills the composer; nothing is sent.
+/// Concept D: white rows, each with its label and a blue arrow, stacked under a
+/// small "다음 작업 제안" heading, as on the phone.
 struct NextActionButtons: View {
     let sessionID: String
     let entryID: String
@@ -10,31 +12,35 @@ struct NextActionButtons: View {
     let onFill: (String) -> Void
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.turn.down.right").font(.system(size: 10)).foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-                ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
-                    Button { onFill(action.fill) } label: {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(L("pane.nextActions.label"))
+                .font(.system(size: 11.5, weight: .bold)).foregroundStyle(Palette.ink2)
+                .padding(.horizontal, 3)
+                .accessibilityHidden(true)
+            ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
+                Button { onFill(action.fill) } label: {
+                    HStack(spacing: 10) {
                         Text(verbatim: action.displayLabel)
-                            .font(.system(size: 11)).lineLimit(1).truncationMode(.tail)
-                            .frame(maxWidth: 280, alignment: .leading)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Palette.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
-                            .overlay { RoundedRectangle(cornerRadius: 6).stroke(Palette.accent.opacity(0.35), lineWidth: 1) }
-                            .contentShape(RoundedRectangle(cornerRadius: 6))
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
+                            .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "arrow.right").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
+                            .accessibilityHidden(true)
                     }
-                    .buttonStyle(.plain)
-                    .help(action.displayLabel)
-                    .accessibilityLabel(action.displayLabel)
-                    .accessibilityHint(L("pane.nextActions.fillHint"))
-                    .accessibilityIdentifier("next-action-\(sessionID)-\(index)")
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Palette.border, lineWidth: 1) }
+                    .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                .buttonStyle(.plain)
+                .help(action.displayLabel)
+                .accessibilityLabel(action.displayLabel)
+                .accessibilityHint(L("pane.nextActions.fillHint"))
+                .accessibilityIdentifier("next-action-\(sessionID)-\(index)")
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
         }
-        .scrollIndicators(.hidden)
+        .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .id(entryID)
         .accessibilityElement(children: .contain)

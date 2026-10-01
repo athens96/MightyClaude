@@ -252,7 +252,7 @@ enum MightyGraphInteractionDiagnostics {
             report["actualGraphResizeScreenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph-resized.png").path
 
             let retiredCount = probe.forwardedWheels + probe.nativeWheels
-            let plainHost = NSHostingView(rootView: AgentTranscriptView(sessionId: "wheel-basic", provider: "claude", running: false, entries: entries, onFocus: {}))
+            let plainHost = NSHostingView(rootView: AgentTranscriptView(sessionId: "wheel-basic", provider: "claude", running: false, entries: entries, onFocus: {}, cards: true))
             window.contentView = plainHost
             try await store.waitForSmoke(timeout: 3) { probe.window == nil && descendants(plainHost, as: AgentTranscriptTextView.self).first?.enclosingScrollView != nil }
             guard let plain = descendants(plainHost, as: AgentTranscriptTextView.self).first, let plainScroll = plain.enclosingScrollView else { throw MightyError("기본 출력창 복귀에 실패했습니다.") }
@@ -475,10 +475,10 @@ enum MightyGraphInteractionDiagnostics {
         let status: String
         var body: some View {
             ZStack {
-                Color(nsColor: .windowBackgroundColor)
-                MightyGraphActivityIndicator(status: status, tint: .orange)
+                Palette.canvas
+                MightyGraphActivityIndicator(status: status, tint: Palette.run)
                     .frame(width: 140, height: 52)
-                    .overlay { MightyGraphActivityOutline(status: status, tint: .orange) }
+                    .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
             }
         }
     }

@@ -300,7 +300,7 @@ private struct FilePanePreviewView: View {
         }
         .font(.system(size: 10)).foregroundStyle(.secondary)
         .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(Color.yellow.opacity(0.07))
+        .background(Palette.waitSoft)
     }
 
     private func notice(symbol: String, title: String, detail: String?) -> some View {

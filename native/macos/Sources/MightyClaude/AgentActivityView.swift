@@ -46,7 +46,7 @@ struct AgentLogEntryView: View {
                 Text(entry.text).font(.system(size: 12)).lineSpacing(3).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .foregroundStyle(entry.kind == "error" ? Color.red.opacity(0.9) : Color.secondary)
+            .foregroundStyle(entry.kind == "error" ? Palette.errText : Color.secondary)
             .padding(.vertical, 3)
         }
     }
@@ -80,14 +80,14 @@ struct AgentActivityRow: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: Self.symbol(activity.kind))
                     .font(.system(size: 11, weight: .medium)).frame(width: 15, height: 17)
-                    .foregroundStyle(activity.state == "error" ? Color.red : animating ? Palette.accent : Color.secondary)
+                    .foregroundStyle(activity.state == "error" ? Palette.errText : animating ? Palette.accent : Color.secondary)
                 Text(activity.summary.isEmpty ? activity.toolName ?? "작업" : activity.summary)
                     .font(.system(size: 12, design: monospace ? .monospaced : .default))
                     .lineSpacing(3).lineLimit(expanded ? nil : 2).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if animating { AgentRunningIndicator().padding(.top, 2) }
                 else if sessionRunning && activity.state == "waiting" { Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(Palette.accent).help("대기 중") }
-                else if activity.state == "error" { Text("실패").font(.system(size: 10, weight: .medium)).foregroundStyle(.red) }
+                else if activity.state == "error" { Text("실패").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.errText) }
                 if hasDetails {
                     Button { expanded.toggle() } label: {
                         Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .medium)).frame(width: 18, height: 18)

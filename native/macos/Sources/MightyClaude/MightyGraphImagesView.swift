@@ -12,7 +12,7 @@ struct MightyGraphImagesCard: View {
     let onToggle: () -> Void
     let onOpen: () -> Void
     @ObservedObject private var library = AgentImageLibrary.shared
-    private let tint = Color.pink
+    private let tint = Palette.steerText
 
     private var visible: Int { MightyGraphLayout.visibleImages(count: items.count, expanded: expanded) }
 
@@ -25,10 +25,10 @@ struct MightyGraphImagesCard: View {
                 Image(systemName: "photo.on.rectangle.angled").foregroundStyle(tint)
                 Text(L("graph.images.title")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 3)
-                Text(L("graph.images.count", ["count": "\(items.count)"])).font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                Text(L("graph.images.count", ["count": "\(items.count)"])).font(.system(size: 10)).foregroundStyle(Palette.ink2).monospacedDigit()
                 if foldable {
                     Button(action: onToggle) { Image(systemName: expanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
-                        .buttonStyle(.plain).foregroundStyle(expanded ? Palette.accent : Color.secondary)
+                        .buttonStyle(.plain).foregroundStyle(expanded ? Palette.accent : Palette.ink2)
                         .help(expanded ? L("graph.images.collapse") : L("graph.images.expand"))
                         .accessibilityLabel(expanded ? L("graph.images.collapse") : L("graph.images.expand"))
                         .accessibilityIdentifier("mighty-images-toggle-\(nodeID)")
@@ -44,9 +44,7 @@ struct MightyGraphImagesCard: View {
             .padding(12)
             Spacer(minLength: 0)
         }
-        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).stroke(tint.opacity(0.45), lineWidth: 1) }
+        .mightyBlockCard()
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(nodeID)")
     }
 
@@ -60,7 +58,7 @@ struct MightyGraphImagesCard: View {
                 if more > 0, !expanded { onToggle() } else { AgentImageActions.open(key) }
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7).fill(Palette.subtle)
+                    RoundedRectangle(cornerRadius: 7).fill(Palette.raised)
                     switch state {
                     case .ready(let thumbnail):
                         Image(nsImage: thumbnail.image).resizable().interpolation(.high).scaledToFill()
@@ -68,7 +66,7 @@ struct MightyGraphImagesCard: View {
                     case .loading:
                         ProgressView().controlSize(.small)
                     case .missing:
-                        Image(systemName: "photo.badge.exclamationmark").foregroundStyle(.secondary).help(L("images.missing"))
+                        Image(systemName: "photo.badge.exclamationmark").foregroundStyle(Palette.ink2).help(L("images.missing"))
                     }
                     if more > 0 {
                         Color.black.opacity(0.45)

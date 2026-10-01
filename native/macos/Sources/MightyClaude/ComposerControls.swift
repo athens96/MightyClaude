@@ -16,13 +16,14 @@ struct ComposerPill: View {
             if let provider { ProviderIcon(provider: provider, size: 12).frame(width: 14, height: 14) }
             else if let systemImage { Image(systemName: systemImage).font(.system(size: 12, weight: .medium)).frame(width: 14, height: 14) }
             if !compact { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.tail).frame(width: min(ComposerToolbarMetrics.textWidth(title), maximumTextWidth ?? .greatestFiniteMagnitude)) }
-            if chevron && !compact { Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).opacity(0.6).frame(width: 7) }
+            if chevron && !compact { Image(systemName: "chevron.down").font(.system(size: 7, weight: .semibold)).foregroundStyle(Palette.ink2).frame(width: 7) }
         }
-        .foregroundStyle(active ? Palette.accent : Color.primary.opacity(0.8))
+        // Concept D: a white pill with the D border; the run blue when the setting is on.
+        .foregroundStyle(active ? Palette.accent : Palette.ink)
         .padding(.horizontal, compact ? 0 : 8)
         .frame(width: compact ? ComposerToolbarMetrics.height : nil, height: ComposerToolbarMetrics.height)
-        .background(active ? Palette.accent.opacity(0.12) : Color.primary.opacity(0.045), in: Capsule())
-        .overlay { Capsule().stroke(active ? Palette.accent.opacity(0.25) : Palette.border.opacity(0.7), lineWidth: 0.5).allowsHitTesting(false) }
+        .background(active ? Palette.accentSoft : Palette.panel, in: Capsule())
+        .overlay { Capsule().stroke(active ? Palette.accent.opacity(0.35) : Palette.border, lineWidth: 1).allowsHitTesting(false) }
         .contentShape(Capsule())
         // A menu's custom label must remain one accessibility element. Without
         // grouping, its identifier can land on the first SF Symbol instead of

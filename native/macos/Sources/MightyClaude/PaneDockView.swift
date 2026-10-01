@@ -168,12 +168,16 @@ private struct PaneDockGroup: View {
         node.sessionIds.compactMap { id in store.snapshot.sessions.first { $0.id == id && $0.workspaceId == workspaceId } }
     }
     private var selected: RunSession? { sessions.first { $0.id == node.selectedSessionId } ?? sessions.first }
+    static let slimHeaderKinds: Set<String> = [SessionKind.browser, AgentIOPaneKind.terminal, AgentIOPaneKind.browser, FilePaneKind.kind]
 
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 tabStrip
                 if let selected {
+                    // Concept D: a pane that is not a conversation wears the slim ink bar;
+                    // agent and shell panes draw their own hero or bar.
+                    if PaneDockGroup.slimHeaderKinds.contains(selected.kind) { PaneSlimHeader(session: selected) }
                     if selected.kind == "browser" { BrowserPaneView(session: selected).id(selected.id) }
                     else if selected.kind == AgentIOPaneKind.terminal { AgentTerminalPaneView(session: selected).id(selected.id) }
                     else if selected.kind == AgentIOPaneKind.browser { AgentBrowserPaneView(session: selected).id(selected.id) }
@@ -240,10 +244,10 @@ private struct PaneDockTab: View {
             .allowsHitTesting(false).accessibilityHidden(true)
             .overlay { PaneDockTabHandle(store: store, sessionId: session.id, workspaceId: session.workspaceId, groupId: groupId, title: session.title, nextSessionId: nextSessionId) }
             Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: 30).contentShape(Rectangle()) }
-                .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("\(session.title) 탭 닫기")
+                .buttonStyle(.plain).foregroundStyle(Palette.ink2).accessibilityLabel("\(session.title) 탭 닫기")
         }
         .padding(.trailing, 2).frame(height: 30)
-        .foregroundStyle(selected ? Color.primary : Color.secondary)
+        .foregroundStyle(selected ? Palette.ink : Palette.ink2)
         .background(selected ? Palette.panel : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? Palette.border : Color.clear) }
         .contentShape(RoundedRectangle(cornerRadius: 6))

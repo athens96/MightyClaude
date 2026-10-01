@@ -108,7 +108,7 @@ struct ResumeSessionSheet: View {
                     Text(details).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     if busy {
                         Label(L("resume.recentlyModified"), systemImage: "exclamationmark.circle")
-                            .font(.system(size: 10)).foregroundStyle(.orange).lineLimit(1)
+                            .font(.system(size: 10)).foregroundStyle(Palette.waitText).lineLimit(1)
                             .accessibilityIdentifier("resume-busy-\(item.sessionID)")
                     }
                 }

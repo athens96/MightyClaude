@@ -140,7 +140,7 @@ final class PaneDockGroupAnchorView: NSView {
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: color]
         let text = target.zone.title as NSString; let size = text.size(withAttributes: attributes)
         let textRect = NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
-        NSColor.windowBackgroundColor.withAlphaComponent(0.95).setFill()
+        Palette.nsToken(\.page, alpha: 0.95).setFill()
         NSBezierPath(roundedRect: textRect.insetBy(dx: -12, dy: -7), xRadius: 15, yRadius: 15).fill()
         text.draw(in: textRect, withAttributes: attributes)
     }

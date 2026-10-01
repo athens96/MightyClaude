@@ -10,6 +10,8 @@ final class WorkspaceGitState: ObservableObject {
     private var workspaceKey: String?
     private var cache: [String: WorkspaceGitInfo] = [:]
 
+    /// The live reading, for the observed workspace only. Another workspace's last
+    /// reading may be old, so the dashboard shows no badge for it rather than stale counts.
     func info(for workspace: Workspace) -> WorkspaceGitInfo? {
         workspaceKey == workspace.id + "|" + workspace.path ? info : nil
     }
@@ -42,7 +44,7 @@ struct WorkspaceGitBadge: View {
             if let ahead = info.ahead, ahead > 0 { Text("↑\(ahead)").monospacedDigit() }
             if let behind = info.behind, behind > 0 { Text("↓\(behind)").monospacedDigit() }
         }
-        .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+        .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.ink2)
         .padding(.horizontal, 7).padding(.vertical, 3)
         .background(Palette.subtle, in: Capsule())
         .frame(maxWidth: 260)

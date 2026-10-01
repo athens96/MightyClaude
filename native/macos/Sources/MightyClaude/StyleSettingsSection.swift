@@ -24,7 +24,7 @@ struct StyleSettingsSection: View {
                 Spacer(minLength: 0)
             }
             if let registerError {
-                Label(registerError, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(.orange)
+                Label(registerError, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(Palette.waitText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(L("settings.styles.description"))
@@ -42,7 +42,7 @@ struct StyleSettingsSection: View {
     private var lockBanner: some View {
         VStack(alignment: .leading, spacing: 3) {
             Label(StyleSettingsList.lockedMessage(store.styleTrustPath), systemImage: "exclamationmark.triangle")
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
+                .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.waitText)
             Text(L("settings.styles.lockBanner"))
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

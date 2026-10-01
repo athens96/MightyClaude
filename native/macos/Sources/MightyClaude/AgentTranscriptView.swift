@@ -19,6 +19,13 @@ struct AgentTranscriptView: NSViewRepresentable {
     var clearsCornerHandle = false
     /// The workspace Markdown pictures may be read from; see `AgentImagePaths`.
     var imageRoot: URL? = nil
+    /// Concept D's conversation: ink bubbles, reply cards and tool chips
+    /// (`AgentTranscriptFormat.entry(cards:)`). The graph's blocks keep the plain look.
+    var cards = false
+    /// Set where the transcript sits inside an outer scroll view (the timeline's
+    /// opened block): the wheel goes on to the outer view at the top or bottom edge
+    /// or when everything fits. The pane's own transcript leaves it off.
+    var passesScrollAtEdges = false
     @Environment(\.colorScheme) private var colorScheme
 
     /// The corner handle's 22pt glyph plus its 2pt padding, and a little air.
@@ -31,9 +38,10 @@ struct AgentTranscriptView: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        (scrollView as? AgentTranscriptScrollView)?.passesScrollAtEdges = passesScrollAtEdges
         context.coordinator.textView?.onFocus = onFocus
         context.coordinator.onReference = onReference
-        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot)
+        context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards)
     }
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: AgentTranscriptCoordinator) {
         coordinator.onReference = nil
@@ -113,6 +121,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         var childBlocks: [String: GraphChildBlock]
         var catalog: [ModelOption]
         var imageRoot: URL?
+        var cards: Bool
     }
     private struct Cached {
         let entry: LogEntry
@@ -125,6 +134,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         let childBlocks: [String: GraphChildBlock]
         let catalog: [ModelOption]
         let imageRoot: URL?
+        let cards: Bool
         let value: NSAttributedString
     }
     var onReference: ((String, Int?) -> Void)?
@@ -151,7 +161,9 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         editor.minSize = .zero; editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.autoresizingMask = [.width]
         editor.textContainerInset = NSSize(width: 15, height: AgentTranscriptTextView.topInset)
-        editor.linkTextAttributes = [.foregroundColor: AgentTranscriptFormat.accent, .cursor: NSCursor.pointingHand]
+        // Every link run carries its own colour (the accent, or the bubble's ink where the
+        // accent would fail contrast), so the link attributes add only the cursor.
+        editor.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor, .foregroundColor: NSColor.selectedTextColor]
         editor.setAccessibilityIdentifier("transcript-\(sessionId)")
         editor.setAccessibilityLabel("실행 기록 · 드래그하여 여러 문단 선택")
@@ -181,8 +193,8 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
     }
 
     func update(entries: [LogEntry], provider: String, running: Bool, dark: Bool, references: Bool = false,
-                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil) {
-        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot)
+                records: [GraphResponseRecord] = [], childBlocks: [String: GraphChildBlock] = [:], catalog: [ModelOption] = [], imageRoot: URL? = nil, cards: Bool = false) {
+        latest = Input(entries: entries, provider: provider, running: running, dark: dark, references: references, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards)
         applyLatest()
     }
 
@@ -200,10 +212,10 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
             if let old = cache[entry.id], old.entry == entry, old.provider == input.provider,
                old.running == input.running, old.dark == input.dark, old.expanded == isExpanded, old.references == input.references,
                old.records == input.records, old.childBlocks == input.childBlocks,
-               old.catalog == input.catalog, old.imageRoot == input.imageRoot { value = old.value }
+               old.catalog == input.catalog, old.imageRoot == input.imageRoot, old.cards == input.cards { value = old.value }
             else {
-                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot)
-                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, value: value)
+                value = AgentTranscriptFormat.entry(entry, provider: input.provider, running: input.running, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards)
+                cache[entry.id] = Cached(entry: entry, provider: input.provider, running: input.running, dark: input.dark, expanded: isExpanded, references: input.references, records: input.records, childBlocks: input.childBlocks, catalog: input.catalog, imageRoot: input.imageRoot, cards: input.cards, value: value)
             }
             segments.append(.init(id: entry.id, range: NSRange(location: output.length, length: value.length), value: value))
             output.append(value)
@@ -252,6 +264,11 @@ private final class AgentTranscriptScrollView: NSScrollView {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     private var keepingViewport = false
+    /// See `AgentTranscriptView.passesScrollAtEdges`.
+    var passesScrollAtEdges = false
+    /// Whether the current wheel gesture goes to the outer scroll view; decided when
+    /// it begins, so one gesture never switches views halfway.
+    private var forwardingGesture = false
 
     /// A block that gets shorter (a request preview measuring itself, a live
     /// resize, a collapse) keeps its top fixed in the flipped document, so
@@ -297,7 +314,26 @@ private final class AgentTranscriptScrollView: NSScrollView {
     }
     override func scrollWheel(with event: NSEvent) {
         (documentView as? AgentTranscriptTextView)?.cancelInitialScroll()
-        super.scrollWheel(with: event)
+        guard passesScrollAtEdges else { super.scrollWheel(with: event); return }
+        // A trackpad gesture is decided at its start and kept through its momentum;
+        // a mouse wheel's notches have no phase and are decided one by one.
+        if event.phase == .began || (event.phase.isEmpty && event.momentumPhase.isEmpty) {
+            forwardingGesture = atEdge(scrollingDeltaY: event.scrollingDeltaY)
+        }
+        guard forwardingGesture else { super.scrollWheel(with: event); return }
+        if let outer = superview?.enclosingScrollView { outer.scrollWheel(with: event) }
+        else { nextResponder?.scrollWheel(with: event) }
+    }
+
+    /// True when the transcript cannot move the way the wheel asks: everything fits,
+    /// or it already shows its top (wheel up) or its bottom (wheel down).
+    private func atEdge(scrollingDeltaY delta: CGFloat) -> Bool {
+        let visible = contentView.bounds
+        let height = documentView?.frame.height ?? 0
+        if height <= visible.height + 0.5 { return true }
+        if delta > 0 { return visible.minY <= 0.5 }
+        if delta < 0 { return visible.maxY >= height - 0.5 }
+        return false
     }
     @objc private func userDidScroll(_ notification: Notification) {
         (documentView as? AgentTranscriptTextView)?.cancelInitialScroll()
