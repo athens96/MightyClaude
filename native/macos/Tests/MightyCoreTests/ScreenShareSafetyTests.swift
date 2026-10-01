@@ -455,6 +455,118 @@ struct ScreenShareSafetyTests {
     @Test func killDeadlineIsOneSecond() {
         #expect(ScreenSharePolicy.killDeadline == 1)
     }
+
+    // MARK: - 11. Every kill trigger works with the relay down
+
+    /// A scripted fake peer. With `relayUp == false` every relay-bound
+    /// notification fails, mimicking a dead relay; teardown must still finish
+    /// locally inside the deadline. It also probes whether the host would admit
+    /// injection while the teardown is in flight — i.e. after t0.
+    private final class ScriptedFakePeer: @unchecked Sendable {
+        var relayUp = true
+        private(set) var events: [String] = []
+        private(set) var injectionsAfterT0 = 0
+
+        func record(_ e: String) { events.append(e) }
+        func countInjectionAfterT0() { injectionsAfterT0 += 1 }
+
+        func peerClose() -> ScreenShareHost.CaptureControl {
+            { @Sendable in
+                // A dead relay cannot be notified; teardown must not depend on it.
+                if !self.relayUp { self.record("relay-send-failed") }
+                self.record("peer-closed")
+            }
+        }
+
+        func stopCapture() -> ScreenShareHost.CaptureControl {
+            { @Sendable in self.record("capture-stopped") }
+        }
+    }
+
+    /// Builds a host with one live control session for `deviceId`.
+    private func hostWithControlSession(
+        deviceId: String = "p1", sessionId: String = "s1",
+        peerClose: @escaping ScreenShareHost.CaptureControl
+    ) async -> ScreenShareHost {
+        let ks = FakeKeystore()
+        let host = ScreenShareHost()
+        await host.setDeviceSettings(ScreenShareDeviceSettings(
+            deviceId: deviceId, allowed: true, grant: .control,
+            controlKeyPublicData: ks.publicKeyData))
+        let challenge = ScreenSharePolicy.controlChallenge(sessionId: sessionId, timestamp: "ts")
+        _ = await host.requestSession(
+            sessionId: sessionId, deviceId: deviceId, requestedMode: .control,
+            controlChallenge: challenge, controlSignature: ks.sign(challenge: challenge),
+            startCapture: fakeOp(), peerClose: peerClose)
+        return host
+    }
+
+    @Test func killSwitchStopsEverythingWithRelayDown() async {
+        let peer = ScriptedFakePeer()
+        peer.relayUp = false
+        let host = await hostWithControlSession(peerClose: peer.peerClose())
+        #expect(await host.canInject())
+
+        await host.killAll(reason: .killSwitch, stopCapture: peer.stopCapture())
+
+        let timing = await host.latestKillTiming()!
+        #expect(timing.elapsed <= ScreenSharePolicy.killDeadline)
+        #expect(await host.canInject() == false)
+        #expect(await host.isCaptureActive == false)
+        #expect(await host.sessionCount == 0)
+        // Teardown completed locally even though every relay send failed.
+        #expect(peer.events.contains("relay-send-failed"))
+        #expect(peer.events.contains("peer-closed"))
+        #expect(peer.events.contains("capture-stopped"))
+    }
+
+    @Test func revokeDowngradeAndRekeyStopEverythingWithRelayDown() async {
+        for reason in [ScreenShareStopReason.revoked, .grantDowngrade, .rekeyPairing] {
+            let peer = ScriptedFakePeer()
+            peer.relayUp = false
+            let host = await hostWithControlSession(peerClose: peer.peerClose())
+            #expect(await host.canInject())
+
+            await host.killDevice(deviceId: "p1", reason: reason, stopCapture: peer.stopCapture())
+
+            let timing = await host.latestKillTiming()!
+            #expect(timing.elapsed <= ScreenSharePolicy.killDeadline)
+            #expect(await host.canInject() == false)
+            #expect(await host.isCaptureActive == false)
+            #expect(await host.sessionCount == 0)
+            #expect(peer.events.contains("relay-send-failed"))
+            #expect(peer.events.contains("peer-closed"))
+        }
+    }
+
+    /// The fake peer tries to inject while the host is tearing the session
+    /// down. Every attempt happens after t0 and must be refused.
+    @Test func noInjectionIsAdmittedDuringTeardownAfterT0() async {
+        let probe = ScriptedFakePeer()
+        probe.relayUp = false
+        let host = ScreenShareHost()
+        let ks = FakeKeystore()
+        await host.setDeviceSettings(ScreenShareDeviceSettings(
+            deviceId: "p1", allowed: true, grant: .control, controlKeyPublicData: ks.publicKeyData))
+        let challenge = ScreenSharePolicy.controlChallenge(sessionId: "s1", timestamp: "ts")
+        let peerClose: ScreenShareHost.CaptureControl = { @Sendable in
+            // Actor reentrancy: killAll is suspended here, so this really does
+            // ask the host for permission mid-teardown.
+            if await host.canInject() { probe.countInjectionAfterT0() }
+            probe.record("peer-closed")
+        }
+        _ = await host.requestSession(
+            sessionId: "s1", deviceId: "p1", requestedMode: .control,
+            controlChallenge: challenge, controlSignature: ks.sign(challenge: challenge),
+            startCapture: fakeOp(), peerClose: peerClose)
+        #expect(await host.canInject())
+
+        await host.killAll(reason: .killSwitch, stopCapture: probe.stopCapture())
+
+        #expect(probe.events.contains("peer-closed"))
+        #expect(probe.injectionsAfterT0 == 0)
+        #expect(await host.canInject() == false)
+    }
 }
 
 // MARK: - Sendable test clock
