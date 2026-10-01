@@ -8,6 +8,8 @@ public struct MightyGraphLayout {
         /// `execution` is a run index and an `OuroborosExecutionLink.key`.
         /// `images` is a run index and the step it attaches to (`MightyGraphImages`).
         case request(Int), agent(Int, Int), result(Int), resultFiles(Int), execution(Int, String), images(Int, String), draft
+        /// The top of the diagram: loads older requests from the session record.
+        case history
     }
     public struct Node: Identifiable {
         public let id: String
@@ -66,12 +68,19 @@ public struct MightyGraphLayout {
     /// negative x rather than pushing the diagram. The drawn container starts
     /// here instead of at 0; the camera still works in node coordinates.
     public var originX: CGFloat = 0
+    /// Older requests loaded from the session record sit above the first
+    /// retained one, at negative y, so loading them moves nothing already on
+    /// screen. The drawn container starts here, as it does at `originX`.
+    public var originY: CGFloat = 0
     /// The node id of the latest result card that is currently auto-fitting to
     /// the viewport. nil when no viewport is supplied, when a shared result size
     /// overrides the fit, or when there is no finished run yet.
     public var fittedResultID: String? = nil
     static let siblingGap: CGFloat = 32
     static let rowGap: CGFloat = 52
+    public static let historyNodeID = "history-top"
+    public static let historyWidth: CGFloat = 380
+    public static let historyHeight: CGFloat = 44
 
     /// Used by the initial SwiftUI render as well as native camera admission.
     /// Computing this before mounting avoids painting the origin then jumping.
@@ -83,10 +92,23 @@ public struct MightyGraphLayout {
     public func route(_ edge: Edge) -> [CGPoint] {
         guard let source = nodes.first(where: { $0.id == edge.source })?.frame,
               let target = nodes.first(where: { $0.id == edge.target })?.frame else { return [] }
+        return Self.route(from: source, to: target, joins: edge.joins)
+    }
+    /// Every edge's route with the nodes looked up once. With `visible`, an
+    /// edge whose whole span lies outside it is left out, as offscreen cards are.
+    public func routes(in visible: CGRect? = nil) -> [[CGPoint]] {
+        let frames = Dictionary(nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
+        return edges.compactMap { edge in
+            guard let source = frames[edge.source], let target = frames[edge.target] else { return nil }
+            if let visible, !visible.intersects(source.union(target)) { return nil }
+            return Self.route(from: source, to: target, joins: edge.joins)
+        }
+    }
+    static func route(from source: CGRect, to target: CGRect, joins: Bool) -> [CGPoint] {
         let start = CGPoint(x: source.midX, y: source.maxY)
         let end = CGPoint(x: target.midX, y: target.minY)
         let clearance = min(26, max(0, (end.y - start.y) / 2))
-        let middle = edge.joins ? end.y - clearance : start.y + clearance
+        let middle = joins ? end.y - clearance : start.y + clearance
         return [start, CGPoint(x: start.x, y: middle), CGPoint(x: end.x, y: middle), end]
     }
 
@@ -108,7 +130,11 @@ public struct MightyGraphLayout {
         (viewport != nil && sharedResultSize == nil) ? latestResultID(runs: runs) : nil
     }
 
-    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, executions: [Execution] = [], galleries: [ImageGallery] = []) -> Self {
+    /// `retainedStart` is the index of the run that keeps the first tree's
+    /// place (the first run the pane retained, or the one loaded history first
+    /// attached above); runs before it, loaded from the session record, stack
+    /// upward from there. `history` adds the block at the top that loads more.
+    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false) -> Self {
         // The latest result card is the result of the last finished run in the list.
         let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
         let latestResultID = Self.latestResultID(runs: runs)
@@ -227,22 +253,36 @@ public struct MightyGraphLayout {
             trees.append(Tree(nodes: [Node(id: pendingID, content: .draft, frame: CGRect(origin: .zero, size: pendingSize))], edges: [], width: pendingSize.width, height: pendingSize.height, top: pendingID, leaves: [pendingID]))
         }
         var result = Self()
+        // The first retained tree starts where the first tree always started;
+        // the older ones are stacked upward from it.
+        let split = min(max(0, retainedStart), runs.count)
+        var tops = [CGFloat](repeating: 24, count: trees.count)
         var y: CGFloat = 24
+        for index in trees.indices.dropFirst(split) { tops[index] = y; y += trees[index].height + rowGap }
+        var above: CGFloat = 24
+        for index in trees.indices.prefix(split).reversed() { above -= trees[index].height + rowGap; tops[index] = above }
         var previous: [String] = []
-        for var tree in trees {
+        for (index, var tree) in trees.enumerated() {
             // One fixed centreline for every tree. A tree's own width decides
             // how far it reaches to each side and nothing else moves, so a new
             // branch never slides the request and result cards already placed.
-            tree.offset(x: MightyGraphCamera.x(for: tree.width), y: y)
+            tree.offset(x: MightyGraphCamera.x(for: tree.width), y: tops[index])
             result.nodes += tree.nodes
             result.edges += previous.map { Edge(source: $0, target: tree.top, joins: true) } + tree.edges
             previous = tree.leaves
-            y += tree.height + rowGap
+        }
+        let bottom = split < trees.count ? y - rowGap : 24 - rowGap
+        if history {
+            let top = result.nodes.map(\.frame.minY).min() ?? 24
+            result.nodes.insert(Node(id: historyNodeID, content: .history,
+                                     frame: CGRect(x: MightyGraphCamera.centreX - historyWidth / 2, y: top - 28 - historyHeight, width: historyWidth, height: historyHeight)), at: 0)
         }
         let leading = result.nodes.map(\.frame.minX).min() ?? MightyGraphCamera.x(for: MightyGraphCamera.requestWidth)
         let trailing = result.nodes.map(\.frame.maxX).max() ?? (MightyGraphCamera.centreX + MightyGraphCamera.requestWidth / 2)
         result.originX = MightyGraphCamera.originX(leadingMinX: leading)
-        result.size = CGSize(width: MightyGraphCamera.canvasWidth(leading: leading, trailing: trailing), height: max(188, y - rowGap + 24))
+        result.originY = min(0, (result.nodes.map(\.frame.minY).min() ?? 24) - 24)
+        result.size = CGSize(width: MightyGraphCamera.canvasWidth(leading: leading, trailing: trailing),
+                             height: max(188, max(bottom, result.nodes.map(\.frame.maxY).max() ?? 0) + 24 - result.originY))
         if let resultFilesRunID, let runIndex = runs.firstIndex(where: { $0.id == resultFilesRunID }),
            runs[runIndex].status == "completed", finished(runs[runIndex]),
            let resultNode = result.nodes.first(where: { $0.content == .result(runIndex) }) {
@@ -269,7 +309,7 @@ public struct MightyGraphLayout {
             let frame = CGRect(x: max(right, step.frame.maxX) + executionGap, y: y, width: imagesWidth, height: height)
             result.nodes.append(Node(id: id, content: .images(runIndex, gallery.step), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
-            result.size.height = max(result.size.height, frame.maxY + 24)
+            result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
         }
         // Execution blocks hang off their request's top, stacked, right of
         // every card they would share rows with — attachments, like the file
@@ -286,7 +326,7 @@ public struct MightyGraphLayout {
             let frame = CGRect(x: max(right, request.frame.maxX) + executionGap, y: y, width: executionWidth, height: height)
             result.nodes.append(Node(id: id, content: .execution(runIndex, execution.key), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
-            result.size.height = max(result.size.height, frame.maxY + 24)
+            result.size.height = max(result.size.height, frame.maxY + 24 - result.originY)
             nextY[runIndex] = frame.maxY + executionGap
         }
         result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)

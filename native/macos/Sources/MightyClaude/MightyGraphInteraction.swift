@@ -30,6 +30,9 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
     /// A new newest request aims the camera by its own rule, not the stranded net's.
     var newestRunID: String?
+    /// The user dragged or scrolled the canvas: the camera before and after.
+    /// Camera moves the app makes itself (re-aims, zoom) never report here.
+    var onUserPan: (CGPoint, CGPoint) -> Void = { _, _ in }
     /// Chrome docked over the diagram, such as the reference bubble. It lives
     /// in its own native view so AppKit, not SwiftUI layering, decides hits,
     /// and the probe resizes it exactly the way it resizes graph blocks.
@@ -52,11 +55,13 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.expectedViewportSize = viewportSize
         view.selectedNodeID = selection
         view.auxiliaryNodeIDs = Set(nodes.filter(\.isAuxiliary).map(\.id))
+        view.fixedNodeIDs = Set(nodes.filter { $0.content == .history }.map(\.id))
         view.targetToken = targetToken
         view.targetFrame = targetFrame
         view.alignTop = alignTop
         view.onSelect = { selection = $0 }
         view.onPan = { panOffset = $0 }
+        view.onUserPan = onUserPan
         view.onResize = onResize
         view.onStranded = onStranded
         view.newestRunID = newestRunID
@@ -118,8 +123,12 @@ final class MightyGraphInteractionProbe: NSView {
     /// Attached file lists and execution blocks scroll immediately and do not
     /// expose block resizing.
     var auxiliaryNodeIDs: Set<String> = []
+    /// Blocks that are neither resized nor selected, such as the history
+    /// block at the top: a click goes to its button, a wheel pans past it.
+    var fixedNodeIDs: Set<String> = []
     var onSelect: (String?) -> Void = { _ in }
     var onPan: (CGPoint) -> Void = { _ in }
+    var onUserPan: (CGPoint, CGPoint) -> Void = { _, _ in }
     var onResize: (String, CGSize, Bool) -> Void = { _, _, _ in }
     var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
     /// A new newest request aims the camera by its own rule, not the stranded net's.
@@ -232,7 +241,7 @@ final class MightyGraphInteractionProbe: NSView {
         gestureRoute = nil; gestureTarget = nil; discardedMomentum = false
     }
     func dispose() {
-        disposed = true; removeMonitoring(); onSelect = { _ in }; onPan = { _ in }; onResize = { _, _, _ in }; onStranded = { _ in }; layoutFrames = []; finishingAnchor = nil
+        disposed = true; removeMonitoring(); onSelect = { _ in }; onPan = { _ in }; onUserPan = { _, _ in }; onResize = { _, _, _ in }; onStranded = { _ in }; layoutFrames = []; finishingAnchor = nil
     }
     /// Layout may recenter a parent when its child's width changes. Keep the
     /// dragged card's original top-left viewport point pinned across that reflow.
@@ -317,7 +326,7 @@ final class MightyGraphInteractionProbe: NSView {
     /// The block and sides a press at `point` would resize: the bottom-right
     /// handle first, then a band along each border.
     func resizeTarget(at point: CGPoint) -> (id: String, frame: CGRect, edges: ResizeEdges)? {
-        for (id, frame) in frames.reversed() where !auxiliaryNodeIDs.contains(id) {
+        for (id, frame) in frames.reversed() where !auxiliaryNodeIDs.contains(id) && !fixedNodeIDs.contains(id) {
             if frame.contains(point), resizeHandleRect(for: frame).contains(point) { return (id, frame, .bottomRight) }
             let edges = ResizeEdges.at(point, frame: frame, outside: resizeBand, inside: Self.resizeBandInside)
             if !edges.isEmpty { return (id, frame, edges) }
@@ -428,7 +437,9 @@ final class MightyGraphInteractionProbe: NSView {
     func setPanOffset(_ value: CGPoint) {
         guard value.x.isFinite, value.y.isFinite else { return }
         if !isResizing { finishingAnchor = nil }
+        let previous = panOffset
         commitInteractionPosition(value)
+        if panOffset != previous { onUserPan(previous, panOffset) }
     }
     /// An input event may arrive before the deferred initial camera admission.
     /// Commit even an unchanged position once, so the SwiftUI fallback stops
@@ -583,7 +594,7 @@ final class MightyGraphInteractionProbe: NSView {
                 beginResize(id: target.id, point: point, frame: target.frame, edges: target.edges)
                 return nil
             }
-            select(node?.0)
+            select(node.flatMap { fixedNodeIDs.contains($0.0) ? nil : $0.0 })
             if node == nil {
                 window.makeFirstResponder(self)
                 isPanning = true; dragLocation = point; NSCursor.closedHand.push()

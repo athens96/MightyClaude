@@ -389,7 +389,9 @@ struct SessionPaneView: View {
     private var output: some View {
         Group {
             if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider), session.agentViewMode == "mighty" {
-                MightyGraphView(sessionID: session.id, provider: session.provider, runs: session.mightyGraphRuns, draft: draft.wrappedValue, running: running,
+                let retained = session.mightyGraphRuns
+                let history = store.graphHistory(for: session, retained: retained)
+                MightyGraphView(sessionID: session.id, provider: session.provider, runs: history.runs + retained, draft: draft.wrappedValue, running: running,
                     blockSizes: session.graphBlockSizes ?? [:],
                     onSaveBlockSize: { id, size in store.setGraphBlockSize(session.id, nodeID: id, size: size) },
                     workspaceRoot: store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
@@ -398,7 +400,10 @@ struct SessionPaneView: View {
                     catalog: store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models,
                     graphResultSize: session.graphResultSize,
                     onSaveResultSize: { size in store.setGraphResultSize(session.id, size: size) },
-                    onOpenURL: { url in await store.openInAgentBrowser(url, agentPaneId: session.id) }) {
+                    onOpenURL: { url in await store.openInAgentBrowser(url, agentPaneId: session.id) },
+                    // A pane with no request and no session to read has no history block.
+                    retainedStart: history.runs.count, history: retained.isEmpty && session.resumeId == nil ? nil : history,
+                    onLoadOlder: { store.loadOlderGraphHistory(session.id) }) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {
