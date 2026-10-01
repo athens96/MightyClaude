@@ -555,6 +555,7 @@
   "run.error.stopTimeout": "프로세스 종료가 지연되고 있습니다.",
   "run.error.tooManyConcurrent": "동시 실행은 16개까지 가능합니다.",
   "run.error.workspaceNotRegistered": "등록된 워크스페이스가 아닙니다.",
+  "run.notice.outputAbandoned": "자식 프로세스가 끝난 뒤에도 다른 프로세스가 출력을 계속 써서 읽기를 멈췄습니다. 그 뒤의 출력은 표시하지 않습니다.",
   "run.warning.noModEvents": "Mod 연결 이벤트가 없습니다. 표시된 응답은 CLI 출력입니다.",
   "session.title.shell": "명령",
   "settings.appInfo.openFinderButton": "Finder에서 열기",
