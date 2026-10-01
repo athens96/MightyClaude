@@ -70,11 +70,12 @@ if [ -z "${IGW}" ]; then
 fi
 RT="$(q network vcn get --vcn-id "${VCN}" --query 'data."default-route-table-id"')"
 SL="$(q network vcn get --vcn-id "${VCN}" --query 'data."default-security-list-id"')"
-say "라우팅과 보안 규칙(22·80·443)을 맞춥니다"
+say "라우팅과 보안 규칙(22·80·443·3478)을 맞춥니다"
 "${OCI[@]}" network route-table update --rt-id "${RT}" --force \
     --route-rules "[{\"destination\":\"0.0.0.0/0\",\"destinationType\":\"CIDR_BLOCK\",\"networkEntityId\":\"${IGW}\"}]" >/dev/null
 tcp() { printf '{"protocol":"6","source":"0.0.0.0/0","tcpOptions":{"destinationPortRange":{"min":%s,"max":%s}}}' "$1" "$1"; }
-INGRESS="[$(tcp 22),$(tcp 80),$(tcp 443),{\"protocol\":\"17\",\"source\":\"0.0.0.0/0\",\"udpOptions\":{\"destinationPortRange\":{\"min\":443,\"max\":443}}}]"
+udp() { printf '{"protocol":"17","source":"0.0.0.0/0","udpOptions":{"destinationPortRange":{"min":%s,"max":%s}}}' "$1" "${2:-$1}"; }
+INGRESS="[$(tcp 22),$(tcp 80),$(tcp 443),$(udp 443),$(tcp 3478),$(udp 3478),$(udp 49160 49200)]"
 "${OCI[@]}" network security-list update --security-list-id "${SL}" --force \
     --ingress-security-rules "${INGRESS}" \
     --egress-security-rules '[{"protocol":"all","destination":"0.0.0.0/0"}]' >/dev/null
