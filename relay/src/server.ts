@@ -54,12 +54,13 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
       return;
     }
     const parsed = parseSocketParams(url.searchParams);
+    const ip = req.socket.remoteAddress ?? '0.0.0.0';
     wss.handleUpgrade(req, socket, head, (ws) => {
       if (!parsed.ok) {
         hub.reject(ws, CloseCode.badRequest, parsed.reason);
         return;
       }
-      hub.handleSocket(ws, parsed.params);
+      hub.handleSocket(ws, parsed.params, ip);
     });
   });
 
