@@ -14,18 +14,18 @@ struct CLILoginRecoveryCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
-            Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(.orange).padding(.top, 1)
+            Image(systemName: "person.crop.circle.badge.exclamationmark").foregroundStyle(Palette.waitText).padding(.top, 1)
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("loginRecovery.title", ["provider": ProviderOptions.label(provider)])).fontWeight(.medium)
                 if let note = store.loginCardNotes[sessionID] {
-                    Text(L("loginRecovery.resendBlockedTemplate", ["reason": note])).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Text(L("loginRecovery.resendBlockedTemplate", ["reason": note])).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                 }
                 switch state?.phase {
                 case nil:
                     Text(store.cliLoginPending.contains(provider) ? L("loginRecovery.terminalPending") : L("loginRecovery.body"))
                         .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     if let message = store.cliAccountMessages[provider] {
-                        Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                        Text(message).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                     }
                 case .starting?:
                     progress(L("loginRecovery.starting"))
@@ -45,7 +45,7 @@ struct CLILoginRecoveryCard: View {
                         }
                     }
                 case .failed(let message)?:
-                    Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Text(message).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 4)

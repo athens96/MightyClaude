@@ -177,10 +177,10 @@ struct StatusBarUsageView: View {
             if let usage, !usage.windows.isEmpty {
                 ForEach(Array(Self.leading(usage.windows).enumerated()), id: \.offset) { _, window in
                     Text(Self.windowLabel(window.kind) + " " + Self.percent(window.usedPercent)).monospacedDigit()
-                        .foregroundStyle(window.usedPercent >= 90 ? Color.orange : Color.secondary)
+                        .foregroundStyle(window.usedPercent >= 90 ? Palette.waitText : Color.secondary)
                 }
             } else if usage?.status == "permission" {
-                Text("Keychain 허용 필요").foregroundStyle(.orange)
+                Text("Keychain 허용 필요").foregroundStyle(Palette.waitText)
             } else if provider == "claude", !controller.claudeKeychainEnabled {
                 Text("실행 후 표시").foregroundStyle(.secondary)
             } else {
@@ -256,7 +256,7 @@ struct StatusBarUsageDetails: View {
                             Spacer()
                             Text(StatusBarUsageView.percent(window.usedPercent) + " 사용").monospacedDigit()
                         }.font(.system(size: 11))
-                        ProgressView(value: min(1, max(0, window.usedPercent / 100))).tint(window.usedPercent >= 90 ? .orange : Palette.accent)
+                        ProgressView(value: min(1, max(0, window.usedPercent / 100))).tint(window.usedPercent >= 90 ? Palette.waitText : Palette.accent)
                         if let reset = window.resetsAt, let date = AccountUsageStatusController.date(reset) {
                             Text("초기화 \(date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 10)).foregroundStyle(.secondary)
                         }

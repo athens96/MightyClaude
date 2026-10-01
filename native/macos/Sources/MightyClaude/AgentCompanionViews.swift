@@ -109,7 +109,7 @@ struct PresenceIndicator: View {
     var body: some View {
         Group {
             if status == "running" { ProgressView().controlSize(.mini).scaleEffect(0.75).frame(width: 15, height: 15) }
-            else { Image(systemName: status == "waiting" ? "hand.raised.fill" : status == "completed" ? "checkmark.circle.fill" : status == "error" ? "exclamationmark.circle.fill" : "circle").foregroundStyle(status == "error" ? Color.red : status == "waiting" ? Color.orange : status == "completed" ? Color.green : Color.secondary).frame(width: 15, height: 15) }
+            else { Image(systemName: status == "waiting" ? "hand.raised.fill" : status == "completed" ? "checkmark.circle.fill" : status == "error" ? "exclamationmark.circle.fill" : "circle").foregroundStyle(Palette.text(status)).frame(width: 15, height: 15) }
         }.accessibilityLabel(presenceLabel(status))
     }
 }
@@ -274,7 +274,7 @@ struct CompanionPager: View {
                 .accessibilityIdentifier("pet-page-label")
             if companion.hiddenApproval != nil {
                 Button { companion.showApprovalAgent() } label: {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(.orange).frame(width: 16, height: 16).contentShape(Rectangle())
+                    Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(Palette.waitText).frame(width: 16, height: 16).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help("다른 에이전트가 승인을 기다립니다 · 눌러서 보기").accessibilityLabel("승인을 기다리는 에이전트 보기")
                 .accessibilityIdentifier("pet-page-approval")
@@ -305,7 +305,7 @@ struct CompanionApprovalBubble: View {
         let question = questionnaire.flatMap { companion.questionProgress.current(in: $0) }
         return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Image(systemName: questionnaire == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(.orange)
+                Image(systemName: questionnaire == nil ? "hand.raised.fill" : "questionmark.bubble.fill").foregroundStyle(Palette.waitText)
                 Text(Self.title(questionnaire, progress: companion.questionProgress)).font(.system(size: 11, weight: .semibold)).monospacedDigit()
                     .accessibilityIdentifier("pet-question-progress")
                 Spacer(minLength: 0)
@@ -332,7 +332,7 @@ struct CompanionApprovalBubble: View {
                     Text(approval.request.summary).font(.system(size: 10, design: .monospaced)).lineLimit(3)
                 }
             }
-            if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(2) }
+            if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
             HStack(spacing: 6) {
                 // Four buttons share 234pt while a questionnaire is up, so 열기 shrinks to its icon there.
                 Button { companion.openApproval() } label: {
@@ -364,7 +364,7 @@ struct CompanionApprovalBubble: View {
         }
         .padding(12).frame(width: CompanionBubbleLayout.approvalWidth(companion.bubbleSize.width))
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.orange.opacity(0.45)))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Palette.wait.opacity(0.45)))
         // The approval keeps its own height; its sides still set the shared width.
         .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: nil, allowsHeight: false))
         .accessibilityElement(children: .contain)

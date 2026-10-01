@@ -37,12 +37,12 @@ struct RenameSheet: View {
             Text(target.kind == .workspace ? "앱에 표시되는 이름만 바뀌며 폴더 이름과 경로는 유지됩니다." : "사이드바와 탭에 같은 이름이 표시됩니다.")
                 .font(.caption).foregroundStyle(.secondary)
             if trimmedName.count > 120 {
-                Text("이름은 120자 이내로 입력하세요.").font(.caption).foregroundStyle(.red)
+                Text("이름은 120자 이내로 입력하세요.").font(.caption).foregroundStyle(Palette.errText)
             }
             if hasControlCharacters {
-                Text("이름은 줄바꿈 없이 입력하세요.").font(.caption).foregroundStyle(.red)
+                Text("이름은 줄바꿈 없이 입력하세요.").font(.caption).foregroundStyle(Palette.errText)
             }
-            if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
+            if let saveError { Text(saveError).font(.caption).foregroundStyle(Palette.errText) }
             HStack {
                 if target.kind == .session {
                     Button(L("pane.rename.automatic")) { setAutomatic() }

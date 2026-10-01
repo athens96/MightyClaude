@@ -34,6 +34,9 @@ struct MightyGraphView: View {
     var retainedStart = 0
     var history: SessionHistoryState? = nil
     var onLoadOlder: () -> Void = {}
+    /// "다이어그램 | 타임라인", saved per pane (`RunSession.graphViewMode`).
+    var viewMode: MightyGraphViewMode = .diagram
+    var onViewMode: (MightyGraphViewMode) -> Void = { _ in }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The newest result's size only while its drag is in progress; the saved
@@ -53,6 +56,15 @@ struct MightyGraphView: View {
     @StateObject private var resultFiles = MightyGraphResultFilesModel()
     @StateObject private var ouroboros = MightyGraphOuroborosModel()
     @ViewState private var canvasViewport: CGSize?
+    /// Timeline rows opened to show what their diagram card holds.
+    @ViewState private var timelineOpen = Set<String>()
+    /// Requests whose fold differs from the default: the newest open, the rest folded.
+    @ViewState private var timelineFlipped = Set<String>()
+    /// Result cards showing their whole answer.
+    @ViewState private var timelineFull = Set<String>()
+    /// The timeline's first visible item, which is how scrolling to its top is seen.
+    @ViewState private var timelineTop: String?
+    private static let timelineHistoryID = "timeline-history"
 
     /// Kept out of the view body: long concatenations of conditionals are
     /// slow for older type checkers.
@@ -71,11 +83,11 @@ struct MightyGraphView: View {
         // The title comes from the core so the phone's Mighty view names the
         // same block the same way; only the symbol and tint are Mac-only.
         let title = MightyGraphSupport.blockTitle(agent)
-        if agent.isSteer { return (title, "text.bubble", .orange) }
-        if agent.isCompact { return (title, "arrow.down.right.and.arrow.up.left", .mint) }
-        if agent.isQuestion { return (title, "questionmark.bubble.fill", .indigo) }
-        if agent.isTask { return (title, "terminal", .teal) }
-        return (title, "person.crop.square.filled.and.at.rectangle", .purple)
+        if agent.isSteer { return (title, "text.bubble", Palette.steerText) }
+        if agent.isCompact { return (title, "arrow.down.right.and.arrow.up.left", Palette.compactText) }
+        if agent.isQuestion { return (title, "questionmark.bubble.fill", Palette.questionText) }
+        if agent.isTask { return (title, "terminal", Palette.taskText) }
+        return (title, "person.crop.square.filled.and.at.rectangle", Palette.agentText)
     }
 
     // The newest result takes the pane-wide saved size, so a drag in progress
@@ -131,27 +143,40 @@ struct MightyGraphView: View {
             : MightyOverlayLayout(onLeft: referenceOnLeft, storedWidth: bubbleWidth, storedHeight: bubbleHeight)
         let fallbackNodeID = initialTarget(graph)
         let target = scrollTarget ?? MightyGraphScrollTarget(token: "initial:" + sessionID, nodeID: fallbackNodeID, alignTop: false)
+        let live = MightyGraphLayout.liveNodeIDs(runs)
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Label(StyleChrome.graphHeader(styleName: styleName, phaseTitle: stylePhase), systemImage: "point.3.connected.trianglepath.dotted")
-                    .font(.system(size: 12, weight: .semibold))
+                MightyViewSwitch(sessionID: sessionID, mode: viewMode) { mode in
+                    onFocus()
+                    onViewMode(mode)
+                }
+                Text(StyleChrome.graphHeader(styleName: styleName, phaseTitle: stylePhase))
+                    .font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1).fixedSize()
                 if let styleSource, let badge = StyleChrome.sourceBadge(styleSource) { SourceBadge(text: badge) }
                 Text(summary)
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
                     .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
                 Spacer(minLength: 8)
-                Button { zoom = max(0.5, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
-                    .disabled(zoom <= 0.5).help("축소").accessibilityIdentifier("mighty-zoom-out-\(sessionID)")
-                Button { zoom = 1 } label: { Text("\(Int((zoom * 100).rounded()))%").monospacedDigit().frame(width: 38) }
-                    .help("실제 크기").accessibilityIdentifier("mighty-zoom-reset-\(sessionID)")
-                Button { zoom = min(1.5, zoom + 0.1) } label: { Image(systemName: "plus.magnifyingglass") }
-                    .disabled(zoom >= 1.5).help("확대").accessibilityIdentifier("mighty-zoom-in-\(sessionID)")
+                if viewMode == .diagram {
+                    Group {
+                        Button { zoom = max(0.5, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
+                            .disabled(zoom <= 0.5).help("축소").accessibilityIdentifier("mighty-zoom-out-\(sessionID)")
+                        Button { zoom = 1 } label: { Text("\(Int((zoom * 100).rounded()))%").monospacedDigit().frame(width: 38) }
+                            .help("실제 크기").accessibilityIdentifier("mighty-zoom-reset-\(sessionID)")
+                        Button { zoom = min(1.5, zoom + 0.1) } label: { Image(systemName: "plus.magnifyingglass") }
+                            .disabled(zoom >= 1.5).help("확대").accessibilityIdentifier("mighty-zoom-in-\(sessionID)")
+                    }
+                    .foregroundStyle(Palette.ink2)
+                }
             }
             .buttonStyle(.plain).padding(.horizontal, 12).padding(.vertical, 10)
-            Divider()
+            Divider().overlay(Palette.border)
+            if viewMode == .timeline {
+                timeline(MightyTimeline.groups(runs))
+            } else {
             MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
                               scrollTarget: target,
-                              defaultNodeID: fallbackNodeID, selection: $selectedNodeID, edges: { graphEdges(graph, visible: $0) },
+                              defaultNodeID: fallbackNodeID, selection: $selectedNodeID, edges: { graphEdges(graph, live: live, visible: $0) },
                               overlay: overlayView,
                               overlayLayout: overlayLayout,
                               onOverlayResize: { size, _ in
@@ -190,6 +215,7 @@ struct MightyGraphView: View {
                                                            targetAlignTop: requested?.alignTop ?? false,
                                                            frames: frames))
                 }
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-graph-\(sessionID)")
@@ -262,9 +288,26 @@ struct MightyGraphView: View {
         return runs.last.map { MightyGraphLayout.nodeID($0, suffix: "request") } ?? MightyGraphCamera.pendingNodeID
     }
 
-    private func graphEdges(_ graph: MightyGraphLayout, visible: CGRect) -> some View {
-        return Path { path in
-            for points in graph.routes(in: visible) {
+    /// Concept D's connectors: quiet ink lines, run blue (and a little heavier) into a
+    /// block that is running.
+    private func graphEdges(_ graph: MightyGraphLayout, live: Set<String>, visible: CGRect) -> some View {
+        let split = graph.routes(in: visible, into: live)
+        return ZStack {
+            Self.edgePath(split.other)
+                .stroke(Palette.ink2.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            Self.edgePath(split.into)
+                .stroke(Palette.run, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        }
+        // Routed in node coordinates, drawn in the container's, which starts at
+        // the diagram's leading edge rather than at x = 0, and at its top
+        // rather than at y = 0 once older requests sit above.
+        .offset(x: MightyGraphCamera.drawnX(nodeX: 0, originX: graph.originX), y: -graph.originY)
+        .allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private static func edgePath(_ routes: [[CGPoint]]) -> Path {
+        Path { path in
+            for points in routes {
                 guard let start = points.first, let end = points.last else { continue }
                 path.move(to: start)
                 for point in points.dropFirst() { path.addLine(to: point) }
@@ -273,12 +316,6 @@ struct MightyGraphView: View {
                 path.addLine(to: CGPoint(x: end.x + 4, y: end.y - 6))
             }
         }
-        .stroke(Palette.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-        // Routed in node coordinates, drawn in the container's, which starts at
-        // the diagram's leading edge rather than at x = 0, and at its top
-        // rather than at y = 0 once older requests sit above.
-        .offset(x: MightyGraphCamera.drawnX(nodeX: 0, originX: graph.originX), y: -graph.originY)
-        .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     /// `executions` is this render's execution links by key, found once
@@ -290,7 +327,7 @@ struct MightyGraphView: View {
                 HStack {
                     Label(runs.isEmpty ? "첫 요청" : "다음 요청", systemImage: "square.and.pencil").font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(draft.isEmpty ? "입력 대기" : "작성 중").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(draft.isEmpty ? "입력 대기" : "작성 중").font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 }
                 // A native selectable view, not Text(...).textSelection: the
                 // canvas monitor hands first responder back to itself for every
@@ -300,7 +337,7 @@ struct MightyGraphView: View {
                 Spacer(minLength: 0)
             }
             .padding(16).background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
-            .overlay { RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4])) }
+            .overlay { RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])) }
             .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
         case .request(let index):
             let run = runs[index]
@@ -327,8 +364,9 @@ struct MightyGraphView: View {
             let stopped = ["stopped", "cancelled", "interrupted"].contains(run.status)
             let status = failed ? "error" : stopped ? "stopped" : "completed"
             transcriptCard(node, title: failed ? "요청 실패" : stopped ? "요청 중단" : "최종 결과", icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
-                           status: status, input: "", entries: run.resultEntries, tint: failed ? .red : stopped ? .orange : .green,
-                           usage: run.totalUsage, usageLabel: "요청 전체 합계", resultFilesRunID: run.status == "completed" ? run.id : nil)
+                           status: status, input: "", entries: run.resultEntries, tint: Palette.text(status),
+                           usage: run.totalUsage, usageLabel: "요청 전체 합계", resultFilesRunID: run.status == "completed" ? run.id : nil,
+                           headerFill: Palette.heroFill(DesignTone(status: status)))
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
                                        onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
@@ -338,7 +376,7 @@ struct MightyGraphView: View {
                                   onToggle: { if !expanded.insert(node.id).inserted { expanded.remove(node.id) } },
                                   onOpen: onFocus)
         case .history:
-            historyCard(node)
+            historyCard(width: node.frame.width, height: node.frame.height)
         case .execution(_, let key):
             if let link = executions[key] {
                 MightyGraphOuroborosCard(nodeID: node.id, link: link, snapshot: ouroboros.snapshots[key], expanded: expanded.contains(node.id),
@@ -352,30 +390,38 @@ struct MightyGraphView: View {
         }
     }
 
+    /// `headerFill` paints the header as a strip (the result card's outcome colour) with
+    /// white words on it; the other blocks keep a plain header on the white card.
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
                                 usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
-                                childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false) -> some View {
+                                childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
+        let onStrip = headerFill != nil
+        let quiet = onStrip ? Palette.onStatus : Palette.ink2
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: icon).foregroundStyle(tint)
-                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1).help(title)
+                Image(systemName: icon).foregroundStyle(onStrip ? Palette.onStatus : tint)
+                Text(title).font(.system(size: 12, weight: .bold)).lineLimit(1).help(title)
+                    .foregroundStyle(onStrip ? Palette.onStatus : Palette.ink)
                 if fromRecord {
                     // Read back from the CLI's own session record, not kept by the app.
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 10)).foregroundStyle(quiet)
                         .help(L("graph.history.tag"))
                         .accessibilityLabel(L("graph.history.tag"))
                         .accessibilityIdentifier("mighty-record-\(node.id)")
                 }
                 Spacer(minLength: 3)
-                if selectedNodeID == node.id { blockScrollLabel(node.id) }
-                MightyGraphActivityIndicator(status: status, tint: tint)
-                Text(statusLabel(status)).font(.system(size: 10)).foregroundStyle(.secondary)
+                if selectedNodeID == node.id { blockScrollLabel(node.id, ink: onStrip ? Palette.onStatus : Palette.accent) }
+                if !onStrip {
+                    MightyGraphActivityIndicator(status: status, tint: Palette.run)
+                    MightyStatusPill(text: statusLabel(status), tone: DesignTone(blockStatus: status))
+                }
                 if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog) {
                     let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog)
-                    Text(capsuleText).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
-                        .padding(.horizontal, 6).padding(.vertical, 2).background(Palette.subtle, in: Capsule())
+                    Text(capsuleText).font(.system(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(onStrip ? Color.black.opacity(0.18) : Palette.raised, in: Capsule())
                         .help(helpText)
                         .accessibilityLabel(helpText)
                         .accessibilityIdentifier("mighty-tokens-\(node.id)")
@@ -383,10 +429,10 @@ struct MightyGraphView: View {
                 if let resultFilesRunID, !resultFiles.files(for: resultFilesRunID).isEmpty {
                     Button { resultFiles.toggle(resultFilesRunID) } label: {
                         HStack(spacing: 3) {
-                            Image(systemName: "doc.on.doc")
+                            Image(systemName: resultFiles.selectedRunID == resultFilesRunID ? "doc.on.doc.fill" : "doc.on.doc")
                             Text("\(resultFiles.files(for: resultFilesRunID).count)").font(.system(size: 10)).monospacedDigit()
                         }
-                        .foregroundStyle(resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Color.secondary)
+                        .foregroundStyle(onStrip ? Palette.onStatus : resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Palette.ink2)
                     }
                     .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? "파일 목록 닫기" : "결과에 나온 파일 보기")
                     .accessibilityLabel("결과 파일 \(resultFiles.files(for: resultFilesRunID).count)개 · 목록 토글")
@@ -402,8 +448,8 @@ struct MightyGraphView: View {
                         onSaveResultSize(nil)
                     }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Palette.accent)
+                        .font(.system(size: 10, weight: onStrip ? .bold : .regular))
+                        .foregroundStyle(onStrip ? Palette.onStatus : Palette.accent)
                         .accessibilityIdentifier("mighty-fit-result-\(node.id)")
                 }
                 if !isFittedResult {
@@ -412,39 +458,47 @@ struct MightyGraphView: View {
                         onSaveBlockSize(node.id, nil)
                         if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
                     } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
-                        .buttonStyle(.plain).help(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
+                        .buttonStyle(.plain).foregroundStyle(quiet).help(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
                         .accessibilityLabel(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
                         .accessibilityIdentifier("mighty-expand-\(node.id)")
                 }
             }.padding(.horizontal, 12).frame(height: 38)
-            Divider()
+            .background(headerFill ?? Color.clear)
+            if !onStrip { Divider().overlay(Palette.border) }
             if !input.isEmpty {
                 MightyGraphInputPreview(input: input, width: node.frame.width - 24, identifier: "mighty-request-\(node.id)")
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(tint.opacity(0.055))
-                Divider()
+                Divider().overlay(Palette.border)
             }
             if content.isEmpty {
                 Text(MightyGraphLayout.terminal(status) ? "별도의 응답 내용이 없습니다." : "에이전트 응답을 기다리고 있습니다…")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(15)
             } else {
-                AgentTranscriptView(sessionId: "graph-\(sessionID)-\(node.id)", provider: provider,
-                    running: !MightyGraphLayout.terminal(status), entries: content, onFocus: onFocus,
-                    onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) },
-                    records: records, childBlocks: childBlocks, catalog: catalog, clearsCornerHandle: true, imageRoot: workspaceRoot)
+                blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks)
             }
         }
-        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).stroke(tint.opacity(0.45), lineWidth: 1) }
-        .overlay { MightyGraphActivityOutline(status: status, tint: tint).allowsHitTesting(false) }
+        .mightyBlockCard()
+        .overlay { MightyGraphActivityOutline(tone: DesignTone(blockStatus: status)) }
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
+    }
+
+    /// A block's own records as the diagram's card shows them; the timeline opens the
+    /// same view under a row.
+    /// `inTimeline`: the transcript sits in the timeline's scroll view and hands the
+    /// wheel on to the timeline at its edges.
+    private func blockTranscript(id: String, status: String, entries: [LogEntry], records: [GraphResponseRecord], childBlocks: [String: GraphChildBlock], inTimeline: Bool = false) -> some View {
+        AgentTranscriptView(sessionId: id, provider: provider,
+            running: !MightyGraphLayout.terminal(status), entries: entries, onFocus: onFocus,
+            onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) },
+            records: records, childBlocks: childBlocks, catalog: catalog, clearsCornerHandle: true, imageRoot: workspaceRoot,
+            passesScrollAtEdges: inTimeline)
     }
 
     /// The top of the diagram: loads the previous requests from the session
     /// record, shows that it is doing so, or that the record begins here.
-    private func historyCard(_ node: MightyGraphLayout.Node) -> some View {
+    private func historyCard(width: CGFloat, height: CGFloat) -> some View {
         let phase = history?.phase ?? .idle
         let loaded = olderCount
         return HStack(spacing: 6) {
@@ -472,29 +526,248 @@ struct MightyGraphView: View {
                 Text("· " + L("graph.history.loaded", ["count": "\(loaded)"]))
             }
         }
-        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+        .font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1).minimumScaleFactor(0.8)
         .padding(.horizontal, 14)
-        .frame(width: node.frame.width, height: node.frame.height)
-        .background(Palette.panel.opacity(0.8), in: Capsule())
-        .overlay { Capsule().stroke(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+        .frame(width: width, height: height)
+        .background(Palette.panel, in: Capsule())
+        .overlay { Capsule().stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
         .help(L("graph.history.help"))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-history-\(sessionID)")
     }
 
-    private func blockScrollLabel(_ id: String) -> some View {
-        Text("블록 스크롤").font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.accent)
+    private func blockScrollLabel(_ id: String, ink: Color) -> some View {
+        Text("블록 스크롤").font(.system(size: 9, weight: .medium)).foregroundStyle(ink)
             .lineLimit(1).fixedSize().accessibilityIdentifier("mighty-block-scroll-" + id)
     }
 
     private func statusLabel(_ status: String) -> String {
         switch status {
-        case "completed": "완료"
-        case "error", "failed": "실패"
-        case "stopped", "cancelled", "interrupted": "중단"
-        case "waiting": "대기 중"
-        case "starting", "queued": "준비 중"
-        default: "실행 중"
+        case "completed": L("graph.state.completed")
+        case "error", "failed": L("graph.state.error")
+        case "stopped", "cancelled", "interrupted": L("graph.state.stopped")
+        case "waiting": L("graph.state.waiting")
+        case "starting", "queued": L("graph.state.starting")
+        default: L("graph.state.running")
+        }
+    }
+
+    // MARK: Timeline
+
+    /// The requests as a timeline, read from the same runs the diagram draws. Scrolling
+    /// up to its top loads older requests from the session record, as panning the
+    /// diagram to its top does; a clicked row opens what that block's card holds, and
+    /// file references in it open the same bubble.
+    private func timeline(_ groups: [MightyTimeline.Group]) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if history != nil {
+                        historyCard(width: MightyGraphLayout.historyWidth, height: MightyGraphLayout.historyHeight)
+                            .frame(maxWidth: .infinity)
+                            .id(Self.timelineHistoryID)
+                    }
+                    if groups.isEmpty {
+                        Text(L("graph.timeline.empty")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                            .id("timeline-empty")
+                    }
+                    ForEach(groups) { group in
+                        timelineGroup(group).id(group.id)
+                    }
+                }
+                .scrollTargetLayout()
+                .padding(.leading, 12).padding(.trailing, 14).padding(.vertical, 12)
+            }
+            .scrollPosition(id: $timelineTop)
+            .defaultScrollAnchor(.bottom)
+            // Only the user's own move up onto the top loads more, as in the diagram;
+            // following the newest request moves down, never onto it.
+            .onChange(of: timelineTop) { old, new in
+                guard new == Self.timelineHistoryID, let old, old != new, history?.phase == .idle else { return }
+                onLoadOlder()
+            }
+            .onChange(of: runs.last?.id) { _, last in
+                guard let last else { return }
+                proxy.scrollTo(last, anchor: .bottom)
+            }
+        }
+        .background(Palette.raised)
+        .overlay {
+            if let reference {
+                GeometryReader { geo in
+                    let frame = MightyGraphReferenceBubble.frame(onLeft: referenceOnLeft, canvas: geo.size, storedWidth: bubbleWidth, storedHeight: bubbleHeight)
+                    referenceOverlay(reference)
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mighty-timeline-\(sessionID)")
+    }
+
+    private func timelineGroup(_ group: MightyTimeline.Group) -> some View {
+        let run = runs[group.runIndex]
+        let open = (group.runIndex == runs.count - 1) != timelineFlipped.contains(group.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            timelineHeader(group, run: run, open: open)
+            if open {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
+                        timelineRow(row, index: index, group: group, run: run)
+                    }
+                }
+            }
+            if let result = group.result {
+                timelineResult(result, group: group, run: run).padding(.leading, MightyTimelineMarker.width + 8)
+            }
+        }
+    }
+
+    /// "요청 N · Claude", its status, the request itself and "블록 n개 · 끝남 m".
+    private func timelineHeader(_ group: MightyTimeline.Group, run: MightyGraphRun, open: Bool) -> some View {
+        let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: group.ordinal,
+                                             providerLabel: ProviderOptions.label(provider))
+        let prompt = group.input.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        return Button {
+            if !timelineFlipped.insert(group.id).inserted { timelineFlipped.remove(group.id) }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Image(systemName: open ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: 11)
+                    Text(title).font(Palette.heading(16)).foregroundStyle(Palette.ink).lineLimit(1)
+                    if group.runIndex < olderCount {
+                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                            .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))
+                    }
+                    Spacer(minLength: 6)
+                    MightyStatusPill(text: statusLabel(group.status), tone: DesignTone(status: group.status), height: 20)
+                }
+                Group {
+                    if !prompt.isEmpty {
+                        Text(prompt).font(.system(size: 12)).foregroundStyle(Palette.ink2).lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Text(L("phone.blocks.tally", ["total": "\(group.tally.total)", "settled": "\(group.tally.settled)"]))
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink2)
+                }
+                .padding(.leading, 19)
+            }
+            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityHint(open ? L("phone.blocks.collapse") : L("phone.blocks.expand"))
+        .accessibilityIdentifier("mighty-timeline-request-\(run.id)")
+    }
+
+    private func timelineRow(_ row: MightyTimeline.Row, index: Int, group: MightyTimeline.Group, run: MightyGraphRun) -> some View {
+        let look = timelineLook(row, run: run)
+        let open = timelineOpen.contains(row.nodeID)
+        // The request's own block is titled by the Mac's locale; the phone payload's
+        // title (`MobileMightySupport.blocks`) stays as the phone is sent it.
+        let title = row.agentIndex == nil ? L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"]) : row.block.title
+        return MightyTimelineRowCard(row: row, title: title, icon: look.icon, tint: look.tint, meta: timelineMeta(row, run: run),
+                                     status: statusLabel(row.block.status), open: open, onToggle: {
+            onFocus()
+            if timelineOpen.insert(row.nodeID).inserted {
+                // Back in the diagram, the camera stands on the block that was opened.
+                publish(.reaim(nodeID: row.nodeID, alignTop: false))
+            } else {
+                timelineOpen.remove(row.nodeID)
+            }
+        }) {
+            timelineDetail(row, run: run, tint: look.tint)
+        }
+        .padding(.leading, MightyTimelineMarker.width + 8)
+        .background(alignment: .topLeading) {
+            MightyTimelineMarker(node: row.node, above: index == 0 ? nil : .some(MightyTimeline.railAbove(group.rows, at: index)),
+                                 last: index == group.rows.count - 1, icon: look.icon)
+        }
+    }
+
+    /// The glyph and ink the diagram gives the block.
+    private func timelineLook(_ row: MightyTimeline.Row, run: MightyGraphRun) -> (icon: String, tint: Color) {
+        guard let agentIndex = row.agentIndex else {
+            return (styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue, Palette.tint(styleTitles.tint(run.input)))
+        }
+        let look = Self.agentPresentation(run.agents[agentIndex])
+        return (look.icon, look.tint)
+    }
+
+    /// After the kind: the block's usage capsule as the diagram shows it, then how long
+    /// its records span once it settled. Only figures the block has.
+    private func timelineMeta(_ row: MightyTimeline.Row, run: MightyGraphRun) -> [String] {
+        let capsule: String? = if let agentIndex = row.agentIndex {
+            ModelUsageFormat.blockCapsule(usage: run.agents[agentIndex].usage, records: run.agents[agentIndex].responseRecords ?? [], nodeModelLabel: nil, catalog: catalog)
+        } else {
+            ModelUsageFormat.blockCapsule(usage: run.usage, records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, catalog: catalog)
+        }
+        return [capsule, MightyTimelineText.duration(row.block.durationMs)].compactMap { $0 }
+    }
+
+    /// What the block's diagram card holds: what it was asked, and its records.
+    @ViewBuilder private func timelineDetail(_ row: MightyTimeline.Row, run: MightyGraphRun, tint: Color) -> some View {
+        let agent = row.agentIndex.map { run.agents[$0] }
+        let input = agent?.input ?? run.input
+        let status = agent?.status ?? run.status
+        let entries = (agent?.entries ?? run.rootEntries).filter { $0.kind != "user" }
+        let runID = run.sourceRunID ?? run.id
+        let records = (agent?.responseRecords ?? run.responseRecords) ?? []
+        let childBlocks = GraphChildBlocks.map(responseRecords: agent?.responseRecords ?? run.responseRecords, agents: run.agents, runId: runID)
+        VStack(alignment: .leading, spacing: 0) {
+            if !input.isEmpty {
+                Text(input).font(.system(size: 11)).foregroundStyle(Palette.ink).lineLimit(6)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(tint.opacity(0.055))
+                Divider().overlay(Palette.border)
+            }
+            if entries.isEmpty {
+                Text(L("phone.blocks.nothing")).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(11)
+            } else {
+                blockTranscript(id: "timeline-\(sessionID)-\(row.nodeID)", status: status, entries: entries, records: records, childBlocks: childBlocks, inTimeline: true)
+                    .frame(height: 260)
+            }
+        }
+        .accessibilityIdentifier("mighty-timeline-detail-\(row.nodeID)")
+    }
+
+    private func timelineResult(_ result: MightyTimeline.Result, group: MightyTimeline.Group, run: MightyGraphRun) -> some View {
+        let title = switch result.tone {
+        case .err: L("graph.block.resultError")
+        case .stop: L("graph.block.resultStopped")
+        default: L("graph.block.result")
+        }
+        let tokens = run.totalUsage.map { GraphTokenUsage.compact($0.total) }
+        let caption = ([L("graph.timeline.requestOrdinal", ["n": "\(group.ordinal)"])] + [tokens].compactMap { $0 }).joined(separator: " · ")
+        let files = run.status == "completed" ? resultFiles.files(for: run.id) : []
+        return MightyTimelineResultCard(result: result, title: title, caption: caption, full: timelineFull.contains(result.nodeID), onToggleFull: {
+            if !timelineFull.insert(result.nodeID).inserted { timelineFull.remove(result.nodeID) }
+        }) {
+            if !files.isEmpty {
+                Menu {
+                    ForEach(files) { file in
+                        Button(file.path + (file.line.map { ":\($0)" } ?? "")) { openReference(file.path, line: file.line) }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "doc.on.doc")
+                        Text("\(files.count)").font(.system(size: 10)).monospacedDigit()
+                    }
+                    .foregroundStyle(Palette.heroInk(result.tone))
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .help(L("graph.resultFiles.openButton"))
+                .accessibilityLabel(L("graph.resultFiles.countLabel", ["count": "\(files.count)"]))
+                .accessibilityIdentifier("mighty-timeline-result-files-\(result.nodeID)")
+            }
         }
     }
 }
@@ -561,7 +834,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                             if !node.isAuxiliary, node.content != .history {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(selection == node.id ? Palette.accent : .secondary)
+                                    .foregroundStyle(selection == node.id ? Palette.accent : Palette.ink2)
                                     .frame(width: 22, height: 22)
                                     .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
                                     .padding(2)
@@ -588,7 +861,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .clipped()
-            .background(Palette.subtle)
+            .background(MightyGraphDotGrid(offset: displayedOffset, zoom: zoom, dark: colorScheme == .dark))
 
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
@@ -616,6 +889,40 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     }
 }
 
+
+/// Concept D's page under the diagram, dotted in the line colour every 18pt of the
+/// diagram. The dots are laid from the camera's offset, so they travel with a pan.
+/// One dot is drawn into a step-sized tile and the page is filled with it as a tiled
+/// pattern, so a pan or zoom frame costs the same however many dots show.
+private struct MightyGraphDotGrid: View {
+    let offset: CGPoint
+    let zoom: CGFloat
+    let dark: Bool
+
+    var body: some View {
+        let palette = dark ? DesignTokens.dark : DesignTokens.light
+        Canvas { context, size in
+            let step = 18 * zoom
+            guard step >= 6 else { return }
+            let radius = max(0.6, zoom)
+            let ink = Self.color(palette.line)
+            // The tile's dot sits at its centre, so the tile is anchored half a step
+            // before the offset to keep a dot on every offset + n·step.
+            let tile = Image(size: CGSize(width: step, height: step)) { tile in
+                tile.fill(Path(ellipseIn: CGRect(x: step / 2 - radius, y: step / 2 - radius, width: radius * 2, height: radius * 2)), with: .color(ink))
+            }
+            context.fill(Path(CGRect(origin: .zero, size: size)),
+                         with: .tiledImage(tile, origin: CGPoint(x: offset.x - step / 2, y: offset.y - step / 2)))
+        }
+        .background(Self.color(palette.page))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private static func color(_ value: DesignColor) -> Color {
+        Color(.sRGB, red: Double(value.red) / 255, green: Double(value.green) / 255, blue: Double(value.blue) / 255)
+    }
+}
 
 /// A short request occupies its natural height; long requests stay selectable
 /// and scroll within the pinned request area, separate from agent output.

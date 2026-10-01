@@ -41,7 +41,7 @@ struct CLIUpdateSettingsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             Image(systemName: icon(result.status))
-                                .foregroundStyle(result.status == "failed" ? Color.orange : Color.secondary)
+                                .foregroundStyle(result.status == "failed" ? Palette.waitText : Color.secondary)
                             Text(L("settings.cliUpdate.resultRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status)]))
                                 .font(.system(size: 11, weight: .medium))
                             if ProviderOptions.isBeta(provider) { BetaBadge() }
@@ -59,7 +59,7 @@ struct CLIUpdateSettingsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             Image(systemName: icon(result.status == "succeeded" ? "updated" : result.status))
-                                .foregroundStyle(result.status == "failed" ? Color.orange : Color.secondary)
+                                .foregroundStyle(result.status == "failed" ? Palette.waitText : Color.secondary)
                             Text(L("settings.cliUpdate.pluginRowTemplate", ["provider": ProviderOptions.label(provider), "status": label(result.status == "succeeded" ? "updated" : result.status)]))
                                 .font(.system(size: 11, weight: .medium))
                             if ProviderOptions.isBeta(provider) { BetaBadge() }

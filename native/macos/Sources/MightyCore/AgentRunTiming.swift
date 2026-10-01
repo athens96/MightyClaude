@@ -66,18 +66,27 @@ public struct AgentRunTiming: Codable, Equatable, Sendable {
         return AgentRunTiming(startedAt: start, lastObservedAt: end, finishedAt: running ? nil : end, isApproximate: true)
     }
 
-    public static func parseTimestamp(_ value: String) -> Date? {
+    /// Built once: the views parse timestamps on every streaming redraw. The options are
+    /// set here and never changed, and ISO8601DateFormatter is thread-safe for parsing
+    /// and formatting, so the shared instances can be used from any thread.
+    private static let fractionalFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value), date.timeIntervalSince1970.isFinite { return date }
+        return formatter
+    }()
+    private static let plainFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value).flatMap { $0.timeIntervalSince1970.isFinite ? $0 : nil }
+        return formatter
+    }()
+
+    public static func parseTimestamp(_ value: String) -> Date? {
+        if let date = fractionalFormatter.date(from: value), date.timeIntervalSince1970.isFinite { return date }
+        return plainFormatter.date(from: value).flatMap { $0.timeIntervalSince1970.isFinite ? $0 : nil }
     }
 
     private static func timestamp(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        fractionalFormatter.string(from: date)
     }
     enum CodingKeys: String, CodingKey { case startedAt, lastObservedAt, finishedAt, isApproximate }
     public init(from decoder: Decoder) throws {

@@ -58,7 +58,7 @@ private struct PhaseModelProviderBlock: View {
             }
             addRow
             if let err = validationError {
-                Text(err).font(.system(size: 11)).foregroundStyle(.red)
+                Text(err).font(.system(size: 11)).foregroundStyle(Palette.errText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("phaseModels-error-\(provider)")
             }

@@ -86,12 +86,12 @@ struct MightyGraphResultFilesView: View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "doc.on.doc").foregroundStyle(Palette.accent)
-                Text("결과에 나온 파일").font(.system(size: 12, weight: .semibold))
-                Text("\(files.count)").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("graph.resultFiles.title")).font(.system(size: 12, weight: .semibold))
+                Text("\(files.count)").font(.system(size: 10)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 4)
-                Button(action: onClose) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("파일 목록 닫기")
-                    .accessibilityLabel("파일 목록 닫기")
+                Button(action: onClose) { Image(systemName: "xmark").foregroundStyle(Palette.ink2) }
+                    .buttonStyle(.plain).help(L("graph.resultFiles.closeButton"))
+                    .accessibilityLabel(L("graph.resultFiles.closeButton"))
                     .accessibilityIdentifier("mighty-result-files-close-\(nodeID)")
             }.padding(.horizontal, 12).frame(height: 38)
             Divider()
@@ -106,12 +106,12 @@ struct MightyGraphResultFilesView: View {
                                     Text(file.url.lastPathComponent).font(.system(size: 12, weight: .medium))
                                         .lineLimit(1).truncationMode(.middle)
                                     Text(file.path + (file.line.map { ":\($0)" } ?? ""))
-                                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.ink2)
                                         .lineLimit(2).truncationMode(.middle)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .padding(8).contentShape(Rectangle())
-                            .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
+                            .background(Palette.raised, in: RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain).help(file.path)
                         .accessibilityLabel("\(file.path) 열기")
@@ -121,9 +121,7 @@ struct MightyGraphResultFilesView: View {
             }
             .accessibilityIdentifier("mighty-result-files-scroll-\(nodeID)")
         }
-        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay { RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.45), lineWidth: 1) }
+        .mightyBlockCard()
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(nodeID)")
     }
 }

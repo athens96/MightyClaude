@@ -44,15 +44,15 @@ private struct ToolPermissionCard: View {
     var body: some View {
         let presentation = presentation
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
-                Text("\(presentation.title) · 승인 요청").fontWeight(.semibold).lineLimit(1)
-                Text(request.toolName).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 8) {
+                PaneWaitBadge(systemImage: "hand.raised.fill")
+                Text("\(presentation.title) · 승인 요청").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(request.toolName).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
-                if count > 1 { Text("\(count)개 대기").foregroundStyle(.secondary) }
-            }.font(.system(size: 11))
+                if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).foregroundStyle(Palette.ink2) }
+            }.font(.system(size: 12))
             if let headline = presentation.headline {
-                Text(headline).font(.system(size: 12, weight: .medium)).textSelection(.enabled)
+                Text(headline).font(.system(size: 14, weight: .bold)).foregroundStyle(Palette.ink).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("permission-headline")
             }
@@ -60,12 +60,12 @@ private struct ToolPermissionCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(presentation.fields.enumerated()), id: \.offset) { _, field in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(field.label).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                            Text(field.label).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.ink2)
                             if field.code {
                                 Text(field.value).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 8).padding(.vertical, 6)
-                                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             } else {
                                 Text(field.value).font(.system(size: 11)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
@@ -76,7 +76,7 @@ private struct ToolPermissionCard: View {
                         Text(request.summary).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                     }
                     if let path = request.blockedPath, !path.isEmpty { Text("접근 경로: \(path)").font(.system(size: 10)) }
-                    if let reason = request.reason, !reason.isEmpty { Text(reason).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    if let reason = request.reason, !reason.isEmpty { Text(reason).font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
                     DisclosureGroup("원본 JSON", isExpanded: $showsJSON) {
                         Text(request.inputJSON).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
@@ -85,24 +85,24 @@ private struct ToolPermissionCard: View {
             }.frame(maxHeight: 180)
             if !request.canAllow {
                 Text("이 요청은 현재 승인 화면에서 허용할 수 없습니다. 거부하거나 실행을 중지하세요.")
-                    .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
             }
             if let error = store.permissionErrors[sessionId] {
-                Text(error).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2)
+                Text(error).font(.system(size: 10)).foregroundStyle(Palette.errText).lineLimit(2)
             }
             HStack(spacing: 8) {
-                Text("이 요청에만 적용").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("이 요청에만 적용").font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 0)
                 if busy { ProgressView().controlSize(.mini) }
-                Button("거부") { answer(false) }.accessibilityIdentifier("permission-deny")
+                Button("거부") { answer(false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("permission-deny")
                 Button("이번만 허용") { answer(true) }
-                    .buttonStyle(.borderedProminent).disabled(!request.canAllow)
+                    .buttonStyle(PaneCardButtonStyle(prominent: true)).disabled(!request.canAllow)
                     .accessibilityIdentifier("permission-allow-once")
-            }.controlSize(.small).disabled(busy)
+            }.disabled(busy)
         }
-        .padding(12)
-        .background(Color.orange.opacity(0.055))
-        .overlay(alignment: .top) { Divider() }
+        // Concept D: the same amber-edged card as a question, above the composer.
+        .paneWaitCard()
+        .padding(.horizontal, 12).padding(.top, 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-request-\(request.id)")
     }

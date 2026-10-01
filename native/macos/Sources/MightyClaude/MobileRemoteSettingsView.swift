@@ -33,7 +33,7 @@ struct MobileRemoteSettingsSection: View {
             }
             connectionGuide
             HStack(spacing: 8) {
-                Circle().fill(status.relayConnected ? Color.green : settings.enabled ? Color.orange : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
+                Circle().fill(Palette.mark(status.relayConnected ? "completed" : settings.enabled ? "waiting" : "idle")).frame(width: 8, height: 8)
                 Text(status.relayConnected
                      ? (status.clients > 0 ? L("settings.mobileRemote.statusConnectedTemplate", ["count": "\(status.clients)"]) : L("settings.mobileRemote.statusRelayConnected"))
                      : settings.enabled ? L("settings.mobileRemote.statusConnecting") : L("settings.mobileRemote.statusOff"))
@@ -55,7 +55,7 @@ struct MobileRemoteSettingsSection: View {
                     }
                 }
             if settings.enabled, settings.effectiveRelayURL == nil {
-                Text(L("settings.mobileRemote.relayHint")).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Text(L("settings.mobileRemote.relayHint")).font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
             }
             if status.relayConnected, let pairing = status.pairingURL {
                 HStack(alignment: .top, spacing: 16) {
@@ -95,7 +95,7 @@ struct MobileRemoteSettingsSection: View {
             .disabled(store.mobileBusy)
             .accessibilityIdentifier("settings-mobile-legacy-toggle")
             if let warning = status.registryWarning {
-                Text(warning).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Text(warning).font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("settings-mobile-registry-warning")
             }
             if !status.devices.isEmpty { devices }
@@ -129,7 +129,7 @@ struct MobileRemoteSettingsSection: View {
         Text(L("settings.mobileRemote.connectedDevicesTitle")).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
         ForEach(status.devices) { device in
             HStack(spacing: 8) {
-                Image(systemName: device.legacy ? "questionmark.app" : "iphone").foregroundStyle(device.connected ? Color.green : .secondary)
+                Image(systemName: device.legacy ? "questionmark.app" : "iphone").foregroundStyle(device.connected ? Palette.doneText : .secondary)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(device.name).font(.system(size: 12))
@@ -148,17 +148,17 @@ struct MobileRemoteSettingsSection: View {
     }
 
     private var connectedBadge: some View {
-        Text(L("settings.mobileRemote.connectedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Color.green)
+        Text(L("settings.mobileRemote.connectedBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.doneText)
             .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Color.green.opacity(0.15), in: Capsule())
+            .background(Palette.doneSoft, in: Capsule())
     }
 
     /// A phone registered in the last day. An arrival the user did not make
     /// themselves is the one thing this list has to show at a glance.
     private var newBadge: some View {
-        Text(L("settings.mobileRemote.newDeviceBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Color.orange)
+        Text(L("settings.mobileRemote.newDeviceBadge")).font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.waitText)
             .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Color.orange.opacity(0.15), in: Capsule())
+            .background(Palette.waitSoft, in: Capsule())
             .accessibilityIdentifier("settings-mobile-new-badge")
     }
 

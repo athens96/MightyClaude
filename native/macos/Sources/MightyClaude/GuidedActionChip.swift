@@ -2,17 +2,18 @@ import SwiftUI
 import MightyCore
 
 extension Palette {
-    /// The nine palette names of §1.10, each mapped to the colour the app
-    /// already draws with. A manifest cannot name anything else.
+    /// The nine palette names of §1.10, each mapped to the D ink that plays
+    /// that role on the Mac (the phone's `tintColor` uses the same table).
+    /// A manifest cannot name anything else.
     static func tint(_ value: StyleTint?) -> Color {
         switch value {
-        case .purple: return .purple
-        case .teal: return .teal
-        case .indigo: return .indigo
-        case .mint: return .mint
-        case .orange: return .orange
-        case .green: return .green
-        case .red: return .red
+        case .purple: return Palette.agentText
+        case .teal: return Palette.taskText
+        case .indigo: return Palette.questionText
+        case .mint: return Palette.compactText
+        case .orange: return Palette.steerText
+        case .green: return Palette.doneText
+        case .red: return Palette.errText
         case .secondary: return .secondary
         case .accent, nil: return Palette.accent
         }

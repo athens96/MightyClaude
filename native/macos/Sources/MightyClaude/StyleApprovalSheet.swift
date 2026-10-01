@@ -115,7 +115,7 @@ struct StyleApprovalSheet: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else if store.styleTrustLocked {
                 Text(verbatim: StyleSettingsList.lockedMessage(store.styleTrustPath))
-                    .font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 11)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             Button(candidate.readOnly ? "닫기" : "지금은 안 함", action: onClose)

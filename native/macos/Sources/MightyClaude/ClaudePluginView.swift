@@ -263,13 +263,13 @@ struct ClaudePluginView: View {
             }
             if let snapshot = model.snapshot, snapshot.status != "ready" || (model.provider == "codex" && !snapshot.detail.isEmpty) {
                 Text(snapshot.detail).font(.system(size: 11))
-                    .foregroundStyle(snapshot.status != "ready" || !snapshot.diagnosticOutput.isEmpty ? Color.orange : Color.secondary)
+                    .foregroundStyle(snapshot.status != "ready" || !snapshot.diagnosticOutput.isEmpty ? Palette.waitText : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("\(model.provider)-plugin-load-status")
             }
             if let result = model.lastResult {
                 Label(result.detail, systemImage: result.status == "succeeded" ? "checkmark.circle.fill" : "info.circle")
-                    .font(.system(size: 11)).foregroundStyle(result.status == "succeeded" ? Color.green : Color.orange)
+                    .font(.system(size: 11)).foregroundStyle(result.status == "succeeded" ? Palette.doneText : Palette.waitText)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     .accessibilityIdentifier("\(model.provider)-plugin-status")
 
@@ -316,12 +316,12 @@ struct ClaudePluginView: View {
                 if let version = plugin.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                 Spacer(minLength: 8)
                 Text(plugin.enabled.map { $0 ? "활성" : "비활성" } ?? "상태 미확인")
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(plugin.enabled == true ? Color.green : Color.secondary)
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(plugin.enabled == true ? Palette.doneText : Color.secondary)
             }
             if !plugin.description.isEmpty { Text(plugin.description).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).lineLimit(3) }
             Text("\(plugin.marketplace ?? "직접 설치") · \(scopeLabel(plugin.scope))").font(.system(size: 10)).foregroundStyle(.secondary)
             if let path = plugin.projectPath { Text(path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(path) }
-            ForEach(Array(plugin.errors.enumerated()), id: \.offset) { _, error in Text(error).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+            ForEach(Array(plugin.errors.enumerated()), id: \.offset) { _, error in Text(error).font(.system(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true) }
             ForEach(Array(plugin.notes.enumerated()), id: \.offset) { _, note in Text(note).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))

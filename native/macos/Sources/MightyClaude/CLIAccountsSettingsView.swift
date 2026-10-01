@@ -40,14 +40,14 @@ struct CLIAccountsSettingsSection: View {
                     Text(ProviderOptions.label(provider)).font(.system(size: 12, weight: .medium))
                     if ProviderOptions.isBeta(provider) { BetaBadge() }
                 }
-                Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.system(size: 11)).foregroundStyle(status?.loggedIn == false ? Color.orange : Color.secondary).lineLimit(1).textSelection(.enabled)
+                Text(status?.summary ?? L("settings.cliAccounts.statusChecking")).font(.system(size: 11)).foregroundStyle(status?.loggedIn == false ? Palette.waitText : Color.secondary).lineLimit(1).textSelection(.enabled)
                     .accessibilityIdentifier("cli-account-status-\(provider)")
                 if let status, !status.canSignOut, !status.detail.isEmpty, status.detail != status.summary {
                     Text(status.detail).font(.system(size: 10)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
                 }
                 if pending { Text(L("settings.cliAccounts.statusPending")).font(.system(size: 10)).foregroundStyle(.tertiary) }
                 if let message = store.cliAccountMessages[provider] {
-                    Label(message, systemImage: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Label(message, systemImage: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("cli-account-message-\(provider)")
                 }
             }

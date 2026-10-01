@@ -113,7 +113,7 @@ struct RunSettingsView: View {
                 }
                 .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true).padding(16).disabled(running)
             }
-            if let validationError { Text(validationError).font(.system(size: 11)).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 10) }
+            if let validationError { Text(validationError).font(.system(size: 11)).foregroundStyle(Palette.errText).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 10) }
             Divider()
             HStack {
                 Text(L("settings.run.appliesNextRequest")).font(.system(size: 10)).foregroundStyle(.secondary)
@@ -283,7 +283,7 @@ struct AppSettingsView: View {
                         HStack {
                             HStack(spacing: 6) { ProviderIcon(provider: id, size: 13); Text(provider.name); if ProviderOptions.isBeta(id) { BetaBadge() } }.font(.system(size: 13, weight: .medium))
                             Spacer()
-                            Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? .green : .orange)
+                            Text(provider.available ? L("settings.providers.statusReady") : L("settings.providers.statusNeedsSetup")).font(.system(size: 10)).foregroundStyle(provider.available ? Palette.doneText : Palette.waitText)
                         }
                         if let version = provider.version { Text(version).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary) }
                         Text(provider.detail).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)

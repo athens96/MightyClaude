@@ -193,6 +193,9 @@ final class AppStore: ObservableObject {
     @Published var pendingRemoval: Workspace?
     /// The workspace whose "continue an earlier session" picker is open.
     @Published var resumePickerWorkspace: Workspace?
+    /// The window shows "작업 현황" instead of the active workspace. Not saved: a
+    /// relaunch opens on the workspace, and choosing any workspace or pane leaves it.
+    @Published var showsDashboard = false
     /// Session ids the app's panes started or resumed, loaded on first use.
     var knownSessionIDs: [String]?
     @Published var error: String?
@@ -451,6 +454,7 @@ final class AppStore: ObservableObject {
 
     func selectWorkspace(_ id: String) {
         guard snapshot.workspaces.contains(where: { $0.id == id }) else { return }
+        if showsDashboard { showsDashboard = false }
         let remembered = (snapshot.paneLayoutActiveSessionIds?[id]).flatMap { saved in snapshot.sessions.first { $0.id == saved && $0.workspaceId == id }?.id }
         let selected = remembered ?? layoutForWorkspace(id)?.firstSelectedSessionId ?? snapshot.sessions.first { $0.workspaceId == id }?.id
         var next = paneSelectionSnapshot(workspaceId: id, sessionId: selected)
@@ -473,6 +477,7 @@ final class AppStore: ObservableObject {
 
     func selectSession(_ id: String) {
         guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return }
+        if showsDashboard { showsDashboard = false }
         let next = paneSelectionSnapshot(workspaceId: session.workspaceId, sessionId: id)
         let changed = snapshot.activeSessionId != id || snapshot.activeWorkspaceId != session.workspaceId
         if next != snapshot { snapshot = next }

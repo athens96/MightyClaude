@@ -7,9 +7,9 @@ struct BetaBadge: View {
     var body: some View {
         Text(verbatim: L("badge.beta"))
             .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Palette.stopText)
             .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Palette.subtle, in: Capsule())
+            .background(Palette.stopSoft, in: Capsule())
             .fixedSize()
             .accessibilityLabel(L("badge.betaAccessibility"))
     }

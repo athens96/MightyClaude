@@ -18,4 +18,13 @@ extension AppStore {
             session.graphResultSize = size?.normalized
         }
     }
+
+    /// The Mighty view's "다이어그램 | 타임라인" choice, kept per pane. The diagram is
+    /// saved as nothing at all, so a pane that never chose stays as it was saved.
+    func setGraphViewMode(_ sessionID: String, mode: MightyGraphViewMode) {
+        updateSession(sessionID) { session in
+            guard session.kind == "claude" else { return }
+            session.graphViewMode = mode == .diagram ? nil : mode
+        }
+    }
 }

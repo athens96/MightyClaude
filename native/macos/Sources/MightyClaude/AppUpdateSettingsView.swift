@@ -10,7 +10,7 @@ struct AppUpdateSettingsSection: View {
             if store.appUpdatePublicKey == nil {
                 // Rule 1: keyless builds do not support update checks — no bypass.
                 Text(L("settings.appUpdate.noPublicKeyNotice"))
-                    .font(.system(size: 11)).foregroundStyle(.orange)
+                    .font(.system(size: 11)).foregroundStyle(Palette.waitText)
                 HStack(spacing: 8) {
                     Spacer()
                     Button(L("settings.appUpdate.checkButton")) {}.disabled(true)
@@ -66,7 +66,7 @@ struct AppUpdateSettingsSection: View {
         case .installing:
             ProgressView().controlSize(.small); Text(L("settings.appUpdate.installing")).font(.system(size: 11))
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(.orange).lineLimit(3).textSelection(.enabled)
+            Label(message, systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(Palette.waitText).lineLimit(3).textSelection(.enabled)
         }
     }
 
