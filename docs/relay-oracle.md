@@ -123,42 +123,51 @@ bash relay/deploy/oracle/setup.sh
 
 | 명령 | 하는 일 |
 |---|---|
-| `bash relay/deploy/oracle/preflight.sh` | 배포 전 관문. 인스턴스 메타데이터에서 shape·OCPU·메모리를 읽고, A1이 아니면 실제 외부 전송 속도를 재서 TURN(합계 8 Mbps)을 감당하는지 판단 |
+| `bash relay/deploy/oracle/preflight.sh` | 배포 전 관문. 인스턴스 메타데이터에서 shape·OCPU·메모리를 읽고, 받아들인 shape(A1 또는 E2.1.Micro)인지 확인하며, Micro면 실제 외부 전송 속도를 재서 TURN(합계 8 Mbps)을 감당하는지 판단 |
 | `bash relay/deploy/oracle/setup.sh <도메인>` | VM에서 실행. 릴레이·Caddy·coturn을 올리고 OS 방화벽에 3478과 중계 포트 49160-49200을 열며, coturn이 인증을 요구하는지 배포 직후 확인 |
-| `bash relay/deploy/oracle/verify-live.sh` | Mac에서 실행. 살아 있는 배포를 R1~R7로 확인(아래) |
+| `bash relay/deploy/oracle/verify-live.sh` | Mac에서 실행. 살아 있는 배포를 R1~R9로 확인(아래) |
 | `bash relay/deploy/oracle/open-turn-port.sh --profile mighty` | Oracle 보안 목록에 UDP/TCP 3478과 UDP 49160-49200을 추가. **OCI 로그인 세션이 필요** |
 
 `verify-live.sh`가 보는 것: R1 `/healthz`, R2 wss 제어 소켓의 `turn-credentials`
-발급, R3 컨테이너 상태, R4 coturn이 인증을 요구하는지, R5 릴레이가 발급한
-자격증명으로 Allocate 성공 + 중계 포트가 49160-49200 안인지, R6 iptables,
-R7 위조 serverId가 4401로 끊기는지(보안 라운드 F-01).
+발급, R3 컨테이너 상태, R4 자격증명 없는 Allocate가 거절되는지(coturn이 설정
+파일을 읽었다는 증거), R5 릴레이가 발급한 자격증명으로 Allocate 성공 + 중계
+포트가 49160-49200 안인지, R6 iptables, R7 위조 serverId가 4401로
+끊기는지(보안 라운드 F-01), R8 VM shape이 받아들인 shape이고 살아 있는 coturn
+설정에 세션당 2 Mbps·합계 8 Mbps 할당량과 중계 포트 범위가 그대로 있는지,
+R9 밖에서 UDP 3478이 닿는지(Oracle 보안 목록). 하나라도 깨지면 종료 코드 1.
 
-### 2026-10-01 배포 상태
+이 계약은 서버 없이도 `bash scripts/tests/test-turn-live-check.sh`로 확인할 수
+있습니다(단계 누락, 받아들이지 않은 shape 통과, 포트 범위 불일치, 할당량 완화를
+잡습니다).
 
-- 릴레이 재배포 완료: TURN 자격증명 발급과 보안 라운드 호스트 인증이 라이브.
-- coturn 라이브: realm `mightyclaude.duckdns.org`, 중계 포트 49160-49200,
-  세션당 2 Mbps·합계 8 Mbps 할당량, 사설·링크로컬·메타데이터 대역 거부.
-- OS 방화벽(iptables): UDP/TCP 3478과 UDP 49160-49200 열림, 재부팅에도 유지.
-- `verify-live.sh`의 R1~R7 전부 통과.
+### 2026-10-02 배포 상태 — 라이브, R1~R9 전부 통과
 
-**남은 한 가지(사용자 작업).** Oracle 클라우드 보안 목록(VCN)이 아직 UDP 3478을
-막고 있습니다. 밖에서 보낸 STUN 패킷이 VM에 한 개도 도착하지 않는 것으로
-확인했고(`tcpdump`), VM 안의 coturn과 OS 방화벽은 정상입니다. 보안 목록을 바꾸려면
-브라우저 로그인이 필요한 OCI 세션이 있어야 해서 대신 해 드릴 수 없습니다:
+- 릴레이 라이브: `/healthz` ok, TURN 자격증명 발급(ttl 3600s)과 보안 라운드
+  호스트 인증(위조 serverId → 4401)이 모두 살아 있습니다.
+- coturn 라이브: realm `mightyclaude.duckdns.org`. 자격증명 없는 Allocate는
+  401로 거절되고, 릴레이가 발급한 자격증명으로는 Allocate가 성공하며 중계
+  주소가 49160-49200 안에서 나옵니다(확인 당시 `…:49174`).
+- 할당량: 세션당 2 Mbps(`max-bps`)·합계 8 Mbps(`bps-capacity`), 사설·링크로컬·
+  메타데이터 대역 거부. R8이 살아 있는 설정에서 직접 읽어 확인합니다.
+- 방화벽: OS(iptables) UDP/TCP 3478 + UDP 49160-49200, 그리고 Oracle 보안
+  목록(VCN)도 사용자가 열어 밖에서 보낸 STUN이 VM에 닿습니다(R9 ok). 강제 TURN
+  경로를 기기에서 시험할 수 있습니다.
+
+**shape: 받아들인 `VM.Standard.E2.1.Micro`.** 지금 VM은 A1이 아니라
+`VM.Standard.E2.1.Micro`(1 OCPU·1 GB)이고, 메타데이터가 0.5 Gbps라고 적어 둔 것과
+달리 실제 외부 전송 속도는 53.6~53.9 Mbps로 묶여 있습니다. 즉 "~50 Mbps Micro"가
+맞습니다. 사용자가 이 shape을 베타에서 받아들였고, 그 전제는 TURN 할당량(세션당
+2 Mbps·합계 8 Mbps)입니다. 그래서 `preflight.sh`는 Micro를 이름으로 통과시키지
+않고 매번 실제 속도를 재며(기준 16 Mbps = 합계 할당량의 2배 여유), `verify-live.sh`
+R8은 그 할당량이 살아 있는 coturn 설정에 그대로 있는지 확인합니다. 그 둘이 아닌
+shape은 두 스크립트 모두 멈춥니다. 나중에 A1으로 올리려면 OCI 로그인 뒤 A1 용량이
+날 때 `provision.sh`를 다시 돌려 새 인스턴스를 만들어야 합니다(공인 IP 재지정 포함).
 
 ```bash
-oci session authenticate --profile-name mighty --region ap-singapore-1
-bash relay/deploy/oracle/open-turn-port.sh --profile mighty
-bash relay/deploy/oracle/verify-live.sh     # PENDING 줄이 ok로 바뀝니다
+bash relay/deploy/oracle/preflight.sh      # shape + 실측 대역폭
+bash relay/deploy/oracle/verify-live.sh    # R1~R9
+bash scripts/tests/test-turn-live-check.sh # 서버 없이 계약만 확인
 ```
-
-**pre-flight 결과(그대로 보고).** 지금 VM은 A1이 아니라
-`VM.Standard.E2.1.Micro`(1 OCPU·1 GB)이고, 메타데이터가 0.5 Gbps라고 적어 둔 것과
-달리 실제 외부 전송 속도는 세 번 재서 53.6~53.9 Mbps로 묶여 있습니다. 즉 사용자가
-걱정한 "~50 Mbps Micro"가 맞습니다. TURN이 쓰는 대역폭(세션당 2 Mbps, 합계
-8 Mbps)에는 충분해서 pre-flight는 측정값 기준으로 통과시키지만, shape 기준으로는
-통과가 아닙니다. A1으로 올리려면 OCI 로그인 뒤 A1 용량이 날 때
-`provision.sh`를 다시 돌려 새 인스턴스를 만들어야 합니다(공인 IP 재지정 포함).
 
 ### 함정: coturn이 설정 파일을 읽지 못하면 공개 중계가 된다
 
