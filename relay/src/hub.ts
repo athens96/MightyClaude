@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import type { RawData, WebSocket } from 'ws';
 
 import type { RelayConfig } from './config.ts';
@@ -8,6 +9,9 @@ import {
   truncateReason,
   type ControlNotice,
   type SocketParams,
+  type TurnCredentialsPayload,
+  type TurnRateLimited,
+  type TurnUnavailable,
 } from './protocol.ts';
 
 /** A frame held while the host data socket is still attaching. */
@@ -47,6 +51,10 @@ function shortId(serverId: string): string {
 /**
  * Stateless-per-process pairing engine: it matches a host control socket with client
  * data sockets and their host counterparts, then pipes frames verbatim.
+ *
+ * TURN credential minting: the relay holds the coturn use-auth-secret and mints
+ * short-lived HMAC-SHA1 credentials on request from authenticated host control
+ * sockets. The secret never appears in any frame forwarded to client data sockets.
  */
 export class RelayHub {
   readonly #config: RelayConfig;
@@ -55,6 +63,11 @@ export class RelayHub {
   readonly #alive = new Map<WebSocket, boolean>();
   #keepalive: NodeJS.Timeout | null = null;
 
+  /** Timestamps (ms) of recent TURN mints, keyed by serverId. */
+  readonly #turnRateByServerId = new Map<string, number[]>();
+  /** Timestamps (ms) of recent TURN mints, keyed by IP address. */
+  readonly #turnRateByIp = new Map<string, number[]>();
+
   constructor(config: RelayConfig, log: RelayLogger = (line) => console.log(line)) {
     this.#config = config;
     this.#log = log;
@@ -62,7 +75,7 @@ export class RelayHub {
   }
 
   /** Entry point for an accepted WebSocket with an already validated query. */
-  handleSocket(ws: WebSocket, params: SocketParams): void {
+  handleSocket(ws: WebSocket, params: SocketParams, ip: string): void {
     this.#track(ws);
     if (params.kind !== 'client-data' && !ownsServerId(params.serverId, params.hostToken)) {
       this.#untrack(ws);
@@ -71,7 +84,7 @@ export class RelayHub {
     }
     switch (params.kind) {
       case 'control':
-        this.#handleControl(ws, params.serverId);
+        this.#handleControl(ws, params.serverId, ip);
         return;
       case 'client-data':
         this.#handleClientData(ws, params.serverId, params.connectionId ?? '');
@@ -94,11 +107,13 @@ export class RelayHub {
       this.#keepalive = null;
     }
     this.#alive.clear();
+    this.#turnRateByServerId.clear();
+    this.#turnRateByIp.clear();
   }
 
   // --- control socket ------------------------------------------------------
 
-  #handleControl(ws: WebSocket, serverId: string): void {
+  #handleControl(ws: WebSocket, serverId: string, ip: string): void {
     let entry = this.#servers.get(serverId);
     if (entry === undefined) {
       entry = { control: null, connections: new Map() };
@@ -113,6 +128,9 @@ export class RelayHub {
     }
     this.#log(`[${shortId(serverId)}] connect control`);
 
+    ws.on('message', (data: RawData) => {
+      this.#handleControlMessage(ws, serverId, ip, toBuffer(data));
+    });
     ws.on('close', () => {
       this.#untrack(ws);
       this.#log(`[${shortId(serverId)}] disconnect control`);
@@ -125,6 +143,118 @@ export class RelayHub {
       if (current.connections.size === 0) this.#servers.delete(serverId);
     });
     ws.on('error', () => closeSocket(ws, CloseCode.normal, ''));
+  }
+
+  /**
+   * Handles a message on the host control socket.
+   * Only `turn-credentials-request` is acted upon; anything else is ignored
+   * (the relay must not read or act on E2EE application frames that might
+   * occasionally be routed through the control socket by accident).
+   */
+  #handleControlMessage(ws: WebSocket, serverId: string, ip: string, data: Buffer): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data.toString('utf8'));
+    } catch {
+      return;
+    }
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      (parsed as Record<string, unknown>)['type'] !== 'turn-credentials-request'
+    ) {
+      return;
+    }
+    this.#handleTurnRequest(ws, serverId, ip);
+  }
+
+  // --- TURN credential minting --------------------------------------------
+
+  #handleTurnRequest(ws: WebSocket, serverId: string, ip: string): void {
+    const secret = this.#config.turnSecret;
+    if (!secret) {
+      const msg: TurnUnavailable = { type: 'turn-unavailable' };
+      ws.send(JSON.stringify(msg));
+      return;
+    }
+
+    const now = Date.now();
+
+    const perServer = this.#rateSlot(
+      this.#turnRateByServerId,
+      serverId,
+      this.#config.turnMaxPerServerId,
+      now,
+    );
+    if (!perServer.ok) {
+      const msg: TurnRateLimited = {
+        type: 'turn-rate-limited',
+        retryAfterSecs: perServer.retryAfterSecs,
+      };
+      ws.send(JSON.stringify(msg));
+      return;
+    }
+
+    const perIp = this.#rateSlot(this.#turnRateByIp, ip, this.#config.turnMaxPerIp, now);
+    if (!perIp.ok) {
+      const msg: TurnRateLimited = {
+        type: 'turn-rate-limited',
+        retryAfterSecs: perIp.retryAfterSecs,
+      };
+      ws.send(JSON.stringify(msg));
+      return;
+    }
+
+    // Mint HMAC-SHA1 TURN credentials (coturn REST API format).
+    const ttl = this.#config.turnCredentialTtlSecs;
+    const expiry = Math.floor(now / 1000) + ttl;
+    const username = `${expiry}:${serverId.slice(0, 16)}`;
+    const password = createHmac('sha1', secret).update(username, 'utf8').digest('base64');
+
+    // Record the mint.
+    perServer.times.push(now);
+    this.#turnRateByServerId.set(serverId, perServer.times);
+    perIp.times.push(now);
+    this.#turnRateByIp.set(ip, perIp.times);
+
+    const uris = [`turn:${this.#config.turnHost}:${this.#config.turnPort}`];
+    const msg: TurnCredentialsPayload = { type: 'turn-credentials', username, password, ttl, uris };
+    ws.send(JSON.stringify(msg));
+    this.#log(`[${shortId(serverId)}] turn-credentials minted`);
+  }
+
+  /**
+   * Prunes mints older than the rate window out of `bucket[key]`, then reports whether
+   * one more mint fits under `limit`. Buckets left empty are dropped so the maps cannot
+   * grow without bound as hosts and source IPs come and go.
+   */
+  #rateSlot(
+    bucket: Map<string, number[]>,
+    key: string,
+    limit: number,
+    now: number,
+  ):
+    | { readonly ok: true; readonly times: number[] }
+    | { readonly ok: false; readonly retryAfterSecs: number } {
+    const window = this.#config.turnRateWindowMs;
+    const times = (bucket.get(key) ?? []).filter((t) => now - t < window);
+    if (times.length === 0) bucket.delete(key);
+    else bucket.set(key, times);
+    if (times.length < limit) return { ok: true, times };
+    const oldest = times[0] ?? now;
+    return { ok: false, retryAfterSecs: Math.max(1, Math.ceil((oldest + window - now) / 1000)) };
+  }
+
+  /** Drops rate-limit buckets whose mints have all aged out of the window. */
+  #sweepTurnRates(now: number): void {
+    const window = this.#config.turnRateWindowMs;
+    for (const bucket of [this.#turnRateByServerId, this.#turnRateByIp]) {
+      for (const [key, times] of bucket) {
+        const live = times.filter((t) => now - t < window);
+        if (live.length === 0) bucket.delete(key);
+        else if (live.length !== times.length) bucket.set(key, live);
+      }
+    }
   }
 
   // --- client data socket --------------------------------------------------
@@ -295,6 +425,7 @@ export class RelayHub {
 
   #startKeepalive(): void {
     this.#keepalive = setInterval(() => {
+      this.#sweepTurnRates(Date.now());
       for (const [ws, alive] of this.#alive) {
         if (!alive) {
           this.#alive.delete(ws);
@@ -307,11 +438,6 @@ export class RelayHub {
     }, this.#config.pingIntervalMs);
     this.#keepalive.unref?.();
   }
-}
-
-function forward(target: WebSocket, payload: Buffer, binary: boolean): void {
-  if (target.readyState !== target.OPEN) return;
-  target.send(payload, { binary });
 }
 
 function closeSocket(ws: WebSocket, code: number, reason: string): void {

@@ -4,6 +4,9 @@ name: mightyclaude-relay
 # certificate for RELAY_DOMAIN on its own over ports 80/443. Both images are
 # built or pulled for the server's own CPU, so an Ampere (arm64) and an AMD
 # micro instance work alike.
+#
+# coturn provides TURN relay on UDP/TCP 3478. The relay mints short-lived HMAC
+# credentials (use-auth-secret); the secret lives only here, never on clients.
 services:
   relay:
     build:
@@ -12,6 +15,13 @@ services:
     environment:
       PORT: "8787"
       HOST: "0.0.0.0"
+      TURN_SECRET: "${TURN_SECRET:?set TURN_SECRET in .env}"
+      TURN_HOST: "${RELAY_DOMAIN:?set RELAY_DOMAIN in .env}"
+      TURN_PORT: "3478"
+      TURN_CREDENTIAL_TTL_SECS: "3600"
+      TURN_RATE_WINDOW_MS: "600000"
+      TURN_MAX_PER_SERVER_ID: "5"
+      TURN_MAX_PER_IP: "10"
 
   caddy:
     image: caddy:2-alpine
@@ -28,6 +38,14 @@ services:
       - caddy_config:/config
     depends_on:
       - relay
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /etc/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
 
 volumes:
   caddy_data:

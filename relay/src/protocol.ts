@@ -59,6 +59,34 @@ export interface ControlNotice {
   readonly connectionId: string;
 }
 
+/** Host → relay: request TURN credentials on the control socket (plaintext, not E2EE). */
+export interface TurnCredentialsRequest {
+  readonly type: 'turn-credentials-request';
+}
+
+/**
+ * Relay → host: short-lived HMAC TURN credentials minted from the relay's
+ * coturn use-auth-secret. The secret itself never leaves the relay process.
+ */
+export interface TurnCredentialsPayload {
+  readonly type: 'turn-credentials';
+  readonly username: string;
+  readonly password: string;
+  readonly ttl: number;
+  readonly uris: string[];
+}
+
+/** Relay → host: request was received but rate-limited. */
+export interface TurnRateLimited {
+  readonly type: 'turn-rate-limited';
+  readonly retryAfterSecs: number;
+}
+
+/** Relay → host: TURN credentials not available (secret not configured). */
+export interface TurnUnavailable {
+  readonly type: 'turn-unavailable';
+}
+
 export type ParseResult =
   | { readonly ok: true; readonly params: SocketParams }
   | { readonly ok: false; readonly reason: string };

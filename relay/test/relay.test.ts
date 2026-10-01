@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { WebSocket } from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -368,6 +368,465 @@ describe('host ownership', () => {
     const { serverId } = identity('malformed');
     const ws = socket(relay, { serverId, role: 'server', v: '1', hostToken: 'not-hex' });
     expect((await closed(ws)).code).toBe(4400);
+  });
+});
+
+describe('turn credentials', () => {
+  const TURN_SECRET = 'test-turn-secret-abc123';
+
+  it('returns turn-unavailable when no secret is configured', async () => {
+    const { serverId, hostToken } = identity('turn-noconf');
+    const ctrl = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(ctrl);
+
+    ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+    const resp = await nextJson(ctrl);
+    expect(resp['type']).toBe('turn-unavailable');
+  });
+
+  it('mints valid HMAC-SHA1 TURN credentials for an authenticated host', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnHost: 'turn.example.com',
+      turnPort: 3478,
+      turnCredentialTtlSecs: 3600,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-mint');
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const resp = await nextJson(ctrl);
+
+      expect(resp['type']).toBe('turn-credentials');
+      expect(typeof resp['username']).toBe('string');
+      expect(typeof resp['password']).toBe('string');
+      expect(resp['ttl']).toBe(3600);
+      expect(Array.isArray(resp['uris'])).toBe(true);
+      expect((resp['uris'] as string[])[0]).toContain('turn.example.com');
+
+      // Verify HMAC-SHA1 is correct (coturn REST API format).
+      const username = resp['username'] as string;
+      const expected = createHmac('sha1', TURN_SECRET).update(username, 'utf8').digest('base64');
+      expect(resp['password']).toBe(expected);
+
+      // Username must start with an expiry timestamp.
+      const expiry = Number(username.split(':')[0]);
+      expect(expiry).toBeGreaterThan(Date.now() / 1000);
+
+      // The raw secret must not appear anywhere in the response.
+      const raw = JSON.stringify(resp);
+      expect(raw).not.toContain(TURN_SECRET);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('the TURN response is sent only to the host control socket, never to client data sockets', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-isolation');
+      const connectionId = 'conn-turn-iso-01';
+
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+
+      const cli = new WebSocket(url(turnRelay, { serverId, role: 'client', connectionId, v: '1' }));
+      open.push(cli);
+      await opened(cli);
+      // Drain the 'connected' notice.
+      await nextJson(ctrl);
+
+      // Collect any frames the client receives while TURN is being requested.
+      const clientFrames: unknown[] = [];
+      cli.on('message', (data: Buffer) => {
+        try {
+          clientFrames.push(JSON.parse(data.toString('utf8')));
+        } catch {
+          clientFrames.push(data);
+        }
+      });
+
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const resp = await nextJson(ctrl);
+      expect(resp['type']).toBe('turn-credentials');
+
+      // Give the relay a tick to propagate anything to the client.
+      await new Promise((r) => setTimeout(r, 30));
+      expect(clientFrames).toHaveLength(0);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('rate-limits per serverId', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 2,
+      turnMaxPerIp: 100,
+      turnRateWindowMs: 60_000,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-rate-sid');
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const r1 = await nextJson(ctrl);
+      expect(r1['type']).toBe('turn-credentials');
+
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const r2 = await nextJson(ctrl);
+      expect(r2['type']).toBe('turn-credentials');
+
+      // Third request exceeds the per-serverId limit.
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const r3 = await nextJson(ctrl);
+      expect(r3['type']).toBe('turn-rate-limited');
+      expect(typeof r3['retryAfterSecs']).toBe('number');
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('rate-limits per IP', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 100,
+      turnMaxPerIp: 2,
+      turnRateWindowMs: 60_000,
+    });
+    try {
+      // Use two different serverIds so per-serverId limit is not hit.
+      const a = identity('turn-rate-ip-a');
+      const b = identity('turn-rate-ip-b');
+      const c = identity('turn-rate-ip-c');
+
+      const ctrlA = new WebSocket(url(turnRelay, { serverId: a.serverId, role: 'server', v: '1', hostToken: a.hostToken }));
+      open.push(ctrlA);
+      await opened(ctrlA);
+      ctrlA.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      expect((await nextJson(ctrlA))['type']).toBe('turn-credentials');
+
+      const ctrlB = new WebSocket(url(turnRelay, { serverId: b.serverId, role: 'server', v: '1', hostToken: b.hostToken }));
+      open.push(ctrlB);
+      await opened(ctrlB);
+      ctrlB.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      expect((await nextJson(ctrlB))['type']).toBe('turn-credentials');
+
+      // Third request from the same IP (127.0.0.1) hits the per-IP limit.
+      const ctrlC = new WebSocket(url(turnRelay, { serverId: c.serverId, role: 'server', v: '1', hostToken: c.hostToken }));
+      open.push(ctrlC);
+      await opened(ctrlC);
+      ctrlC.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      expect((await nextJson(ctrlC))['type']).toBe('turn-rate-limited');
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('ignores unrecognised messages on the control socket (relay stays blind)', async () => {
+    const { serverId, hostToken } = identity('turn-blind');
+    const ctrl = socket(relay, { serverId, role: 'server', v: '1', hostToken });
+    await opened(ctrl);
+
+    // Send a binary E2EE-like payload — relay must not crash or respond.
+    ctrl.send(Buffer.from([0x00, 0x01, 0x02, 0x03]));
+    ctrl.send(JSON.stringify({ type: 'unknown-relay-message', data: 'ignored' }));
+
+    // Control socket must still be open.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(ctrl.readyState).toBe(ctrl.OPEN);
+  });
+
+  it('defaults the credential lifetime to ~1 h', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-ttl-default');
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const resp = await nextJson(ctrl);
+
+      expect(resp['ttl']).toBe(3600);
+      const expiry = Number((resp['username'] as string).split(':')[0]);
+      const nowSecs = Math.floor(Date.now() / 1000);
+      // ~1 h ahead: allow a few seconds of slack for test execution time.
+      expect(expiry).toBeGreaterThanOrEqual(nowSecs + 3590);
+      expect(expiry).toBeLessThanOrEqual(nowSecs + 3600);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('never mints for a client data socket — the request is forwarded as opaque payload', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-client-cannot-mint');
+      const connectionId = 'conn-turn-cli-01';
+
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+      const cli = new WebSocket(url(turnRelay, { serverId, role: 'client', connectionId, v: '1' }));
+      open.push(cli);
+      await opened(cli);
+      expect((await nextJson(ctrl))['type']).toBe('connected');
+
+      const clientFrames: Buffer[] = [];
+      cli.on('message', (data: Buffer) => clientFrames.push(data));
+
+      // A phone asking the relay directly for credentials must get nothing back.
+      const request = JSON.stringify({ type: 'turn-credentials-request' });
+      cli.send(request);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(clientFrames).toHaveLength(0);
+
+      // Instead the bytes were queued for the Mac as ordinary opaque payload.
+      const hst = new WebSocket(
+        url(turnRelay, { serverId, role: 'server', connectionId, v: '1', hostToken }),
+      );
+      open.push(hst);
+      const first = nextFrame(hst);
+      await opened(hst);
+      expect((await first).data.toString('utf8')).toBe(request);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('never mints for a host data socket — the request is forwarded as opaque payload', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-hostdata-cannot-mint');
+      const connectionId = 'conn-turn-hd-01';
+
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+      const cli = new WebSocket(url(turnRelay, { serverId, role: 'client', connectionId, v: '1' }));
+      open.push(cli);
+      await opened(cli);
+      expect((await nextJson(ctrl))['type']).toBe('connected');
+      const hst = new WebSocket(
+        url(turnRelay, { serverId, role: 'server', connectionId, v: '1', hostToken }),
+      );
+      open.push(hst);
+      await opened(hst);
+
+      const hostFrames: Buffer[] = [];
+      hst.on('message', (data: Buffer) => hostFrames.push(data));
+
+      // Only the control socket mints; a data socket's request is just payload.
+      const request = JSON.stringify({ type: 'turn-credentials-request' });
+      const toClient = nextFrame(cli);
+      hst.send(request);
+      expect((await toClient).data.toString('utf8')).toBe(request);
+      expect(hostFrames).toHaveLength(0);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('refuses a control socket with the wrong host token, so it can never mint', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+    });
+    try {
+      const { serverId } = identity('turn-unauth');
+      const wrongToken = identity('turn-unauth-stranger').hostToken;
+      const impostor = new WebSocket(
+        url(turnRelay, { serverId, role: 'server', v: '1', hostToken: wrongToken }),
+      );
+      open.push(impostor);
+      expect((await closed(impostor)).code).toBe(4401);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('keeps the coturn secret out of every client-bound frame', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 1,
+      turnRateWindowMs: 60_000,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-secret-hygiene');
+      const connectionId = 'conn-turn-hyg-01';
+
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+      const cli = new WebSocket(url(turnRelay, { serverId, role: 'client', connectionId, v: '1' }));
+      open.push(cli);
+      await opened(cli);
+      expect((await nextJson(ctrl))['type']).toBe('connected');
+      const hst = new WebSocket(
+        url(turnRelay, { serverId, role: 'server', connectionId, v: '1', hostToken }),
+      );
+      open.push(hst);
+      await opened(hst);
+
+      const clientFrames: Buffer[] = [];
+      cli.on('message', (data: Buffer) => clientFrames.push(data));
+
+      // Mint once, then trip the rate limit, so both relay→host replies are exercised.
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const minted = await nextJson(ctrl);
+      expect(minted['type']).toBe('turn-credentials');
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const limited = await nextJson(ctrl);
+      expect(limited['type']).toBe('turn-rate-limited');
+
+      // The Mac forwards the credentials to the phone inside E2EE; the relay itself
+      // must never put the secret on the wire, in either reply or any client frame.
+      expect(JSON.stringify(minted)).not.toContain(TURN_SECRET);
+      expect(JSON.stringify(limited)).not.toContain(TURN_SECRET);
+      hst.send('host-to-phone');
+      await nextFrame(cli);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(clientFrames.length).toBeGreaterThan(0);
+      for (const frame of clientFrames) {
+        expect(frame.toString('utf8')).not.toContain(TURN_SECRET);
+      }
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('lets a host mint again once the rate window has passed', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 1,
+      turnMaxPerIp: 100,
+      turnRateWindowMs: 80,
+    });
+    try {
+      const { serverId, hostToken } = identity('turn-window-expiry');
+      const ctrl = new WebSocket(url(turnRelay, { serverId, role: 'server', v: '1', hostToken }));
+      open.push(ctrl);
+      await opened(ctrl);
+
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      expect((await nextJson(ctrl))['type']).toBe('turn-credentials');
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const limited = await nextJson(ctrl);
+      expect(limited['type']).toBe('turn-rate-limited');
+      expect(limited['retryAfterSecs']).toBeGreaterThanOrEqual(1);
+
+      // Renewal before expiry needs the window to roll over, not a restart.
+      await new Promise((r) => setTimeout(r, 140));
+      ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      expect((await nextJson(ctrl))['type']).toBe('turn-credentials');
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('passes screen-share signalling frames through byte-for-byte at realistic sizes', async () => {
+    const { client, host } = await pair('turn-signalling', 'conn-turn-sig-01');
+
+    // Mock E2EE envelopes: 12B nonce + ciphertext. Sizes mirror the screen-share
+    // signalling types — a small ICE candidate and a full SDP offer.
+    const envelope = (size: number, seed: number): Buffer => {
+      const buf = Buffer.alloc(size);
+      for (let i = 0; i < size; i += 1) buf[i] = (i * 31 + seed) & 0xff;
+      return buf;
+    };
+    const iceCandidate = envelope(96, 7);
+    const sdpOffer = envelope(8192, 19);
+
+    // Both directions, in order, unaltered — the relay reads none of it.
+    client.send(iceCandidate);
+    client.send(sdpOffer);
+    const upstream = await collect(host, 2);
+    expect(upstream.map((f) => f.binary)).toEqual([true, true]);
+    expect([...upstream[0]!.data]).toEqual([...iceCandidate]);
+    expect([...upstream[1]!.data]).toEqual([...sdpOffer]);
+
+    host.send(sdpOffer);
+    host.send(iceCandidate);
+    const downstream = await collect(client, 2);
+    expect([...downstream[0]!.data]).toEqual([...sdpOffer]);
+    expect([...downstream[1]!.data]).toEqual([...iceCandidate]);
+  });
+
+  it('carries a signalling frame at the 1 MiB binary frame limit', async () => {
+    const { client, host } = await pair('turn-sig-max', 'conn-turn-sig-02');
+    const atLimit = Buffer.alloc(1024 * 1024, 0xa5);
+
+    client.send(atLimit);
+    const received = await nextFrame(host);
+    expect(received.binary).toBe(true);
+    expect(received.data.length).toBe(atLimit.length);
+    expect(received.data.equals(atLimit)).toBe(true);
+  });
+
+  it('E2EE data socket frames pass through byte-for-byte (relay is blind to content)', async () => {
+    // Simulate E2EE encrypted frames: binary blobs the relay must not read or alter.
+    const { client, host } = await pair('turn-e2ee', 'conn-turn-e2ee-01');
+
+    // 28-byte mock E2EE frame: 12B nonce + 16B ciphertext (just random bytes).
+    const e2eeFrame = Buffer.from([
+      0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+      0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x01, 0x23, 0x45, 0x67,
+      0x89, 0xab, 0xcd, 0xef,
+    ]);
+
+    client.send(e2eeFrame);
+    const fromClient = await nextFrame(host);
+    expect(fromClient.binary).toBe(true);
+    expect([...fromClient.data]).toEqual([...e2eeFrame]);
+
+    host.send(e2eeFrame);
+    const fromHost = await nextFrame(client);
+    expect(fromHost.binary).toBe(true);
+    expect([...fromHost.data]).toEqual([...e2eeFrame]);
   });
 });
 
