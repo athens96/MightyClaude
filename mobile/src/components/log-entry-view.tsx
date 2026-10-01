@@ -1,27 +1,58 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { LogActivity, LogEntry } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
-import { monoText, radius, spacing, useStyles, usePalette, type Palette } from '@/theme';
+import { ProviderMark } from '@/components/provider-mark';
+import type { Tone } from '@/lib/status-tone';
+import {
+  cardShadow,
+  monoText,
+  providerColorsFor,
+  providerLabel,
+  radius,
+  spacing,
+  toneColors,
+  useStyles,
+  usePalette,
+  type Palette,
+} from '@/theme';
 
 /** Contract states plus the handful the host used before them; anything else is neutral. */
-function activityColor(palette: Palette, state: string): string {
+function activityTone(state: string): Tone {
   switch (state) {
     case 'running':
-      return palette.accent;
+      return 'run';
     case 'waiting':
     case 'pending':
-      return palette.warning;
+      return 'wait';
     case 'completed':
     case 'done':
-      return palette.success;
+      return 'done';
     case 'error':
     case 'failed':
-      return palette.danger;
+      return 'err';
     case 'stopped':
     case 'cancelled':
-      return palette.grey;
+      return 'stop';
     default:
-      return palette.textMuted;
+      return 'idle';
+  }
+}
+
+/** The glyph inside the coloured square: ✓ done, ✕ failed, … still going. */
+function activityGlyph(tone: Tone): string {
+  switch (tone) {
+    case 'done':
+      return '✓';
+    case 'err':
+      return '✕';
+    case 'stop':
+      return '■';
+    case 'wait':
+      return '?';
+    case 'run':
+      return '…';
+    case 'idle':
+      return '·';
   }
 }
 
@@ -35,27 +66,59 @@ export function formatDuration(durationMs: number): string {
   return `${minutes}분 ${Math.round(seconds % 60)}초`;
 }
 
+/**
+ * A tool call as a compact chip: a square in the call's state colour with ✓ / ✕ in it,
+ * the tool's name in bold, what it did in mono, then its time and state word. A failed
+ * call is ringed in red. The log sends calls one entry at a time, so each is its own row
+ * rather than a two-column strip.
+ */
 function ActivityRow({ activity }: { activity: LogActivity }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
-  const color = activityColor(palette, activity.state);
+  const tone = activityTone(activity.state);
+  const colors = toneColors(palette, tone);
   const duration = activity.durationMs !== undefined ? formatDuration(activity.durationMs) : '';
+  const name = activity.toolName || activity.kind;
+  const detail = activity.toolName ? activity.summary : activity.summary === activity.kind ? '' : activity.summary;
   return (
-    <View style={styles.activity}>
-      <View style={[styles.activityDot, { backgroundColor: color }]} />
+    <View style={[styles.activity, tone === 'err' && { borderColor: colors.fill }]}>
+      <View style={[styles.glyph, { backgroundColor: colors.fill }]}>
+        <Text style={[styles.glyphMark, { color: colors.onFill }]}>{activityGlyph(tone)}</Text>
+      </View>
       <View style={styles.activityBody}>
-        <Text numberOfLines={1} style={styles.activityTitle}>
-          {activity.toolName ? `${activity.toolName} · ` : ''}
-          {activity.summary || activity.kind}
-        </Text>
+        <View style={styles.activityHead}>
+          <Text numberOfLines={1} style={styles.activityTitle}>
+            {name}
+          </Text>
+          {duration ? <Text style={styles.activityDuration}>{duration}</Text> : null}
+          <Text style={[styles.activityState, { color: colors.ink }]}>{activity.state}</Text>
+        </View>
+        {detail ? (
+          <Text numberOfLines={1} style={styles.activityDetail}>
+            {detail}
+          </Text>
+        ) : null}
         {activity.output ? (
           <Text numberOfLines={6} style={styles.activityOutput}>
             {activity.output}
           </Text>
         ) : null}
       </View>
-      {duration ? <Text style={styles.activityDuration}>{duration}</Text> : null}
-      <Text style={[styles.activityState, { color }]}>{activity.state}</Text>
+    </View>
+  );
+}
+
+/** Who is speaking, above a reply card: the provider's mark on its square and its name. */
+function Speaker({ provider }: { provider: string }) {
+  const palette = usePalette();
+  const styles = useStyles(makeStyles);
+  const [brand = palette.idle] = providerColorsFor(palette, provider);
+  return (
+    <View style={styles.speaker}>
+      <View style={[styles.speakerMark, { backgroundColor: brand }]}>
+        <ProviderMark provider={provider} size={12} color={palette.onStatus} />
+      </View>
+      <Text style={styles.speakerName}>{providerLabel(provider)}</Text>
     </View>
   );
 }
@@ -81,6 +144,7 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
   if (entry.kind === 'assistant') {
     return (
       <View style={styles.assistant}>
+        {entry.provider ? <Speaker provider={entry.provider} /> : null}
         <AssistantMarkdown text={entry.text} />
       </View>
     );
@@ -103,36 +167,70 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    // The user's turn is a soft paper slip on the right; the reply is prose on the page.
-    userWrap: { alignItems: 'flex-end', paddingVertical: spacing.sm },
+    // The user's turn is an ink bubble on the right, its corner tucked toward the edge;
+    // the reply is a white card with its speaker on top.
+    userWrap: { alignItems: 'flex-end', paddingLeft: 48, paddingVertical: spacing.xs },
     userBubble: {
       backgroundColor: palette.bubbleUser,
-      borderRadius: radius.lg,
-      maxWidth: '85%',
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 2,
+      borderBottomRightRadius: 6,
+      borderRadius: 18,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
     },
-    userText: { color: palette.text, fontSize: 15, lineHeight: 22 },
-    assistant: { paddingVertical: spacing.sm },
-    // Output, system and error lines: mono, set off by a thin rule instead of a box.
+    userText: { color: palette.onBubbleUser, fontSize: 15, lineHeight: 21 },
+    assistant: {
+      ...cardShadow,
+      backgroundColor: palette.surface,
+      borderRadius: radius.card,
+      marginVertical: spacing.xs,
+      paddingBottom: spacing.xs,
+      paddingHorizontal: spacing.md + 2,
+      paddingTop: spacing.md,
+    },
+    speaker: { alignItems: 'center', flexDirection: 'row', gap: 6, marginBottom: spacing.xs },
+    speakerMark: {
+      alignItems: 'center',
+      borderRadius: 6,
+      height: 20,
+      justifyContent: 'center',
+      width: 20,
+    },
+    speakerName: { color: palette.textMuted, fontSize: 12, fontWeight: '700' },
+    // Output, system and error lines: mono, set off by a coloured rule instead of a box.
     mono: {
       borderLeftColor: palette.border,
-      borderLeftWidth: 2,
+      borderLeftWidth: 3,
+      borderRadius: 2,
       marginVertical: spacing.xs,
       paddingLeft: spacing.sm,
       paddingVertical: 2,
     },
-    // Tool activity whispers: faint text, a small dot, no chrome.
     activity: {
       alignItems: 'flex-start',
+      backgroundColor: palette.surface,
+      borderColor: 'transparent',
+      borderRadius: radius.md,
+      borderWidth: 1.5,
       flexDirection: 'row',
-      gap: spacing.sm,
-      paddingVertical: 3,
+      gap: 8,
+      marginVertical: 3,
+      paddingHorizontal: 9,
+      paddingVertical: 7,
     },
-    activityDot: { borderRadius: radius.round, height: 5, marginTop: 7, width: 5 },
-    activityBody: { flex: 1 },
-    activityTitle: { color: palette.textFaint, fontSize: 13, lineHeight: 18 },
-    activityOutput: { ...monoText, color: palette.textFaint, marginTop: 2 },
-    activityDuration: { color: palette.textFaint, fontSize: 11, lineHeight: 18 },
-    activityState: { fontSize: 11, fontWeight: '500', lineHeight: 18 },
+    glyph: {
+      alignItems: 'center',
+      borderRadius: 6,
+      height: 18,
+      justifyContent: 'center',
+      marginTop: 1,
+      width: 18,
+    },
+    glyphMark: { fontSize: 11, fontWeight: '800', lineHeight: 13 },
+    activityBody: { flex: 1, gap: 1 },
+    activityHead: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+    activityTitle: { color: palette.text, flex: 1, fontSize: 12.5, fontWeight: '700' },
+    activityDetail: { ...monoText, color: palette.textMuted, fontSize: 11, lineHeight: 15 },
+    activityOutput: { ...monoText, color: palette.textMuted, fontSize: 11, lineHeight: 15, marginTop: 2 },
+    activityDuration: { color: palette.textFaint, fontSize: 11 },
+    activityState: { fontSize: 11, fontWeight: '700' },
   });

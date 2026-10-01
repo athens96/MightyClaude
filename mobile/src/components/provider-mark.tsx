@@ -10,10 +10,19 @@ import { providerColorsFor, providerIsBeta, providerLabel, spacing, usePalette }
  * mark is a gradient through its three stops, bottom-left to top-right. A provider we do
  * not know has no outline, so it keeps a neutral chip.
  */
-export function ProviderMark({ provider, size = 12 }: { provider: string; size?: number }) {
+export function ProviderMark({
+  provider,
+  size = 12,
+  color,
+}: {
+  provider: string;
+  size?: number;
+  /** One colour for the whole mark, e.g. white on a brand-coloured avatar square. */
+  color?: string;
+}) {
   const palette = usePalette();
   const outline = providerMarkOutline(provider);
-  const colors = providerColorsFor(palette, provider);
+  const colors = color ? [color] : providerColorsFor(palette, provider);
   const [first = palette.textMuted] = colors;
   return (
     <View accessibilityElementsHidden importantForAccessibility="no">

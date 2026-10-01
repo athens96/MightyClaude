@@ -16,6 +16,11 @@ const NO_COMMANDS: MobileCommand[] = [];
 interface LiveStore {
   states: Record<string, MobileState>;
   details: Record<string, MobileSessionDetail>;
+  /**
+   * When each held detail arrived (phone clock, ms). A detail is only replaced by a newer
+   * revision, so this is when the host measured its `elapsedSeconds`.
+   */
+  detailReceivedAt: Record<string, number>;
   /** `/m1/info` capabilities, cached per host for as long as the app runs. */
   capabilities: Record<string, Capability[]>;
   /** `/m1/sessions/{id}/commands`, cached per session and refreshed on focus. */
@@ -36,6 +41,7 @@ interface LiveStore {
 export const useLiveStore = create<LiveStore>((set) => ({
   states: {},
   details: {},
+  detailReceivedAt: {},
   capabilities: {},
   commands: {},
 
@@ -51,7 +57,11 @@ export const useLiveStore = create<LiveStore>((set) => ({
       const key = detailKey(hostId, sessionId);
       const merged = mergeSessionDetail(prev.details[key], incoming, fresh);
       if (merged === prev.details[key]) return prev;
-      return { ...prev, details: { ...prev.details, [key]: merged } };
+      return {
+        ...prev,
+        details: { ...prev.details, [key]: merged },
+        detailReceivedAt: { ...prev.detailReceivedAt, [key]: Date.now() },
+      };
     }),
 
   setCapabilities: (hostId, capabilities) =>
@@ -72,8 +82,11 @@ export const useLiveStore = create<LiveStore>((set) => ({
       const belongsToHost = ([key]: [string, unknown]) =>
         !key.startsWith(`${hostId}${KEY_SEPARATOR}`);
       const details = Object.fromEntries(Object.entries(prev.details).filter(belongsToHost));
+      const detailReceivedAt = Object.fromEntries(
+        Object.entries(prev.detailReceivedAt).filter(belongsToHost),
+      );
       const commands = Object.fromEntries(Object.entries(prev.commands).filter(belongsToHost));
-      return { ...prev, states, details, capabilities, commands };
+      return { ...prev, states, details, detailReceivedAt, capabilities, commands };
     }),
 }));
 
@@ -87,6 +100,16 @@ export function useSessionDetail(
 ): MobileSessionDetail | undefined {
   return useLiveStore((store) =>
     hostId && sessionId ? store.details[detailKey(hostId, sessionId)] : undefined,
+  );
+}
+
+/** When the held detail of a session arrived, or undefined when none is held. */
+export function useDetailReceivedAt(
+  hostId: string | undefined,
+  sessionId: string | undefined,
+): number | undefined {
+  return useLiveStore((store) =>
+    hostId && sessionId ? store.detailReceivedAt[detailKey(hostId, sessionId)] : undefined,
   );
 }
 

@@ -8,7 +8,7 @@ import { ToastHost } from '@/components/toast-host';
 import { installCryptoPolyfill } from '@/api/relay/random';
 import { useHostsStore } from '@/store/hosts';
 import { t } from '@/lib/i18n';
-import { darkPalette, serifFontFamily, useStyles, usePalette, type Palette } from '@/theme';
+import { darkPalette, headingFontFamily, useStyles, usePalette, type Palette } from '@/theme';
 
 // `@noble/*` reads `globalThis.crypto.getRandomValues`, which React Native lacks.
 installCryptoPolyfill();
@@ -49,24 +49,25 @@ export default function RootLayout() {
           <StatusBar style={dark ? 'light' : 'dark'} />
           <Stack
             screenOptions={{
-              // Paper all the way up: the header is the page itself, with no rule under it,
-              // and its title is set in the serif.
+              // The header is the grey page itself, with no rule under it; the cards below
+              // carry the colour. Its title is bold Avenir Next, a size under the screen's own.
               headerStyle: { backgroundColor: palette.background },
               headerShadowVisible: false,
               headerTintColor: palette.text,
               headerTitleStyle: {
                 color: palette.text,
-                fontFamily: serifFontFamily,
-                fontSize: 18,
-                fontWeight: '400',
+                fontFamily: headingFontFamily,
+                fontSize: 16,
+                fontWeight: '700',
               },
               contentStyle: { backgroundColor: palette.background },
             }}
           >
-            <Stack.Screen name="index" options={{ title: '호스트' }} />
+            {/* The tab bar (현황 · 세션 · 알림 · 호스트) is the root; everything else stacks on it. */}
+            <Stack.Screen name="(tabs)" options={{ headerShown: false, title: t('phone.tabs.dashboard') }} />
             <Stack.Screen name="connect" options={{ title: t('phone.connect.title'), presentation: 'modal' }} />
             <Stack.Screen name="pair" options={{ title: '호스트 추가', presentation: 'modal' }} />
-            <Stack.Screen name="host/[hostId]/index" options={{ title: '작업 공간' }} />
+            <Stack.Screen name="host/[hostId]/index" options={{ title: t('phone.workspaces.title') }} />
             <Stack.Screen name="host/[hostId]/session/[sessionId]" options={{ title: '세션' }} />
             <Stack.Screen
               name="host/[hostId]/workspace/[workspaceId]/files"

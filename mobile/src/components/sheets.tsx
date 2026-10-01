@@ -13,7 +13,7 @@ import { MAX_TITLE_LENGTH, type SettingOption } from '@/api/types';
 import { Button } from '@/components/ui';
 import { monoText, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
-/** Shared modal shell: dimmed backdrop, a centred sheet of paper, tap outside to dismiss. */
+/** Shared modal shell: dimmed backdrop, a centred white card, tap outside to dismiss. */
 export function Sheet({
   visible,
   onClose,
@@ -84,7 +84,7 @@ export function PickerSheet({
                 onPress={() => onSelect(option.id)}
                 style={({ pressed }) => [
                   styles.option,
-                  selected && { borderColor: palette.accent },
+                  selected && { backgroundColor: palette.accentMuted },
                   (locked || busy) && styles.optionLocked,
                   pressed && styles.pressed,
                 ]}
@@ -342,32 +342,34 @@ const makeStyles = (palette: Palette) =>
     },
     sheet: {
       backgroundColor: palette.surface,
-      borderRadius: radius.lg,
+      borderRadius: radius.hero,
       gap: spacing.md,
       padding: spacing.xl,
     },
-    title: { ...typeScale.heading, color: palette.text, fontSize: 20, lineHeight: 26 },
+    title: { ...typeScale.title, color: palette.text },
     note: { color: palette.textMuted, fontSize: 14, lineHeight: 20 },
     optionList: { maxHeight: 320 },
-    // Options are lines parted by hairlines; the chosen one takes the accent and a word.
+    // Options are rounded rows; the chosen one sits on the blue wash with the accent and a word.
     option: {
       alignItems: 'center',
-      borderBottomColor: palette.border,
-      borderBottomWidth: StyleSheet.hairlineWidth,
+      backgroundColor: palette.surfaceRaised,
+      borderRadius: radius.md,
       flexDirection: 'row',
       gap: spacing.sm,
-      minHeight: 44,
+      marginBottom: spacing.xs,
+      minHeight: 46,
+      paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
     optionStacked: { alignItems: 'flex-start', flexDirection: 'column', gap: 2 },
     optionDescription: { color: palette.textMuted, fontSize: 12, lineHeight: 17 },
     optionLocked: { opacity: 0.45 },
-    optionLabel: { color: palette.text, flex: 1, fontSize: 15 },
-    optionMark: { color: palette.accent, fontSize: 12, fontWeight: '600' },
+    optionLabel: { color: palette.text, flex: 1, fontSize: 15, fontWeight: '600' },
+    optionMark: { color: palette.accent, fontSize: 12, fontWeight: '700' },
     optionBadge: { color: palette.warning, fontSize: 11, fontWeight: '500' },
     pressed: { opacity: 0.6 },
     input: {
-      backgroundColor: palette.background,
+      backgroundColor: palette.surfaceRaised,
       borderColor: palette.border,
       borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,

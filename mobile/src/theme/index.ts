@@ -1,31 +1,62 @@
 import { useMemo } from 'react';
 import { Platform, useColorScheme, type TextStyle } from 'react-native';
 import type { Provider, SessionStatus, SettingOption } from '@/api/types';
+import type { Tone } from '@/lib/status-tone';
 
 export interface Palette {
+  /** The page under every card. */
   background: string;
+  /** Cards, sheets, the composer field and the tab bar. */
   surface: string;
+  /** A step inside a card: the last-activity strip, pressed rows, inline code. */
   surfaceRaised: string;
   border: string;
+  /** Segmented-control track and empty progress rails. */
+  track: string;
+  /** Links, the primary button, the selected tab: the "run" blue, kept AA as text too. */
   accent: string;
+  /** Soft blue wash behind a selected chip or inline code. */
   accentMuted: string;
   text: string;
   textMuted: string;
   textFaint: string;
+  /** Status words drawn on the page or a card (done / error / waiting / stopped). */
   success: string;
   danger: string;
-  /** Background behind error banners. */
+  /** Background behind error banners and the error pill. */
   dangerSurface: string;
   warning: string;
   grey: string;
+  /** The user's turn: an ink bubble on the light page, a pale one on the dark page. */
   bubbleUser: string;
-  /** Text drawn on top of a filled accent/danger surface. */
+  onBubbleUser: string;
+  /** Text drawn on top of a filled accent surface (the primary button). */
   onAccent: string;
-  /** Text drawn on top of a filled chip or badge. */
+  /** Text drawn on top of a filled badge (the attention count). */
   onBadge: string;
   /** Dimming behind modals. */
   overlay: string;
-  /** Mighty block tints: earthy takes on the Mac's SwiftUI system hues, kept apart by hue. */
+  /**
+   * Status fills — stat tiles, the conversation hero, timeline nodes and filled pills.
+   * Each carries its own text colour: white on run/done/err/stop/idle, dark ink on wait.
+   */
+  run: string;
+  runSoft: string;
+  wait: string;
+  waitSoft: string;
+  onWait: string;
+  done: string;
+  doneSoft: string;
+  err: string;
+  stop: string;
+  stopSoft: string;
+  /** The hero behind a pane that is simply idle. */
+  idle: string;
+  onStatus: string;
+  /** Fenced code: an ink block in both modes. */
+  codeSurface: string;
+  codeText: string;
+  /** Mighty block tints, kept apart by hue; AA as words and under white/ink glyphs. */
   blockAgent: string;
   blockTask: string;
   blockSteer: string;
@@ -34,66 +65,107 @@ export interface Palette {
 }
 
 /**
- * "Warm paper": the Claude app's look. Ivory paper and ink by day, warm charcoal (never
- * black) by night, and one terracotta accent kept for the primary action, the selected
- * state, links and live indicators. Every text colour clears WCAG AA (4.5:1) on the
- * background and surface it is drawn on; `palette-contrast.test.ts` holds that line.
+ * "카드 대시보드" (concept D): status first. A cool grey page with white cards by day,
+ * deep ink navy with slate cards by night; every state owns a bold fill — run blue, wait
+ * amber, done green, error red, stop slate — with a soft tint and a text-safe ink. The
+ * concept's hues were darkened where white text needed it — run #2F6BFF → #2A5FEE (and
+ * #2459E6 where the blue is a word), error #EF4136 → #D42F22, stop #98A1B3 → #667085 —
+ * and wait keeps its amber with dark ink on it. `palette-contrast.test.ts` holds every
+ * text pair to WCAG AA (4.5:1) and every status fill to 3:1 as a mark on a card.
  */
-export const darkPalette: Palette = {
-  background: '#262624',
-  surface: '#30302e',
-  surfaceRaised: '#3a3935',
-  border: '#45443f',
-  accent: '#dd7e5e',
-  accentMuted: '#3e302a',
-  text: '#f5f4ee',
-  textMuted: '#b5b3aa',
-  textFaint: '#a3a198',
-  success: '#9cbf72',
-  danger: '#e88a74',
-  dangerSurface: '#3f2c27',
-  warning: '#d6a850',
-  grey: '#a3a198',
-  bubbleUser: '#393834',
-  onAccent: '#1f1e1d',
-  onBadge: '#1f1e1d',
-  overlay: 'rgba(0,0,0,0.5)',
-  blockAgent: '#c79ad6',
-  blockTask: '#86b4d9',
-  blockSteer: '#ddaa5c',
-  blockCompact: '#86c4b0',
-  blockQuestion: '#a3a7e6',
-};
-
 export const lightPalette: Palette = {
-  background: '#f5f4ee',
-  surface: '#faf9f5',
-  surfaceRaised: '#edebe4',
-  border: '#dedad0',
-  accent: '#ae4e2b',
-  accentMuted: '#f4e4da',
-  text: '#1f1e1d',
-  textMuted: '#57564f',
-  textFaint: '#6c6a63',
-  success: '#48722a',
-  danger: '#b0392b',
-  dangerSurface: '#f5e3dd',
-  warning: '#8a6212',
-  grey: '#6c6a63',
-  bubbleUser: '#eae7de',
-  onAccent: '#ffffff',
-  onBadge: '#ffffff',
-  overlay: 'rgba(31,30,29,0.32)',
-  blockAgent: '#8a4e9e',
-  blockTask: '#2d6a8c',
-  blockSteer: '#8c5b0e',
-  blockCompact: '#2b6e5d',
-  blockQuestion: '#4f56a3',
+  background: '#ECEEF3',
+  surface: '#FFFFFF',
+  surfaceRaised: '#F5F7FB',
+  border: '#DEE2EA',
+  track: '#DDE1E9',
+  accent: '#2459E6',
+  accentMuted: '#E6EDFF',
+  text: '#0E1320',
+  textMuted: '#5A6377',
+  textFaint: '#616A7C',
+  success: '#06703F',
+  danger: '#B42318',
+  dangerSurface: '#FDE6E4',
+  warning: '#8A5300',
+  grey: '#4F5869',
+  bubbleUser: '#0E1320',
+  onBubbleUser: '#FFFFFF',
+  onAccent: '#FFFFFF',
+  onBadge: '#2B1B00',
+  overlay: 'rgba(14,19,32,0.36)',
+  run: '#2A5FEE',
+  runSoft: '#E6EDFF',
+  wait: '#FFA81F',
+  waitSoft: '#FFF3DE',
+  onWait: '#2B1B00',
+  done: '#08804A',
+  doneSoft: '#E2F6EA',
+  err: '#D42F22',
+  stop: '#667085',
+  stopSoft: '#EEF0F4',
+  idle: '#0E1320',
+  onStatus: '#FFFFFF',
+  codeSurface: '#0E1320',
+  codeText: '#D8DEEA',
+  blockAgent: '#6D3FD9',
+  blockTask: '#0A7480',
+  blockSteer: '#A33D8F',
+  blockCompact: '#4B5BB8',
+  blockQuestion: '#8A5300',
 };
 
 /**
- * The dark palette stays the default: `useColorScheme()` returns null while the system
- * preference is unknown, and only an explicit "light" switches.
+ * The night side of D: the page is ink navy (never pure black), cards are slate, and the
+ * status inks lift to pale tints so they read as words on the dark. Fills stay saturated:
+ * the same white-on-colour tiles and hero, the same dark ink on amber.
+ */
+export const darkPalette: Palette = {
+  background: '#0B0F19',
+  surface: '#151B29',
+  surfaceRaised: '#1D2435',
+  border: '#283043',
+  track: '#1D2435',
+  accent: '#7FA3FF',
+  accentMuted: '#1A2750',
+  text: '#EEF1F7',
+  textMuted: '#A9B1C2',
+  textFaint: '#8E97AA',
+  success: '#5BD49A',
+  danger: '#FF8A80',
+  dangerSurface: '#3A1A18',
+  warning: '#FFC45C',
+  grey: '#A9B1C2',
+  bubbleUser: '#EEF1F7',
+  onBubbleUser: '#0E1320',
+  onAccent: '#0B0F19',
+  onBadge: '#2B1B00',
+  overlay: 'rgba(0,0,0,0.55)',
+  run: '#2A5FEE',
+  runSoft: '#1A2750',
+  wait: '#FFA81F',
+  waitSoft: '#3A2A0D',
+  onWait: '#2B1B00',
+  done: '#08804A',
+  doneSoft: '#0F2E22',
+  err: '#D42F22',
+  stop: '#667085',
+  stopSoft: '#222939',
+  idle: '#2A3347',
+  onStatus: '#FFFFFF',
+  codeSurface: '#05070D',
+  codeText: '#D8DEEA',
+  blockAgent: '#B9A0FF',
+  blockTask: '#5ED3E0',
+  blockSteer: '#E58FD0',
+  blockCompact: '#9AA6F5',
+  blockQuestion: '#FFC45C',
+};
+
+/**
+ * The light palette is D's own face, but the dark one stays the default while the system
+ * preference is unknown: `useColorScheme()` returns null then, and only an explicit
+ * "light" switches.
  */
 export function usePalette(): Palette {
   const scheme = useColorScheme();
@@ -131,23 +203,25 @@ export const spacing = {
   xxl: 32,
 } as const;
 
-/** Small, quiet corners: paper is cut, not moulded. `round` is for dots and the send button. */
+/** Moulded, not cut: pills are round, rows and fields 12–14, cards 20, the hero 24. */
 export const radius = {
-  sm: 4,
-  md: 8,
-  lg: 12,
+  sm: 6,
+  md: 12,
+  lg: 16,
+  card: 20,
+  hero: 24,
   round: 999,
 } as const;
 
 /**
- * The serif for screen titles, large headings, sheet titles and empty states. Georgia is
- * on every iOS device; Android's `serif` is Noto Serif. Hangul has no glyphs in either
- * and falls back to the system Korean face. Body, lists and controls stay system sans.
+ * The heading face: Avenir Next, set bold, for screen titles, stat numbers, card titles
+ * and sheet titles. iOS ships it; Android has no Avenir, so it uses the system sans in
+ * bold. Hangul falls back to the system Korean face on both.
  */
-export const serifFontFamily = Platform.select({
-  ios: 'Georgia',
-  android: 'serif',
-  default: 'Georgia, serif',
+export const headingFontFamily = Platform.select({
+  ios: 'Avenir Next',
+  android: 'sans-serif',
+  default: '"Avenir Next", Avenir, system-ui, sans-serif',
 });
 
 export const monoFontFamily = Platform.select({
@@ -163,16 +237,32 @@ export const monoText: TextStyle = {
 };
 
 /**
- * The type scale. The serif steps (display, title, heading) carry no weight of their own:
- * the Claude look sets its headings in a regular serif rather than a bold sans.
+ * The type scale. The heading steps are bold Avenir Next with a little negative tracking;
+ * `number` is the big tabular figure on stat tiles, cards and the hero.
  */
 export const typeScale = {
-  display: { fontFamily: serifFontFamily, fontSize: 28, lineHeight: 34, fontWeight: '400' },
-  title: { fontFamily: serifFontFamily, fontSize: 22, lineHeight: 28, fontWeight: '400' },
-  heading: { fontFamily: serifFontFamily, fontSize: 18, lineHeight: 24, fontWeight: '400' },
+  display: { fontFamily: headingFontFamily, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.5 },
+  title: { fontFamily: headingFontFamily, fontSize: 20, lineHeight: 25, fontWeight: '700', letterSpacing: -0.3 },
+  heading: { fontFamily: headingFontFamily, fontSize: 16, lineHeight: 21, fontWeight: '700' },
+  number: {
+    fontFamily: headingFontFamily,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
   body: { fontSize: 15, lineHeight: 22, fontWeight: '400' },
   caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
 } as const satisfies Record<string, TextStyle>;
+
+/** A card lifting off the page: a whisper of shadow by day, none needed by night. */
+export const cardShadow = {
+  shadowColor: '#0F1428',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.06,
+  shadowRadius: 3,
+  elevation: 1,
+} as const;
 
 const statusLabels: Record<SessionStatus, string> = {
   idle: '대기',
@@ -241,6 +331,36 @@ export function statusColor(palette: Palette, status: string): string {
       return palette.textMuted;
     default:
       return palette.textMuted;
+  }
+}
+
+/** The fill, its text, the soft tint and the text-safe ink for one status tone. */
+export interface ToneColors {
+  fill: string;
+  onFill: string;
+  soft: string;
+  ink: string;
+}
+
+/**
+ * D's colour for a tone (`toneOf` in `@/lib/status-tone`): stat tiles, the hero, filled
+ * pills and timeline nodes use `fill`/`onFill`; soft pills and the card edge use
+ * `soft`/`ink`. `idle` is neutral ink rather than a state colour.
+ */
+export function toneColors(palette: Palette, tone: Tone): ToneColors {
+  switch (tone) {
+    case 'run':
+      return { fill: palette.run, onFill: palette.onStatus, soft: palette.runSoft, ink: palette.accent };
+    case 'wait':
+      return { fill: palette.wait, onFill: palette.onWait, soft: palette.waitSoft, ink: palette.warning };
+    case 'done':
+      return { fill: palette.done, onFill: palette.onStatus, soft: palette.doneSoft, ink: palette.success };
+    case 'err':
+      return { fill: palette.err, onFill: palette.onStatus, soft: palette.dangerSurface, ink: palette.danger };
+    case 'stop':
+      return { fill: palette.stop, onFill: palette.onStatus, soft: palette.stopSoft, ink: palette.grey };
+    case 'idle':
+      return { fill: palette.idle, onFill: palette.onStatus, soft: palette.stopSoft, ink: palette.textMuted };
   }
 }
 

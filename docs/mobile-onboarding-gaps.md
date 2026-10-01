@@ -69,6 +69,9 @@ Mighty 블록 화면은 Mac 창이 Mighty 모드일 때만 열렸고, 폰에서 
   버튼으로 기존 `/pair` 화면에 넘깁니다.
 - `mobile/app/index.tsx` — 저장소를 읽은 뒤 호스트가 0개면 `/connect`로 바로 이동하고,
   호스트가 있으면 지금처럼 목록을 보여 주며 `연결 안내 보기` 버튼으로 안내에 돌아갈 수 있습니다.
+  (카드 대시보드 이후로 이 이동은 탭 레이아웃 `mobile/app/(tabs)/_layout.tsx`가 탭 위에 `/connect`를
+  여는 것으로 바뀌었고, 호스트 목록은 `mobile/app/(tabs)/hosts.tsx`가 맡습니다. 페어링이 끝나면
+  `pair.tsx`가 탭으로 내려온 뒤 새 호스트를 엽니다.)
 - `mobile/app/_layout.tsx` — `connect` 화면을 모달로 등록.
 - 문구는 공용 키 `phone.connect.*`, `phone.hosts.guide`로 `locales/ko.json`,
   `locales/en.json`과 `mobile/src/locales/`에 추가.

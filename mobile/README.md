@@ -7,8 +7,9 @@
 > 산출물은 새 네이티브 모듈을 모르므로, 첨부 기능을 쓰려면 `npx expo prebuild` 뒤
 > `npm run android` / `npm run ios`로 **다시 빌드해야 합니다**. JS만 새로고침해도 붙지 않습니다.
 
-- 페어링된 호스트 목록 / 연결 상태 확인
-- 작업 공간별 세션 목록 (상태 칩, 권한 대기 배지, 새 창 만들기)
+- 아래 탭 바: **현황**(작업 현황 타일 + 세션 카드) · **세션**(모든 호스트의 작업 공간과 세션) ·
+  **알림**(답이 필요한 것과 결과) · **호스트**(페어링된 호스트 목록 / 연결 상태)
+- 작업 공간별 세션 카드 (상태 색 가장자리, 상태 알약, 응답 대기 수, 새 창 만들기)
 - 세션 상세: 대화 기록, 권한 허용/거부, 질문 답변, 대기열, 메시지 전송/중지
 - 호스트가 알려 주는 기능만 추가로: 전송 방식 선택, 대기열 관리, 이름 변경·창 닫기,
   이전 기록 불러오기, 설정 변경, 슬래시 명령, 상태 줄,
@@ -16,7 +17,8 @@
 - 인증: 처음 한 번만 페어링 키를 쓰고, 이후에는 호스트가 발급한 **기기 토큰**으로 붙습니다
 - 연결: **릴레이 + 종단 간 암호화** (자세한 계약은 [`docs/relay.md`](../docs/relay.md))
 - 터널 안의 요청/응답은 기존 `m1` 프로토콜 그대로입니다 ([`docs/mobile-remote.md`](../docs/mobile-remote.md))
-- 화면은 시스템 설정을 따라 밝게/어둡게 바뀝니다(`useColorScheme`). 어두운 화면은 예전 그대로입니다.
+- 화면은 시스템 설정을 따라 밝게/어둡게 바뀝니다(`useColorScheme`). 모양은 **카드 대시보드**입니다
+  (아래 **화면 모양**).
 
 ---
 
@@ -68,7 +70,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 
 앱에서:
 
-1. 첫 화면 하단 **+ 호스트 추가**
+1. 현황 탭 오른쪽 위 **+**, 또는 호스트 탭 아래 **+ 호스트 추가**
 2. **QR 스캔** 탭에서 카메라 권한을 허용하고 Mac 화면의 QR을 비춥니다.
    - 카메라를 쓸 수 없으면 **링크 붙여넣기** 탭에 `mightyclaude://pair?v=2&…` 링크를 그대로 붙여넣습니다.
 3. 앱이 실제로 릴레이에 접속해 `auth_ok`까지 확인한 뒤 비밀을
@@ -92,9 +94,55 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 
 ---
 
+## 화면 모양 — 카드 대시보드
+
+다섯 시안 중 D(`artifacts/design-concepts/concept-D.html`)를 따릅니다. **상태가 먼저** 보이는 앱입니다.
+
+- **팔레트** (`src/theme/index.ts`): 밝게는 회청색 바탕 `#ECEEF3` 위 흰 카드, 잉크 `#0E1320`;
+  어둡게는 남색 잉크 바탕 `#0B0F19` 위 슬레이트 카드 `#151B29`. 상태마다 굵은 채움색과 옅은 색,
+  글자용 잉크가 한 벌씩 있습니다 — 실행 중 파랑 `#2A5FEE`(글자로는 `#2459E6`), 기다림 주황
+  `#FFA81F`(위 글자는 어두운 잉크 `#2B1B00`), 완료 초록 `#08804A`, 오류 빨강 `#D42F22`, 중지 회색
+  `#667085`. 시안의 `#2F6BFF`·`#EF4136`·`#98A1B3`은 흰 글자가 AA(4.5:1)에 못 미쳐 어둡게 고쳤습니다.
+  `palette-contrast.test.ts`가 모든 글자 쌍을 4.5:1, 카드 위 상태 채움을 3:1로 지킵니다.
+- **글꼴**: 제목·숫자는 iOS에서 Avenir Next 굵게, Android에서 시스템 굵은 산세리프. 본문은 시스템,
+  코드는 Menlo / monospace. 한글은 두 플랫폼 모두 시스템 한글 글꼴로 내려옵니다.
+- **탭 바**: 현황 · 세션 · 알림 · 호스트. 세션 대화, 파일, 파일 보기, 페어링·연결 안내는 탭 위의
+  스택 화면이라 탭 바가 입력창 밑에 깔리지 않습니다. 알림 탭 배지는 답해야 할 질문·권한 요청 수입니다.
+  페어링된 Mac이 없으면 연결 안내가 탭 위에 열리고, 페어링이 끝나면 탭으로 내려온 뒤 새 호스트를
+  엽니다(뒤로 가면 탭). 호스트 연결 점은 어느 탭에서든 앱이 돌아올 때와 끊긴 호스트를 다시 확인할 때
+  새로 고쳐집니다.
+- **현황**: 호스트 칩(연결 점) · `작업 현황` · 세 타일 · 작업 공간별 세션 카드. 카드는 상태 색
+  왼쪽 가장자리, 아바타 사각형, 제목·메타, 상태 알약, 마지막 단계를 모노 글씨로(실행 중이면 퍼지는 점).
+- **대화 화면**: 위에 상태 색 히어로(제목·메타·숫자 줄), `대화`/`블록` 세그먼트, 사용자 말은
+  잉크 말풍선, 답은 흰 카드, 도구 호출은 상태 색 사각형(✓ ✕) 칩, 다음 작업 제안은 파란 화살표가 있는
+  흰 줄, 입력창은 흰 둥근 칸 안의 둥근 파란 전송 단추(실행 중이면 빨간 중지).
+
+### 숫자는 어디서 오나
+
+화면의 숫자는 **호스트가 이미 보내는 값**에서만 셉니다. 없는 값은 지어내지 않고 뺍니다(`lib/dashboard.ts`).
+
+| 자리 | 값 | 출처 |
+|---|---|---|
+| 현황 `실행 중` | `status == running`인 창 수 | 세션 목록 `MobileState.sessions` (에이전트가 연 터미널·브라우저 창 제외) |
+| 현황 `응답 대기` | `pendingQuestions + pendingPermissions`의 합 — 창 수가 아니라 요청 수 | 같은 목록 (`countAttention`에서 폰이 열 수 없는 에이전트 창을 뺀 값 = 알림 탭 배지) |
+| 현황 `완료` | 지금 `status == completed`인 창 수 | 같은 목록 — "오늘 끝난 수"가 아닙니다 |
+| 카드 컨텍스트 막대·`컨텍스트 n%` | `usage.contextPercent`(없으면 사용/창 토큰) | 폰이 가진 세션 상세, **목록과 같은 리비전일 때만** |
+| 카드 큰 시간 | `elapsedSeconds` — 실행 중이면 그 상세가 도착한 뒤 흐른 시간을 폰 시계로 더함, 도착 시각을 모르면 뺌 | 같은 조건의 세션 상세 |
+| 카드 `n분 전` | `updatedAt` | 세션 목록 |
+| 카드 마지막 단계 | `preview.text` | 세션 목록 |
+| 히어로 걸린 시간 · 컨텍스트 · 비용 | `elapsedSeconds`(카드와 같은 규칙) · `usage` · `usage.costUSD` | 세션 상세 |
+| 히어로 `도구` | `activity.toolName`이 있는 기록 수 | 기록 전체가 폰에 있을 때만 (`hasOlder`가 없거나 끝까지 불러왔을 때) |
+| 알림 목록 | 질문 > 권한 > 오류 > 완료, 같은 이유 안에서는 최근 순 | 모든 호스트의 세션 목록 |
+| 블록 `블록 n개 · 끝남 m` | 폰이 가진 블록 수 / 그중 끝난 수 | `mighty.runs[].blocks` |
+
+---
+
 ## 4. 사용 중 참고
 
 - 화면이 열려 있는 동안만 롱폴링(`?since=&wait=10`)합니다. 다른 화면으로 나가면 요청이 중단되어 배터리를 아낍니다.
+  탭 바가 보이는 동안은 탭 레이아웃(`app/(tabs)/_layout.tsx`의 `HostPoller`)이 **페어링된 호스트마다**
+  세션 목록을 롱폴링해 현황·세션·알림이 같은 최신 목록을 읽습니다. 세션이나 다른 스택 화면이
+  탭을 덮으면 멈추고, 돌아오면 한 번 전체를 다시 읽습니다.
 - 호스트가 `notify`를 보내면 대기 중인 롱폴을 기다리지 않고 **즉시 다시 요청**합니다.
   뒤늦게 도착한 예전 응답은 리비전으로 걸러집니다.
 - 한 호스트당 암호화 연결은 **하나**이며, 열려 있는 화면들이 공유합니다(참조 카운트).
@@ -143,10 +191,15 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 
 ### Mighty 블록 보기 (`mighty`)
 
-호스트가 `detail.mighty`를 보내면 세션 헤더에 `대화`/`블록` 칩이 생깁니다.
-`블록`은 Mac의 그래프를 **목록**으로 옮긴 것입니다: 요청(run)을 시간순으로 놓고, 그 안의
-블록을 종류별 색·표식(`main ●` `agent ◆` `task ▣` `steer ↳` `compact ⤡` `question ?`)과
-한국어 이름, 상태 칩, 요약, 소요 시간으로 그립니다. `output`이 있는 블록은 눌러서 펼칩니다.
+호스트가 `detail.mighty`를 보내면 세션 헤더 아래에 `대화`/`블록` 세그먼트가 생깁니다.
+`블록`은 Mac의 그래프를 **세로 타임라인**으로 옮긴 것입니다: 요청(run)을 시간순 카드로 놓고,
+그 안의 블록을 3px 레일 위의 둥근 노드로 그립니다. 노드 색은 블록의 **상태**(실행 중 파랑 ·
+기다림 주황 · 완료 초록 · 오류 빨강 · 중지 회색)이고, 노드 안의 표식은 종류
+(`main ●` `agent ◆` `task ▣` `steer ↳` `compact ⤡` `question ?`)입니다. 실행 중인 노드는 퍼지는
+고리가 돕니다(`Animated`, 네이티브 드라이버). 레일은 끝난 블록과 실행 중인 블록 아래에서만 그 색으로
+켜집니다(`lib/timeline.ts`). 블록 내용은 노드 옆 흰 카드이고, 눌러서 펼칩니다. 요청 머리에는
+`블록 5개 · 끝남 3`처럼 **폰이 가진 블록만** 셉니다 — 호스트가 앞으로 몇 개가 더 올지 알려 주지
+않으므로 `3 / 5` 같은 진행률로 그리지 않습니다.
 **계약에 없는 종류·상태는 중립 색으로, 호스트가 보낸 단어 그대로** 그립니다.
 
 보기 방식(`plain`/`mighty`)과 스타일(`cli`/`ouroboros`/`paperthin`)은 헤더의 설정 칩에서
@@ -193,7 +246,7 @@ mightyclaude://pair?v=2&sid=<serverId>&pk=<base64url 공개키 32B>&relay=<wss:/
 
 ### 워크스페이스 파일 (`files`)
 
-호스트 화면에서 워크스페이스 이름 옆 `파일`을 누르면 Mac 파일 창과 같은 규칙으로 그 워크스페이스를
+작업 공간 머리(현황·세션 탭과 호스트 화면)의 `파일`을 누르면 Mac 파일 창과 같은 규칙으로 그 워크스페이스를
 **읽기만** 합니다(`app/host/[hostId]/workspace/[workspaceId]/files.tsx`·`file.tsx`). 계약과 한도는
 `docs/mobile-remote.md`의 "파일", 화면 규칙은 `docs/file-pane.md`의 "휴대폰"에 있습니다.
 
@@ -281,9 +334,13 @@ npm test            # jest (암호·페어링·전송 계층 단위 테스트)
 ```
 app/                     expo-router 화면
   _layout.tsx            루트 스택 + 시스템 테마 연동 + crypto 폴리필
-  index.tsx              호스트 목록
+  (tabs)/_layout.tsx     하단 탭 바 + 호스트별 세션 목록 롱폴(HostPoller) + 첫 실행 안내로 보내기
+  (tabs)/index.tsx       현황 ("/": 호스트 칩, 작업 현황 타일, 세션 카드)
+  (tabs)/sessions.tsx    세션 (모든 호스트의 작업 공간과 세션 카드)
+  (tabs)/alerts.tsx      알림 (질문·권한·오류·끝난 실행)
+  (tabs)/hosts.tsx       호스트 목록 (예전 "/")
   pair.tsx               QR/수동 페어링 (v2)
-  host/[hostId]/index.tsx                작업 공간 + 세션 목록
+  host/[hostId]/index.tsx                작업 공간 + 세션 카드 (탭 위 스택 화면)
   host/[hostId]/session/[sessionId].tsx  세션 상세 (기록 페이징·설정·명령·창 메뉴)
 src/
   api/       client.ts(m1 클라이언트 + 연결 풀), types.ts(프로토콜 타입)
@@ -293,19 +350,24 @@ src/
              foreground.ts(AppState → 즉시 재접속)
   components/ UI 컴포넌트
              composer.tsx(전송 방식 + 슬래시 명령 + 첨부 칩), command-list.tsx, queued-list.tsx
-             session-header.tsx(설정 칩), status-line-view.tsx, provider-mark.tsx
+             session-header.tsx(상태 색 히어로 + 설정 칩), status-line-view.tsx, provider-mark.tsx
+             session-card.tsx(세션 카드), host-workspaces.tsx(작업 공간 묶음), host-poller.tsx
+             host-status.tsx(연결 점), icons.tsx(탭·전송·중지 선 아이콘)
              sheets.tsx(선택·입력·확인·본문·목록 모달), permission-card.tsx(한 번에 한 질문)
-             mighty-blocks.tsx(요청·블록 목록), ouroboros-panel.tsx, paperthin-panel.tsx
+             mighty-blocks.tsx(요청·블록 타임라인), guided-panel.tsx
   hooks/     use-long-poll.ts (AbortController + 포커스 + notify 연동)
              use-capabilities.ts (호스트별 /m1/info 캐시)
              use-attachments.ts (picker → 한도 → 청크 업로드 → uploadId)
   lib/       pairing.ts, merge.ts, device.ts
+             dashboard.ts(현황 타일·알림 목록·카드 숫자), timeline.ts(노드 색·레일·블록 수),
+             status-tone.ts(상태 → 다섯 색 + 중립)
              capabilities.ts, history.ts, questionnaire.ts, status-line.ts, commands.ts
              mighty.ts(블록·패널 파싱과 라벨), uploads.ts(한도·청크 계획·업로드 진행)
              file-slices.ts(expo-file-system 범위 읽기), device-token.ts, host-secrets.ts
              provider-marks.ts(프로바이더 마크 24×24 아웃라인)
-  store/     hosts.ts(secure store), live.ts(상태·기능·명령 캐시), toast.ts
-  theme/     팔레트(밝게/어둡게) / 간격 / 상태·프로바이더·블록 라벨과 색
+  store/     hosts.ts(secure store), live.ts(상태·기능·명령 캐시), toast.ts,
+             dashboard.ts(현황이 보는 호스트, 탭 롱폴 상태)
+  theme/     팔레트(밝게/어둡게) / 상태 색 묶음(toneColors) / 글꼴 / 간격 / 라벨
 ```
 
 새 기능의 순수 로직은 모두 `src/lib`에 있고 `src/__tests__`에서 직접 테스트합니다:
