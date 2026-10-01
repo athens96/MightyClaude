@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import type { QueuedItem } from '@/api/types';
 import { Button } from '@/components/ui';
-import { monoText, spacing, useStyles, type Palette } from '@/theme';
+import { monoText, radius, spacing, useStyles, type Palette } from '@/theme';
 
 /**
  * The pane's queue. Removing an item and starting the next one are offered only on a
@@ -57,10 +57,10 @@ export function QueuedList({
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     wrap: {
-      borderTopColor: palette.border,
-      borderTopWidth: StyleSheet.hairlineWidth,
+      backgroundColor: palette.surface,
+      borderRadius: radius.lg,
       gap: spacing.xs,
-      paddingTop: spacing.sm,
+      padding: spacing.md,
     },
     header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     title: { color: palette.textMuted, flex: 1, fontSize: 13, fontWeight: '600' },

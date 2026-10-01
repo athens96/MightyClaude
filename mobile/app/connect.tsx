@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { t } from '@/lib/i18n';
 import { CONNECT_STEPS } from '@/lib/onboarding';
-import { radius, serifFontFamily, spacing, typeScale, useStyles, type Palette } from '@/theme';
+import { cardShadow, headingFontFamily, radius, spacing, typeScale, useStyles, type Palette } from '@/theme';
 
 function StepRow({ index, titleKey, bodyKey }: { index: number; titleKey: string; bodyKey: string }) {
   const styles = useStyles(makeStyles);
@@ -47,29 +47,37 @@ export default function ConnectScreen() {
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     container: {
-      gap: spacing.xxl,
+      backgroundColor: palette.background,
+      flexGrow: 1,
+      gap: spacing.xl,
       paddingHorizontal: spacing.xl,
       paddingTop: spacing.xl,
     },
     title: {
       ...typeScale.display,
       color: palette.text,
-      textAlign: 'center',
     },
-    steps: { gap: spacing.xl },
-    step: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.md },
-    // The step number is a serif numeral in a hairline ring — a page marker, not a button.
+    steps: { gap: spacing.sm },
+    step: {
+      ...cardShadow,
+      alignItems: 'flex-start',
+      backgroundColor: palette.surface,
+      borderRadius: radius.card,
+      flexDirection: 'row',
+      gap: spacing.md,
+      padding: spacing.lg,
+    },
+    // The step number is a bold figure on the blue wash — the timeline's node, not a button.
     badge: {
       alignItems: 'center',
-      borderColor: palette.border,
+      backgroundColor: palette.accentMuted,
       borderRadius: radius.round,
-      borderWidth: StyleSheet.hairlineWidth,
       height: 32,
       justifyContent: 'center',
       width: 32,
     },
-    badgeText: { color: palette.textMuted, fontFamily: serifFontFamily, fontSize: 16 },
+    badgeText: { color: palette.accent, fontFamily: headingFontFamily, fontSize: 16, fontWeight: '700' },
     stepContent: { flex: 1, gap: spacing.xs, paddingTop: 5 },
-    stepTitle: { color: palette.text, fontSize: 16, fontWeight: '600' },
+    stepTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
     stepBody: { color: palette.textMuted, fontSize: 14, lineHeight: 21 },
   });

@@ -57,20 +57,38 @@ export function PermissionCard({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    // A flat sheet marked by a thin terracotta rule: the one place the log asks for a decision.
+    // A white card ringed in the waiting amber, the tool's name on an amber tab: the one
+    // place the log asks for a decision.
     card: {
-      borderLeftColor: palette.accent,
-      borderLeftWidth: 2,
-      borderRadius: radius.md,
+      borderColor: palette.wait,
+      borderWidth: 2,
       gap: spacing.sm,
       marginVertical: spacing.sm,
     },
-    tool: { color: palette.textMuted, fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
+    tool: {
+      alignSelf: 'flex-start',
+      backgroundColor: palette.wait,
+      borderRadius: radius.round,
+      color: palette.onWait,
+      fontSize: 11.5,
+      fontWeight: '800',
+      overflow: 'hidden',
+      paddingHorizontal: 9,
+      paddingVertical: 3,
+    },
     title: { ...typeScale.heading, color: palette.text },
     headline: { color: palette.textMuted, fontSize: 14, lineHeight: 20 },
     field: { gap: 2 },
     fieldLabel: { color: palette.textFaint, fontSize: 12 },
-    fieldValue: { ...monoText, color: palette.text },
+    fieldValue: {
+      ...monoText,
+      backgroundColor: palette.surfaceRaised,
+      borderRadius: radius.sm,
+      color: palette.text,
+      overflow: 'hidden',
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
     summary: { color: palette.textMuted, fontSize: 14, lineHeight: 20 },
     actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
     action: { flex: 1 },

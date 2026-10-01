@@ -47,13 +47,14 @@ import {
   type SettingField,
 } from '@/components/session-header';
 import { ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, Sheet } from '@/components/sheets';
-import { Button, Chip, EmptyState, ErrorBanner } from '@/components/ui';
+import { Button, EmptyState, ErrorBanner, SegmentedControl } from '@/components/ui';
 import { useAttachments } from '@/hooks/use-attachments';
 import { useCapabilities } from '@/hooks/use-capabilities';
 import { useFollowBottom } from '@/hooks/use-follow-bottom';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { hasCapability } from '@/lib/capabilities';
 import { commandActionOf, isMessageAction } from '@/lib/commands';
+import { toolCount } from '@/lib/dashboard';
 import {
   combineEntries,
   isHistoryExhausted,
@@ -69,7 +70,13 @@ import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
 import { useForgetRefusedSecret } from '@/store/hosts';
-import { useHostClient, useLiveStore, useSessionCommands, useSessionDetail } from '@/store/live';
+import {
+  useDetailReceivedAt,
+  useHostClient,
+  useLiveStore,
+  useSessionCommands,
+  useSessionDetail,
+} from '@/store/live';
 import { showToast } from '@/store/toast';
 import { spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
@@ -128,6 +135,7 @@ export default function SessionScreen() {
   const { hostId, sessionId } = useLocalSearchParams<{ hostId: string; sessionId: string }>();
   const client = useHostClient(hostId);
   const detail = useSessionDetail(hostId, sessionId);
+  const receivedAt = useDetailReceivedAt(hostId, sessionId);
   const applyDetail = useLiveStore((store) => store.applyDetail);
   const setCommands = useLiveStore((store) => store.setCommands);
   const commands = useSessionCommands(hostId, sessionId);
@@ -809,6 +817,12 @@ export default function SessionScreen() {
     [canStyle, client, followNewest, panel, poll, sessionId, text],
   );
 
+  // Tool calls are counted only from a transcript the phone holds whole.
+  const tools = useMemo(
+    () => toolCount(entries, detail !== undefined && (!detail.hasOlder || exhausted)),
+    [detail, entries, exhausted],
+  );
+
   const headerNode = detail ? (
     <View>
       <SessionHeader
@@ -816,21 +830,19 @@ export default function SessionScreen() {
         settings={settings}
         showStatus={hasCapability(capabilities, 'status')}
         styleAware={canStyle}
+        tools={tools}
+        {...(receivedAt !== undefined ? { receivedAt } : {})}
         onEditSetting={openPicker}
       />
       {mighty ? (
         <View style={styles.viewSwitch}>
-          <Chip
-            label="대화"
-            color={palette.accent}
-            selected={view === 'log'}
-            onPress={() => setChosenView('log')}
-          />
-          <Chip
-            label="블록"
-            color={palette.accent}
-            selected={view === 'blocks'}
-            onPress={() => setChosenView('blocks')}
+          <SegmentedControl
+            options={[
+              { id: 'log', label: t('phone.session.view.log') },
+              { id: 'blocks', label: t('phone.session.view.blocks') },
+            ]}
+            value={view}
+            onChange={setChosenView}
           />
         </View>
       ) : null}
@@ -888,6 +900,7 @@ export default function SessionScreen() {
                   accessibilityRole="button"
                   hitSlop={8}
                   onPress={() => setMenuOpen(true)}
+                  style={styles.headerCircle}
                 >
                   <Text style={styles.headerAction}>⋯</Text>
                 </Pressable>
@@ -1095,15 +1108,35 @@ const makeStyles = (palette: Palette) =>
     screen: { backgroundColor: palette.background, flex: 1 },
     // A short transcript sits at the bottom, right above the composer, as in a chat: the
     // header takes the spare room and stays at the top, the rows and footer end the list.
-    list: { flexGrow: 1, justifyContent: 'flex-end', padding: spacing.lg, paddingBottom: spacing.xl },
+    list: {
+      flexGrow: 1,
+      justifyContent: 'flex-end',
+      paddingBottom: spacing.xl,
+      paddingHorizontal: spacing.md + 2,
+      paddingTop: spacing.sm,
+    },
     listHeader: { flexGrow: 1 },
     body: { flex: 1 },
     footer: { gap: spacing.sm, paddingTop: spacing.sm },
-    dockedNext: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
-    headerAction: { color: palette.textMuted, fontSize: 22, paddingHorizontal: spacing.sm },
-    menuTitle: { ...typeScale.heading, color: palette.text },
+    dockedNext: { paddingHorizontal: spacing.md + 2, paddingTop: spacing.xs },
+    headerAction: {
+      color: palette.text,
+      fontSize: 18,
+      fontWeight: '800',
+      lineHeight: 22,
+      textAlign: 'center',
+    },
+    headerCircle: {
+      alignItems: 'center',
+      backgroundColor: palette.surface,
+      borderRadius: 18,
+      height: 36,
+      justifyContent: 'center',
+      width: 36,
+    },
+    menuTitle: { ...typeScale.title, color: palette.text },
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     olderText: { color: palette.textFaint, fontSize: 12, paddingVertical: spacing.xs },
     pullRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
-    viewSwitch: { flexDirection: 'row', gap: spacing.xs, paddingBottom: spacing.sm, paddingTop: spacing.xs },
+    viewSwitch: { paddingBottom: spacing.md },
   });

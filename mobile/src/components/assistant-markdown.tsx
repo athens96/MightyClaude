@@ -2,7 +2,7 @@ import { Component, useMemo, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import Markdown, { MarkdownIt, type RenderRules } from 'react-native-markdown-display';
 import { isOpenableLink, prepareMarkdown } from '@/lib/markdown';
-import { monoFontFamily, radius, serifFontFamily, spacing, useStyles, type Palette } from '@/theme';
+import { headingFontFamily, monoFontFamily, radius, spacing, useStyles, type Palette } from '@/theme';
 
 /**
  * One parser for every result on the phone: bare URLs become links, a single
@@ -15,32 +15,38 @@ const parser = MarkdownIt({ html: false, linkify: true, breaks: true, typographe
 const CELL_WIDTH = 140;
 
 /**
- * The reply reads as prose on the page: generous leading, the two top heading levels in
- * the serif, code on a slightly darker paper, quotes set off by a thin rule. The accent
- * is kept for links.
+ * The reply reads as a card of prose: generous leading, the two top heading levels in
+ * bold Avenir Next, inline code on the blue wash, fenced code as an ink block, quotes set
+ * off by a thin rule. The accent is kept for links.
  */
 const makeMarkdownStyles = (palette: Palette, size: number) =>
   StyleSheet.create({
     body: { color: palette.text, fontSize: size, lineHeight: Math.round(size * 1.53) },
     heading1: {
       color: palette.text,
-      fontFamily: serifFontFamily,
-      fontSize: size + 6,
-      fontWeight: '400',
+      fontFamily: headingFontFamily,
+      fontSize: size + 5,
+      fontWeight: '700',
       lineHeight: Math.round((size + 6) * 1.3),
       marginBottom: spacing.sm,
       marginTop: spacing.xs,
     },
     heading2: {
       color: palette.text,
-      fontFamily: serifFontFamily,
-      fontSize: size + 3,
-      fontWeight: '400',
+      fontFamily: headingFontFamily,
+      fontSize: size + 2,
+      fontWeight: '700',
       lineHeight: Math.round((size + 3) * 1.3),
       marginBottom: spacing.xs,
       marginTop: spacing.xs,
     },
-    heading3: { color: palette.text, fontSize: size, fontWeight: '600', marginBottom: spacing.xs },
+    heading3: {
+      color: palette.text,
+      fontFamily: headingFontFamily,
+      fontSize: size,
+      fontWeight: '700',
+      marginBottom: spacing.xs,
+    },
     heading4: { color: palette.text, fontSize: size, fontWeight: '600', marginBottom: spacing.xs },
     heading5: { color: palette.textMuted, fontSize: size - 1, fontWeight: '600', marginBottom: spacing.xs },
     heading6: { color: palette.textMuted, fontSize: size - 2, fontWeight: '600', marginBottom: spacing.xs },
@@ -52,27 +58,27 @@ const makeMarkdownStyles = (palette: Palette, size: number) =>
     bullet_list: { marginBottom: spacing.sm },
     ordered_list: { marginBottom: spacing.sm },
     code_inline: {
-      backgroundColor: palette.surfaceRaised,
+      backgroundColor: palette.accentMuted,
       borderRadius: radius.sm,
-      color: palette.text,
+      color: palette.accent,
       fontFamily: monoFontFamily,
       fontSize: size - 2,
     },
     code_block: {
-      backgroundColor: palette.surfaceRaised,
+      backgroundColor: palette.codeSurface,
       borderRadius: radius.md,
       borderWidth: 0,
-      color: palette.text,
+      color: palette.codeText,
       fontFamily: monoFontFamily,
       fontSize: 12,
       lineHeight: 18,
       padding: spacing.md,
     },
     fence: {
-      backgroundColor: palette.surfaceRaised,
+      backgroundColor: palette.codeSurface,
       borderRadius: radius.md,
       borderWidth: 0,
-      color: palette.text,
+      color: palette.codeText,
       fontFamily: monoFontFamily,
       fontSize: 12,
       lineHeight: 18,

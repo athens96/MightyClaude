@@ -1,25 +1,28 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { radius, statusColor, statusLabel, usePalette } from '@/theme';
+import { toneOf } from '@/lib/status-tone';
+import { radius, statusLabel, toneColors, usePalette } from '@/theme';
 
 /**
- * Status as a coloured dot and its word — no pill, no border; the running state pulses so activity is visible at a glance. The status
- * arrives as a string: one the contract does not list is drawn in the neutral colour
- * with its own text rather than being forced into a known state.
+ * Status as a capsule in its tone. Running and waiting are the loud ones — filled, the
+ * running one with a breathing dot so activity reads at a glance; the rest sit on their
+ * soft tint. The status arrives as a string: one the contract does not list is drawn in
+ * the neutral tone with its own text rather than being forced into a known state.
  */
-export function StatusChip({ status }: { status: string }) {
+export function StatusChip({ status, label }: { status: string; label?: string }) {
   const palette = usePalette();
   const pulse = useRef(new Animated.Value(1)).current;
+  const running = status === 'running';
 
   useEffect(() => {
-    if (status !== 'running') {
+    if (!running) {
       pulse.setValue(1);
       return undefined;
     }
     const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
-          toValue: 0.35,
+          toValue: 0.3,
           duration: 650,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
@@ -34,13 +37,18 @@ export function StatusChip({ status }: { status: string }) {
     );
     animation.start();
     return () => animation.stop();
-  }, [pulse, status]);
+  }, [pulse, running]);
 
-  const color = statusColor(palette, status);
+  const tone = toneOf(status);
+  const colors = toneColors(palette, tone);
+  const filled = tone === 'run' || tone === 'wait';
+  const ink = filled ? colors.onFill : colors.ink;
   return (
-    <View style={styles.chip}>
-      <Animated.View style={[styles.dot, { backgroundColor: color, opacity: pulse }]} />
-      <Text style={[styles.label, { color }]}>{statusLabel(status)}</Text>
+    <View style={[styles.chip, { backgroundColor: filled ? colors.fill : colors.soft }]}>
+      {running ? <Animated.View style={[styles.dot, { backgroundColor: ink, opacity: pulse }]} /> : null}
+      <Text numberOfLines={1} style={[styles.label, { color: ink }]}>
+        {label ?? statusLabel(status)}
+      </Text>
     </View>
   );
 }
@@ -48,10 +56,12 @@ export function StatusChip({ status }: { status: string }) {
 const styles = StyleSheet.create({
   chip: {
     alignItems: 'center',
+    borderRadius: radius.round,
     flexDirection: 'row',
     gap: 5,
+    paddingHorizontal: 9,
     paddingVertical: 3,
   },
   dot: { borderRadius: radius.round, height: 6, width: 6 },
-  label: { fontSize: 12, fontWeight: '500' },
+  label: { fontSize: 11.5, fontWeight: '700' },
 });

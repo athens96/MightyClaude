@@ -24,30 +24,59 @@ const AA = 4.5;
 type Pair = [foreground: keyof Palette, background: keyof Palette];
 
 /**
- * Every text colour on the ground it is drawn on. The accent and the status and block
- * tints are drawn as words (links, status labels, block marks, headings) on the page
- * and on the surface sheets; `onAccent` is the label of the filled primary button and
- * of a prominent guided chip, and danger is the label of the soft danger button.
+ * Every text colour on the ground it is drawn on, in concept D:
+ * - ink and its two greys on the page, on cards, on the raised strip inside a card;
+ * - the status inks as words on the page and on cards (status labels, reachability,
+ *   reasons in "알림", the "완료" figure) and on their own soft tints (soft pills, the
+ *   quiet stat tiles, the error banner);
+ * - the text on every status fill: white on run, done, error, stop and the idle hero,
+ *   dark ink on wait (stat tiles, the hero, filled pills, timeline glyphs, tool chips);
+ * - the accent as links and the selected tab on page and card, and on its blue wash
+ *   (selected picker option, inline code); white on the primary button;
+ * - the user's ink bubble, the toast, fenced code, the badge;
+ * - the block tints as kind marks on cards, and under white/ink glyphs.
  */
 const textPairs: Pair[] = [
   ['text', 'background'],
   ['text', 'surface'],
   ['text', 'surfaceRaised'],
-  ['text', 'bubbleUser'],
   ['text', 'accentMuted'],
+  ['background', 'text'],
   ['textMuted', 'background'],
   ['textMuted', 'surface'],
   ['textMuted', 'surfaceRaised'],
   ['textFaint', 'background'],
   ['textFaint', 'surface'],
+  ['textFaint', 'surfaceRaised'],
   ['grey', 'background'],
+  ['grey', 'surface'],
+  ['grey', 'stopSoft'],
   ['accent', 'background'],
   ['accent', 'surface'],
+  ['accent', 'surfaceRaised'],
+  ['accent', 'accentMuted'],
+  ['accent', 'runSoft'],
   ['onAccent', 'accent'],
-  ['danger', 'dangerSurface'],
-  ['danger', 'background'],
   ['success', 'background'],
+  ['success', 'surface'],
+  ['success', 'doneSoft'],
+  ['danger', 'background'],
+  ['danger', 'surface'],
+  ['danger', 'dangerSurface'],
   ['warning', 'background'],
+  ['warning', 'surface'],
+  ['warning', 'surfaceRaised'],
+  ['warning', 'waitSoft'],
+  ['textMuted', 'stopSoft'],
+  ['onStatus', 'run'],
+  ['onStatus', 'done'],
+  ['onStatus', 'err'],
+  ['onStatus', 'stop'],
+  ['onStatus', 'idle'],
+  ['onWait', 'wait'],
+  ['onBadge', 'wait'],
+  ['onBubbleUser', 'bubbleUser'],
+  ['codeText', 'codeSurface'],
   ['blockAgent', 'background'],
   ['blockTask', 'background'],
   ['blockSteer', 'background'],
@@ -63,8 +92,6 @@ const textPairs: Pair[] = [
   ['onAccent', 'blockSteer'],
   ['onAccent', 'blockCompact'],
   ['onAccent', 'blockQuestion'],
-  ['onAccent', 'success'],
-  ['onAccent', 'danger'],
 ];
 
 describe.each([
@@ -80,14 +107,31 @@ describe.each([
     expect(contrast(palette.accent, palette.accentMuted)).toBeGreaterThanOrEqual(3);
   });
 
-  it('keeps the page, its sheets and its hairlines apart but close', () => {
-    // Paper, not panels: the surfaces stay within a small step of the page.
+  it('keeps the selection and the timeline marks visible on cards', () => {
+    // Non-text marks (WCAG 1.4.11) need 3:1: the run blue of a progress fill and the
+    // send button, the run/done/error/stop timeline nodes, on the card they sit on.
+    for (const fill of ['run', 'done', 'err', 'stop'] as const) {
+      expect(contrast(palette[fill], palette.surface)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('lifts the cards off the page without turning them into panels', () => {
+    // The page and its cards are told apart, but stay within a step of each other.
+    expect(contrast(palette.surface, palette.background)).toBeGreaterThan(1.05);
     expect(contrast(palette.surface, palette.background)).toBeLessThan(1.5);
-    expect(contrast(palette.surfaceRaised, palette.background)).toBeLessThan(1.5);
-    expect(contrast(palette.border, palette.background)).toBeGreaterThan(1.1);
+    expect(contrast(palette.border, palette.background)).toBeGreaterThan(1.05);
   });
 });
 
-it('keeps the dark palette warm charcoal rather than black', () => {
-  expect(luminance(darkPalette.background)).toBeGreaterThan(0.015);
+it('keeps the dark page ink navy rather than black', () => {
+  expect(luminance(darkPalette.background)).toBeGreaterThan(0.004);
+  const [, r, , b] = /^#(..)(..)(..)$/.exec(darkPalette.background) ?? [];
+  expect(parseInt(b ?? '0', 16)).toBeGreaterThan(parseInt(r ?? '0', 16));
+});
+
+it('keeps the status fills one set of colours across both modes', () => {
+  // A tile, the hero and a node mean the same thing by day and by night.
+  for (const fill of ['run', 'wait', 'done', 'err', 'stop'] as const) {
+    expect(darkPalette[fill]).toBe(lightPalette[fill]);
+  }
 });

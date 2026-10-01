@@ -24,7 +24,7 @@ import {
   toggleOption,
   type QuestionnaireState,
 } from '@/lib/questionnaire';
-import { radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
+import { cardShadow, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /**
  * The phone's copy of the Mac's `UserQuestionnaireCard`: one AskUserQuestion at a time,
@@ -359,20 +359,21 @@ function ChoiceRow({
 
 const makeStyles = (palette: Palette) =>
   StyleSheet.create({
-    // Docked above the composer as a sheet of lighter paper; the accent is left to the
-    // progress dots and the chosen answer.
+    // Docked above the composer as a white card ringed in the waiting amber: the one thing
+    // the pane is waiting on. The blue is left to the progress dots and the chosen answer.
     card: {
+      ...cardShadow,
       backgroundColor: palette.surface,
-      borderColor: palette.border,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.wait,
+      borderRadius: radius.card,
+      borderWidth: 2,
       gap: spacing.sm,
       marginBottom: spacing.xs,
-      marginHorizontal: spacing.lg,
-      padding: spacing.md,
+      marginHorizontal: spacing.md + 2,
+      padding: spacing.md + 2,
     },
     headRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-    title: { ...typeScale.heading, color: palette.text, fontSize: 16, lineHeight: 22 },
+    title: { ...typeScale.heading, color: palette.text },
     progress: { color: palette.textMuted, fontSize: 12, fontVariant: ['tabular-nums'] },
     spacer: { flex: 1 },
     waiting: { color: palette.textMuted, fontSize: 12 },
@@ -398,7 +399,7 @@ const makeStyles = (palette: Palette) =>
       alignItems: 'flex-start',
       borderColor: palette.border,
       borderRadius: radius.md,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 1.5,
       flexDirection: 'row',
       gap: spacing.sm,
       paddingHorizontal: spacing.md,
@@ -428,11 +429,11 @@ const makeStyles = (palette: Palette) =>
     },
     checkMark: { color: palette.onAccent, fontSize: 12, fontWeight: '800', lineHeight: 14 },
     choiceText: { flex: 1, gap: 2 },
-    choiceLabel: { color: palette.text, fontSize: 14, fontWeight: '500' },
-    choiceLabelSelected: { fontWeight: '600' },
+    choiceLabel: { color: palette.text, fontSize: 14, fontWeight: '600' },
+    choiceLabelSelected: { fontWeight: '700' },
     choiceDescription: { color: palette.textMuted, fontSize: 12, lineHeight: 17 },
     customInput: {
-      backgroundColor: palette.background,
+      backgroundColor: palette.surfaceRaised,
       borderColor: palette.border,
       borderRadius: radius.md,
       borderWidth: StyleSheet.hairlineWidth,

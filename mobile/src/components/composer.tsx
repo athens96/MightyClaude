@@ -1,13 +1,16 @@
 import { useCallback, useMemo, useState, type Ref } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Icon } from '@/components/icons';
 import { Button } from '@/components/ui';
 import { CommandList } from '@/components/command-list';
 import { Sheet } from '@/components/sheets';
 import { byteLength } from '@/api/client';
 import { MAX_TEXT_BYTES, type MobileCommand, type SubmitMode } from '@/api/types';
 import { commandInsertion, commandQuery, filterCommands } from '@/lib/commands';
+import { t } from '@/lib/i18n';
 import { formatBytes, type PickedFile, type UploadProgress } from '@/lib/uploads';
-import { radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
+import { cardShadow, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 export interface ComposerAttachments {
   files: PickedFile[];
@@ -154,10 +157,35 @@ export function Composer({
         <Text style={styles.hint}>첨부가 있는 요청은 대기열로 들어갑니다.</Text>
       ) : null}
 
+      {running && submitModes ? (
+        // While a run is going the message can join it or wait for the next turn; both
+        // ride above the field, so the field itself keeps only 중지.
+        <View style={styles.modeRow}>
+          {canSteer ? (
+            <Button
+              label="바로 전달"
+              tone="primary"
+              compact
+              busy={sending}
+              disabled={blocked}
+              onPress={() => void submit('steer')}
+            />
+          ) : null}
+          <Button
+            label="다음 요청"
+            tone={canSteer ? 'neutral' : 'primary'}
+            compact
+            busy={!canSteer && sending}
+            disabled={blocked || (canSteer && sending)}
+            onPress={() => void submit('queue')}
+          />
+        </View>
+      ) : null}
+
       <View style={styles.row}>
         {attachments ? (
           <Pressable
-            accessibilityLabel="파일 첨부"
+            accessibilityLabel={t('phone.composer.attach')}
             accessibilityRole="button"
             disabled={disabled || attachments.uploading}
             onPress={() => setPickerOpen(true)}
@@ -167,63 +195,57 @@ export function Composer({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.attachMark}>＋</Text>
+            <Icon name="plus" color={palette.textMuted} size={20} strokeWidth={2.4} />
           </Pressable>
         ) : null}
-        <TextInput
-          ref={inputRef}
-          value={text}
-          onChangeText={onChangeText}
-          placeholder="메시지를 입력하세요"
-          placeholderTextColor={palette.textFaint}
-          style={styles.input}
-          multiline
-          editable={!disabled}
-        />
-        <View style={styles.buttons}>
+        <View style={styles.field}>
+          <TextInput
+            ref={inputRef}
+            value={text}
+            onChangeText={onChangeText}
+            placeholder="메시지를 입력하세요"
+            placeholderTextColor={palette.textFaint}
+            style={styles.input}
+            multiline
+            editable={!disabled}
+          />
           {running ? (
-            <Button label="중지" tone="danger" compact style={styles.send} onPress={onStop} />
+            <Pressable
+              accessibilityLabel={t('phone.composer.stop')}
+              accessibilityRole="button"
+              hitSlop={6}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                onStop();
+              }}
+              style={({ pressed }) => [styles.stop, pressed && styles.pressed]}
+            >
+              <Icon name="stop" color={palette.onStatus} size={18} />
+            </Pressable>
           ) : null}
-          {running && submitModes && canSteer ? (
-            <>
-              <Button
-                label="바로 전달"
-                tone="primary"
-                compact
-                style={styles.send}
-                busy={sending}
-                disabled={blocked}
-                onPress={() => void submit('steer')}
-              />
-              <Button
-                label="다음 요청"
-                tone="neutral"
-                compact
-                style={styles.send}
-                disabled={blocked || sending}
-                onPress={() => void submit('queue')}
-              />
-            </>
-          ) : running && submitModes ? (
-            <Button
-              label="다음 요청"
-              tone="primary"
-              compact
-              style={styles.send}
-              busy={sending}
-              disabled={blocked}
-              onPress={() => void submit('queue')}
-            />
-          ) : (
-            <Button
-              label="전송"
-              tone="primary"
-              compact
-              style={[styles.send, styles.sendSolo]}
-              busy={sending}
-              disabled={blocked}
-              onPress={() => void submit()}
-            />
+          {running && submitModes ? null : (
+            <Pressable
+              accessibilityLabel={t('phone.composer.send')}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: blocked || sending, busy: sending }}
+              disabled={blocked || sending}
+              hitSlop={6}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                void submit();
+              }}
+              style={({ pressed }) => [
+                styles.send,
+                (blocked || sending) && styles.sendDisabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              {sending ? (
+                <ActivityIndicator color={palette.onStatus} size="small" />
+              ) : (
+                <Icon name="send" color={palette.onStatus} size={17} strokeWidth={2.8} />
+              )}
+            </Pressable>
           )}
         </View>
       </View>
@@ -259,62 +281,84 @@ const makeStyles = (palette: Palette) =>
     bar: {
       backgroundColor: palette.background,
       gap: spacing.xs,
-      paddingHorizontal: spacing.lg,
+      paddingHorizontal: spacing.md + 2,
       paddingTop: spacing.sm,
     },
     row: { alignItems: 'flex-end', flexDirection: 'row', gap: spacing.sm },
-    // A sheet of paper with a hairline edge; the terracotta send button is the one colour.
-    input: {
+    // A white rounded field that holds its own round blue send button.
+    field: {
+      ...cardShadow,
+      alignItems: 'flex-end',
       backgroundColor: palette.surface,
-      borderColor: palette.border,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: 22,
+      flex: 1,
+      flexDirection: 'row',
+      gap: 6,
+      minHeight: 44,
+      paddingBottom: 5,
+      paddingLeft: spacing.md + 2,
+      paddingRight: 5,
+      paddingTop: 5,
+    },
+    input: {
       color: palette.text,
       flex: 1,
       fontSize: 15,
       lineHeight: 21,
       maxHeight: 140,
-      minHeight: 44,
-      paddingHorizontal: spacing.md,
-      paddingBottom: spacing.sm + 2,
-      paddingTop: spacing.sm + 2,
+      minHeight: 34,
+      paddingBottom: 6,
+      paddingTop: 6,
     },
-    buttons: { gap: spacing.xs },
-    send: { borderRadius: radius.round, minWidth: 64 },
-    // Alone, the send button stands as tall as the empty field beside it.
-    sendSolo: { minHeight: 44 },
-    attach: {
+    send: {
       alignItems: 'center',
-      borderColor: palette.border,
+      backgroundColor: palette.run,
       borderRadius: radius.round,
-      borderWidth: StyleSheet.hairlineWidth,
+      height: 34,
+      justifyContent: 'center',
+      width: 34,
+    },
+    sendDisabled: { opacity: 0.35 },
+    stop: {
+      alignItems: 'center',
+      backgroundColor: palette.err,
+      borderRadius: 10,
+      height: 34,
+      justifyContent: 'center',
+      width: 34,
+    },
+    modeRow: { flexDirection: 'row', gap: spacing.xs, justifyContent: 'flex-end' },
+    attach: {
+      ...cardShadow,
+      alignItems: 'center',
+      backgroundColor: palette.surface,
+      borderRadius: radius.round,
       height: 44,
       justifyContent: 'center',
       width: 44,
     },
     attachDisabled: { opacity: 0.4 },
-    attachMark: { color: palette.textMuted, fontSize: 18 },
     chips: { flexDirection: 'row', gap: spacing.xs, paddingVertical: 2 },
     chip: {
       alignItems: 'center',
-      borderColor: palette.border,
-      borderRadius: radius.md,
-      borderWidth: StyleSheet.hairlineWidth,
+      backgroundColor: palette.surface,
+      borderRadius: radius.round,
       flexDirection: 'row',
       gap: spacing.xs,
       maxWidth: 220,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs + 1,
     },
-    chipName: { color: palette.text, flexShrink: 1, fontSize: 12 },
+    chipName: { color: palette.text, flexShrink: 1, fontSize: 12, fontWeight: '600' },
     chipSize: { color: palette.textFaint, fontSize: 11 },
     chipRemove: { color: palette.textMuted, fontSize: 12 },
     uploadRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     hint: { color: palette.textFaint, flex: 1, fontSize: 11 },
-    sheetTitle: { ...typeScale.heading, color: palette.text },
+    sheetTitle: { ...typeScale.title, color: palette.text },
     terminalNote: {
       color: palette.warning,
       fontSize: 13,
+      fontWeight: '600',
       paddingVertical: spacing.sm,
       textAlign: 'center',
     },

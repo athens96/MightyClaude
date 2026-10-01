@@ -60,7 +60,10 @@ export default function PairScreen() {
           { hostId: info.hostId, appVersion: info.appVersion, deviceToken: info.deviceToken },
         );
         showToast(t('phone.pair.paired', { name: saved.name }), 'success');
-        router.replace(`/host/${saved.id}`);
+        // Back down to the tabs — or onto them, after a pairing link opened this screen
+        // alone — and then into the new host, so its back button leads to the tabs.
+        router.dismissTo('/');
+        router.push(`/host/${saved.id}`);
       } catch (caught) {
         setError(describeError(caught));
       } finally {

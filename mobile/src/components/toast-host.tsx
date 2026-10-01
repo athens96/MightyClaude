@@ -11,15 +11,15 @@ export function ToastHost() {
   const insets = useSafeAreaInsets();
 
   const toneColor: Record<ToastTone, string> = {
-    info: palette.accent,
-    success: palette.success,
-    error: palette.danger,
+    info: palette.run,
+    success: palette.done,
+    error: palette.err,
   };
 
   if (toasts.length === 0) return null;
 
   return (
-    <View pointerEvents="box-none" style={[styles.host, { bottom: insets.bottom + spacing.xl }]}>
+    <View pointerEvents="box-none" style={[styles.host, { bottom: insets.bottom + 64 }]}>
       {toasts.map((toast) => (
         <Pressable key={toast.id} onPress={() => dismiss(toast.id)}>
           <View style={styles.toast}>
@@ -42,18 +42,21 @@ const makeStyles = (palette: Palette) =>
       position: 'absolute',
       right: 0,
     },
-    // A slip of paper with a hairline edge; the tone is a dot beside the words.
+    // An ink capsule floating over the page and the tab bar; the tone is a bold dot.
     toast: {
       alignItems: 'center',
-      backgroundColor: palette.surfaceRaised,
-      borderColor: palette.border,
+      backgroundColor: palette.bubbleUser,
       borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
+      elevation: 4,
       flexDirection: 'row',
       gap: spacing.sm,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
+      shadowColor: '#0F1428',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.18,
+      shadowRadius: 14,
     },
-    dot: { borderRadius: radius.round, height: 6, width: 6 },
-    message: { color: palette.text, flexShrink: 1, fontSize: 14, lineHeight: 20 },
+    dot: { borderRadius: radius.round, height: 8, width: 8 },
+    message: { color: palette.onBubbleUser, flexShrink: 1, fontSize: 14, fontWeight: '600', lineHeight: 20 },
   });
