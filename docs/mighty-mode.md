@@ -91,7 +91,7 @@ Claude 또는 Codex 실행 창 상단에서 **기본 / 마이티**를 선택한�
 
 ## 실행 데이터
 
-- Claude의 구조화된 CLI 출력과 인증된 Mods 이벤트를 사용한다. 실행 중인 그래프는 별도의 대화 로그 파일을 읽어 추측하지 않는다. CLI 세션 기록은 사용자가 [이전 다이어그램](#이전-다이어그램-불러오기)을 불러올 때만 읽는다.
+- Claude의 구조화된 CLI 출력과 인증된 Mods 이벤트를 사용한다. 실행 중인 그래프는 별도의 대화 로그 파일을 읽어 추측하지 않는다. CLI 세션 기록은 사용자가 [이전 다이어그램](#이전-다이어그램-불러오기)을 불러올 때와 [기존 세션 이어가기](session-resume.md) 목록을 열 때만 읽는다.
 - 백그라운드 작업 블록은 CLI 스트림의 `tool_use`(`run_in_background`)와 시작 응답, 이후 사용자 턴에 주입되는 `<task-notification>`(`tool-use-id`·`task-id`·`status`·`summary`)만 사용한다. Mods에는 작업 알림 이벤트가 없으므로 출력 파일을 읽어 추측하지 않는다.
 - Mods의 `agent.spawn`에서 실제 요청과 부모 에이전트를, `turn.complete`에서 해당 에이전트의 실제 최종 응답을 받는다. CLI의 `parent_tool_use_id`로 에이전트별 메시지와 도구 출력을 구분한다. 연동 계약은 [Claude Code의 공식 Mods 타입](https://github.com/anthropics/claude-code/blob/main/mods/types/claude-code.d.ts)의 2.1.273 정의로 확인했다.
 - 프로세스별 ID로 요청을 구분하고 같은 에이전트의 이벤트는 갱신한다. 늦게 도착한 이벤트가 다음 요청의 블록으로 섞이지 않도록 한다.

@@ -39,6 +39,7 @@ struct WorkspaceView: View {
         .sheet(isPresented: $store.showSettings) { AppSettingsView().environmentObject(store) }
         .sheet(item: $store.renameTarget) { RenameSheet(target: $0).environmentObject(store) }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
+        .sheet(item: $store.resumePickerWorkspace) { ResumeSessionSheet(workspace: $0).environmentObject(store) }
         .sheet(item: $store.pluginBrowser) { browser in
             ClaudePluginView(model: browser, onClose: { store.pluginBrowser = nil })
                 .interactiveDismissDisabled(browser.isMutating)
@@ -233,6 +234,10 @@ struct WorkspaceView: View {
                     }
                 }
             }
+            Button { store.openResumePicker(workspace.id) } label: {
+                Label(L("resume.menu"), systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityIdentifier("workspace-resume-session-\(workspace.id)")
             Divider()
             Button { addSession(in: workspace, kind: "shell") } label: {
                 Label(L("workspace.newTerminal"), systemImage: "terminal")

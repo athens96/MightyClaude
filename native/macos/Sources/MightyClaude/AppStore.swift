@@ -191,6 +191,10 @@ final class AppStore: ObservableObject {
     @Published var settingsSession: RunSession?
     @Published var sessionInfoSessionID: String?
     @Published var pendingRemoval: Workspace?
+    /// The workspace whose "continue an earlier session" picker is open.
+    @Published var resumePickerWorkspace: Workspace?
+    /// Session ids the app's panes started or resumed, loaded on first use.
+    var knownSessionIDs: [String]?
     @Published var error: String?
     @Published var resourceWarning: String?
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
@@ -281,7 +285,7 @@ final class AppStore: ObservableObject {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePickerWorkspace != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -885,6 +889,7 @@ final class AppStore: ObservableObject {
             }
         }
         receiveLoginSignal(event)
+        if event.type == "resume", let id = event.resumeId { rememberSessionID(id) }
         if event.type == "status", let provider = snapshot.sessions.first(where: { $0.id == event.sessionId })?.provider { providerLastActive[provider] = receivedAt }
         companion.receive(event, snapshot: snapshot, at: receivedAt)
         if event.type == "status", let status = event.status, status != "running" { settleQueue(event.sessionId, status: status) }
