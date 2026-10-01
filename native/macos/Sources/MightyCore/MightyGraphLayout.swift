@@ -6,7 +6,8 @@ import Foundation
 public struct MightyGraphLayout {
     public enum Content: Hashable {
         /// `execution` is a run index and an `OuroborosExecutionLink.key`.
-        case request(Int), agent(Int, Int), result(Int), resultFiles(Int), execution(Int, String), draft
+        /// `images` is a run index and the step it attaches to (`MightyGraphImages`).
+        case request(Int), agent(Int, Int), result(Int), resultFiles(Int), execution(Int, String), images(Int, String), draft
     }
     public struct Node: Identifiable {
         public let id: String
@@ -16,7 +17,7 @@ public struct MightyGraphLayout {
         /// Attachments beside the flow: not resized, scrolled at once.
         public var isAuxiliary: Bool {
             switch content {
-            case .resultFiles, .execution: return true
+            case .resultFiles, .execution, .images: return true
             default: return false
             }
         }
@@ -33,6 +34,25 @@ public struct MightyGraphLayout {
     /// Collapsed, it holds the goal, progress, counts, one phase line, a
     /// three-line note and the footer without clipping.
     public static func executionHeight(expanded: Bool) -> CGFloat { expanded ? 470 : 290 }
+    /// A step's picture preview, attached beside the block that produced them.
+    public struct ImageGallery: Hashable, Sendable {
+        public var runID: String
+        /// "request", or "agent:" and the agent's id.
+        public var step: String
+        public var count: Int
+        public init(runID: String, step: String, count: Int) { self.runID = runID; self.step = step; self.count = count }
+    }
+    public static let imagesSuffix = "images:"
+    public static let imagesWidth: CGFloat = 304
+    /// Thumbnails per row and on screen: two rows folded, four unfolded; the
+    /// last visible tile carries "+k" for the rest.
+    public static let imagesColumns = 3
+    public static func visibleImages(count: Int, expanded: Bool) -> Int { min(count, imagesColumns * (expanded ? 4 : 2)) }
+    public static let imagesTile: CGFloat = 88
+    public static func imagesHeight(count: Int, expanded: Bool) -> CGFloat {
+        let rows = max(1, (visibleImages(count: count, expanded: expanded) + imagesColumns - 1) / imagesColumns)
+        return 38 + 24 + CGFloat(rows) * imagesTile + CGFloat(rows - 1) * 8
+    }
     public struct Edge: Identifiable {
         public let source: String
         public let target: String
@@ -88,7 +108,7 @@ public struct MightyGraphLayout {
         (viewport != nil && sharedResultSize == nil) ? latestResultID(runs: runs) : nil
     }
 
-    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, executions: [Execution] = []) -> Self {
+    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, executions: [Execution] = [], galleries: [ImageGallery] = []) -> Self {
         // The latest result card is the result of the last finished run in the list.
         let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
         let latestResultID = Self.latestResultID(runs: runs)
@@ -233,6 +253,23 @@ public struct MightyGraphLayout {
             // centerline. Only the trailing canvas extent grows horizontally.
             result.nodes.append(Node(id: panelID, content: .resultFiles(runIndex), frame: frame))
             result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
+        }
+        // A picture preview hangs off the top of the step that produced it,
+        // right of every card it would share rows with: an attachment, like
+        // the file list — no edge, no centreline, nothing already placed moves.
+        for gallery in galleries where gallery.count > 0 {
+            guard let runIndex = runs.firstIndex(where: { $0.id == gallery.runID }) else { continue }
+            let stepID = nodeID(runs[runIndex], suffix: gallery.step)
+            guard let step = result.nodes.first(where: { $0.id == stepID && !$0.isAuxiliary }) else { continue }
+            let id = nodeID(runs[runIndex], suffix: imagesSuffix + gallery.step)
+            guard !result.nodes.contains(where: { $0.id == id }) else { continue }
+            let height = imagesHeight(count: gallery.count, expanded: expanded.contains(id))
+            let y = step.frame.minY
+            let right = result.nodes.filter { $0.frame.minY < y + height && $0.frame.maxY > y }.map(\.frame.maxX).max() ?? step.frame.maxX
+            let frame = CGRect(x: max(right, step.frame.maxX) + executionGap, y: y, width: imagesWidth, height: height)
+            result.nodes.append(Node(id: id, content: .images(runIndex, gallery.step), frame: frame))
+            result.size.width = max(result.size.width, frame.maxX + 24 - result.originX)
+            result.size.height = max(result.size.height, frame.maxY + 24)
         }
         // Execution blocks hang off their request's top, stacked, right of
         // every card they would share rows with — attachments, like the file

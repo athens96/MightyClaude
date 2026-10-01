@@ -76,7 +76,8 @@ struct MightyGraphView: View {
     private var layout: MightyGraphLayout { layout(executionLinks) }
     private func layout(_ links: [OuroborosExecutionLink]) -> MightyGraphLayout {
         .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize,
-              executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) })
+              executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
+              galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot))
     }
 
     /// Background executions the pane's agents started; they outlive the
@@ -298,6 +299,11 @@ struct MightyGraphView: View {
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
                                        onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
+        case .images(let index, let step):
+            MightyGraphImagesCard(nodeID: node.id, items: MightyGraphImages.items(runs[index], step: step, root: workspaceRoot),
+                                  expanded: expanded.contains(node.id),
+                                  onToggle: { if !expanded.insert(node.id).inserted { expanded.remove(node.id) } },
+                                  onOpen: onFocus)
         case .execution(_, let key):
             if let link = executions[key] {
                 MightyGraphOuroborosCard(nodeID: node.id, link: link, snapshot: ouroboros.snapshots[key], expanded: expanded.contains(node.id),
