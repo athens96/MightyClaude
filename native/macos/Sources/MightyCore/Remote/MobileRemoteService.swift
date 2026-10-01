@@ -131,6 +131,11 @@ public actor MobileRemoteService {
     /// filesystem halfway through. Never set outside tests.
     var keyRotationFailure: String?
 
+    /// Screen-share safety. A revoked phone and a regenerated pairing key must
+    /// stop a live screen-share session too, and that happens here rather than
+    /// in the settings sheet, so every caller of these paths is covered.
+    private var screenShare: ScreenShareSafetyTarget?
+
     /// The relay used when the user's own field is empty. The app passes the
     /// built-in `MobileWire.defaultRelayURL`; tests pass their own.
     private let defaultRelayURL: String
@@ -152,6 +157,7 @@ public actor MobileRemoteService {
     }
 
     public func attach(_ delegate: MobileHostDelegate) { self.delegate = delegate }
+    public func attachScreenShare(_ target: ScreenShareSafetyTarget) { screenShare = target }
     /// Test seam; see `keyRotationFailure`.
     func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
@@ -232,6 +238,11 @@ public actor MobileRemoteService {
         // atomically; a write failure is tolerated since the key is already rotated.
         if isRotation { try? deviceRegistry.clearAll() }
         dropKeyDependentClients()
+        // Every phone has to pair again, so every screen-share grant and every
+        // live session goes with the old key. Not awaited: this path is
+        // synchronous, and the host disables injection and capture before it
+        // touches a surface.
+        if isRotation, let screenShare { Task { await screenShare.pairingKeyRegenerated() } }
         return fresh
     }
 
@@ -285,6 +296,9 @@ public actor MobileRemoteService {
         // dropKeyDependentClients handles key-dependent connections; close
         // this device's token-authenticated socket explicitly.
         close(connections: connectedDevices.filter { $0.value == id }.map(\.key), reason: "device revoked")
+        // The phone has lost its place: anything it is watching or controlling
+        // stops now, not when it next tries to reconnect.
+        await screenShare?.deviceRevoked(id)
         await uploads.discard(device: id)
         publish()
         return status()
