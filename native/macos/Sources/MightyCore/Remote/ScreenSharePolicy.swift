@@ -51,13 +51,58 @@ public struct ScreenSessionEntry: Sendable, Equatable {
     }
 }
 
+/// Why a session or the capture subsystem was stopped.
+public enum ScreenShareStopReason: Sendable, Equatable {
+    case revoked, grantDowngrade, rekeyPairing, killSwitch
+    case idleTimeout, peerLeft, lockScreen, secureInput, concurrencyLimit
+}
+
 /// t0 (trigger) and t1 (all stopped) on the Mac clock for the ≤1 s guarantee.
 public struct ScreenShareKillTiming: Sendable, Equatable {
     public var t0: Date
     public var t1: Date
+    public var reason: ScreenShareStopReason
+    /// True when a surface had not finished by the deadline and was cut off.
+    /// The host's own state was already safe at t0; this records that the
+    /// PeerConnection or the capture stream was abandoned rather than awaited.
+    public var deadlineExceeded: Bool
     public var elapsed: TimeInterval { t1.timeIntervalSince(t0) }
 
-    public init(t0: Date, t1: Date) { self.t0 = t0; self.t1 = t1 }
+    public init(t0: Date, t1: Date, reason: ScreenShareStopReason, deadlineExceeded: Bool = false) {
+        self.t0 = t0; self.t1 = t1; self.reason = reason; self.deadlineExceeded = deadlineExceeded
+    }
+}
+
+/// The capture, peer and teardown controls of one session. Injected, so the
+/// host's rules run without a display, a relay or a real PeerConnection.
+public struct ScreenShareSurface: Sendable {
+    /// Begins frame capture. Called when the first session starts and again
+    /// when the lock screen or secure input clears.
+    public var startCapture: @Sendable () async -> Void
+    /// Stops frame capture.
+    public var stopCapture: @Sendable () async -> Void
+    /// Closes the PeerConnection for this session.
+    public var closePeer: @Sendable () async -> Void
+
+    public init(
+        startCapture: @escaping @Sendable () async -> Void,
+        stopCapture: @escaping @Sendable () async -> Void,
+        closePeer: @escaping @Sendable () async -> Void
+    ) {
+        self.startCapture = startCapture; self.stopCapture = stopCapture; self.closePeer = closePeer
+    }
+}
+
+/// One live session, as the menu-bar indicator and the session list see it.
+public struct ScreenShareLiveSession: Sendable, Equatable {
+    public var sessionId: String
+    public var deviceId: String
+    public var mode: ScreenShareGrant
+    public var startedAt: Date
+
+    public init(sessionId: String, deviceId: String, mode: ScreenShareGrant, startedAt: Date) {
+        self.sessionId = sessionId; self.deviceId = deviceId; self.mode = mode; self.startedAt = startedAt
+    }
 }
 
 /// Normalized 0–1 display coordinate plus the display identifier.
@@ -71,12 +116,6 @@ public struct ScreenShareNormalizedPoint: Sendable, Equatable {
     public init(displayId: UInt32, x: Double, y: Double) {
         self.displayId = displayId; self.x = x; self.y = y
     }
-}
-
-/// Why a session or the capture subsystem was stopped.
-public enum ScreenShareStopReason: Sendable, Equatable {
-    case revoked, grantDowngrade, rekeyPairing, killSwitch
-    case idleTimeout, peerLeft, lockScreen, secureInput, concurrencyLimit
 }
 
 /// Reasons a join attempt fails.
