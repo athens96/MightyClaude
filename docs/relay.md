@@ -108,6 +108,106 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 
 새 제어 소켓이 붙으면 릴레이는 같은 serverId의 옛 소켓을 4409로 닫으므로 언제 새로 접속해도 안전하다. 휴대폰의 호스트 화면은 `host-offline`(4404·4410)을 받아도 위의 백오프로 스스로 다시 붙고, 호스트 목록은 오프라인으로 보이는 호스트를 호스트마다 따로 1.5초부터 2배씩 최대 30초 간격으로 다시 확인한다. 다시 확인하는 동안에도 목록은 "확인 중"으로 바뀌지 않고 직전 상태를 그대로 보여 주며, 오프라인인 호스트가 없으면 타이머를 돌리지 않는다.
 
+## TURN 자격증명 발급 (릴레이 평문, E2EE 아님)
+
+릴레이는 coturn `use-auth-secret`을 환경 변수 `TURN_SECRET`으로 보관한다. 클라이언트·호스트 앱에는 절대 전달되지 않는다.
+
+**요청** — 인증된 호스트 제어 소켓이 평문 텍스트 프레임으로 전송:
+
+```json
+{ "type": "turn-credentials-request" }
+```
+
+**응답** (제어 소켓에만, 클라이언트 데이터 소켓에는 절대 전달 안 됨):
+
+| type | 설명 |
+|---|---|
+| `turn-credentials` | `username`, `password`(HMAC-SHA1), `ttl`(초), `uris` 포함. 호스트가 이를 E2EE 채널의 `iceServers`로 감싸 휴대폰에 전달한다(아래 화면 공유 시그널링) |
+| `turn-rate-limited` | `retryAfterSecs` 포함. 창(기본 10분)당 serverId별 5회, IP별 10회 초과 시 |
+| `turn-unavailable` | `TURN_SECRET`이 설정되지 않은 경우 |
+
+HMAC-SHA1 형식 (coturn REST API):
+- `username = "<만료_유닉스초>:<serverId 앞 16자>"`
+- `password = base64(HMAC-SHA1(TURN_SECRET, username))`
+
+자격증명은 호스트만 요청할 수 있다(클라이언트 데이터 소켓에는 `turn-credentials-request`가 먹히지 않고, 응답도 제어 소켓에만 간다). 휴대폰은 Mac이 E2EE로 전달해 준 것만 본다. 호스트는 만료 전에 다시 요청해 `screen-grant`로 새 자격증명을 보내고 ICE restart를 건다. coturn 쪽에도 사용자별·전체 대역 할당량(세션 기본 2 Mbps)이 걸려 있고, 사설·링크로컬·메타데이터 IP 대역으로의 중계는 거절된다.
+
+환경 변수:
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `TURN_SECRET` | (없음) | coturn use-auth-secret. 비어 있으면 TURN 비활성화 |
+| `TURN_HOST` | `127.0.0.1` | TURN 서버 주소 (URI에 사용) |
+| `TURN_PORT` | `3478` | TURN 서버 포트 |
+| `TURN_CREDENTIAL_TTL_SECS` | `3600` | 자격증명 유효 시간 |
+| `TURN_RATE_WINDOW_MS` | `600000` | 발급 속도 제한 창 (ms) |
+| `TURN_MAX_PER_SERVER_ID` | `5` | 창당 serverId별 최대 발급 횟수 |
+| `TURN_MAX_PER_IP` | `10` | 창당 IP별 최대 발급 횟수 |
+
+## 화면 공유 시그널링 (E2EE, 릴레이 해석 불가)
+
+BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호화 채널 위에 JSON으로 흐른다. 릴레이는 이 프레임을 바이너리 그대로 넘기므로 SDP·ICE 후보·권한·킬 신호 중 어느 것도 읽거나 바꿀 수 없다(X25519/HKDF/ChaCha20-Poly1305 + 엄격한 카운터). 영상은 릴레이를 지나지 않는다: 같은 와이파이에서는 ICE **host** 후보로 바로, 그 밖에서는 **srflx·prflx**로 P2P, 그마저 막히면 coturn TURN(**relay** 후보)으로만 우회한다.
+
+무엇이 어디로 흐르는지:
+
+| 내용 | 경로 |
+|---|---|
+| offer·answer·ICE 후보, 세션 종료, 권한, 킬 | 릴레이의 E2EE 채널 (이 절의 메시지 타입) |
+| 영상 프레임 | WebRTC 피어 연결 (host → srflx/prflx → 최후에 TURN relay) |
+| 입력 이벤트(포인터·스크롤·키·확정된 문자열), 클립보드(양방향·수동 버튼·최대 1 MB·zstd) | 피어 연결의 데이터 채널. 릴레이를 지나지 않으므로 릴레이 프레임 한도와 무관하다 |
+| getStats 지표(RTT·지터·디코드 시간·프리즈·비트레이트, 선택된 후보 종류 `host`/`srflx`/`prflx`/`relay`) | 휴대폰 안에서만 집계·표시. 릴레이로 보내지 않는다 |
+
+### 호스트 기능 광고 (`screenShare`)
+
+기능 광고는 기존 방식을 그대로 쓴다. 호스트는 `GET /m1/info`의 `capabilities` 배열(`docs/mobile-remote.md`의 `MobileInfo.capabilities`)에 이름 하나를 더한다: **`"screenShare"`**.
+
+```json
+{ "protocol": 1, "hostId": "…", "hostName": "…", "appVersion": "…", "platform": "macOS",
+  "capabilities": ["queue", "pane", "files", "screenShare"] }
+```
+
+- 배열이 없거나 `"screenShare"`가 없으면 휴대폰은 화면 공유 화면과 진입점을 **숨긴다**(구버전 Mac).
+- 휴대폰은 자기가 아는 이름만 남기고 나머지는 버리므로, `screenShare`를 모르는 구버전 앱은 이름을 무시하고 기능을 띄우지 않는다. 모르는 `type`의 암호화 메시지도 양쪽 모두 조용히 버리므로, 어느 쪽이 구버전이어도 연결이 깨지지 않는다.
+- `clientId` 없이 인증한 구버전 앱(기기 목록에서 "구버전 앱"으로 묶이는 쪽)은 기기를 서로 구분할 수 없어 허용 목록에 올릴 수 없다. 세션 요청은 `legacy-client` 이유로 거절된다.
+- 기능 자체에는 전역 끄기 스위치가 없다. 그래도 휴대폰마다 허용 목록(`screenShareAllowed`)과 보기/조작 권한(`grant`)이 따로 필요하고, 판단은 전부 Mac이 한다. 새로 페어링한 휴대폰은 허용 목록에서 꺼진 상태(`allowed:false`, `grant:"none"`)로 시작한다.
+
+### 세션 요청 (기존 m1 터널)
+
+세션을 **시작**하는 쪽은 휴대폰이고, 새 푸시 타입을 쓰지 않고 위의 요청/응답 터널을 그대로 쓴다(`{"id":…,"method":…,"path":…}`). 본문 규약은 이 문서가 기준이다.
+
+- `GET /m1/screen-share/state` → `{"screenShare":{"allowed":bool,"grant":"none"|"view"|"control","isBeta":true,"displays":[{"displayId":N,"width":N,"height":N,"main":bool}],"controlChallengeB64":"…","iceServers":[…],"idleTimeoutSeconds":600}}`
+  - `controlChallengeB64`는 이 세션 한 번만 쓰는 바이트열(`screen-control-challenge:<sessionId>:<unix초>`)이며 `grant`가 `control`일 때만 들어 있다.
+  - `iceServers`는 릴레이가 발급한 짧은 수명(기본 1시간)의 TURN 자격증명이다(위 [TURN 자격증명 발급](#turn-자격증명-발급-릴레이-평문-e2ee-아님)). coturn 비밀값은 릴레이에만 있고 Mac·휴대폰에는 절대 오지 않는다.
+  - `idleTimeoutSeconds`는 조작 600초, 보기 전용 1800초다.
+- `POST /m1/screen-share/sessions` 본문 `{"mode":"view"|"control","displayId":N,"controlSignatureB64":"…","network":"wifi"|"cellular","decodes":["H264","VP9","AV1"]}` → `200 {"sessionId":"…","mode":"…","displayId":N,"codec":"H264"|"VP9"|"AV1","quality":{"width":N,"height":N,"fps":N,"maxBitrateKbps":N}}`
+  - `mode:"control"`은 매 세션 `controlSignatureB64`가 필요하다. 생체·PIN이 걸린 Android Keystore 키(P-256)로 `controlChallengeB64`에 서명한 ECDSA DER 서명이고, 권한을 줄 때 등록해 둔 공개키(`controlKeyPublic`)로 **Mac이** 검증한다. 휴대폰 쪽 확인만으로는 조작 세션이 열리지 않는다.
+  - `decodes`는 휴대폰이 `getCapabilities`로 확인한 디코딩 가능 코덱이다. 기본값은 하드웨어 H.264이고, 모바일 데이터에서 Mac CPU에 여유가 있고 휴대폰이 디코딩할 수 있을 때만 VP9/AV1을 고른다. CPU·발열 압박이 생기면 H.264로 되돌린다. HEVC는 쓰지 않는다.
+  - `quality`는 네트워크별 상한이다: 와이파이 최대 1080p30(약 6 Mbps), 모바일 데이터 최대 720p15(약 1 Mbps, 5–15 fps). TURN relay 경로에서는 세션 대역 할당량(기본 2 Mbps)까지로 더 낮춘다. 화면이 멈춰 있으면 프레임을 보내지 않아 유휴 트래픽은 0에 가깝다.
+  - 거절은 `403 {"error":{"reason":"…"}}`: `legacy-client`, `device-not-allowed`(허용 목록 밖 — 새로 페어링한 휴대폰의 기본값), `insufficient-grant`, `control-signature`, `concurrency-limit`(조작 1대 + 보기 전용 2대까지), `screen-permission`(Mac의 화면 기록 권한이 없거나 만료됨 — 휴대폰은 "Mac에서 승인 필요"를 보여 준다).
+- 세션이 열리면 Mac은 알림을 한 번 띄우고 '원격 조작 중' 표시와 메뉴바 항목을 보여 준다. 세션마다 Mac에서 따로 승인을 묻지는 않는다.
+
+### 새 암호화 메시지 타입
+
+공통 봉투는 `{"type":"screen-…","sessionId":"<세션 id>", …}`다. 평문 JSON 하나는 64 KiB를 넘기지 않으며(릴레이 프레임 한도 1 MiB, 소켓 송신 버퍼 4 MiB에서 연결 종료), ICE 후보는 묶지 않고 생기는 대로 한 프레임에 하나씩 보낸다(트리클). 클립보드처럼 큰 데이터는 이 채널이 아니라 피어 연결의 데이터 채널로 간다.
+
+| type | 방향 | 본문 | 설명 |
+|---|---|---|---|
+| `screen-offer` | 호스트 → 클라이언트 | `sdp`, `mode`, `displayId`, `codec`, `quality`, `iceRestart` | 영상을 보내는 쪽이 Mac이므로 offer도 Mac이 만든다. SDP에는 화면 글자 가독성을 위한 설정(contentHint `text`/`detail`, degradationPreference `maintain-resolution`)이 반영된다. 디스플레이 전환이나 TURN 자격증명 교체 때는 `iceRestart:true`로 다시 보낸다 |
+| `screen-answer` | 클라이언트 → 호스트 | `sdp` | 휴대폰의 SDP answer |
+| `screen-ice` | 양방향 | `candidate`, `sdpMid`, `sdpMLineIndex`, `usernameFragment` | ICE 후보 1개. 빈 `candidate`(`""`)는 후보 끝을 뜻한다 |
+| `screen-session-end` | 양방향 | `reason` | 정상 종료. 휴대폰 쪽 이유: `user-stop`, `background`(앱이 백그라운드로 간 뒤 30초), `peer-failed`. 호스트 쪽 이유: `idle-timeout`(조작 10분·보기 30분), `peer-left`, `display-gone` |
+| `screen-grant` | 호스트 → 클라이언트 | `allowed`, `grant`, `controlChallengeB64`?, `iceServers`?, `displays`? | 허용 목록과 보기/조작 권한이 Mac 설정에서 바뀌었음을 알린다(부여·승격·강등·회수). TURN 자격증명을 만료 전에 교체할 때도 이 메시지로 새 `iceServers`를 보내고 뒤이어 `iceRestart:true` offer를 보낸다. 세션 밖에서 보낼 때는 `sessionId`를 생략한다 |
+| `screen-kill` | 호스트 → 클라이언트 | `reason`, `sessionId`? | 즉시 중단. `reason`: `revoked`, `grant-downgrade`, `rekey-pairing`, `kill-switch`, `lock-screen`, `secure-input`, `concurrency-limit`. `sessionId`가 없으면 그 휴대폰의 모든 세션이다 |
+
+### 중단은 Mac이 한다
+
+`screen-kill`은 **알려 주는 메시지일 뿐 방어선이 아니다.** 기기 해제, 권한 강등·회수, 페어링 키 다시 만들기, 메뉴바 킬 스위치와 단축키(⌃⌥⌘K)는 Mac에서 SCStream 캡처를 멈추고 입력 주입을 막고 PeerConnection을 닫는 것으로 끝나며, 릴레이가 죽어 있어도 1초 안에 끝난다. Mac은 방아쇠 시점 t0과 전부 멈춘 시점 t1을 자기 시계로 기록한다. 메시지는 보낼 수 있으면 보내는 것이고, 휴대폰은 메시지를 못 받아도 영상이 끊기는 것으로 알게 된다.
+
+- 잠금 화면이나 보안 입력(암호 입력란)에서는 프레임이 멈추고 주입이 거절되며, 휴대폰에 그 상태가 표시된다.
+- Mac에서 사람이 직접 키보드·마우스를 쓰면 원격 입력은 2초 쉬어 간다.
+- 좌표 규약은 `displayId` + 정규화된 0–1 좌표이고, Mac이 `CGDisplayBounds`에 맞춰 환산한다. 보던 디스플레이가 빠지면 주 디스플레이로 되돌린다.
+- 세션 기록은 기기·시작/종료 시각·모드만 남긴다. 입력한 키는 어디에도 남기지 않는다.
+
 ## 릴레이 실행
 
 ```
