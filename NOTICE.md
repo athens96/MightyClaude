@@ -19,6 +19,43 @@ Mighty Claude 자체는 MIT 라이선스로 배포됩니다(`LICENSE`). 아래 �
 - 프로젝트: Paperthin — https://github.com/LilMGenius/paperthin
 - 라이선스: MIT License (Copyright (c) Paperthin contributors)
 
+## WebRTC — BSD 3-Clause / MIT
+
+Mac 화면 공유(BETA)의 피어-투-피어 영상 전송은 WebRTC를 사용합니다. 아래 `licenses/` 파일은 각 상위 프로젝트가 배포하는 라이선스 전문을 그대로 받아 둔 것입니다.
+
+### WebRTC 핵심 라이브러리 (macOS XCFramework)
+
+Mac 앱은 미리 컴파일된 WebRTC XCFramework를 포함합니다. 이 바이너리는 Google이 관리하는 WebRTC 오픈소스 프로젝트(https://webrtc.googlesource.com/src)를 빌드한 것이며, 아래 두 배포 방식 중 어느 것을 쓰더라도 같은 핵심 라이브러리 고지가 적용됩니다.
+
+- 프로젝트: WebRTC — https://webrtc.org / https://webrtc.googlesource.com/src
+- 저작권: Copyright (c) 2011, The WebRTC project authors. All rights reserved.
+- 라이선스: BSD 3-Clause License — 전문은 `licenses/WebRTC-BSD-3-Clause.txt` (상위 저장소의 `LICENSE`와 바이트 단위로 동일)
+- Mac 앱 번들: 같은 전문이 `native/licenses/WebRTC-LICENSE`에 있고, 빌드가 앱의 `Contents/Resources/ThirdPartyLicenses`로 복사하므로 바이너리 배포에도 고지가 함께 갑니다
+
+### stasel/WebRTC (macOS 기본 배포 패키지)
+
+- 프로젝트: stasel/WebRTC — https://github.com/stasel/WebRTC
+- 라이선스: BSD 3-Clause License (Google WebRTC 고지 포함) — 전문은 `licenses/stasel-WebRTC-BSD-3-Clause.txt`
+
+### livekit/webrtc-xcframework (macOS 대안 배포)
+
+번들된 CEF와 심볼이 충돌하면 stasel/WebRTC 대신 LK- 접두사가 붙은 이 배포를 사용합니다.
+
+- 프로젝트: livekit/webrtc-xcframework — https://github.com/livekit/webrtc-xcframework
+- 저작권: Copyright (c) 2021 WebRTC SDKs
+- 라이선스: MIT License — 전문은 `licenses/livekit-webrtc-xcframework-MIT.txt`
+
+### react-native-webrtc (Android 앱)
+
+- 프로젝트: react-native-webrtc — https://github.com/react-native-webrtc/react-native-webrtc
+- 저작권: Copyright (c) 2017-present React Native WebRTC Community / Copyright (c) 2015-2017 Howard Yang
+- 라이선스: MIT License — 전문은 `licenses/react-native-webrtc-MIT.txt`
+
+### @config-plugins/react-native-webrtc (Expo 설정 플러그인)
+
+- 프로젝트: expo/config-plugins — https://github.com/expo/config-plugins (`packages/react-native-webrtc`)
+- 라이선스: MIT License (패키지 메타데이터에 선언되어 있고, 상위 저장소에는 별도 전문 파일이 없습니다)
+
 ## 그 밖의 구성 요소
 
 - macOS 앱과 펫 리소스의 타사 라이선스: `native/licenses/`, `assets/`
@@ -47,6 +84,43 @@ The Paperthin style of Mighty mode presents the Paperthin project's skill catalo
 - Project: Paperthin — https://github.com/LilMGenius/paperthin
 - License: MIT License (Copyright (c) Paperthin contributors)
 
+
+## WebRTC — BSD 3-Clause / MIT
+
+The peer-to-peer video transport of the Mac screen-share feature (BETA) uses WebRTC. Each file under `licenses/` below is the upstream project's licence text, copied verbatim.
+
+### WebRTC core library (macOS XCFramework)
+
+The Mac app embeds a pre-compiled WebRTC XCFramework. The binary is built from the Google-maintained WebRTC open-source project at https://webrtc.googlesource.com/src, so the same core notice applies whichever of the two distributions below is used.
+
+- Project: WebRTC — https://webrtc.org / https://webrtc.googlesource.com/src
+- Copyright (c) 2011, The WebRTC project authors. All rights reserved.
+- License: BSD 3-Clause License — full text in `licenses/WebRTC-BSD-3-Clause.txt` (byte-identical to the upstream `LICENSE`)
+- Mac app bundle: the same text is kept at `native/licenses/WebRTC-LICENSE`, which the build copies into the app's `Contents/Resources/ThirdPartyLicenses`, so the notice travels with the binary distribution as well
+
+### stasel/WebRTC (default macOS distribution package)
+
+- Project: stasel/WebRTC — https://github.com/stasel/WebRTC
+- License: BSD 3-Clause License (includes the Google WebRTC notice) — full text in `licenses/stasel-WebRTC-BSD-3-Clause.txt`
+
+### livekit/webrtc-xcframework (alternative macOS distribution)
+
+Used in place of stasel/WebRTC — with LK-prefixed symbols — if symbols clash with the bundled CEF.
+
+- Project: livekit/webrtc-xcframework — https://github.com/livekit/webrtc-xcframework
+- Copyright (c) 2021 WebRTC SDKs
+- License: MIT License — full text in `licenses/livekit-webrtc-xcframework-MIT.txt`
+
+### react-native-webrtc (Android app)
+
+- Project: react-native-webrtc — https://github.com/react-native-webrtc/react-native-webrtc
+- Copyright (c) 2017-present React Native WebRTC Community / Copyright (c) 2015-2017 Howard Yang
+- License: MIT License — full text in `licenses/react-native-webrtc-MIT.txt`
+
+### @config-plugins/react-native-webrtc (Expo config plugin)
+
+- Project: expo/config-plugins — https://github.com/expo/config-plugins (`packages/react-native-webrtc`)
+- License: MIT License (declared in the package metadata; the upstream repository publishes no separate licence text file)
 
 ## Provider marks
 
