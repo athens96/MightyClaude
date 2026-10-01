@@ -169,6 +169,8 @@ final class NativeChildProcess: @unchecked Sendable {
         lock.lock(); inputClosing = true; lock.unlock()
         writer.async { [self] in if stdinFD >= 0 { Darwin.close(stdinFD); stdinFD = -1 } }
     }
+    /// The child itself has exited; its pipes may still be read.
+    var hasExited: Bool { lock.lock(); defer { lock.unlock() }; return exitedAt != nil }
     /// Whether a write would still reach the child: no close requested (even
     /// one still queued), not stopping, not exited. Read under the lock only,
     /// never on the writer queue: a write blocked on a full stdin pipe (up to
@@ -184,16 +186,26 @@ final class NativeChildProcess: @unchecked Sendable {
         usleep(150_000)
         _ = Darwin.kill(-pid, SIGKILL)
     }
+    /// Signals this object sent to the child's group, in order (tests read it).
+    var sentSignals: [Int32] { lock.lock(); defer { lock.unlock() }; return sent }
+    private var sent: [Int32] = []
+    /// Signals the child's group unless the child was already reaped: its pid
+    /// may then belong to another process.
+    private func signalGroup(_ value: Int32) {
+        lock.lock()
+        guard exitedAt == nil else { lock.unlock(); return }
+        sent.append(value); lock.unlock()
+        _ = Darwin.kill(-pid, value)
+    }
     func stop() {
         lock.lock(); let shouldStop = !stopping && result == nil; stopping = true; lock.unlock()
         guard shouldStop else { return }
         closeInput()
-        _ = Darwin.kill(-pid, SIGTERM)
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2) { [self] in
-            lock.lock(); let alive = result == nil; lock.unlock()
-            if alive { _ = Darwin.kill(-pid, SIGKILL) }
-        }
+        signalGroup(SIGTERM)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2) { [self] in signalGroup(SIGKILL) }
     }
+    /// SIGKILL to the child's group now, unless it was already reaped.
+    func kill() { signalGroup(SIGKILL) }
     func wait(timeout: TimeInterval? = nil) async -> Int32 {
         await withCheckedContinuation { continuation in
             let id = UUID()
@@ -270,6 +282,74 @@ final class ChildOutputBudget: @unchecked Sendable {
     func close() { condition.lock(); closed = true; condition.broadcast(); condition.unlock() }
 }
 
+/// Each live run's child and output consumer by pane, readable without the
+/// runner's actor. A busy run's consumer keeps that actor occupied, so a stop
+/// that first had to get onto it could wait behind every chunk queued there;
+/// signalling from here ends the child at once, whatever the caller's priority.
+public final class LiveRunRegistry: @unchecked Sendable {
+    private struct Entry { let child: NativeChildProcess; let consumer: Task<Void, Never>?; var signalled = false }
+    private let lock = NSLock()
+    private var entries: [String: Entry] = [:]
+    private var isClosing = false
+    public init() {}
+    /// The app is quitting (`signalAll()` was called): no run starts a child
+    /// any more, and one that got past that check is signalled as it registers.
+    public var closing: Bool { lock.lock(); defer { lock.unlock() }; return isClosing }
+    func register(_ id: String, child: NativeChildProcess, consumer: Task<Void, Never>?) {
+        lock.lock(); entries[id] = Entry(child: child, consumer: consumer); let closing = isClosing; lock.unlock()
+        if closing { signal(id, child: child) }
+    }
+    func remove(_ id: String, child: NativeChildProcess) {
+        lock.lock(); if entries[id]?.child === child { entries.removeValue(forKey: id) }; lock.unlock()
+    }
+    /// Whether a stop was signalled for this child: its run ends "stopped".
+    func wasSignalled(_ id: String, child: NativeChildProcess) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return entries[id].map { $0.child === child && $0.signalled } ?? false
+    }
+    /// SIGTERM to the pane's process group now, SIGKILL 0.2 s later if it is
+    /// still alive. A slow consumer can still have up to the run's budget
+    /// queued: it gets one more second after the child exits (none when that
+    /// takes over 3 s), then is cancelled and drops the rest. Repeated calls
+    /// do nothing. False when the pane has no live child.
+    @discardableResult public func signalStop(id: String) -> Bool { signal(id, child: nil) }
+    /// Signals every live child at once, as `signalStop(id:)` does, and marks
+    /// the registry closing: quit calls it first thing.
+    public func signalAll() {
+        lock.lock(); isClosing = true; let ids = Array(entries.keys); lock.unlock()
+        for id in ids { signal(id, child: nil) }
+    }
+    /// SIGKILL to every live child's group now: quit's last word when its
+    /// cleanup did not finish in time.
+    public func killAll() {
+        lock.lock(); let children = entries.values.map(\.child); lock.unlock()
+        for child in children { child.kill() }
+    }
+    @discardableResult func signal(_ id: String, child expected: NativeChildProcess?) -> Bool {
+        lock.lock()
+        guard var entry = entries[id], expected == nil || entry.child === expected else { lock.unlock(); return false }
+        let first = !entry.signalled
+        entry.signalled = true; entries[id] = entry
+        lock.unlock()
+        guard first else { return true }
+        entry.child.stop()
+        Self.cancelConsumerAfterExit(entry.child, consumer: entry.consumer)
+        return true
+    }
+    /// Cancels a stopped run's consumer one second after the child exits (at
+    /// once when that takes over 3 s). Off every actor: the consumer keeps the
+    /// runner's busy. The exit is the child's own, not its readers' end: a
+    /// reader can still be held by the consumer it waits for.
+    static func cancelConsumerAfterExit(_ child: NativeChildProcess, consumer: Task<Void, Never>?) {
+        Task.detached(priority: .userInitiated) {
+            let began = Date()
+            while !child.hasExited, Date().timeIntervalSince(began) < 3 { try? await Task.sleep(for: .milliseconds(20)) }
+            if child.hasExited { try? await Task.sleep(for: .seconds(1)) }
+            consumer?.cancel()
+        }
+    }
+}
+
 private final class ManagedProcess {
     let request: StartRunRequest
     let activityId = UUID().uuidString
@@ -316,8 +396,14 @@ public actor ProcessRunner {
     private let paneMCPBindings: PaneMCPBindingRegistry
     /// Panes this runner minted tokens for, so shutdown revokes only its own.
     private var boundPaneIds = Set<String>()
+    /// Live children, signalled without this actor; see `LiveRunRegistry`.
+    private let liveRuns: LiveRunRegistry
 
-    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.onEvent = onEvent }
+    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), liveRuns: LiveRunRegistry = LiveRunRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.liveRuns = liveRuns; self.onEvent = onEvent }
+
+    /// Ends the pane's child right away, without waiting for this actor; the
+    /// run's bookkeeping still needs `stop(id:)`. False when nothing ran.
+    @discardableResult public nonisolated func signalStop(id: String) -> Bool { liveRuns.signalStop(id: id) }
 
     /// The agent pane a tool call belongs to, resolved from the token its own MCP
     /// server presented. An unknown or revoked token reaches no pane.
@@ -432,6 +518,8 @@ public actor ProcessRunner {
                         completed: { [weak run] in run?.permissionInitializationTask?.cancel(); run?.child?.closeInput() })
                 }
             }
+            // Quit signals the registry before it reaches this actor.
+            guard !liveRuns.closing else { throw MightyError("앱이 종료 중입니다.") }
             // Unbounded, but never more than the run's budget: the readers wait
             // for the consumer instead of evicting chunks it has not seen.
             let stream = AsyncStream<ChildEvent>.makeStream(bufferingPolicy: .unbounded)
@@ -443,7 +531,12 @@ public actor ProcessRunner {
             onEvent(RunEvent(sessionId: request.sessionId, type: "status", status: "running"))
             if request.kind == "claude" { Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: request.provider, kind: "turn", state: "running", summary: "\(ProviderOptions.label(request.provider)) 실행 중"), emit: onEvent) }
             emitLog(run, kind: "system", text: request.kind == "shell" ? "명령 실행 · 비대화형 셸" : "\(ProviderOptions.label(request.provider)) CLI 실행")
-            run.task = Task { [weak self, weak run] in
+            // Below every user-facing caller (user-initiated): on this actor,
+            // a stop, a steer or a permission answer goes ahead of the chunks
+            // it queues, and a medium caller (a Task started from a plain
+            // queue) is not starved either. A stop from even lower signals
+            // first anyway.
+            run.task = Task(priority: .medium) { [weak self, weak run] in
                 for await event in stream.stream {
                     // Nobody handles output any more: later yields return
                     // `.terminated` and the readers never wait again.
@@ -455,6 +548,7 @@ public actor ProcessRunner {
                     switch event { case .stdout(let data), .stderr(let data): budget.release(data.count); case .exit: break }
                 }
             }
+            liveRuns.register(request.sessionId, child: child, consumer: run.task)
             if run.permissions != nil || run.codexPermissions != nil {
                 run.permissions?.start(); run.codexPermissions?.start()
                 run.permissionInitializationTask = Task { [weak self, weak run] in
@@ -600,6 +694,12 @@ public actor ProcessRunner {
     }
     private func finish(_ run: ManagedProcess, code: Int32) async {
         guard !run.finished else { return }
+        // A stop signalled off the actor can end the child before `stop(id:)`
+        // gets here; the run still ends "stopped".
+        if let child = run.child {
+            if liveRuns.wasSignalled(run.request.sessionId, child: child) { run.stopping = true }
+            liveRuns.remove(run.request.sessionId, child: child)
+        }
         run.codexPermissions?.flush()
         run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); emitLog(run, kind: "output", text: run.errorDecoder.flush())
         // The run still ends by its exit code; only the stray writer's rest is lost.
@@ -648,20 +748,22 @@ public actor ProcessRunner {
         run.stopping = true
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
         if let child = run.child {
-            child.stop()
-            // A slow consumer can still have up to the run's budget queued:
-            // it gets one more second after the exit (none when the exit timed
-            // out), then is cancelled and drops the rest. The deadline runs
-            // off this actor, which the consumer keeps busy.
-            let task = run.task
-            let deadline = Task.detached {
-                if await child.wait(timeout: 3) != -1 { do { try await Task.sleep(for: .seconds(1)) } catch { return } }
-                task?.cancel()
-            }
-            await task?.value; deadline.cancel()
+            // Usually signalled already, before the caller reached this actor;
+            // the consumer's deadline comes with the signal.
+            if !liveRuns.signal(id, child: child) { child.stop(); LiveRunRegistry.cancelConsumerAfterExit(child, consumer: run.task) }
+            await run.task?.value
             if !run.finished { await finish(run, code: -1) } else { await waitForFinalization(run) }
         }
         else { await cancelPending(run) }
     }
-    public func shutdown() async { shuttingDown = true; for id in Array(runs.keys) { await stop(id: id) }; for id in boundPaneIds { paneMCPBindings.revoke(agentPaneId: id) }; boundPaneIds.removeAll() }
+    /// Signals every run first, then stops them together, so one slow run
+    /// does not hold the others' bookkeeping.
+    public func shutdown() async {
+        shuttingDown = true
+        for (id, run) in runs { if let child = run.child { liveRuns.signal(id, child: child) } }
+        await withTaskGroup(of: Void.self) { group in
+            for id in Array(runs.keys) { group.addTask { await self.stop(id: id) } }
+        }
+        for id in boundPaneIds { paneMCPBindings.revoke(agentPaneId: id) }; boundPaneIds.removeAll()
+    }
 }

@@ -55,6 +55,16 @@ public final class AgentProcessRegistry: @unchecked Sendable {
         return runner
     }
 
+    /// SIGTERM (SIGKILL when `kill`) to every running process group now,
+    /// without waiting and without forgetting runners. Quit calls it first
+    /// thing, and with `kill` when its cleanup runs past the deadline.
+    public func signalAll(kill: Bool = false) {
+        let owned = lock.withLock { Array(panes.values) }
+        for pane in owned {
+            for handle in pane.runningHandles() { if kill { pane.sendSIGKILL(handle: handle) } else { pane.sendSIGTERM(handle: handle) } }
+        }
+    }
+
     /// Stop every tracked process group and forget all runners. Called when the
     /// app quits: SIGTERM to each running process group, then SIGKILL to any
     /// still running after `graceSeconds`. Bounded by `graceSeconds` plus one poll.
