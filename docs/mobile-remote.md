@@ -75,7 +75,9 @@ MobilePermission {
 
 기존 라우트와 필드는 그대로다. 아래는 모두 **추가**이며, 새 필드는 전부 선택(optional)이다. 업데이트하지 않은 휴대폰 앱은 모르는 필드를 무시하고 지금처럼 동작한다. 휴대폰은 `/m1/info`의 `capabilities`에 이름이 있을 때만 해당 기능을 보여 준다(없으면 구버전 호스트).
 
-`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`.
+`MobileInfo.capabilities: string[]` — 허용 값: `"submit-mode"`, `"queue"`, `"pane"`, `"history"`, `"settings"`, `"commands"`, `"mighty"`, `"status"`, `"attachments"`, `"style"`, `"files"`, `"screenShare"`.
+
+`"screenShare"`는 BETA 화면 보기·조작 기능의 문이다. 세션 요청 라우트와 E2EE 시그널링 메시지 규약은 `docs/relay.md`의 "화면 공유 시그널링"에 있다.
 
 공통 오류: 알 수 없는 실행 창·항목 404, 형식 오류·허용 값 밖의 문자열·필수 필드 누락 400, 지금 상태에서 할 수 없음 409, 크기 초과 413. 허용 값 밖의 값을 조용히 기본값으로 바꾸지 않는다.
 
