@@ -51,6 +51,16 @@ final class AppStore: ObservableObject {
     @Published var mobileBusy = false
     lazy var mobileRemote = MobileRemoteService(dataDirectory: dataDirectory.appendingPathComponent("mobile-remote", isDirectory: true), hostName: Host.current().localizedName ?? "Mighty Claude Mac")
     var mobileBridge: MobileRemoteBridge?
+    /// Screen-share safety (ScreenShareSafety.swift): the per-phone allow-list,
+    /// the host's enforcement actor and the menu-bar kill switch.
+    lazy var screenShare = ScreenShareService(
+        store: ScreenShareSettingsStore(url: dataDirectory
+            .appendingPathComponent("mobile-remote", isDirectory: true)
+            .appendingPathComponent("screen-share.json")),
+        displays: CoreGraphicsDisplaySource(),
+        input: SystemScreenShareInput(),
+        environment: SystemScreenShareEnvironment())
+    var screenShareMenuBar: ScreenShareMenuBarController?
     var mobileTracking = MobileRemoteTracking()
     var mobileSubscriptions = Set<AnyCancellable>()
     var mobileRetryTask: Task<Void, Never>?
@@ -318,6 +328,7 @@ final class AppStore: ObservableObject {
             checkForAppUpdateAutomatically()
         }
         configureMobileRemote()
+        configureScreenShare()
         guard !ending, !Task.isCancelled else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
