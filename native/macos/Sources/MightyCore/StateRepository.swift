@@ -240,7 +240,10 @@ public actor StateRepository {
             if restoring && session.kind == SessionKind.claude {
                 let isAuto = session.titleMode == nil || session.titleMode == "auto"
                 if isAuto {
-                    session.title = PaneTitle.autoTitle(for: session, defaultTitle: ProviderOptions.label(session.provider))
+                    // A pane that continued an earlier session keeps that
+                    // session's title until it sends a request of its own.
+                    let fallback = session.resumeId != nil && !session.title.isEmpty ? session.title : ProviderOptions.label(session.provider)
+                    session.title = PaneTitle.autoTitle(for: session, defaultTitle: fallback)
                 }
             }
             output.sessions.append(session)
