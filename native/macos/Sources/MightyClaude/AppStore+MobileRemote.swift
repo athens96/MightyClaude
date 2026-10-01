@@ -93,6 +93,8 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
             return (store, store.mobileHasRun(sessionId))
         }
         guard running else { return false }
+        // The child ends now; the bookkeeping below waits for the main actor.
+        store.liveRuns.signalStop(id: sessionId)
         await store.stop(sessionId)
         return true
     }

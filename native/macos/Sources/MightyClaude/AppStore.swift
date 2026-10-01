@@ -233,8 +233,27 @@ final class AppStore: ObservableObject {
     /// How runs launch their per-pane MCP server; nil until the agent IO socket listens.
     var agentIOLocation: PaneMCPServerLocation?
 
-    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings) { [weak self] event in
-        Task { @MainActor in self?.apply(event) }
+    /// Live agent runs, signalled to stop without waiting for the runner's
+    /// actor or the main actor; read from the phone's handlers too.
+    let liveRuns = LiveRunRegistry()
+    /// Runner events reach the main actor in ordered batches, one job per
+    /// batch, so a flood of output never queues ahead of a click.
+    private let runEvents = RunEventBatcher(batchLimit: 32)
+
+    private lazy var runner = ProcessRunner(providerService: providers, pluginDirectory: pluginDirectory, paneMCPServer: agentIOLocation, paneMCPBindings: paneBindings, liveRuns: liveRuns) { [weak self, runEvents] event in
+        if runEvents.push(event) { Task { @MainActor in self?.applyRunEvents() } }
+    }
+
+    /// Applies queued batches for about 8 ms, then yields the main actor and
+    /// continues in a new job; the batcher keeps them in order.
+    private func applyRunEvents() {
+        let began = DispatchTime.now().uptimeNanoseconds
+        while true {
+            let (events, more) = runEvents.take()
+            for event in events { apply(event) }
+            guard more else { return }
+            if DispatchTime.now().uptimeNanoseconds - began >= 8_000_000 { Task { @MainActor in self.applyRunEvents() }; return }
+        }
     }
 
     init() {
@@ -471,6 +490,7 @@ final class AppStore: ObservableObject {
 
     func closeSession(_ id: String) {
         guard closingSessions.insert(id).inserted else { return }
+        liveRuns.signalStop(id: id)
         let closing = snapshot.sessions.first(where: { $0.id == id })
         let workspaceId = closing?.workspaceId
         let previousGroup = workspaceId.flatMap { layoutForWorkspace($0)?.group(containing: id) }
@@ -499,9 +519,21 @@ final class AppStore: ObservableObject {
         pendingRemoval = nil
         let ids = snapshot.sessions.filter { $0.workspaceId == workspace.id }.map(\.id)
         closingSessions.formUnion(ids)
+        for id in ids { liveRuns.signalStop(id: id) }
         Task {
+            // Every run was signalled above; their bookkeeping runs together.
+            await withTaskGroup(of: Void.self) { group in
+                for id in ids { group.addTask { await self.stop(id) } }
+            }
+            // A run of this workspace started meanwhile stops too; stopping
+            // an ended one does nothing.
+            let late = snapshot.sessions.filter { $0.workspaceId == workspace.id }.map(\.id)
+            closingSessions.formUnion(late)
+            for id in late { liveRuns.signalStop(id: id) }
+            await withTaskGroup(of: Void.self) { group in
+                for id in late { group.addTask { await self.stop(id) } }
+            }
             for session in snapshot.sessions where session.workspaceId == workspace.id {
-                await stop(session.id)
                 await runner.revokePaneMCPBinding(agentPaneId: session.id)
                 drafts.removeValue(forKey: session.id)
                 statusLines.removeValue(forKey: session.id)
@@ -524,7 +556,7 @@ final class AppStore: ObservableObject {
             }
             if let activeWorkspaceId = snapshot.activeWorkspaceId { reconcilePaneLayout(activeWorkspaceId) }
             releaseUnreachableAgentIOPanes()
-            closingSessions.subtract(ids)
+            closingSessions.subtract(ids); closingSessions.subtract(late)
         }
     }
 
@@ -813,6 +845,7 @@ final class AppStore: ObservableObject {
             return
         }
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status == "running" || pendingRuns.contains(id) else { return }
+        liveRuns.signalStop(id: id)
         let starting = startTasks[id]
         starting?.cancel()
         await runner.stop(id: id)
@@ -927,8 +960,21 @@ final class AppStore: ObservableObject {
         try await repository.save(snapshot)
     }
 
+    /// Quit's deadline passed with cleanup unfinished: every agent run and
+    /// agent terminal process is killed now.
+    func killProcessesAtQuitDeadline() {
+        liveRuns.signalAll()
+        liveRuns.killAll()
+        AgentProcessRegistry.shared.signalAll(kill: true)
+    }
+
     func shutdown() async {
         ending = true
+        // Agent runs and agent terminal panes' processes end now, before any
+        // cleanup below that could be slow; a run still starting never spawns.
+        liveRuns.signalAll()
+        AgentProcessRegistry.shared.signalAll()
+        for task in startTasks.values { task.cancel() }
         CefBrowserRuntime.shared.shutDown()
         await claudePlugins.shutdown()
         await codexPlugins.shutdown()

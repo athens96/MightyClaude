@@ -100,13 +100,31 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         terminating = true
         Task {
             await AppStore.shared.shutdown()
-            terminationReady = true
-            sender.terminate(nil)
+            finishTermination(sender)
+        }
+        // A cleanup step that hangs must not keep the app from quitting. Agent
+        // runs and terminal processes were signalled first thing and are killed
+        // at the deadline; saved state restores a run still marked running as
+        // stopped.
+        Task {
+            try? await Task.sleep(for: .seconds(Self.terminationDeadline))
+            finishTermination(sender, deadline: true)
         }
         // Keep the normal event loop active while asynchronous process cleanup and
         // state saving finish. terminateLater enters a modal loop that can block
         // MainActor jobs when termination was requested from a SwiftUI Task.
         return .terminateCancel
+    }
+
+    /// Seconds quit waits for cleanup before the app ends regardless.
+    static let terminationDeadline: Double = 6
+
+    private func finishTermination(_ sender: NSApplication, deadline: Bool = false) {
+        guard !terminationReady else { return }
+        terminationReady = true
+        // Cleanup hung: nothing it would still have stopped outlives the app.
+        if deadline { AppStore.shared.killProcessesAtQuitDeadline() }
+        sender.terminate(nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
