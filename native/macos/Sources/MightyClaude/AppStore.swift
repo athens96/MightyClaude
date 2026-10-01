@@ -38,6 +38,11 @@ final class AppStore: ObservableObject {
     /// Requests typed while a pane was busy, in send order. Kept in memory:
     /// a restored session is never running, so nothing would drain it.
     @Published var queuedInputs: [String: [QueuedInput]] = [:]
+    /// Older Mighty requests a pane loaded from its CLI's session record:
+    /// in memory only, never saved and never sent to the phone.
+    @Published var graphHistory: [String: SessionHistoryState] = [:]
+    /// Session record reads in flight per pane, cancelled when it closes.
+    var graphHistoryLoads: [String: Task<Result<SessionHistoryChunk, Error>, Never>] = [:]
     /// The live steer chain per session. The token identifies the chain's last
     /// link, so a finished chain clears itself without racing a newer one.
     private var steerTasks: [String: (token: UUID, task: Task<SubmitOutcome, Never>)] = [:]
@@ -509,6 +514,7 @@ final class AppStore: ObservableObject {
             discardAttachments(id)
             queuedInputs.removeValue(forKey: id); steerTasks.removeValue(forKey: id)?.task.cancel()
             draftRevisions.removeValue(forKey: id)
+            forgetGraphHistory(id)
             forgetStyleState(id); pruneStyleStateWatchers()
             if snapshot.activeSessionId == id {
                 snapshot.activeSessionId = previousGroup?.sessionIds.first(where: { candidate in snapshot.sessions.contains { $0.id == candidate } }) ?? activeSessions.first?.id
@@ -545,6 +551,7 @@ final class AppStore: ObservableObject {
                 discardAttachments(session.id)
                 queuedInputs.removeValue(forKey: session.id); steerTasks.removeValue(forKey: session.id)?.task.cancel()
                 draftRevisions.removeValue(forKey: session.id)
+                forgetGraphHistory(session.id)
                 forgetStyleState(session.id)
             }
             snapshot.sessions.removeAll { $0.workspaceId == workspace.id }
@@ -566,7 +573,10 @@ final class AppStore: ObservableObject {
 
     func updateSession(_ id: String, _ update: (inout RunSession) -> Void) {
         guard let index = snapshot.sessions.firstIndex(where: { $0.id == id }) else { return }
+        // A pane with loaded history follows trims of its retained graph.
+        let previous = graphHistory[id] == nil ? nil : snapshot.sessions[index].graphRuns ?? []
         update(&snapshot.sessions[index])
+        if let previous { followGraphHistory(snapshot.sessions[index], previous: previous) }
     }
 
     func setAgentViewMode(_ id: String, mode: String) {

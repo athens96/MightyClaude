@@ -27,6 +27,13 @@ struct MightyGraphView: View {
     /// Shows a background execution's dashboard where the workspace opens
     /// web pages; false when nothing was shown (or the pane has closed).
     var onOpenURL: @MainActor (URL) async -> Bool = { _ in false }
+    /// Runs before this index were loaded from the CLI's session record and
+    /// are drawn above the pane's own; nil `history` hides the block that
+    /// loads more of them. A pane with nothing on screen loads them when it
+    /// appears.
+    var retainedStart = 0
+    var history: SessionHistoryState? = nil
+    var onLoadOlder: () -> Void = {}
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The newest result's size only while its drag is in progress; the saved
@@ -77,12 +84,26 @@ struct MightyGraphView: View {
     private func layout(_ links: [OuroborosExecutionLink]) -> MightyGraphLayout {
         .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize,
               executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
-              galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot))
+              galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
+              retainedStart: pinnedStart, history: history != nil)
+    }
+    private var olderCount: Int { min(max(0, retainedStart), runs.count) }
+    /// The run that keeps its place while loaded history grows above it and
+    /// trimmed runs move into it.
+    private var pinnedStart: Int { history?.pinnedRunID.flatMap { id in runs.firstIndex { $0.id == id } } ?? olderCount }
+    /// The pane's own requests, without those read back from the record.
+    private var ownRuns: ArraySlice<MightyGraphRun> { runs.dropFirst(olderCount) }
+    /// A block of a run read from the session record: sized on screen only,
+    /// never saved into the pane's profile.
+    private func isRecordNode(_ id: String) -> Bool {
+        runs.prefix(olderCount).contains { id.hasPrefix(MightyGraphBlockSize.nodeID(runID: $0.id, suffix: "")) }
     }
 
     /// Background executions the pane's agents started; they outlive the
     /// request that started them, so their blocks stay live after it settled.
-    private var executionLinks: [OuroborosExecutionLink] { OuroborosExecutionLinks.extract(from: runs) }
+    /// Requests read back from the session record are history: their
+    /// executions are not polled again.
+    private var executionLinks: [OuroborosExecutionLink] { OuroborosExecutionLinks.extract(from: Array(runs.dropFirst(olderCount))) }
     private static func executionNodeID(_ link: OuroborosExecutionLink) -> String {
         MightyGraphBlockSize.nodeID(runID: link.runID, suffix: MightyGraphLayout.executionSuffix + link.key)
     }
@@ -92,12 +113,17 @@ struct MightyGraphView: View {
         let linksByKey = Dictionary(links.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         let graph = layout(links)
         let ouroborosRequest = MightyGraphOuroborosModel.Request(links: links, listKeys: Set(links.filter { expanded.contains(Self.executionNodeID($0)) }.map(\.key)))
-        let agentCount = runs.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
-        let questionCount = runs.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
-        let taskCount = runs.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
-        let steerCount = runs.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
-        let compactCount = runs.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
-        let tokens = runs.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
+        // Totals are the pane's own requests; those read back from the
+        // record are counted apart.
+        let own = ownRuns
+        let agentCount = own.reduce(0) { $0 + $1.agents.filter { !$0.isTask && !$0.isSteer && !$0.isCompact && !$0.isQuestion }.count }
+        let questionCount = own.reduce(0) { $0 + $1.agents.filter(\.isQuestion).count }
+        let taskCount = own.reduce(0) { $0 + $1.agents.filter(\.isTask).count }
+        let steerCount = own.reduce(0) { $0 + $1.agents.filter(\.isSteer).count }
+        let compactCount = own.reduce(0) { $0 + $1.agents.filter(\.isCompact).count }
+        let tokens = own.reduce(GraphTokenUsage()) { $0 + ($1.totalUsage ?? GraphTokenUsage()) }
+        let summary = Self.headerSummary(runs: own.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens)
+            + (olderCount > 0 ? " · " + L("graph.history.headerLoaded", ["count": "\(olderCount)"]) : "")
         // Hoisted out of the canvas call: older type checkers spend a long time
         // on optional maps and conditionals written inline in an argument list.
         let overlayView: AnyView = reference.map { AnyView(referenceOverlay($0)) } ?? AnyView(EmptyView())
@@ -110,7 +136,7 @@ struct MightyGraphView: View {
                 Label(StyleChrome.graphHeader(styleName: styleName, phaseTitle: stylePhase), systemImage: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 12, weight: .semibold))
                 if let styleSource, let badge = StyleChrome.sourceBadge(styleSource) { SourceBadge(text: badge) }
-                Text(Self.headerSummary(runs: runs.count, agents: agentCount, tasks: taskCount, steers: steerCount, compactions: compactCount, questions: questionCount, tokens: tokens))
+                Text(summary)
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
                 Spacer(minLength: 8)
@@ -125,7 +151,7 @@ struct MightyGraphView: View {
             Divider()
             MightyGraphCanvas(graph: graph, zoom: zoom, sessionID: sessionID,
                               scrollTarget: target,
-                              defaultNodeID: fallbackNodeID, selection: $selectedNodeID, edges: graphEdges(graph),
+                              defaultNodeID: fallbackNodeID, selection: $selectedNodeID, edges: { graphEdges(graph, visible: $0) },
                               overlay: overlayView,
                               overlayLayout: overlayLayout,
                               onOverlayResize: { size, _ in
@@ -135,6 +161,7 @@ struct MightyGraphView: View {
                               },
                               onResize: resize, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id,
+                              onReachTop: { if history?.phase == .idle { onLoadOlder() } },
                               card: { card($0, executions: linksByKey) })
                 // The whole id list, not just the last one: dropping the oldest
                 // runs moves every surviving card up without touching the last
@@ -166,9 +193,13 @@ struct MightyGraphView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mighty-graph-\(sessionID)")
-        .task(id: MightyGraphResultFilesModel.Request(sessionID: sessionID, runs: runs, root: workspaceRoot)) {
-            await resultFiles.load(.init(sessionID: sessionID, runs: runs, root: workspaceRoot))
+        // Result files are looked for in the pane's own requests only.
+        .task(id: MightyGraphResultFilesModel.Request(sessionID: sessionID, runs: Array(ownRuns), root: workspaceRoot)) {
+            await resultFiles.load(.init(sessionID: sessionID, runs: Array(ownRuns), root: workspaceRoot))
         }
+        // A resumed pane (or one switched to this view) with nothing on screen
+        // yet shows its session's latest requests.
+        .onAppear { if runs.isEmpty, history?.phase == .idle { onLoadOlder() } }
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
     }
@@ -213,6 +244,7 @@ struct MightyGraphView: View {
     private func resize(_ id: String, _ size: CGSize, _ finished: Bool) {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
         resized[id] = value
+        if isRecordNode(id) { return }
         if id == MightyGraphLayout.latestResultID(runs: runs) {
             liveResultSize = finished ? nil : value
             if finished { onSaveResultSize(value) }
@@ -222,7 +254,7 @@ struct MightyGraphView: View {
     private func resetSize(_ id: String) {
         resized.removeValue(forKey: id)
         expanded.remove(id)
-        onSaveBlockSize(id, nil)
+        if !isRecordNode(id) { onSaveBlockSize(id, nil) }
     }
 
     private func initialTarget(_ graph: MightyGraphLayout) -> String {
@@ -230,10 +262,9 @@ struct MightyGraphView: View {
         return runs.last.map { MightyGraphLayout.nodeID($0, suffix: "request") } ?? MightyGraphCamera.pendingNodeID
     }
 
-    private func graphEdges(_ graph: MightyGraphLayout) -> some View {
+    private func graphEdges(_ graph: MightyGraphLayout, visible: CGRect) -> some View {
         return Path { path in
-            for edge in graph.edges {
-                let points = graph.route(edge)
+            for points in graph.routes(in: visible) {
                 guard let start = points.first, let end = points.last else { continue }
                 path.move(to: start)
                 for point in points.dropFirst() { path.addLine(to: point) }
@@ -244,8 +275,9 @@ struct MightyGraphView: View {
         }
         .stroke(Palette.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
         // Routed in node coordinates, drawn in the container's, which starts at
-        // the diagram's leading edge rather than at x = 0.
-        .offset(x: MightyGraphCamera.drawnX(nodeX: 0, originX: graph.originX))
+        // the diagram's leading edge rather than at x = 0, and at its top
+        // rather than at y = 0 once older requests sit above.
+        .offset(x: MightyGraphCamera.drawnX(nodeX: 0, originX: graph.originX), y: -graph.originY)
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
@@ -279,7 +311,8 @@ struct MightyGraphView: View {
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
             transcriptCard(node, title: title, icon: icon, status: run.status,
                            input: run.input, entries: run.rootEntries, tint: Palette.tint(styleTitles.tint(run.input)), usage: run.usage,
-                           records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks)
+                           records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
+                           fromRecord: index < olderCount)
         case .agent(let runIndex, let agentIndex):
             let run = runs[runIndex]
             let agent = run.agents[agentIndex]
@@ -304,6 +337,8 @@ struct MightyGraphView: View {
                                   expanded: expanded.contains(node.id),
                                   onToggle: { if !expanded.insert(node.id).inserted { expanded.remove(node.id) } },
                                   onOpen: onFocus)
+        case .history:
+            historyCard(node)
         case .execution(_, let key):
             if let link = executions[key] {
                 MightyGraphOuroborosCard(nodeID: node.id, link: link, snapshot: ouroboros.snapshots[key], expanded: expanded.contains(node.id),
@@ -320,12 +355,19 @@ struct MightyGraphView: View {
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
                                 usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
-                                childBlocks: [String: GraphChildBlock] = [:]) -> some View {
+                                childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false) -> some View {
         let content = entries.filter { $0.kind != "user" }
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: icon).foregroundStyle(tint)
                 Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1).help(title)
+                if fromRecord {
+                    // Read back from the CLI's own session record, not kept by the app.
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 10)).foregroundStyle(.secondary)
+                        .help(L("graph.history.tag"))
+                        .accessibilityLabel(L("graph.history.tag"))
+                        .accessibilityIdentifier("mighty-record-\(node.id)")
+                }
                 Spacer(minLength: 3)
                 if selectedNodeID == node.id { blockScrollLabel(node.id) }
                 MightyGraphActivityIndicator(status: status, tint: tint)
@@ -400,6 +442,46 @@ struct MightyGraphView: View {
         .accessibilityElement(children: .contain).accessibilityIdentifier("mighty-node-\(node.id)")
     }
 
+    /// The top of the diagram: loads the previous requests from the session
+    /// record, shows that it is doing so, or that the record begins here.
+    private func historyCard(_ node: MightyGraphLayout.Node) -> some View {
+        let phase = history?.phase ?? .idle
+        let loaded = olderCount
+        return HStack(spacing: 6) {
+            switch phase {
+            case .loading:
+                ProgressView().controlSize(.small).scaleEffect(0.7)
+                Text(L("graph.history.loading"))
+            case .start:
+                Image(systemName: "flag")
+                Text(L("graph.history.start"))
+            case .unavailable:
+                Text(L(loaded > 0 ? "graph.history.start" : "graph.history.none"))
+            case .limit:
+                Text(L("graph.history.limit"))
+            case .failed:
+                Button { onLoadOlder() } label: { Label(L("graph.history.failed"), systemImage: "arrow.clockwise") }
+                    .buttonStyle(.plain).foregroundStyle(Palette.accent)
+                    .accessibilityIdentifier("mighty-history-retry-\(sessionID)")
+            case .idle:
+                Button { onLoadOlder() } label: { Label(L("graph.history.load"), systemImage: "arrow.up.circle") }
+                    .buttonStyle(.plain).foregroundStyle(Palette.accent)
+                    .accessibilityIdentifier("mighty-history-load-\(sessionID)")
+            }
+            if loaded > 0 {
+                Text("· " + L("graph.history.loaded", ["count": "\(loaded)"]))
+            }
+        }
+        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+        .padding(.horizontal, 14)
+        .frame(width: node.frame.width, height: node.frame.height)
+        .background(Palette.panel.opacity(0.8), in: Capsule())
+        .overlay { Capsule().stroke(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3])) }
+        .help(L("graph.history.help"))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mighty-history-\(sessionID)")
+    }
+
     private func blockScrollLabel(_ id: String) -> some View {
         Text("블록 스크롤").font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.accent)
             .lineLimit(1).fixedSize().accessibilityIdentifier("mighty-block-scroll-" + id)
@@ -429,7 +511,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     /// committed from the document origin after a block disappeared.
     let defaultNodeID: String
     @Binding var selection: String?
-    let edges: Edges
+    /// The connecting lines for the part of the diagram near the viewport.
+    let edges: (CGRect) -> Edges
     var overlay: AnyView = AnyView(EmptyView())
     var overlayLayout: MightyOverlayLayout? = nil
     var onOverlayResize: (CGSize, Bool) -> Void = { _, _ in }
@@ -437,6 +520,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     let onResetSize: (String) -> Void
     var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
     var newestRunID: String? = nil
+    /// Scrolling up past the top of the diagram asks for older requests.
+    var onReachTop: () -> Void = {}
     let card: (MightyGraphLayout.Node) -> Card
     @ViewState private var cameraOffset: CGPoint?
     @Environment(\.colorScheme) private var colorScheme
@@ -458,13 +543,13 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                                  height: viewport.size.height / zoom + 448)
             let diagram = ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
-                    edges
+                    edges(visible)
                     ForEach(graph.nodes) { node in
                         ZStack {
                             if visible.intersects(node.frame) {
                                 card(node)
                                     .overlay {
-                                        if selection == node.id {
+                                        if selection == node.id, node.content != .history {
                                             RoundedRectangle(cornerRadius: 12).stroke(Palette.accent, lineWidth: 2)
                                                 .allowsHitTesting(false).accessibilityIdentifier("mighty-selected-" + node.id)
                                         }
@@ -473,7 +558,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                         }
                         .frame(width: node.frame.width, height: node.frame.height)
                         .overlay(alignment: .bottomTrailing) {
-                            if !node.isAuxiliary {
+                            if !node.isAuxiliary, node.content != .history {
                                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(selection == node.id ? Palette.accent : .secondary)
@@ -489,7 +574,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                             }
                         }
                         .id(node.id)
-                        .position(x: MightyGraphCamera.drawnX(nodeX: node.frame.midX, originX: graph.originX), y: node.frame.midY)
+                        .position(x: MightyGraphCamera.drawnX(nodeX: node.frame.midX, originX: graph.originX), y: node.frame.midY - graph.originY)
                     }
                 }
                 // The container covers the whole diagram, whose leading edge is
@@ -498,7 +583,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 // hit testing and the culling rect all in node coordinates.
                 .frame(width: graph.size.width, height: graph.size.height, alignment: .topLeading)
                 .scaleEffect(zoom, anchor: .topLeading)
-                .offset(x: MightyGraphCamera.drawnOffsetX(cameraX: displayedOffset.x, originX: graph.originX, zoom: zoom), y: displayedOffset.y)
+                .offset(x: MightyGraphCamera.drawnOffsetX(cameraX: displayedOffset.x, originX: graph.originX, zoom: zoom),
+                        y: displayedOffset.y + graph.originY * zoom)
             }
             .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .clipped()
@@ -508,6 +594,13 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
                 targetFrame: targetFrame,
                 alignTop: alignTop, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
+                onUserPan: { old, new in
+                    // Only the user's own move towards the top, once the top
+                    // shows: re-aims and zoom never load more.
+                    guard new.y > old.y, let top = graph.nodes.first(where: { $0.content == .history })?.frame.minY,
+                          MightyGraphCamera.showsTop(camera: new, zoom: zoom, top: top) else { return }
+                    onReachTop()
+                },
                 overlay: AnyView(overlay.environment(\.colorScheme, colorScheme)), overlayLayout: overlayLayout, onOverlayResize: onOverlayResize,
                 content: diagram.environment(\.colorScheme, colorScheme))
                 .frame(width: viewport.size.width, height: viewport.size.height)

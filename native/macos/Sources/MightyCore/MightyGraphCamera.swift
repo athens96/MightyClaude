@@ -58,7 +58,7 @@ public enum MightyGraphCamera {
     /// are attachments to the diagram rather than somewhere to put the camera
     /// after the whole document moved.
     public static func isAuxiliary(nodeID: String) -> Bool {
-        nodeID == pendingNodeID || nodeID.hasSuffix(":result-files") || nodeID.contains(":" + MightyGraphLayout.executionSuffix)
+        nodeID == pendingNodeID || nodeID == MightyGraphLayout.historyNodeID || nodeID.hasSuffix(":result-files") || nodeID.contains(":" + MightyGraphLayout.executionSuffix)
             || nodeID.contains(":" + MightyGraphLayout.imagesSuffix)
     }
 
@@ -77,6 +77,9 @@ public enum MightyGraphCamera {
         // A new (or removed) last request keeps its own camera behaviour, and
         // streaming content alone never reaches here: no id changed.
         guard last == previousRunIDs.last, Set(previousRunIDs) != Set(runIDs) else { return .hold }
+        // Older requests loaded above the first one are laid out at negative
+        // y: nothing already placed moved, so the camera stays where it is.
+        if runIDs.count > previousRunIDs.count, Array(runIDs.suffix(previousRunIDs.count)) == previousRunIDs { return .hold }
         return reaimAnchor(newestRunID: last, selectedNodeID: selectedNodeID, layoutNodeIDs: layoutNodeIDs)
     }
 
@@ -201,6 +204,14 @@ public enum MightyGraphCamera {
             self.camera = camera; self.zoom = zoom; self.newestRunID = newestRunID
             isWithholding = false
         }
+    }
+
+    /// The camera shows the top of the diagram — the history block, or the
+    /// first card when there is none — so scrolling further up asks for older
+    /// requests. `slack` is how far below that top the viewport may start.
+    public static func showsTop(camera: CGPoint, zoom: CGFloat, top: CGFloat, slack: CGFloat = 8) -> Bool {
+        guard zoom.isFinite, zoom > 0, camera.y.isFinite, top.isFinite else { return false }
+        return -camera.y / zoom <= top + slack
     }
 
     /// A second trim must re-aim again even when it lands on the same block, so

@@ -51,13 +51,16 @@ public enum MightyGraphImages {
     }
 
     /// Every step with at least one picture, for the layout.
-    public static func galleries(runs: [MightyGraphRun], root: URL?) -> [MightyGraphLayout.ImageGallery] {
+    /// The first `fixed` runs never change (requests read back from the
+    /// session record), so their memo is keyed without hashing every entry.
+    public static func galleries(runs: [MightyGraphRun], root: URL?, fixed: Int = 0) -> [MightyGraphLayout.ImageGallery] {
         var result: [MightyGraphLayout.ImageGallery] = []
-        for run in runs {
-            let main = remembered(run.id, requestStep, run.rootEntries, status: run.status, root: root).count
+        for (index, run) in runs.enumerated() {
+            let settled = index < fixed
+            let main = remembered(run.id, requestStep, run.rootEntries, status: run.status, root: root, settled: settled).count
             if main > 0 { result.append(.init(runID: run.id, step: requestStep, count: main)) }
             for agent in run.agents {
-                let count = remembered(run.id, agentStep(agent.id), agent.entries, status: agent.status, root: root).count
+                let count = remembered(run.id, agentStep(agent.id), agent.entries, status: agent.status, root: root, settled: settled).count
                 if count > 0 { result.append(.init(runID: run.id, step: agentStep(agent.id), count: count)) }
             }
         }
@@ -65,11 +68,11 @@ public enum MightyGraphImages {
     }
 
     private static let memo = Memo()
-    private static func remembered(_ runID: String, _ step: String, _ entries: [LogEntry], status: String, root: URL?) -> [AgentImageItem] {
+    private static func remembered(_ runID: String, _ step: String, _ entries: [LogEntry], status: String, root: URL?, settled: Bool = false) -> [AgentImageItem] {
         var hasher = Hasher()
         hasher.combine(status); hasher.combine(entries.count)
         // Only entries that can carry pictures; their text by length, not content.
-        for entry in entries where entry.kind == "assistant" || entry.images != nil {
+        for entry in entries where !settled && (entry.kind == "assistant" || entry.images != nil) {
             hasher.combine(entry.id); hasher.combine(entry.kind); hasher.combine(entry.text.utf8.count); hasher.combine(entry.images)
         }
         return memo.value(key: runID + "\u{1F}" + step + "\u{1F}" + (root?.path ?? ""), signature: hasher.finalize()) { items(entries, root: root) }
