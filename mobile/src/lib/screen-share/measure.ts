@@ -4,7 +4,11 @@ import type {
   ScreenMode,
   ScreenQuality,
 } from '@/api/types';
-import { TapLatencyTracker, type LatencySummary } from '@/lib/screen-share/latency';
+import {
+  TapLatencyTracker,
+  type LatencySummary,
+  type ScenePhase,
+} from '@/lib/screen-share/latency';
 import {
   bitrateSummary,
   decodeMsPerFrame,
@@ -19,6 +23,8 @@ import {
 
 /** About ten minutes of one-second readings. */
 export const MEASURE_MAX_SAMPLES = 600;
+/** Phase changes kept: a scene has four, so this is many replays. */
+export const MEASURE_MAX_SCENE_MARKS = 64;
 
 export interface MeasurementSummary {
   rttMs?: number;
@@ -36,14 +42,34 @@ export interface MeasurementSummary {
 export class ScreenMeasurement {
   readonly latency = new TapLatencyTracker();
   private readonly readings: ScreenStatsSample[] = [];
+  private readonly sceneMarks: { phase: ScenePhase; at: number }[] = [];
 
   get samples(): readonly ScreenStatsSample[] {
     return this.readings;
   }
 
-  /** A tap went out; the next readings decide how long it took to show. */
-  tapped(at: number): void {
-    this.latency.tapped(at);
+  /** The Mac's reference-scene phases, in the order they arrived. */
+  get scene(): readonly { phase: ScenePhase; at: number }[] {
+    return this.sceneMarks;
+  }
+
+  /**
+   * A tap went out; the next readings decide how long it took to show. `markerId` is the
+   * marker the tap carried, when the Mac draws one.
+   */
+  tapped(at: number, markerId?: string): void {
+    this.latency.tapped(at, markerId);
+  }
+
+  /** The Mac's `marker` echo. */
+  markerEcho(id: string, shown: boolean, at: number): void {
+    this.latency.marker(id, shown, at);
+  }
+
+  /** The Mac's reference scene entered `phase`. */
+  scenePhase(phase: ScenePhase, at: number): void {
+    this.sceneMarks.push({ phase, at });
+    if (this.sceneMarks.length > MEASURE_MAX_SCENE_MARKS) this.sceneMarks.shift();
   }
 
   /**
@@ -100,11 +126,15 @@ export interface MeasurementReport {
     codec?: ScreenCodec;
     quality?: ScreenQuality;
   };
-  /** False until the Mac draws a marker at each tap; see `latency.ts`. */
+  /** True when the Mac drew a marker at each timed tap; see `latency.ts`. */
   hostTapMarker: boolean;
   summary: MeasurementSummary;
   /** Every tap-to-visible sample, ms. */
   latencySamplesMs: number[];
+  /** Every tap → marker-echo sample, ms (the input path alone). Empty without markers. */
+  markerEchoSamplesMs: number[];
+  /** The Mac's reference-scene phases, seconds since the first reading. */
+  scene: { phase: ScenePhase; t: number }[];
   /** The readings behind the bitrate split, seconds since the first. */
   series: {
     t: number;
@@ -128,6 +158,7 @@ export function measurementReport(
     mode?: ScreenMode | undefined;
     codec?: ScreenCodec | undefined;
     quality?: ScreenQuality | undefined;
+    hostTapMarker?: boolean | undefined;
   },
 ): MeasurementReport {
   const start = measurement.samples[0]?.at ?? 0;
@@ -139,9 +170,11 @@ export function measurementReport(
     format: MEASUREMENT_FORMAT,
     exportedAt: new Date(context.exportedAt).toISOString(),
     session,
-    hostTapMarker: false,
+    hostTapMarker: context.hostTapMarker === true,
     summary: measurement.summary(),
     latencySamplesMs: measurement.latency.samples.map((value) => rounded(value)),
+    markerEchoSamplesMs: measurement.latency.echoSamples.map((value) => rounded(value)),
+    scene: measurement.scene.map((mark) => ({ phase: mark.phase, t: rounded((mark.at - start) / 1000, 3) })),
     series: measurement.samples.map((sample) => {
       const row: MeasurementReport['series'][number] = {
         t: rounded((sample.at - start) / 1000, 3),

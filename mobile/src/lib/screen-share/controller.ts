@@ -51,6 +51,10 @@ import {
   type ScreenInputEvent,
   type ScreenShortcut,
 } from '@/lib/screen-share/input';
+import {
+  parseHostMeasurementNote,
+  type HostMeasurementNote,
+} from '@/lib/screen-share/latency';
 import type { ScreenPeer, ScreenPeerFactory } from '@/lib/screen-share/peer';
 import {
   answerSignal,
@@ -158,6 +162,8 @@ export interface ScreenShareDeps {
 export interface ScreenShareController {
   snapshot(): ScreenShareSnapshot;
   subscribe(listener: (snapshot: ScreenShareSnapshot) => void): () => void;
+  /** The Mac's measurement notes: `marker` echoes and reference-scene phases. */
+  onMeasurementNote(listener: (note: HostMeasurementNote) => void): () => void;
   /** Reads `/m1/screen-share/state` and where the control key stands. Never prompts. */
   refresh(): Promise<void>;
   /** Makes (if needed) and registers the control key; the Mac's user confirms it. */
@@ -171,7 +177,8 @@ export interface ScreenShareController {
   foreground(): void;
   setZoom(scale: number, centre: NormalizedPoint): void;
   resetZoom(): void;
-  tap(point: NormalizedPoint): boolean;
+  /** `marker` asks a Mac that draws tap markers to draw one here and echo the id. */
+  tap(point: NormalizedPoint, marker?: string): boolean;
   rightClick(point: NormalizedPoint): void;
   drag(point: NormalizedPoint, phase: DragPhase): void;
   scroll(point: NormalizedPoint, delta: { dx: number; dy: number }): void;
@@ -244,6 +251,7 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
     },
   };
   const listeners = new Set<(snapshot: ScreenShareSnapshot) => void>();
+  const noteListeners = new Set<(note: HostMeasurementNote) => void>();
   let disposed = false;
 
   let peer: ScreenPeer | undefined;
@@ -379,6 +387,11 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
         },
         onData: (message) => {
           if (!current()) return;
+          const note = parseHostMeasurementNote(message);
+          if (note) {
+            for (const listener of noteListeners) listener(note);
+            return;
+          }
           receiveClipboard(message);
         },
       },
@@ -552,6 +565,11 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
 
   const api: ScreenShareController = {
     snapshot: () => snapshot,
+
+    onMeasurementNote(listener) {
+      noteListeners.add(listener);
+      return () => noteListeners.delete(listener);
+    },
 
     subscribe(listener) {
       listeners.add(listener);
@@ -735,10 +753,10 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
       api.setZoom(1, { x: 0.5, y: 0.5 });
     },
 
-    tap(point) {
+    tap(point, marker) {
       const displayId = snapshot.session.displayId;
       if (displayId === undefined) return false;
-      return send(tapEvent(displayId, point));
+      return send(tapEvent(displayId, point, 'left', marker));
     },
 
     rightClick(point) {
@@ -840,6 +858,7 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
       unsubscribeSignals();
       teardownPeer();
       listeners.clear();
+      noteListeners.clear();
     },
   };
   return api;

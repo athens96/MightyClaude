@@ -753,6 +753,11 @@ export interface ScreenShareState {
   iceServers?: ScreenIceServer[];
   /** 600 in control, 1800 in view-only. */
   idleTimeoutSeconds?: number;
+  /**
+   * True when the Mac draws a marker at a `tap` that carries `marker` and echoes its id, so
+   * tap-to-visible can be timed on a moving screen. Absent from older Macs.
+   */
+  tapMarker?: boolean;
 }
 
 export interface ScreenShareStateResponse {

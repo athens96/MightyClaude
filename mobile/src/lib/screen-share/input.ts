@@ -50,7 +50,7 @@ export interface NormalizedPoint {
 }
 
 export type ScreenInputEvent =
-  | { t: 'tap'; displayId: number; x: number; y: number; button: PointerButton }
+  | { t: 'tap'; displayId: number; x: number; y: number; button: PointerButton; marker?: string }
   | { t: 'drag'; displayId: number; x: number; y: number; phase: DragPhase }
   | { t: 'scroll'; displayId: number; x: number; y: number; dx: number; dy: number }
   | { t: 'text'; text: string }
@@ -80,12 +80,29 @@ export function mayInject(mode: ScreenMode): boolean {
   return mode === 'control';
 }
 
+/** The marker ids the Mac accepts on a `tap`: 1–32 of `[A-Za-z0-9_-]`. */
+export const TAP_MARKER_ID = /^[A-Za-z0-9_-]{1,32}$/;
+
+/**
+ * A left or right click. `marker` asks a Mac that advertises `tapMarker` to draw its
+ * latency marker at the point and echo the id; a malformed id is left off rather than
+ * sent, since the Mac would drop the whole tap.
+ */
 export function tapEvent(
   displayId: number,
   point: NormalizedPoint,
   button: PointerButton = 'left',
+  marker?: string,
 ): ScreenInputEvent {
-  return { t: 'tap', displayId, x: clamp01(point.x), y: clamp01(point.y), button };
+  const event: Extract<ScreenInputEvent, { t: 'tap' }> = {
+    t: 'tap',
+    displayId,
+    x: clamp01(point.x),
+    y: clamp01(point.y),
+    button,
+  };
+  if (marker !== undefined && TAP_MARKER_ID.test(marker)) event.marker = marker;
+  return event;
 }
 
 /** A long press is the right button: the Mac posts a right click at that point. */
