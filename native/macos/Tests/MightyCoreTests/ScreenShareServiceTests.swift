@@ -27,16 +27,19 @@ struct ScreenShareServiceTests {
         let clock: ScreenShareTestClock
     }
 
+    /// `wallClock` runs the host on the real clock, for paths that stamp t0
+    /// outside the host (a rekey in `MobileRemoteService`).
     private func makeFixture(
         layout: [UInt32: CGRect] = [1: CGRect(x: 0, y: 0, width: 1920, height: 1080),
                                     2: CGRect(x: 1920, y: 0, width: 1280, height: 800)],
-        main: UInt32 = 1
+        main: UInt32 = 1,
+        wallClock: Bool = false
     ) -> Fixture {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("screen-share-" + UUID().uuidString, isDirectory: true)
         let store = ScreenShareSettingsStore(url: directory.appendingPathComponent("screen-share.json"))
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
-        let host = ScreenShareHost(now: { clock.date })
+        let host = wallClock ? ScreenShareHost() : ScreenShareHost(now: { clock.date })
         let displays = FakeDisplays(layout: layout, main: main)
         let input = FakeInput()
         let environment = FakeEnvironment()
@@ -385,6 +388,29 @@ struct ScreenShareServiceTests {
         #expect(fixture.input.calls == ["key 36 modifiers 0"])
     }
 
+    @Test func secureInputIsReadAgainForEveryInputEventNotOnlyByThePoll() async {
+        let fixture = makeFixture(); defer { cleanUp(fixture) }
+        let peer = Peer()
+        _ = await joinControl(fixture, peer: peer)
+        #expect(await fixture.host.canInject())
+
+        // A password field takes focus between two polls: nothing has called
+        // refreshEnvironment, yet the very next event must be refused.
+        fixture.environment.secureInput = true
+        #expect(await fixture.service.deliver(.text("비밀번호"), sessionId: "s1") == .failure(.blocked))
+        #expect(await fixture.host.isSecureInputActive)
+        #expect(await fixture.host.isCaptureActive == false)
+
+        fixture.environment.secureInput = false
+        fixture.environment.locked = true
+        #expect(await fixture.service.deliver(.key(code: 36, modifiers: []), sessionId: "s1") == .failure(.blocked))
+        #expect(fixture.input.calls.isEmpty)
+
+        fixture.environment.locked = false
+        #expect(await fixture.service.deliver(.key(code: 36, modifiers: []), sessionId: "s1").isSuccess)
+        #expect(fixture.input.calls == ["key 36 modifiers 0"])
+    }
+
     @Test func localHidActivityPausesRemoteInputForTwoSeconds() async {
         let fixture = makeFixture(); defer { cleanUp(fixture) }
         _ = await joinControl(fixture, peer: Peer())
@@ -481,8 +507,8 @@ struct ScreenShareServiceTests {
         await remote.shutdown()
     }
 
-    @Test func regeneratingTheMobileKeyStopsEveryScreenShareSession() async throws {
-        let fixture = makeFixture(); defer { cleanUp(fixture) }
+    @Test func regeneratingTheMobileKeyStopsEveryScreenShareSessionBeforeItReturns() async throws {
+        let fixture = makeFixture(wallClock: true); defer { cleanUp(fixture) }
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -492,24 +518,55 @@ struct ScreenShareServiceTests {
         _ = try await remote.loadOrCreateKey()
 
         let peer = Peer()
+        // A peer that never finishes closing: the rekey still returns, at the
+        // kill deadline, with everything already off.
+        peer.closeHangs = true
         _ = await joinControl(fixture, peer: peer)
         #expect(await fixture.service.liveSessions().count == 1)
+        #expect(await fixture.host.canInject())
 
+        let before = Date()
         _ = try await remote.regenerateKey()
+        let after = Date()
 
-        #expect(await waitUntil { await fixture.service.liveSessions().isEmpty })
+        // Awaited, not fire-and-forget: no polling needed.
+        #expect(await fixture.service.liveSessions().isEmpty)
         #expect(await fixture.host.canInject() == false)
+        #expect(await fixture.host.isCaptureActive == false)
         #expect(await fixture.service.allowList().isEmpty)
+        let timing = await fixture.host.latestKillTiming()
+        #expect(timing?.reason == .rekeyPairing)
+        // t0 is the rotation instant, stamped inside regenerateKey.
+        if let timing {
+            #expect(timing.t0 >= before && timing.t0 <= after)
+            #expect(timing.elapsed <= ScreenSharePolicy.killDeadline + 0.25)
+        }
+        #expect(after.timeIntervalSince(before) < ScreenSharePolicy.killDeadline + 1)
         await remote.shutdown()
     }
 
-    private func waitUntil(timeout: TimeInterval = 5, _ condition: @Sendable () async -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if await condition() { return true }
-            try? await Task.sleep(nanoseconds: 2_000_000)
-        }
-        return await condition()
+    @Test func aRevokeOrRekeyTheDiskCannotRecordStillDropsTheRowsInMemory() async throws {
+        let fixture = makeFixture(); defer { cleanUp(fixture) }
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .view)
+        try await fixture.service.setAllowed(deviceId: Self.viewer, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.viewer, grant: .view)
+
+        // The allow-list folder turns read-only: every save from here fails.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.directory.path) }
+
+        await fixture.service.deviceRevoked(Self.phone)
+        #expect(await fixture.service.settings(for: Self.phone) == nil)
+        #expect(isFailure(await fixture.service.join(
+            sessionId: "s1", deviceId: Self.phone, mode: .view,
+            controlChallenge: nil, controlSignature: nil, surface: Peer().surface()), .deviceNotAllowed))
+
+        await fixture.service.pairingKeyRegenerated()
+        #expect(await fixture.service.allowList().isEmpty)
+        #expect(isFailure(await fixture.service.join(
+            sessionId: "s2", deviceId: Self.viewer, mode: .view,
+            controlChallenge: nil, controlSignature: nil, surface: Peer().surface()), .deviceNotAllowed))
     }
 }
 

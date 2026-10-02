@@ -38,24 +38,26 @@ public final class ScreenShareSettingsStore: @unchecked Sendable {
         do { try save() } catch { rows = snapshot; throw error }
     }
 
+    /// Drops one row. Unlike `update`, a failed write does not put the row
+    /// back: taking a grant away must hold in this process even when the file
+    /// cannot be written. The error is still thrown so the caller can log it.
     public func remove(_ deviceId: String) throws {
         lock.lock(); defer { lock.unlock() }
         load()
         guard rows[deviceId] != nil else { return }
-        let snapshot = rows
         rows.removeValue(forKey: deviceId)
-        do { try save() } catch { rows = snapshot; throw error }
+        try save()
     }
 
     /// Clears every row — the pairing key was regenerated, so every phone has
-    /// to pair again and starts disabled again.
+    /// to pair again and starts disabled again. Like `remove`, the rows are gone
+    /// in memory even when the write fails.
     public func removeAll() throws {
         lock.lock(); defer { lock.unlock() }
         load()
         guard !rows.isEmpty else { return }
-        let snapshot = rows
         rows = [:]
-        do { try save() } catch { rows = snapshot; throw error }
+        try save()
     }
 
     private func load() {
@@ -99,7 +101,8 @@ public final class ScreenShareSettingsStore: @unchecked Sendable {
 /// live session without knowing anything about WebRTC.
 public protocol ScreenShareSafetyTarget: Sendable {
     func deviceRevoked(_ deviceId: String) async
-    func pairingKeyRegenerated() async
+    /// `rekeyedAt` is the instant the key rotated: the kill's t0.
+    func pairingKeyRegenerated(at rekeyedAt: Date?) async
 }
 
 /// What the menu-bar indicator draws.
@@ -266,6 +269,9 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         _ event: ScreenShareInputEvent, sessionId: String
     ) async -> Result<ScreenShareResolvedPoint?, ScreenShareInputRejection> {
         guard await host.mode(of: sessionId) == .control else { return .failure(.notControlSession) }
+        // The once-a-second poll is too slow for a password field that just took
+        // focus: read secure input and the lock screen again for every event.
+        await refreshEnvironment()
         guard await host.canInject() else { return .failure(.blocked) }
 
         switch event {
@@ -332,7 +338,9 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
 
     /// A phone was revoked in settings: its row goes, and so does its session.
     public func deviceRevoked(_ deviceId: String) async {
-        try? store.remove(deviceId)
+        do { try store.remove(deviceId) } catch {
+            Self.log.error("screen-share allow-list row removed in memory but not saved: \(error.localizedDescription, privacy: .public)")
+        }
         await host.forgetDeviceSettings(deviceId)
         await kill(deviceId: deviceId, reason: .revoked)
         await publish()
@@ -340,10 +348,14 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
 
     /// The pairing key was regenerated, so every phone must pair again: every
     /// row goes and every session stops.
-    public func pairingKeyRegenerated() async {
-        try? store.removeAll()
+    public func pairingKeyRegenerated(at rekeyedAt: Date? = nil) async {
+        do { try store.removeAll() } catch {
+            Self.log.error("screen-share allow-list cleared in memory but not saved: \(error.localizedDescription, privacy: .public)")
+        }
+        // Kill before anything else that needs the host, so injection and
+        // capture go off at the first hop.
+        let timing = await host.killAll(reason: .rekeyPairing, triggeredAt: rekeyedAt)
         await host.forgetAllDeviceSettings()
-        let timing = await host.killAll(reason: .rekeyPairing)
         record(timing)
         await publish()
     }
