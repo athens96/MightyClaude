@@ -233,6 +233,8 @@ struct ScreenShareServiceTests {
         #expect(await fixture.service.liveSessions().isEmpty)
         #expect(await fixture.host.canInject() == false)
         #expect(await fixture.service.settings(for: Self.phone)?.grant == ScreenShareGrant.none)
+        // The enrolled key goes too: allowing the phone again starts from nothing.
+        #expect(await fixture.service.settings(for: Self.phone)?.controlKeyPublicData == nil)
         #expect(await fixture.host.latestKillTiming()?.reason == .revoked)
     }
 

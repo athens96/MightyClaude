@@ -318,12 +318,17 @@ public actor ScreenShareEngine {
         let confirmed = await confirmer.confirmControlKey(deviceId: deviceId, fingerprint: fingerprint)
         confirming.remove(deviceId)
         guard confirmed else { return .failure(.controlKeyNotConfirmed) }
-        // The grant may have been withdrawn while the dialog was open.
-        guard let fresh = await service.settings(for: deviceId), fresh.allowed,
-              fresh.grant == .control, fresh.controlKeyPublicData == nil
-        else { return .failure(.insufficientGrant) }
-        do { try await service.setGrant(deviceId: deviceId, grant: .control, controlKeyPublicData: key) }
+        // The grant may have been withdrawn, or another key stored, while the
+        // dialog was open: the service checks and writes in one turn.
+        let enrolment: ScreenShareService.ControlKeyEnrolment
+        do { enrolment = try await service.enrolControlKey(deviceId: deviceId, key: key) }
         catch { return .failure(.badRequest) }
+        switch enrolment {
+        case .stored: break
+        case .notAllowed: return .failure(.deviceNotAllowed)
+        case .notControl: return .failure(.insufficientGrant)
+        case .keyPresent: return .failure(.controlKeyPresent)
+        }
         await pushGrant(to: deviceId)
         return .success(ScreenShareControlKeyReply(fingerprint: fingerprint))
     }

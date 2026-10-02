@@ -1293,6 +1293,44 @@ extension ScreenShareEngineTests {
         #expect(await confirmer.asked == 1)
     }
 
+    @Test func takingAPhoneOffTheAllowListForgetsItsKeySoControlNeedsAFreshConfirmation() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        #expect(await fixture.confirmer.asked == 1)
+
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: false)
+        #expect(await fixture.service.settings(for: Self.phone)?.controlKeyPublicData == nil)
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
+        guard case .success(let state) = await fixture.engine.state(deviceId: Self.phone) else {
+            Issue.record("state refused"); return
+        }
+        // Nothing enrolled: the old key cannot start control on its own…
+        #expect(state.screenShare.controlKeyFingerprint == nil)
+        #expect(await startSession(fixture, mode: .control, keystore: keystore).refusal == .controlSignature)
+        // …and the same key has to be confirmed at the Mac again.
+        let again = await fixture.engine.enrolControlKey(
+            deviceId: Self.phone, publicKeyB64: keystore.publicKeyData.base64EncodedString())
+        #expect(again.isSuccess)
+        #expect(await fixture.confirmer.asked == 2)
+    }
+
+    @Test func aGrantWithdrawnWhileTheDialogIsOpenStoresNoKey() async throws {
+        let confirmer = HeldConfirmer()
+        let fixture = await makeFixture(confirmer: confirmer)
+        defer { cleanUp(fixture) }
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
+        let key = Keystore().publicKeyData.base64EncodedString()
+        let pending = Task { await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key) }
+        #expect(await waitUntil { await confirmer.isAsking })
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .view)
+        await confirmer.answer(true)
+        #expect(await pending.value.refusal == .insufficientGrant)
+        #expect(await fixture.service.settings(for: Self.phone)?.controlKeyPublicData == nil)
+    }
+
     // MARK: Helpers
 
     static func frame(_ layer: ScreenShareCaptureLayer.Kind) -> ScreenShareVideoFrame? {
