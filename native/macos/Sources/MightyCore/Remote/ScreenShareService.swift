@@ -155,6 +155,9 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     private var dragCount: UInt64 = 0
     /// How long a control challenge stays usable.
     public static let challengeLifetime: TimeInterval = 120
+    /// A pending challenge with less than this left is replaced rather than
+    /// handed out again: the phone still needs time to sign it.
+    public static let challengeReuseMargin: TimeInterval = 30
 
     public init(
         store: ScreenShareSettingsStore,
@@ -304,9 +307,17 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     /// The challenge the phone's biometric-gated Keystore key signs for this
     /// control session. Fresh every time, remembered until it is used once, so
     /// a captured signature cannot start another control session.
-    public func controlChallenge(sessionId: String) -> Data {
+    ///
+    /// `reuseFresh` hands back the pending challenge instead when it still has
+    /// at least `challengeReuseMargin` to live: a `screen-grant` pushed while
+    /// the phone is signing must not swap the challenge out from under it.
+    public func controlChallenge(sessionId: String, reuseFresh: Bool = false) -> Data {
         let now = Date()
         pendingChallenges = pendingChallenges.filter { now.timeIntervalSince($0.value.issuedAt) < Self.challengeLifetime }
+        if reuseFresh, let pending = pendingChallenges[sessionId],
+           now.timeIntervalSince(pending.issuedAt) < Self.challengeLifetime - Self.challengeReuseMargin {
+            return pending.challenge
+        }
         let challenge = ScreenSharePolicy.controlChallenge(
             sessionId: sessionId, timestamp: UUID().uuidString)
         pendingChallenges[sessionId] = (challenge, now)
