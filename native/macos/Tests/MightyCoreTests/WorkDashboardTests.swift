@@ -66,7 +66,21 @@ struct WorkDashboardTests {
             Self.pane("e", status: "completed"),
         ]
         let badges = WorkDashboard.badges(sessions: sessions, permissions: ["b": [Self.request("q", question: true), Self.request("p")]])
-        #expect(badges == WorkDashboard.Badges(questions: 1, permissions: 1, errors: 2, running: 1))
+        #expect(badges == WorkDashboard.Badges(questions: 1, permissions: 1, errors: 2, running: 1, done: 1))
+    }
+
+    @Test func badgesAlsoCountWhatHasSettledForTheWorkspaceHeader() {
+        let sessions = [
+            Self.pane("done", status: "completed"),
+            Self.pane("stopped", status: "stopped"),
+            Self.pane("shell", kind: "shell"),
+            Self.pane("asking", status: "completed"),
+            // An agent's own terminal is not counted, as everywhere else.
+            Self.pane("io", kind: AgentIOPaneKind.terminal),
+        ]
+        let badges = WorkDashboard.badges(sessions: sessions, permissions: ["asking": [Self.request("q", question: true)]])
+        // A pane holding a request is counted once, as waiting, not also as done.
+        #expect(badges == WorkDashboard.Badges(questions: 1, done: 1, stopped: 1, idle: 1))
     }
 
     @Test func cardReadsContextOnlyFromThePanesOwnProvider() {
@@ -104,7 +118,7 @@ struct WorkDashboardTests {
     @Test func lastActivityPrefersTheNewestToolCallOrMessageLine() {
         let tool = AgentActivity(provider: "claude", kind: "tool", state: "running", toolName: "Bash", summary: "npx playwright screenshot")
         #expect(WorkDashboard.lastActivity([LogEntry(kind: "assistant", text: "earlier"), LogEntry(kind: "output", text: "", activity: tool)])
-                == .init(text: "Bash · npx playwright screenshot", isError: false))
+                == .init(text: "Bash · npx playwright screenshot", isError: false, tool: "Bash"))
         let failed = AgentActivity(provider: "claude", kind: "tool", state: "error", toolName: "Bash", summary: "npm run build")
         #expect(WorkDashboard.lastActivity([LogEntry(kind: "output", text: "", activity: failed)])?.isError == true)
         #expect(WorkDashboard.lastActivity([LogEntry(kind: "assistant", text: "\n  first line  \nsecond"), LogEntry(kind: "assistant", text: "   ")])
@@ -159,22 +173,55 @@ struct WorkDashboardTests {
         #expect(WorkDashboard.age(of: now.addingTimeInterval(600), now: now) == .now)
     }
 
-    @Test func sidebarMetaShowsOnlyNumbersTheAppHas() {
+    @Test func sidebarMetaNamesTheProviderThenOnlyNumbersTheAppHas() {
         let now = Self.date("2026-10-01T10:20:00Z")
         let start = Self.date("2026-10-01T10:00:00Z")
         let usage = SessionUsage(provider: "claude", source: "test", contextUsedTokens: 406, contextWindowTokens: 1_000)
         let running = WorkDashboard.card(Self.pane("a", status: "running", timing: AgentRunTiming(startedAt: start), usage: usage), permissions: nil)
-        #expect(WorkDashboard.sidebarMeta(running, now: now) == [.elapsed, .context(41)])
+        #expect(WorkDashboard.sidebarMeta(running, now: now) == [.provider, .elapsed, .context(41)])
+
+        // A pane waiting on a question is still running: its clock and context stay.
+        let asking = WorkDashboard.card(Self.pane("q", status: "running", timing: AgentRunTiming(startedAt: start), usage: usage),
+                                        permissions: [Self.request("q1", question: true)])
+        #expect(WorkDashboard.sidebarMeta(asking, now: now) == [.provider, .elapsed, .context(41)])
 
         let logs = [LogEntry(kind: "assistant", text: "ok", timestamp: "2026-10-01T10:09:00.000Z")]
         let finished = WorkDashboard.card(Self.pane("b", status: "completed", logs: logs,
                                                     timing: AgentRunTiming(startedAt: start, finishedAt: start.addingTimeInterval(408)), usage: usage), permissions: nil)
-        #expect(WorkDashboard.sidebarMeta(finished, now: now) == [.elapsed, .age(.minutes(11))])
+        // At rest only how long ago it was active, as on the status-v2 row ("Codex · 11분 전").
+        #expect(WorkDashboard.sidebarMeta(finished, now: now) == [.provider, .age(.minutes(11))])
 
         let bare = WorkDashboard.card(Self.pane("c", status: "running"), permissions: nil)
-        #expect(WorkDashboard.sidebarMeta(bare, now: now) == [])
+        #expect(WorkDashboard.sidebarMeta(bare, now: now) == [.provider])
 
         let shell = WorkDashboard.card(Self.pane("d", kind: "shell", status: "running", timing: AgentRunTiming(startedAt: start)), permissions: nil)
         #expect(WorkDashboard.sidebarMeta(shell, now: now) == [])
+    }
+
+    @Test func anErrorRowSaysWhyBeforeHowLongAgo() {
+        let now = Self.date("2026-10-01T10:20:00Z")
+        // A failed tool call: "Claude · Bash 실패 · 3분 전".
+        let failed = AgentActivity(provider: "claude", kind: "tool", state: "error", toolName: "Bash", summary: "npm run build")
+        let tool = WorkDashboard.card(Self.pane("a", status: "error", logs: [LogEntry(kind: "output", text: "", timestamp: "2026-10-01T10:17:00.000Z", activity: failed)]),
+                                      permissions: nil)
+        #expect(WorkDashboard.sidebarMeta(tool, now: now) == [.provider, .reason("Bash", isTool: true), .age(.minutes(3))])
+
+        // An error line: its own words, cut short so the age still fits.
+        let long = String(repeating: "x", count: 60)
+        let line = WorkDashboard.card(Self.pane("b", status: "error", logs: [LogEntry(kind: "error", text: long, timestamp: "2026-10-01T10:17:00.000Z")]),
+                                      permissions: nil)
+        let reason = String(repeating: "x", count: WorkDashboard.reasonLimit - 1) + "…"
+        #expect(WorkDashboard.sidebarMeta(line, now: now) == [.provider, .reason(reason, isTool: false), .age(.minutes(3))])
+        let short = WorkDashboard.card(Self.pane("c", status: "failed", logs: [LogEntry(kind: "error", text: "boom", timestamp: "2026-10-01T10:17:00.000Z")]),
+                                       permissions: nil)
+        #expect(WorkDashboard.sidebarMeta(short, now: now) == [.provider, .reason("boom", isTool: false), .age(.minutes(3))])
+
+        // No reason without an error to point at, nor for a pane that only finished.
+        let quiet = WorkDashboard.card(Self.pane("d", status: "error", logs: [LogEntry(kind: "assistant", text: "ok", timestamp: "2026-10-01T10:17:00.000Z")]),
+                                       permissions: nil)
+        #expect(WorkDashboard.sidebarMeta(quiet, now: now) == [.provider, .age(.minutes(3))])
+        let done = WorkDashboard.card(Self.pane("e", status: "completed", logs: [LogEntry(kind: "error", text: "old", timestamp: "2026-10-01T10:17:00.000Z")]),
+                                      permissions: nil)
+        #expect(WorkDashboard.sidebarMeta(done, now: now) == [.provider, .age(.minutes(3))])
     }
 }

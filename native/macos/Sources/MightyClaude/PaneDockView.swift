@@ -224,6 +224,15 @@ private struct PaneDockTab: View {
     let selected: Bool
     let nextSessionId: String?
 
+    /// The tab's status glyph (status v2): any state but idle, a pane waiting on the user
+    /// as waiting. Not for an agent's own terminal or browser, or the files pane.
+    private var tabTone: DesignTone? {
+        guard WorkDashboard.isCounted(session.kind) else { return nil }
+        let pending = WorkDashboard.attention(store.toolPermissions[session.id])
+        let tone = DesignTone(status: WorkDashboard.displayStatus(session.status, attention: pending))
+        return tone == .idle ? nil : tone
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // The click/drag handle covers the whole tab up to the close
@@ -237,7 +246,7 @@ private struct PaneDockTab: View {
                 }
                 Text(session.title).font(.system(size: 11, weight: selected ? .semibold : .regular)).lineLimit(1).frame(maxWidth: 125).help(session.titleHelp)
                 if session.kind == "claude" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
-                if session.status == "running" { StatusDot(status: session.status) }
+                if let tone = tabTone { StatusGlyph(tone: tone, kind: session.kind, size: 12) }
             }
             .padding(.leading, 10).padding(.trailing, 6)
             .frame(minWidth: 56, minHeight: 30, maxHeight: 30, alignment: .leading)

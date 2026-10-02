@@ -155,6 +155,17 @@ public struct DesignPalette: Equatable, Sendable {
         }
     }
 
+    /// Whether this is the night palette: its words are lighter than its cards.
+    public var isDark: Bool { ink.relativeLuminance > card.relativeLuminance }
+
+    /// The track of a segmented switch on a card (the pane header's 기본 | 마이티): the
+    /// rail grey by day, the page navy by night. Its unchosen side's words are `ink2`.
+    public var segmentTrack: DesignColor { isDark ? page : track }
+
+    /// The chosen side of that switch: a card chip by day, the idle slate by night,
+    /// with `ink` words on it.
+    public var segmentOn: DesignColor { isDark ? idle : card }
+
     /// A small mark (dot, node) for a tone on page, card or sidebar: the fill
     /// where it holds 3:1, the ink for amber, and the quiet ink for idle.
     public func mark(_ tone: DesignTone) -> DesignColor {

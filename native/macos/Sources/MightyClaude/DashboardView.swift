@@ -2,20 +2,8 @@ import SwiftUI
 import AppKit
 import MightyCore
 
-/// Concept D's status colours by tone, for the dashboard and the sidebar's cards.
+/// Concept D's status colours by tone, for the dashboard and the graph.
 extension Palette {
-    /// A card's left edge: the tone's fill, or the quiet track for an idle pane.
-    static func edge(_ tone: DesignTone) -> Color {
-        switch tone {
-        case .run: run
-        case .wait: wait
-        case .done: done
-        case .err: err
-        case .stop: stop
-        case .idle: track
-        }
-    }
-
     /// The soft tint behind a tone's ink in a pill.
     static func soft(_ tone: DesignTone) -> Color {
         switch tone {
@@ -33,7 +21,7 @@ extension Palette {
     }
 }
 
-/// Words the dashboard and the sidebar cards share.
+/// Words the dashboard and the sidebar rows share.
 enum DashboardText {
     static func age(_ age: WorkDashboard.Age) -> String {
         switch age {
@@ -57,16 +45,27 @@ enum DashboardText {
         return Palette.status(card.status)
     }
 
-    static func kind(_ card: WorkDashboard.Card, localTerminal: Bool) -> String {
+    static func kind(_ card: WorkDashboard.Card) -> String {
         switch card.kind {
         case SessionKind.claude: L("dashboard.kind.agent")
-        case SessionKind.shell: localTerminal ? L("phone.card.localTerminal") : L("dashboard.kind.shell")
+        case SessionKind.shell: L("dashboard.kind.shell")
         case SessionKind.browser: L("browser.tab.title")
         case AgentIOPaneKind.terminal: L("dashboard.kind.agentTerminal")
         case AgentIOPaneKind.browser: L("dashboard.kind.agentBrowser")
         case FilePaneKind.kind: L("files.pane.title")
         default: card.kind
         }
+    }
+
+    /// The second line for a pane that is not an agent's: its kind, and for a shell
+    /// that runs in the app's own terminal, "셸 · 로컬 터미널".
+    static func kindLine(_ card: WorkDashboard.Card, localTerminal: Bool) -> String {
+        card.kind == SessionKind.shell && localTerminal ? L("dashboard.kind.shell") + " · " + L("phone.card.localTerminal") : kind(card)
+    }
+
+    /// Why a pane stopped on an error, for the second line: "Bash 실패", or the error's line.
+    static func reason(_ text: String, isTool: Bool) -> String {
+        isTool ? L("dashboard.card.toolFailed", ["tool": text]) : text
     }
 
     static func countLabel(_ label: String, _ count: Int) -> String {
@@ -83,23 +82,7 @@ func paneSymbol(_ kind: String) -> String {
     }
 }
 
-/// A small filled count, as on the sidebar's "작업 현황" entry and workspace rows.
-struct CountPill: View {
-    let text: String
-    let fill: Color
-    let ink: Color
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .bold)).monospacedDigit().lineLimit(1)
-            .foregroundStyle(ink)
-            .padding(.horizontal, 6).frame(minWidth: 20, minHeight: 18)
-            .background(fill, in: Capsule())
-            .fixedSize()
-    }
-}
-
-/// "작업 현황": every workspace's panes as status cards, under three tiles that count
+/// "작업 현황": every workspace's panes as glyph rows, under three tiles that count
 /// what runs, what waits on the user and what has finished.
 struct DashboardView: View {
     @EnvironmentObject private var store: AppStore
@@ -252,11 +235,15 @@ struct DashboardView: View {
             if cards.isEmpty {
                 Text(L("phone.workspaces.noSessions")).font(.system(size: 12)).foregroundStyle(Palette.ink2).padding(.horizontal, 2)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
-                    ForEach(cards) { card in
-                        DashboardCard(card: card, localTerminal: sessions.first { $0.id == card.id }.map { store.usesLocalTerminal($0) } ?? false)
+                // One white group per workspace, its panes as glyph rows (status v2).
+                VStack(spacing: 0) {
+                    ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+                        if index > 0 { Rectangle().fill(Palette.border).frame(height: 1).padding(.leading, 43) }
+                        DashboardRow(card: card, localTerminal: sessions.first { $0.id == card.id }.map { store.usesLocalTerminal($0) } ?? false)
                     }
                 }
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.panel).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
         .accessibilityElement(children: .contain)
@@ -264,144 +251,79 @@ struct DashboardView: View {
     }
 }
 
-/// One pane as a status card on the dashboard. Clicking it opens the workspace on that pane.
-struct DashboardCard: View {
+/// One pane as a row on the dashboard: its status glyph, the title, a muted line with
+/// provider, model and what the app knows of its run, and for a running pane its last
+/// step in mono. Only a pane waiting on the user carries a word on the right ("질문 1").
+/// Clicking it opens the workspace on that pane.
+struct DashboardRow: View {
     @EnvironmentObject private var store: AppStore
     let card: WorkDashboard.Card
     let localTerminal: Bool
-
-    private var loud: Color {
-        switch card.tone {
-        case .run: Palette.run
-        case .wait: Palette.wait
-        default: .clear
-        }
-    }
+    @ViewState private var hovering = false
 
     var body: some View {
+        let settled = [.done, .stop, .idle].contains(card.tone)
         Button { store.selectSession(card.id) } label: {
-            VStack(alignment: .leading, spacing: 11) {
-                head
-                if card.contextPercent != nil || card.timing != nil { numbers }
-                if let last = card.lastActivity { lastLine(last) }
+            HStack(alignment: .top, spacing: 11) {
+                StatusGlyph(tone: card.tone, kind: card.kind, size: 18).padding(.top, 1).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(card.title).font(.system(size: 14, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
+                        .frame(minHeight: 20)
+                    if card.isRunning, let timing = card.timing, timing.finishedAt == nil {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in meta(at: context.date) }
+                    } else {
+                        TimelineView(.everyMinute) { context in meta(at: context.date) }
+                    }
+                    if let last = card.lastActivity, card.isRunning {
+                        Text(last.text).font(.system(size: 11.3, design: .monospaced))
+                            .foregroundStyle(last.isError ? Palette.errText : Palette.ink2)
+                            .lineLimit(1).truncationMode(.tail).padding(.top, 4)
+                    }
+                }
+                Spacer(minLength: 4)
+                if card.attention.total > 0 {
+                    Text(DashboardText.status(card)).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.waitText)
+                        .lineLimit(1).fixedSize().frame(minHeight: 20)
+                }
             }
-            .padding(.leading, 19).padding(.trailing, 14).padding(.vertical, 13)
+            .padding(.horizontal, 14).padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.panel)
-            .overlay(alignment: .leading) { Rectangle().fill(Palette.edge(card.tone)).frame(width: 5) }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(loud, lineWidth: 2))
-            // The shadow belongs to the card's shape alone, not to every view on it.
-            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.panel).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(hovering ? Palette.subtle : Color.clear)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(L("phone.card.label", ["title": card.title, "status": card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : Palette.status(card.status)]))
+        .accessibilityLabel(L("phone.card.label", ["title": card.title, "status": card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : Palette.word(card.tone)]))
         .accessibilityIdentifier("dashboard-card-\(card.id)")
     }
 
-    private var head: some View {
-        HStack(spacing: 11) {
-            avatar
-            VStack(alignment: .leading, spacing: 2) {
-                Text(card.title).font(.system(size: 14.5, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
-                TimelineView(.everyMinute) { context in meta(at: context.date) }
-            }
-            Spacer(minLength: 4)
-            pill
-        }
-    }
-
-    private var avatar: some View {
-        RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .fill(card.isAgent ? AnyShapeStyle(ProviderBrand.gradient(card.provider)) : AnyShapeStyle(Palette.idle))
-            .frame(width: 34, height: 34)
-            .overlay {
-                if card.isAgent {
-                    ProviderMarkShape(provider: card.provider).fill(Palette.onStatus).frame(width: 18, height: 18)
-                } else {
-                    Image(systemName: paneSymbol(card.kind)).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.onStatus)
-                }
-            }
-            .accessibilityHidden(true)
-    }
-
+    /// `Claude · opus · 02:14 · 컨텍스트 41%` while it runs, `Codex · gpt-5 · 11분 전` at
+    /// rest; a pane that is not an agent's names its kind.
     private func meta(at date: Date) -> some View {
         HStack(spacing: 4) {
-            if card.kind == SessionKind.shell, localTerminal {
+            if card.isAgent {
+                Text(ProviderOptions.label(card.provider))
+                if ProviderOptions.isBeta(card.provider) { BetaBadge() }
+                let rest = ([card.model] + WorkDashboard.sidebarMeta(card, now: date).map { part -> String? in
+                    switch part {
+                    case .provider: nil
+                    case .elapsed: card.timing.map { DashboardText.clock($0, at: date) }
+                    case .context(let percent): L("phone.card.context", ["percent": "\(percent)"])
+                    case .reason(let text, let isTool): DashboardText.reason(text, isTool: isTool)
+                    case .age(let age): DashboardText.age(age)
+                    }
+                }).compactMap { $0 }
+                if !rest.isEmpty { Text("· " + rest.joined(separator: " · ")) }
+            } else if card.kind == SessionKind.shell, localTerminal {
                 Text(L("dashboard.kind.shell") + " ·")
                 Text(L("phone.card.localTerminal")).fontWeight(.semibold).foregroundStyle(Palette.waitText)
             } else {
-                Text(DashboardText.kind(card, localTerminal: false))
-            }
-            if card.isAgent || AgentIOPaneKind.isAgentIOPane(card.kind) {
-                Text("· " + ProviderOptions.label(card.provider))
-                if ProviderOptions.isBeta(card.provider) { BetaBadge() }
-            }
-            if card.isAgent, let model = card.model { Text("· " + model) }
-            if !card.isRunning, card.isAgent, let updated = card.updatedAt {
-                Text("· " + DashboardText.age(WorkDashboard.age(of: updated, now: date)))
+                Text(DashboardText.kind(card))
+                if AgentIOPaneKind.isAgentIOPane(card.kind) { Text("· " + ProviderOptions.label(card.provider)) }
             }
         }
-        .font(.system(size: 11.5)).foregroundStyle(Palette.ink2).lineLimit(1)
-    }
-
-    @ViewBuilder private var pill: some View {
-        if card.attention.total > 0 {
-            Text(DashboardText.status(card)).font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.onWait)
-                .padding(.horizontal, 9).frame(height: 21).background(Palette.wait, in: Capsule()).fixedSize()
-        } else {
-            Text(DashboardText.status(card)).font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.text(card.status))
-                .padding(.horizontal, 9).frame(height: 21).background(Palette.soft(card.tone), in: Capsule()).fixedSize()
-        }
-    }
-
-    private var numbers: some View {
-        HStack(spacing: 10) {
-            if let percent = card.contextPercent {
-                Capsule().fill(Palette.runSoft).frame(height: 8)
-                    .overlay(alignment: .leading) {
-                        GeometryReader { proxy in Capsule().fill(Palette.run).frame(width: proxy.size.width * percent / 100) }
-                    }
-                    .accessibilityHidden(true)
-                Text(L("phone.card.context", ["percent": "\(Int(percent.rounded()))"]))
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink2).fixedSize()
-                    .accessibilityLabel(L("phone.card.contextLabel", ["percent": "\(Int(percent.rounded()))"]))
-            } else {
-                Spacer(minLength: 0)
-            }
-            if let timing = card.timing {
-                if card.isRunning && timing.finishedAt == nil {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in clock(timing, at: context.date) }
-                } else {
-                    clock(timing, at: Date())
-                }
-            }
-        }
-    }
-
-    private func clock(_ timing: AgentRunTiming, at date: Date) -> some View {
-        let text = DashboardText.clock(timing, at: date)
-        return Text(text).font(Palette.heading(23)).monospacedDigit().foregroundStyle(Palette.ink).fixedSize()
-            .accessibilityLabel(L("phone.card.elapsedLabel", ["time": text]))
-    }
-
-    private func lastLine(_ last: WorkDashboard.LastActivity) -> some View {
-        HStack(spacing: 8) {
-            if last.isError {
-                RoundedRectangle(cornerRadius: 4).fill(Palette.err).frame(width: 14, height: 14)
-                    .overlay { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.onStatus) }
-                    .accessibilityHidden(true)
-            } else if card.isRunning {
-                PulseDot()
-            }
-            Text(last.text).font(.system(size: 11.3, design: .monospaced)).foregroundStyle(Palette.ink2)
-                .lineLimit(1).truncationMode(.tail)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .font(.system(size: 12)).monospacedDigit().foregroundStyle(Palette.ink2).lineLimit(1)
     }
 }
 
