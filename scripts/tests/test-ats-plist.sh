@@ -31,6 +31,14 @@ if [ "$(plutil -extract NSAppTransportSecurity.NSAllowsLocalNetworking raw "$TMP
   exit 1
 fi
 
+# Same-Wi-Fi screen sharing connects to phones over WebRTC host candidates; macOS 15
+# needs a reason string for that local network access.
+if [ -z "$(plutil -extract NSLocalNetworkUsageDescription raw "$TMPFILE" 2>/dev/null)" ]; then
+  echo "FAIL: NSLocalNetworkUsageDescription is missing from build-macos.sh" >&2
+  rm -f "$TMPFILE"
+  exit 1
+fi
+
 # Also verify it is syntactically valid XML plist
 if ! plutil -lint "$TMPFILE" > /dev/null 2>&1; then
   echo "FAIL: inline plist in build-macos.sh is not valid XML" >&2
