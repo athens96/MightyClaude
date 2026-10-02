@@ -97,6 +97,79 @@ public struct ScreenShareModifiers: OptionSet, Sendable, Equatable {
     public static let control = ScreenShareModifiers(rawValue: 1 << 3)
 }
 
+/// One key combination from the phone: a named key plus modifiers, written
+/// `cmd+shift+z` on the data channel. The key names are a closed list — a
+/// remote phone cannot post a raw key code the Mac never offered.
+public struct ScreenShareKeyCombo: Sendable, Equatable {
+    public var code: UInt16
+    public var modifiers: ScreenShareModifiers
+
+    public init(code: UInt16, modifiers: ScreenShareModifiers) {
+        self.code = code; self.modifiers = modifiers
+    }
+
+    /// Modifier names, in the order the phone writes them.
+    public static let modifierNames: [(name: String, modifier: ScreenShareModifiers)] = [
+        ("ctrl", .control), ("opt", .option), ("shift", .shift), ("cmd", .command),
+    ]
+
+    /// Virtual key codes (`kVK_*`) of the keys a phone may name.
+    public static let keys: [String: UInt16] = {
+        var keys: [String: UInt16] = [
+            "return": 36, "tab": 48, "space": 49, "backspace": 51, "escape": 53, "delete": 117,
+            "left": 123, "right": 124, "down": 125, "up": 126,
+            "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
+        ]
+        let letters: [(String, UInt16)] = [
+            ("a", 0), ("s", 1), ("d", 2), ("f", 3), ("h", 4), ("g", 5), ("z", 6), ("x", 7), ("c", 8), ("v", 9),
+            ("b", 11), ("q", 12), ("w", 13), ("e", 14), ("r", 15), ("y", 16), ("t", 17), ("o", 31), ("u", 32),
+            ("i", 34), ("p", 35), ("l", 37), ("j", 38), ("k", 40), ("n", 45), ("m", 46),
+        ]
+        for (letter, code) in letters { keys[letter] = code }
+        let digits: [UInt16] = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25]
+        for (digit, code) in digits.enumerated() { keys[String(digit)] = code }
+        return keys
+    }()
+
+    /// Reads `cmd+c`, `return`, `ctrl+opt+left`… Each modifier at most once,
+    /// then exactly one key, all lower case. Anything else is nil.
+    public static func parse(_ combo: String) -> ScreenShareKeyCombo? {
+        guard combo.utf8.count <= 40 else { return nil }
+        let parts = combo.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
+        guard let keyName = parts.last, let code = keys[keyName] else { return nil }
+        var modifiers: ScreenShareModifiers = []
+        for name in parts.dropLast() {
+            guard let modifier = modifierNames.first(where: { $0.name == name })?.modifier,
+                  !modifiers.contains(modifier) else { return nil }
+            modifiers.insert(modifier)
+        }
+        return ScreenShareKeyCombo(code: code, modifiers: modifiers)
+    }
+}
+
+/// Splits committed text into the pieces `CGEventKeyboardSetUnicodeString`
+/// carries: the window server drops what lies past 20 UTF-16 units in one
+/// event. A grapheme (a Hangul syllable, an emoji with its modifiers) is never
+/// cut in half; one longer than a whole chunk travels alone.
+public enum ScreenShareTextChunks {
+    public static let maximumUnits = 20
+
+    public static func split(_ text: String, maximumUnits: Int = maximumUnits) -> [[UInt16]] {
+        var chunks: [[UInt16]] = []
+        var current: [UInt16] = []
+        for character in text {
+            let units = Array(String(character).utf16)
+            if !current.isEmpty, current.count + units.count > maximumUnits {
+                chunks.append(current)
+                current = []
+            }
+            current.append(contentsOf: units)
+        }
+        if !current.isEmpty { chunks.append(current) }
+        return chunks
+    }
+}
+
 /// One remote input event. Korean arrives as committed text, never as jamo
 /// keystrokes, so the host does not need an input method of its own.
 public enum ScreenShareInputEvent: Sendable, Equatable {
@@ -162,6 +235,20 @@ public protocol ScreenShareEnvironmentProbe: Sendable {
     func secureInputActive() -> Bool
 }
 
+// MARK: - Local activity
+
+/// Tells the Mac's own remote input apart from a person at the Mac. Every
+/// event the injector posts carries `marker` in `eventSourceUserData`; the
+/// local-HID monitor skips those, so the phone's typing never pauses itself.
+public enum ScreenShareInjectionTag {
+    public static let marker: Int64 = 0x4D43_5353  // 'MCSS'
+
+    /// True for an event a person made, which pauses remote input for 2 s.
+    public static func isLocalActivity(eventSourceUserData: Int64) -> Bool {
+        eventSourceUserData != marker
+    }
+}
+
 // MARK: - Kill switch
 
 /// The hotkey that stops every screen-share session. Deliberately not a
@@ -181,4 +268,8 @@ public struct ScreenShareKillHotkey: Sendable, Equatable {
     public func matches(keyCode: UInt16, modifiers: ScreenShareModifiers) -> Bool {
         keyCode == self.keyCode && modifiers == self.modifiers
     }
+
+    /// The chord is held only while a session is live. On an idle Mac it would
+    /// take ⌃⌥⌘K away from every other app for a switch with nothing to stop.
+    public static func isRegistered(for state: ScreenShareIndicatorState) -> Bool { state.isActive }
 }

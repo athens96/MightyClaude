@@ -568,6 +568,21 @@ struct ScreenShareServiceTests {
             sessionId: "s2", deviceId: Self.viewer, mode: .view,
             controlChallenge: nil, controlSignature: nil, surface: Peer().surface()), .deviceNotAllowed))
     }
+
+    @Test func aGrantTheDiskCannotRecordFailsWithTheLocalizedMessage() async throws {
+        let fixture = makeFixture(); defer { cleanUp(fixture) }
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.directory.path) }
+        do {
+            try await fixture.service.setGrant(deviceId: Self.phone, grant: .view)
+            Issue.record("a grant that was never saved was reported as given")
+        } catch let error as MightyError {
+            // The message comes from the locale catalog, not a hard-coded string.
+            #expect(error.message == L("screenShare.error.allowListNotSaved"))
+        }
+        #expect(await fixture.service.settings(for: Self.phone)?.grant == ScreenShareGrant.none)
+    }
 }
 
 // MARK: - Test doubles

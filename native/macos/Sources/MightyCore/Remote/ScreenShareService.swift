@@ -164,8 +164,15 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     /// Told whenever the host stopped sessions by itself — kill switch, revoke,
     /// downgrade, rekey, idle timeout. The engine uses it to close its peers and
     /// send the courtesy note; the host has already stopped everything.
-    public func observeStops(_ observer: @escaping @Sendable ([ScreenShareStoppedSession]) async -> Void) {
+    public func observeStops(_ observer: @escaping @Sendable ([ScreenShareStoppedSession]) async -> Void) async {
         stopObserver = observer
+        // An idle timeout ends a session inside the host, on its own timer.
+        await host.observeIdleStops { [weak self] stopped in await self?.idleStopped(stopped) }
+    }
+
+    private func idleStopped(_ stopped: ScreenShareStoppedSession) async {
+        await stopObserver?([stopped])
+        await publish()
     }
 
     /// Told when the lock screen or secure input started or stopped blocking
@@ -309,6 +316,9 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     }
 
     public func liveSessions() async -> [ScreenShareLiveSession] { await host.liveSessions() }
+
+    /// Whether the host still holds this session.
+    public func isLive(sessionId: String) async -> Bool { await host.mode(of: sessionId) != nil }
 
     public func sessionLog() async -> [ScreenSessionEntry] { await host.log() }
 
