@@ -639,7 +639,9 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
             return;
           }
           if (snapshot.controlKey.status !== 'ready') {
-            await refusedControl('not-enrolled');
+            await refusedControl(
+              snapshot.controlKey.status === 'unsupported' ? 'unsupported' : 'not-enrolled',
+            );
             return;
           }
           const challenge = snapshot.session.controlChallengeB64;
