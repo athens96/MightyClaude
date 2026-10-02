@@ -6,7 +6,7 @@ import type {
 } from '@/api/types';
 import { toBase64, utf8Encode } from '@/api/relay/crypto';
 import { CLIPBOARD_CHUNK_BYTES, type ZstdCodec } from '@/lib/screen-share/clipboard';
-import { createScreenShareController } from '@/lib/screen-share/controller';
+import { createScreenShareController, untilAborted } from '@/lib/screen-share/controller';
 import { controlKeyAlias, controlKeyFingerprint, verifyControlSignature } from '@/lib/screen-share/control-key';
 import type {
   ScreenIceCandidateInit,
@@ -874,5 +874,22 @@ describe('the phone letting go on its own', () => {
     h.controller.dispose();
     expect(h.peer()?.closed).toBeGreaterThan(0);
     expect(h.sent).toContainEqual({ type: 'screen-session-end', sessionId: 's1', reason: 'user-stop' });
+  });
+});
+
+describe('untilAborted', () => {
+  it('removes its abort listener once the request settles, either way', async () => {
+    const abort = new AbortController();
+    const removed = jest.spyOn(abort.signal, 'removeEventListener');
+    await expect(untilAborted(Promise.resolve(7), abort.signal)).resolves.toBe(7);
+    await expect(untilAborted(Promise.reject(new Error('no')), abort.signal)).rejects.toThrow('no');
+    expect(removed).toHaveBeenCalledTimes(2);
+  });
+
+  it('still rejects at once when the signal aborts first', async () => {
+    const abort = new AbortController();
+    const pending = untilAborted(new Promise<number>(() => undefined), abort.signal);
+    abort.abort();
+    await expect(pending).rejects.toThrow('aborted');
   });
 });
