@@ -1049,7 +1049,7 @@
   "settings.screenShare.permissions.statusNotDetermined": "Not asked yet",
   "settings.screenShare.permissions.statusUnknown": "Can't tell",
   "settings.screenShare.permissions.title": "Mac permissions for screen sharing",
-  "settings.screenShare.removeKeyBody": "Any control session from {device} ends. The phone has to enrol a new key the next time it takes control, and this Mac asks you to confirm its fingerprint again.",
+  "settings.screenShare.removeKeyBody": "Any control session from {device} ends. The next time the phone takes control it registers its key again, and this Mac asks you to confirm its fingerprint again.",
   "settings.screenShare.removeKeyButton": "Remove key",
   "settings.screenShare.removeKeyConfirm": "Remove key",
   "settings.screenShare.removeKeyTitle": "Remove the control key?",

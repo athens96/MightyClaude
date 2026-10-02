@@ -456,8 +456,9 @@ extension AppStore {
 
     /// Settings: forgets one phone's enrolled control key. The host keeps no
     /// separate "forget the key" path — withdrawing control is what clears it —
-    /// so this steps the grant down to view and back up to control, in order,
-    /// and the phone enrols a fresh key (confirmed here again) next time.
+    /// so this steps the grant down to view and back up to control, in order.
+    /// The next time the phone takes control it registers the key it already
+    /// holds again, and the person at this Mac has to confirm it again.
     func removeScreenShareControlKey(deviceId: String) {
         Task { [screenShareEngine] in
             do {
