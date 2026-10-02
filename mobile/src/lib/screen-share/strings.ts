@@ -7,6 +7,7 @@ import type {
   ControlStartFailure,
 } from '@/lib/screen-share/controller';
 import type { ScreenShareHiddenReason } from '@/lib/screen-share/availability';
+import type { MeasurementSummary } from '@/lib/screen-share/measure';
 import type { ScreenHold, ScreenRefusal, ScreenStopReason } from '@/lib/screen-share/session';
 
 /**
@@ -238,4 +239,44 @@ export function candidatePathText(candidateType: ScreenCandidateType): string {
     default:
       return t('phone.screenShare.path.srflx');
   }
+}
+
+function figure(value: number | undefined, digits = 0): string {
+  if (value === undefined || !Number.isFinite(value)) return t('phone.screenShare.measure.none');
+  return value.toFixed(digits);
+}
+
+/** The measurement overlay, one line per group of numbers. */
+export function measurementLines(summary: MeasurementSummary | undefined): string[] {
+  const latency = summary?.latency;
+  const bitrate = summary?.bitrate;
+  return [
+    t('phone.screenShare.measure.network', {
+      path: summary?.candidateType
+        ? candidatePathText(summary.candidateType)
+        : t('phone.screenShare.measure.none'),
+      rtt: figure(summary?.rttMs),
+      jitter: figure(summary?.jitterMs),
+    }),
+    t('phone.screenShare.measure.decode', {
+      decode: figure(summary?.decodeMsPerFrame, 1),
+      freezes: figure(summary?.freezeCount),
+      seconds: figure(summary?.freezeSeconds, 1),
+    }),
+    t('phone.screenShare.measure.latency', {
+      p50: figure(latency?.p50Ms),
+      p95: figure(latency?.p95Ms),
+      count: latency?.count ?? 0,
+      timeouts: latency?.timeouts ?? 0,
+    }),
+    t('phone.screenShare.measure.bitrate', {
+      active: figure(bitrate?.activeKbps),
+      idle: figure(bitrate?.idleKbps),
+    }),
+  ];
+}
+
+/** Why tap-to-visible is only the phone's half of the measurement for now. */
+export function measurementMarkerNote(): string {
+  return t('phone.screenShare.measure.markerMissing');
 }

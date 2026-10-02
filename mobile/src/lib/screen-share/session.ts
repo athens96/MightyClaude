@@ -1,5 +1,6 @@
 import {
   SCREEN_BACKGROUND_GRACE_SECONDS,
+  type ScreenCodec,
   SCREEN_IDLE_TIMEOUT_CONTROL_SECONDS,
   SCREEN_IDLE_TIMEOUT_VIEW_SECONDS,
   type ScreenDisplay,
@@ -54,6 +55,8 @@ export interface ScreenSessionState {
   mode: ScreenMode;
   sessionId?: string;
   displayId?: number;
+  /** The codec the Mac chose. */
+  codec?: ScreenCodec;
   quality?: ScreenQuality;
   displays: ScreenDisplay[];
   controlChallengeB64?: string;
@@ -274,6 +277,7 @@ export function screenSessionReducer(
         sessionId: event.session.sessionId,
         mode: event.session.mode,
         displayId: event.session.displayId,
+        codec: event.session.codec,
         quality: event.session.quality,
         idleTimeoutSeconds: idleTimeoutSecondsFor(event.session.mode),
         lastActivityAt: event.at,
@@ -427,6 +431,7 @@ function applySignal(
           // The mode comes from `accepted`; an offer may only narrow it to view.
           mode: signal.mode === 'view' ? 'view' : state.mode,
           displayId: signal.displayId,
+          codec: signal.codec,
           quality: signal.quality,
           lastActivityAt: at,
         },
