@@ -624,6 +624,99 @@ struct ScreenShareSafetyTests {
             == CGPoint(x: 100, y: 300))
     }
 
+    // MARK: - Kill while capture is starting (actor re-entrancy)
+
+    /// A capture start the test releases by hand, so a kill can land while the
+    /// host is suspended inside `startCapture`.
+    final class HeldCaptureStart: @unchecked Sendable {
+        private let lock = NSLock()
+        private var log: [String] = []
+        private var waiter: CheckedContinuation<Void, Never>?
+        private var released = false
+        var events: [String] { lock.lock(); defer { lock.unlock() }; return log }
+        private func record(_ event: String) { lock.lock(); log.append(event); lock.unlock() }
+
+        func release() {
+            lock.lock(); released = true; let w = waiter; waiter = nil; lock.unlock()
+            w?.resume()
+        }
+
+        func surface() -> ScreenShareSurface {
+            ScreenShareSurface(
+                startCapture: { @Sendable in
+                    self.record("capture-start-begun")
+                    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                        self.lock.lock()
+                        if self.released { self.lock.unlock(); c.resume(); return }
+                        self.waiter = c
+                        self.lock.unlock()
+                    }
+                    self.record("capture-started")
+                },
+                stopCapture: { @Sendable in self.record("capture-stopped") },
+                closePeer: { @Sendable in self.record("peer-closed") })
+        }
+    }
+
+    @Test func aKillDuringStartCaptureRefusesTheJoinAndStopsTheLateCapture() async {
+        let held = HeldCaptureStart()
+        let host = ScreenShareHost()
+        let keystore = FakeKeystore()
+        await host.setDeviceSettings(ScreenShareDeviceSettings(
+            deviceId: "p1", allowed: true, grant: .control,
+            controlKeyPublicData: keystore.publicKeyData))
+        let challenge = ScreenSharePolicy.controlChallenge(sessionId: "s1", timestamp: "ts")
+        let join = Task {
+            await host.requestSession(
+                sessionId: "s1", deviceId: "p1", requestedMode: .control,
+                controlChallenge: challenge, controlSignature: keystore.sign(challenge: challenge),
+                surface: held.surface())
+        }
+        #expect(await waitUntil { held.events.contains("capture-start-begun") })
+
+        // The kill switch lands while the host is suspended inside startCapture.
+        let timing = await host.killAll(reason: .killSwitch)
+        #expect(timing.elapsed <= ScreenSharePolicy.killDeadline)
+        #expect(await host.sessionCount == 0)
+
+        // Capture finishes starting only after the kill.
+        held.release()
+        let result = await join.value
+
+        #expect(isFailure(result, .sessionStopped))
+        #expect(await host.isInjectionEnabled == false)
+        #expect(await host.canInject() == false)
+        #expect(await host.isCaptureActive == false)
+        #expect(await host.sessionCount == 0)
+        // The capture that came up after the kill was stopped again.
+        let events = held.events
+        let started = events.firstIndex(of: "capture-started")
+        #expect(started != nil)
+        #expect(events.last == "capture-stopped")
+        if let started { #expect(events[started...].contains("capture-stopped")) }
+    }
+
+    @Test func aKillWhileCaptureResumesAfterUnlockStopsTheLateCapture() async {
+        let held = HeldCaptureStart()
+        let host = ScreenShareHost()
+        // Admitted while locked: no capture yet, so the first start comes from
+        // the unlock path.
+        await host.setLocked(true)
+        await host.setDeviceSettings(ScreenShareDeviceSettings(deviceId: "p1", allowed: true, grant: .view))
+        #expect(isSuccess(await host.requestSession(
+            sessionId: "s1", deviceId: "p1", requestedMode: .view,
+            controlChallenge: nil, controlSignature: nil, surface: held.surface())))
+
+        let unlock = Task { await host.setLocked(false) }
+        #expect(await waitUntil { held.events.contains("capture-start-begun") })
+        _ = await host.killAll(reason: .killSwitch)
+        held.release()
+        await unlock.value
+
+        #expect(await host.isCaptureActive == false)
+        #expect(held.events.last == "capture-stopped")
+    }
+
     @Test func killDeadlineIsOneSecond() {
         #expect(ScreenSharePolicy.killDeadline == 1)
     }

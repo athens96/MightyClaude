@@ -217,9 +217,27 @@ public actor MobileRemoteService {
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
             key = saved; return saved
         }
-        return try regenerateKey()
+        let (fresh, rotatedAt) = try rotateKey()
+        // Only an unreadable key file on disk gets here as a rotation, before any
+        // session could have used the in-memory key; this synchronous path cannot
+        // wait, so the screen-share rows are cleared right after it.
+        if let rotatedAt, let screenShare { Task { await screenShare.pairingKeyRegenerated(at: rotatedAt) } }
+        return fresh
     }
-    public func regenerateKey() throws -> String {
+
+    /// Rotates the pairing key. Every phone has to pair again, so every
+    /// screen-share grant and every live session goes with the old key — and
+    /// this returns only once they have stopped, with t0 stamped at the
+    /// rotation.
+    public func regenerateKey() async throws -> String {
+        let (fresh, rotatedAt) = try rotateKey()
+        if let rotatedAt, let screenShare { await screenShare.pairingKeyRegenerated(at: rotatedAt) }
+        return fresh
+    }
+
+    /// Writes a fresh key and drops what depended on the old one. `rotatedAt`
+    /// is the instant an existing key was replaced; nil on first creation.
+    private func rotateKey() throws -> (key: String, rotatedAt: Date?) {
         if let keyRotationFailure { throw MightyError(keyRotationFailure) }
         // Capture before any writes: true when an existing key is being rotated,
         // false on first-time creation where no tokens have been issued yet.
@@ -233,17 +251,13 @@ public actor MobileRemoteService {
         else { try FileManager.default.moveItem(at: temporary, to: keyURL) }
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
         key = fresh
+        let rotatedAt: Date? = isRotation ? Date() : nil
         // A new key invalidates every token issued under the old key: clear the
         // registry so no stale token can authenticate again. clearAll writes []
         // atomically; a write failure is tolerated since the key is already rotated.
         if isRotation { try? deviceRegistry.clearAll() }
         dropKeyDependentClients()
-        // Every phone has to pair again, so every screen-share grant and every
-        // live session goes with the old key. Not awaited: this path is
-        // synchronous, and the host disables injection and capture before it
-        // touches a surface.
-        if isRotation, let screenShare { Task { await screenShare.pairingKeyRegenerated() } }
-        return fresh
+        return (fresh, rotatedAt)
     }
 
     /// Closes connections without a token in the current registry, including
@@ -292,7 +306,7 @@ public actor MobileRemoteService {
         // A rotation that fails leaves everything as it was, including the
         // device: half a revoke must never be reported as a whole one.
         // regenerateKey() clears the whole registry so no remove() is needed.
-        _ = try regenerateKey()
+        _ = try await regenerateKey()
         // dropKeyDependentClients handles key-dependent connections; close
         // this device's token-authenticated socket explicitly.
         close(connections: connectedDevices.filter { $0.value == id }.map(\.key), reason: "device revoked")

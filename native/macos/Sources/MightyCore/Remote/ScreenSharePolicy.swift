@@ -124,6 +124,9 @@ public enum ScreenShareError: Error, Sendable, Equatable {
     case insufficientGrant
     case controlSignatureInvalid
     case concurrencyLimit
+    /// A kill (kill switch, revoke, downgrade, rekey) ran while this session's
+    /// capture was starting, so the session no longer exists.
+    case sessionStopped
 }
 
 // MARK: - Pure policy rules

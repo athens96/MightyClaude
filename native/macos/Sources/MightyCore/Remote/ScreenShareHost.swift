@@ -151,6 +151,14 @@ public actor ScreenShareHost {
         if !captureActive, !framesBlocked {
             captureActive = true
             await surface.startCapture()
+            // The actor is re-entrant: a kill can run while capture starts. If it
+            // took this session, the join is refused before injection is enabled,
+            // and unless capture is wanted again by now (`captureActive`), what
+            // just started is stopped within the deadline.
+            if sessions[sessionId] == nil {
+                if !captureActive { _ = await runWithinDeadline([surface.stopCapture]) }
+                return .failure(.sessionStopped)
+            }
         }
         if requestedMode == .control { injectionEnabled = true }
         armIdleTimer(sessionId: sessionId)
@@ -169,9 +177,13 @@ public actor ScreenShareHost {
 
     /// Kills every live session. `t0` is stamped on entry, `t1` once the
     /// surfaces have stopped or the deadline has cut them off.
+    ///
+    /// - Parameter triggeredAt: when the trigger happened, if that was before
+    ///   this call (a rekey stamps it the instant the key rotated). Defaults to
+    ///   now.
     @discardableResult
-    public func killAll(reason: ScreenShareStopReason) async -> ScreenShareKillTiming {
-        let t0 = now()
+    public func killAll(reason: ScreenShareStopReason, triggeredAt: Date? = nil) async -> ScreenShareKillTiming {
+        let t0 = triggeredAt ?? now()
         // Host state first: from this instant no injection is admitted and no
         // frame is considered live, whatever the surfaces do afterwards.
         injectionEnabled = false
@@ -351,6 +363,9 @@ public actor ScreenShareHost {
             guard !captureActive else { return }
             captureActive = true
             await capture.startCapture()
+            // Re-entrancy again: a kill or a fresh lock that ran while capture came
+            // back cleared `captureActive`, so what just started is unwanted.
+            if !captureActive { _ = await runWithinDeadline([capture.stopCapture]) }
         }
     }
 
