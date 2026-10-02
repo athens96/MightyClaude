@@ -1049,7 +1049,7 @@
   "settings.screenShare.permissions.statusNotDetermined": "아직 묻지 않음",
   "settings.screenShare.permissions.statusUnknown": "확인할 수 없음",
   "settings.screenShare.permissions.title": "화면 공유에 필요한 Mac 권한",
-  "settings.screenShare.removeKeyBody": "{device}의 조작 세션이 있으면 끝납니다. 휴대폰은 다음에 조작할 때 새 키를 등록해야 하고, 그때 이 Mac에서 지문을 다시 확인합니다.",
+  "settings.screenShare.removeKeyBody": "{device}의 조작 세션이 있으면 끝납니다. 휴대폰은 다음에 조작할 때 키를 다시 등록하고, 그때 이 Mac에서 지문을 다시 확인합니다.",
   "settings.screenShare.removeKeyButton": "키 삭제",
   "settings.screenShare.removeKeyConfirm": "키 삭제",
   "settings.screenShare.removeKeyTitle": "조작 키를 지울까요?",
