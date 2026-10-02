@@ -32,7 +32,10 @@
       "package": "dev.mightyclaude.mobile",
       "versionCode": 2,
       "blockedPermissions": [
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH",
+        "android.permission.WAKE_LOCK"
       ]
     },
     "web": {
@@ -81,7 +84,8 @@
           }
         }
       ],
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      "./plugins/with-no-media-projection"
     ],
     "experiments": {
       "typedRoutes": true
