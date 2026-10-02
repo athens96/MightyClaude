@@ -62,6 +62,20 @@ export function containRect(stage: Size, aspect: number): Rect {
 }
 
 /**
+ * Where the picture is on the stage as last laid out. The stage is measured afresh on every
+ * layout — the header, the panel and the system bars coming and going for full screen all
+ * change it — so touches are always mapped against the frame the user is looking at.
+ */
+export function pictureRect(input: {
+  stage: Size;
+  video?: Size | undefined;
+  display?: Size | undefined;
+  region?: ZoomRegion | undefined;
+}): Rect {
+  return containRect(input.stage, contentAspect(input));
+}
+
+/**
  * A touch on the stage, as a point on the whole display — or `undefined` when it landed on
  * a letterbox bar, outside the picture.
  */

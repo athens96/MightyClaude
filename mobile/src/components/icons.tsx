@@ -3,7 +3,8 @@ import Svg, { Path, Rect } from 'react-native-svg';
 
 /**
  * The few line glyphs concept D draws: the four tab marks, the composer's plus, send and
- * stop, and the next-action arrow. 24×24 strokes, round caps, coloured by the caller.
+ * stop, the next-action arrow, and the remote screen's full-screen expand and collapse.
+ * 24×24 strokes, round caps, coloured by the caller.
  * Decorative: whatever carries them holds the accessible label.
  */
 export type IconName =
@@ -17,7 +18,9 @@ export type IconName =
   | 'arrow'
   | 'chevronDown'
   | 'terminal'
-  | 'globe';
+  | 'globe'
+  | 'expand'
+  | 'collapse';
 
 export function Icon({
   name,
@@ -76,6 +79,10 @@ export function Icon({
         <Path {...stroke} d="M6 9l6 6 6-6" />
       ) : name === 'terminal' ? (
         <Path {...stroke} d="M5 7l5 5-5 5M12 18h7" />
+      ) : name === 'expand' ? (
+        <Path {...stroke} d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+      ) : name === 'collapse' ? (
+        <Path {...stroke} d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
       ) : (
         <>
           <Path {...stroke} d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z" />
