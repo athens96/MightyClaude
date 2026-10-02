@@ -427,6 +427,92 @@ struct ScreenShareServiceTests {
         #expect(fixture.input.calls.count == 1)
     }
 
+    // MARK: - A remote drag never leaves the button down
+
+    private static let pressAt = ScreenShareNormalizedPoint(displayId: 1, x: 0.25, y: 0.5)
+    private static let dragTo = ScreenShareNormalizedPoint(displayId: 1, x: 0.5, y: 0.5)
+
+    /// A control session with the left button pressed at 480,540 and dragged
+    /// to 960,540.
+    private func heldDrag(_ fixture: Fixture) async {
+        _ = await joinControl(fixture, peer: Peer())
+        #expect(await fixture.service.deliver(.drag(Self.pressAt, phase: .begin), sessionId: "s1").isSuccess)
+        #expect(await fixture.service.deliver(.drag(Self.dragTo, phase: .move), sessionId: "s1").isSuccess)
+    }
+
+    @Test func theKillSwitchLetsGoOfAHeldDragAtItsLastPosition() async {
+        let fixture = makeFixture(); defer { cleanUp(fixture) }
+        await heldDrag(fixture)
+
+        await fixture.service.killSwitch()
+
+        #expect(fixture.input.calls == ["drag begin 480.0,540.0 display 1",
+                                        "drag move 960.0,540.0 display 1",
+                                        "drag end 960.0,540.0 display 1"])
+        // The phone's own release afterwards finds nothing held and nothing live.
+        #expect(await fixture.service.deliver(.drag(Self.dragTo, phase: .end), sessionId: "s1")
+                == .failure(.notControlSession))
+        #expect(fixture.input.calls.count == 3)
+    }
+
+    @Test func everyOtherStopLetsGoOfAHeldDragToo() async throws {
+        let stops: [(String, @Sendable (ScreenShareService) async throws -> Void)] = [
+            ("end", { await $0.endSession(sessionId: "s1", reason: .peerLeft) }),
+            ("downgrade", { try await $0.setGrant(deviceId: Self.phone, grant: .view) }),
+            ("disallow", { try await $0.setAllowed(deviceId: Self.phone, allowed: false) }),
+            ("revoke", { await $0.deviceRevoked(Self.phone) }),
+            ("rekey", { await $0.pairingKeyRegenerated() }),
+            ("quit", { await $0.shutdown() }),
+        ]
+        for (name, stop) in stops {
+            let fixture = makeFixture(); defer { cleanUp(fixture) }
+            await heldDrag(fixture)
+            try await stop(fixture.service)
+            #expect(fixture.input.calls.last == "drag end 960.0,540.0 display 1", "\(name)")
+            #expect(fixture.input.calls.filter { $0.hasPrefix("drag end") }.count == 1, "\(name)")
+        }
+    }
+
+    @Test func thePhonesReleaseIsAdmittedThroughALocalInputPause() async {
+        let fixture = makeFixture(); defer { cleanUp(fixture) }
+        await heldDrag(fixture)
+
+        await fixture.service.localHIDActivity()
+        // Moving on is refused while the person at the Mac has the mouse…
+        #expect(await fixture.service.deliver(.drag(.init(displayId: 1, x: 0.6, y: 0.5), phase: .move),
+                                              sessionId: "s1") == .failure(.blocked))
+        // …but letting go is not, and it lets go where the button last was.
+        let released = await fixture.service.deliver(.drag(.init(displayId: 1, x: 0.75, y: 0.5), phase: .end),
+                                                     sessionId: "s1")
+        #expect(released.isSuccess)
+        #expect(fixture.input.calls.last == "drag end 960.0,540.0 display 1")
+        // Once the pause is over, a release lands where the phone let go.
+        fixture.clock.advance(by: 2.1)
+        #expect(await fixture.service.deliver(.drag(Self.pressAt, phase: .begin), sessionId: "s1").isSuccess)
+        #expect(await fixture.service.deliver(.drag(.init(displayId: 1, x: 0.75, y: 0.5), phase: .end),
+                                              sessionId: "s1").isSuccess)
+        #expect(fixture.input.calls.last == "drag end 1440.0,540.0 display 1")
+    }
+
+    @Test func theLockScreenAndSecureInputLetGoOfAHeldDrag() async {
+        for secure in [false, true] {
+            let fixture = makeFixture(); defer { cleanUp(fixture) }
+            await heldDrag(fixture)
+
+            if secure { fixture.environment.secureInput = true } else { fixture.environment.locked = true }
+            await fixture.service.refreshEnvironment()
+
+            #expect(fixture.input.calls == ["drag begin 480.0,540.0 display 1",
+                                            "drag move 960.0,540.0 display 1",
+                                            "drag end 960.0,540.0 display 1"])
+            // Nothing is held any more, so the phone's late release is an
+            // ordinary event — and refused like one.
+            #expect(await fixture.service.deliver(.drag(Self.dragTo, phase: .end), sessionId: "s1")
+                    == .failure(.blocked))
+            #expect(fixture.input.calls.count == 3)
+        }
+    }
+
     @Test func noKeystrokeEverReachesTheSessionLog() async {
         let fixture = makeFixture(); defer { cleanUp(fixture) }
         _ = await joinControl(fixture, peer: Peer())
@@ -623,20 +709,20 @@ final class FakeInput: ScreenShareInputSink, @unchecked Sendable {
     var calls: [String] { lock.lock(); defer { lock.unlock() }; return recorded }
     private func add(_ line: String) { lock.lock(); recorded.append(line); lock.unlock() }
 
-    func move(to position: CGPoint, displayId: UInt32) async {
+    func move(to position: CGPoint, displayId: UInt32) {
         add("move \(position.x),\(position.y) display \(displayId)")
     }
-    func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) async {
+    func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) {
         add("click \(button.rawValue) x\(clickCount) \(position.x),\(position.y) display \(displayId)")
     }
-    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) async {
+    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) {
         add("drag \(phase.rawValue) \(position.x),\(position.y) display \(displayId)")
     }
-    func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) async {
+    func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) {
         add("scroll \(deltaX),\(deltaY) at \(position.x),\(position.y) display \(displayId)")
     }
-    func commitText(_ text: String) async { add("text \(text)") }
-    func key(code: UInt16, modifiers: ScreenShareModifiers) async {
+    func commitText(_ text: String) { add("text \(text)") }
+    func key(code: UInt16, modifiers: ScreenShareModifiers) {
         add("key \(code) modifiers \(modifiers.rawValue)")
     }
 }

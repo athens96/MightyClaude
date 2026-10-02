@@ -182,15 +182,19 @@ public enum ScreenShareInputEvent: Sendable, Equatable {
 }
 
 /// Where admitted input actually goes. `CGEventPost` in production.
+///
+/// Synchronous on purpose: the host posts an admitted event inside the same
+/// actor turn that admitted it (`ScreenShareHost.inject`), so a kill stamped
+/// at t0 can never be followed by an event that was admitted before it.
 public protocol ScreenShareInputSink: Sendable {
-    func move(to position: CGPoint, displayId: UInt32) async
-    func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) async
+    func move(to position: CGPoint, displayId: UInt32)
+    func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int)
     /// One phase of a left-button drag.
-    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) async
-    func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) async
+    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase)
+    func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32)
     /// Committed text — the whole string at once, so Hangul arrives composed.
-    func commitText(_ text: String) async
-    func key(code: UInt16, modifiers: ScreenShareModifiers) async
+    func commitText(_ text: String)
+    func key(code: UInt16, modifiers: ScreenShareModifiers)
 }
 
 /// Why the host refused an input event. Nothing here names the keys involved.

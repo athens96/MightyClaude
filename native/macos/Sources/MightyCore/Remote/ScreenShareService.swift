@@ -144,6 +144,15 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     private var frameBlockObserver: (@Sendable (Bool, ScreenShareStopReason) async -> Void)?
     /// What `refreshEnvironment` last reported, so a transition is announced once.
     private var framesBlocked = false
+    /// The left button a remote drag holds down, per session, and where it
+    /// last was. Every stop lets go of it.
+    private struct OpenDrag {
+        var position: CGPoint
+        var displayId: UInt32
+        var token: UInt64
+    }
+    private var openDrags: [String: OpenDrag] = [:]
+    private var dragCount: UInt64 = 0
     /// How long a control challenge stays usable.
     public static let challengeLifetime: TimeInterval = 120
 
@@ -171,6 +180,7 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     }
 
     private func idleStopped(_ stopped: ScreenShareStoppedSession) async {
+        await releaseStoppedDrags()
         await stopObserver?([stopped])
         await publish()
     }
@@ -311,6 +321,7 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     public func endSession(sessionId: String, reason: ScreenShareStopReason = .peerLeft) async {
         let before = await host.liveSessions()
         if let timing = await host.endSession(sessionId: sessionId, reason: reason) { record(timing) }
+        await releaseStoppedDrags()
         await announceStops(before: before, reason: reason)
         await publish()
     }
@@ -330,44 +341,141 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     public func deliver(
         _ event: ScreenShareInputEvent, sessionId: String
     ) async -> Result<ScreenShareResolvedPoint?, ScreenShareInputRejection> {
+        // Letting go of a held button is never dangerous, so the session that
+        // pressed it may always release it — past a local-input pause, the lock
+        // screen and secure input alike.
+        if case .drag(let point, .end) = event, openDrags[sessionId] != nil {
+            return await endDrag(at: point, sessionId: sessionId)
+        }
         guard await host.mode(of: sessionId) == .control else { return .failure(.notControlSession) }
         // The once-a-second poll is too slow for a password field that just took
         // focus: read secure input and the lock screen again for every event.
         await refreshEnvironment()
         guard await host.canInject() else { return .failure(.blocked) }
 
+        let input = self.input
         switch event {
         case .move(let point):
             guard let resolved = resolve(point) else { return .failure(.noDisplay) }
-            await input.move(to: resolved.position, displayId: resolved.displayId)
-            await host.noteActivity(sessionId: sessionId)
-            return .success(resolved)
+            return await post(resolved, sessionId: sessionId) {
+                input.move(to: resolved.position, displayId: resolved.displayId)
+            }
         case .click(let point, let button, let clickCount):
             guard let resolved = resolve(point) else { return .failure(.noDisplay) }
-            await input.click(at: resolved.position, displayId: resolved.displayId,
-                              button: button, clickCount: max(1, min(3, clickCount)))
-            await host.noteActivity(sessionId: sessionId)
-            return .success(resolved)
+            let count = max(1, min(3, clickCount))
+            return await post(resolved, sessionId: sessionId) {
+                input.click(at: resolved.position, displayId: resolved.displayId, button: button, clickCount: count)
+            }
         case .drag(let point, let phase):
             guard let resolved = resolve(point) else { return .failure(.noDisplay) }
-            await input.drag(at: resolved.position, displayId: resolved.displayId, phase: phase)
-            await host.noteActivity(sessionId: sessionId)
-            return .success(resolved)
+            return await drag(resolved, phase: phase, sessionId: sessionId)
         case .scroll(let point, let deltaX, let deltaY):
             guard let resolved = resolve(point) else { return .failure(.noDisplay) }
-            await input.scroll(at: resolved.position, displayId: resolved.displayId,
-                               deltaX: deltaX, deltaY: deltaY)
-            await host.noteActivity(sessionId: sessionId)
-            return .success(resolved)
+            return await post(resolved, sessionId: sessionId) {
+                input.scroll(at: resolved.position, displayId: resolved.displayId, deltaX: deltaX, deltaY: deltaY)
+            }
         case .text(let text):
-            await input.commitText(text)
-            await host.noteActivity(sessionId: sessionId)
-            return .success(nil)
+            return await post(nil, sessionId: sessionId) { input.commitText(text) }
         case .key(let code, let modifiers):
-            await input.key(code: code, modifiers: modifiers)
-            await host.noteActivity(sessionId: sessionId)
-            return .success(nil)
+            return await post(nil, sessionId: sessionId) { input.key(code: code, modifiers: modifiers) }
         }
+    }
+
+    /// Posts through the host, which checks again in the turn it posts in: the
+    /// check above may be a hop old by now.
+    private func post(
+        _ resolved: ScreenShareResolvedPoint?, sessionId: String, _ action: @Sendable () -> Void
+    ) async -> Result<ScreenShareResolvedPoint?, ScreenShareInputRejection> {
+        guard await host.inject(sessionId: sessionId, action) else { return .failure(.blocked) }
+        await host.noteActivity(sessionId: sessionId)
+        return .success(resolved)
+    }
+
+    /// One phase of a drag. The press is remembered before it is posted, so a
+    /// stop that lands while it is on its way already knows to let go; and a
+    /// press or move that turns out to have raced such a stop is followed by one
+    /// more release, so the last word the window server hears is always "up".
+    private func drag(
+        _ resolved: ScreenShareResolvedPoint, phase: ScreenShareDragPhase, sessionId: String
+    ) async -> Result<ScreenShareResolvedPoint?, ScreenShareInputRejection> {
+        let input = self.input
+        switch phase {
+        case .begin:
+            // A second press without a release lets go of the first one.
+            releaseDrags([sessionId])
+            dragCount &+= 1
+            let token = dragCount
+            openDrags[sessionId] = OpenDrag(position: resolved.position, displayId: resolved.displayId, token: token)
+            let pressed = await host.inject(sessionId: sessionId) {
+                input.drag(at: resolved.position, displayId: resolved.displayId, phase: .begin)
+            }
+            guard pressed else {
+                if openDrags[sessionId]?.token == token { openDrags.removeValue(forKey: sessionId) }
+                return .failure(.blocked)
+            }
+            if openDrags[sessionId]?.token != token {
+                input.drag(at: resolved.position, displayId: resolved.displayId, phase: .end)
+            }
+        case .move:
+            let token = openDrags[sessionId]?.token
+            let moved = await host.inject(sessionId: sessionId) {
+                input.drag(at: resolved.position, displayId: resolved.displayId, phase: .move)
+            }
+            guard moved else { return .failure(.blocked) }
+            if let token {
+                if openDrags[sessionId]?.token == token {
+                    openDrags[sessionId]?.position = resolved.position
+                    openDrags[sessionId]?.displayId = resolved.displayId
+                } else {
+                    input.drag(at: resolved.position, displayId: resolved.displayId, phase: .end)
+                }
+            }
+        case .end:
+            // Nothing is held for this session: an ordinary, admitted event.
+            guard await host.inject(sessionId: sessionId, {
+                input.drag(at: resolved.position, displayId: resolved.displayId, phase: .end)
+            }) else { return .failure(.blocked) }
+        }
+        await host.noteActivity(sessionId: sessionId)
+        return .success(resolved)
+    }
+
+    /// The phone let go. Where it let go when the host would admit input there;
+    /// otherwise where the button last was, so a refused session never moves
+    /// the pointer while it releases.
+    private func endDrag(
+        at point: ScreenShareNormalizedPoint, sessionId: String
+    ) async -> Result<ScreenShareResolvedPoint?, ScreenShareInputRejection> {
+        guard let open = openDrags.removeValue(forKey: sessionId) else { return .failure(.notControlSession) }
+        let input = self.input
+        var released: ScreenShareResolvedPoint?
+        if let resolved = resolve(point),
+           await host.inject(sessionId: sessionId, {
+               input.drag(at: resolved.position, displayId: resolved.displayId, phase: .end)
+           }) {
+            released = resolved
+        } else {
+            input.drag(at: open.position, displayId: open.displayId, phase: .end)
+            released = ScreenShareResolvedPoint(displayId: open.displayId, position: open.position, fellBackToMain: false)
+        }
+        await host.noteActivity(sessionId: sessionId)
+        return .success(released)
+    }
+
+    /// Lets go of the buttons these sessions hold, at the last drag position.
+    private func releaseDrags(_ sessionIds: [String]) {
+        for sessionId in sessionIds {
+            guard let open = openDrags.removeValue(forKey: sessionId) else { continue }
+            input.drag(at: open.position, displayId: open.displayId, phase: .end)
+        }
+    }
+
+    /// After a stop: every session the host no longer holds lets go of its
+    /// button. Injection is already off by now, so no press can follow.
+    private func releaseStoppedDrags() async {
+        guard !openDrags.isEmpty else { return }
+        let live = Set(await host.liveSessions().map(\.sessionId))
+        releaseDrags(openDrags.keys.filter { !live.contains($0) })
     }
 
     /// A frame reached the phone: the session is not idle.
@@ -392,6 +500,8 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         await host.setLocked(locked)
         await host.setSecureInput(secure)
         let blocked = locked || secure
+        // The lock screen or a password field: nothing stays pressed under it.
+        if blocked { releaseDrags(Array(openDrags.keys)) }
         if blocked != framesBlocked {
             framesBlocked = blocked
             // The lock screen wins the reason when both hold: it is the one the
@@ -409,6 +519,7 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         let before = await host.liveSessions()
         let timing = await host.killAll(reason: .killSwitch)
         record(timing)
+        await releaseStoppedDrags()
         await announceStops(before: before, reason: .killSwitch)
         await publish()
         return timing
@@ -436,6 +547,7 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         let timing = await host.killAll(reason: .rekeyPairing, triggeredAt: rekeyedAt)
         await host.forgetAllDeviceSettings()
         record(timing)
+        await releaseStoppedDrags()
         await announceStops(before: before, reason: .rekeyPairing)
         await publish()
     }
@@ -444,7 +556,19 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         let before = await host.liveSessions()
         let timing = await host.killDevice(deviceId: deviceId, reason: reason)
         record(timing)
+        await releaseStoppedDrags()
         await announceStops(before: before, reason: reason)
+    }
+
+    /// The app is quitting: every session ends, every held button is let go
+    /// and every phone is told, while the relay is still there to carry it.
+    public func shutdown() async {
+        let before = await host.liveSessions()
+        guard !before.isEmpty || !openDrags.isEmpty else { return }
+        record(await host.killAll(reason: .peerLeft))
+        await releaseStoppedDrags()
+        await announceStops(before: before, reason: .peerLeft)
+        await publish()
     }
 
     /// Diffs the live list around a kill and tells the observer what went. The

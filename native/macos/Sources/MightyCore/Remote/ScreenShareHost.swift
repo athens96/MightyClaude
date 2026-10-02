@@ -338,6 +338,16 @@ public actor ScreenShareHost {
         return true
     }
 
+    /// Admits one remote event for a live control session and posts it in the
+    /// same actor turn. A kill runs on this actor too, so it either lands
+    /// before the check (nothing is posted) or after the post (the post came
+    /// before t0) — never in between.
+    public func inject(sessionId: String, _ post: @Sendable () -> Void) -> Bool {
+        guard sessions[sessionId]?.mode == .control, canInject() else { return false }
+        post()
+        return true
+    }
+
     /// Local HID activity on the Mac: remote injection pauses for 2 s.
     public func notifyLocalHID() {
         hidPausedUntil = now().addingTimeInterval(ScreenSharePolicy.hidPauseDuration)
