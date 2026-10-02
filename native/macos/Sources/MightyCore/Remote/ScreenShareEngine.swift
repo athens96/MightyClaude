@@ -160,6 +160,9 @@ public actor ScreenShareEngine {
     /// A failed TURN renewal is retried this often until the old credential
     /// expires; the relay's own rate limit stays far away.
     public static let renewalRetry: TimeInterval = 60
+    /// After the person at the Mac rejects a control key, that phone may not
+    /// raise the dialog again for this long.
+    public static let controlKeyRetryCooldown: TimeInterval = 60
 
     // MARK: Dependencies
 
@@ -223,6 +226,8 @@ public actor ScreenShareEngine {
     private var blockReason: ScreenShareStopReason = .lockScreen
     /// Phones whose control-key fingerprint is on screen at the Mac right now.
     private var confirming: Set<String> = []
+    /// When the person at the Mac last rejected each phone's key.
+    private var rejectedKeyAt: [String: Date] = [:]
     /// The last admitted frame of each layer: what a newly connected phone, or
     /// a decoder that lost a keyframe while the screen stood still, is sent.
     private var lastFrames: [ScreenShareCaptureLayer.Kind: ScreenShareVideoFrame] = [:]
@@ -313,11 +318,25 @@ public actor ScreenShareEngine {
         // One question at a time per phone: a phone repeating the request while
         // the dialog is open must not stack a second dialog behind it.
         guard !confirming.contains(deviceId) else { return .failure(.controlKeyPending) }
+        // A rejected phone cannot put the dialog straight back up.
+        if let rejected = rejectedKeyAt[deviceId] {
+            guard now().timeIntervalSince(rejected) >= Self.controlKeyRetryCooldown else {
+                return .failure(.controlKeyNotConfirmed)
+            }
+            rejectedKeyAt.removeValue(forKey: deviceId)
+        }
         confirming.insert(deviceId)
+        // No remote input while the dialog is up: a phone in control must not
+        // be able to press "Register" itself.
+        await service.keyConfirmation(open: true)
         let fingerprint = ScreenShareControlKey.fingerprint(key)
         let confirmed = await confirmer.confirmControlKey(deviceId: deviceId, fingerprint: fingerprint)
+        await service.keyConfirmation(open: false)
         confirming.remove(deviceId)
-        guard confirmed else { return .failure(.controlKeyNotConfirmed) }
+        guard confirmed else {
+            rejectedKeyAt[deviceId] = now()
+            return .failure(.controlKeyNotConfirmed)
+        }
         // The grant may have been withdrawn, or another key stored, while the
         // dialog was open: the service checks and writes in one turn.
         let enrolment: ScreenShareService.ControlKeyEnrolment
