@@ -67,6 +67,7 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>같은 Wi-Fi의 휴대폰과 화면 공유를 연결하려면 로컬 네트워크 접근이 필요합니다.</string>
+<key>NSBonjourServices</key><array><string>_mightyclaude._tcp</string></array>
 </dict></plist>
 PLIST
 # The languages the app speaks, so AppKit draws its own menus (the app menu,
