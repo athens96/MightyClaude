@@ -163,9 +163,30 @@ final class WebRTCScreenSharePeer: NSObject, ScreenSharePeerConnection, @uncheck
         let wanted = codec.rawValue.uppercased()
         let ordered = usable.filter { $0.name.uppercased() == wanted } + usable.filter { $0.name.uppercased() != wanted }
         guard !ordered.isEmpty else { return }
-        // Swift sees only the deprecated spelling: `setCodecPreferences:error:`
-        // imports under the same name, so the compiler cannot reach it.
-        for layer in layers.values { layer.transceiver.setCodecPreferences(ordered) }
+        for layer in layers.values {
+            if let error = Self.setCodecPreferences(ordered, on: layer.transceiver) {
+                NSLog("screen-share codec preference refused: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    /// `setCodecPreferences:error:` called through its selector. Swift imports
+    /// it under the same name as the deprecated `setCodecPreferences:`, so the
+    /// compiler always picks the deprecated one, which drops a refusal on the
+    /// floor. Returns the refusal, or nil when the preference took.
+    private static func setCodecPreferences(_ codecs: [RTCRtpCodecCapability], on transceiver: RTCRtpTransceiver) -> NSError? {
+        typealias Setter = @convention(c) (
+            AnyObject, Selector, NSArray, AutoreleasingUnsafeMutablePointer<NSError?>?
+        ) -> Bool
+        let selector = NSSelectorFromString("setCodecPreferences:error:")
+        let object: NSObject = transceiver
+        guard object.responds(to: selector) else {
+            return NSError(domain: "dev.mightyclaude.screen-share", code: 1)
+        }
+        let setter = unsafeBitCast(object.method(for: selector), to: Setter.self)
+        var error: NSError?
+        let accepted = setter(object, selector, codecs as NSArray, &error)
+        return accepted ? nil : (error ?? NSError(domain: "dev.mightyclaude.screen-share", code: 2))
     }
 
     // MARK: Offer / answer
