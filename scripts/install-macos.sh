@@ -4,9 +4,12 @@
 # (Korean composition falls apart into jamo) and can leave Keychain and other
 # services confused until the app restarts.
 #
-# Every build is ad-hoc signed with a fresh signature and every copy of the
-# bundle (build output, backups) registers with LaunchServices under the same
-# bundle id, so after the swap this script unregisters the other copies and
+# Builds are signed with the stable "Mighty Claude Dev" self-signed identity
+# (run scripts/setup-codesign.sh once to create it). Using a stable identity
+# keeps TCC grants and Keychain "Always Allow" valid across installs. The first
+# install after migrating from ad-hoc signing resets those grants once.
+# Every copy of the bundle registers with LaunchServices under the same bundle
+# id, so after the swap this script unregisters the other copies and
 # re-registers the installed one, keeps the backup under a name that is not an
 # app bundle, and gives the old process a moment to disappear before relaunch.
 set -euo pipefail
