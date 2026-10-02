@@ -23,9 +23,10 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
     let targetToken: String?
     let targetFrame: CGRect?
     let alignTop: Bool
+    var alignBottom = false
     @Binding var selection: String?
     @Binding var panOffset: CGPoint
-    var onResize: (String, CGSize, Bool) -> Void = { _, _, _ in }
+    var onResize: (String, CGSize, ResizeEdges, MightyGraphLayout.ResizePhase) -> Void = { _, _, _, _ in }
     /// A layout pass left no card on screen without the camera having moved.
     var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
     /// A new newest request aims the camera by its own rule, not the stranded net's.
@@ -59,6 +60,7 @@ struct MightyGraphInteraction<Content: View>: NSViewRepresentable {
         view.targetToken = targetToken
         view.targetFrame = targetFrame
         view.alignTop = alignTop
+        view.alignBottom = alignBottom
         view.onSelect = { selection = $0 }
         view.onPan = { panOffset = $0 }
         view.onUserPan = onUserPan
@@ -129,13 +131,14 @@ final class MightyGraphInteractionProbe: NSView {
     var onSelect: (String?) -> Void = { _ in }
     var onPan: (CGPoint) -> Void = { _ in }
     var onUserPan: (CGPoint, CGPoint) -> Void = { _, _ in }
-    var onResize: (String, CGSize, Bool) -> Void = { _, _, _ in }
+    var onResize: (String, CGSize, ResizeEdges, MightyGraphLayout.ResizePhase) -> Void = { _, _, _, _ in }
     var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
     /// A new newest request aims the camera by its own rule, not the stranded net's.
     var newestRunID: String?
     var targetToken: String?
     var targetFrame: CGRect?
     var alignTop = false
+    var alignBottom = false
     /// Docked chrome placement; events inside its frame are never a pan or a
     /// block selection, and its corner handle is resized here like a block.
     var overlayLayout: MightyOverlayLayout?
@@ -173,7 +176,7 @@ final class MightyGraphInteractionProbe: NSView {
         var size: CGSize
         var changed = false
     }
-    private struct ResizeAnchor { let id: String; let point: CGPoint; let unit: CGPoint; let size: CGSize }
+    private struct ResizeAnchor { let id: String; let point: CGPoint; let unit: CGPoint }
     private var hoverEdges: ResizeEdges = []
     private var resizeDrag: ResizeDrag?
     private var finishingAnchor: ResizeAnchor?
@@ -241,7 +244,7 @@ final class MightyGraphInteractionProbe: NSView {
         gestureRoute = nil; gestureTarget = nil; discardedMomentum = false
     }
     func dispose() {
-        disposed = true; removeMonitoring(); onSelect = { _ in }; onPan = { _ in }; onUserPan = { _, _ in }; onResize = { _, _, _ in }; onStranded = { _ in }; layoutFrames = []; finishingAnchor = nil
+        disposed = true; removeMonitoring(); onSelect = { _ in }; onPan = { _ in }; onUserPan = { _, _ in }; onResize = { _, _, _, _ in }; onStranded = { _ in }; layoutFrames = []; finishingAnchor = nil
     }
     /// Layout may recenter a parent when its child's width changes. Keep the
     /// dragged card's original top-left viewport point pinned across that reflow.
@@ -249,7 +252,7 @@ final class MightyGraphInteractionProbe: NSView {
         strandedRetriesLeft = Self.strandedRetries
         notifyIfStranded(frames, incomingZoom: newZoom, incomingPan: incomingPan)
         layoutFrames = frames; zoom = newZoom; panOffset = incomingPan
-        let anchor = resizeDrag.map { ResizeAnchor(id: $0.id, point: $0.anchor, unit: $0.edges.pinnedUnit, size: $0.size) } ?? finishingAnchor
+        let anchor = resizeDrag.map { ResizeAnchor(id: $0.id, point: $0.anchor, unit: $0.edges.pinnedUnit) } ?? finishingAnchor
         guard let anchor else { return }
         guard let frame = frames.first(where: { $0.0 == anchor.id })?.1 else {
             cancelInteraction(); finishingAnchor = nil; return
@@ -272,8 +275,7 @@ final class MightyGraphInteractionProbe: NSView {
                 }
             }
         }
-        if resizeDrag == nil, adjusted == incomingPan,
-           abs(frame.width - anchor.size.width) < 0.5, abs(frame.height - anchor.size.height) < 0.5 { finishingAnchor = nil }
+        if MightyGraphCamera.resizePinSettled(dragging: resizeDrag != nil, pinnedCamera: adjusted, incomingCamera: incomingPan) { finishingAnchor = nil }
     }
     /// Only a settled pass is judged: a drag, a resize, a move the user just
     /// made and a camera target still waiting for admission all decide where
@@ -321,8 +323,8 @@ final class MightyGraphInteractionProbe: NSView {
     /// it the strip is thin: the block's own scroller and text sit there.
     var resizeBand: CGFloat { max(4, 6 * zoom) }
     static let resizeBandInside: CGFloat = 2
-    static let minimumBlockSize = CGSize(width: 300, height: 140)
-    static let maximumBlockSize = CGSize(width: 1400, height: 1200)
+    static let minimumBlockSize = CGSize(width: MightyGraphBlockSize.minimumWidth, height: MightyGraphBlockSize.minimumHeight)
+    static let maximumBlockSize = CGSize(width: MightyGraphBlockSize.maximumWidth, height: MightyGraphBlockSize.maximumHeight)
     /// The block and sides a press at `point` would resize: the bottom-right
     /// handle first, then a band along each border.
     func resizeTarget(at point: CGPoint) -> (id: String, frame: CGRect, edges: ResizeEdges)? {
@@ -365,7 +367,7 @@ final class MightyGraphInteractionProbe: NSView {
                                    zoom: drag.initialZoom, minimum: Self.minimumBlockSize, maximum: Self.maximumBlockSize)
         guard size != drag.size else { return }
         drag.size = size; drag.changed = true; resizeDrag = drag
-        onResize(drag.id, size, false)
+        onResize(drag.id, size, drag.edges, .live)
     }
     private func finishResize(cancelled: Bool) {
         guard let drag = resizeDrag else { return }
@@ -374,8 +376,8 @@ final class MightyGraphInteractionProbe: NSView {
         scheduleInitialPosition()
         guard drag.changed else { return }
         let size = cancelled ? drag.initialFrame.size : drag.size
-        finishingAnchor = ResizeAnchor(id: drag.id, point: drag.anchor, unit: drag.edges.pinnedUnit, size: size)
-        onResize(drag.id, size, true)
+        finishingAnchor = ResizeAnchor(id: drag.id, point: drag.anchor, unit: drag.edges.pinnedUnit)
+        onResize(drag.id, size, drag.edges, cancelled ? .cancelled : .finished)
     }
     private func beginOverlayResize(at point: CGPoint, frame: CGRect, onLeft: Bool) {
         finishingAnchor = nil
@@ -439,7 +441,9 @@ final class MightyGraphInteractionProbe: NSView {
         if !isResizing { finishingAnchor = nil }
         let previous = panOffset
         commitInteractionPosition(value)
-        if panOffset != previous { onUserPan(previous, panOffset) }
+        // Only the user's own movement reports: a click that merely admits a
+        // pending camera target moves the camera without being a pan.
+        if value != previous, panOffset != previous { onUserPan(previous, panOffset) }
     }
     /// An input event may arrive before the deferred initial camera admission.
     /// Commit even an unchanged position once, so the SwiftUI fallback stops
@@ -451,7 +455,7 @@ final class MightyGraphInteractionProbe: NSView {
         // the admission is rescheduled so the camera still arrives.
         guard admissibleViewport else { scheduleInitialPosition(); return }
         let pendingInitialPosition = targetToken != nil && targetToken != consumedTargetToken
-        let targetCamera = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: bounds.size, zoom: zoom, alignTop: alignTop) }
+        let targetCamera = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: bounds.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom) }
         guard let committed = MightyGraphCamera.admittedCamera(targetToken: targetToken, consumedToken: consumedTargetToken,
                                                                targetCamera: targetCamera, current: panOffset, requested: value) else {
             // A published target without a frame yet: leave its token pending
@@ -484,7 +488,9 @@ final class MightyGraphInteractionProbe: NSView {
             guard !self.disposed, !self.isResizing, self.window != nil, let token = self.targetToken, token != self.consumedTargetToken,
                   let frame = self.targetFrame, self.admissibleViewport else { return }
             self.consumedTargetToken = token
-            let initial = MightyGraphLayout.cameraOffset(for: frame, viewport: self.bounds.size, zoom: self.zoom, alignTop: self.alignTop)
+            // The target owns the camera now; a pin left by a drag must not pull it back.
+            self.finishingAnchor = nil
+            let initial = MightyGraphLayout.cameraOffset(for: frame, viewport: self.bounds.size, zoom: self.zoom, alignTop: self.alignTop, alignBottom: self.alignBottom)
             if initial == self.panOffset {
                 // The first SwiftUI render already used this offset. Commit it
                 // as camera state so later layout changes do not keep centering.

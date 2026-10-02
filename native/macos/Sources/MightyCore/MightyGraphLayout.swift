@@ -88,6 +88,51 @@ public struct MightyGraphLayout {
         CGPoint(x: (viewport.width - frame.width * zoom) / 2 - frame.minX * zoom,
                 y: (alignTop ? 16 : max(16, (viewport.height - frame.height * zoom) / 2)) - frame.minY * zoom)
     }
+    /// A newly finished result card: its bottom 16pt above the viewport's
+    /// bottom edge, right above the composer, or — taller than the viewport —
+    /// its top where `alignTop` puts it, so its beginning is what shows.
+    public static func revealOffset(for frame: CGRect, viewport: CGSize, zoom: CGFloat) -> CGPoint {
+        let top = cameraOffset(for: frame, viewport: viewport, zoom: zoom, alignTop: true)
+        return CGPoint(x: top.x, y: max(top.y, viewport.height - 16 - frame.maxY * zoom))
+    }
+    /// `alignBottom` (a revealed result) wins over `alignTop`.
+    public static func cameraOffset(for frame: CGRect, viewport: CGSize, zoom: CGFloat, alignTop: Bool, alignBottom: Bool) -> CGPoint {
+        alignBottom ? revealOffset(for: frame, viewport: viewport, zoom: zoom)
+            : cameraOffset(for: frame, viewport: viewport, zoom: zoom, alignTop: alignTop)
+    }
+
+    /// The newest result card is never shorter than a dragged block may be.
+    public static let minimumResultHeight = CGFloat(MightyGraphBlockSize.minimumHeight)
+    /// The newest result card's size. `cap` is the size the user last dragged
+    /// it to or, with none saved, the window fit: a remembered maximum, not a
+    /// fixed size. The card is as tall as its content (header included) up to
+    /// that cap, where its answer scrolls inside, and never shorter than
+    /// `minimumResultHeight`. Content not measured yet takes the cap. The
+    /// width stays the cap's: the answer wraps to whatever width it is given.
+    public static func resultSize(cap: CGSize, contentHeight: CGFloat?) -> CGSize {
+        guard let contentHeight, contentHeight.isFinite, contentHeight >= 0 else { return cap }
+        return CGSize(width: cap.width, height: min(cap.height, max(minimumResultHeight, ceil(contentHeight))))
+    }
+    /// The window fit: the newest result card's cap when no size is saved.
+    public static func resultFitSize(viewport: CGSize, filesPanelOpen: Bool) -> CGSize {
+        CGSize(width: max(500, viewport.width - 48 - (filesPanelOpen ? 336 : 0)), height: max(200, viewport.height - 48))
+    }
+    /// Where a block drag is: still moving, released, or abandoned (Escape,
+    /// the window losing key) with the block back at its starting size.
+    public enum ResizePhase: Equatable, Sendable { case live, finished, cancelled }
+    /// What a drag of the newest result card saves as its remembered maximum;
+    /// nil saves nothing. A cancelled drag saves nothing. A drag that moved a
+    /// top or bottom side saves the size it was released at — it started from
+    /// the card as shown. A drag of only the left or right side changes the
+    /// width alone and keeps the height of the maximum already in force (the
+    /// saved one, else the window fit), never the shorter fitted height shown.
+    public static func resultDragCap(released: CGSize, edges: ResizeEdges, cancelled: Bool,
+                                     saved: MightyGraphBlockSize?, viewport: CGSize?) -> MightyGraphBlockSize? {
+        guard !cancelled else { return nil }
+        let height: CGFloat = edges.vertical ? released.height
+            : saved.map { CGFloat($0.height) } ?? viewport.map { resultFitSize(viewport: $0, filesPanelOpen: false).height } ?? released.height
+        return MightyGraphBlockSize(width: released.width, height: height).normalized
+    }
 
     public func route(_ edge: Edge) -> [CGPoint] {
         guard let source = nodes.first(where: { $0.id == edge.source })?.frame,
@@ -134,7 +179,9 @@ public struct MightyGraphLayout {
     /// place (the first run the pane retained, or the one loaded history first
     /// attached above); runs before it, loaded from the session record, stack
     /// upward from there. `history` adds the block at the top that loads more.
-    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false) -> Self {
+    /// `resultContentHeight` is the newest result card's measured content
+    /// height (`resultSize(cap:contentHeight:)`); nil keeps it at its cap.
+    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, resultContentHeight: CGFloat? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false) -> Self {
         // The latest result card is the result of the last finished run in the list.
         let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
         let latestResultID = Self.latestResultID(runs: runs)
@@ -151,16 +198,15 @@ public struct MightyGraphLayout {
         // Auto-fit size for the latest result card (no .normalized clamp applied).
         let autoFitResultSize: CGSize? = {
             guard let vp = viewport, latestResultID != nil else { return nil }
-            let filesOffset: CGFloat = filesPanelOpenForLatest ? 336.0 : 0.0
-            return CGSize(width: max(500, vp.width - 48 - filesOffset),
-                          height: max(200, vp.height - 48))
+            return resultFitSize(viewport: vp, filesPanelOpen: filesPanelOpenForLatest)
         }()
 
         func size(_ id: String, width: CGFloat, height: CGFloat) -> CGSize {
-            // Latest result card: use shared or auto-fit size when viewport is active.
+            // Latest result card: the shared or auto-fit size, when a viewport
+            // is active, is the most it takes; it shrinks to its content.
             if let latestID = latestResultID, id == latestID, viewport != nil {
-                if let shared = sharedResultSize { return CGSize(width: shared.width, height: shared.height) }
-                if let autoFit = autoFitResultSize { return autoFit }
+                if let shared = sharedResultSize { return resultSize(cap: CGSize(width: shared.width, height: shared.height), contentHeight: resultContentHeight) }
+                if let autoFit = autoFitResultSize { return resultSize(cap: autoFit, contentHeight: resultContentHeight) }
             }
             guard let custom = blockSizes[id]?.normalized else { return CGSize(width: width, height: height) }
             return CGSize(width: custom.width, height: custom.height)

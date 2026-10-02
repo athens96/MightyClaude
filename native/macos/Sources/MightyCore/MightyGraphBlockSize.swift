@@ -6,9 +6,15 @@ public struct MightyGraphBlockSize: Codable, Sendable, Equatable {
     public var height: Double
     public init(width: Double, height: Double) { self.width = width; self.height = height }
 
+    /// The smallest and largest size a block may be dragged to.
+    public static let minimumWidth: Double = 300
+    public static let minimumHeight: Double = 140
+    public static let maximumWidth: Double = 1_400
+    public static let maximumHeight: Double = 1_200
+
     public var normalized: Self? {
         guard width.isFinite, height.isFinite else { return nil }
-        return Self(width: min(1_400, max(300, width)), height: min(1_200, max(140, height)))
+        return Self(width: min(Self.maximumWidth, max(Self.minimumWidth, width)), height: min(Self.maximumHeight, max(Self.minimumHeight, height)))
     }
 
     /// Length-prefixed run identity keeps run/suffix boundaries unambiguous.

@@ -327,7 +327,7 @@ enum MightyGraphInteractionDiagnostics {
                 }
             }
             probe.onPan = { point in currentPan = point; if let frame = probe.frames.first?.1 { inner.frame = frame.insetBy(dx: 8 * zoom, dy: 24 * zoom) } }
-            probe.onResize = { _, size, finished in calls.append((size, finished)); currentSize = size; render() }
+            probe.onResize = { _, size, _, phase in calls.append((size, phase != .live)); currentSize = size; render() }
             render()
             window.contentView = container
             window.makeKeyAndOrderFront(nil)
@@ -410,6 +410,32 @@ enum MightyGraphInteractionDiagnostics {
             try post(.leftMouseDragged, at: smallEnd)
             try post(.leftMouseUp, at: smallEnd)
             try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize == CGSize(width: 300, height: 140) }
+
+            // A released size the layout does not keep (the newest result
+            // shrinks to its content) must not leave the corner pinned: a
+            // camera target published afterwards arrives and stays.
+            currentSize = initialSize; currentPan = .zero; render()
+            probe.onResize = { _, size, _, phase in
+                calls.append((size, phase != .live))
+                currentSize = phase == .live ? size : CGSize(width: size.width, height: 160)
+                render()
+            }
+            let shrinkStart = try await startDrag()
+            let shrinkEnd = CGPoint(x: shrinkStart.x + 40, y: shrinkStart.y + 120)
+            try post(.leftMouseDragged, at: shrinkEnd)
+            try post(.leftMouseUp, at: shrinkEnd)
+            try await store.waitForSmoke(timeout: 3) { !probe.isResizing && currentSize.height == 160 }
+            try await Task.sleep(for: .milliseconds(40))
+            render()
+            let revealFrame = CGRect(x: 120, y: 1_400, width: 360, height: 240)
+            let revealCamera = MightyGraphLayout.cameraOffset(for: revealFrame, viewport: probe.bounds.size, zoom: zoom, alignTop: false, alignBottom: true)
+            probe.targetFrame = revealFrame; probe.alignBottom = true; probe.targetToken = "after-drag-\(zoom)"
+            probe.scheduleInitialPosition()
+            try await store.waitForSmoke(timeout: 3) { probe.panOffset == revealCamera }
+            render()
+            try require(probe.panOffset == revealCamera && currentPan == revealCamera, "끌기를 놓은 뒤 남은 고정점이 카메라를 되돌렸습니다.")
+            probe.onResize = { _, size, _, phase in calls.append((size, phase != .live)); currentSize = size; render() }
+            probe.targetToken = nil; probe.targetFrame = nil; probe.alignBottom = false
 
             currentSize = initialSize; currentPan = .zero; render()
             scroll(inner, to: NSPoint(x: 0, y: 200))

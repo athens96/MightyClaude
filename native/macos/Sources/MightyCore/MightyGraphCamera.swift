@@ -116,6 +116,86 @@ public enum MightyGraphCamera {
         return .reaim(nodeID: fittedResultID, alignTop: true)
     }
 
+    /// When the camera puts a newly finished request's result card right above
+    /// the composer (`MightyGraphLayout.revealOffset`). It happens once, for a
+    /// request of the pane's own that finishes while the diagram watches —
+    /// never for runs a pane opens or hydrates with, nor for ones read back
+    /// from the session record, nor when the newest result moves back to an
+    /// older request. A card whose answer was not measured yet is held without
+    /// a camera move, so it lands once at its real height (or at its cap if
+    /// the measurement never comes). While held, the card settling to a new
+    /// height or the canvas changing size places it again. The user's own
+    /// scroll, a drag, a zoom, a draft being typed, a new request or any other
+    /// re-aim ends the hold.
+    public struct ResultReveal: Equatable, Sendable {
+        /// A request as the reveal rule sees it.
+        public struct RunProgress: Equatable, Sendable {
+            public var id: String
+            public var finished: Bool
+            public init(id: String, finished: Bool) { self.id = id; self.finished = finished }
+        }
+        /// The card the camera is holding above the composer.
+        public private(set) var holdingID: String?
+        /// The held card was not placed yet: its measurement is awaited.
+        public private(set) var awaitingMeasure = false
+        public init() {}
+
+        /// The run whose result has just appeared: the newest finished run,
+        /// which the previous observation saw unfinished. A run seen for the
+        /// first time already finished (a launch, a hydration, history) and a
+        /// newest result moving back to an earlier run never qualify.
+        public static func finishedRunID(previous: [RunProgress], current: [RunProgress]) -> String? {
+            guard let latest = current.last(where: \.finished),
+                  let before = previous.first(where: { $0.id == latest.id }), !before.finished else { return nil }
+            return latest.id
+        }
+
+        /// The pane's own runs changed. `resultID` maps a run to its result
+        /// card; `measured` says whether that card's height is known already
+        /// (or needs no measuring). Returns the card to place now, if any.
+        public mutating func runsChanged(previous: [RunProgress], current: [RunProgress],
+                                         resultID: (String) -> String, measured: (String) -> Bool) -> String? {
+            guard let run = Self.finishedRunID(previous: previous, current: current) else { return nil }
+            let id = resultID(run)
+            holdingID = id
+            awaitingMeasure = !measured(id)
+            return awaitingMeasure ? nil : id
+        }
+        /// A card's measured content height changed; returns it when it is
+        /// the one held, since its new height moved its bottom.
+        public mutating func contentMeasured(_ id: String) -> String? {
+            guard id == holdingID else { return nil }
+            awaitingMeasure = false
+            return id
+        }
+        /// The measurement did not come (the card was never drawn): place it
+        /// at its cap, which draws it, and its measurement places it again.
+        public mutating func measureTimedOut(_ id: String) -> String? {
+            guard id == holdingID, awaitingMeasure else { return nil }
+            awaitingMeasure = false
+            return id
+        }
+        /// The canvas changed size; returns the held card to place again,
+        /// unless it is still waiting for its first placement.
+        public func viewportChanged() -> String? { awaitingMeasure ? nil : holdingID }
+        /// The composer started holding a draft: the draft's block is what
+        /// the camera keeps from now on.
+        public mutating func draftChanged(wasEmpty: Bool, isEmpty: Bool) {
+            if wasEmpty, !isEmpty { cancel() }
+        }
+        /// The user moved or zoomed the camera, or something else re-aimed it.
+        public mutating func cancel() { holdingID = nil; awaitingMeasure = false }
+    }
+
+    /// A finished block drag keeps the dragged corner pinned until the first
+    /// pass after release whose camera already carries that pin. The size is
+    /// not compared: the laid-out card may differ from the released size (the
+    /// newest result shrinks to its content), and a pin kept for a size that
+    /// never comes would hold the camera on that card for good.
+    public static func resizePinSettled(dragging: Bool, pinnedCamera: CGPoint, incomingCamera: CGPoint) -> Bool {
+        !dragging && pinnedCamera == incomingCamera
+    }
+
     /// The run-id rule above names one cause. This one names none: after a
     /// layout pass that moved cards under a camera nobody touched, did every
     /// card leave the viewport? A user who deliberately panned into empty
