@@ -6,6 +6,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { RTCVideoViewProps } from 'react-native-webrtc/lib/typescript/RTCView';
 import { BetaBadge, Button, Card, Chip, EmptyState, ErrorBanner } from '@/components/ui';
 import { useCapabilities } from '@/hooks/use-capabilities';
+import { useScreenMeasurement } from '@/hooks/use-screen-measurement';
 import { useScreenShare } from '@/hooks/use-screen-share';
 import { t } from '@/lib/i18n';
 import { screenShareRefusal, screenShareVisibility } from '@/lib/screen-share/availability';
@@ -28,6 +29,8 @@ import {
   controlFailureText,
   controlKeyEnrolFailureText,
   controlKeyStatusText,
+  measurementLines,
+  measurementMarkerNote,
   screenHiddenText,
   screenHoldDetail,
   screenHoldTitle,
@@ -96,6 +99,7 @@ export default function RemoteScreenScreen() {
   const [size, setSize] = useState<Size>({ width: 1, height: 1 });
   const [videoSize, setVideoSize] = useState<Size | undefined>(undefined);
   const [draft, setDraft] = useState('');
+  const [measuring, setMeasuring] = useState(false);
 
   // Landscape belongs to this screen alone; every other screen stays portrait.
   useEffect(() => {
@@ -111,6 +115,15 @@ export default function RemoteScreenScreen() {
   const live = session?.phase === 'live';
   const controlling = live && session?.mode === 'control';
   const zoom = snapshot?.zoom;
+
+  const measure = useScreenMeasurement(controller, {
+    enabled: measuring,
+    live: live === true,
+    exportTitle: t('phone.screenShare.measure.exportTitle'),
+  });
+  // The tap gesture is built once per session; it reaches the latest probe through here.
+  const markTap = useRef(measure.markTap);
+  markTap.current = measure.markTap;
 
   // A new stream starts with no known frame size; the view reports it with the first frame.
   useEffect(() => setVideoSize(undefined), [streamUrl]);
@@ -164,7 +177,7 @@ export default function RemoteScreenScreen() {
       .runOnJS(true)
       .onEnd((event) => {
         const point = toDisplay(event.x, event.y);
-        if (point) controller.tap(point);
+        if (point && controller.tap(point)) markTap.current();
       });
     const longPress = Gesture.LongPress()
       .runOnJS(true)
@@ -352,6 +365,15 @@ export default function RemoteScreenScreen() {
         ) : (
           picture
         )}
+        {measuring && live ? (
+          <View pointerEvents="none" style={styles.measure}>
+            {measurementLines(measure.summary).map((line) => (
+              <Text key={line} style={styles.measureText}>
+                {line}
+              </Text>
+            ))}
+          </View>
+        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={styles.panel} keyboardShouldPersistTaps="handled">
@@ -361,6 +383,13 @@ export default function RemoteScreenScreen() {
           {snapshot?.candidateType ? (
             <Chip label={candidatePathText(snapshot.candidateType)} />
           ) : null}
+          {live ? (
+            <Chip
+              label={t('phone.screenShare.measure.toggle')}
+              selected={measuring}
+              onPress={() => setMeasuring((on) => !on)}
+            />
+          ) : null}
           {live && zoomed ? (
             <Chip label={t('phone.screenShare.zoom.reset')} onPress={() => controller?.resetZoom()} />
           ) : null}
@@ -368,6 +397,17 @@ export default function RemoteScreenScreen() {
         </View>
 
         <Text style={styles.status}>{statusText}</Text>
+
+        {measuring ? (
+          <View style={styles.card}>
+            <Text style={styles.detail}>{measurementMarkerNote()}</Text>
+            <Button
+              label={t('phone.screenShare.measure.export')}
+              compact
+              onPress={() => void measure.exportReport()}
+            />
+          </View>
+        ) : null}
 
         {session?.quality ? (
           <Text style={styles.detail}>
@@ -565,6 +605,15 @@ const makeStyles = (palette: Palette) =>
     detail: { color: palette.textMuted, fontSize: 12 },
     warning: { color: palette.danger, fontSize: 12 },
     fingerprint: { color: palette.text, fontFamily: 'monospace', fontSize: 13 },
+    measure: {
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      borderRadius: 6,
+      left: spacing.xs,
+      padding: spacing.xs,
+      position: 'absolute',
+      top: spacing.xs,
+    },
+    measureText: { color: '#fff', fontFamily: 'monospace', fontSize: 11 },
     card: { gap: spacing.xs },
     cardTitle: { color: palette.text, fontWeight: '600' },
     input: {
