@@ -226,15 +226,28 @@ function mainDisplayId(displays: readonly ScreenDisplay[]): number | undefined {
   return (main ?? displays[0])?.displayId;
 }
 
-/** Settles with the request, or rejects as soon as the signal aborts. */
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+/**
+ * Settles with the request, or rejects as soon as the signal aborts. The abort listener
+ * goes once the request settles, so a long-lived signal does not collect one per call.
+ */
+export function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     if (signal.aborted) {
       reject(new Error('aborted'));
       return;
     }
-    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
-    work.then(resolve, reject);
+    const onAbort = () => reject(new Error('aborted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
   });
 }
 
