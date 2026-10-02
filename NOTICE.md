@@ -56,6 +56,14 @@ Mac 앱은 미리 컴파일된 WebRTC XCFramework를 포함합니다. 이 바이
 - 프로젝트: expo/config-plugins — https://github.com/expo/config-plugins (`packages/react-native-webrtc`)
 - 라이선스: MIT License (패키지 메타데이터에 선언되어 있고, 상위 저장소에는 별도 전문 파일이 없습니다)
 
+## Zstandard (zstd) — BSD 3-Clause
+
+Mac 화면 공유(BETA)의 클립보드는 휴대폰과 같은 zstd 형식으로 압축합니다. Mac 앱은 zstd 라이브러리를 소스로 빌드해 포함합니다(Swift 패키지 `facebook/zstd` 1.5.7).
+
+- 프로젝트: Zstandard — https://github.com/facebook/zstd
+- 저작권: Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+- 라이선스: BSD 3-Clause License(상위 프로젝트는 BSD와 GPLv2 중 선택하게 하며, 이 앱은 BSD를 따릅니다) — 전문은 `licenses/zstd-BSD-3-Clause.txt`, 앱 번들에는 `native/licenses/zstd-LICENSE`가 함께 들어갑니다
+
 ## 그 밖의 구성 요소
 
 - macOS 앱과 펫 리소스의 타사 라이선스: `native/licenses/`, `assets/`
@@ -121,6 +129,14 @@ Used in place of stasel/WebRTC — with LK-prefixed symbols — if symbols clash
 
 - Project: expo/config-plugins — https://github.com/expo/config-plugins (`packages/react-native-webrtc`)
 - License: MIT License (declared in the package metadata; the upstream repository publishes no separate licence text file)
+
+## Zstandard (zstd) — BSD 3-Clause
+
+The Mac screen-share (BETA) clipboard is compressed with zstd, the same format the phone uses. The Mac app builds the zstd library from source and ships it (Swift package `facebook/zstd` 1.5.7).
+
+- Project: Zstandard — https://github.com/facebook/zstd
+- Copyright: Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+- License: BSD 3-Clause License (upstream offers BSD or GPLv2; this app follows BSD) — full text in `licenses/zstd-BSD-3-Clause.txt`; the app bundle carries `native/licenses/zstd-LICENSE`
 
 ## Provider marks
 
