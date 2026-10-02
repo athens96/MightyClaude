@@ -55,3 +55,48 @@ enum ProviderIconImage {
         }
     }
 }
+
+/// A provider's mark set inline before its name on the main area's cards (the
+/// dashboard rows, the diagram's request blocks and the timeline headers).
+/// Rasterised once per provider and size and reused, so a diagram with many
+/// blocks never redraws the outline. Decorative: the name beside it already says
+/// which agent it is, so VoiceOver skips it.
+@MainActor
+enum ProviderBadgeIcon {
+    private static let scale: CGFloat = 2
+    private static let cache: NSCache<NSString, CGImage> = NSCache()
+
+    /// The mark sized to a line of `font` (11–15pt) and centred on its capitals, in
+    /// the brand colours; nil for a provider the app has no mark of its own for.
+    static func mark(provider: String, font: NSFont) -> Text? {
+        guard let provider = ProviderMark.markedProvider(provider) else { return nil }
+        let side = min(15, max(11, font.pointSize.rounded()))
+        guard let image = image(provider: provider, side: side) else { return nil }
+        return Text(Image(decorative: image, scale: scale)).baselineOffset((font.capHeight - side) / 2)
+    }
+
+    /// `text` with the mark before its trailing provider name: `요청 3 · [mark] Claude`.
+    /// Text that does not end with the name, or an unknown provider, stays as it is.
+    static func labelled(_ text: String, provider: String, font: NSFont) -> Text {
+        guard let parts = ProviderMark.splitTrailingLabel(text, provider: provider),
+              let mark = mark(provider: provider, font: font) else { return Text(verbatim: text) }
+        return Text(verbatim: parts.head) + mark + Text(verbatim: " " + parts.label)
+    }
+
+    private static func image(provider: String, side: CGFloat) -> CGImage? {
+        let key = "\(provider)@\(side)" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+        let pixels = Int((side * scale).rounded(.up))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let mark = ProviderIconImage.image(provider: provider, pointSize: side / 1.2) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        mark.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let image = context.makeImage() else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}

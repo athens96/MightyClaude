@@ -19,6 +19,10 @@ extension Palette {
     static func heading(_ size: CGFloat) -> Font {
         NSFont(name: "AvenirNext-Bold", size: size) != nil ? .custom("AvenirNext-Bold", size: size) : .system(size: size, weight: .bold)
     }
+    /// The AppKit font `heading` draws with, for measuring it.
+    static func headingNSFont(_ size: CGFloat) -> NSFont {
+        NSFont(name: "AvenirNext-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
+    }
 }
 
 /// Words the dashboard and the sidebar rows share.
@@ -303,7 +307,7 @@ struct DashboardRow: View {
     private func meta(at date: Date) -> some View {
         HStack(spacing: 4) {
             if card.isAgent {
-                Text(ProviderOptions.label(card.provider))
+                ProviderBadgeIcon.labelled(ProviderOptions.label(card.provider), provider: card.provider, font: .systemFont(ofSize: 12))
                 if ProviderOptions.isBeta(card.provider) { BetaBadge() }
                 let rest = ([card.model] + WorkDashboard.sidebarMeta(card, now: date).map { part -> String? in
                     switch part {

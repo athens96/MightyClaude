@@ -19,6 +19,23 @@ public enum ProviderMark {
         }
     }
 
+    /// The provider whose mark may stand beside its name, or nil for any other
+    /// value: `outline` falls back to Claude's mark, which must not label a pane
+    /// that is not a known agent's.
+    public static func markedProvider(_ provider: String) -> String? {
+        ProviderOptions.ids.contains(provider) ? provider : nil
+    }
+
+    /// `요청 3 · Claude` → (`요청 3 · `, `Claude`): the text before the provider's
+    /// trailing name and the name, where the mark goes between them. Nil when the
+    /// provider has no mark or the text does not end with its name.
+    public static func splitTrailingLabel(_ text: String, provider: String) -> (head: String, label: String)? {
+        guard let provider = markedProvider(provider) else { return nil }
+        let label = ProviderOptions.label(provider)
+        guard text.hasSuffix(label) else { return nil }
+        return (String(text.dropLast(label.count)), label)
+    }
+
     public static func outline(provider: String) -> String {
         switch provider { case "codex": return codex; case "gemini": return gemini; default: return claude }
     }
