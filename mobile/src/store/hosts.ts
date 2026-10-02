@@ -25,6 +25,8 @@ import {
 } from '@/lib/host-secrets';
 import { createKeyedMutex } from '@/lib/keyed-mutex';
 import { describeRelayTarget, type PairingPayload } from '@/lib/pairing';
+import { forgetControlKey } from '@/lib/screen-share/control-key';
+import { nativeControlKey } from '@/lib/screen-share/native-control-key';
 
 const INDEX_KEY = 'mightyclaude.hosts.v2.index';
 
@@ -321,6 +323,8 @@ export const useHostsStore = create<HostsState>((set, get) => ({
     const hosts = get().hosts.filter((entry) => entry.id !== id);
     closeHostClient(id);
     await forgetHost(SecureStore, id);
+    // The screen-share control key belongs to this pairing and goes with it.
+    await forgetControlKey({ hostId: id, native: nativeControlKey() });
     await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(hosts));
     set((prev) => {
       const keys = { ...prev.keys };

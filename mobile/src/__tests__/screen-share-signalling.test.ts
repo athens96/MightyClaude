@@ -2,6 +2,7 @@ import { SCREEN_SIGNAL_MAX_BYTES } from '@/api/types';
 import {
   ScreenSignalTooLarge,
   answerSignal,
+  backgroundSignal,
   encodeScreenSignal,
   endOfCandidatesSignal,
   iceSignal,
@@ -231,5 +232,19 @@ describe('encodeScreenSignal', () => {
     for (const frame of frames) {
       expect(parseScreenSignal(JSON.parse(encodeScreenSignal(frame)))).toEqual(frame);
     }
+  });
+});
+
+describe('screen-background', () => {
+  it('reads and writes the app’s foreground state for one session', () => {
+    expect(parseScreenSignal({ type: 'screen-background', sessionId: 's1', background: true })).toEqual({
+      type: 'screen-background',
+      sessionId: 's1',
+      background: true,
+    });
+    expect(parseScreenSignal({ type: 'screen-background', sessionId: 's1' })).toBeUndefined();
+    expect(parseScreenSignal({ type: 'screen-background', background: false })).toBeUndefined();
+    expect(backgroundSignal('s1', false)).toEqual({ type: 'screen-background', sessionId: 's1', background: false });
+    expect(screenSignalFits(backgroundSignal('s1', true))).toBe(true);
   });
 });

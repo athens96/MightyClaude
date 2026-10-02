@@ -1,168 +1,174 @@
+import { createHash, createSign, generateKeyPairSync } from 'node:crypto';
 import { toBase64, utf8Encode } from '@/api/relay/crypto';
 import {
-  controlKeyStorageKey,
-  enrollControlKey,
+  controlKeyAlias,
+  controlKeyFailureFor,
+  controlKeyFingerprint,
+  controlKeyStatus,
+  createControlKey,
   forgetControlKey,
-  hasControlKey,
+  mayEnrolControlKey,
+  readControlPublicKey,
   signControlChallenge,
   verifyControlSignature,
-  type SecureKeyStore,
-  type SecureKeyStoreOptions,
+  type ControlKeyContext,
 } from '@/lib/screen-share/control-key';
+import { fakeControlKey } from './support/fake-control-key';
 
 /**
- * Starting control needs the phone's owner every session. The private key is sealed behind
- * a biometric prompt — reading it is what raises the fingerprint sheet — and the **Mac**
- * verifies the signature. A phone that merely checked a fingerprint locally would get
- * nowhere: without a signature the Mac answers `control-signature`.
+ * Starting control needs the phone's owner every session. The private key lives in the
+ * Android Keystore and never reaches JavaScript; the **Mac** verifies the signature. A
+ * phone that merely checked a fingerprint locally would get nowhere: without a signature
+ * the Mac answers `control-signature`.
  */
 
-interface Recorded {
-  key: string;
-  options?: SecureKeyStoreOptions;
-}
-
-/** Stands in for `expo-secure-store`, and records how it was asked. */
-function fakeStore(options: { denyRead?: boolean } = {}) {
-  const items = new Map<string, string>();
-  const reads: Recorded[] = [];
-  const writes: Recorded[] = [];
-  const store: SecureKeyStore = {
-    async getItemAsync(key, opts) {
-      reads.push({ key, ...(opts === undefined ? {} : { options: opts }) });
-      // A dismissed fingerprint prompt is a rejected read, which is what the OS does.
-      if (options.denyRead) throw new Error('user cancelled');
-      return items.get(key) ?? null;
-    },
-    async setItemAsync(key, value, opts) {
-      writes.push({ key, ...(opts === undefined ? {} : { options: opts }) });
-      items.set(key, value);
-    },
-    async deleteItemAsync(key) {
-      items.delete(key);
-    },
-  };
-  return { store, items, reads, writes };
-}
-
 const CHALLENGE = toBase64(utf8Encode('screen-control-challenge:s1:1760000000'));
+const PROMPT = { title: '본인 확인', cancel: '취소' };
 
-describe('enrolling the control key', () => {
-  it('seals it behind a biometric prompt, under a key of this host’s own', async () => {
-    const fake = fakeStore();
-    const context = { hostId: 'h1', store: fake.store, prompt: '본인 확인' };
-    const enrolment = await enrollControlKey(context);
+function context(native = fakeControlKey(), hostId = 'h1'): ControlKeyContext {
+  return { hostId, native, prompt: PROMPT };
+}
 
-    expect(fake.writes).toHaveLength(1);
-    expect(fake.writes[0]?.key).toBe(controlKeyStorageKey('h1'));
-    expect(fake.writes[0]?.options?.requireAuthentication).toBe(true);
-    expect(fake.writes[0]?.options?.authenticationPrompt).toBe('본인 확인');
-    // An uncompressed P-256 point: 65 bytes, which is what the Mac stores.
-    expect(enrolment.publicKeyB64).toMatch(/^[A-Za-z0-9+/]+=*$/);
-    expect(Buffer.from(enrolment.publicKeyB64, 'base64')).toHaveLength(65);
+/** The Mac's fingerprint, computed independently of the code under test. */
+function macFingerprint(publicKeyB64: string): string {
+  const hex = createHash('sha256')
+    .update(Buffer.from(publicKeyB64, 'base64'))
+    .digest('hex')
+    .slice(0, 16)
+    .toUpperCase();
+  return (hex.match(/.{4}/g) ?? []).join('-');
+}
+
+describe('the control key never leaves the Keystore', () => {
+  it('hands JavaScript only a 65-byte X9.62 public key, under one alias per host', async () => {
+    const native = fakeControlKey();
+    const enrolment = await createControlKey(context(native));
+    const point = Buffer.from(enrolment.publicKeyB64, 'base64');
+    expect(point).toHaveLength(65);
+    expect(point[0]).toBe(0x04);
+    expect(native.generated).toEqual([controlKeyAlias('h1')]);
+    expect(await readControlPublicKey(context(native))).toBe(enrolment.publicKeyB64);
   });
 
   it('keeps one key per host, so unpairing one leaves the others alone', async () => {
-    const fake = fakeStore();
-    await enrollControlKey({ hostId: 'h1', store: fake.store, prompt: 'p' });
-    await enrollControlKey({ hostId: 'h2', store: fake.store, prompt: 'p' });
-    expect([...fake.items.keys()].sort()).toEqual([
-      controlKeyStorageKey('h1'),
-      controlKeyStorageKey('h2'),
-    ]);
+    const native = fakeControlKey();
+    await createControlKey(context(native, 'h1'));
+    await createControlKey(context(native, 'h2'));
+    await forgetControlKey(context(native, 'h1'));
+    expect(await readControlPublicKey(context(native, 'h1'))).toBeUndefined();
+    expect(await readControlPublicKey(context(native, 'h2'))).toBeDefined();
   });
 
-  it('knows whether this host has a key yet', async () => {
-    const fake = fakeStore();
-    const context = { hostId: 'h1', store: fake.store, prompt: 'p' };
-    expect(await hasControlKey(context)).toBe(false);
-    await enrollControlKey(context);
-    expect(await hasControlKey(context)).toBe(true);
-    await forgetControlKey(context);
-    expect(await hasControlKey(context)).toBe(false);
+  it('reading the public key raises no prompt', async () => {
+    const native = fakeControlKey();
+    await createControlKey(context(native));
+    await readControlPublicKey(context(native));
+    expect(native.prompts).toEqual([]);
   });
 });
 
-describe('signing a control challenge', () => {
-  it('produces a signature the Mac’s stored public key verifies', async () => {
-    const fake = fakeStore();
-    const context = { hostId: 'h1', store: fake.store, prompt: 'p' };
-    const enrolment = await enrollControlKey(context);
-    const signature = await signControlChallenge(context, CHALLENGE);
+describe('the fingerprint the Mac shows its user', () => {
+  it('is the first 8 bytes of SHA-256 over the public key, in four groups of four', async () => {
+    const { publicKeyB64 } = await createControlKey(context());
+    const fingerprint = controlKeyFingerprint(publicKeyB64);
+    expect(fingerprint).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    expect(fingerprint).toBe(macFingerprint(publicKeyB64));
+  });
 
+  it('refuses anything that is not an uncompressed P-256 point', () => {
+    expect(controlKeyFingerprint(toBase64(new Uint8Array(33).fill(2)))).toBeUndefined();
+    expect(controlKeyFingerprint('not base64 at all')).toBeUndefined();
+  });
+});
+
+describe('where the key stands, without a prompt', () => {
+  const base = { supported: true, grantIsControl: true };
+
+  it('is ready only when both sides hold the same key', () => {
+    expect(controlKeyStatus({ ...base, phoneFingerprint: 'AAAA', hostFingerprint: 'aaaa' })).toBe('ready');
+    expect(controlKeyStatus({ ...base, phoneFingerprint: 'AAAA', hostFingerprint: 'BBBB' })).toBe('mismatch');
+  });
+
+  it('tells the missing cases apart', () => {
+    expect(controlKeyStatus({ ...base, phoneFingerprint: undefined, hostFingerprint: undefined })).toBe('missing');
+    expect(controlKeyStatus({ ...base, phoneFingerprint: 'AAAA', hostFingerprint: undefined })).toBe('host-missing');
+    expect(controlKeyStatus({ ...base, phoneFingerprint: undefined, hostFingerprint: 'AAAA' })).toBe('phone-missing');
+  });
+
+  it('needs no key without the control grant, and has none where there is no Keystore', () => {
+    expect(controlKeyStatus({ supported: true, grantIsControl: false, phoneFingerprint: 'A', hostFingerprint: 'A' })).toBe('not-needed');
+    expect(controlKeyStatus({ supported: false, grantIsControl: true, phoneFingerprint: undefined, hostFingerprint: undefined })).toBe('unsupported');
+  });
+
+  it('offers enrolment only when the Mac has no key, or another one', () => {
+    expect(mayEnrolControlKey('missing')).toBe(true);
+    expect(mayEnrolControlKey('host-missing')).toBe(true);
+    expect(mayEnrolControlKey('phone-missing')).toBe(true);
+    expect(mayEnrolControlKey('mismatch')).toBe(true);
+    expect(mayEnrolControlKey('ready')).toBe(false);
+    expect(mayEnrolControlKey('not-needed')).toBe(false);
+    expect(mayEnrolControlKey('unsupported')).toBe(false);
+  });
+});
+
+describe('signing the Mac’s challenge', () => {
+  it('produces the DER ECDSA signature over SHA-256(challenge) the Mac verifies', async () => {
+    const native = fakeControlKey();
+    const { publicKeyB64 } = await createControlKey(context(native));
+    const signature = await signControlChallenge(context(native), CHALLENGE);
     expect(signature.ok).toBe(true);
     if (!signature.ok) return;
-    expect(verifyControlSignature(enrolment.publicKeyB64, CHALLENGE, signature.signatureB64)).toBe(
-      true,
-    );
-    // DER, as the contract says, not a bare 64-byte pair.
-    expect(Buffer.from(signature.signatureB64, 'base64')[0]).toBe(0x30);
+    expect(verifyControlSignature(publicKeyB64, CHALLENGE, signature.signatureB64)).toBe(true);
+    expect(native.prompts).toEqual([PROMPT]);
   });
 
-  it('raises the biometric prompt on every signature, not once per install', async () => {
-    const fake = fakeStore();
-    const context = { hostId: 'h1', store: fake.store, prompt: '조작 확인' };
-    await enrollControlKey(context);
-    fake.reads.length = 0;
-    await signControlChallenge(context, CHALLENGE);
-    await signControlChallenge(context, CHALLENGE);
-    expect(fake.reads).toHaveLength(2);
-    for (const read of fake.reads) {
-      expect(read.options?.requireAuthentication).toBe(true);
-      expect(read.options?.authenticationPrompt).toBe('조작 확인');
-    }
+  it('accepts a signature made the way Android makes it (SHA256withECDSA)', () => {
+    // An independent signer: Node's OpenSSL, the same algorithm the Keystore runs.
+    const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const jwk = publicKey.export({ format: 'jwk' });
+    const point = Buffer.concat([
+      Buffer.from([0x04]),
+      Buffer.from(jwk.x ?? '', 'base64url'),
+      Buffer.from(jwk.y ?? '', 'base64url'),
+    ]);
+    const signer = createSign('SHA256');
+    signer.update(Buffer.from(CHALLENGE, 'base64'));
+    const der = signer.sign(privateKey);
+    expect(verifyControlSignature(point.toString('base64'), CHALLENGE, der.toString('base64'))).toBe(true);
+    // The same signature over another challenge is worthless.
+    const other = toBase64(utf8Encode('screen-control-challenge:s2:1760000001'));
+    expect(verifyControlSignature(point.toString('base64'), other, der.toString('base64'))).toBe(false);
   });
 
-  it('fails when the user dismisses the prompt, so no control session opens', async () => {
-    const denied = fakeStore({ denyRead: true });
-    const context = { hostId: 'h1', store: denied.store, prompt: 'p' };
-    expect(await signControlChallenge(context, CHALLENGE)).toEqual({
+  it('comes back as authentication-failed when the prompt is dismissed', async () => {
+    const native = fakeControlKey();
+    await createControlKey(context(native));
+    native.nextPrompt = { code: 'E_AUTH_CANCELLED' };
+    expect(await signControlChallenge(context(native), CHALLENGE)).toEqual({
       ok: false,
       failure: 'authentication-failed',
     });
   });
 
-  it('fails when nothing has been enrolled for this host', async () => {
-    const fake = fakeStore();
-    expect(
-      await signControlChallenge({ hostId: 'h9', store: fake.store, prompt: 'p' }, CHALLENGE),
-    ).toEqual({ ok: false, failure: 'not-enrolled' });
+  it('says not-enrolled when this phone holds no key for the host', async () => {
+    expect(await signControlChallenge(context(), CHALLENGE)).toEqual({
+      ok: false,
+      failure: 'not-enrolled',
+    });
   });
 
-  it('fails on a stored value that is no longer a key', async () => {
-    const fake = fakeStore();
-    fake.items.set(controlKeyStorageKey('h1'), 'not-a-key');
-    expect(
-      await signControlChallenge({ hostId: 'h1', store: fake.store, prompt: 'p' }, CHALLENGE),
-    ).toEqual({ ok: false, failure: 'corrupt' });
+  it('says unsupported where there is no Keystore module, as on iOS', async () => {
+    const ios: ControlKeyContext = { hostId: 'h1', native: undefined, prompt: PROMPT };
+    expect(await signControlChallenge(ios, CHALLENGE)).toEqual({ ok: false, failure: 'unsupported' });
+    expect(await readControlPublicKey(ios)).toBeUndefined();
+    await expect(createControlKey(ios)).rejects.toThrow();
   });
 
-  it('signs the challenge itself, so a signature for one challenge is useless for another', async () => {
-    const fake = fakeStore();
-    const context = { hostId: 'h1', store: fake.store, prompt: 'p' };
-    const enrolment = await enrollControlKey(context);
-    const signature = await signControlChallenge(context, CHALLENGE);
-    expect(signature.ok).toBe(true);
-    if (!signature.ok) return;
-    const other = toBase64(utf8Encode('screen-control-challenge:s2:1760000099'));
-    expect(verifyControlSignature(enrolment.publicKeyB64, other, signature.signatureB64)).toBe(false);
-  });
-
-  it('does not verify against another phone’s key', async () => {
-    const fake = fakeStore();
-    const mine = { hostId: 'h1', store: fake.store, prompt: 'p' };
-    await enrollControlKey(mine);
-    const signature = await signControlChallenge(mine, CHALLENGE);
-    const stranger = await enrollControlKey({ hostId: 'h2', store: fake.store, prompt: 'p' });
-    expect(signature.ok).toBe(true);
-    if (!signature.ok) return;
-    expect(verifyControlSignature(stranger.publicKeyB64, CHALLENGE, signature.signatureB64)).toBe(
-      false,
-    );
-  });
-
-  it('rejects rubbish rather than throwing', () => {
-    expect(verifyControlSignature('not base64 !!', CHALLENGE, 'MA==')).toBe(false);
-    expect(verifyControlSignature(toBase64(utf8Encode('short')), CHALLENGE, 'MA==')).toBe(false);
+  it('maps each Keystore error code to a failure the screen can explain', () => {
+    expect(controlKeyFailureFor({ code: 'E_KEY_INVALIDATED' })).toBe('key-invalidated');
+    expect(controlKeyFailureFor({ code: 'E_NO_AUTHENTICATOR' })).toBe('no-authenticator');
+    expect(controlKeyFailureFor({ code: 'E_AUTH_FAILED' })).toBe('authentication-failed');
+    expect(controlKeyFailureFor({ code: 'E_NO_KEY' })).toBe('not-enrolled');
+    expect(controlKeyFailureFor(new Error('anything'))).toBe('keystore');
   });
 });

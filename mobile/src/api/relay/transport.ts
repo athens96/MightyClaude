@@ -728,7 +728,14 @@ export class RelayConnection {
         // sides so that an older phone or an older Mac never breaks the connection.
         if (typeof envelope.type !== 'string' || this.messageListeners.size === 0) return;
         const payload = message as Record<string, unknown>;
-        for (const listener of this.messageListeners) listener(payload);
+        for (const listener of this.messageListeners) {
+          // One listener that throws must not take the tunnel (or the others) with it.
+          try {
+            listener(payload);
+          } catch {
+            // Dropped: the message was for that listener alone.
+          }
+        }
         return;
       }
     }

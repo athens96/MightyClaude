@@ -30,6 +30,7 @@ import {
   mayInject,
   rightClickEvent,
   scrollEvent,
+  isKeyCombo,
   shortcutEvent,
   tapEvent,
   textEvent,
@@ -215,9 +216,21 @@ describe('the input the phone sends', () => {
     expect(textEvent('가'.repeat(MAX_INPUT_TEXT_BYTES))).toBeUndefined();
   });
 
-  it('sends ⌘C and ⌘V as the only shortcuts', () => {
+  it('sends key combos in the contract’s grammar, and nothing outside it', () => {
     expect(shortcutEvent('cmd+c')).toEqual({ t: 'key', combo: 'cmd+c' });
     expect(shortcutEvent('cmd+v')).toEqual({ t: 'key', combo: 'cmd+v' });
+    expect(shortcutEvent('shift+cmd+z')).toEqual({ t: 'key', combo: 'shift+cmd+z' });
+    expect(shortcutEvent('opt+left')).toEqual({ t: 'key', combo: 'opt+left' });
+    expect(shortcutEvent('ctrl+opt+shift+cmd+pagedown')).toBeDefined();
+    expect(shortcutEvent('return')).toEqual({ t: 'key', combo: 'return' });
+    // Upper case, an unknown key, a doubled modifier, a modifier alone, a key code.
+    expect(shortcutEvent('CMD+C')).toBeUndefined();
+    expect(shortcutEvent('cmd+f13')).toBeUndefined();
+    expect(shortcutEvent('cmd+cmd+c')).toBeUndefined();
+    expect(shortcutEvent('cmd')).toBeUndefined();
+    expect(shortcutEvent('cmd+0x24')).toBeUndefined();
+    expect(shortcutEvent('')).toBeUndefined();
+    expect(isKeyCombo('cmd+c+v')).toBe(false);
   });
 
   it('asks for a zoom region and a display switch on the same channel', () => {
@@ -242,7 +255,7 @@ describe('the input the phone sends', () => {
   it('never puts a keystroke in a label, only its length', () => {
     expect(describeInputEvent(textEvent('rm -rf /') as never)).toBe('text:8');
     expect(describeInputEvent(textEvent('비밀번호') as never)).not.toContain('비밀');
-    expect(describeInputEvent(shortcutEvent('cmd+v'))).toBe('key');
+    expect(describeInputEvent(shortcutEvent('cmd+v')!)).toBe('key');
     expect(describeInputEvent(tapEvent(1, { x: 0, y: 0 }, 'right'))).toBe('tap:right');
     expect(describeInputEvent(displaySwitchEvent(4))).toBe('display:4');
   });

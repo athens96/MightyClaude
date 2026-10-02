@@ -1,9 +1,13 @@
-import type { ScreenCandidateType, ScreenMode, ScreenRejectReason } from '@/api/types';
+import type { ScreenCandidateType, ScreenMode } from '@/api/types';
 import { t } from '@/lib/i18n';
 import type { ClipboardRefusal } from '@/lib/screen-share/clipboard';
-import type { ControlStartFailure } from '@/lib/screen-share/controller';
+import type { ControlKeyStatus } from '@/lib/screen-share/control-key';
+import type {
+  ControlKeyEnrolFailure,
+  ControlStartFailure,
+} from '@/lib/screen-share/controller';
 import type { ScreenShareHiddenReason } from '@/lib/screen-share/availability';
-import type { ScreenHold, ScreenStopReason } from '@/lib/screen-share/session';
+import type { ScreenHold, ScreenRefusal, ScreenStopReason } from '@/lib/screen-share/session';
 
 /**
  * Every sentence the screen-share feature shows, read from the shared locale files. The
@@ -28,8 +32,8 @@ export function screenHiddenText(reason: ScreenShareHiddenReason): string {
     : t('phone.screenShare.hiddenCapability');
 }
 
-/** What the Mac said when it refused the session. */
-export function screenRefusalText(reason: ScreenRejectReason): string {
+/** What the Mac said when it refused the session, or what went wrong when it said nothing. */
+export function screenRefusalText(reason: ScreenRefusal): string {
   switch (reason) {
     case 'legacy-client':
       return t('phone.screenShare.refusal.legacyClient');
@@ -44,8 +48,23 @@ export function screenRefusalText(reason: ScreenRejectReason): string {
     case 'screen-permission':
       // The one refusal the user can fix on the Mac, so it gets its own words.
       return t('phone.screenShare.permissionNeeded');
+    case 'lock-screen':
+      return t('phone.screenShare.hold.lockScreen');
+    case 'secure-input':
+      return t('phone.screenShare.hold.secureInput');
+    case 'session-stopped':
+      return t('phone.screenShare.refusal.sessionStopped');
+    case 'bad-request':
+      return t('phone.screenShare.refusal.badRequest');
+    case 'control-key-present':
+      return t('phone.screenShare.key.failure.present');
+    case 'control-key-pending':
+      return t('phone.screenShare.key.failure.pending');
+    case 'control-key-not-confirmed':
+      return t('phone.screenShare.key.failure.notConfirmed');
+    case 'failed':
     default:
-      return t('phone.screenShare.status.idle');
+      return t('phone.screenShare.refusal.failed');
   }
 }
 
@@ -109,8 +128,14 @@ export function controlFailureText(failure: ControlStartFailure): string {
       return t('phone.screenShare.control.notEnrolled');
     case 'authentication-failed':
       return t('phone.screenShare.control.authenticationFailed');
-    case 'corrupt':
-      return t('phone.screenShare.control.corrupt');
+    case 'key-invalidated':
+      return t('phone.screenShare.control.keyInvalidated');
+    case 'no-authenticator':
+      return t('phone.screenShare.control.noAuthenticator');
+    case 'unsupported':
+      return t('phone.screenShare.control.unsupported');
+    case 'keystore':
+      return t('phone.screenShare.control.keystore');
     case 'no-challenge':
       return t('phone.screenShare.control.noChallenge');
     default:
@@ -123,8 +148,61 @@ export function controlPromptText(): string {
   return t('phone.screenShare.control.prompt');
 }
 
-export function clipboardRefusalText(refusal: ClipboardRefusal): string {
+/** The prompt's way out, where the device PIN is not offered (before Android 11). */
+export function controlPromptCancelText(): string {
+  return t('phone.screenShare.control.promptCancel');
+}
+
+/** Where this phone's control key stands against the Mac's. */
+export function controlKeyStatusText(status: ControlKeyStatus): string | undefined {
+  switch (status) {
+    case 'ready':
+      return t('phone.screenShare.key.ready');
+    case 'missing':
+      return t('phone.screenShare.key.missing');
+    case 'host-missing':
+      return t('phone.screenShare.key.hostMissing');
+    case 'phone-missing':
+      return t('phone.screenShare.key.phoneMissing');
+    case 'mismatch':
+      return t('phone.screenShare.key.mismatch');
+    case 'unsupported':
+      return t('phone.screenShare.control.unsupported');
+    case 'not-needed':
+    default:
+      return undefined;
+  }
+}
+
+/** Why the Mac did not take the control key. */
+export function controlKeyEnrolFailureText(failure: ControlKeyEnrolFailure): string {
+  switch (failure) {
+    case 'control-key-present':
+      return t('phone.screenShare.key.failure.present');
+    case 'control-key-pending':
+      return t('phone.screenShare.key.failure.pending');
+    case 'control-key-not-confirmed':
+      return t('phone.screenShare.key.failure.notConfirmed');
+    case 'insufficient-grant':
+      return t('phone.screenShare.refusal.insufficientGrant');
+    case 'device-not-allowed':
+      return t('phone.screenShare.refusal.deviceNotAllowed');
+    case 'no-authenticator':
+      return t('phone.screenShare.control.noAuthenticator');
+    case 'keystore':
+      return t('phone.screenShare.control.keystore');
+    case 'failed':
+    default:
+      return t('phone.screenShare.key.failure.failed');
+  }
+}
+
+export function clipboardRefusalText(refusal: ClipboardRefusal | 'no-reply'): string {
   switch (refusal) {
+    case 'not-sent':
+      return t('phone.screenShare.clipboard.notSent');
+    case 'no-reply':
+      return t('phone.screenShare.clipboard.noReply');
     case 'empty':
       return t('phone.screenShare.clipboard.empty');
     case 'too-large':

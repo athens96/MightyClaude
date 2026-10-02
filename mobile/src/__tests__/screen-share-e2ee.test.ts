@@ -221,6 +221,32 @@ describe('signalling inside the E2EE channel', () => {
     expect(client.sendScreenSignal({ type: 'screen-answer', sessionId: 's1', sdp: 'v=0' })).toBe(true);
   });
 
+  it('keeps the tunnel and the other listeners when one listener throws', async () => {
+    const { fake, client, connection } = await connect();
+    const seen: ScreenSignal[] = [];
+    client.onScreenSignal(() => {
+      throw new Error('a screen with a bug');
+    });
+    client.onScreenSignal((signal) => seen.push(signal));
+
+    fake.push(OFFER);
+    fake.push(OFFER);
+    await settle();
+
+    expect(seen).toHaveLength(2);
+    expect(connection.state).toBe('ready');
+  });
+
+  it('seals screen-background like every other frame', async () => {
+    const { fake, client } = await connect();
+    expect(client.sendScreenSignal({ type: 'screen-background', sessionId: 's1', background: true })).toBe(true);
+    await settle();
+    expect(fake.received).toContainEqual({ type: 'screen-background', sessionId: 's1', background: true });
+    for (const frame of fake.wire) {
+      expect(utf8Decode(new Uint8Array(frame))).not.toContain('screen-background');
+    }
+  });
+
   it('is unsendable once the tunnel is closed, so the phone knows the Mac did not hear it', async () => {
     const { connection, client } = await connect();
     connection.close();

@@ -10,6 +10,7 @@ import {
   initialScreenSessionState,
   isScreenSessionActive,
   runScreenEvents,
+  SCREEN_CONNECT_DEADLINE_MS,
   screenSessionReducer,
   wasStoppedByHost,
   type ScreenEvent,
@@ -35,6 +36,14 @@ function hostState(overrides: Partial<ScreenShareState> = {}): ScreenShareState 
     idleTimeoutSeconds: SCREEN_IDLE_TIMEOUT_CONTROL_SECONDS,
     ...overrides,
   };
+}
+
+/** A session that asked the Mac and has no answer yet, at t=0. */
+function starting(mode: 'view' | 'control'): ScreenSessionState {
+  return runScreenEvents(initialScreenSessionState(0), [
+    { kind: 'host-state', state: hostState(), at: 0 },
+    { kind: 'requested', mode, displayId: 1, at: 0 },
+  ]).state;
 }
 
 /** A live session in the given mode, at t=0. */
@@ -248,13 +257,11 @@ describe('idle timeout', () => {
     ).toBe('idle-timeout');
   });
 
-  it('does not fire on a session that never connected', () => {
-    const starting = runScreenEvents(initialScreenSessionState(0), [
-      { kind: 'host-state', state: hostState(), at: 0 },
-      { kind: 'requested', mode: 'control', displayId: 1, at: 0 },
-    ]);
-    const ticked = screenSessionReducer(starting.state, { kind: 'tick', at: 3600 * SECOND });
-    expect(ticked.state.phase).toBe('starting');
+  it('does not fire on a session that never connected: the connect deadline does', () => {
+    const begun = starting('control');
+    const ticked = screenSessionReducer(begun, { kind: 'tick', at: 3600 * SECOND });
+    expect(ticked.state.stopReason).not.toBe('idle-timeout');
+    expect(ticked.state.stopReason).toBe('peer-failed');
   });
 });
 
@@ -324,7 +331,7 @@ describe('the user and the peer', () => {
 
 describe('the refusals the Mac sends back', () => {
   it('shows a missing Screen Recording grant as a hold the user can fix on the Mac', () => {
-    const step = screenSessionReducer(live('view'), {
+    const step = screenSessionReducer(starting('view'), {
       kind: 'refused',
       at: SECOND,
       reason: 'screen-permission',
@@ -341,8 +348,10 @@ describe('the refusals the Mac sends back', () => {
       'insufficient-grant',
       'control-signature',
       'concurrency-limit',
+      'session-stopped',
+      'failed',
     ] as const) {
-      const step = screenSessionReducer(live('view'), { kind: 'refused', at: SECOND, reason });
+      const step = screenSessionReducer(starting('view'), { kind: 'refused', at: SECOND, reason });
       expect(step.state.refusal).toBe(reason);
       expect(step.state.hold).toBeUndefined();
     }
@@ -386,5 +395,172 @@ describe('an offer for a display switch', () => {
       },
     });
     expect(step.state).toBe(state);
+  });
+});
+
+describe('the Mac’s own refusal words', () => {
+  it('holds the picture for a lock screen or a password field instead of a flat no', () => {
+    for (const reason of ['lock-screen', 'secure-input'] as const) {
+      const step = screenSessionReducer(starting('view'), { kind: 'refused', at: SECOND, reason });
+      expect(step.state.refusal).toBe(reason);
+      expect(step.state.hold).toBe(reason);
+    }
+  });
+
+  it('ignores a refusal that arrives after the start was already given up', () => {
+    const stopped = screenSessionReducer(starting('view'), { kind: 'stop', at: SECOND }).state;
+    const late = screenSessionReducer(stopped, {
+      kind: 'refused',
+      at: 2 * SECOND,
+      reason: 'concurrency-limit',
+    });
+    expect(late.state).toBe(stopped);
+  });
+});
+
+describe('starting only from rest', () => {
+  it('ignores a second request while one is starting or live', () => {
+    const begun = starting('view');
+    expect(screenSessionReducer(begun, { kind: 'requested', mode: 'control', displayId: 2, at: 1 }).state).toBe(begun);
+    const running = live('view');
+    expect(screenSessionReducer(running, { kind: 'requested', mode: 'control', displayId: 2, at: 1 }).state).toBe(running);
+  });
+
+  it('starts again once the last session has ended', () => {
+    const ended = screenSessionReducer(live('view'), { kind: 'stop', at: SECOND }).state;
+    const again = screenSessionReducer(ended, { kind: 'requested', mode: 'view', displayId: 1, at: 2 * SECOND });
+    expect(again.state.phase).toBe('starting');
+  });
+
+  it('never lets a late acceptance bring a stopped start back', () => {
+    const stopped = screenSessionReducer(starting('view'), { kind: 'stop', at: SECOND }).state;
+    const late = screenSessionReducer(stopped, {
+      kind: 'accepted',
+      at: 2 * SECOND,
+      session: {
+        sessionId: 'late',
+        mode: 'view',
+        displayId: 1,
+        codec: 'H264',
+        quality: { width: 1920, height: 1080, fps: 30, maxBitrateKbps: 6000 },
+      },
+    });
+    expect(late.state.phase).toBe('ended');
+    expect(late.state.sessionId).toBeUndefined();
+  });
+});
+
+describe('a kill while the session is still starting', () => {
+  it('takes a kill naming a session the phone has not learned yet', () => {
+    const step = screenSessionReducer(starting('control'), {
+      kind: 'signal',
+      at: SECOND,
+      signal: { type: 'screen-kill', sessionId: 'not-told-yet', reason: 'kill-switch' },
+    });
+    expect(step.state.phase).toBe('ended');
+    expect(step.state.stopReason).toBe('kill-switch');
+    expect(step.closePeer).toBe(true);
+  });
+});
+
+describe('the connect deadline', () => {
+  it('gives up a start that never hears back, counted from the request leaving', () => {
+    const sent = screenSessionReducer(starting('view'), { kind: 'request-sent', at: 10 * SECOND }).state;
+    const early = screenSessionReducer(sent, {
+      kind: 'tick',
+      at: 10 * SECOND + SCREEN_CONNECT_DEADLINE_MS - 1,
+    });
+    expect(early.state.phase).toBe('starting');
+    const late = screenSessionReducer(sent, { kind: 'tick', at: 10 * SECOND + SCREEN_CONNECT_DEADLINE_MS });
+    expect(late.state.phase).toBe('ended');
+    expect(late.state.stopReason).toBe('peer-failed');
+  });
+
+  it('gives up a connection that never reaches connected, and tells the Mac', () => {
+    const connecting = runScreenEvents(starting('view'), [
+      {
+        kind: 'accepted',
+        at: 5 * SECOND,
+        session: {
+          sessionId: 's9',
+          mode: 'view',
+          displayId: 1,
+          codec: 'H264',
+          quality: { width: 1920, height: 1080, fps: 30, maxBitrateKbps: 6000 },
+        },
+      },
+    ]).state;
+    const late = screenSessionReducer(connecting, {
+      kind: 'tick',
+      at: 5 * SECOND + SCREEN_CONNECT_DEADLINE_MS,
+    });
+    expect(late.state.stopReason).toBe('peer-failed');
+    expect(late.outgoing).toEqual([
+      { type: 'screen-session-end', sessionId: 's9', reason: 'peer-failed' },
+    ]);
+  });
+});
+
+describe('telling the Mac about the background', () => {
+  it('sends screen-background the moment the app leaves, and again when it is back', () => {
+    const away = screenSessionReducer(live('view'), { kind: 'background', at: SECOND });
+    expect(away.outgoing).toEqual([{ type: 'screen-background', sessionId: 's1', background: true }]);
+    const back = screenSessionReducer(away.state, { kind: 'foreground', at: 2 * SECOND });
+    expect(back.outgoing).toEqual([{ type: 'screen-background', sessionId: 's1', background: false }]);
+  });
+
+  it('says nothing when there is no session', () => {
+    expect(screenSessionReducer(initialScreenSessionState(0), { kind: 'background', at: 1 }).outgoing).toEqual([]);
+  });
+});
+
+describe('the mode an offer may carry', () => {
+  it('keeps the mode from the acceptance: an offer never widens view to control', () => {
+    const step = screenSessionReducer(live('view'), {
+      kind: 'signal',
+      at: SECOND,
+      signal: {
+        type: 'screen-offer',
+        sessionId: 's1',
+        sdp: 'v=0',
+        mode: 'control',
+        displayId: 1,
+        codec: 'H264',
+        quality: { width: 1920, height: 1080, fps: 30, maxBitrateKbps: 6000 },
+        iceRestart: true,
+      },
+    });
+    expect(step.state.mode).toBe('view');
+  });
+
+  it('lets an offer narrow control to view', () => {
+    const step = screenSessionReducer(live('control'), {
+      kind: 'signal',
+      at: SECOND,
+      signal: {
+        type: 'screen-offer',
+        sessionId: 's1',
+        sdp: 'v=0',
+        mode: 'view',
+        displayId: 1,
+        codec: 'H264',
+        quality: { width: 1920, height: 1080, fps: 30, maxBitrateKbps: 6000 },
+        iceRestart: true,
+      },
+    });
+    expect(step.state.mode).toBe('view');
+  });
+});
+
+describe('the Mac’s control key fingerprint', () => {
+  it('is read from the state, and dropped when the Mac no longer has one', () => {
+    const withKey = screenSessionReducer(initialScreenSessionState(0), {
+      kind: 'host-state',
+      at: 0,
+      state: hostState({ controlKeyFingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
+    }).state;
+    expect(withKey.controlKeyFingerprint).toBe('AAAA-BBBB-CCCC-DDDD');
+    const without = screenSessionReducer(withKey, { kind: 'host-state', at: 1, state: hostState() }).state;
+    expect(without.controlKeyFingerprint).toBeUndefined();
   });
 });

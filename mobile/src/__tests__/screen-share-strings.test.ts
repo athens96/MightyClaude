@@ -5,6 +5,9 @@ import {
   clipboardMovedText,
   clipboardRefusalText,
   controlFailureText,
+  controlKeyEnrolFailureText,
+  controlKeyStatusText,
+  controlPromptCancelText,
   controlPromptText,
   screenHiddenText,
   screenHoldDetail,
@@ -86,7 +89,10 @@ describe('every reason has words', () => {
       for (const failure of [
         'not-enrolled',
         'authentication-failed',
-        'corrupt',
+        'key-invalidated',
+        'no-authenticator',
+        'unsupported',
+        'keystore',
         'no-challenge',
       ] as const) {
         expect(controlFailureText(failure)).not.toContain('phone.screenShare');
@@ -97,11 +103,50 @@ describe('every reason has words', () => {
   it('for each clipboard refusal, and for a transfer that worked', () => {
     for (const language of ['ko', 'en'] as const) {
       resetLanguage(language);
-      for (const refusal of ['empty', 'too-large', 'not-control', 'concealed', 'undecodable'] as const) {
+      for (const refusal of [
+        'empty',
+        'too-large',
+        'not-control',
+        'concealed',
+        'undecodable',
+        'not-sent',
+        'no-reply',
+      ] as const) {
         expect(clipboardRefusalText(refusal)).not.toContain('phone.screenShare');
       }
       expect(clipboardMovedText('to-mac')).not.toContain('phone.screenShare');
       expect(clipboardMovedText('to-phone')).not.toContain('phone.screenShare');
+    }
+  });
+
+  it('for a start that failed without a reason from the Mac', () => {
+    resetLanguage('ko');
+    expect(screenRefusalText('failed')).toContain('시작하지 못했습니다');
+    resetLanguage('en');
+    expect(screenRefusalText('failed')).toContain('Could not start');
+  });
+
+  it('for where the control key stands, and why the Mac did not take it', () => {
+    for (const language of ['ko', 'en'] as const) {
+      resetLanguage(language);
+      for (const status of ['ready', 'missing', 'host-missing', 'phone-missing', 'mismatch', 'unsupported'] as const) {
+        expect(controlKeyStatusText(status)).toBeDefined();
+        expect(controlKeyStatusText(status)).not.toContain('phone.screenShare');
+      }
+      expect(controlKeyStatusText('not-needed')).toBeUndefined();
+      for (const failure of [
+        'control-key-present',
+        'control-key-pending',
+        'control-key-not-confirmed',
+        'insufficient-grant',
+        'device-not-allowed',
+        'no-authenticator',
+        'keystore',
+        'failed',
+      ] as const) {
+        expect(controlKeyEnrolFailureText(failure)).not.toContain('phone.screenShare');
+      }
+      expect(controlPromptCancelText()).not.toContain('phone.screenShare');
     }
   });
 
