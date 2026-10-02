@@ -1296,6 +1296,35 @@ extension ScreenShareEngineTests {
         #expect(await peer.sentLayers.count == 2)
     }
 
+    @Test func aStillScreensOnlyFrameArrivingDuringTheStartReachesThePhone() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        let frame = try #require(Self.frame(.primary))
+        let delivered = ScreenShareFlag()
+        // Capture is up and the host has admitted the session, but the engine's
+        // start has not finished: the one complete frame of a still screen
+        // arrives right then.
+        await fixture.service.observeIndicator { [engine = fixture.engine] state in
+            guard !state.sessions.isEmpty, !delivered.isSet else { return }
+            delivered.set()
+            let done = DispatchSemaphore(value: 0)
+            Task {
+                await engine.deliver(frame: frame, status: .complete, dirtyRects: 1)
+                done.signal()
+            }
+            _ = done.wait(timeout: .now() + 5)
+        }
+        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        #expect(delivered.isSet)
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        #expect(await peer.sentLayers.isEmpty)
+        await peer.emitConnected(.host)
+        #expect(await peer.sentLayers == [.primary])
+    }
+
     @Test func anIdleTimeoutReachesThePhoneAsIdleTimeout() async throws {
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
         let started = ScreenShareFlag()
