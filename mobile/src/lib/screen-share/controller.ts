@@ -9,11 +9,7 @@ import type {
   ScreenMode,
   ScreenNetwork,
 } from '@/api/types';
-import {
-  decodableCodecs,
-  preferredCodec,
-  type DecoderCapabilities,
-} from '@/lib/screen-share/quality';
+import { decodableCodecs, type DecoderCapabilities } from '@/lib/screen-share/quality';
 import {
   enrollControlKey,
   hasControlKey,
@@ -356,9 +352,9 @@ export function createScreenShareController(deps: ScreenShareDeps): ScreenShareC
         }
         const session = await deps.client.startScreenShare(request);
         dispatch({ kind: 'accepted', session, at: deps.now() });
-        // The codec the Mac chose may differ from what we would have picked; it decides.
+        // The Mac answers with the codec it actually chose, which may not be the one this
+        // phone would have picked; it is the Mac's call, so nothing here second-guesses it.
         ensurePeer(snapshot.session.iceServers ?? []);
-        void preferredCodec(network, decodes);
       } catch (error) {
         const reason = screenRejectReason(error);
         dispatch({ kind: 'refused', reason: reason ?? 'device-not-allowed', at: deps.now() });
