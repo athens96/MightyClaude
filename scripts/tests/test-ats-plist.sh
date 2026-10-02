@@ -39,6 +39,14 @@ if [ -z "$(plutil -extract NSLocalNetworkUsageDescription raw "$TMPFILE" 2>/dev/
   exit 1
 fi
 
+# The Local Network probe in Settings browses _mightyclaude._tcp; the service type
+# it browses is declared, so the system never refuses the browse as undeclared.
+if [ "$(plutil -extract NSBonjourServices.0 raw "$TMPFILE" 2>/dev/null)" != "_mightyclaude._tcp" ]; then
+  echo "FAIL: NSBonjourServices does not declare _mightyclaude._tcp in build-macos.sh" >&2
+  rm -f "$TMPFILE"
+  exit 1
+fi
+
 # Also verify it is syntactically valid XML plist
 if ! plutil -lint "$TMPFILE" > /dev/null 2>&1; then
   echo "FAIL: inline plist in build-macos.sh is not valid XML" >&2
