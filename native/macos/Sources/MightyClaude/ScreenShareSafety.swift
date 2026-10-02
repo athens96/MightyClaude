@@ -2,6 +2,7 @@ import AppKit
 import Carbon
 import CoreGraphics
 import MightyCore
+import UserNotifications
 
 /// The Mac's own answer to "may a remote phone see this screen, and may it type
 /// here right now": the lock screen and secure input (a password field, a
@@ -200,6 +201,8 @@ final class ScreenShareMenuBarController {
     // MARK: Indicator
 
     private func apply(_ state: ScreenShareIndicatorState) {
+        let known = Set(self.state.sessions.map(\.sessionId))
+        for session in state.sessions where !known.contains(session.sessionId) { announce(session) }
         self.state = state
         // ⌃⌥⌘K belongs to screen sharing only while screen sharing is happening.
         // Holding it on an idle Mac would take the chord away from every other
@@ -233,6 +236,22 @@ final class ScreenShareMenuBarController {
     }
 
     @objc private func stopPressed() { killNow() }
+
+    /// One notice per session that opens, so remote access never starts unseen
+    /// by someone who is not looking at the menu bar. Nothing is asked here: the
+    /// permission is requested from the onboarding screen's System Settings link.
+    private func announce(_ session: ScreenShareLiveSession) {
+        let control = session.mode == .control
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard (await center.notificationSettings()).authorizationStatus == .authorized else { return }
+            let content = UNMutableNotificationContent()
+            content.title = L("screenShare.notification.title")
+            content.body = control ? L("screenShare.notification.controlBody") : L("screenShare.notification.viewBody")
+            try? await center.add(UNNotificationRequest(identifier: "screen-share-" + session.sessionId,
+                                                        content: content, trigger: nil))
+        }
+    }
 
     private func removeItem() {
         if let item { NSStatusBar.system.removeStatusItem(item) }
