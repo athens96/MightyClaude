@@ -200,16 +200,31 @@ private struct ReferenceDocument: View {
 /// kept on screen. The script is synthetic tool output, the same every run.
 private struct ReferenceTerminal: View {
     let motionElapsed: TimeInterval
-    static let script: String = (1...400).map { step in
+    /// The script as characters, so a frame slices it without walking it.
+    static let script: [Character] = Array((1...400).map { step in
         "$ swift build --target Module\(step)\n[\(step)/400] Compiling Module\(step) Source\(step % 17).swift\n"
-    }.joined()
+    }.joined())
+    /// Where each line starts in `script`, ascending.
+    static let lineStarts: [Int] = [0] + script.indices.filter { script[$0] == "\n" }.map { $0 + 1 }
     static let visibleLines = 28
+
+    /// The last `visibleLines` lines of the first `count` characters — what
+    /// splitting the typed prefix into lines would give, at the cost of a
+    /// binary search and one short slice per frame.
+    static func visibleText(typed count: Int) -> String {
+        // The line the cursor is on: the last start at or before `count`.
+        var low = 0, high = lineStarts.count
+        while low < high {
+            let middle = (low + high) / 2
+            if lineStarts[middle] <= count { low = middle + 1 } else { high = middle }
+        }
+        let first = max(0, low - 1 - (visibleLines - 1))
+        return String(script[lineStarts[first]..<count])
+    }
 
     var body: some View {
         let count = ScreenShareReferenceScene.typedCount(motionElapsed: motionElapsed) % Self.script.count
-        let shown = Self.script.prefix(count)
-        let lines = shown.split(separator: "\n", omittingEmptySubsequences: false).suffix(Self.visibleLines)
-        Text(lines.joined(separator: "\n") + "▌")
+        Text(Self.visibleText(typed: count) + "▌")
             .font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.green)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(14)
