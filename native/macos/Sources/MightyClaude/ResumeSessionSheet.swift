@@ -1,47 +1,93 @@
 import SwiftUI
 import MightyCore
 
-/// Lists the Claude and Codex sessions recorded for a workspace folder that no
-/// open pane uses; choosing one adds a pane that continues it. Automated runs
-/// (nested `claude --print` steps) show only with "모든 세션 보기".
+/// The first "창 추가" step for an agent that has earlier sessions in this folder:
+/// start a new session, or go on to the list of its sessions. Esc closes it
+/// without adding a pane. `checking`: the look-up is still reading the folder's
+/// records; "새로 시작" already works, "이어가기" waits for it.
+struct ResumeChoiceSheet: View {
+    @EnvironmentObject private var store: AppStore
+    let provider: String
+    var checking = false
+
+    var body: some View {
+        let agent = ProviderOptions.label(provider)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 10) {
+                ProviderIcon(provider: provider, size: 18).foregroundStyle(.secondary).frame(width: 22).padding(.top, 1)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("resume.choice.title", ["provider": agent])).font(.headline)
+                    if checking {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(L("resume.loading")).font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("add-pane-choice-checking")
+                    } else {
+                        Text(L("resume.choice.message", ["provider": agent])).font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                Button(L("resume.cancel")) { store.closeResumeChoice() }
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("add-pane-choice-cancel")
+                Spacer()
+                Button(L("resume.choice.resume")) { store.showResumeList() }
+                    .disabled(checking)
+                    .accessibilityIdentifier("add-pane-choice-resume")
+                Button(L("resume.choice.startNew")) { store.startNewFromResumeChoice() }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("add-pane-choice-new")
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("add-pane-choice")
+    }
+}
+
+/// Lists one agent's sessions recorded for a workspace folder that no open pane
+/// uses; choosing one adds a pane that continues it. Automated runs (nested
+/// `claude --print` steps) show only with "모든 세션 보기".
 struct ResumeSessionSheet: View {
     @EnvironmentObject private var store: AppStore
     let workspace: Workspace
+    /// The agent picked in "창 추가".
+    let provider: String
     @ViewState private var listing: ResumableSessionListing?
     @ViewState private var search = ""
-    @ViewState private var provider = "all"
     @ViewState private var showAll = false
     @FocusState private var searchFocused: Bool
 
-    /// What the list shows: the search, the provider choice, and never a
-    /// session a pane took while the sheet was open.
+    /// What the list shows: the search, and never a session a pane took while
+    /// the sheet was open.
     private var shown: [ResumableSession] {
         let used = ResumableSessions.inUse(store.snapshot.sessions)
-        let available = (listing?.items ?? []).filter { !used.contains($0.sessionID.lowercased()) && (provider == "all" || $0.provider == provider) }
+        let available = (listing?.items ?? []).filter { !used.contains($0.sessionID.lowercased()) }
         return ResumableSessions.filter(available, query: search)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(L("resume.title")).font(.headline)
+                HStack(spacing: 7) {
+                    ProviderIcon(provider: provider, size: 14).foregroundStyle(.secondary)
+                    Text(L("resume.title")).font(.headline)
+                }
                 Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
-            HStack(spacing: 10) {
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                    TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.system(size: 12))
-                        .focused($searchFocused)
-                        .accessibilityIdentifier("resume-search")
-                }
-                .padding(7).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
-                Picker(L("resume.provider"), selection: $provider) {
-                    Text(L("resume.provider.all")).tag("all")
-                    ForEach(ResumableSessions.providers, id: \.self) { Text(ProviderOptions.label($0)).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                TextField(L("resume.search"), text: $search).textFieldStyle(.plain).font(.system(size: 12))
+                    .focused($searchFocused)
+                    .accessibilityIdentifier("resume-search")
             }
+            .padding(7).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
             content.frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
             HStack(spacing: 10) {
                 Toggle(L("resume.showAll"), isOn: $showAll).toggleStyle(.checkbox).font(.caption)
@@ -54,13 +100,13 @@ struct ResumeSessionSheet: View {
             HStack {
                 Text(L("resume.note")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                Button(L("resume.cancel")) { store.resumePickerWorkspace = nil }.keyboardShortcut(.cancelAction)
+                Button(L("resume.cancel")) { store.resumePicker = nil }.keyboardShortcut(.cancelAction)
             }
         }
         .padding(20)
         .frame(width: 560, height: 520)
         .task(id: showAll) {
-            listing = await store.resumableSessions(for: workspace, includeAutomated: showAll)
+            listing = await store.resumableSessions(for: workspace, provider: provider, includeAutomated: showAll)
             searchFocused = true
         }
     }
@@ -73,7 +119,7 @@ struct ResumeSessionSheet: View {
                 Image(systemName: "clock.arrow.circlepath").font(.system(size: 26, weight: .light)).foregroundStyle(.tertiary)
                 if search.trimmingCharacters(in: .whitespaces).isEmpty {
                     Text(L("resume.empty")).font(.system(size: 13, weight: .medium))
-                    Text(L("resume.emptyReason")).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(L("resume.emptyReason", ["provider": ProviderOptions.label(provider)])).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 } else {
                     Text(L("resume.noMatch")).font(.system(size: 13, weight: .medium))
                 }

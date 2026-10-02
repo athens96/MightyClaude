@@ -204,11 +204,17 @@ final class AppStore: ObservableObject {
     @Published var settingsSession: RunSession?
     @Published var sessionInfoSessionID: String?
     @Published var pendingRemoval: Workspace?
-    /// The workspace whose "continue an earlier session" picker is open.
-    @Published var resumePickerWorkspace: Workspace?
+    /// The "창 추가" agent step that is open: "새로 시작" or "이어가기", then the
+    /// session picker for that agent.
+    @Published var resumePicker: ResumePickerRequest?
+    /// The look-up "창 추가" runs before asking about an agent's earlier sessions;
+    /// the token tells its answer from a cancelled one's.
+    var addPaneProbe: (token: UUID, task: Task<Void, Never>)?
     /// The window shows "작업 현황" instead of the active workspace. Not saved: a
     /// relaunch opens on the workspace, and choosing any workspace or pane leaves it.
-    @Published var showsDashboard = false
+    @Published var showsDashboard = false {
+        didSet { if showsDashboard != oldValue { cancelAddPaneProbe() } }
+    }
     /// Session ids the app's panes started or resumed, loaded on first use.
     var knownSessionIDs: [String]?
     @Published var error: String?
@@ -301,7 +307,7 @@ final class AppStore: ObservableObject {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePickerWorkspace != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -468,6 +474,7 @@ final class AppStore: ObservableObject {
 
     func selectWorkspace(_ id: String) {
         guard snapshot.workspaces.contains(where: { $0.id == id }) else { return }
+        if id != snapshot.activeWorkspaceId { cancelAddPaneProbe() }
         if showsDashboard { showsDashboard = false }
         let remembered = (snapshot.paneLayoutActiveSessionIds?[id]).flatMap { saved in snapshot.sessions.first { $0.id == saved && $0.workspaceId == id }?.id }
         let selected = remembered ?? layoutForWorkspace(id)?.firstSelectedSessionId ?? snapshot.sessions.first { $0.workspaceId == id }?.id
@@ -501,6 +508,8 @@ final class AppStore: ObservableObject {
     @discardableResult
     func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
         guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
+        // A pane started any other way (⌘N, the phone) answers "창 추가"'s pending look-up.
+        cancelAddPaneProbe()
         guard snapshot.sessions.count < 128 else { error = "실행 창은 최대 128개까지 만들 수 있습니다."; return nil }
         let name = kind == "shell" ? "터미널" : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
         var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
@@ -550,6 +559,7 @@ final class AppStore: ObservableObject {
 
     func removeWorkspace(_ workspace: Workspace) {
         pendingRemoval = nil
+        cancelAddPaneProbe()
         let ids = snapshot.sessions.filter { $0.workspaceId == workspace.id }.map(\.id)
         closingSessions.formUnion(ids)
         for id in ids { liveRuns.signalStop(id: id) }
