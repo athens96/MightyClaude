@@ -543,6 +543,102 @@ describe('turn credentials', () => {
     }
   });
 
+  /** Opens a host control socket on `handle`, optionally as if forwarded by a proxy. */
+  async function turnControl(
+    handle: RelayHandle,
+    label: string,
+    forwardedFor?: string,
+  ): Promise<WebSocket> {
+    const { serverId, hostToken } = identity(label);
+    const headers = forwardedFor === undefined ? {} : { 'x-forwarded-for': forwardedFor };
+    const ctrl = new WebSocket(url(handle, { serverId, role: 'server', v: '1', hostToken }), { headers });
+    open.push(ctrl);
+    await opened(ctrl);
+    return ctrl;
+  }
+
+  async function mint(ctrl: WebSocket): Promise<unknown> {
+    ctrl.send(JSON.stringify({ type: 'turn-credentials-request' }));
+    return (await nextJson(ctrl))['type'];
+  }
+
+  it('keys the per-IP limit on the last X-Forwarded-For hop behind a trusted proxy', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 100,
+      turnMaxPerIp: 1,
+      turnMaxGlobal: 100,
+      turnRateWindowMs: 60_000,
+      trustProxy: true,
+    });
+    try {
+      // Every socket comes from 127.0.0.1 (the "proxy"); only the forwarded hop differs.
+      expect(await mint(await turnControl(turnRelay, 'xff-a', '198.51.100.1'))).toBe('turn-credentials');
+      // A spoofed leading hop is ignored: the proxy-appended last hop is the client.
+      expect(await mint(await turnControl(turnRelay, 'xff-b', '198.51.100.1, 198.51.100.2'))).toBe(
+        'turn-credentials',
+      );
+      expect(await mint(await turnControl(turnRelay, 'xff-c', '203.0.113.9, 198.51.100.1'))).toBe(
+        'turn-rate-limited',
+      );
+      // A malformed hop falls back to the socket address, which has its own budget.
+      expect(await mint(await turnControl(turnRelay, 'xff-d', 'not-an-ip'))).toBe('turn-credentials');
+      expect(await mint(await turnControl(turnRelay, 'xff-e'))).toBe('turn-rate-limited');
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('ignores X-Forwarded-For unless the trusted-proxy flag is on', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 100,
+      turnMaxPerIp: 1,
+      turnMaxGlobal: 100,
+      turnRateWindowMs: 60_000,
+      trustProxy: false,
+    });
+    try {
+      expect(await mint(await turnControl(turnRelay, 'noxff-a', '198.51.100.1'))).toBe('turn-credentials');
+      // A different forged header does not buy a fresh per-IP budget.
+      expect(await mint(await turnControl(turnRelay, 'noxff-b', '198.51.100.2'))).toBe('turn-rate-limited');
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
+  it('stops minting for everyone once the global cap is reached', async () => {
+    const turnRelay = await startRelay({
+      host: '127.0.0.1',
+      port: 0,
+      logger: silent,
+      turnSecret: TURN_SECRET,
+      turnMaxPerServerId: 100,
+      turnMaxPerIp: 100,
+      turnMaxGlobal: 2,
+      turnRateWindowMs: 60_000,
+      trustProxy: true,
+    });
+    try {
+      // Fresh serverIds from fresh IPs: per-host and per-IP limits never trip.
+      expect(await mint(await turnControl(turnRelay, 'global-a', '198.51.100.11'))).toBe('turn-credentials');
+      expect(await mint(await turnControl(turnRelay, 'global-b', '198.51.100.12'))).toBe('turn-credentials');
+      const third = await turnControl(turnRelay, 'global-c', '198.51.100.13');
+      third.send(JSON.stringify({ type: 'turn-credentials-request' }));
+      const limited = await nextJson(third);
+      expect(limited['type']).toBe('turn-rate-limited');
+      expect(limited['retryAfterSecs']).toBeGreaterThanOrEqual(1);
+    } finally {
+      await turnRelay.close();
+    }
+  });
+
   it('ignores unrecognised messages on the control socket (relay stays blind)', async () => {
     const { serverId, hostToken } = identity('turn-blind');
     const ctrl = socket(relay, { serverId, role: 'server', v: '1', hostToken });

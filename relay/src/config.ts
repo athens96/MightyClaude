@@ -33,6 +33,17 @@ export interface RelayConfig {
   readonly turnMaxPerServerId: number;
   /** Maximum TURN credential mints per source IP per rate window. */
   readonly turnMaxPerIp: number;
+  /**
+   * Maximum TURN credential mints across all hosts per rate window. Host identity is
+   * self-certified, so this global budget is what bounds a flood of fresh serverIds.
+   */
+  readonly turnMaxGlobal: number;
+  /**
+   * Trust the last `X-Forwarded-For` hop as the client IP (set when the relay sits
+   * behind a reverse proxy that appends it, e.g. Caddy). Off by default: the header
+   * is client-controlled when nothing in front of the relay rewrites it.
+   */
+  readonly trustProxy: boolean;
 }
 
 const DEFAULTS: RelayConfig = {
@@ -51,6 +62,8 @@ const DEFAULTS: RelayConfig = {
   turnRateWindowMs: 600_000,
   turnMaxPerServerId: 5,
   turnMaxPerIp: 10,
+  turnMaxGlobal: 60,
+  trustProxy: false,
 };
 
 function envInt(name: string, fallback: number): number {
@@ -78,6 +91,8 @@ export function loadConfig(overrides: Partial<RelayConfig> = {}): RelayConfig {
     turnRateWindowMs: envInt('TURN_RATE_WINDOW_MS', DEFAULTS.turnRateWindowMs),
     turnMaxPerServerId: envInt('TURN_MAX_PER_SERVER_ID', DEFAULTS.turnMaxPerServerId),
     turnMaxPerIp: envInt('TURN_MAX_PER_IP', DEFAULTS.turnMaxPerIp),
+    turnMaxGlobal: envInt('TURN_MAX_GLOBAL', DEFAULTS.turnMaxGlobal),
+    trustProxy: process.env['RELAY_TRUST_PROXY']?.trim() === '1',
   };
   return { ...fromEnv, ...overrides };
 }

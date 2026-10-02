@@ -67,6 +67,8 @@ export class RelayHub {
   readonly #turnRateByServerId = new Map<string, number[]>();
   /** Timestamps (ms) of recent TURN mints, keyed by IP address. */
   readonly #turnRateByIp = new Map<string, number[]>();
+  /** Timestamps (ms) of recent TURN mints across all hosts (single key). */
+  readonly #turnRateGlobal = new Map<string, number[]>();
 
   constructor(config: RelayConfig, log: RelayLogger = (line) => console.log(line)) {
     this.#config = config;
@@ -109,6 +111,7 @@ export class RelayHub {
     this.#alive.clear();
     this.#turnRateByServerId.clear();
     this.#turnRateByIp.clear();
+    this.#turnRateGlobal.clear();
   }
 
   // --- control socket ------------------------------------------------------
@@ -205,6 +208,17 @@ export class RelayHub {
       return;
     }
 
+    const global = this.#rateSlot(this.#turnRateGlobal, '*', this.#config.turnMaxGlobal, now);
+    if (!global.ok) {
+      const msg: TurnRateLimited = {
+        type: 'turn-rate-limited',
+        retryAfterSecs: global.retryAfterSecs,
+      };
+      ws.send(JSON.stringify(msg));
+      this.#log(`[${shortId(serverId)}] turn-credentials refused: global mint cap reached`);
+      return;
+    }
+
     // Mint HMAC-SHA1 TURN credentials (coturn REST API format).
     const ttl = this.#config.turnCredentialTtlSecs;
     const expiry = Math.floor(now / 1000) + ttl;
@@ -216,6 +230,8 @@ export class RelayHub {
     this.#turnRateByServerId.set(serverId, perServer.times);
     perIp.times.push(now);
     this.#turnRateByIp.set(ip, perIp.times);
+    global.times.push(now);
+    this.#turnRateGlobal.set('*', global.times);
 
     const uris = [`turn:${this.#config.turnHost}:${this.#config.turnPort}`];
     const msg: TurnCredentialsPayload = { type: 'turn-credentials', username, password, ttl, uris };
@@ -248,7 +264,7 @@ export class RelayHub {
   /** Drops rate-limit buckets whose mints have all aged out of the window. */
   #sweepTurnRates(now: number): void {
     const window = this.#config.turnRateWindowMs;
-    for (const bucket of [this.#turnRateByServerId, this.#turnRateByIp]) {
+    for (const bucket of [this.#turnRateByServerId, this.#turnRateByIp, this.#turnRateGlobal]) {
       for (const [key, times] of bucket) {
         const live = times.filter((t) => now - t < window);
         if (live.length === 0) bucket.delete(key);
