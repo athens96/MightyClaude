@@ -9,7 +9,9 @@
 #   - the 49160-49200 relay media range is the same number in the coturn
 #     config, the OS/cloud firewall scripts and the checks,
 #   - the coturn config keeps the Micro quotas (2 Mbps per session, 8 Mbps
-#     total), REST-only auth and the private/metadata peer denials,
+#     total — coturn counts them in bytes/s, so 250000 and 1000000), REST-only
+#     auth, the private/metadata/IPv6/multicast peer denials, no admin CLI and
+#     no certificate-less TLS listener,
 #   - a broken required step fails the run (no pass-anyway escape hatch).
 set -euo pipefail
 
@@ -81,15 +83,29 @@ awk '/^case "\$\{SHAPE\}" in/,/^esac/' "$VERIFY" | grep -qF 'FAIL shape=' \
 #    and the peer denials. verify-live.sh R8 asserts these against the running
 #    config, so the expected values must match this repo's config.
 grep -qE '^use-auth-secret$' "$CONF"     || fail "turnserver.conf does not set use-auth-secret"
-grep -qE '^max-bps=2000000$' "$CONF"     || fail "turnserver.conf per-session quota is not 2 Mbps"
-grep -qE '^bps-capacity=8000000$' "$CONF" || fail "turnserver.conf total quota is not 8 Mbps"
+# coturn reads max-bps and bps-capacity as BYTES per second.
+grep -qE '^max-bps=250000$' "$CONF"       || fail "turnserver.conf per-session quota is not 2 Mbps (250000 B/s)"
+grep -qE '^bps-capacity=1000000$' "$CONF" || fail "turnserver.conf total quota is not 8 Mbps (1000000 B/s)"
+has "$VERIFY" 'check_conf "max-bps=250000"'
+has "$VERIFY" 'check_conf "bps-capacity=1000000"'
+grep -qE '^no-cli$' "$CONF"               || fail "turnserver.conf leaves the admin CLI on"
+grep -qE '^no-multicast-peers$' "$CONF"   || fail "turnserver.conf allows multicast peers"
+grep -qE '^tls-listening-port=' "$CONF" && fail "turnserver.conf opens a TLS port without a certificate"
+grep -qE '^verbose$' "$CONF" && fail "turnserver.conf logs verbosely"
 grep -qE '^no-auth$' "$CONF" && fail "turnserver.conf enables no-auth (public relay)"
 for range in \
   '10.0.0.0-10.255.255.255' \
   '172.16.0.0-172.31.255.255' \
   '192.168.0.0-192.168.255.255' \
   '169.254.0.0-169.254.255.255' \
-  '169.254.169.254-169.254.169.254'
+  '169.254.169.254-169.254.169.254' \
+  '192.0.2.0-192.0.2.255' \
+  '224.0.0.0-239.255.255.255' \
+  '::1' \
+  'fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff' \
+  'fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff' \
+  '::ffff:0.0.0.0-::ffff:255.255.255.255' \
+  '64:ff9b::-64:ff9b::ffff:ffff'
 do
   grep -qF "denied-peer-ip=$range" "$CONF" || fail "turnserver.conf does not deny peer range $range"
 done
