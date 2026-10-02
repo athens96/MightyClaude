@@ -386,6 +386,9 @@ public enum ScreenShareClipboardCodec {
         let plaintext: Data
         switch encoding {
         case .raw:
+            // Uncompressed, the payload is the text: it must be exactly as long
+            // as the transfer said it would be.
+            guard payload.count == declaredBytes else { return .failure(.malformed) }
             plaintext = payload
         case .zstd:
             guard let compressor,
