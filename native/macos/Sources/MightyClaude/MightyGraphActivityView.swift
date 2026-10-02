@@ -16,6 +16,31 @@ enum MightyGraphActivityStyle {
     static func barHeight(_ index: Int, phase: Double) -> CGFloat {
         4 + 8 * CGFloat((sin((phase + Double(index) / 5) * 2 * .pi) + 1) / 2)
     }
+
+    /// A running block's border: 9pt dashes, 7pt gaps, drawn with butt caps so the
+    /// dashes are as long as they say.
+    static let dash: [CGFloat] = [9, 7]
+
+    /// The length of a rounded rectangle's outline with circular corners.
+    static func perimeter(_ size: CGSize, cornerRadius: CGFloat) -> CGFloat {
+        let radius = max(0, min(cornerRadius, size.width / 2, size.height / 2))
+        return 2 * (size.width + size.height) - 8 * radius + 2 * .pi * radius
+    }
+
+    /// `dash` stretched or squeezed so a whole number of dash-and-gap periods fits the
+    /// outline: where the path starts and ends there is no short dash or double gap.
+    static func dash(fitting perimeter: CGFloat) -> [CGFloat] {
+        let period = dash.reduce(0, +)
+        guard perimeter > 0 else { return dash }
+        let fitted = perimeter / max(1, (perimeter / period).rounded())
+        return dash.map { $0 * fitted / period }
+    }
+
+    /// One period per cycle, so the line moves on without a jump when the cycle
+    /// wraps; a negative phase walks the dashes forward along the outline.
+    static func dashPhase(_ phase: Double, dash: [CGFloat]) -> CGFloat {
+        -CGFloat(phase) * dash.reduce(0, +)
+    }
 }
 
 struct MightyGraphActivityIndicator: View {
@@ -52,19 +77,39 @@ struct MightyGraphActivityIndicator: View {
 }
 
 /// Concept D's edge on a block that is in motion: a 2pt run-blue border with the soft
-/// run halo outside it while it runs, the amber one while it waits on the user. Solid,
-/// so Reduce Motion changes nothing here; the bars beside the status carry the motion.
+/// run halo outside it while it runs, the amber one while it waits on the user. While
+/// it runs, the border is a dashed line marching around the card (the look the diagram
+/// had before the card dashboard); under Reduce Motion it holds still as a solid line.
 struct MightyGraphActivityOutline: View {
     let tone: DesignTone
     var cornerRadius: CGFloat = 12
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius)
         Group {
             switch tone {
             case .run:
-                shape.inset(by: 1).stroke(Palette.run, lineWidth: 2)
-                    .background { shape.inset(by: -2).stroke(Palette.runSoft, lineWidth: 4) }
+                Group {
+                    if reduceMotion {
+                        shape.inset(by: 1).stroke(Palette.run, lineWidth: 2)
+                    } else {
+                        // Only this stroke redraws each frame: the card under it, its
+                        // transcript and the graph's layout never see the clock.
+                        TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
+                            let phase = MightyGraphActivityStyle.phase(at: context.date, reducedMotion: false)
+                            Canvas { canvas, size in
+                                let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
+                                let radius = max(0, cornerRadius - 1)
+                                let dash = MightyGraphActivityStyle.dash(fitting: MightyGraphActivityStyle.perimeter(rect.size, cornerRadius: radius))
+                                canvas.stroke(RoundedRectangle(cornerRadius: radius, style: .circular).path(in: rect), with: .color(Palette.run),
+                                              style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: dash,
+                                                                 dashPhase: MightyGraphActivityStyle.dashPhase(phase, dash: dash)))
+                            }
+                        }
+                    }
+                }
+                .background { shape.inset(by: -2).stroke(Palette.runSoft, lineWidth: 4) }
             case .wait:
                 shape.inset(by: 1).stroke(Palette.wait, lineWidth: 2)
             default:
