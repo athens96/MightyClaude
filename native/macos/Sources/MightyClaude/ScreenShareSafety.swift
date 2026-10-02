@@ -175,6 +175,9 @@ private final class ScreenShareControlKeyPrompt: NSObject {
         alert.layout()
         let window = alert.window
         window.level = .floating
+        // A panel hides when the app loses focus; this question must stay in
+        // sight, since remote input is refused until it is answered.
+        window.hidesOnDeactivate = false
         window.center()
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
