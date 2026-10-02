@@ -423,7 +423,7 @@ struct MightyGraphView: View {
             let icon = styleTitles.icon(run.input)?.rawValue ?? StyleIcon.requestDefault.rawValue
             let runID = run.sourceRunID ?? run.id
             let runChildBlocks = GraphChildBlocks.map(responseRecords: run.responseRecords, agents: run.agents, runId: runID)
-            transcriptCard(node, title: title, icon: icon, status: run.status,
+            transcriptCard(node, title: title, titleProvider: provider, icon: icon, status: run.status,
                            input: run.input, entries: run.rootEntries, tint: Palette.tint(styleTitles.tint(run.input)), usage: run.usage,
                            records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, childBlocks: runChildBlocks,
                            fromRecord: index < olderCount)
@@ -470,7 +470,7 @@ struct MightyGraphView: View {
 
     /// `headerFill` paints the header as a strip (the result card's outcome colour) with
     /// white words on it; the other blocks keep a plain header on the white card.
-    private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
+    private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
                                 usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
@@ -481,7 +481,9 @@ struct MightyGraphView: View {
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: icon).foregroundStyle(onStrip ? Palette.onStatus : tint)
-                Text(title).font(.system(size: 12, weight: .bold)).lineLimit(1).help(title)
+                // A request block's title ends with its agent's name; its mark goes before it.
+                (titleProvider.map { ProviderBadgeIcon.labelled(title, provider: $0, font: .systemFont(ofSize: 12, weight: .bold)) } ?? Text(title))
+                    .font(.system(size: 12, weight: .bold)).lineLimit(1).help(title)
                     .foregroundStyle(onStrip ? Palette.onStatus : Palette.ink)
                 if fromRecord {
                     // Read back from the CLI's own session record, not kept by the app.
@@ -724,7 +726,8 @@ struct MightyGraphView: View {
                 HStack(spacing: 8) {
                     Image(systemName: open ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.ink2).frame(width: 11)
-                    Text(title).font(Palette.heading(16)).foregroundStyle(Palette.ink).lineLimit(1)
+                    ProviderBadgeIcon.labelled(title, provider: provider, font: Palette.headingNSFont(16))
+                        .font(Palette.heading(16)).foregroundStyle(Palette.ink).lineLimit(1)
                     if group.runIndex < olderCount {
                         Image(systemName: "clock.arrow.circlepath").font(.system(size: 11)).foregroundStyle(Palette.ink2)
                             .help(L("graph.history.tag")).accessibilityLabel(L("graph.history.tag"))

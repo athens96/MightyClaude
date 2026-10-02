@@ -27,6 +27,22 @@ struct ProviderMarkTests {
         #expect(ProviderMark.commands("M1 2 L3.5 -4 Z") == [.init(kind: "M", values: [1, 2]), .init(kind: "L", values: [3.5, -4]), .init(kind: "Z", values: [])])
     }
 
+    @Test func onlyKnownAgentsGetAMarkBesideTheirName() {
+        for provider in ["claude", "codex", "gemini"] { #expect(ProviderMark.markedProvider(provider) == provider) }
+        // `outline` would fall back to Claude's mark; a card for anything else carries none.
+        for other in ["", "shell", "terminal", "browser", "unknown", "Claude"] { #expect(ProviderMark.markedProvider(other) == nil) }
+    }
+
+    @Test func theMarkGoesBeforeTheTrailingProviderName() {
+        let request = ProviderMark.splitTrailingLabel("요청 3 · Claude", provider: "claude")
+        #expect(request?.head == "요청 3 · " && request?.label == "Claude")
+        let bare = ProviderMark.splitTrailingLabel("Claude", provider: "claude")
+        #expect(bare?.head == "" && bare?.label == "Claude")
+        // Another provider's name, or a provider with no mark, leaves the text alone.
+        #expect(ProviderMark.splitTrailingLabel("Codex", provider: "claude") == nil)
+        #expect(ProviderMark.splitTrailingLabel("요청 3 · Claude", provider: "unknown") == nil)
+    }
+
     @Test func brandColours() {
         #expect(ProviderMark.colors(provider: "claude") == [0xD97757] && ProviderMark.colors(provider: "codex") == [0x10A37F])
         #expect(ProviderMark.colors(provider: "gemini").count == 3 && ProviderMark.colors(provider: "other") == [0xD97757])
