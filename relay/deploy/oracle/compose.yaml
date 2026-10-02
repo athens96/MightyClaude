@@ -15,6 +15,10 @@ services:
     environment:
       PORT: "8787"
       HOST: "0.0.0.0"
+      # Only Caddy reaches the relay (no published port), and Caddy sets the
+      # last X-Forwarded-For hop to the address it saw, so per-IP limits key on
+      # the real client instead of the proxy.
+      RELAY_TRUST_PROXY: "1"
       TURN_SECRET: "${TURN_SECRET:?set TURN_SECRET in .env}"
       TURN_HOST: "${RELAY_DOMAIN:?set RELAY_DOMAIN in .env}"
       TURN_PORT: "3478"
@@ -22,6 +26,7 @@ services:
       TURN_RATE_WINDOW_MS: "600000"
       TURN_MAX_PER_SERVER_ID: "5"
       TURN_MAX_PER_IP: "10"
+      TURN_MAX_GLOBAL: "60"
 
   caddy:
     image: caddy:2-alpine

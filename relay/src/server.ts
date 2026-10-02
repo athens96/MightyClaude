@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { isIP, type AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
@@ -32,6 +32,20 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   res.end('not found');
 }
 
+/**
+ * The source IP used for per-IP limits. Behind a trusted reverse proxy (Caddy appends
+ * the address it saw as the last `X-Forwarded-For` hop) that last hop is the client;
+ * anything malformed falls back to the socket peer, which is then the proxy itself.
+ */
+export function clientIp(req: IncomingMessage, trustProxy: boolean): string {
+  const socketIp = req.socket.remoteAddress ?? '0.0.0.0';
+  if (!trustProxy) return socketIp;
+  const header = req.headers['x-forwarded-for'];
+  const joined = Array.isArray(header) ? header.join(',') : header;
+  const last = joined?.split(',').at(-1)?.trim() ?? '';
+  return isIP(last) !== 0 ? last : socketIp;
+}
+
 function rejectUpgrade(socket: Duplex): void {
   socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
   socket.destroy();
@@ -54,7 +68,7 @@ export async function startRelay(options: StartRelayOptions = {}): Promise<Relay
       return;
     }
     const parsed = parseSocketParams(url.searchParams);
-    const ip = req.socket.remoteAddress ?? '0.0.0.0';
+    const ip = clientIp(req, config.trustProxy);
     wss.handleUpgrade(req, socket, head, (ws) => {
       if (!parsed.ok) {
         hub.reject(ws, CloseCode.badRequest, parsed.reason);

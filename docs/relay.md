@@ -123,14 +123,19 @@ QR/문자열: `mightyclaude://pair?v=2&sid=<serverId>&pk=<b64url 공개키>&rela
 | type | 설명 |
 |---|---|
 | `turn-credentials` | `username`, `password`(HMAC-SHA1), `ttl`(초), `uris` 포함. 호스트가 이를 E2EE 채널의 `iceServers`로 감싸 휴대폰에 전달한다(아래 화면 공유 시그널링) |
-| `turn-rate-limited` | `retryAfterSecs` 포함. 창(기본 10분)당 serverId별 5회, IP별 10회 초과 시 |
+| `turn-rate-limited` | `retryAfterSecs` 포함. 창(기본 10분)당 serverId별 5회, IP별 10회, 릴레이 전체 60회 중 하나라도 넘으면 |
 | `turn-unavailable` | `TURN_SECRET`이 설정되지 않은 경우 |
 
 HMAC-SHA1 형식 (coturn REST API):
 - `username = "<만료_유닉스초>:<serverId 앞 16자>"`
 - `password = base64(HMAC-SHA1(TURN_SECRET, username))`
 
-자격증명은 호스트만 요청할 수 있다(클라이언트 데이터 소켓에는 `turn-credentials-request`가 먹히지 않고, 응답도 제어 소켓에만 간다). 휴대폰은 Mac이 E2EE로 전달해 준 것만 본다. 호스트는 만료 전에 다시 요청해 `screen-grant`로 새 자격증명을 보내고 ICE restart를 건다. coturn 쪽에도 사용자별·전체 대역 할당량(세션 기본 2 Mbps)이 걸려 있고, 사설·링크로컬·메타데이터 IP 대역으로의 중계는 거절된다.
+자격증명은 호스트만 요청할 수 있다(클라이언트 데이터 소켓에는 `turn-credentials-request`가 먹히지 않고, 응답도 제어 소켓에만 간다). 휴대폰은 Mac이 E2EE로 전달해 준 것만 본다. 호스트는 만료 전에 다시 요청해 `screen-grant`로 새 자격증명을 보내고 ICE restart를 건다.
+
+**"호스트만"의 실제 의미.** 호스트 인증은 스스로 증명하는 것이다: `serverId = SHA-256(hostToken)`이고 `hostToken`은 호스트가 혼자 고른 무작위 값이다. 그래서 이 확인은 "다른 호스트의 serverId를 빼앗지 못한다"는 것만 보장하고, "등록된 Mac만 TURN을 쓴다"는 것은 보장하지 않는다 — 누구든 새 토큰을 만들어 새 serverId로 자격증명을 받을 수 있다. 남용을 실제로 막는 것은 아래 두 가지다:
+
+- 릴레이의 발급 한도: serverId별·IP별·릴레이 전체(`TURN_MAX_GLOBAL`) 창당 횟수. 새 serverId를 무한히 만들어도 전체 한도에서 멈춘다. 릴레이가 리버스 프록시 뒤에 있으면 `RELAY_TRUST_PROXY=1`로 IP별 한도가 프록시가 아니라 실제 클라이언트 IP(프록시가 붙인 `X-Forwarded-For`의 마지막 값)에 걸리게 한다. 이 값이 IP가 아니면 소켓 주소를 쓴다. 프록시 없이 이 플래그를 켜면 클라이언트가 헤더로 IP를 꾸밀 수 있으니 켜지 않는다.
+- coturn의 할당량: 세션당 2 Mbps(`max-bps=250000`), 전체 8 Mbps(`bps-capacity=1000000`) — coturn은 이 둘을 초당 **바이트**로 센다. 사용자당 4개·전체 8개 할당, 사설·루프백·링크로컬·메타데이터·멀티캐스트·문서용 대역과 IPv6 루프백·ULA·링크로컬·IPv4 매핑·NAT64 대역으로의 중계는 거절된다.
 
 환경 변수:
 
@@ -143,6 +148,8 @@ HMAC-SHA1 형식 (coturn REST API):
 | `TURN_RATE_WINDOW_MS` | `600000` | 발급 속도 제한 창 (ms) |
 | `TURN_MAX_PER_SERVER_ID` | `5` | 창당 serverId별 최대 발급 횟수 |
 | `TURN_MAX_PER_IP` | `10` | 창당 IP별 최대 발급 횟수 |
+| `TURN_MAX_GLOBAL` | `60` | 창당 릴레이 전체 최대 발급 횟수 |
+| `RELAY_TRUST_PROXY` | (꺼짐) | `1`이면 IP별 한도에 `X-Forwarded-For`의 마지막 값을 쓴다. 릴레이 앞의 프록시가 그 값을 붙일 때만 켠다(Oracle 배포의 Caddy) |
 
 ## 화면 공유 시그널링 (E2EE, 릴레이 해석 불가)
 
