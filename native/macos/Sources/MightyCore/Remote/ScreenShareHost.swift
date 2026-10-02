@@ -58,6 +58,9 @@ public actor ScreenShareHost {
     private let now: @Sendable () -> Date
     private let killDeadline: TimeInterval
     private let idleSleep: Sleeper
+    /// Told when an idle timer ended a session, which happens inside the host
+    /// with no caller to report back to.
+    private var idleObserver: (@Sendable (ScreenShareStoppedSession) async -> Void)?
 
     // MARK: - Init
 
@@ -76,6 +79,10 @@ public actor ScreenShareHost {
         self.now = now
         self.killDeadline = killDeadline
         self.idleSleep = idleSleep
+    }
+
+    public func observeIdleStops(_ observer: @escaping @Sendable (ScreenShareStoppedSession) async -> Void) {
+        idleObserver = observer
     }
 
     // MARK: - Allow-list & grants
@@ -315,6 +322,8 @@ public actor ScreenShareHost {
         // another full round, so the comparison is made with a small epsilon.
         if idleFor >= timeout - 0.001 {
             _ = await endSession(sessionId: sessionId, reason: .idleTimeout)
+            await idleObserver?(ScreenShareStoppedSession(
+                sessionId: sessionId, deviceId: session.deviceId, reason: .idleTimeout))
         } else {
             armIdleTimer(sessionId: sessionId)
         }

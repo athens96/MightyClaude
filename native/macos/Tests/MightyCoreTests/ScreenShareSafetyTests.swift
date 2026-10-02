@@ -397,6 +397,20 @@ struct ScreenShareSafetyTests {
         #expect(await host.log().first?.endedAt != nil)
     }
 
+    @Test func anIdleTimeoutIsReportedToTheObserver() async {
+        let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
+        let host = ScreenShareHost(now: { clock.date }, idleSleep: { _ in clock.advance(by: 1_801) })
+        let reported = ScreenShareIntervalLog()
+        await host.observeIdleStops { stopped in
+            if stopped.reason == .idleTimeout, stopped.sessionId == "s1", stopped.deviceId == "p1" { reported.add(1) }
+        }
+        await host.setDeviceSettings(ScreenShareDeviceSettings(deviceId: "p1", allowed: true, grant: .view))
+        _ = await host.requestSession(sessionId: "s1", deviceId: "p1", requestedMode: .view,
+                                      controlChallenge: nil, controlSignature: nil, surface: quietSurface())
+        #expect(await waitUntil { reported.values.count == 1 })
+        #expect(await host.sessionCount == 0)
+    }
+
     @Test func controlSessionEndsAfterTenIdleMinutes() async {
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
         let waits = ScreenShareIntervalLog()
@@ -715,6 +729,34 @@ struct ScreenShareSafetyTests {
 
         #expect(await host.isCaptureActive == false)
         #expect(held.events.last == "capture-stopped")
+    }
+
+    @Test func aLockOrPasswordFieldDuringTheJoinsCaptureStartStopsTheLateCapture() async {
+        for secure in [false, true] {
+            let held = HeldCaptureStart()
+            let host = ScreenShareHost()
+            await host.setDeviceSettings(ScreenShareDeviceSettings(deviceId: "p1", allowed: true, grant: .view))
+            let join = Task {
+                await host.requestSession(
+                    sessionId: "s1", deviceId: "p1", requestedMode: .view,
+                    controlChallenge: nil, controlSignature: nil, surface: held.surface())
+            }
+            #expect(await waitUntil { held.events.contains("capture-start-begun") })
+            // The screen locks (or a password field takes focus) while the host
+            // is suspended inside startCapture.
+            if secure { await host.setSecureInput(true) } else { await host.setLocked(true) }
+            held.release()
+            let result = await join.value
+
+            // The session stays — the phone is told the state — but no frame flows.
+            #expect(isSuccess(result))
+            #expect(await host.isCaptureActive == false)
+            #expect(held.events.last == "capture-stopped")
+            // And frames come back once the lock clears.
+            if secure { await host.setSecureInput(false) } else { await host.setLocked(false) }
+            held.release()
+            #expect(await waitUntil { await host.isCaptureActive })
+        }
     }
 
     @Test func killDeadlineIsOneSecond() {
