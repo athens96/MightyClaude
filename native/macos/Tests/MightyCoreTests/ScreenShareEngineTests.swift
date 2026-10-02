@@ -840,6 +840,13 @@ struct ScreenShareEngineTests {
             encoding: .zstd, declaredBytes: 4, payload: Data([1]), compressor: nil) {
             #expect(rejection == .malformed)
         } else { Issue.record("a zstd frame was read without a decompressor") }
+        // A raw payload must be exactly as long as the transfer declared.
+        for payload in [Data("abcd".utf8), Data("ab".utf8)] {
+            if case .failure(let rejection) = ScreenShareClipboardCodec.decode(
+                encoding: .raw, declaredBytes: 3, payload: payload, compressor: nil) {
+                #expect(rejection == .malformed)
+            } else { Issue.record("a raw payload of the wrong length was accepted") }
+        }
     }
 
     @Test func theClipboardMovesBothWaysOnlyForAControlSession() async throws {
@@ -1176,6 +1183,39 @@ extension ScreenShareEngineTests {
         // One mint served both renewals.
         let credentials = Set(grants.compactMap { $0.2?.first { $0.username != nil }?.credential })
         #expect(credentials.count == 1)
+    }
+
+    @Test func aGrantPushedWhileThePhoneSignsKeepsItsChallenge() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        // The phone reads state and starts signing…
+        guard case .success(let state) = await fixture.engine.state(deviceId: Self.phone),
+              let challengeB64 = state.screenShare.controlChallengeB64,
+              let challenge = Data(base64Encoded: challengeB64)
+        else { Issue.record("no challenge"); return }
+        // …while the Mac pushes a grant (a settings change, a renewal).
+        await fixture.signals.clear()
+        await fixture.engine.pushGrant(to: Self.phone)
+        let pushed = await fixture.signals.sent.compactMap { signal -> String? in
+            guard case .grant(_, _, _, let challenge, _, _) = signal else { return nil }
+            return challenge
+        }
+        #expect(pushed == [challengeB64])
+        // The signature over the challenge it read still starts control.
+        let request = decodeRequest([
+            "mode": "control", "displayId": 1, "network": "wifi", "decodes": ["H264"],
+            "controlSignatureB64": keystore.sign(challenge: challenge).base64EncodedString(),
+        ])
+        #expect(await fixture.engine.start(deviceId: Self.phone, request: request).isSuccess)
+        // Spent: the next grant carries a new one.
+        await fixture.signals.clear()
+        await fixture.engine.pushGrant(to: Self.phone)
+        let next = await fixture.signals.sent.compactMap { signal -> String? in
+            guard case .grant(_, _, _, let challenge, _, _) = signal else { return nil }
+            return challenge
+        }
+        #expect(next.count == 1 && next != [challengeB64])
     }
 
     @Test func aViewerCannotPullTheControllersScreenAway() async throws {

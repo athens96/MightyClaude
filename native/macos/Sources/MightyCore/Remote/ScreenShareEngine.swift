@@ -282,10 +282,16 @@ public actor ScreenShareEngine {
     /// actually handed out and cannot be used twice.
     public static func challengeSession(_ deviceId: String) -> String { "pending:" + deviceId }
 
-    /// A fresh challenge, minted only for a phone that may actually control.
-    private func challenge(for deviceId: String, allowed: Bool, grant: ScreenShareGrant) async -> String? {
+    /// A challenge, minted only for a phone that may actually control. `state`
+    /// (the phone asking, right before it signs) always gets a fresh one; a
+    /// pushed `screen-grant` reuses a pending one that is still fresh, so it
+    /// never replaces the challenge the phone may be signing right now.
+    private func challenge(
+        for deviceId: String, allowed: Bool, grant: ScreenShareGrant, reuseFresh: Bool = false
+    ) async -> String? {
         guard allowed, grant == .control else { return nil }
-        return await service.controlChallenge(sessionId: Self.challengeSession(deviceId)).base64EncodedString()
+        return await service.controlChallenge(
+            sessionId: Self.challengeSession(deviceId), reuseFresh: reuseFresh).base64EncodedString()
     }
 
     // MARK: POST /m1/screen-share/control-key
@@ -984,7 +990,8 @@ public actor ScreenShareEngine {
         let grant = row?.grant ?? .none
         let allowed = row?.allowed == true
         return .grant(sessionId: sessionId, allowed: allowed, grant: grant,
-                      controlChallengeB64: await challenge(for: deviceId, allowed: allowed, grant: grant),
+                      controlChallengeB64: await challenge(for: deviceId, allowed: allowed, grant: grant,
+                                                           reuseFresh: true),
                       iceServers: allowed ? iceServers : nil,
                       displays: displays.info())
     }
