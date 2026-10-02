@@ -7,6 +7,7 @@ import {
   ScreenMeasurement,
   formatMeasurementReport,
   measurementReport,
+  pollTapProbe,
   type MeasurementSummary,
 } from '@/lib/screen-share/measure';
 import { readStatsSample } from '@/lib/screen-share/stats';
@@ -38,9 +39,12 @@ export function useScreenMeasurement(
 ): ScreenMeasurementHook {
   const measurement = useRef(new ScreenMeasurement());
   const [summary, setSummary] = useState<MeasurementSummary | undefined>(undefined);
-  const probeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stopProbe = useRef<(() => void) | undefined>(undefined);
   const tapCount = useRef(0);
   const active = options.enabled && options.live && controller !== undefined;
+  // Read by a probe poll that is already in flight: it stops once this turns false.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const read = useCallback(async () => {
     if (!controller) return;
@@ -62,10 +66,20 @@ export function useScreenMeasurement(
     const timer = setInterval(() => void read(), POLL_MS);
     return () => {
       clearInterval(timer);
-      if (probeTimer.current) clearTimeout(probeTimer.current);
-      probeTimer.current = undefined;
+      stopProbe.current?.();
+      stopProbe.current = undefined;
     };
   }, [active, read]);
+
+  // Unmounted: nothing may poll on behind the screen.
+  useEffect(
+    () => () => {
+      activeRef.current = false;
+      stopProbe.current?.();
+      stopProbe.current = undefined;
+    },
+    [],
+  );
 
   // The Mac's echoes and scene phases, while the overlay is on.
   useEffect(() => {
@@ -91,17 +105,13 @@ export function useScreenMeasurement(
       const marker = options.hostTapMarker ? tapMarkerId(at, tapCount.current) : undefined;
       if (!controller.tap(point, marker)) return false;
       measurement.current.tapped(at, marker);
-      if (probeTimer.current) clearTimeout(probeTimer.current);
-      const poll = () => {
-        void read().then(() => {
-          if (!measurement.current.latency.pending) {
-            probeTimer.current = undefined;
-            return;
-          }
-          probeTimer.current = setTimeout(poll, PROBE_POLL_MS);
-        });
-      };
-      poll();
+      stopProbe.current?.();
+      stopProbe.current = pollTapProbe(measurement.current, {
+        read,
+        isActive: () => activeRef.current,
+        now: () => Date.now(),
+        intervalMs: PROBE_POLL_MS,
+      });
       return true;
     },
     [active, controller, options.hostTapMarker, read],

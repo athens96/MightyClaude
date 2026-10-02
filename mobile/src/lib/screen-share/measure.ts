@@ -66,6 +66,11 @@ export class ScreenMeasurement {
     this.latency.marker(id, shown, at);
   }
 
+  /** Drops a tap probe that has waited past the timeout, reading or not. */
+  expire(now: number): void {
+    this.latency.expire(now);
+  }
+
   /** The Mac's reference scene entered `phase`. */
   scenePhase(phase: ScenePhase, at: number): void {
     this.sceneMarks.push({ phase, at });
@@ -112,6 +117,38 @@ export class ScreenMeasurement {
     }
     return summary;
   }
+}
+
+/**
+ * Polls fast while a tap waits for its frame. Stops once the probe settles, once it has
+ * waited past the probe timeout by the wall clock (even when no reading arrives), or once
+ * `isActive()` turns false — the overlay went off, the session ended, the screen unmounted.
+ * Returns a cancel for the next tap or the cleanup.
+ */
+export function pollTapProbe(
+  measurement: ScreenMeasurement,
+  options: { read: () => Promise<void>; isActive: () => boolean; now: () => number; intervalMs: number },
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelled = false;
+  const poll = () => {
+    timer = undefined;
+    if (cancelled || !options.isActive()) return;
+    void options
+      .read()
+      .catch(() => undefined)
+      .then(() => {
+        measurement.expire(options.now());
+        if (cancelled || !options.isActive() || !measurement.latency.pending) return;
+        timer = setTimeout(poll, options.intervalMs);
+      });
+  };
+  poll();
+  return () => {
+    cancelled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
 }
 
 /** The export's format name; bump it when a field changes meaning. */

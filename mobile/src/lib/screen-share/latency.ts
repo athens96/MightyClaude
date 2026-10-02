@@ -114,6 +114,17 @@ export class TapLatencyTracker {
     if (this.echoes.length > LATENCY_MAX_SAMPLES) this.echoes.shift();
   }
 
+  /**
+   * Gives up on a probe that has waited past the timeout by the wall clock, even when no
+   * reading arrives to notice it (stats stopped answering, the session went away).
+   */
+  expire(now: number): void {
+    const probe = this.probe;
+    if (!probe || now - probe.tappedAt <= LATENCY_PROBE_TIMEOUT_MS) return;
+    this.timedOut += 1;
+    this.probe = undefined;
+  }
+
   /** One `getStats` reading. The first one that counts only sets the baseline. */
   observe(sample: { at: number; framesDecoded: number }): void {
     const probe = this.probe;

@@ -51,6 +51,19 @@ describe('tap-to-visible latency', () => {
   });
 });
 
+describe('a probe nothing answers', () => {
+  it('expires by the wall clock alone, once, and not before the timeout', () => {
+    const tracker = new TapLatencyTracker();
+    tracker.tapped(1_000);
+    tracker.expire(1_000 + LATENCY_PROBE_TIMEOUT_MS);
+    expect(tracker.pending).toBe(true);
+    tracker.expire(1_001 + LATENCY_PROBE_TIMEOUT_MS);
+    expect(tracker.pending).toBe(false);
+    tracker.expire(9_999_999);
+    expect(tracker.summary()).toEqual({ count: 0, timeouts: 1 });
+  });
+});
+
 describe('tap-to-visible against the Mac’s tap marker', () => {
   it('counts frames only from the echo on, so frames already moving before it do not end the probe', () => {
     const tracker = new TapLatencyTracker();
