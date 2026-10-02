@@ -17,26 +17,39 @@ export interface ScreenIceCandidateInit {
 
 export type ScreenPeerConnectionState = 'connecting' | 'connected' | 'failed' | 'closed';
 
+/**
+ * The Mac's two video tracks, by stream id: `screen` is what the user reads (the whole
+ * display, or the zoomed region at full quality) and `overview` is the low-resolution whole
+ * display it lays under a zoom.
+ */
+export type ScreenTrack = 'screen' | 'overview';
+
 export interface ScreenPeerCallbacks {
   /** One locally gathered candidate, or `null` for "that was the last one". */
   onIceCandidate(candidate: ScreenIceCandidateInit | null): void;
-  /** The URL an `RTCView` renders, or `undefined` once the track is gone. */
-  onStream(streamUrl: string | undefined): void;
+  /** The URL an `RTCView` renders for one of the two tracks, or `undefined` once it is gone. */
+  onStream(streamUrl: string | undefined, track: ScreenTrack): void;
   onConnectionState(state: ScreenPeerConnectionState): void;
   /** One decoded data-channel frame, already `JSON.parse`d. */
   onData(message: unknown): void;
 }
 
 export interface ScreenPeer {
-  /** Takes the Mac's offer and answers it; the SDP it returns goes back as `screen-answer`. */
-  answer(offerSdp: string, options: { iceRestart: boolean }): Promise<string>;
+  /**
+   * Takes the Mac's offer and answers it; the SDP it returns goes back as `screen-answer`.
+   * On an ICE restart the renewed servers are applied before the offer is.
+   */
+  answer(
+    offerSdp: string,
+    options: { iceRestart: boolean; iceServers?: ScreenIceServer[] },
+  ): Promise<string>;
   addIceCandidate(candidate: ScreenIceCandidateInit): Promise<void>;
   /** Marks the end of the Mac's candidates. */
   endOfRemoteCandidates(): Promise<void>;
   /** Sends one data-channel frame; false when the channel is not open. */
   sendData(payload: string): boolean;
-  /** The ICE path in use, once `getStats` has something to say. */
-  candidateType(): Promise<import('@/api/types').ScreenCandidateType | undefined>;
+  /** The raw `getStats` report; `stats.ts` reads it. */
+  stats(): Promise<unknown>;
   close(): void;
 }
 

@@ -42,6 +42,7 @@ import {
   type SubmitResponse,
   type UploadTicket,
   SCREEN_REJECT_REASONS,
+  type ScreenControlKeyResponse,
   type ScreenRejectReason,
   type ScreenSessionRequest,
   type ScreenSessionResponse,
@@ -49,8 +50,8 @@ import {
   type ScreenShareStateResponse,
 } from '@/api/types';
 import {
-  encodeScreenSignal,
   parseScreenSignal,
+  screenSignalFits,
   type ScreenSignal,
 } from '@/lib/screen-share/signalling';
 
@@ -287,13 +288,22 @@ export interface MobileClient {
     input: ScreenSessionRequest,
     signal?: AbortSignal,
   ): Promise<ScreenSessionResponse>;
-  /** Hands the Mac the public half of the biometric-gated control key ("screenShare"). */
-  registerScreenControlKey(publicKeyB64: string, signal?: AbortSignal): Promise<OkResponse>;
+  /**
+   * Hands the Mac the public half of the Keystore control key ("screenShare"); the Mac
+   * answers once its user has confirmed the fingerprint.
+   */
+  registerScreenControlKey(
+    publicKeyB64: string,
+    signal?: AbortSignal,
+  ): Promise<ScreenControlKeyResponse>;
   /** Screen-share signalling arriving inside the E2EE channel. */
   onScreenSignal(listener: (signal: ScreenSignal) => void): () => void;
   /** Puts one signalling frame on the E2EE channel; false when the tunnel is down. */
   sendScreenSignal(signal: ScreenSignal): boolean;
 }
+
+/** How long the phone waits for the Mac's user to confirm a control key's fingerprint. */
+export const SCREEN_CONTROL_KEY_TIMEOUT_MS = 120_000;
 
 /**
  * The reason the Mac gave for refusing a screen-share session, when it gave one of the
@@ -325,9 +335,13 @@ export function createClient(channel: RelayChannel): MobileClient {
     path: string,
     body?: unknown,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<T> {
     if (signal?.aborted) throw new AbortedError();
-    const inflight = channel.request(method, path, body);
+    const inflight =
+      timeoutMs === undefined
+        ? channel.request(method, path, body)
+        : channel.request(method, path, body, timeoutMs);
     // The host answers the abandoned request at its own pace; we simply stop waiting.
     const response = signal
       ? await Promise.race([
@@ -599,7 +613,14 @@ export function createClient(channel: RelayChannel): MobileClient {
       request<ScreenSessionResponse>('POST', '/m1/screen-share/sessions', input, signal),
 
     registerScreenControlKey: (publicKeyB64, signal) =>
-      request<OkResponse>('POST', '/m1/screen-share/control-key', { publicKeyB64 }, signal),
+      request<ScreenControlKeyResponse>(
+        'POST',
+        '/m1/screen-share/control-key',
+        { publicKeyB64 },
+        signal,
+        // The Mac holds the reply until its user has compared the fingerprints.
+        SCREEN_CONTROL_KEY_TIMEOUT_MS,
+      ),
 
     onScreenSignal: (listener) => {
       if (!channel.onMessage) return () => undefined;
@@ -612,13 +633,9 @@ export function createClient(channel: RelayChannel): MobileClient {
 
     sendScreenSignal: (signal) => {
       if (!channel.send) return false;
-      try {
-        // Encoding first: a frame over the plaintext budget is a bug on our side, and
-        // must not be put on a channel whose limits the relay enforces by hanging up.
-        JSON.parse(encodeScreenSignal(signal));
-      } catch {
-        return false;
-      }
+      // A frame over the plaintext budget is a bug on our side, and must not be put on a
+      // channel whose limits the relay enforces by hanging up.
+      if (!screenSignalFits(signal)) return false;
       return channel.send(signal as unknown as Record<string, unknown>);
     },
   };

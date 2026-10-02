@@ -17,8 +17,32 @@ export const MAX_INPUT_TEXT_BYTES = 4096;
 
 export type PointerButton = 'left' | 'right';
 export type DragPhase = 'begin' | 'move' | 'end';
-/** The only key combinations the beta sends, both for the clipboard. */
-export type ScreenShortcut = 'cmd+c' | 'cmd+v';
+/**
+ * One key combination in the contract's grammar: lower case, `+`-joined, zero to four
+ * distinct modifiers (`ctrl`, `opt`, `shift`, `cmd`) and then exactly one named key.
+ */
+export type ScreenShortcut = string;
+
+export const KEY_MODIFIERS = ['ctrl', 'opt', 'shift', 'cmd'] as const;
+/** The closed list of key names the Mac accepts. */
+export const KEY_NAMES: readonly string[] = [
+  ...'abcdefghijklmnopqrstuvwxyz'.split(''),
+  ...'0123456789'.split(''),
+  'return',
+  'tab',
+  'space',
+  'backspace',
+  'delete',
+  'escape',
+  'left',
+  'right',
+  'up',
+  'down',
+  'home',
+  'end',
+  'pageup',
+  'pagedown',
+];
 
 export interface NormalizedPoint {
   x: number;
@@ -104,8 +128,22 @@ export function textEvent(text: string): ScreenInputEvent | undefined {
   return { t: 'text', text };
 }
 
-export function shortcutEvent(combo: ScreenShortcut): ScreenInputEvent {
-  return { t: 'key', combo };
+/** True for a combo the Mac's `key` grammar accepts; anything else is never sent. */
+export function isKeyCombo(combo: string): boolean {
+  const parts = combo.split('+');
+  const key = parts.pop();
+  if (key === undefined || !KEY_NAMES.includes(key)) return false;
+  if (parts.length > KEY_MODIFIERS.length) return false;
+  const seen = new Set<string>();
+  for (const modifier of parts) {
+    if (!(KEY_MODIFIERS as readonly string[]).includes(modifier) || seen.has(modifier)) return false;
+    seen.add(modifier);
+  }
+  return true;
+}
+
+export function shortcutEvent(combo: ScreenShortcut): ScreenInputEvent | undefined {
+  return isKeyCombo(combo) ? { t: 'key', combo } : undefined;
 }
 
 /** Asks the Mac to stream this region at full resolution over the overview layer. */

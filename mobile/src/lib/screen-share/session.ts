@@ -14,10 +14,10 @@ import {
   type ScreenSessionResponse,
 } from '@/api/types';
 import {
+  backgroundSignal,
   killHitsSession,
   sessionEndSignal,
   type ScreenSignal,
-  type ScreenSessionEndSignal,
 } from '@/lib/screen-share/signalling';
 
 /**
@@ -34,6 +34,16 @@ export type ScreenHold = 'screen-permission' | 'lock-screen' | 'secure-input';
 
 /** How a session finished: our own reasons, the Mac's, or a kill. */
 export type ScreenStopReason = ScreenEndReason | ScreenKillReason;
+
+/** Why a start did not happen: the Mac's own reason, or `failed` when it gave none. */
+export type ScreenRefusal = ScreenRejectReason | 'failed';
+
+/**
+ * How long `starting` (from the moment the request leaves) and `connecting` may each last.
+ * The Mac gives up on a connection after 30 s; this is the phone's own ceiling on top of
+ * that, so a reply or an offer that never comes cannot leave the screen spinning.
+ */
+export const SCREEN_CONNECT_DEADLINE_MS = 45_000;
 
 export interface ScreenSessionState {
   phase: ScreenPhase;
@@ -52,8 +62,12 @@ export interface ScreenSessionState {
   hold?: ScreenHold;
   stopReason?: ScreenStopReason;
   /** Why the Mac refused the last request. */
-  refusal?: ScreenRejectReason;
+  refusal?: ScreenRefusal;
+  /** The fingerprint of the control key the Mac stores for this phone, if any. */
+  controlKeyFingerprint?: string;
   idleTimeoutSeconds: number;
+  /** Phone clock, ms, when `starting` or `connecting` began; the deadline counts from it. */
+  phaseStartedAt: number;
   /** Phone clock, ms. Reset by any input or any frame. */
   lastActivityAt: number;
   /** Phone clock, ms, from the moment the app left the foreground. */
@@ -65,10 +79,12 @@ export type ScreenEvent =
   | { kind: 'host-state'; state: ScreenShareState; at: number }
   /** The phone asked for a session. */
   | { kind: 'requested'; mode: ScreenMode; displayId: number; at: number }
+  /** The request left for the Mac (after any fingerprint prompt). */
+  | { kind: 'request-sent'; at: number }
   /** `POST /m1/screen-share/sessions` was accepted. */
   | { kind: 'accepted'; session: ScreenSessionResponse; at: number }
-  /** The Mac refused with a reason. */
-  | { kind: 'refused'; reason: ScreenRejectReason; at: number }
+  /** The Mac refused with a reason, or the request failed without one. */
+  | { kind: 'refused'; reason: ScreenRefusal; at: number }
   /** One decrypted signalling frame. */
   | { kind: 'signal'; signal: ScreenSignal; at: number }
   /** The peer connection reached `connected`. */
@@ -101,7 +117,13 @@ export function initialScreenSessionState(at = 0): ScreenSessionState {
     displays: [],
     idleTimeoutSeconds: SCREEN_IDLE_TIMEOUT_VIEW_SECONDS,
     lastActivityAt: at,
+    phaseStartedAt: at,
   };
+}
+
+/** A new session may only be asked for from rest: never while one is starting or live. */
+export function mayRequestSession(state: ScreenSessionState): boolean {
+  return state.phase === 'idle' || state.phase === 'ended';
 }
 
 /** True while a session is worth tearing down. */
@@ -120,8 +142,11 @@ export function idleTimeoutSecondsFor(mode: ScreenMode, hostValue?: number): num
 }
 
 /** A lock screen or a secure input field holds the picture back; it is not a failure. */
-export function holdFor(reason: ScreenStopReason | undefined): ScreenHold | undefined {
+export function holdFor(
+  reason: ScreenStopReason | ScreenRefusal | undefined,
+): ScreenHold | undefined {
   if (reason === 'lock-screen' || reason === 'secure-input') return reason;
+  if (reason === 'screen-permission') return reason;
   return undefined;
 }
 
@@ -148,7 +173,7 @@ function end(
   reason: ScreenStopReason,
   options: { notify: boolean } = { notify: false },
 ): ScreenTransition {
-  const outgoing: ScreenSessionEndSignal[] = [];
+  const outgoing: ScreenSignal[] = [];
   const active = isScreenSessionActive(state);
   if (options.notify && active && state.sessionId && isOwnReason(reason)) {
     outgoing.push(sessionEndSignal(state.sessionId, reason));
@@ -184,7 +209,11 @@ function applyHostState(
   };
   if (host.controlChallengeB64) next.controlChallengeB64 = host.controlChallengeB64;
   else delete next.controlChallengeB64;
+  if (host.controlKeyFingerprint) next.controlKeyFingerprint = host.controlKeyFingerprint;
+  else delete next.controlKeyFingerprint;
   if (host.iceServers) next.iceServers = host.iceServers;
+  // A state read during a session must not shorten or lengthen the live session's ceiling.
+  if (isScreenSessionActive(state)) next.idleTimeoutSeconds = state.idleTimeoutSeconds;
   return applyGrant(next, host.allowed, host.grant);
 }
 
@@ -213,6 +242,7 @@ export function screenSessionReducer(
       return applyHostState(state, event.state, event.at);
 
     case 'requested': {
+      if (!mayRequestSession(state)) return unchanged(state);
       const next: ScreenSessionState = {
         ...state,
         phase: 'starting',
@@ -220,6 +250,7 @@ export function screenSessionReducer(
         displayId: event.displayId,
         idleTimeoutSeconds: idleTimeoutSecondsFor(event.mode),
         lastActivityAt: event.at,
+        phaseStartedAt: event.at,
         backgroundSince: undefined,
       };
       delete next.stopReason;
@@ -229,7 +260,14 @@ export function screenSessionReducer(
       return { state: next, outgoing: [], closePeer: false };
     }
 
+    case 'request-sent': {
+      if (state.phase !== 'starting') return unchanged(state);
+      return { state: { ...state, phaseStartedAt: event.at }, outgoing: [], closePeer: false };
+    }
+
     case 'accepted': {
+      // A reply for a start the user stopped, or one a kill ended, revives nothing.
+      if (state.phase !== 'starting') return unchanged(state);
       const next: ScreenSessionState = {
         ...state,
         phase: 'connecting',
@@ -237,22 +275,25 @@ export function screenSessionReducer(
         mode: event.session.mode,
         displayId: event.session.displayId,
         quality: event.session.quality,
-        idleTimeoutSeconds: idleTimeoutSecondsFor(event.session.mode, state.idleTimeoutSeconds),
+        idleTimeoutSeconds: idleTimeoutSecondsFor(event.session.mode),
         lastActivityAt: event.at,
+        phaseStartedAt: event.at,
       };
       return { state: next, outgoing: [], closePeer: false };
     }
 
     case 'refused': {
+      if (state.phase !== 'starting') return unchanged(state);
       const next: ScreenSessionState = {
         ...state,
         phase: 'idle',
         refusal: event.reason,
       };
       delete next.sessionId;
-      // A missing or expired Screen Recording grant is the one refusal the phone
-      // explains as "Mac에서 승인 필요" rather than as a flat no.
-      if (event.reason === 'screen-permission') next.hold = 'screen-permission';
+      // A missing Screen Recording grant reads as "Mac에서 승인 필요", and a lock screen
+      // or a password field as the pause it is, rather than as a flat no.
+      const hold = holdFor(event.reason);
+      if (hold) next.hold = hold;
       else delete next.hold;
       return { state: next, outgoing: [], closePeer: true };
     }
@@ -282,10 +323,13 @@ export function screenSessionReducer(
     }
 
     case 'background': {
-      if (!isScreenSessionActive(state)) return unchanged(state);
+      if (!isScreenSessionActive(state) || state.backgroundSince !== undefined) {
+        return unchanged(state);
+      }
+      // The Mac keeps the 30 s rule, so it hears about the background at once.
       return {
         state: { ...state, backgroundSince: event.at },
-        outgoing: [],
+        outgoing: state.sessionId ? [backgroundSignal(state.sessionId, true)] : [],
         closePeer: false,
       };
     }
@@ -294,11 +338,22 @@ export function screenSessionReducer(
       if (state.backgroundSince === undefined) return unchanged(state);
       const next = { ...state };
       delete next.backgroundSince;
-      return { state: next, outgoing: [], closePeer: false };
+      const outgoing =
+        isScreenSessionActive(state) && state.sessionId
+          ? [backgroundSignal(state.sessionId, false)]
+          : [];
+      return { state: next, outgoing, closePeer: false };
     }
 
     case 'tick': {
       if (!isScreenSessionActive(state)) return unchanged(state);
+      // A reply or an offer that never comes must not leave the screen spinning.
+      if (
+        (state.phase === 'starting' || state.phase === 'connecting') &&
+        event.at - state.phaseStartedAt >= SCREEN_CONNECT_DEADLINE_MS
+      ) {
+        return end(state, 'peer-failed', { notify: true });
+      }
       // 30 s in the background ends the session even if the user never comes back.
       if (state.backgroundSince !== undefined) {
         const away = event.at - state.backgroundSince;
@@ -342,7 +397,10 @@ function applySignal(
     }
 
     case 'screen-kill': {
-      if (!killHitsSession(signal, state.sessionId)) return unchanged(state);
+      // While starting the phone has no session id yet, so any kill is taken as ours:
+      // the Mac only sends one for a session it opened for this phone.
+      const pending = state.phase === 'starting' && state.sessionId === undefined;
+      if (!pending && !killHitsSession(signal, state.sessionId)) return unchanged(state);
       // The kill is a courtesy note: the Mac has already stopped capture and closed
       // the connection. We only make the screen say the same thing.
       if (!isScreenSessionActive(state)) {
@@ -362,10 +420,12 @@ function applySignal(
 
     case 'screen-offer': {
       if (signal.sessionId !== state.sessionId) return unchanged(state);
+      if (!isScreenSessionActive(state)) return unchanged(state);
       return {
         state: {
           ...state,
-          mode: signal.mode,
+          // The mode comes from `accepted`; an offer may only narrow it to view.
+          mode: signal.mode === 'view' ? 'view' : state.mode,
           displayId: signal.displayId,
           quality: signal.quality,
           lastActivityAt: at,

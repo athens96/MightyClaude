@@ -745,6 +745,11 @@ export interface ScreenShareState {
   displays: ScreenDisplay[];
   /** Present only when `grant` is `control`; signed once per control session. */
   controlChallengeB64?: string;
+  /**
+   * The fingerprint of the control key the Mac stores for this phone, when it stores one.
+   * Not a secret: the phone compares it with its own key's to decide whether to enrol.
+   */
+  controlKeyFingerprint?: string;
   iceServers?: ScreenIceServer[];
   /** 600 in control, 1800 in view-only. */
   idleTimeoutSeconds?: number;
@@ -773,14 +778,26 @@ export interface ScreenSessionResponse {
   quality: ScreenQuality;
 }
 
-/** Why the Mac refused a session; `403 {"error":{"reason":…}}`. */
+/** `POST /m1/screen-share/control-key` reply. */
+export interface ScreenControlKeyResponse {
+  fingerprint: string;
+}
+
+/** Why the Mac refused a session or a control key; `4xx {"error":{"reason":…}}`. */
 export type ScreenRejectReason =
   | 'legacy-client'
   | 'device-not-allowed'
   | 'insufficient-grant'
   | 'control-signature'
   | 'concurrency-limit'
-  | 'screen-permission';
+  | 'screen-permission'
+  | 'lock-screen'
+  | 'secure-input'
+  | 'session-stopped'
+  | 'bad-request'
+  | 'control-key-present'
+  | 'control-key-pending'
+  | 'control-key-not-confirmed';
 
 export const SCREEN_REJECT_REASONS: readonly ScreenRejectReason[] = [
   'legacy-client',
@@ -789,6 +806,13 @@ export const SCREEN_REJECT_REASONS: readonly ScreenRejectReason[] = [
   'control-signature',
   'concurrency-limit',
   'screen-permission',
+  'lock-screen',
+  'secure-input',
+  'session-stopped',
+  'bad-request',
+  'control-key-present',
+  'control-key-pending',
+  'control-key-not-confirmed',
 ] as const;
 
 /** Why a session stopped on its own. */

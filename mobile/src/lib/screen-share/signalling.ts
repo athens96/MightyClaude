@@ -52,6 +52,13 @@ export interface ScreenSessionEndSignal {
   reason: ScreenEndReason;
 }
 
+/** The app left (`true`) or came back to (`false`) the foreground; the Mac keeps the 30 s rule. */
+export interface ScreenBackgroundSignal {
+  type: 'screen-background';
+  sessionId: string;
+  background: boolean;
+}
+
 export interface ScreenGrantSignal {
   type: 'screen-grant';
   /** Absent when the Mac reports a change outside any session. */
@@ -70,12 +77,13 @@ export interface ScreenKillSignal {
   reason: ScreenKillReason;
 }
 
-/** Everything the Mac may send us, plus the two frames we send back. */
+/** Everything the Mac may send us, plus the frames we send back. */
 export type ScreenSignal =
   | ScreenOfferSignal
   | ScreenAnswerSignal
   | ScreenIceSignal
   | ScreenSessionEndSignal
+  | ScreenBackgroundSignal
   | ScreenGrantSignal
   | ScreenKillSignal;
 
@@ -86,6 +94,7 @@ const TYPES: readonly ScreenSignalType[] = [
   'screen-answer',
   'screen-ice',
   'screen-session-end',
+  'screen-background',
   'screen-grant',
   'screen-kill',
 ];
@@ -237,6 +246,11 @@ export function parseScreenSignal(message: unknown): ScreenSignal | undefined {
       return { type: 'screen-session-end', sessionId, reason };
     }
 
+    case 'screen-background': {
+      if (!sessionId || typeof raw.background !== 'boolean') return undefined;
+      return { type: 'screen-background', sessionId, background: raw.background };
+    }
+
     case 'screen-grant': {
       const grant = oneOf(raw.grant, GRANTS);
       if (!grant || typeof raw.allowed !== 'boolean') return undefined;
@@ -328,6 +342,10 @@ export function iceSignal(
 /** The trickle terminator: one frame with an empty candidate. */
 export function endOfCandidatesSignal(sessionId: string): ScreenIceSignal {
   return { type: 'screen-ice', sessionId, candidate: '' };
+}
+
+export function backgroundSignal(sessionId: string, background: boolean): ScreenBackgroundSignal {
+  return { type: 'screen-background', sessionId, background };
 }
 
 export function sessionEndSignal(sessionId: string, reason: ScreenEndReason): ScreenSessionEndSignal {

@@ -1,11 +1,6 @@
-import {
-  RTCIceCandidate,
-  RTCPeerConnection,
-  RTCRtpReceiver,
-  RTCSessionDescription,
-} from 'react-native-webrtc';
+import type * as WebRTC from 'react-native-webrtc';
 import type RTCDataChannel from 'react-native-webrtc/lib/typescript/RTCDataChannel';
-import type { ScreenCandidateType } from '@/api/types';
+import type { ScreenIceServer } from '@/api/types';
 import type { DecoderCapabilities } from '@/lib/screen-share/quality';
 import type {
   ScreenIceCandidateInit,
@@ -19,78 +14,59 @@ import type {
  * sends the video and therefore makes the offer, and the Mac opens the data channel that
  * carries input and the clipboard.
  *
- * This file is the only one that touches the native module, so everything else — the
- * session rules, the signalling, the clipboard — runs under plain Node in the tests.
+ * This file is the only one that touches the native module, and it loads it lazily: the
+ * iOS build leaves `react-native-webrtc` out of autolinking (`react-native.config.js`), and
+ * importing it there would throw at startup.
  */
 
 /** The channel label the Mac opens for input, clipboard and zoom requests. */
-export const SCREEN_DATA_CHANNEL = 'mc-screen';
+export const SCREEN_DATA_CHANNEL = 'screen-control';
 
-const CANDIDATE_TYPES: readonly ScreenCandidateType[] = ['host', 'srflx', 'prflx', 'relay'];
-
-function asCandidateType(value: unknown): ScreenCandidateType | undefined {
-  return typeof value === 'string' && (CANDIDATE_TYPES as readonly string[]).includes(value)
-    ? (value as ScreenCandidateType)
-    : undefined;
+function webrtc(): typeof WebRTC {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('react-native-webrtc') as typeof WebRTC;
 }
 
 /** What this phone can decode, for the `decodes` field of a session request. */
 export function videoDecoderCapabilities(): DecoderCapabilities | undefined {
   try {
-    return RTCRtpReceiver.getCapabilities('video') as DecoderCapabilities;
+    return webrtc().RTCRtpReceiver.getCapabilities('video') as DecoderCapabilities;
   } catch {
     return undefined;
   }
 }
 
-/** Walks `getStats` for the pair in use and reports which kind of path won. */
-async function selectedCandidateType(
-  connection: RTCPeerConnection,
-): Promise<ScreenCandidateType | undefined> {
-  try {
-    const report: unknown = await connection.getStats();
-    const entries: Record<string, Record<string, unknown>> = {};
-    if (report instanceof Map) {
-      for (const [id, value] of report.entries()) {
-        entries[String(id)] = value as Record<string, unknown>;
-      }
-    } else if (report !== null && typeof report === 'object') {
-      Object.assign(entries, report as Record<string, Record<string, unknown>>);
-    }
-    const pair = Object.values(entries).find(
-      (value) =>
-        value.type === 'candidate-pair' && (value.selected === true || value.state === 'succeeded'),
-    );
-    const localId = pair?.localCandidateId;
-    const local = typeof localId === 'string' ? entries[localId] : undefined;
-    return asCandidateType(local?.candidateType);
-  } catch {
-    return undefined;
-  }
+function rtcIceServers(servers: ScreenIceServer[]) {
+  return servers.map((server) => ({
+    urls: server.urls,
+    ...(server.username === undefined ? {} : { username: server.username }),
+    ...(server.credential === undefined ? {} : { credential: server.credential }),
+  }));
 }
 
 export function createWebrtcScreenPeer(
   config: ScreenPeerConfig,
   callbacks: ScreenPeerCallbacks,
 ): ScreenPeer {
-  const connection = new RTCPeerConnection({
-    iceServers: config.iceServers.map((server) => ({
-      urls: server.urls,
-      ...(server.username === undefined ? {} : { username: server.username }),
-      ...(server.credential === undefined ? {} : { credential: server.credential }),
-    })),
-    bundlePolicy: 'max-bundle',
-    rtcpMuxPolicy: 'require',
-  });
+  const { RTCIceCandidate, RTCPeerConnection, RTCSessionDescription } = webrtc();
+  const configuration = {
+    iceServers: rtcIceServers(config.iceServers),
+    bundlePolicy: 'max-bundle' as const,
+    rtcpMuxPolicy: 'require' as const,
+  };
+  const connection = new RTCPeerConnection(configuration);
 
   let channel: RTCDataChannel | undefined;
 
   // The published package ships no typings for its event-target shim, so the `on*`
   // setters are used rather than `addEventListener`, and each event is read through the
   // shape we actually need.
-  connection.ontrack = ((event: { streams?: { toURL(): string }[] }) => {
+  connection.ontrack = ((event: { streams?: { id?: string; toURL(): string }[] }) => {
     const stream = event.streams?.[0];
-    callbacks.onStream(stream ? stream.toURL() : undefined);
+    if (!stream) return;
+    // The Mac names its streams `screen` and `overview`; anything else is the screen.
+    const track = stream.id === 'overview' ? 'overview' : 'screen';
+    callbacks.onStream(stream.toURL(), track);
   }) as never;
 
   connection.onicecandidate = ((event: { candidate?: { toJSON(): unknown } | null }) => {
@@ -107,27 +83,39 @@ export function createWebrtcScreenPeer(
     else callbacks.onConnectionState('connecting');
   }) as never;
 
-  // The Mac opens the channel; we only listen for it.
+  // The Mac opens `screen-control`; we only listen for it.
   connection.ondatachannel = ((event: { channel: RTCDataChannel }) => {
     const opened = event.channel;
+    if (opened.label !== SCREEN_DATA_CHANNEL) return;
     channel = opened;
     opened.onmessage = ((message: { data?: unknown }) => {
       const data = message.data;
       if (typeof data !== 'string') return;
+      let parsed: unknown;
       try {
-        callbacks.onData(JSON.parse(data));
+        parsed = JSON.parse(data);
       } catch {
         // A frame we cannot read is dropped; the data channel stays usable.
+        return;
       }
+      callbacks.onData(parsed);
     }) as never;
   }) as never;
 
   return {
     async answer(offerSdp, options) {
-      await connection.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offerSdp }));
-      // An ICE restart arrives as a fresh offer with new ufrags, so answering it is the
-      // whole job — there is nothing to restart on the answering side.
-      void options.iceRestart;
+      // A TURN credential renewal arrives as `screen-grant` with new servers and then an
+      // `iceRestart` offer: the new servers must be in place before the offer is applied,
+      // or the restarted ICE gathers against expired credentials.
+      if (options.iceRestart && options.iceServers) {
+        connection.setConfiguration({
+          ...configuration,
+          iceServers: rtcIceServers(options.iceServers),
+        });
+      }
+      await connection.setRemoteDescription(
+        new RTCSessionDescription({ type: 'offer', sdp: offerSdp }),
+      );
       const answer = await connection.createAnswer();
       await connection.setLocalDescription(answer);
       return connection.localDescription?.sdp ?? (answer as { sdp?: string }).sdp ?? '';
@@ -143,11 +131,15 @@ export function createWebrtcScreenPeer(
 
     sendData(payload) {
       if (!channel || channel.readyState !== 'open') return false;
-      channel.send(payload);
-      return true;
+      try {
+        channel.send(payload);
+        return true;
+      } catch {
+        return false;
+      }
     },
 
-    candidateType: () => selectedCandidateType(connection),
+    stats: () => connection.getStats(),
 
     close() {
       try {
@@ -157,7 +149,6 @@ export function createWebrtcScreenPeer(
       }
       channel = undefined;
       connection.close();
-      callbacks.onStream(undefined);
     },
   };
 }
