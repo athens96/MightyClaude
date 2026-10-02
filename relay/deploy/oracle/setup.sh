@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 if [ -z "${DOMAIN}" ] && [ -f .env ]; then
-    DOMAIN="$(grep -E '^RELAY_DOMAIN=' .env | cut -d= -f2-)"
+    DOMAIN="$(grep -E '^RELAY_DOMAIN=' .env | cut -d= -f2- || true)"
 fi
 if [ -z "${DOMAIN}" ]; then
     echo "용법: bash $0 <이름>.duckdns.org" >&2
@@ -56,17 +56,21 @@ fi
 
 # ── 스택 시작 ───────────────────────────────────────────────────────────────
 # ── TURN 시크릿 ─────────────────────────────────────────────────────────────
-# TURN_SECRET이 이미 .env에 있으면 다시 만들지 않는다(재배포에 안전).
+# TURN_SECRET이 이미 .env에 있으면 다시 만들지 않는다(재배포에 안전). TURN 이전에
+# 만든 .env에는 그 줄이 없으므로 grep이 실패해도 멈추지 않는다(pipefail).
+# 시크릿은 화면에도, 다른 프로세스가 볼 수 있는 명령줄 인수에도 내보내지 않는다.
 TURN_SECRET_VAL=""
 if [ -f .env ]; then
-    TURN_SECRET_VAL="$(grep -E '^TURN_SECRET=' .env | cut -d= -f2-)"
+    TURN_SECRET_VAL="$(grep -E '^TURN_SECRET=' .env | cut -d= -f2- || true)"
 fi
 if [ -z "${TURN_SECRET_VAL}" ]; then
     TURN_SECRET_VAL="$(openssl rand -hex 32)"
     echo "▶ TURN 시크릿을 새로 만들었습니다."
 fi
 
-printf 'RELAY_DOMAIN=%s\nTURN_SECRET=%s\n' "${DOMAIN}" "${TURN_SECRET_VAL}" > .env
+# .env는 처음부터 소유자만 읽게 만든다(umask는 이 서브셸 안에서만).
+(umask 077 && printf 'RELAY_DOMAIN=%s\nTURN_SECRET=%s\n' "${DOMAIN}" "${TURN_SECRET_VAL}" > .env)
+chmod 600 .env
 
 # ── coturn 설정의 플레이스홀더를 실제 값으로 치환하고 호스트에 기록 ─────────
 # compose.yaml이 /etc/coturn/turnserver.conf를 컨테이너에 마운트한다.
@@ -75,10 +79,23 @@ INTERNAL_IP="$(hostname -I | awk '{print $1}')"
 EXTERNAL_IP="$(curl -fsS --max-time 5 https://ifconfig.me 2>/dev/null || curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo "${INTERNAL_IP}")"
 echo "▶ 외부 IP: ${EXTERNAL_IP}, 내부 IP: ${INTERNAL_IP}"
 sudo mkdir -p /etc/coturn
-sed -e "s/\${TURN_SECRET}/${TURN_SECRET_VAL}/g" \
-    -e "s/\${EXTERNAL_IP}/${EXTERNAL_IP}/g" \
-    -e "s/\${INTERNAL_IP}/${INTERNAL_IP}/g" \
-    turnserver.conf | sudo tee /etc/coturn/turnserver.conf >/dev/null
+# 치환은 bash 안에서 한다: sed 인수로 넘기면 시크릿이 ps에 보인다. 결과는 umask
+# 077 임시 파일을 거쳐 표준 입력으로 sudo tee에 넘긴다(시크릿이 명령줄에 오르지
+# 않고, 바인드 마운트된 파일을 제자리에서 고쳐 쓴다).
+RENDERED="$(umask 077 && mktemp)"
+trap 'rm -f "${RENDERED}"' EXIT
+# bash 5.2부터는 치환 문자열의 &가 "찾은 부분"을 뜻하므로 끈다(그 이전 bash엔 없는 옵션).
+shopt -u patsub_replacement 2>/dev/null || true
+CONF_TEXT="$(cat turnserver.conf)"
+CONF_TEXT="${CONF_TEXT//'${TURN_SECRET}'/${TURN_SECRET_VAL}}"
+CONF_TEXT="${CONF_TEXT//'${EXTERNAL_IP}'/${EXTERNAL_IP}}"
+CONF_TEXT="${CONF_TEXT//'${INTERNAL_IP}'/${INTERNAL_IP}}"
+printf '%s\n' "${CONF_TEXT}" > "${RENDERED}"
+unset CONF_TEXT
+# 첫 배포라면 비어 있는 600 파일부터 만들어, 시크릿이 한순간도 644로 놓이지 않게 한다.
+sudo test -f /etc/coturn/turnserver.conf || sudo install -m 600 /dev/null /etc/coturn/turnserver.conf
+sudo tee /etc/coturn/turnserver.conf < "${RENDERED}" >/dev/null
+rm -f "${RENDERED}"
 # coturn 공식 이미지는 nobody:nogroup(65534)으로 돌기 때문에 600 root 파일은
 # 읽지 못하고, 그러면 coturn이 경고 한 줄만 남기고 기본 설정(인증 없는 공개
 # 중계!)으로 떠 버린다. 그룹만 읽게 열어 준다.

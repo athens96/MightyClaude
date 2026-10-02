@@ -102,15 +102,16 @@ case "${SHAPE}" in
     *)
         note "FAIL shape=${SHAPE} 는 받아들인 shape이 아닙니다 (VM.Standard.E2.1.Micro 또는 VM.Standard.A1.Flex)"; FAILED=1 ;;
 esac
-# Micro를 받아들인 전제는 할당량이다: 세션당 2 Mbps, 합계 8 Mbps. 지금 coturn이
+# Micro를 받아들인 전제는 할당량이다: 세션당 2 Mbps, 합계 8 Mbps. coturn은 이 두 값을
+# 초당 바이트로 세므로 설정 값은 250000·1000000이다. 지금 coturn이
 # 실제로 읽고 있는 설정에서 그 줄만 골라 읽는다(비밀에 해당하는 줄은 읽지 않는다).
 CONF="$("${SSH[@]}" 'sudo grep -E "^(max-bps|bps-capacity|min-port|max-port|use-auth-secret)" /etc/coturn/turnserver.conf' 2>/dev/null)"
 check_conf() {
     if printf '%s\n' "${CONF}" | grep -qx -- "$1"; then note "ok   $2"; else note "FAIL $2 — 살아 있는 설정에 '$1' 이 없습니다"; FAILED=1; fi
 }
 check_conf "use-auth-secret" "use-auth-secret (릴레이가 발급한 자격증명만 허용)"
-check_conf "max-bps=2000000" "세션당 할당량 2 Mbps"
-check_conf "bps-capacity=8000000" "합계 할당량 8 Mbps"
+check_conf "max-bps=250000" "세션당 할당량 2 Mbps (250000 B/s)"
+check_conf "bps-capacity=1000000" "합계 할당량 8 Mbps (1000000 B/s)"
 check_conf "min-port=${MIN_PORT}" "중계 포트 최소 ${MIN_PORT}"
 check_conf "max-port=${MAX_PORT}" "중계 포트 최대 ${MAX_PORT}"
 

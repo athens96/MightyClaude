@@ -147,8 +147,15 @@ R9 밖에서 UDP 3478이 닿는지(Oracle 보안 목록). 하나라도 깨지면
 - coturn 라이브: realm `mightyclaude.duckdns.org`. 자격증명 없는 Allocate는
   401로 거절되고, 릴레이가 발급한 자격증명으로는 Allocate가 성공하며 중계
   주소가 49160-49200 안에서 나옵니다(확인 당시 `…:49174`).
-- 할당량: 세션당 2 Mbps(`max-bps`)·합계 8 Mbps(`bps-capacity`), 사설·링크로컬·
-  메타데이터 대역 거부. R8이 살아 있는 설정에서 직접 읽어 확인합니다.
+- 할당량: 세션당 2 Mbps(`max-bps=250000`)·합계 8 Mbps(`bps-capacity=1000000`).
+  coturn은 이 둘을 초당 바이트로 셉니다(예전 값 2000000·8000000은 실제로는 16·64
+  Mbps였습니다). 사설·링크로컬·메타데이터·멀티캐스트 대역과 IPv6 루프백·ULA·
+  링크로컬·IPv4 매핑·NAT64 대역 거부, 관리 CLI 끔. R8이 살아 있는 설정에서 직접
+  읽어 확인합니다.
+- 릴레이 발급 한도: Caddy 뒤에서 `RELAY_TRUST_PROXY=1`이라 IP별 한도가 실제
+  클라이언트 IP에 걸리고, 릴레이 전체 한도(`TURN_MAX_GLOBAL=60`/10분)가 따로
+  있습니다. 호스트 인증은 스스로 증명하는 방식이라(`docs/relay.md`) 이 한도와
+  coturn 할당량이 실제 방어선입니다.
 - 방화벽: OS(iptables) UDP/TCP 3478 + UDP 49160-49200, 그리고 Oracle 보안
   목록(VCN)도 사용자가 열어 밖에서 보낸 STUN이 VM에 닿습니다(R9 ok). 강제 TURN
   경로를 기기에서 시험할 수 있습니다.
