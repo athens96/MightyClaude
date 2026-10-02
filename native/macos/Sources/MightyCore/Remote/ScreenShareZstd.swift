@@ -24,14 +24,27 @@ public struct ZstdScreenShareCompressor: ScreenShareCompressor {
         return output
     }
 
+    /// The largest window a frame may ask the decoder for: 2 MiB, twice the
+    /// clipboard ceiling. zstd's own default allows 128 MiB, which a hostile
+    /// frame header could make the decoder allocate before a byte comes out.
+    public static let windowLogMax: Int32 = 21
+
     /// Streams the frame out and gives up the moment the output would pass
     /// `limit`, so a small frame that claims (or expands to) gigabytes costs at
     /// most `limit` bytes of memory. The frame's own size header is never
-    /// trusted for the allocation.
+    /// trusted for the allocation — but a header that declares more than
+    /// `limit` is refused before decoding starts.
     public func decompress(_ data: Data, limit: Int) -> Data? {
-        guard !data.isEmpty, limit > 0, let stream = ZSTD_createDStream() else { return nil }
+        guard !data.isEmpty, limit > 0 else { return nil }
+        let declared = data.withUnsafeBytes { ZSTD_getFrameContentSize($0.baseAddress, data.count) }
+        // UInt64.max is "unknown" (a streamed frame), UInt64.max - 1 a bad header.
+        if declared == UInt64.max - 1 { return nil }
+        if declared != UInt64.max, declared > UInt64(limit) { return nil }
+        guard let stream = ZSTD_createDStream() else { return nil }
         defer { ZSTD_freeDStream(stream) }
-        guard ZSTD_isError(ZSTD_initDStream(stream)) == 0 else { return nil }
+        guard ZSTD_isError(ZSTD_initDStream(stream)) == 0,
+              ZSTD_isError(ZSTD_DCtx_setParameter(stream, ZSTD_d_windowLogMax, Self.windowLogMax)) == 0
+        else { return nil }
         let chunk = ZSTD_DStreamOutSize()
         var scratch = [UInt8](repeating: 0, count: chunk)
         var result = Data()
