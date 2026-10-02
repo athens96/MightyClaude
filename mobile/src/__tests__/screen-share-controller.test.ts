@@ -328,6 +328,7 @@ describe('the control key lifecycle', () => {
     expect(h.controller.snapshot().controlKey.status).toBe('unsupported');
     await h.controller.start('control');
     expect(h.requests).toEqual([]);
+    expect(h.controller.snapshot().controlFailure).toBe('unsupported');
   });
 });
 
