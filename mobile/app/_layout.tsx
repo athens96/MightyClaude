@@ -69,6 +69,11 @@ export default function RootLayout() {
             <Stack.Screen name="pair" options={{ title: '호스트 추가', presentation: 'modal' }} />
             <Stack.Screen name="host/[hostId]/index" options={{ title: t('phone.workspaces.title') }} />
             <Stack.Screen name="host/[hostId]/session/[sessionId]" options={{ title: '세션' }} />
+            {/* The only screen that may turn sideways; it unlocks landscape itself. */}
+            <Stack.Screen
+              name="host/[hostId]/screen"
+              options={{ title: t('phone.screenShare.title') }}
+            />
             <Stack.Screen
               name="host/[hostId]/workspace/[workspaceId]/files"
               options={{ title: t('phone.files.title') }}

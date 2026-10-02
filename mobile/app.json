@@ -30,7 +30,10 @@
       ],
       "predictiveBackGestureEnabled": false,
       "package": "dev.mightyclaude.mobile",
-      "versionCode": 2
+      "versionCode": 2,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "output": "static",
@@ -56,6 +59,13 @@
       ],
       "expo-document-picker",
       [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "호스트 페어링 QR 코드를 스캔하기 위해 카메라를 사용합니다.",
+          "microphonePermission": "원격 화면 연결에 WebRTC를 사용합니다. 마이크는 쓰지 않습니다."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#0d0d0f",
@@ -70,7 +80,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-screen-orientation"
     ],
     "experiments": {
       "typedRoutes": true
