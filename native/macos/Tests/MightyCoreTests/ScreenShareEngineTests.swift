@@ -40,7 +40,8 @@ struct ScreenShareEngineTests {
         load: ScreenShareMachineLoad = FakeLoad(headroom: 0.9, thermal: false),
         fast: Set<TimeInterval> = [],
         host: ScreenShareHost = ScreenShareHost(),
-        confirmer custom: ScreenShareControlKeyConfirmer? = nil
+        confirmer custom: ScreenShareControlKeyConfirmer? = nil,
+        tapMarker: ScreenShareTapMarkerSurface? = nil
     ) async -> Fixture {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("screen-engine-" + UUID().uuidString, isDirectory: true)
@@ -59,7 +60,8 @@ struct ScreenShareEngineTests {
         let confirmer = FakeConfirmer(answer: confirm)
         let engine = ScreenShareEngine(
             service: service, peers: peers, capture: capture, signals: signals, turn: turn,
-            displays: displays, pasteboard: pasteboard, confirmer: custom ?? confirmer, load: load,
+            displays: displays, pasteboard: pasteboard, confirmer: custom ?? confirmer,
+            tapMarker: tapMarker, load: load,
             compressor: nil,
             // The intervals a test names run in a millisecond; every other timer
             // (renewal, connect deadline, keepalive) waits an hour, so it cannot
@@ -640,6 +642,83 @@ struct ScreenShareEngineTests {
         #expect(calls.contains("text 안녕하세요"))
         // ⌘V is kVK_ANSI_V with the command modifier and nothing else.
         #expect(calls.contains("key 9 modifiers \(ScreenShareModifiers.command.rawValue)"))
+    }
+
+    // MARK: Tap marker
+
+    @Test func aTapMayCarryAMarkerIdAndAMalformedOneDropsTheTap() {
+        let plain = ScreenShareDataChannel.decode(
+            ["t": "tap", "displayId": 1, "x": 0.5, "y": 0.25, "button": "left"])
+        let point = ScreenShareNormalizedPoint(displayId: 1, x: 0.5, y: 0.25)
+        #expect(plain == .success(.input(.click(point, button: .left, clickCount: 1))))
+        let marked = ScreenShareDataChannel.decode(
+            ["t": "tap", "displayId": 1, "x": 0.5, "y": 0.25, "button": "left", "marker": "m-12_ab"])
+        #expect(marked == .success(.markedTap(.click(point, button: .left, clickCount: 1), markerId: "m-12_ab")))
+        for bad in ["", String(repeating: "a", count: 33), "a b", "ㄱ", "a/b", 7, true] as [Any] {
+            let decoded = ScreenShareDataChannel.decode(
+                ["t": "tap", "displayId": 1, "x": 0.5, "y": 0.25, "button": "left", "marker": bad])
+            #expect(decoded == .failure(.malformed), "\(bad) was accepted as a marker id")
+        }
+        #expect(ScreenShareTapMarker.isValidId(String(repeating: "Z", count: 32)))
+    }
+
+    @Test func aMarkedTapClicksDrawsTheMarkerWhereTheHostResolvedItAndEchoesTheId() async throws {
+        let marker = RecordingTapMarker()
+        let fixture = await makeFixture(tapMarker: marker)
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        guard case .success(let state) = await fixture.engine.state(deviceId: Self.phone) else {
+            Issue.record("state refused"); return
+        }
+        #expect(state.screenShare.tapMarker)
+        guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
+            Issue.record("control start refused"); return
+        }
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        await peer.emitData(Self.json(["t": "tap", "displayId": 2, "x": 0.5, "y": 0.5, "button": "left", "marker": "probe-1"]))
+        try await Task.sleep(nanoseconds: 60_000_000)
+        // The click itself went through the host, at display 2's centre.
+        #expect(fixture.input.calls.contains { $0.hasPrefix("click left x1 2560.0,400.0 display 2") })
+        #expect(marker.shown == ["2560.0,400.0 display 2"])
+        let echoes = await peer.sentData.compactMap {
+            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+        }.filter { $0["t"] as? String == "marker" }
+        #expect(echoes.count == 1)
+        #expect(echoes.first?["id"] as? String == "probe-1")
+        #expect(echoes.first?["shown"] as? Bool == true)
+    }
+
+    @Test func aRefusedMarkedTapDrawsNothingAndSaysSo() async throws {
+        let marker = RecordingTapMarker()
+        let fixture = await makeFixture(tapMarker: marker)
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        await peer.emitData(Self.json(["t": "tap", "displayId": 1, "x": 0.5, "y": 0.5, "button": "left", "marker": "v1"]))
+        try await Task.sleep(nanoseconds: 60_000_000)
+        #expect(fixture.input.calls.isEmpty)
+        #expect(marker.shown.isEmpty)
+        let echoes = await peer.sentData.compactMap {
+            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+        }.filter { $0["t"] as? String == "marker" }
+        #expect(echoes.first?["id"] as? String == "v1")
+        #expect(echoes.first?["shown"] as? Bool == false)
+    }
+
+    @Test func aMacWithoutAMarkerSurfaceDoesNotAdvertiseOne() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let state) = await fixture.engine.state(deviceId: Self.phone) else {
+            Issue.record("state refused"); return
+        }
+        #expect(!state.screenShare.tapMarker)
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any]
+        let body = encoded?["screenShare"] as? [String: Any]
+        #expect(body?["tapMarker"] as? Bool == false)
     }
 
     @Test func aViewOnlyPhoneInjectsNothingHoweverItAsks() async throws {
@@ -1524,6 +1603,20 @@ actor RecordingCaptureBackend: ScreenShareCaptureBackend {
 
 /// The Mac pasteboard, as a test decides it. A lock rather than an actor, because
 /// the protocol is synchronous: `NSPasteboard` is.
+/// Records where the engine asked for the latency marker.
+final class RecordingTapMarker: ScreenShareTapMarkerSurface, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String] = []
+    var shown: [String] { lock.lock(); defer { lock.unlock() }; return recorded }
+
+    private func add(_ line: String) { lock.lock(); recorded.append(line); lock.unlock() }
+
+    func showMarker(at position: CGPoint, displayId: UInt32) async -> Bool {
+        add("\(position.x),\(position.y) display \(displayId)")
+        return true
+    }
+}
+
 final class FakePasteboard: ScreenSharePasteboard, @unchecked Sendable {
     private let lock = NSLock()
     private var value: ScreenSharePasteboardRead = .empty

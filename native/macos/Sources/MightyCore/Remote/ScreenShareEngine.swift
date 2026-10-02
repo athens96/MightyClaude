@@ -17,15 +17,20 @@ public struct ScreenShareStateBody: Encodable, Sendable, Equatable {
     public var controlKeyFingerprint: String?
     public var iceServers: [ScreenShareIceServerBody]?
     public var idleTimeoutSeconds: Int
+    /// True when this Mac draws the latency marker for a `tap` that asks for
+    /// one. A phone that reads false (or nothing, from an older Mac) keeps its
+    /// still-screen fallback.
+    public var tapMarker: Bool
 
     public init(allowed: Bool, grant: String, isBeta: Bool = true,
                 displays: [ScreenShareDisplayInfo], controlChallengeB64: String?,
                 controlKeyFingerprint: String?, iceServers: [ScreenShareIceServerBody]?,
-                idleTimeoutSeconds: Int) {
+                idleTimeoutSeconds: Int, tapMarker: Bool = false) {
         self.allowed = allowed; self.grant = grant; self.isBeta = isBeta
         self.displays = displays; self.controlChallengeB64 = controlChallengeB64
         self.controlKeyFingerprint = controlKeyFingerprint
         self.iceServers = iceServers; self.idleTimeoutSeconds = idleTimeoutSeconds
+        self.tapMarker = tapMarker
     }
 }
 
@@ -168,6 +173,7 @@ public actor ScreenShareEngine {
     private let pasteboard: ScreenSharePasteboard
     private let compressor: ScreenShareCompressor?
     private let confirmer: ScreenShareControlKeyConfirmer
+    private let tapMarker: ScreenShareTapMarkerSurface?
     private let now: @Sendable () -> Date
     private let sleeper: @Sendable (TimeInterval) async throws -> Void
     private let frameClock: @Sendable () -> Int64
@@ -233,6 +239,7 @@ public actor ScreenShareEngine {
         displays: ScreenShareDisplaySource,
         pasteboard: ScreenSharePasteboard,
         confirmer: ScreenShareControlKeyConfirmer,
+        tapMarker: ScreenShareTapMarkerSurface? = nil,
         load: ScreenShareMachineLoad = SystemScreenShareLoad(),
         compressor: ScreenShareCompressor? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
@@ -243,7 +250,7 @@ public actor ScreenShareEngine {
     ) {
         self.service = service; self.peers = peers; self.capture = capture
         self.signals = signals; self.turn = turn; self.displays = displays
-        self.pasteboard = pasteboard; self.confirmer = confirmer
+        self.pasteboard = pasteboard; self.confirmer = confirmer; self.tapMarker = tapMarker
         self.load = load; self.compressor = compressor; self.now = now; self.sleeper = sleeper
         self.frameClock = frameClock
     }
@@ -260,7 +267,8 @@ public actor ScreenShareEngine {
             controlChallengeB64: await challenge(for: deviceId, allowed: allowed, grant: grant),
             controlKeyFingerprint: allowed ? row?.controlKeyPublicData.map(ScreenShareControlKey.fingerprint) : nil,
             iceServers: allowed ? await iceServers()?.map(ScreenShareIceServerBody.init) : nil,
-            idleTimeoutSeconds: Int(ScreenSharePolicy.idleTimeout(for: grant == .control ? .control : .view)))
+            idleTimeoutSeconds: Int(ScreenSharePolicy.idleTimeout(for: grant == .control ? .control : .view)),
+            tapMarker: tapMarker != nil)
         return .success(ScreenShareStateEnvelope(screenShare: body))
     }
 
@@ -556,6 +564,8 @@ public actor ScreenShareEngine {
             // while the screen is locked or secure input is on, and everything
             // for 2 s after the person at the Mac touched the keyboard.
             _ = await service.deliver(event, sessionId: sessionId)
+        case .markedTap(let event, let markerId):
+            await markedTap(event, markerId: markerId, sessionId: sessionId)
         case .zoom(let displayId, let region):
             guard mayReshape(sessionId: sessionId), sessions[sessionId]?.displayId == displayId else { return }
             try? await capture.setZoom(region)
@@ -569,6 +579,19 @@ public actor ScreenShareEngine {
         case .clipboardRequest:
             await sendClipboard(sessionId: sessionId)
         }
+    }
+
+    /// A tap the phone is timing. The click goes through the host exactly like
+    /// any other tap; only an admitted one gets the marker drawn at the point
+    /// the host resolved, and the echo goes out once the marker is on screen.
+    private func markedTap(_ event: ScreenShareInputEvent, markerId: String, sessionId: String) async {
+        let delivered = await service.deliver(event, sessionId: sessionId)
+        var shown = false
+        if case .success(let resolved?) = delivered, let tapMarker {
+            shown = await tapMarker.showMarker(at: resolved.position, displayId: resolved.displayId)
+        }
+        guard let peer = sessions[sessionId]?.peer else { return }
+        _ = await peer.sendData(Self.encode(ScreenShareTapMarker.echo(id: markerId, shown: shown)))
     }
 
     /// One capture serves every phone, so zoom and the display switch change
