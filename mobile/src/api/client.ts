@@ -41,7 +41,18 @@ import {
   type SubmitOptions,
   type SubmitResponse,
   type UploadTicket,
+  SCREEN_REJECT_REASONS,
+  type ScreenRejectReason,
+  type ScreenSessionRequest,
+  type ScreenSessionResponse,
+  type ScreenShareState,
+  type ScreenShareStateResponse,
 } from '@/api/types';
+import {
+  encodeScreenSignal,
+  parseScreenSignal,
+  type ScreenSignal,
+} from '@/lib/screen-share/signalling';
 
 /**
  * Everything needed to open an encrypted tunnel to one paired desktop. A host that has
@@ -133,6 +144,15 @@ function errorCodeFrom(body: unknown): string | undefined {
     const value = (body as { code: unknown }).code;
     if (typeof value === 'string' && value.length > 0) return value;
   }
+  // The screen-share routes refuse with `{"error":{"reason":"…"}}`, so the reason lands
+  // in `code` beside the file routes' own codes.
+  if (body !== null && typeof body === 'object' && 'error' in body) {
+    const nested = (body as { error: unknown }).error;
+    if (nested !== null && typeof nested === 'object' && 'reason' in nested) {
+      const reason = (nested as { reason: unknown }).reason;
+      if (typeof reason === 'string' && reason.length > 0) return reason;
+    }
+  }
   return undefined;
 }
 
@@ -166,6 +186,10 @@ export interface RelayChannel {
   ): Promise<{ status: number; body: unknown }>;
   onNotify(listener: (event: RelayNotification) => void): () => void;
   onStateChange?(listener: (state: RelayState, failure?: string) => void): () => void;
+  /** Encrypted envelopes the transport has no handler for (screen-share signalling). */
+  onMessage?(listener: (message: Record<string, unknown>) => void): () => void;
+  /** One encrypted message with no reply; false when the tunnel is not open. */
+  send?(message: Record<string, unknown>): boolean;
   ready?(): Promise<RelayHostInfo>;
 }
 
@@ -256,6 +280,32 @@ export interface MobileClient {
   listFiles(workspaceId: string, path: string, signal?: AbortSignal): Promise<FileListing>;
   /** One file's preview, read-only ("files"). */
   filePreview(workspaceId: string, path: string, signal?: AbortSignal): Promise<FilePreview>;
+  /** This phone's allow-list flag, grant, displays and TURN servers ("screenShare"). */
+  screenShareState(signal?: AbortSignal): Promise<ScreenShareState>;
+  /** Asks the Mac for a session; it refuses with a `ScreenRejectReason` ("screenShare"). */
+  startScreenShare(
+    input: ScreenSessionRequest,
+    signal?: AbortSignal,
+  ): Promise<ScreenSessionResponse>;
+  /** Hands the Mac the public half of the biometric-gated control key ("screenShare"). */
+  registerScreenControlKey(publicKeyB64: string, signal?: AbortSignal): Promise<OkResponse>;
+  /** Screen-share signalling arriving inside the E2EE channel. */
+  onScreenSignal(listener: (signal: ScreenSignal) => void): () => void;
+  /** Puts one signalling frame on the E2EE channel; false when the tunnel is down. */
+  sendScreenSignal(signal: ScreenSignal): boolean;
+}
+
+/**
+ * The reason the Mac gave for refusing a screen-share session, when it gave one of the
+ * reasons the contract lists. Anything else reads as a plain failure.
+ */
+export function screenRejectReason(error: unknown): ScreenRejectReason | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const code = error.code;
+  if (code === undefined) return undefined;
+  return (SCREEN_REJECT_REASONS as readonly string[]).includes(code)
+    ? (code as ScreenRejectReason)
+    : undefined;
 }
 
 class AbortedError extends Error {
@@ -534,6 +584,43 @@ export function createClient(channel: RelayChannel): MobileClient {
         undefined,
         signal,
       ),
+
+    screenShareState: async (signal) => {
+      const response = await request<ScreenShareStateResponse>(
+        'GET',
+        '/m1/screen-share/state',
+        undefined,
+        signal,
+      );
+      return response.screenShare;
+    },
+
+    startScreenShare: (input, signal) =>
+      request<ScreenSessionResponse>('POST', '/m1/screen-share/sessions', input, signal),
+
+    registerScreenControlKey: (publicKeyB64, signal) =>
+      request<OkResponse>('POST', '/m1/screen-share/control-key', { publicKeyB64 }, signal),
+
+    onScreenSignal: (listener) => {
+      if (!channel.onMessage) return () => undefined;
+      return channel.onMessage((message) => {
+        const signal = parseScreenSignal(message);
+        // Anything else — a type a newer Mac invented — is dropped without a word.
+        if (signal) listener(signal);
+      });
+    },
+
+    sendScreenSignal: (signal) => {
+      if (!channel.send) return false;
+      try {
+        // Encoding first: a frame over the plaintext budget is a bug on our side, and
+        // must not be put on a channel whose limits the relay enforces by hanging up.
+        JSON.parse(encodeScreenSignal(signal));
+      } catch {
+        return false;
+      }
+      return channel.send(signal as unknown as Record<string, unknown>);
+    },
   };
 }
 

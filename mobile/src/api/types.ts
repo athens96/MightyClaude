@@ -83,7 +83,8 @@ export type Capability =
   | 'status'
   | 'attachments'
   | 'style'
-  | 'files';
+  | 'files'
+  | 'screenShare';
 
 export const CAPABILITIES: readonly Capability[] = [
   'submit-mode',
@@ -97,6 +98,7 @@ export const CAPABILITIES: readonly Capability[] = [
   'attachments',
   'style',
   'files',
+  'screenShare',
 ] as const;
 
 export interface HostInfo {
@@ -694,3 +696,136 @@ export type FileErrorCode =
   | 'notReadable'
   | 'notDirectory'
   | 'badPath';
+
+// ─────────────────────────────── 화면 공유 (BETA) ───────────────────────────────
+// docs/relay.md "화면 공유 시그널링". The Mac decides everything that matters; these
+// types only describe what it says and what the phone is allowed to ask for.
+
+/** Per-phone grant the Mac enforces. A newly paired phone starts at `none`. */
+export type ScreenGrant = 'none' | 'view' | 'control';
+/** A live session is either watched or driven; `control` needs a fresh signature. */
+export type ScreenMode = 'view' | 'control';
+/** Negotiated video codec. HEVC is excluded on purpose. */
+export type ScreenCodec = 'H264' | 'VP9' | 'AV1';
+/** What the phone is on right now, which picks the quality ceiling. */
+export type ScreenNetwork = 'wifi' | 'cellular';
+/** The ICE path that actually carried the video, as `getStats` reports it. */
+export type ScreenCandidateType = 'host' | 'srflx' | 'prflx' | 'relay';
+
+/** One attached display the Mac offers. */
+export interface ScreenDisplay {
+  displayId: number;
+  width: number;
+  height: number;
+  main: boolean;
+}
+
+/** The ceiling for this session: Wi-Fi up to 1080p30, mobile data up to 720p15. */
+export interface ScreenQuality {
+  width: number;
+  height: number;
+  fps: number;
+  maxBitrateKbps: number;
+}
+
+/** A TURN/STUN server, with credentials the relay minted and the Mac forwarded. */
+export interface ScreenIceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+/** `GET /m1/screen-share/state`'s `screenShare` object. */
+export interface ScreenShareState {
+  /** The Mac's allow-list flag for this phone; false for a newly paired one. */
+  allowed: boolean;
+  grant: ScreenGrant;
+  /** Always true while the feature ships as BETA. */
+  isBeta: boolean;
+  displays: ScreenDisplay[];
+  /** Present only when `grant` is `control`; signed once per control session. */
+  controlChallengeB64?: string;
+  iceServers?: ScreenIceServer[];
+  /** 600 in control, 1800 in view-only. */
+  idleTimeoutSeconds?: number;
+}
+
+export interface ScreenShareStateResponse {
+  screenShare: ScreenShareState;
+}
+
+/** `POST /m1/screen-share/sessions` body. */
+export interface ScreenSessionRequest {
+  mode: ScreenMode;
+  displayId: number;
+  /** ECDSA DER over `controlChallengeB64`, base64. Control sessions only. */
+  controlSignatureB64?: string;
+  network: ScreenNetwork;
+  /** What this phone can decode, from `getCapabilities`. */
+  decodes: ScreenCodec[];
+}
+
+export interface ScreenSessionResponse {
+  sessionId: string;
+  mode: ScreenMode;
+  displayId: number;
+  codec: ScreenCodec;
+  quality: ScreenQuality;
+}
+
+/** Why the Mac refused a session; `403 {"error":{"reason":…}}`. */
+export type ScreenRejectReason =
+  | 'legacy-client'
+  | 'device-not-allowed'
+  | 'insufficient-grant'
+  | 'control-signature'
+  | 'concurrency-limit'
+  | 'screen-permission';
+
+export const SCREEN_REJECT_REASONS: readonly ScreenRejectReason[] = [
+  'legacy-client',
+  'device-not-allowed',
+  'insufficient-grant',
+  'control-signature',
+  'concurrency-limit',
+  'screen-permission',
+] as const;
+
+/** Why a session stopped on its own. */
+export type ScreenEndReason =
+  | 'user-stop'
+  | 'background'
+  | 'peer-failed'
+  | 'idle-timeout'
+  | 'peer-left'
+  | 'display-gone';
+
+/** Why the Mac cut everything off. The Mac has already stopped; this only explains it. */
+export type ScreenKillReason =
+  | 'revoked'
+  | 'grant-downgrade'
+  | 'rekey-pairing'
+  | 'kill-switch'
+  | 'lock-screen'
+  | 'secure-input'
+  | 'concurrency-limit';
+
+export const SCREEN_KILL_REASONS: readonly ScreenKillReason[] = [
+  'revoked',
+  'grant-downgrade',
+  'rekey-pairing',
+  'kill-switch',
+  'lock-screen',
+  'secure-input',
+  'concurrency-limit',
+] as const;
+
+/** Idle limits the contract fixes: 10 min driving, 30 min watching. */
+export const SCREEN_IDLE_TIMEOUT_CONTROL_SECONDS = 600;
+export const SCREEN_IDLE_TIMEOUT_VIEW_SECONDS = 1800;
+/** The phone ends a session this long after the app leaves the foreground. */
+export const SCREEN_BACKGROUND_GRACE_SECONDS = 30;
+/** One plaintext signalling JSON stays well under the relay's 1 MiB frame. */
+export const SCREEN_SIGNAL_MAX_BYTES = 64 * 1024;
+/** Clipboard limit, both directions, before compression. */
+export const SCREEN_CLIPBOARD_MAX_BYTES = 1024 * 1024;

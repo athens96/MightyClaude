@@ -294,6 +294,8 @@ export class RelayConnection {
   private readonly readyWaiters: Waiter[] = [];
   private readonly notifyListeners = new Set<(event: RelayNotification) => void>();
   private readonly stateListeners = new Set<(state: RelayState, failure?: RelayFailure) => void>();
+  /** Decrypted envelopes that are not m1 responses: screen-share signalling, mostly. */
+  private readonly messageListeners = new Set<(message: Record<string, unknown>) => void>();
 
   private reconnectDelayMs = RECONNECT_MIN_MS;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -376,6 +378,29 @@ export class RelayConnection {
   onStateChange(listener: (state: RelayState, failure?: RelayFailure) => void): () => void {
     this.stateListeners.add(listener);
     return () => this.stateListeners.delete(listener);
+  }
+
+  /**
+   * Every decrypted envelope this build does not answer itself. The screen-share
+   * signalling of docs/relay.md rides here: the relay forwards the frames sealed, so
+   * neither the SDP nor an ICE candidate nor a kill is readable by it.
+   */
+  onMessage(listener: (message: Record<string, unknown>) => void): () => void {
+    this.messageListeners.add(listener);
+    return () => this.messageListeners.delete(listener);
+  }
+
+  /**
+   * Sends one encrypted message that is not an m1 request — it has a `type` and no reply.
+   * Returns false when the tunnel is not open, which the caller treats as "the Mac did
+   * not hear this": for a kill or a session end that is enough, because the Mac stops on
+   * its own and the picture simply dies.
+   */
+  send(message: Record<string, unknown>): boolean {
+    if (this.disposed || this.currentState !== 'ready') return false;
+    if (!this.socket || !this.cipher) return false;
+    this.sendEncrypted(message);
+    return true;
   }
 
   /** Resolves with the host's `auth_ok` payload once the tunnel is usable. */
@@ -463,6 +488,7 @@ export class RelayConnection {
     this.setState('closed');
     this.notifyListeners.clear();
     this.stateListeners.clear();
+    this.messageListeners.clear();
   }
 
   // ---------------------------------------------------------------- internals
@@ -696,8 +722,15 @@ export class RelayConnection {
         this.sendEncrypted({ type: 'pong' });
         return;
       }
-      default:
+      default: {
+        // A type this build has no handler for goes to whoever is listening, and is
+        // dropped in silence when nobody is — which is what the contract asks of both
+        // sides so that an older phone or an older Mac never breaks the connection.
+        if (typeof envelope.type !== 'string' || this.messageListeners.size === 0) return;
+        const payload = message as Record<string, unknown>;
+        for (const listener of this.messageListeners) listener(payload);
         return;
+      }
     }
   }
 
