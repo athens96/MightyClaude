@@ -22,12 +22,6 @@ struct SystemScreenShareEnvironment: ScreenShareEnvironmentProbe {
 /// is injected as a unicode string rather than as jamo keystrokes, so no input
 /// method has to be driven from the outside.
 struct SystemScreenShareInput: ScreenShareInputSink {
-    /// Stamped on every event this app posts, so the local-HID monitor can tell
-    /// the remote phone's own input apart from a person at the Mac. Without it
-    /// every injected event would look like local activity and pause remote
-    /// input for 2 s — which is to say, remote input would pause itself.
-    static let injectedMarker: Int64 = 0x4D43_5353  // 'MCSS'
-
     func move(to position: CGPoint, displayId: UInt32) async {
         post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left))
     }
@@ -62,14 +56,11 @@ struct SystemScreenShareInput: ScreenShareInputSink {
     }
 
     func commitText(_ text: String) async {
-        // One event per grapheme-safe chunk: the whole string in one event is
-        // truncated by the window server past 20 UTF-16 units.
-        var scalars = Array(text.utf16)
-        while !scalars.isEmpty {
-            let chunk = Array(scalars.prefix(16))
-            scalars.removeFirst(chunk.count)
-            for type in [true, false] {
-                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: type) else { continue }
+        // `CGEventKeyboardSetUnicodeString` carries at most 20 UTF-16 units per
+        // event; the chunks never split a Hangul syllable or an emoji.
+        for chunk in ScreenShareTextChunks.split(text) {
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down) else { continue }
                 event.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
                 post(event)
             }
@@ -91,7 +82,9 @@ struct SystemScreenShareInput: ScreenShareInputSink {
 
     private func post(_ event: CGEvent?) {
         guard let event else { return }
-        event.setIntegerValueField(.eventSourceUserData, value: Self.injectedMarker)
+        // Stamped so the local-HID monitor does not take the phone's own input
+        // for a person at the Mac and pause remote input for 2 s.
+        event.setIntegerValueField(.eventSourceUserData, value: ScreenShareInjectionTag.marker)
         event.post(tap: .cghidEventTap)
     }
 }
@@ -130,12 +123,15 @@ struct SystemScreenSharePasteboard: ScreenSharePasteboard {
 /// second, different key is refused outright — the old one has to be withdrawn in
 /// Settings first.
 struct AlertScreenShareControlKeyConfirmer: ScreenShareControlKeyConfirmer {
+    let mobileRemote: MobileRemoteService
+
     func confirmControlKey(deviceId: String, fingerprint: String) async -> Bool {
-        await MainActor.run {
+        let device = await mobileRemote.deviceName(deviceId) ?? deviceId
+        return await MainActor.run {
             let alert = NSAlert()
             alert.messageText = L("screenShare.controlKey.confirmTitle")
             alert.informativeText = L("screenShare.controlKey.confirmBody",
-                                      ["device": deviceId, "fingerprint": fingerprint])
+                                      ["device": device, "fingerprint": fingerprint])
             alert.alertStyle = .informational
             alert.addButton(withTitle: L("screenShare.controlKey.confirmAccept"))
             alert.addButton(withTitle: L("screenShare.controlKey.confirmReject"))
@@ -208,7 +204,7 @@ final class ScreenShareMenuBarController {
         // ⌃⌥⌘K belongs to screen sharing only while screen sharing is happening.
         // Holding it on an idle Mac would take the chord away from every other
         // app for a kill switch with nothing to kill.
-        if state.isActive { registerHotKey() } else { unregisterHotKey() }
+        if ScreenShareKillHotkey.isRegistered(for: state) { registerHotKey() } else { unregisterHotKey() }
         guard state.isActive else { removeItem(); return }
         let item = self.item ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.item = item
@@ -314,7 +310,7 @@ final class ScreenShareMenuBarController {
     private func handle(_ event: NSEvent) {
         guard state.isActive else { return }
         if let cgEvent = event.cgEvent,
-           cgEvent.getIntegerValueField(.eventSourceUserData) == SystemScreenShareInput.injectedMarker {
+           !ScreenShareInjectionTag.isLocalActivity(eventSourceUserData: cgEvent.getIntegerValueField(.eventSourceUserData)) {
             return
         }
         Task { await service.localHIDActivity() }
@@ -332,6 +328,8 @@ extension AppStore {
         controller.start()
         let backend = SCStreamCaptureBackend()
         let capture = ScreenShareCaptureController(backend: backend, displays: CoreGraphicsDisplaySource())
+        // The engine exists only where WebRTC does, and only once it exists does
+        // the Mac advertise `screenShare` to phones.
         let engine = ScreenShareEngine(
             service: screenShare,
             peers: WebRTCScreenSharePeerFactory(),
@@ -340,12 +338,14 @@ extension AppStore {
             turn: mobileRemote,
             displays: CoreGraphicsDisplaySource(),
             pasteboard: SystemScreenSharePasteboard(),
-            confirmer: AlertScreenShareControlKeyConfirmer(),
-            stills: CoreImageScreenShareStillEncoder())
+            confirmer: AlertScreenShareControlKeyConfirmer(mobileRemote: mobileRemote),
+            compressor: ZstdScreenShareCompressor())
         screenShareEngine = engine
-        backend.setFrameHandler { frame, status, dirtyRects in
-            await engine.deliver(frame: frame, status: status, dirtyRects: dirtyRects)
-        }
+        backend.setHandlers(
+            frame: { frame, status, dirtyRects in
+                await engine.deliver(frame: frame, status: status, dirtyRects: dirtyRects)
+            },
+            interrupted: { await engine.captureInterrupted() })
         Task { [screenShare, mobileRemote] in
             await mobileRemote.attachScreenShare(screenShare)
             await mobileRemote.attachScreenShareEngine(engine)

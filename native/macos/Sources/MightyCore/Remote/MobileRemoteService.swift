@@ -47,7 +47,13 @@ public extension MobileHostDelegate {
 public struct MobileReply: Sendable {
     public var status: Int
     public var body: Data
-    public init(status: Int, body: Data) { self.status = status; self.body = body }
+    /// Runs once the reply has been sealed onto the phone's socket. A screen
+    /// share's first offer goes out here, so it can never overtake the reply
+    /// that tells the phone the session id.
+    public var afterReply: (@Sendable () async -> Void)?
+    public init(status: Int, body: Data, afterReply: (@Sendable () async -> Void)? = nil) {
+        self.status = status; self.body = body; self.afterReply = afterReply
+    }
 }
 
 /// Phone access through a relay (docs/relay.md). The host dials out to the
@@ -165,6 +171,12 @@ public actor MobileRemoteService {
     /// and signalling frames reach it. Nil until the app has one, which is what
     /// keeps the routes answering 503 rather than half-working.
     public func attachScreenShareEngine(_ engine: ScreenShareEngine) { screenShareEngine = engine }
+    /// What this host advertises in `/m1/info` and `auth_ok`. `screenShare` is
+    /// listed only once an engine is attached, so a phone never offers a
+    /// feature whose routes would answer 503.
+    var capabilities: [String] {
+        MobileCapability.all + (screenShareEngine == nil ? [] : [MobileCapability.screenShare])
+    }
     /// Test seam; see `keyRotationFailure`.
     func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
@@ -308,6 +320,10 @@ public actor MobileRemoteService {
     /// Revoking a phone rotates the pairing key and clears the entire registry.
     /// All phones must pair again with the new key; previously issued device
     /// tokens no longer grant access. The selected phone's uploads are discarded.
+    /// The name a paired phone gave itself, for a dialog that has to say which
+    /// phone is asking.
+    public func deviceName(_ id: String) -> String? { deviceRegistry.all().first { $0.id == id }?.name }
+
     @discardableResult public func revokeDevice(_ id: String) async throws -> MobileHostStatus {
         guard deviceRegistry.contains(id) else { throw MightyError("이미 해제된 기기입니다.") }
         // A rotation that fails leaves everything as it was, including the
@@ -635,7 +651,7 @@ public actor MobileRemoteService {
               let relay = relayURL, let hostToken = try? loadOrCreateControlToken(),
               let url = RelayEndpoint.socketURL(relay: relay, serverId: RelayEndpoint.serverId(hostToken: hostToken), role: "server", connectionId: connectionId, hostToken: hostToken) else { return }
         let identity = RelayHostIdentity(hostId: hostId, hostName: hostName, appVersion: appVersion, pairingKey: pairingKey, keypair: keypair,
-                                         devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones)
+                                         devices: deviceRegistry, allowLegacy: settings.allowLegacyPhones, capabilities: capabilities)
         let client = RelayClientConnection(id: connectionId, url: url, session: session, identity: identity, delegate: delegate, router: self)
         clients[connectionId] = client
         unauthenticated.insert(connectionId)
@@ -817,7 +833,8 @@ public actor MobileRemoteService {
                 return value
             }
             if method == "GET", route == ["info"] {
-                return reply(200, MobileInfo(hostId: hostId, hostName: hostName, appVersion: appVersion))
+                return reply(200, MobileInfo(hostId: hostId, hostName: hostName, appVersion: appVersion,
+                                             capabilities: capabilities))
             }
             if method == "GET", route == ["state"] {
                 let poll = try Self.pollArguments(url)
@@ -1053,7 +1070,10 @@ extension MobileRemoteService {
         case ("POST", "sessions"):
             let request = try decode(body, as: ScreenShareSessionRequestBody.self)
             switch await engine.start(deviceId: deviceId, request: request) {
-            case .success(let value): return reply(200, value)
+            case .success(let value):
+                var answer = reply(200, value)
+                answer.afterReply = { await engine.sendInitialOffer(sessionId: value.sessionId) }
+                return answer
             case .failure(let refusal): return screenShareRefusal(refusal)
             }
         case ("POST", "control-key"):
@@ -1107,15 +1127,18 @@ extension MobileRemoteService: ScreenShareTurnSource {
               let frame = try? JSONSerialization.data(withJSONObject: ["type": "turn-credentials-request"], options: [.sortedKeys])
         else { return nil }
         let id = UUID()
-        let deadline = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(10))
-            await self?.resumeTurnWaiter(id, with: nil)
-        }
-        defer { deadline.cancel() }
-        do { try await socket.send(.string(String(decoding: frame, as: UTF8.self))) }
-        catch { return nil }
+        let request = String(decoding: frame, as: UTF8.self)
+        // The waiter is registered before the request leaves, so an answer that
+        // beats `send` back still finds it; the deadline and a failed send both
+        // end the wait with nil.
         return await withCheckedContinuation { (continuation: CheckedContinuation<ScreenShareTurnCredential?, Never>) in
             turnWaiters[id] = continuation
+            Task { [weak self] in
+                do { try await socket.send(.string(request)) }
+                catch { await self?.resumeTurnWaiter(id, with: nil); return }
+                try? await Task.sleep(for: .seconds(10))
+                await self?.resumeTurnWaiter(id, with: nil)
+            }
         }
     }
 
@@ -1146,6 +1169,8 @@ struct RelayHostIdentity: Sendable {
     let devices: MobileDeviceRegistry
     /// Whether an app that knows nothing about device tokens may still connect.
     let allowLegacy: Bool
+    /// The m1 extensions advertised in `auth_ok`, the same list `/m1/info` has.
+    let capabilities: [String]
 }
 
 /// One phone: a relay data socket, the E2EE handshake, pairing-key check,
@@ -1254,6 +1279,8 @@ actor RelayClientConnection {
         guard !Task.isCancelled else { return }
         let body = (try? JSONSerialization.jsonObject(with: reply.body)) ?? [:]
         send(["id": requestId, "status": reply.status, "body": body])
+        // Sealed after the reply above: frames leave in the order they are sealed.
+        if let afterReply = reply.afterReply { Task { await afterReply() } }
     }
 
     private func handshake(_ socket: URLSessionWebSocketTask) async throws {
@@ -1292,7 +1319,8 @@ actor RelayClientConnection {
     private func accept(device: String, token: String?) -> String {
         authenticated = true
         deviceId = device
-        var frame: [String: Any] = ["type": "auth_ok", "hostName": identity.hostName, "hostId": identity.hostId, "appVersion": identity.appVersion]
+        var frame: [String: Any] = ["type": "auth_ok", "hostName": identity.hostName, "hostId": identity.hostId, "appVersion": identity.appVersion,
+                                    "capabilities": identity.capabilities]
         if let token {
             assert(!issuedToken, "one device token per socket")
             issuedToken = true

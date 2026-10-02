@@ -173,9 +173,10 @@ public actor ScreenShareCaptureController {
     private var plan: ScreenShareCapturePlan?
     private var quality: ScreenShareQualityProfile
     private var region: ScreenShareZoomRegion = .full
-    /// One gate per layer: the overview's slow trickle must not suppress the
-    /// primary layer's keepalive, nor the other way round.
+    /// One gate per layer: the 2 fps overview must not reset the primary
+    /// layer's keepalive clock, nor the other way round.
     private var gates: [ScreenShareCaptureLayer.Kind: ScreenShareFrameGate] = [:]
+    private var lastDisplayId: UInt32?
     private let now: @Sendable () -> Date
 
     public init(
@@ -190,6 +191,8 @@ public actor ScreenShareCaptureController {
     public var currentPlan: ScreenShareCapturePlan? { plan }
     public var zoomRegion: ScreenShareZoomRegion { region }
     public var droppedIdleFrames: Int { gates.values.reduce(0) { $0 + $1.dropped } }
+    /// The display capture runs on (or last ran on, when it is stopped).
+    public var displayId: UInt32? { plan?.displayId ?? lastDisplayId }
 
     /// Starts capture of `displayId`, falling back to the main display when that
     /// id is not attached. Returns the display actually captured.
@@ -230,14 +233,12 @@ public actor ScreenShareCaptureController {
         await backend.stop()
     }
 
-    /// True when this frame carries new pixels and should be encoded.
-    public func admit(
-        layer: ScreenShareCaptureLayer.Kind, status: ScreenShareFrameStatus, dirtyRects: Int
-    ) -> Bool {
-        var gate = gates[layer] ?? ScreenShareFrameGate()
-        let admitted = gate.admit(status: status, dirtyRects: dirtyRects, now: now())
-        gates[layer] = gate
-        return admitted
+    /// True when this frame carries new pixels and should be encoded. A frame
+    /// that arrives while capture is stopped (a late one, in flight when the
+    /// lock screen or a kill stopped the stream) is never admitted.
+    public func admit(layer: ScreenShareCaptureLayer.Kind, status: ScreenShareFrameStatus, dirtyRects: Int) -> Bool {
+        guard plan?.layers.contains(where: { $0.kind == layer }) == true else { return false }
+        return gates[layer, default: ScreenShareFrameGate()].admit(status: status, dirtyRects: dirtyRects, now: now())
     }
 
     private func configure(displayId: UInt32) async throws -> UInt32 {
@@ -252,8 +253,13 @@ public actor ScreenShareCaptureController {
         guard let bounds else { throw ScreenShareCaptureError.displayGone }
         let fresh = ScreenShareCapturePlanner.plan(
             displayId: target, displayBounds: bounds, region: region, quality: quality)
-        try await backend.apply(fresh)
+        // The plan is in force before the backend starts, so the very first
+        // frame — which a still screen may never follow with another — is not
+        // refused as arriving from a stream nobody asked for.
+        let previous = plan
         plan = fresh
+        do { try await backend.apply(fresh) } catch { plan = previous; throw error }
+        lastDisplayId = target
         return target
     }
 }

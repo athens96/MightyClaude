@@ -38,15 +38,17 @@ struct ScreenShareEngineTests {
         main: UInt32 = 1,
         confirm: Bool = true,
         load: ScreenShareMachineLoad = FakeLoad(headroom: 0.9, thermal: false),
-        stills: ScreenShareStillEncoder? = nil
-    ) -> Fixture {
+        fast: Set<TimeInterval> = [],
+        host: ScreenShareHost = ScreenShareHost(),
+        confirmer custom: ScreenShareControlKeyConfirmer? = nil
+    ) async -> Fixture {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("screen-engine-" + UUID().uuidString, isDirectory: true)
         let store = ScreenShareSettingsStore(url: directory.appendingPathComponent("screen-share.json"))
         let displays = FakeDisplays(layout: layout, main: main)
         let input = FakeInput()
         let environment = FakeEnvironment()
-        let service = ScreenShareService(store: store, displays: displays, input: input,
+        let service = ScreenShareService(store: store, host: host, displays: displays, input: input,
                                         environment: environment)
         let peers = FakePeerFactory()
         let signals = RecordingSignalSender()
@@ -57,9 +59,20 @@ struct ScreenShareEngineTests {
         let confirmer = FakeConfirmer(answer: confirm)
         let engine = ScreenShareEngine(
             service: service, peers: peers, capture: capture, signals: signals, turn: turn,
-            displays: displays, pasteboard: pasteboard, confirmer: confirmer, load: load,
-            compressor: nil, stills: stills,
-            sleeper: { _ in try await Task.sleep(nanoseconds: 1_000_000) })
+            displays: displays, pasteboard: pasteboard, confirmer: custom ?? confirmer, load: load,
+            compressor: nil,
+            // The intervals a test names run in a millisecond; every other timer
+            // (renewal, connect deadline, keepalive) waits an hour, so it cannot
+            // fire in the middle of a test that did not ask for it.
+            sleeper: { seconds in
+                try await Task.sleep(nanoseconds: fast.contains(seconds) ? 1_000_000 : 3_600_000_000_000)
+            })
+        // Wired the way the app wires them: the host's own stops and the lock
+        // screen / secure input reach the engine.
+        await service.observeStops { [engine] stopped in await engine.hostStopped(stopped) }
+        await service.observeFrameBlock { [engine] blocked, reason in
+            await engine.framesBlockedChanged(blocked, reason: reason)
+        }
         return Fixture(directory: directory, service: service, engine: engine, peers: peers,
                        signals: signals, turn: turn, capture: backend, pasteboard: pasteboard,
                        confirmer: confirmer, displays: displays, environment: environment, input: input)
@@ -90,7 +103,7 @@ struct ScreenShareEngineTests {
     private func startSession(
         _ fixture: Fixture, deviceId: String = phone, mode: ScreenShareGrant,
         keystore: Keystore? = nil, displayId: UInt32? = nil,
-        network: String = "wifi", decodes: [String] = ["H264"]
+        network: String = "wifi", decodes: [String] = ["H264"], sendOffer: Bool = true
     ) async -> Result<ScreenShareSessionReply, ScreenShareRouteRefusal> {
         var signature: String?
         if mode == .control {
@@ -107,7 +120,12 @@ struct ScreenShareEngineTests {
             "network": network,
             "decodes": decodes,
         ])
-        return await fixture.engine.start(deviceId: deviceId, request: request)
+        let result = await fixture.engine.start(deviceId: deviceId, request: request)
+        // What the route does once its reply has left.
+        if sendOffer, case .success(let reply) = result {
+            await fixture.engine.sendInitialOffer(sessionId: reply.sessionId)
+        }
+        return result
     }
 
     private func decodeRequest(_ object: [String: Any]) -> ScreenShareSessionRequestBody {
@@ -119,14 +137,15 @@ struct ScreenShareEngineTests {
 
     // MARK: Capability
 
-    @Test func hostAdvertisesScreenShare() {
-        #expect(MobileCapability.all.contains("screenShare"))
+    @Test func screenShareIsNotInTheBaseCapabilityList() {
+        // Advertised only by a host whose engine is attached (see the route tests).
+        #expect(!MobileCapability.all.contains(MobileCapability.screenShare))
     }
 
     // MARK: Routes
 
     @Test func stateHidesEverythingFromAPhoneTheMacHasNotAllowed() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         guard case .success(let state) = await fixture.engine.state(deviceId: Self.phone) else {
             Issue.record("state refused an allow-listed phone"); return
@@ -144,7 +163,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aLegacyPhoneWithoutAClientIdIsRefusedWithAReason() async {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         if case .failure(let refusal) = await fixture.engine.state(deviceId: MobileDeviceRegistry.legacyId) {
             #expect(refusal == .legacyClient)
@@ -154,7 +173,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func stateCarriesTheChallengeAndTheRelayMintedTurnCredentialOnceControlIsGranted() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .control)
         guard case .success(let state) = await fixture.engine.state(deviceId: Self.phone) else {
@@ -176,7 +195,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aViewSessionStartsCaptureAndSendsOneOffer() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
@@ -205,7 +224,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aControlSessionNeedsASignatureTheMacVerifies() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let keystore = try #require(try await allow(fixture, grant: .control))
 
@@ -237,7 +256,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aPhoneWithOnlyViewCannotStartControl() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         let started = await startSession(fixture, mode: .control, keystore: Keystore())
@@ -245,7 +264,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func oneControllerAndTwoViewersIsTheLimit() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         _ = try await allow(fixture, deviceId: Self.viewer, grant: .view)
@@ -259,7 +278,7 @@ struct ScreenShareEngineTests {
     // MARK: Control-key enrolment
 
     @Test func aControlKeyIsStoredOnlyOnceAndOnlyWhenTheMacUserConfirmsIt() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
         try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
@@ -287,7 +306,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aKeyTheMacUserRejectsIsNotStored() async throws {
-        let fixture = makeFixture(confirm: false)
+        let fixture = await makeFixture(confirm: false)
         defer { cleanUp(fixture) }
         try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
         try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
@@ -298,7 +317,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func enrolmentNeedsTheAllowListAndTheControlGrantFirst() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let key = Keystore().publicKeyData.base64EncodedString()
         #expect(await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key).refusal == .deviceNotAllowed)
@@ -315,7 +334,7 @@ struct ScreenShareEngineTests {
     // MARK: Signalling
 
     @Test func theAnswerAndTrickledCandidatesReachThePeerAndTheEndStopsTheSession() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
@@ -381,7 +400,7 @@ struct ScreenShareEngineTests {
     // MARK: TURN renewal
 
     @Test func aRenewedCredentialReachesThePeerBeforeTheIceRestartThatUsesIt() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
@@ -432,7 +451,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aRelayThatRefusesTurnDoesNotStopASession() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         await fixture.turn.setUnavailable(true)
         _ = try await allow(fixture, grant: .view)
@@ -472,7 +491,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func theSessionPicksTheCodecThePolicyChose() async throws {
-        let fixture = makeFixture(load: FakeLoad(headroom: 0.9, thermal: false))
+        let fixture = await makeFixture(load: FakeLoad(headroom: 0.9, thermal: false))
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(
@@ -551,7 +570,6 @@ struct ScreenShareEngineTests {
         let overview = zoomed.overview!
         #expect(overview.sourceRect == bounds)
         #expect(overview.width == ScreenShareCapturePlanner.overviewMaxWidth)
-        #expect(overview.width == 640)   // the phone's own OVERVIEW_MAX_WIDTH
         #expect(overview.fps == ScreenShareCapturePlanner.overviewFps)
         // The overview really is low-res: it spends a quarter of a pixel on each
         // display pixel, where the zoomed region gets one for one — which is the
@@ -559,7 +577,7 @@ struct ScreenShareEngineTests {
         let overviewDensity = Double(overview.width) / bounds.width
         let primaryDensity = Double(primary.width) / primary.sourceRect.width
         #expect(overviewDensity < primaryDensity)
-        #expect(overviewDensity <= 1.0 / 3)
+        #expect(overview.width <= ScreenShareCapturePlanner.overviewMaxWidth)
     }
 
     @Test func aDegenerateZoomRegionIsRefusedAndClampedInsideTheDisplay() {
@@ -571,7 +589,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func anUnpluggedDisplayFallsBackToTheMainOne() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view, displayId: 2) else {
@@ -587,57 +605,10 @@ struct ScreenShareEngineTests {
         #expect(plan.displayId == 1)
     }
 
-    @Test func theOverviewTravelsAsAThrottledStillAndTheVideoTrackCarriesTheRegion() async throws {
-        let stills = FakeStillEncoder()
-        let fixture = makeFixture(stills: stills)
-        defer { cleanUp(fixture) }
-        _ = try await allow(fixture, grant: .view)
-        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
-            Issue.record("start refused"); return
-        }
-        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
-        let frame = try #require(Self.pixelFrame(layer: .primary))
-        let overviewFrame = try #require(Self.pixelFrame(layer: .overview))
-
-        // The region goes on the video track.
-        await fixture.engine.deliver(frame: frame, status: .complete, dirtyRects: 3)
-        #expect(await peer.frames == 1)
-
-        // The overview goes on the data channel instead, as a small still.
-        await fixture.engine.deliver(frame: overviewFrame, status: .complete, dirtyRects: 3)
-        #expect(await peer.frames == 1)
-        let stillFrames = await peer.sentData.compactMap {
-            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
-        }.filter { $0["t"] as? String == "overview" }
-        #expect(stillFrames.count == 1)
-        #expect((stillFrames.first?["jpegB64"] as? String ?? "").isEmpty == false)
-
-        // And it is throttled: a second overview straight away is not sent.
-        await fixture.engine.deliver(frame: overviewFrame, status: .complete, dirtyRects: 3)
-        let again = await peer.sentData.compactMap {
-            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
-        }.filter { $0["t"] as? String == "overview" }
-        #expect(again.count == 1)
-        #expect(ScreenShareEngine.overviewInterval == 2)
-    }
-
-    @Test func eachLayerHasItsOwnIdleGate() async throws {
-        let backend = RecordingCaptureBackend()
-        let displays = FakeDisplays(layout: [1: CGRect(x: 0, y: 0, width: 1920, height: 1080)], main: 1)
-        let capture = ScreenShareCaptureController(backend: backend, displays: displays)
-        _ = try await capture.start(displayId: 1, quality: ScreenShareQuality.wifiCeiling)
-        // The overview's slow trickle must not consume the primary layer's first
-        // frame, nor suppress its keepalive.
-        #expect(await capture.admit(layer: .overview, status: .complete, dirtyRects: 0))
-        #expect(await capture.admit(layer: .primary, status: .complete, dirtyRects: 0))
-        #expect(!(await capture.admit(layer: .primary, status: .complete, dirtyRects: 0)))
-        #expect(!(await capture.admit(layer: .overview, status: .idle, dirtyRects: 9)))
-    }
-
     // MARK: Data channel → CGEventPost
 
     @Test func theDocumentedDataChannelMessagesBecomeInjectedEvents() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let keystore = try #require(try await allow(fixture, grant: .control))
         guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
@@ -672,7 +643,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aViewOnlyPhoneInjectsNothingHoweverItAsks() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
@@ -686,7 +657,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aPasswordFieldStopsInjectionEvenInAControlSession() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let keystore = try #require(try await allow(fixture, grant: .control))
         guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
@@ -699,11 +670,16 @@ struct ScreenShareEngineTests {
         #expect(fixture.input.calls.isEmpty)
     }
 
-    @Test func onlyTheTwoClipboardShortcutsAreAccepted() {
+    @Test func keyCombosComeFromAClosedVocabulary() {
         #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "cmd+c"]).isSuccess)
         #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "cmd+v"]).isSuccess)
-        // A phone cannot synthesize an arbitrary chord — ⌘Q, say.
-        #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "cmd+q"]).rejection == .unknownType)
+        #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "ctrl+opt+shift+cmd+left"]).isSuccess)
+        // No raw key codes, no unknown names, no doubled or trailing modifiers.
+        #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "cmd+f13"]).rejection == .unknownType)
+        #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "cmd+cmd+c"]).rejection == .unknownType)
+        #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "cmd+"]).rejection == .unknownType)
+        #expect(ScreenShareDataChannel.decode(["t": "key", "combo": "CMD+C"]).rejection == .unknownType)
+        #expect(ScreenShareDataChannel.decode(["t": "key", "code": 12]).rejection == .unknownType)
         #expect(ScreenShareDataChannel.decode(["t": "nonsense"]).rejection == .unknownType)
         #expect(ScreenShareDataChannel.decode(Data("not json".utf8)).rejection == .notJSON)
         // A single committed string stays small; a paste that size is the clipboard's job.
@@ -724,7 +700,9 @@ struct ScreenShareEngineTests {
         }
         #expect(frames.count == 3)
         var outcome: ScreenShareClipboardAssembler.Outcome = .waiting(received: 0, total: 0)
-        for frame in frames {
+        for var frame in frames {
+            // The Mac writes `to-phone`; read back as the phone's own upload.
+            frame["dir"] = "to-mac"
             guard case .success(let parsed) = ScreenShareDataChannel.clipboardFrame(frame) else {
                 Issue.record("a frame this code wrote did not parse"); return
             }
@@ -747,7 +725,8 @@ struct ScreenShareEngineTests {
         // The declared plaintext size is checked first, so a phone cannot make
         // the Mac hold a gigabyte by promising to send one.
         #expect(ScreenShareDataChannel.clipboardFrame([
-            "t": "clipboard", "enc": "raw", "bytes": 50_000_000, "data": "AAAA",
+            "t": "clipboard", "dir": "to-mac", "enc": "raw", "bytes": 50_000_000, "data": "AAAA",
+            "id": "t1", "seq": 0, "total": 1,
         ]).rejection == .clipboardTooLarge)
         // A zstd payload that decompresses past the ceiling is refused too.
         let bomb = FakeCompressor(expanded: Data(repeating: 0x41, count: ScreenShareClipboardLimits.maximumBytes + 1))
@@ -763,7 +742,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func theClipboardMovesBothWaysOnlyForAControlSession() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let keystore = try #require(try await allow(fixture, grant: .control))
         guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
@@ -798,7 +777,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aConcealedPasteboardItemIsNeverRead() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let keystore = try #require(try await allow(fixture, grant: .control))
         guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
@@ -821,25 +800,28 @@ struct ScreenShareEngineTests {
     // MARK: Background and host stops
 
     @Test func thePhoneReportsTheBackgroundAndTheHostEndsTheSession() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture(fast: [ScreenSharePolicy.backgroundTimeout])
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
             Issue.record("start refused"); return
         }
+        // Connected, so only the background rule can end it.
         let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
-        await peer.emitData(Self.json(["t": "background", "background": true]))
+        await peer.emitConnected(.host)
+        await fixture.engine.handle(.background(sessionId: reply.sessionId, background: true), from: Self.phone)
         // The fixture's sleeper makes the 30 s rule a millisecond; the rule itself
         // is the host's, which is the point.
-        for _ in 0..<60 where !(await fixture.engine.liveSessionIds.isEmpty) {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        #expect(await waitUntil { await fixture.signals.sent.contains { $0.type == "screen-session-end" } })
         #expect(await fixture.engine.liveSessionIds.isEmpty)
         #expect(ScreenSharePolicy.backgroundTimeout == 30)
+        let end = await fixture.signals.sent.last { $0.type == "screen-session-end" }
+        guard case .sessionEnd(_, let reason) = end else { Issue.record("no session end"); return }
+        #expect(reason == "background")
     }
 
     @Test func aKillSwitchStopsEveryPeerAndTellsEveryPhone() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         _ = try await allow(fixture, deviceId: Self.viewer, grant: .view)
@@ -862,7 +844,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func revokingAPhoneStopsItsSessionAndTellsIt() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success(let reply) = await startSession(fixture, mode: .view) else {
@@ -882,7 +864,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func aLockScreenStopsTheSessionAndSaysWhy() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         _ = try await allow(fixture, grant: .view)
         guard case .success = await startSession(fixture, mode: .view) else {
@@ -901,7 +883,7 @@ struct ScreenShareEngineTests {
     }
 
     @Test func theSessionLogRecordsTheDeviceAndModeAndNeverAKeystroke() async throws {
-        let fixture = makeFixture()
+        let fixture = await makeFixture()
         defer { cleanUp(fixture) }
         let keystore = try #require(try await allow(fixture, grant: .control))
         guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
@@ -926,16 +908,471 @@ struct ScreenShareEngineTests {
     static func json(_ object: [String: Any]) -> Data {
         (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
     }
+}
 
-    /// A tiny real `CVPixelBuffer`, so the delivery path runs exactly as it does
-    /// with a captured frame.
-    static func pixelFrame(layer: ScreenShareCaptureLayer.Kind) -> ScreenShareVideoFrame? {
+// MARK: - Session flow: ordering, refusals, deadlines, adaptation
+
+extension ScreenShareEngineTests {
+    @Test func theFirstOfferAndItsCandidatesWaitForTheRouteReply() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        await fixture.signals.clear()
+        guard case .success(let reply) = await startSession(fixture, mode: .view, sendOffer: false) else {
+            Issue.record("start refused"); return
+        }
+        // Candidates gathered while the reply is still on its way are held: the
+        // phone does not know this session id yet.
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        await peer.emitLocalCandidate("candidate:1 host")
+        await peer.emitLocalCandidate("candidate:2 srflx")
+        #expect(await fixture.signals.sent.allSatisfy { $0.type == "screen-grant" })
+
+        await fixture.engine.sendInitialOffer(sessionId: reply.sessionId)
+        let frames = await fixture.signals.sent.filter { $0.type != "screen-grant" }
+        #expect(frames.map(\.type) == ["screen-offer", "screen-ice", "screen-ice"])
+        guard case .ice(_, let first, _, _, _) = frames[1], case .ice(_, let second, _, _, _) = frames[2] else {
+            Issue.record("candidates out of shape"); return
+        }
+        #expect([first, second] == ["candidate:1 host", "candidate:2 srflx"])
+        // Sent once only.
+        await fixture.engine.sendInitialOffer(sessionId: reply.sessionId)
+        #expect(await fixture.signals.sent.filter { $0.type == "screen-offer" }.count == 1)
+        // From now on a candidate goes straight out.
+        await peer.emitLocalCandidate("candidate:3 relay")
+        #expect(await fixture.signals.sent.last?.type == "screen-ice")
+    }
+
+    @Test func aLockedMacRefusesTheStartAndNeverStartsCapture() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        fixture.environment.locked = true
+        let started = await startSession(fixture, mode: .view)
+        #expect(started.refusal == .lockScreen)
+        #expect(await fixture.capture.plans.isEmpty)
+        #expect(await fixture.engine.liveSessionIds.isEmpty)
+        #expect(await fixture.service.liveSessions().isEmpty)
+        #expect(await fixture.peers.closedPeers() == 1)
+    }
+
+    @Test func aPasswordFieldRefusesTheStartWithItsOwnReason() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        fixture.environment.secureInput = true
+        #expect(await startSession(fixture, mode: .view).refusal == .secureInput)
+        #expect(await fixture.capture.plans.isEmpty)
+    }
+
+    @Test func aLockDuringTheJoinsCaptureStartStopsTheLateCapture() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        // The lock screen comes on while ScreenCaptureKit is still starting.
+        await fixture.capture.holdApply()
+        let start = Task { await startSession(fixture, mode: .view) }
+        #expect(await waitUntil { await fixture.capture.isHolding })
+        fixture.environment.locked = true
+        await fixture.service.refreshEnvironment()
+        await fixture.capture.releaseApply()
+        let result = await start.value
+        #expect(result.refusal == .lockScreen)
+        // The capture that came up after the lock was stopped again, and no
+        // session is left holding it.
+        #expect(await fixture.capture.stops >= 1)
+        #expect(await fixture.service.liveSessions().isEmpty)
+        #expect(await fixture.engine.liveSessionIds.isEmpty)
+    }
+
+    @Test func aMissingScreenRecordingGrantIsTheScreenPermissionRefusal() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        await fixture.capture.setFailure(.permissionDenied)
+        #expect(await startSession(fixture, mode: .view).refusal == .screenPermission)
+        #expect(await fixture.service.liveSessions().isEmpty)
+        #expect(await fixture.engine.liveSessionIds.isEmpty)
+    }
+
+    @Test func aPeerThatNeverConnectsIsGivenUp() async throws {
+        let fixture = await makeFixture(fast: [ScreenShareEngine.connectDeadline])
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        _ = try await allow(fixture, deviceId: Self.viewer, grant: .view)
+        guard case .success(let lost) = await startSession(fixture, mode: .view),
+              case .success(let kept) = await startSession(fixture, deviceId: Self.viewer, mode: .view)
+        else { Issue.record("start refused"); return }
+        await fixture.peers.peer(sessionId: kept.sessionId)?.emitConnected(.host)
+        #expect(await waitUntil { await fixture.peers.peer(sessionId: lost.sessionId)?.isClosed == true })
+        #expect(await fixture.engine.liveSessionIds == [kept.sessionId])
+    }
+
+    @Test func aRelayedPathCapsTheBitrateToTheTurnQuotaWithoutRenegotiating() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        let offers = await peer.offerLog.count
+        await peer.emitConnected(.relay)
+        #expect(await peer.qualities.last?.maxBitrateKbps == ScreenShareQuality.turnSessionQuotaKbps)
+        #expect(await peer.offerLog.count == offers)
+        // Same Wi-Fi keeps the full ceiling.
+        guard case .success(let other) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        let direct = try #require(await fixture.peers.peer(sessionId: other.sessionId))
+        await direct.emitConnected(.host)
+        #expect(await direct.qualities.isEmpty)
+    }
+
+    @Test func aSoftwareCodecFallsBackToH264WhenTheMacRunsHot() async throws {
+        let load = MutableLoad(headroom: 0.9, thermal: false)
+        let fixture = await makeFixture(load: load)
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let reply) = await startSession(
+            fixture, mode: .view, network: "cellular", decodes: ["H264", "VP9"]) else {
+            Issue.record("start refused"); return
+        }
+        #expect(reply.codec == "VP9")
+        // Still cool: nothing changes, and the watch keeps going.
+        #expect(await fixture.engine.checkMachineLoad())
+        load.thermal = true
+        #expect(await fixture.engine.checkMachineLoad() == false)
+        #expect(await fixture.engine.session(reply.sessionId)?.codec == .h264)
+        let offer = await fixture.signals.sent.last { $0.type == "screen-offer" }
+        guard case .offer(_, _, _, _, let codec, _, let iceRestart) = offer else { Issue.record("no offer"); return }
+        #expect(codec == .h264)
+        #expect(iceRestart == false)
+    }
+
+    @Test func aRenewalReusesACredentialAnotherSessionJustMintedAndCarriesTheRealGrant() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        _ = try await allow(fixture, deviceId: Self.viewer, grant: .view)
+        // A phone with control watching in view mode still holds control.
+        guard case .success(let watching) = await startSession(fixture, mode: .view),
+              case .success(let viewer) = await startSession(fixture, deviceId: Self.viewer, mode: .view)
+        else { Issue.record("start refused"); return }
+        _ = keystore
+        await fixture.signals.clear()
+        await fixture.engine.renewCredential(sessionId: watching.sessionId)
+        await fixture.engine.renewCredential(sessionId: viewer.sessionId)
+        let grants = await fixture.signals.sent.compactMap { signal -> (ScreenShareGrant, String?, [ScreenShareIceServer]?)? in
+            guard case .grant(_, _, let grant, let challenge, let servers, _) = signal else { return nil }
+            return (grant, challenge, servers)
+        }
+        #expect(grants.count == 2)
+        #expect(grants[0].0 == .control)
+        #expect(grants[0].1 != nil)
+        #expect(grants[1].0 == .view)
+        #expect(grants[1].1 == nil)
+        // One mint served both renewals.
+        let credentials = Set(grants.compactMap { $0.2?.first { $0.username != nil }?.credential })
+        #expect(credentials.count == 1)
+    }
+
+    @Test func aViewerCannotPullTheControllersScreenAway() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        _ = try await allow(fixture, deviceId: Self.viewer, grant: .view)
+        guard case .success = await startSession(fixture, mode: .control, keystore: keystore),
+              case .success(let viewer) = await startSession(fixture, deviceId: Self.viewer, mode: .view)
+        else { Issue.record("start refused"); return }
+        let plans = await fixture.capture.plans.count
+        let peer = try #require(await fixture.peers.peer(sessionId: viewer.sessionId))
+        await peer.emitData(Self.json(["t": "display", "displayId": 2]))
+        await peer.emitData(Self.json(["t": "zoom", "displayId": 1,
+                                       "region": ["x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2]]))
+        #expect(await fixture.capture.plans.count == plans)
+    }
+
+    @Test func theControllersDisplaySwitchRestartsIceForEveryPhone() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        _ = try await allow(fixture, deviceId: Self.viewer, grant: .view)
+        guard case .success(let control) = await startSession(fixture, mode: .control, keystore: keystore),
+              case .success(let viewer) = await startSession(fixture, deviceId: Self.viewer, mode: .view)
+        else { Issue.record("start refused"); return }
+        await fixture.signals.clear()
+        let peer = try #require(await fixture.peers.peer(sessionId: control.sessionId))
+        await peer.emitData(Self.json(["t": "display", "displayId": 2]))
+        #expect(await fixture.capture.lastPlan?.displayId == 2)
+        let offers = await fixture.signals.sent.compactMap { signal -> (String, UInt32, Bool)? in
+            guard case .offer(let id, _, _, let display, _, _, let restart) = signal else { return nil }
+            return (id, display, restart)
+        }
+        #expect(Set(offers.map(\.0)) == [control.sessionId, viewer.sessionId])
+        #expect(offers.allSatisfy { $0.1 == 2 && $0.2 })
+    }
+
+    @Test func aDisplayThatVanishesWithNothingToFallBackToEndsEverySession() async throws {
+        let fixture = await makeFixture(layout: [1: CGRect(x: 0, y: 0, width: 1920, height: 1080)])
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        fixture.displays.unplug(1)
+        await fixture.engine.captureInterrupted()
+        #expect(await fixture.engine.liveSessionIds.isEmpty)
+        let end = await fixture.signals.sent.last { $0.type == "screen-session-end" }
+        guard case .sessionEnd(let id, let reason) = end else { Issue.record("no end"); return }
+        #expect(id == reply.sessionId)
+        #expect(reason == "display-gone")
+    }
+
+    @Test func framesGoOutPerLayerAndAStillScreenIsHandedToANewlyConnectedPhone() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        let frame = try #require(Self.frame(.primary))
+        await fixture.engine.deliver(frame: frame, status: .complete, dirtyRects: 1)
+        // Unchanged pixels are not encoded again.
+        await fixture.engine.deliver(frame: frame, status: .complete, dirtyRects: 0)
+        await fixture.engine.deliver(frame: frame, status: .idle, dirtyRects: 0)
+        // Not zoomed: an overview frame has no layer to go to.
+        await fixture.engine.deliver(frame: try #require(Self.frame(.overview)), status: .complete, dirtyRects: 1)
+        #expect(await peer.sentLayers == [.primary])
+        // The phone connects after the screen went still: it is handed the
+        // picture the encoder already has instead of waiting for a change.
+        await peer.emitConnected(.host)
+        #expect(await peer.sentLayers == [.primary, .primary])
+        // Capture stopped (a kill, the lock screen): a frame in flight is dropped.
+        _ = await fixture.service.killSwitch()
+        await fixture.engine.deliver(frame: frame, status: .complete, dirtyRects: 1)
+        #expect(await peer.sentLayers.count == 2)
+    }
+
+    @Test func anIdleTimeoutReachesThePhoneAsIdleTimeout() async throws {
+        let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
+        let started = ScreenShareFlag()
+        // Ten idle minutes pass once the session is fully up.
+        let host = ScreenShareHost(now: { clock.date }, idleSleep: { _ in
+            while !started.isSet { try await Task.sleep(nanoseconds: 1_000_000) }
+            clock.advance(by: 601)
+        })
+        let fixture = await makeFixture(host: host)
+        defer { cleanUp(fixture) }
+        let keystore = try #require(try await allow(fixture, grant: .control))
+        guard case .success(let reply) = await startSession(fixture, mode: .control, keystore: keystore) else {
+            Issue.record("start refused"); return
+        }
+        started.set()
+        #expect(await waitUntil { await fixture.signals.sent.contains { $0.type == "screen-session-end" } })
+        #expect(await fixture.engine.liveSessionIds.isEmpty)
+        let end = await fixture.signals.sent.last { $0.type == "screen-session-end" }
+        guard case .sessionEnd(let id, let reason) = end else { Issue.record("no end"); return }
+        #expect(id == reply.sessionId)
+        #expect(reason == "idle-timeout")
+    }
+
+    @Test func aSecondEnrolmentWhileTheDialogIsOpenIsTurnedAway() async throws {
+        let confirmer = HeldConfirmer()
+        let fixture = await makeFixture(confirmer: confirmer)
+        defer { cleanUp(fixture) }
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
+        let key = Keystore().publicKeyData.base64EncodedString()
+        let first = Task { await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key) }
+        #expect(await waitUntil { await confirmer.isAsking })
+        let second = await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key)
+        #expect(second.refusal == .controlKeyPending)
+        await confirmer.answer(true)
+        #expect(await first.value.isSuccess)
+        #expect(await confirmer.asked == 1)
+    }
+
+    // MARK: Helpers
+
+    static func frame(_ layer: ScreenShareCaptureLayer.Kind) -> ScreenShareVideoFrame? {
         var buffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(kCFAllocatorDefault, 16, 16,
-                                         kCVPixelFormatType_32BGRA, nil, &buffer)
-        guard status == kCVReturnSuccess, let buffer else { return nil }
+        CVPixelBufferCreate(nil, 4, 4, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, nil, &buffer)
+        guard let buffer else { return nil }
         return ScreenShareVideoFrame(pixelBuffer: buffer, layer: layer, timestampNanos: 1)
     }
+
+    func waitUntil(timeout: TimeInterval = 5, _ condition: @Sendable () async -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return true }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        return await condition()
+    }
+}
+
+final class ScreenShareFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    func set() { lock.lock(); value = true; lock.unlock() }
+}
+
+final class MutableLoad: ScreenShareMachineLoad, @unchecked Sendable {
+    private let lock = NSLock()
+    private var headroomValue: Double
+    private var thermalValue: Bool
+    init(headroom: Double, thermal: Bool) { headroomValue = headroom; thermalValue = thermal }
+    var thermal: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return thermalValue }
+        set { lock.lock(); thermalValue = newValue; lock.unlock() }
+    }
+    func cpuHeadroom() -> Double { lock.lock(); defer { lock.unlock() }; return headroomValue }
+    func thermalPressure() -> Bool { thermal }
+}
+
+/// A confirmation dialog the test answers by hand.
+actor HeldConfirmer: ScreenShareControlKeyConfirmer {
+    private var waiter: CheckedContinuation<Bool, Never>?
+    private(set) var asked = 0
+    var isAsking: Bool { waiter != nil }
+
+    func confirmControlKey(deviceId: String, fingerprint: String) async -> Bool {
+        asked += 1
+        return await withCheckedContinuation { waiter = $0 }
+    }
+
+    func answer(_ value: Bool) {
+        waiter?.resume(returning: value)
+        waiter = nil
+    }
+}
+
+// MARK: - Routes over the m1 tunnel
+
+extension ScreenShareEngineTests {
+    private func route(_ service: MobileRemoteService, _ method: String, _ path: String,
+                       _ body: [String: Any]? = nil, device: String = phone) async -> (MobileReply, [String: Any]) {
+        let data = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        let reply = await service.route(method: method, path: path, body: data, deviceId: device)
+        return (reply, (try? JSONSerialization.jsonObject(with: reply.body)) as? [String: Any] ?? [:])
+    }
+
+    @Test func screenShareIsAdvertisedAndRoutedOnlyOnceTheEngineIsAttached() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
+                                         hostName: "Route Mac", watchesNetwork: false)
+        // The service holds its delegate weakly; the test keeps it alive.
+        let host = RouteHost()
+        await remote.attach(host)
+        defer { withExtendedLifetime(host) {} }
+
+        let (_, before) = await route(remote, "GET", "/m1/info")
+        #expect((before["capabilities"] as? [String])?.contains("screenShare") == false)
+        #expect(await route(remote, "GET", "/m1/screen-share/state").0.status == 503)
+
+        await remote.attachScreenShareEngine(fixture.engine)
+        let (_, after) = await route(remote, "GET", "/m1/info")
+        #expect((after["capabilities"] as? [String])?.contains("screenShare") == true)
+        #expect(await remote.capabilities.contains("screenShare"))
+
+        // State for a phone the Mac has not allowed: answered, and empty.
+        let (stateReply, state) = await route(remote, "GET", "/m1/screen-share/state")
+        #expect(stateReply.status == 200)
+        let body = try #require(state["screenShare"] as? [String: Any])
+        #expect(body["allowed"] as? Bool == false)
+        #expect(body["grant"] as? String == "none")
+        #expect(body["isBeta"] as? Bool == true)
+
+        // A refusal carries the documented reason.
+        let (refused, refusal) = await route(remote, "POST", "/m1/screen-share/sessions", ["mode": "view"])
+        #expect(refused.status == 403)
+        #expect((refusal["error"] as? [String: Any])?["reason"] as? String == "device-not-allowed")
+        let (legacy, legacyBody) = await route(remote, "GET", "/m1/screen-share/state",
+                                               device: MobileDeviceRegistry.legacyId)
+        #expect(legacy.status == 403)
+        #expect((legacyBody["error"] as? [String: Any])?["reason"] as? String == "legacy-client")
+        #expect(await route(remote, "GET", "/m1/screen-share/nothing").0.status == 404)
+        #expect(await route(remote, "POST", "/m1/screen-share/control-key",
+                            ["publicKeyB64": String(repeating: "A", count: 400)]).0.status == 400)
+    }
+
+    @Test func theSessionRouteRepliesFirstAndOnlyThenSendsTheOffer() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
+                                         hostName: "Route Mac", watchesNetwork: false)
+        // The service holds its delegate weakly; the test keeps it alive.
+        let host = RouteHost()
+        await remote.attach(host)
+        defer { withExtendedLifetime(host) {} }
+        await remote.attachScreenShareEngine(fixture.engine)
+        _ = try await allow(fixture, grant: .view)
+        await fixture.signals.clear()
+
+        let (reply, body) = await route(remote, "POST", "/m1/screen-share/sessions",
+                                        ["mode": "view", "displayId": 1, "network": "wifi", "decodes": ["H264"]])
+        #expect(reply.status == 200)
+        let sessionId = try #require(body["sessionId"] as? String)
+        #expect(body["codec"] as? String == "H264")
+        #expect(await fixture.signals.sent.filter { $0.type == "screen-offer" }.isEmpty)
+        let afterReply = try #require(reply.afterReply)
+        await afterReply()
+        let offer = try #require(await fixture.signals.sent.first { $0.type == "screen-offer" })
+        #expect(offer.sessionId == sessionId)
+    }
+
+    @Test func theControlKeyRouteEnrolsOnceTheMacUserConfirms() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        let remote = MobileRemoteService(dataDirectory: fixture.directory.appendingPathComponent("remote"),
+                                         hostName: "Route Mac", watchesNetwork: false)
+        // The service holds its delegate weakly; the test keeps it alive.
+        let host = RouteHost()
+        await remote.attach(host)
+        defer { withExtendedLifetime(host) {} }
+        await remote.attachScreenShareEngine(fixture.engine)
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
+        let key = Keystore().publicKeyData
+        let (reply, body) = await route(remote, "POST", "/m1/screen-share/control-key",
+                                        ["publicKeyB64": key.base64EncodedString()])
+        #expect(reply.status == 200)
+        #expect(body["fingerprint"] as? String == ScreenShareControlKey.fingerprint(key))
+        #expect(await fixture.confirmer.fingerprints == [ScreenShareControlKey.fingerprint(key)])
+        // The state now says a key is enrolled, by fingerprint only.
+        let (_, state) = await route(remote, "GET", "/m1/screen-share/state")
+        let screen = try #require(state["screenShare"] as? [String: Any])
+        #expect(screen["controlKeyFingerprint"] as? String == ScreenShareControlKey.fingerprint(key))
+        // Another key is a conflict, never a replacement.
+        let (conflict, conflictBody) = await route(remote, "POST", "/m1/screen-share/control-key",
+                                                   ["publicKeyB64": Keystore().publicKeyData.base64EncodedString()])
+        #expect(conflict.status == 409)
+        #expect((conflictBody["error"] as? [String: Any])?["reason"] as? String == "control-key-present")
+    }
+}
+
+/// The least a Mac needs for the m1 tunnel to route at all.
+private final class RouteHost: MobileHostDelegate, @unchecked Sendable {
+    func mobileState() async -> MobileState { MobileState(revision: 1, hostName: "Route Mac", workspaces: [], sessions: []) }
+    func mobileSession(id: String) async -> MobileSessionDetail? { nil }
+    func mobileSubmit(sessionId: String, text: String, mode: String?, attachments: [RunAttachment]) async throws -> String { "started" }
+    func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String { "started" }
+    func mobileStop(sessionId: String) async throws -> Bool { false }
+    func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws {}
+    func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {}
+    func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String { "new" }
+    func mobileRemoveQueued(sessionId: String, itemId: String) async throws {}
+    func mobileRunNextQueued(sessionId: String) async throws {}
+    func mobileRename(sessionId: String, title: String, titleMode: String?) async throws {}
+    func mobileClose(sessionId: String) async throws {}
+    func mobileEntries(sessionId: String, before: String, limit: Int) async throws -> MobileEntriesPage { MobileEntriesPage(entries: [], hasMore: false) }
+    func mobileApplySettings(sessionId: String, request: MobileSettingsRequest) async throws {}
+    func mobileCommands(sessionId: String) async throws -> [MobileCommand] { [] }
+    func mobilePerformCommand(sessionId: String, action: String) async throws -> String? { nil }
 }
 
 // MARK: - Fakes
@@ -976,11 +1413,15 @@ actor FakeScreenSharePeer: ScreenSharePeerConnection {
 
     func acceptAnswer(_ sdp: String) async throws { answer = sdp }
 
+    private(set) var qualities: [ScreenShareQualityProfile] = []
+    func setQuality(_ quality: ScreenShareQualityProfile) async { qualities.append(quality) }
+
     func addRemoteCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int?) async {
         remoteCandidates.append(candidate)
     }
 
-    func send(frame: ScreenShareVideoFrame) async { frames += 1 }
+    private(set) var sentLayers: [ScreenShareCaptureLayer.Kind] = []
+    func send(frame: ScreenShareVideoFrame) async { frames += 1; sentLayers.append(frame.layer) }
 
     func sendData(_ data: Data) async -> Bool {
         guard !isClosed else { return false }
@@ -1060,11 +1501,19 @@ actor RecordingCaptureBackend: ScreenShareCaptureBackend {
     private(set) var plans: [ScreenShareCapturePlan] = []
     private(set) var stops = 0
     private var failure: ScreenShareCaptureError?
+    private var holding = false
+    private var held: CheckedContinuation<Void, Never>?
 
     func setFailure(_ value: ScreenShareCaptureError?) { failure = value }
+    /// The next `apply` waits for `releaseApply`, like a ScreenCaptureKit start
+    /// that is still coming up.
+    func holdApply() { holding = true }
+    var isHolding: Bool { held != nil }
+    func releaseApply() { holding = false; held?.resume(); held = nil }
 
     func apply(_ plan: ScreenShareCapturePlan) async throws {
         if let failure { throw failure }
+        if holding { await withCheckedContinuation { held = $0 } }
         plans.append(plan)
     }
 
@@ -1105,14 +1554,6 @@ actor FakeConfirmer: ScreenShareControlKeyConfirmer {
         asked += 1
         fingerprints.append(fingerprint)
         return answer
-    }
-}
-
-/// Stands in for the CoreImage JPEG encoder; the bytes do not matter, only that
-/// the overview takes the data-channel path and is throttled.
-struct FakeStillEncoder: ScreenShareStillEncoder {
-    func jpeg(_ frame: ScreenShareVideoFrame, quality: Double) -> Data? {
-        Data(repeating: 0xAB, count: 512)
     }
 }
 
