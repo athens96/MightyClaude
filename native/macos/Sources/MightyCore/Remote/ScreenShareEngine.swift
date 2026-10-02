@@ -759,8 +759,12 @@ public actor ScreenShareEngine {
 
     /// One captured frame. Idle frames are dropped before an encoder is woken,
     /// which is what keeps an untouched screen near zero traffic.
+    ///
+    /// A frame that arrives while the first session is still being admitted
+    /// is kept, not sent: on a still screen it may be the only complete frame
+    /// capture ever produces, and the phone gets it once it connects.
     public func deliver(frame: ScreenShareVideoFrame, status: ScreenShareFrameStatus, dirtyRects: Int) async {
-        guard !sessions.isEmpty,
+        guard !sessions.isEmpty || !starting.isEmpty,
               await capture.admit(layer: frame.layer, status: status, dirtyRects: dirtyRects)
         else { return }
         lastFrames[frame.layer] = frame
