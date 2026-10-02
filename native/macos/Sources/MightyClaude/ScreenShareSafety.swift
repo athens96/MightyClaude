@@ -380,6 +380,26 @@ extension AppStore {
         }
     }
 
+    /// Settings: forgets one phone's enrolled control key. The host keeps no
+    /// separate "forget the key" path — withdrawing control is what clears it —
+    /// so this steps the grant down to view and back up to control, in order,
+    /// and the phone enrols a fresh key (confirmed here again) next time.
+    func removeScreenShareControlKey(deviceId: String) {
+        Task { [screenShareEngine] in
+            do {
+                try await screenShare.setGrant(deviceId: deviceId, grant: .view)
+                try await screenShare.setGrant(deviceId: deviceId, grant: .control)
+                await screenShareEngine?.pushGrant(to: deviceId)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    /// Settings: ends one live session. The phone hears the same note the menu
+    /// bar's kill switch sends.
+    func stopScreenShareSession(sessionId: String) {
+        Task { await screenShare.endSession(sessionId: sessionId, reason: .killSwitch) }
+    }
+
     /// The menu command and the hotkey both land here.
     func stopScreenShareSessions() { screenShareMenuBar?.killNow() }
 }
