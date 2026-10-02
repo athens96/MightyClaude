@@ -46,16 +46,30 @@ final class WebRTCScreenSharePeer: NSObject, ScreenSharePeerConnection, @uncheck
     private var closed = false
     private var selected: ScreenShareIcePath?
     private var quality: ScreenShareQualityProfile?
-    /// Delegate callbacks arrive on WebRTC's threads; they reach the engine one
-    /// at a time and in order, so a drag's begin is never overtaken by its end.
+    /// Connection callbacks (candidates, state changes) arrive on WebRTC's
+    /// threads and reach the engine one at a time, in order. There are only a
+    /// handful per connection.
     private let pump: AsyncStream<@Sendable () async -> Void>.Continuation
     private let pumpTask: Task<Void, Never>
+    /// Data-channel messages reach the engine one at a time and in order, so a
+    /// drag's begin is never overtaken by its end — through a bounded queue: a
+    /// phone that floods the channel faster than the Mac handles it loses the
+    /// newest messages, counted, instead of growing the Mac's memory.
+    private let inbox: AsyncStream<Data>.Continuation
+    private let inboxTask: Task<Void, Never>
+    static let inboxCapacity = 256
+    private var droppedMessages = 0
 
     init(sessionId: String, iceServers: [ScreenShareIceServer], events: ScreenSharePeerEvents) throws {
         self.events = events
         let (jobs, pump) = AsyncStream.makeStream(of: (@Sendable () async -> Void).self)
         self.pump = pump
         pumpTask = Task.detached(priority: .userInitiated) { for await job in jobs { await job() } }
+        let (messages, inbox) = AsyncStream.makeStream(
+            of: Data.self, bufferingPolicy: .bufferingOldest(Self.inboxCapacity))
+        self.inbox = inbox
+        let deliver = events.data
+        inboxTask = Task.detached(priority: .userInitiated) { for await message in messages { await deliver(message) } }
         let configuration = RTCConfiguration()
         configuration.iceServers = Self.servers(iceServers)
         configuration.sdpSemantics = .unifiedPlan
@@ -94,6 +108,7 @@ final class WebRTCScreenSharePeer: NSObject, ScreenSharePeerConnection, @uncheck
     deinit {
         connection.close()
         pump.finish()
+        inbox.finish()
     }
 
     // MARK: Configuration
@@ -296,9 +311,15 @@ extension WebRTCScreenSharePeer: RTCDataChannelDelegate {
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-        let events = events
-        let data = buffer.data
-        pump.yield { await events.data(data) }
+        // Larger than any message the contract allows: never queued at all.
+        guard buffer.data.count <= ScreenShareDataChannel.maximumMessageBytes else { return }
+        if case .dropped = inbox.yield(buffer.data) {
+            lock.lock(); droppedMessages += 1; let dropped = droppedMessages; lock.unlock()
+            // Once, then every 256th: the count, never the contents.
+            if dropped == 1 || dropped % Self.inboxCapacity == 0 {
+                NSLog("screen-share data channel full: %d messages dropped", dropped)
+            }
+        }
     }
 }
 
