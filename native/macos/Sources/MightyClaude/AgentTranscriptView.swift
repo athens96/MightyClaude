@@ -26,6 +26,9 @@ struct AgentTranscriptView: NSViewRepresentable {
     /// opened block): the wheel goes on to the outer view at the top or bottom edge
     /// or when everything fits. The pane's own transcript leaves it off.
     var passesScrollAtEdges = false
+    /// Told the laid-out text's own height, insets included, whenever it
+    /// changes: what the transcript needs to show without scrolling.
+    var onContentHeight: ((CGFloat) -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     /// The corner handle's 22pt glyph plus its 2pt padding, and a little air.
@@ -40,6 +43,7 @@ struct AgentTranscriptView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         (scrollView as? AgentTranscriptScrollView)?.passesScrollAtEdges = passesScrollAtEdges
         context.coordinator.textView?.onFocus = onFocus
+        context.coordinator.textView?.onContentHeight = onContentHeight
         context.coordinator.onReference = onReference
         context.coordinator.update(entries: entries, provider: provider, running: running, dark: colorScheme == .dark, references: onReference != nil, records: records, childBlocks: childBlocks, catalog: catalog, imageRoot: imageRoot, cards: cards)
     }
@@ -47,6 +51,7 @@ struct AgentTranscriptView: NSViewRepresentable {
         coordinator.onReference = nil
         coordinator.textView?.onFocus = nil
         coordinator.textView?.onSelectionFinished = nil
+        coordinator.textView?.onContentHeight = nil
         coordinator.textView?.delegate = nil
     }
 }
@@ -344,6 +349,19 @@ private final class AgentTranscriptScrollView: NSScrollView {
 final class AgentTranscriptTextView: SelectableTextView {
     var onFocus: (() -> Void)?
     var onSelectionFinished: (() -> Void)?
+    /// See `AgentTranscriptView.onContentHeight`. Delivered on a later main
+    /// queue turn, never inside a layout or a SwiftUI update.
+    var onContentHeight: ((CGFloat) -> Void)? {
+        didSet {
+            // A card that becomes the newest result again reports afresh: its
+            // last height was dropped when it stopped being the newest.
+            if oldValue == nil, onContentHeight != nil { reportedContentHeight = nil }
+            reportContentHeight()
+        }
+    }
+    private var contentHeight: CGFloat?
+    private var reportedContentHeight: CGFloat?
+    private var reportScheduled = false
     private(set) var isTrackingSelection = false
     private(set) var document = AgentTranscriptDocument.empty
     private var contextCode: String?
@@ -524,13 +542,32 @@ final class AgentTranscriptTextView: SelectableTextView {
         // The scroll view owns the viewport, while this native document owns
         // its entire laid-out height, including content outside the viewport.
         let bottom = max(manager.usedRect(for: container).maxY, manager.extraLineFragmentRect.maxY)
-        let height = max(enclosingScrollView?.contentView.bounds.height ?? 0,
-                         ceil(bottom + textContainerInset.height * 2))
+        let measured = ceil(bottom + textContainerInset.height * 2)
+        let height = max(enclosingScrollView?.contentView.bounds.height ?? 0, measured)
         if abs(frame.height - height) > 0.5 { super.setFrameSize(NSSize(width: frame.width, height: height)) }
+        contentHeight = measured
+        reportContentHeight()
         // Clear old glyph pixels as well as their new positions after collapse
         // or expansion, including a cached suffix already visible on screen.
         needsDisplay = true
         enclosingScrollView?.contentView.needsDisplay = true
+    }
+
+    /// Coalesced to one delivery per main queue turn, carrying the latest
+    /// height: a document laid out first at the view's provisional width and
+    /// then at its real one reports only the second.
+    private func reportContentHeight() {
+        guard onContentHeight != nil, let contentHeight, !reportScheduled,
+              reportedContentHeight.map({ abs($0 - contentHeight) > 0.5 }) ?? true else { return }
+        reportScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reportScheduled = false
+            guard let callback = self.onContentHeight, let height = self.contentHeight,
+                  self.reportedContentHeight.map({ abs($0 - height) > 0.5 }) ?? true else { return }
+            self.reportedContentHeight = height
+            callback(height)
+        }
     }
 
     private func lineY(at index: Int) -> CGFloat {

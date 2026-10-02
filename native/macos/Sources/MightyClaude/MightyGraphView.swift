@@ -42,6 +42,15 @@ struct MightyGraphView: View {
     /// The newest result's size only while its drag is in progress; the saved
     /// pane-wide size is the truth before and after.
     @ViewState private var liveResultSize: MightyGraphBlockSize?
+    /// Result cards' measured answer heights, by node id: the newest card is
+    /// no taller than its content (`MightyGraphLayout.resultSize`).
+    @ViewState private var resultHeights: [String: CGFloat] = [:]
+    /// A height measured while the newest result was being dragged, applied
+    /// on release. A reference, so keeping it never redraws the diagram.
+    @ViewState private var measuredDuringDrag = MeasuredHeight()
+    private final class MeasuredHeight { var value: (nodeID: String, height: CGFloat)? }
+    /// Holds a newly finished result above the composer until something else moves the camera.
+    @ViewState private var reveal = MightyGraphCamera.ResultReveal()
     @ViewState private var reference: MightyGraphReference?
     @ViewState private var referenceOnLeft = false
     // Remembered across sessions and panes. Height 0 means "as tall as the graph".
@@ -95,11 +104,30 @@ struct MightyGraphView: View {
     private var layout: MightyGraphLayout { layout(executionLinks) }
     private func layout(_ links: [OuroborosExecutionLink]) -> MightyGraphLayout {
         .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize,
+              resultContentHeight: latestResultContentHeight,
               executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
               galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
               retainedStart: pinnedStart, history: history != nil)
     }
     private var olderCount: Int { min(max(0, retainedStart), runs.count) }
+    /// The newest result card's content — its header strip and its measured
+    /// answer — once known. A drag in progress shows exactly the dragged size.
+    private var latestResultContentHeight: CGFloat? {
+        guard liveResultSize == nil, let index = runs.indices.last(where: { MightyGraphLayout.finished(runs[$0]) }) else { return nil }
+        // The card's placeholder line when it has no answer (`transcriptCard`).
+        if !runs[index].resultEntries.contains(where: { $0.kind != "user" }) { return 0 }
+        return resultHeights[MightyGraphLayout.nodeID(runs[index], suffix: "result")].map { Self.blockHeaderHeight + $0 }
+    }
+    private static let blockHeaderHeight: CGFloat = 38
+    /// The pane's own requests as the reveal rule sees them.
+    private var ownRunProgress: [MightyGraphCamera.ResultReveal.RunProgress] {
+        ownRuns.map { .init(id: $0.id, finished: MightyGraphLayout.finished($0)) }
+    }
+    /// Whether a result card's height is known, or needs no measuring.
+    private func resultMeasuredAlready(_ nodeID: String) -> Bool {
+        guard let run = runs.first(where: { MightyGraphLayout.nodeID($0, suffix: "result") == nodeID }) else { return true }
+        return resultHeights[nodeID] != nil || !run.resultEntries.contains(where: { $0.kind != "user" })
+    }
     /// The run that keeps its place while loaded history grows above it and
     /// trimmed runs move into it.
     private var pinnedStart: Int { history?.pinnedRunID.flatMap { id in runs.firstIndex { $0.id == id } } ?? olderCount }
@@ -187,12 +215,14 @@ struct MightyGraphView: View {
                               onResize: resize, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
+                              onUserMove: { if reveal.holdingID != nil { reveal.cancel() } },
                               card: { card($0, executions: linksByKey) })
                 // The whole id list, not just the last one: dropping the oldest
                 // runs moves every surviving card up without touching the last
                 // id, and nothing else would re-aim the camera.
                 .onChange(of: runs.map(\.id)) { previous, current in
                     if let last = current.last, previous.last != last {
+                        reveal.cancel()
                         scrollTarget = MightyGraphScrollTarget(token: "run:" + last, nodeID: MightyGraphBlockSize.nodeID(runID: last, suffix: "request"), alignTop: true)
                         return
                     }
@@ -204,7 +234,26 @@ struct MightyGraphView: View {
                         .onAppear { canvasViewport = geo.size }
                         .onChange(of: geo.size) { _, new in canvasViewport = new }
                 })
+                // Once, when a request of this pane finishes while it is
+                // watched: its result card goes right above the composer.
+                .onChange(of: ownRunProgress) { previous, current in
+                    if let id = reveal.runsChanged(previous: previous, current: current, resultID: { MightyGraphBlockSize.nodeID(runID: $0, suffix: "result") },
+                                                   measured: resultMeasuredAlready) {
+                        revealResult(id)
+                    } else if reveal.awaitingMeasure, let id = reveal.holdingID {
+                        // An answer that is never drawn is never measured.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            if let id = reveal.measureTimedOut(id) { revealResult(id) }
+                        }
+                    }
+                }
+                .onChange(of: zoom) { _, _ in if reveal.holdingID != nil { reveal.cancel() } }
+                .onChange(of: draft.isEmpty) { wasEmpty, isEmpty in
+                    if reveal.holdingID != nil { reveal.draftChanged(wasEmpty: wasEmpty, isEmpty: isEmpty) }
+                }
                 .onChange(of: canvasViewport) { _, _ in
+                    // A result still held above the composer stays there.
+                    if let id = reveal.viewportChanged() { revealResult(id); return }
                     // Core decides whether a card is fitting and whether the
                     // block the camera is on is newer work that keeps it.
                     let resized = layout
@@ -234,8 +283,26 @@ struct MightyGraphView: View {
     /// lands even when it picks the block the first one did.
     private func publish(_ anchor: MightyGraphCamera.Anchor) {
         guard case .reaim(let nodeID, let alignTop) = anchor else { return }
+        reveal.cancel()
         trimSequence += 1
         scrollTarget = MightyGraphScrollTarget(token: MightyGraphCamera.trimToken(sequence: trimSequence, nodeID: nodeID), nodeID: nodeID, alignTop: alignTop)
+    }
+
+    /// The result card's bottom right above the composer, or its top when it
+    /// is taller than the canvas (`MightyGraphLayout.revealOffset`).
+    private func revealResult(_ nodeID: String) {
+        trimSequence += 1
+        scrollTarget = MightyGraphScrollTarget(token: "reveal:\(trimSequence):" + nodeID, nodeID: nodeID, alignTop: false, alignBottom: true)
+    }
+
+    /// A result card's answer measured a new height.
+    /// Only the newest card's height is kept; a drag in progress shows its own size.
+    private func resultMeasured(_ nodeID: String, _ height: CGFloat) {
+        guard height.isFinite else { return }
+        if liveResultSize != nil { measuredDuringDrag.value = (nodeID, height); return }
+        guard abs((resultHeights[nodeID] ?? -1) - height) > 0.5 else { return }
+        resultHeights = [nodeID: height]
+        if let id = reveal.contentMeasured(nodeID) { revealResult(id) }
     }
 
     /// The layout moved every card off screen while the camera stood still —
@@ -267,14 +334,24 @@ struct MightyGraphView: View {
         reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: workspaceRoot))
     }
 
-    private func resize(_ id: String, _ size: CGSize, _ finished: Bool) {
+    private func resize(_ id: String, _ size: CGSize, _ edges: ResizeEdges, _ phase: MightyGraphLayout.ResizePhase) {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
+        if reveal.holdingID != nil { reveal.cancel() }
         resized[id] = value
         if isRecordNode(id) { return }
         if id == MightyGraphLayout.latestResultID(runs: runs) {
-            liveResultSize = finished ? nil : value
-            if finished { onSaveResultSize(value) }
-        } else if finished { onSaveBlockSize(id, value) }
+            // The saved size is the newest result's maximum, not what it shows.
+            liveResultSize = phase == .live ? value : nil
+            guard phase != .live else { return }
+            if let cap = MightyGraphLayout.resultDragCap(released: size, edges: edges, cancelled: phase == .cancelled,
+                                                         saved: graphResultSize, viewport: canvasViewport) {
+                onSaveResultSize(cap)
+            }
+            if let measured = measuredDuringDrag.value {
+                measuredDuringDrag.value = nil
+                resultMeasured(measured.nodeID, measured.height)
+            }
+        } else if phase != .live { onSaveBlockSize(id, value) }
     }
 
     private func resetSize(_ id: String) {
@@ -366,7 +443,8 @@ struct MightyGraphView: View {
             transcriptCard(node, title: failed ? "요청 실패" : stopped ? "요청 중단" : "최종 결과", icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
                            status: status, input: "", entries: run.resultEntries, tint: Palette.text(status),
                            usage: run.totalUsage, usageLabel: "요청 전체 합계", resultFilesRunID: run.status == "completed" ? run.id : nil,
-                           headerFill: Palette.heroFill(DesignTone(status: status)))
+                           headerFill: Palette.heroFill(DesignTone(status: status)),
+                           onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0) } : nil)
         case .resultFiles(let index):
             MightyGraphResultFilesView(nodeID: node.id, files: resultFiles.files(for: runs[index].id),
                                        onOpen: { openReference($0.path, line: $0.line) }, onClose: { resultFiles.close() })
@@ -395,7 +473,8 @@ struct MightyGraphView: View {
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
                                 usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
-                                childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil) -> some View {
+                                childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
+                                onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
         let content = entries.filter { $0.kind != "user" }
         let onStrip = headerFill != nil
         let quiet = onStrip ? Palette.onStatus : Palette.ink2
@@ -462,7 +541,7 @@ struct MightyGraphView: View {
                         .accessibilityLabel(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
                         .accessibilityIdentifier("mighty-expand-\(node.id)")
                 }
-            }.padding(.horizontal, 12).frame(height: 38)
+            }.padding(.horizontal, 12).frame(height: Self.blockHeaderHeight)
             .background(headerFill ?? Color.clear)
             if !onStrip { Divider().overlay(Palette.border) }
             if !input.isEmpty {
@@ -476,7 +555,8 @@ struct MightyGraphView: View {
                     .font(.system(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(15)
             } else {
-                blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks)
+                blockTranscript(id: "graph-\(sessionID)-\(node.id)", status: status, entries: content, records: records, childBlocks: childBlocks,
+                                onContentHeight: onContentHeight)
             }
         }
         .mightyBlockCard()
@@ -488,12 +568,13 @@ struct MightyGraphView: View {
     /// same view under a row.
     /// `inTimeline`: the transcript sits in the timeline's scroll view and hands the
     /// wheel on to the timeline at its edges.
-    private func blockTranscript(id: String, status: String, entries: [LogEntry], records: [GraphResponseRecord], childBlocks: [String: GraphChildBlock], inTimeline: Bool = false) -> some View {
+    private func blockTranscript(id: String, status: String, entries: [LogEntry], records: [GraphResponseRecord], childBlocks: [String: GraphChildBlock], inTimeline: Bool = false,
+                                 onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
         AgentTranscriptView(sessionId: id, provider: provider,
             running: !MightyGraphLayout.terminal(status), entries: entries, onFocus: onFocus,
             onReference: workspaceRoot == nil ? nil : { path, line in openReference(path, line: line) },
             records: records, childBlocks: childBlocks, catalog: catalog, clearsCornerHandle: true, imageRoot: workspaceRoot,
-            passesScrollAtEdges: inTimeline)
+            passesScrollAtEdges: inTimeline, onContentHeight: onContentHeight)
     }
 
     /// The top of the diagram: loads the previous requests from the session
@@ -590,6 +671,12 @@ struct MightyGraphView: View {
             .onChange(of: runs.last?.id) { _, last in
                 guard let last else { return }
                 proxy.scrollTo(last, anchor: .bottom)
+            }
+            // Once, when a request of this pane finishes: its result card, the
+            // last thing in its group, goes to the bottom, above the composer.
+            .onChange(of: ownRunProgress) { previous, current in
+                guard let run = MightyGraphCamera.ResultReveal.finishedRunID(previous: previous, current: current) else { return }
+                proxy.scrollTo(run, anchor: .bottom)
             }
         }
         .background(Palette.raised)
@@ -789,12 +876,14 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
     var overlay: AnyView = AnyView(EmptyView())
     var overlayLayout: MightyOverlayLayout? = nil
     var onOverlayResize: (CGSize, Bool) -> Void = { _, _ in }
-    let onResize: (String, CGSize, Bool) -> Void
+    let onResize: (String, CGSize, ResizeEdges, MightyGraphLayout.ResizePhase) -> Void
     let onResetSize: (String) -> Void
     var onStranded: (MightyGraphCamera.StrandedWatch.Loss) -> Void = { _ in }
     var newestRunID: String? = nil
     /// Scrolling up past the top of the diagram asks for older requests.
     var onReachTop: () -> Void = {}
+    /// The user dragged or scrolled the diagram.
+    var onUserMove: () -> Void = {}
     let card: (MightyGraphLayout.Node) -> Card
     @ViewState private var cameraOffset: CGPoint?
     @Environment(\.colorScheme) private var colorScheme
@@ -807,7 +896,8 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             // Top alignment belongs to the block that was asked for. The
             // fallback is a different block, so it is simply centred.
             let alignTop = requested != nil && (scrollTarget?.alignTop ?? false)
-            let initialOffset = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: alignTop) } ?? .zero
+            let alignBottom = requested != nil && (scrollTarget?.alignBottom ?? false)
+            let initialOffset = targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: zoom, alignTop: alignTop, alignBottom: alignBottom) } ?? .zero
             let displayedOffset = cameraOffset ?? initialOffset
             let panBinding = Binding<CGPoint>(get: { cameraOffset ?? initialOffset }, set: { cameraOffset = $0 })
             let visible = CGRect(x: floor(-displayedOffset.x / zoom / 64) * 64 - 192,
@@ -866,8 +956,9 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             MightyGraphInteraction(sessionID: sessionID, nodes: graph.nodes, zoom: zoom,
                 viewportSize: viewport.size, targetToken: scrollTarget?.token,
                 targetFrame: targetFrame,
-                alignTop: alignTop, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
+                alignTop: alignTop, alignBottom: alignBottom, selection: $selection, panOffset: panBinding, onResize: onResize, onStranded: onStranded, newestRunID: newestRunID,
                 onUserPan: { old, new in
+                    onUserMove()
                     // Only the user's own move towards the top, once the top
                     // shows: re-aims and zoom never load more.
                     guard new.y > old.y, let top = graph.nodes.first(where: { $0.content == .history })?.frame.minY,
@@ -881,7 +972,7 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
             .onChange(of: zoom) { old, new in
                 guard old > 0 else { return }
                 let center = CGPoint(x: viewport.size.width / 2, y: viewport.size.height / 2)
-                let previous = cameraOffset ?? targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: alignTop) } ?? .zero
+                let previous = cameraOffset ?? targetFrame.map { MightyGraphLayout.cameraOffset(for: $0, viewport: viewport.size, zoom: old, alignTop: alignTop, alignBottom: alignBottom) } ?? .zero
                 cameraOffset = CGPoint(x: center.x - (center.x - previous.x) * new / old,
                                        y: center.y - (center.y - previous.y) * new / old)
             }
@@ -972,4 +1063,6 @@ private struct MightyGraphScrollTarget {
     let token: String
     let nodeID: String
     let alignTop: Bool
+    /// A revealed result: its bottom right above the composer.
+    var alignBottom = false
 }
