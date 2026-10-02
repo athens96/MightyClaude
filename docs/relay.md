@@ -185,7 +185,7 @@ BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호
 세션을 **시작**하는 쪽은 휴대폰이고, 새 푸시 타입을 쓰지 않고 위의 요청/응답 터널을 그대로 쓴다(`{"id":…,"method":…,"path":…}`). 본문 규약은 이 문서가 기준이다.
 
 - `GET /m1/screen-share/state` → `{"screenShare":{"allowed":bool,"grant":"none"|"view"|"control","isBeta":true,"displays":[{"displayId":N,"width":N,"height":N,"main":bool}],"controlChallengeB64":"…","controlKeyFingerprint":"XXXX-XXXX-XXXX-XXXX","iceServers":[…],"idleTimeoutSeconds":600,"tapMarker":true}}`
-  - `controlChallengeB64`는 한 번만 쓰는 바이트열(`screen-control-challenge:<id>:<무작위>`)이며 허용 목록에 있고 `grant`가 `control`일 때만 들어 있다. 상태를 읽을 때마다 새로 만들어지고, 2분 안에 한 번의 조작 세션 시작에만 쓰인다(성공하든 실패하든 그 시도로 소진된다).
+  - `controlChallengeB64`는 한 번만 쓰는 바이트열(`screen-control-challenge:<id>:<무작위>`)이며 허용 목록에 있고 `grant`가 `control`일 때만 들어 있다. 상태를 읽을 때마다 새로 만들어지고, 2분 안에 한 번의 조작 세션 시작에만 쓰인다(성공하든 실패하든 그 시도로 소진된다). `screen-grant`에 실리는 도전값은 30초 넘게 남은 대기 중 도전값이 있으면 그것을 그대로 다시 보낸다 — 휴대폰이 서명하는 도중에 바뀌지 않게.
   - `controlKeyFingerprint`는 Mac이 이 휴대폰의 조작 키를 저장해 두었을 때만 들어 있는 짧은 지문(공개키 SHA-256 앞 8바이트, 4글자씩 `-`로 묶은 16진수)이다. 비밀이 아니다. 휴대폰은 이 값으로 "키를 등록해야 하는가"를 판단하므로, 화면을 열 때 생체 인증을 띄울 필요가 없다. 값이 없는데 휴대폰에 키가 있으면 Mac이 키를 잊은 것이므로 다시 등록한다.
   - `iceServers`는 릴레이가 발급한 짧은 수명(기본 1시간)의 TURN 자격증명이다(위 [TURN 자격증명 발급](#turn-자격증명-발급-릴레이-평문-e2ee-아님)). coturn 비밀값은 릴레이에만 있고 Mac·휴대폰에는 절대 오지 않는다.
   - `idleTimeoutSeconds`는 조작 600초, 보기 전용 1800초다.
@@ -198,7 +198,7 @@ BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호
   - **첫 offer는 이 응답 뒤에 온다.** Mac은 응답을 봉인한 다음에 `screen-offer`를 보내고, 그 전에 모은 ICE 후보는 offer 뒤에 순서대로 보낸다. 그래서 휴대폰은 `sessionId`를 모르는 offer·후보를 받지 않는다. 연결이 30초 안에 `connected`에 이르지 않으면 Mac이 세션을 끝낸다(`peer-left`).
 - `POST /m1/screen-share/control-key` 본문 `{"publicKeyB64":"…"}`(ANSI X9.62 비압축 P-256 공개키 65바이트, base64) → `200 {"fingerprint":"XXXX-XXXX-XXXX-XXXX"}`
   - 허용 목록에 있고 `grant`가 `control`인 휴대폰만 등록할 수 있다(`device-not-allowed`·`insufficient-grant`).
-  - **저장된 키가 없을 때만** 받는다. Mac은 받은 키의 지문을 화면에 띄우고 Mac 사용자가 휴대폰에 보이는 지문과 같다고 확인해야 저장한다. 거절하면 `403` `control-key-not-confirmed`, 확인 창이 이미 떠 있으면 `409` `control-key-pending`.
+  - **저장된 키가 없을 때만** 받는다. Mac은 받은 키의 지문을 화면에 띄우고 Mac 사용자가 휴대폰에 보이는 지문과 같다고 확인해야 저장한다. 거절하면 `403` `control-key-not-confirmed`, 확인 창이 이미 떠 있으면 `409` `control-key-pending`. 거절된 휴대폰이 60초 안에 다시 보내면 확인 창 없이 같은 `403` `control-key-not-confirmed`. 확인 창이 떠 있는 동안 Mac은 모든 원격 입력을 거절한다(원격으로 "등록"을 누를 수 없다).
   - 같은 키를 다시 보내면 같은 지문으로 `200`(응답을 못 받은 재시도). **다른 키는 `409` `control-key-present`** — Mac은 키를 조용히 바꾸지 않는다. 휴대폰이 키를 잃었으면 Mac 사용자가 조작 권한을 거두었다가 다시 주어야 하고, 권한을 거두면 저장된 키도 지워진다.
   - 모양이 틀린 키는 `400` `bad-request`.
 - 세션이 열리면 Mac은 알림을 한 번 띄우고 '원격 조작 중' 표시와 메뉴바 항목을 보여 준다. 세션마다 Mac에서 따로 승인을 묻지는 않는다.
@@ -260,12 +260,12 @@ Mac이 만드는 offer에는 보내기 전용 영상 트랙 두 개와 데이터
 
 - `dir`: 휴대폰이 보내는 것은 언제나 `"to-mac"`, Mac이 보내는 것은 `"to-phone"`. Mac은 `"to-mac"`이 아닌 조각을 받지 않는다.
 - 보내는 쪽은 클립보드 한 번 읽은 것을 **혼자** 압축(`enc:"zstd"`, 압축이 오히려 크면 `"raw"`)한 뒤 바이트열을 잘라 조각마다 base64로 담는다. 조각 하나의 원본은 32 KiB(Mac이 보내는 크기) — 어느 쪽이든 메시지 한 개가 64 KiB 안에 들어가면 된다. `total`은 1–64, `seq`는 0부터 `total-1`.
-- `bytes`는 압축 전 전체 평문 바이트 수(1 이상 1 MiB 이하)이고 모든 조각에 같은 값이 들어간다. Mac은 **조각을 하나도 모으기 전에** 이 값을 확인하고, 모은 크기도 1 MiB를 넘으면 버린다. 압축을 푼 결과가 1 MiB를 넘거나(압축 폭탄) UTF-8이 아니면 버린다. 받는 쪽은 `enc` 태그를 읽고 추측하지 않는다.
+- `bytes`는 압축 전 전체 평문 바이트 수(1 이상 1 MiB 이하)이고 모든 조각에 같은 값이 들어간다. Mac은 **조각을 하나도 모으기 전에** 이 값을 확인하고, 모은 크기도 1 MiB를 넘으면 버린다. 압축을 푼 결과가 1 MiB를 넘거나(압축 폭탄) UTF-8이 아니면 버린다. `enc:"raw"`이면 모은 바이트 수가 `bytes`와 정확히 같아야 한다. 받는 쪽은 `enc` 태그를 읽고 추측하지 않는다.
 - 한 세션에서 한 번에 한 전송만 모은다. 새 `id`가 오면 앞의 미완성 전송은 버리고, 30초 안에 끝나지 않은 전송도 버린다. `id`·`enc`·`bytes`·`total`이 앞 조각과 다르면 그 전송을 버린다.
 - Mac은 조각을 다 모은 뒤 **조작 권한이 그때도 살아 있는지 다시 확인한 뒤** Mac 클립보드에 쓴다. ⌘V를 대신 누르지는 않는다 — 붙여넣기는 휴대폰이 `key` `cmd+v`로 따로 보낸다.
 - Mac 쪽 클립보드가 비밀로 표시된 항목(`org.nspasteboard.ConcealedType` 등, 암호 관리자)이면 읽지 않고 `{"t":"clipboard","dir":"to-phone","id":"…","seq":0,"total":1,"enc":"raw","bytes":0,"data":"","concealed":true}` 하나만 보낸다.
 
-**판단은 전부 Mac이 한다.** 보기 전용 세션의 `tap`·`drag`·`scroll`·`text`·`key`·`clipboard`·`clipboard-request`는 전부 거절된다. 조작 세션이어도 잠금 화면·보안 입력 중이거나, Mac에서 사람이 키보드·마우스를 쓴 뒤 2초 동안은 거절된다. 주입은 안전 정책(`ScreenShareService.deliver`)을 지난 것만 `CGEventPost`에 닿고, Mac이 주입한 이벤트에는 표식(`eventSourceUserData`)이 붙어 "사람이 Mac을 쓴 것"으로 오인되지 않는다. 입력한 글자·키는 어디에도 기록하지 않는다.
+**판단은 전부 Mac이 한다.** 보기 전용 세션의 `tap`·`drag`·`scroll`·`text`·`key`·`clipboard`·`clipboard-request`는 전부 거절된다. 조작 세션이어도 잠금 화면·보안 입력 중이거나, Mac에서 사람이 키보드·마우스를 쓴 뒤 2초 동안은 거절된다. 단, 그 세션이 누른 버튼을 놓는 `drag` `end`는 언제나 받는다. 세션이 끝나거나(어떤 이유든) 잠금 화면·보안 입력이 걸리면 Mac은 눌린 버튼을 마지막 끌기 위치에서 스스로 놓는다. 주입은 안전 정책(`ScreenShareService.deliver`)을 지난 것만 `CGEventPost`에 닿고, Mac이 주입한 이벤트에는 표식(`eventSourceUserData`)이 붙어 "사람이 Mac을 쓴 것"으로 오인되지 않는다. 입력한 글자·키는 어디에도 기록하지 않는다.
 
 ### 탭 표식과 측정 장면
 
