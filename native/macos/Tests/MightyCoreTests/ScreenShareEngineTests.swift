@@ -41,7 +41,8 @@ struct ScreenShareEngineTests {
         fast: Set<TimeInterval> = [],
         host: ScreenShareHost = ScreenShareHost(),
         confirmer custom: ScreenShareControlKeyConfirmer? = nil,
-        tapMarker: ScreenShareTapMarkerSurface? = nil
+        tapMarker: ScreenShareTapMarkerSurface? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) async -> Fixture {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("screen-engine-" + UUID().uuidString, isDirectory: true)
@@ -63,6 +64,7 @@ struct ScreenShareEngineTests {
             displays: displays, pasteboard: pasteboard, confirmer: custom ?? confirmer,
             tapMarker: tapMarker, load: load,
             compressor: nil,
+            now: now,
             // The intervals a test names run in a millisecond; every other timer
             // (renewal, connect deadline, keepalive) waits an hour, so it cannot
             // fire in the middle of a test that did not ask for it.
@@ -1329,6 +1331,72 @@ extension ScreenShareEngineTests {
         await confirmer.answer(true)
         #expect(await pending.value.refusal == .insufficientGrant)
         #expect(await fixture.service.settings(for: Self.phone)?.controlKeyPublicData == nil)
+    }
+
+    @Test func noRemoteInputLandsWhileTheKeyDialogIsOpen() async throws {
+        let confirmer = HeldConfirmer()
+        let fixture = await makeFixture(confirmer: confirmer)
+        defer { cleanUp(fixture) }
+        // The second phone is in control (its key stored directly: the held
+        // dialog would hold its own enrolment too).
+        let controller = Keystore()
+        try await fixture.service.setAllowed(deviceId: Self.viewer, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.viewer, grant: .control,
+                                          controlKeyPublicData: controller.publicKeyData)
+        guard case .success(let reply) = await startSession(
+            fixture, deviceId: Self.viewer, mode: .control, keystore: controller) else {
+            Issue.record("start refused"); return
+        }
+        let click = ScreenShareInputEvent.click(.init(displayId: 1, x: 0.5, y: 0.5), button: .left, clickCount: 1)
+        let landed = Result<ScreenShareResolvedPoint?, ScreenShareInputRejection>.success(
+            ScreenShareResolvedPoint(displayId: 1, position: CGPoint(x: 960, y: 540), fellBackToMain: false))
+        #expect(await fixture.service.deliver(click, sessionId: reply.sessionId) == landed)
+
+        // The first phone asks to enrol: the fingerprint dialog goes up.
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
+        let key = Keystore().publicKeyData.base64EncodedString()
+        let pending = Task { await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key) }
+        #expect(await waitUntil { await confirmer.isAsking })
+
+        // Nothing the phone in control sends can reach "Register".
+        #expect(await fixture.service.deliver(click, sessionId: reply.sessionId) == .failure(.blocked))
+        #expect(await fixture.service.deliver(.key(code: 36, modifiers: []), sessionId: reply.sessionId)
+                == .failure(.blocked))
+        #expect(await fixture.service.mayInject(sessionId: reply.sessionId) == false)
+        #expect(fixture.input.calls.count == 1)
+
+        await confirmer.answer(false)
+        #expect(await pending.value.refusal == .controlKeyNotConfirmed)
+        #expect(await fixture.service.deliver(click, sessionId: reply.sessionId) == landed)
+        #expect(fixture.input.calls.count == 2)
+    }
+
+    @Test func aRejectedPhoneCannotRaiseTheDialogAgainForAMinute() async throws {
+        let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
+        let fixture = await makeFixture(confirm: false, now: { clock.date })
+        defer { cleanUp(fixture) }
+        try await fixture.service.setAllowed(deviceId: Self.phone, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.phone, grant: .control)
+        let key = Keystore().publicKeyData.base64EncodedString()
+
+        #expect(await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key).refusal
+                == .controlKeyNotConfirmed)
+        #expect(await fixture.confirmer.asked == 1)
+        // Asking again at once is refused without a dialog.
+        clock.advance(by: ScreenShareEngine.controlKeyRetryCooldown - 1)
+        #expect(await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key).refusal
+                == .controlKeyNotConfirmed)
+        #expect(await fixture.confirmer.asked == 1)
+        // Another phone is not held back by it.
+        try await fixture.service.setAllowed(deviceId: Self.viewer, allowed: true)
+        try await fixture.service.setGrant(deviceId: Self.viewer, grant: .control)
+        _ = await fixture.engine.enrolControlKey(deviceId: Self.viewer, publicKeyB64: key)
+        #expect(await fixture.confirmer.asked == 2)
+        // Once the minute is over, the Mac asks again.
+        clock.advance(by: 2)
+        _ = await fixture.engine.enrolControlKey(deviceId: Self.phone, publicKeyB64: key)
+        #expect(await fixture.confirmer.asked == 3)
     }
 
     // MARK: Helpers

@@ -53,6 +53,9 @@ public actor ScreenShareHost {
     private var locked = false
     private var secureInputActive = false
     private var hidPausedUntil: Date?
+    /// Control-key dialogs open on the Mac right now. While one is, nothing a
+    /// phone sends is injected: a remote click must never press "Register".
+    private var keyConfirmations = 0
     private var killTimings: [ScreenShareKillTiming] = []
     private var idleTimers: [String: Task<Void, Never>] = [:]
     private let now: @Sendable () -> Date
@@ -332,7 +335,7 @@ public actor ScreenShareHost {
     // MARK: - Injection gating
 
     public func canInject() -> Bool {
-        guard injectionEnabled else { return false }
+        guard injectionEnabled, keyConfirmations == 0 else { return false }
         guard !ScreenSharePolicy.injectionBlocked(locked: locked, secureInputActive: secureInputActive) else { return false }
         if let until = hidPausedUntil, now() < until { return false }
         return true
@@ -347,6 +350,11 @@ public actor ScreenShareHost {
         post()
         return true
     }
+
+    /// A control-key dialog opened or closed. Counted, so two phones' dialogs
+    /// closing in any order never lift the block early.
+    public func beginKeyConfirmation() { keyConfirmations += 1 }
+    public func endKeyConfirmation() { keyConfirmations = max(0, keyConfirmations - 1) }
 
     /// Local HID activity on the Mac: remote injection pauses for 2 s.
     public func notifyLocalHID() {

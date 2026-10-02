@@ -123,21 +123,68 @@ struct SystemScreenSharePasteboard: ScreenSharePasteboard {
 /// and so is accepting the key that will stand for it. A phone that sends a
 /// second, different key is refused outright — the old one has to be withdrawn in
 /// Settings first.
+///
+/// The question is a floating window, not an app-modal alert: the Settings stop
+/// buttons, the menu-bar kill switch and ⌃⌥⌘K all keep working while it is up.
+/// Reject is the default (Return); Register has no key equivalent and takes a
+/// click — and the host refuses every remote event while the window is open, so
+/// that click can only come from the person at the Mac.
 struct AlertScreenShareControlKeyConfirmer: ScreenShareControlKeyConfirmer {
     let mobileRemote: MobileRemoteService
 
     func confirmControlKey(deviceId: String, fingerprint: String) async -> Bool {
         let device = await mobileRemote.deviceName(deviceId) ?? deviceId
-        return await MainActor.run {
-            let alert = NSAlert()
-            alert.messageText = L("screenShare.controlKey.confirmTitle")
-            alert.informativeText = L("screenShare.controlKey.confirmBody",
-                                      ["device": device, "fingerprint": fingerprint])
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: L("screenShare.controlKey.confirmAccept"))
-            alert.addButton(withTitle: L("screenShare.controlKey.confirmReject"))
-            return alert.runModal() == .alertFirstButtonReturn
+        return await ScreenShareControlKeyPrompt.ask(device: device, fingerprint: fingerprint)
+    }
+}
+
+/// One control-key question on screen, answered exactly once.
+@MainActor
+private final class ScreenShareControlKeyPrompt: NSObject {
+    /// Prompts on screen right now; each keeps itself alive until answered.
+    private static var open: Set<ScreenShareControlKeyPrompt> = []
+    private let alert = NSAlert()
+    private var answer: CheckedContinuation<Bool, Never>?
+
+    static func ask(device: String, fingerprint: String) async -> Bool {
+        let prompt = ScreenShareControlKeyPrompt()
+        open.insert(prompt)
+        defer { open.remove(prompt) }
+        return await withCheckedContinuation { answer in
+            // The continuation's body runs right here, on the main thread.
+            MainActor.assumeIsolated { prompt.show(device: device, fingerprint: fingerprint, answer: answer) }
         }
+    }
+
+    private func show(device: String, fingerprint: String, answer: CheckedContinuation<Bool, Never>) {
+        self.answer = answer
+        alert.messageText = L("screenShare.controlKey.confirmTitle")
+        alert.informativeText = L("screenShare.controlKey.confirmBody", ["device": device, "fingerprint": fingerprint])
+        alert.alertStyle = .informational
+        // The first button is the default one: Reject answers Return.
+        let reject = alert.addButton(withTitle: L("screenShare.controlKey.confirmReject"))
+        let register = alert.addButton(withTitle: L("screenShare.controlKey.confirmAccept"))
+        reject.keyEquivalent = "\r"
+        register.keyEquivalent = ""
+        // Not run modally, so the buttons answer here instead of ending a modal session.
+        for (button, accepted) in [(reject, false), (register, true)] {
+            button.tag = accepted ? 1 : 0
+            button.target = self
+            button.action = #selector(pressed(_:))
+        }
+        alert.layout()
+        let window = alert.window
+        window.level = .floating
+        window.center()
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func pressed(_ sender: NSButton) {
+        alert.window.orderOut(nil)
+        let answer = self.answer
+        self.answer = nil
+        answer?.resume(returning: sender.tag == 1)
     }
 }
 

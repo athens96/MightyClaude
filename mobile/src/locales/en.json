@@ -554,7 +554,7 @@
   "phone.screenShare.key.fingerprint": "This phone's fingerprint: {fingerprint}",
   "phone.screenShare.key.failure.present": "The Mac already has another control key. Have the Mac withdraw and re-grant control.",
   "phone.screenShare.key.failure.pending": "The Mac is already asking about a key. Answer it on the Mac first.",
-  "phone.screenShare.key.failure.notConfirmed": "The Mac declined the control key.",
+  "phone.screenShare.key.failure.notConfirmed": "The Mac declined the control key. You can ask again in a minute.",
   "phone.screenShare.key.failure.failed": "Could not register the control key. Try again in a moment.",
   "phone.screenShare.clipboard.notSent": "The connection dropped, so the clipboard was not sent.",
   "phone.screenShare.clipboard.noReply": "The Mac did not send its clipboard.",

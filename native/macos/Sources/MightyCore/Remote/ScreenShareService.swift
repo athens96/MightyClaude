@@ -340,6 +340,12 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         return await host.canInject()
     }
 
+    /// A control-key dialog is on screen at the Mac: remote input is refused
+    /// until it closes, as it is under secure input.
+    public func keyConfirmation(open: Bool) async {
+        if open { await host.beginKeyConfirmation() } else { await host.endKeyConfirmation() }
+    }
+
     /// Remote activity that is not an input event (a clipboard transfer, a zoom)
     /// still keeps the session alive.
     public func noteActivity(sessionId: String) async {
