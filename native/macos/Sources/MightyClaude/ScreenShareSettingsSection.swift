@@ -13,6 +13,10 @@ struct ScreenShareSettingsSection: View {
     @ViewState private var sessions: [ScreenShareLiveSession] = []
     @ViewState private var grantingControl: MobileDeviceInfo?
     @ViewState private var removingKey: MobileDeviceInfo?
+    @ViewState private var showsPermissions = false
+    /// The onboarding screen comes up by itself once: the first time a phone is
+    /// allowed while a permission is still missing. After that it is a button.
+    @AppStorage("screenShare.permissionOnboardingShown") private var onboardingShown = false
 
     private var devices: [MobileDeviceInfo] { store.mobileStatus.devices }
 
@@ -20,6 +24,14 @@ struct ScreenShareSettingsSection: View {
         Section {
             Text(L("settings.screenShare.description"))
                 .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button { showsPermissions = true } label: {
+                    Label(L("settings.screenShare.permissions.openButton"), systemImage: "lock.shield")
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier("settings-screen-share-permissions")
+                Spacer()
+            }
             if devices.isEmpty {
                 Text(L("settings.screenShare.noPhones")).font(.system(size: 11)).foregroundStyle(.secondary)
             }
@@ -33,6 +45,7 @@ struct ScreenShareSettingsSection: View {
             }
         }
         .accessibilityIdentifier("settings-screen-share")
+        .sheet(isPresented: $showsPermissions) { ScreenSharePermissionsView() }
         // The host's own state, read again and again while this is on screen: a
         // session started, ended or was killed from the menu bar meanwhile.
         .task {
@@ -162,6 +175,13 @@ struct ScreenShareSettingsSection: View {
         row.allowed = allowed
         if !allowed { row.grant = .none; row.controlKeyPublicData = nil }
         rows[deviceId] = row
+        guard allowed, !onboardingShown else { return }
+        Task {
+            let statuses = await ScreenSharePermissionReader.readQuick()
+            guard ScreenSharePermissionReading.needsOnboarding(statuses), !onboardingShown else { return }
+            onboardingShown = true
+            showsPermissions = true
+        }
     }
 
     private func setGrant(_ deviceId: String, _ grant: ScreenShareGrant) {
