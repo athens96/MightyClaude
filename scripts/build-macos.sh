@@ -87,6 +87,20 @@ fi
 if [ -n "${MIGHTY_UPDATE_PUBLIC_KEY:-}" ]; then
   plutil -replace MightyUpdatePublicKey -string "$MIGHTY_UPDATE_PUBLIC_KEY" "$APP_PATH/Contents/Info.plist"
 fi
+# Bundled libwebrtc for the BETA screen-share feature. The binary links it as
+# @rpath/WebRTC.framework/WebRTC, so the framework travels in Contents/Frameworks
+# and the executable gets the rpath that finds it there.
+WEBRTC_FRAMEWORK="$BIN_PATH/WebRTC.framework"
+if [ ! -d "$WEBRTC_FRAMEWORK" ]; then
+  echo "WebRTC.framework가 빌드 산출물에 없습니다: $WEBRTC_FRAMEWORK" >&2
+  exit 1
+fi
+mkdir -p "$APP_PATH/Contents/Frameworks"
+ditto "$WEBRTC_FRAMEWORK" "$APP_PATH/Contents/Frameworks/WebRTC.framework"
+if ! otool -l "$APP_PATH/Contents/MacOS/MightyClaude" | grep -q "@executable_path/../Frameworks"; then
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_PATH/Contents/MacOS/MightyClaude"
+fi
+
 # Browser engine bundling: CEF framework, helper stubs, pinned Node, licence notices.
 # Requires a warm engine cache (run scripts/fetch-browser-engine.sh first).
 if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
@@ -188,6 +202,10 @@ if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
             "$APP_PATH/Contents/Frameworks/MightyCEFBridge.dylib"
     codesign --force --sign "$CODESIGN_IDENTITY" "$CEF_FW"
 fi
+# The WebRTC framework is signed with the same stable identity as everything
+# else, before the bundle around it; --deep on the app does not reach inside a
+# nested framework's own binary.
+codesign --force --sign "$CODESIGN_IDENTITY" "$APP_PATH/Contents/Frameworks/WebRTC.framework"
 codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_PATH"
 # Verify that the packaged app can resolve its locale catalogs and default pet
 # through its own binary before reporting a successful build.

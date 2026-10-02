@@ -22,8 +22,26 @@ struct SystemScreenShareEnvironment: ScreenShareEnvironmentProbe {
 /// is injected as a unicode string rather than as jamo keystrokes, so no input
 /// method has to be driven from the outside.
 struct SystemScreenShareInput: ScreenShareInputSink {
+    /// Stamped on every event this app posts, so the local-HID monitor can tell
+    /// the remote phone's own input apart from a person at the Mac. Without it
+    /// every injected event would look like local activity and pause remote
+    /// input for 2 s — which is to say, remote input would pause itself.
+    static let injectedMarker: Int64 = 0x4D43_5353  // 'MCSS'
+
     func move(to position: CGPoint, displayId: UInt32) async {
         post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left))
+    }
+
+    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) async {
+        let type: CGEventType
+        switch phase {
+        case .begin: type = .leftMouseDown
+        case .move: type = .leftMouseDragged
+        case .end: type = .leftMouseUp
+        }
+        let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: position, mouseButton: .left)
+        event?.setIntegerValueField(.mouseEventClickState, value: 1)
+        post(event)
     }
 
     func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) async {
@@ -71,7 +89,59 @@ struct SystemScreenShareInput: ScreenShareInputSink {
         }
     }
 
-    private func post(_ event: CGEvent?) { event?.post(tap: .cghidEventTap) }
+    private func post(_ event: CGEvent?) {
+        guard let event else { return }
+        event.setIntegerValueField(.eventSourceUserData, value: Self.injectedMarker)
+        event.post(tap: .cghidEventTap)
+    }
+}
+
+/// The Mac pasteboard behind the clipboard buttons. Both directions are manual:
+/// nothing is read or written unless the person at the phone pressed a button and
+/// the Mac admitted it.
+struct SystemScreenSharePasteboard: ScreenSharePasteboard {
+    /// Types a password manager marks so nothing syncs them. They are never read.
+    static let concealedTypes: [NSPasteboard.PasteboardType] = [
+        NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
+        NSPasteboard.PasteboardType("com.agilebits.onepassword"),
+    ]
+
+    func read() -> ScreenSharePasteboardRead {
+        let pasteboard = NSPasteboard.general
+        let types = pasteboard.types ?? []
+        if Self.concealedTypes.contains(where: types.contains) {
+            return ScreenSharePasteboardRead(text: nil, concealed: true)
+        }
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return .empty }
+        return ScreenSharePasteboardRead(text: text)
+    }
+
+    func write(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+}
+
+/// Asks the person at the Mac to confirm a control key's fingerprint.
+///
+/// The Mac never silently accepts a key: granting control is the user's decision,
+/// and so is accepting the key that will stand for it. A phone that sends a
+/// second, different key is refused outright — the old one has to be withdrawn in
+/// Settings first.
+struct AlertScreenShareControlKeyConfirmer: ScreenShareControlKeyConfirmer {
+    func confirmControlKey(deviceId: String, fingerprint: String) async -> Bool {
+        await MainActor.run {
+            let alert = NSAlert()
+            alert.messageText = L("screenShare.controlKey.confirmTitle")
+            alert.informativeText = L("screenShare.controlKey.confirmBody",
+                                      ["device": deviceId, "fingerprint": fingerprint])
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: L("screenShare.controlKey.confirmAccept"))
+            alert.addButton(withTitle: L("screenShare.controlKey.confirmReject"))
+            return alert.runModal() == .alertFirstButtonReturn
+        }
+    }
 }
 
 /// The menu-bar item the user stops a session from, and the kill-switch hotkey.
@@ -101,7 +171,6 @@ final class ScreenShareMenuBarController {
 
     func start() {
         installMonitors()
-        registerHotKey()
         // The lock screen and secure input are polled: neither posts a
         // notification an unprivileged app may rely on.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -136,6 +205,10 @@ final class ScreenShareMenuBarController {
 
     private func apply(_ state: ScreenShareIndicatorState) {
         self.state = state
+        // ⌃⌥⌘K belongs to screen sharing only while screen sharing is happening.
+        // Holding it on an idle Mac would take the chord away from every other
+        // app for a kill switch with nothing to kill.
+        if state.isActive { registerHotKey() } else { unregisterHotKey() }
         guard state.isActive else { removeItem(); return }
         let item = self.item ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.item = item
@@ -234,8 +307,16 @@ final class ScreenShareMenuBarController {
     }
 
     /// Local keyboard or mouse activity pauses remote input while a session is live.
+    ///
+    /// An event this app injected itself is not local activity: it carries the
+    /// marker `SystemScreenShareInput` stamps on everything it posts, and it is
+    /// ignored here. Otherwise the phone's own typing would pause the phone.
     private func handle(_ event: NSEvent) {
         guard state.isActive else { return }
+        if let cgEvent = event.cgEvent,
+           cgEvent.getIntegerValueField(.eventSourceUserData) == SystemScreenShareInput.injectedMarker {
+            return
+        }
         Task { await service.localHIDActivity() }
     }
 }
@@ -249,26 +330,52 @@ extension AppStore {
         let controller = ScreenShareMenuBarController(service: screenShare)
         screenShareMenuBar = controller
         controller.start()
-        Task { [screenShare] in
+        let backend = SCStreamCaptureBackend()
+        let capture = ScreenShareCaptureController(backend: backend, displays: CoreGraphicsDisplaySource())
+        let engine = ScreenShareEngine(
+            service: screenShare,
+            peers: WebRTCScreenSharePeerFactory(),
+            capture: capture,
+            signals: mobileRemote,
+            turn: mobileRemote,
+            displays: CoreGraphicsDisplaySource(),
+            pasteboard: SystemScreenSharePasteboard(),
+            confirmer: AlertScreenShareControlKeyConfirmer(),
+            stills: CoreImageScreenShareStillEncoder())
+        screenShareEngine = engine
+        backend.setFrameHandler { frame, status, dirtyRects in
+            await engine.deliver(frame: frame, status: status, dirtyRects: dirtyRects)
+        }
+        Task { [screenShare, mobileRemote] in
             await mobileRemote.attachScreenShare(screenShare)
+            await mobileRemote.attachScreenShareEngine(engine)
+            // The host decides; the engine only closes its peers and tells the
+            // phone what already happened.
+            await screenShare.observeStops { stopped in await engine.hostStopped(stopped) }
+            await screenShare.observeFrameBlock { blocked, reason in
+                await engine.framesBlockedChanged(blocked, reason: reason)
+            }
             await screenShare.refreshEnvironment()
         }
     }
 
     /// Settings: puts one phone on or off the screen-share allow-list.
     func setScreenShareAllowed(deviceId: String, allowed: Bool) {
-        Task {
-            do { try await screenShare.setAllowed(deviceId: deviceId, allowed: allowed) }
-            catch { self.error = error.localizedDescription }
+        Task { [screenShareEngine] in
+            do {
+                try await screenShare.setAllowed(deviceId: deviceId, allowed: allowed)
+                await screenShareEngine?.pushGrant(to: deviceId)
+            } catch { self.error = error.localizedDescription }
         }
     }
 
     /// Settings: changes one phone's grant. A downgrade stops its session.
     func setScreenShareGrant(deviceId: String, grant: ScreenShareGrant, controlKeyPublicData: Data? = nil) {
-        Task {
+        Task { [screenShareEngine] in
             do {
                 try await screenShare.setGrant(deviceId: deviceId, grant: grant,
                                               controlKeyPublicData: controlKeyPublicData)
+                await screenShareEngine?.pushGrant(to: deviceId)
             } catch { self.error = error.localizedDescription }
         }
     }

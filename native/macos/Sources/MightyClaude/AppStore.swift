@@ -61,6 +61,9 @@ final class AppStore: ObservableObject {
         input: SystemScreenShareInput(),
         environment: SystemScreenShareEnvironment())
     var screenShareMenuBar: ScreenShareMenuBarController?
+    /// The screen-share engine: capture, peers, signalling and TURN renewal.
+    /// Built in `configureScreenShare()` once, alongside the menu-bar item.
+    var screenShareEngine: ScreenShareEngine?
     var mobileTracking = MobileRemoteTracking()
     var mobileSubscriptions = Set<AnyCancellable>()
     var mobileRetryTask: Task<Void, Never>?

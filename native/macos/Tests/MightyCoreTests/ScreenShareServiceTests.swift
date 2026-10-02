@@ -614,6 +614,9 @@ final class FakeInput: ScreenShareInputSink, @unchecked Sendable {
     func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) async {
         add("click \(button.rawValue) x\(clickCount) \(position.x),\(position.y) display \(displayId)")
     }
+    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) async {
+        add("drag \(phase.rawValue) \(position.x),\(position.y) display \(displayId)")
+    }
     func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) async {
         add("scroll \(deltaX),\(deltaY) at \(position.x),\(position.y) display \(displayId)")
     }

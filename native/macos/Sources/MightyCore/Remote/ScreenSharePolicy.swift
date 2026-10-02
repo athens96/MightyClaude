@@ -57,6 +57,17 @@ public enum ScreenShareStopReason: Sendable, Equatable {
     case idleTimeout, peerLeft, lockScreen, secureInput, concurrencyLimit
 }
 
+/// One session the host stopped by itself, so the engine can tell the phone.
+public struct ScreenShareStoppedSession: Sendable, Equatable {
+    public var sessionId: String
+    public var deviceId: String
+    public var reason: ScreenShareStopReason
+
+    public init(sessionId: String, deviceId: String, reason: ScreenShareStopReason) {
+        self.sessionId = sessionId; self.deviceId = deviceId; self.reason = reason
+    }
+}
+
 /// t0 (trigger) and t1 (all stopped) on the Mac clock for the ≤1 s guarantee.
 public struct ScreenShareKillTiming: Sendable, Equatable {
     public var t0: Date

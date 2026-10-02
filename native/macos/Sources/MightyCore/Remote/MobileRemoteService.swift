@@ -98,6 +98,9 @@ public actor MobileRemoteService {
     private var networkPath: RelayNetworkPath?
     private var pathWindow = RelayLinkPolicy.Window()
     private var pathPacing = RelayLinkPolicy.Pacing()
+    private var screenShareEngine: ScreenShareEngine?
+    /// Waiters on a `turn-credentials` answer from the relay's control socket.
+    private var turnWaiters: [UUID: CheckedContinuation<ScreenShareTurnCredential?, Never>] = [:]
     private var clients: [String: RelayClientConnection] = [:]
     /// Connections still inside the handshake; capped separately so a peer who
     /// only knows the serverId cannot fill every slot by stalling.
@@ -158,6 +161,10 @@ public actor MobileRemoteService {
 
     public func attach(_ delegate: MobileHostDelegate) { self.delegate = delegate }
     public func attachScreenShare(_ target: ScreenShareSafetyTarget) { screenShare = target }
+    /// Wires the screen-share engine in, so the `/m1/screen-share` routes work
+    /// and signalling frames reach it. Nil until the app has one, which is what
+    /// keeps the routes answering 503 rather than half-working.
+    public func attachScreenShareEngine(_ engine: ScreenShareEngine) { screenShareEngine = engine }
     /// Test seam; see `keyRotationFailure`.
     func setKeyRotationFailure(_ value: String?) { keyRotationFailure = value }
     public func setAppVersion(_ value: String) { appVersion = value }
@@ -560,6 +567,8 @@ public actor MobileRemoteService {
                     if let id = object["connectionId"] as? String, Self.validConnectionId(id) { acceptClient(connectionId: id, generation: current) }
                 case "disconnected":
                     if let id = object["connectionId"] as? String, let client = clients.removeValue(forKey: id) { await client.close(reason: "relay disconnected"); publish() }
+                case "turn-credentials", "turn-rate-limited", "turn-unavailable":
+                    turnCredentialAnswer(object)
                 // No "ping" case: the relay pings with WebSocket control frames,
                 // which URLSession answers by itself and never hands to the app.
                 default: break
@@ -972,6 +981,9 @@ public actor MobileRemoteService {
                 let created = try await perform { try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider) }
                 return reply(201, MobileCreatedSession(sessionId: created))
             }
+            if route.count == 2, route[0] == "screen-share", url.query == nil {
+                return try await screenShareRoute(method: method, leaf: route[1], body: body, deviceId: deviceId)
+            }
             if method == "GET", route.count == 3, route[0] == "workspaces", ["files", "file"].contains(route[2]) {
                 return try await workspaceFile(listing: route[2] == "files", workspaceId: route[1], url: url, deviceId: deviceId, delegate: delegate)
             }
@@ -1023,6 +1035,105 @@ extension MobileRemoteService {
             }
             return MobileReply(status: 200, body: body)
         } catch let error as MobileFileError { throw Failure(error) }
+    }
+}
+
+extension MobileRemoteService {
+    /// The BETA screen-share routes of docs/relay.md. Every decision behind them
+    /// belongs to `ScreenShareEngine`/`ScreenShareService`; this only shapes the
+    /// JSON and maps a refusal onto its documented `reason`.
+    fileprivate func screenShareRoute(method: String, leaf: String, body: Data?, deviceId: String) async throws -> MobileReply {
+        guard let engine = screenShareEngine else { throw Failure(503, L("screenShare.error.notReady")) }
+        switch (method, leaf) {
+        case ("GET", "state"):
+            switch await engine.state(deviceId: deviceId) {
+            case .success(let value): return reply(200, value)
+            case .failure(let refusal): return screenShareRefusal(refusal)
+            }
+        case ("POST", "sessions"):
+            let request = try decode(body, as: ScreenShareSessionRequestBody.self)
+            switch await engine.start(deviceId: deviceId, request: request) {
+            case .success(let value): return reply(200, value)
+            case .failure(let refusal): return screenShareRefusal(refusal)
+            }
+        case ("POST", "control-key"):
+            let request = try decode(body, as: ScreenShareControlKeyRequestBody.self)
+            guard request.publicKeyB64.utf8.count <= 256 else { throw Failure(400, L("screenShare.error.controlKeyShape")) }
+            switch await engine.enrolControlKey(deviceId: deviceId, publicKeyB64: request.publicKeyB64) {
+            case .success(let value): return reply(200, value)
+            case .failure(let refusal): return screenShareRefusal(refusal)
+            }
+        default:
+            throw Failure(404, L("screenShare.error.routeNotFound"))
+        }
+    }
+
+    /// `{"error":{"reason":"…"}}` — the shape the phone reads refusals from.
+    fileprivate func screenShareRefusal(_ refusal: ScreenShareRouteRefusal) -> MobileReply {
+        let object: [String: Any] = ["protocol": 1, "error": ["reason": refusal.rawValue]]
+        let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
+        return MobileReply(status: refusal.status, body: data)
+    }
+
+    /// One inbound signalling frame from a phone's E2EE socket.
+    func screenShareSignal(_ object: [String: Any], deviceId: String) async {
+        guard let engine = screenShareEngine, let signal = ScreenShareSignal.inbound(object) else { return }
+        await engine.handle(signal, from: deviceId)
+    }
+}
+
+extension MobileRemoteService: ScreenShareSignalSender {
+    /// Sends one signalling frame to every live connection of a paired phone.
+    /// False when it has none: a kill has already happened on the Mac, and the
+    /// note is best effort by design.
+    @discardableResult
+    public func send(_ signal: ScreenShareSignal, to deviceId: String) async -> Bool {
+        guard let frame = signal.encoded(),
+              let object = (try? JSONSerialization.jsonObject(with: frame)) as? [String: Any]
+        else { return false }
+        let targets = connectedDevices.filter { $0.value == deviceId }.keys.compactMap { clients[$0] }
+        guard !targets.isEmpty else { return false }
+        for client in targets { await client.sendSignal(object) }
+        return true
+    }
+}
+
+extension MobileRemoteService: ScreenShareTurnSource {
+    /// Asks the relay to mint a short-lived TURN credential on the host control
+    /// socket. The coturn secret never leaves the relay; this is the whole of
+    /// what the Mac ever learns, and it is forwarded to the phone inside E2EE.
+    public func mintTurnCredential() async -> ScreenShareTurnCredential? {
+        guard let socket = controlSocket,
+              let frame = try? JSONSerialization.data(withJSONObject: ["type": "turn-credentials-request"], options: [.sortedKeys])
+        else { return nil }
+        let id = UUID()
+        let deadline = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            await self?.resumeTurnWaiter(id, with: nil)
+        }
+        defer { deadline.cancel() }
+        do { try await socket.send(.string(String(decoding: frame, as: UTF8.self))) }
+        catch { return nil }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<ScreenShareTurnCredential?, Never>) in
+            turnWaiters[id] = continuation
+        }
+    }
+
+    private func resumeTurnWaiter(_ id: UUID, with credential: ScreenShareTurnCredential?) {
+        turnWaiters.removeValue(forKey: id)?.resume(returning: credential)
+    }
+
+    /// A `turn-credentials`, `turn-rate-limited` or `turn-unavailable` frame from
+    /// the relay. A refusal is not an error: the session still runs on host and
+    /// reflexive candidates, which is the same-Wi-Fi case anyway.
+    func turnCredentialAnswer(_ object: [String: Any]) {
+        let credential = ScreenShareTurnCredential.parse(relayFrame: object, now: Date())
+        if credential == nil, let retry = (object["retryAfterSecs"] as? NSNumber)?.intValue {
+            Self.log.info("relay rate-limited the TURN credential request, retry in \(retry, privacy: .public)s")
+        }
+        let waiters = turnWaiters
+        turnWaiters.removeAll()
+        for continuation in waiters.values { continuation.resume(returning: credential) }
     }
 }
 
@@ -1101,6 +1212,14 @@ actor RelayClientConnection {
                 guard let object = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any] else { continue }
                 if let type = object["type"] as? String {
                     if type == "ping" { send(["type": "pong"]) }
+                    // Screen-share signalling rides the same encrypted channel as
+                    // the request tunnel; a type this build does not know is
+                    // dropped in silence, so neither side breaks on the other's
+                    // version.
+                    else if type.hasPrefix("screen-") {
+                        let device = deviceId
+                        if let router { await router.screenShareSignal(object, deviceId: device) }
+                    }
                     continue
                 }
                 guard let requestId = object["id"] as? String, requestId.count <= 64, let method = object["method"] as? String, ["GET", "POST"].contains(method),
@@ -1215,6 +1334,12 @@ actor RelayClientConnection {
     func notify(scope: String, revision: Int) {
         guard authenticated else { return }
         send(["type": "notify", "scope": scope, "revision": revision])
+    }
+
+    /// One screen-share signalling frame, sealed in call order like every other.
+    func sendSignal(_ object: [String: Any]) {
+        guard authenticated else { return }
+        send(object)
     }
 
     func close(reason: String) async {
