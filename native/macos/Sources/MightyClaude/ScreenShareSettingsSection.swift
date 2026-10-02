@@ -30,8 +30,15 @@ struct ScreenShareSettingsSection: View {
                 }
                 .controlSize(.small)
                 .accessibilityIdentifier("settings-screen-share-permissions")
+                Button { store.playScreenShareReferenceScene() } label: {
+                    Label(L("settings.screenShare.scene.button"), systemImage: "play.rectangle")
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier("settings-screen-share-scene")
                 Spacer()
             }
+            Text(L("settings.screenShare.scene.description"))
+                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if devices.isEmpty {
                 Text(L("settings.screenShare.noPhones")).font(.system(size: 11)).foregroundStyle(.secondary)
             }

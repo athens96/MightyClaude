@@ -721,6 +721,26 @@ struct ScreenShareEngineTests {
         #expect(body?["tapMarker"] as? Bool == false)
     }
 
+    @Test func theReferenceScenesPhasesReachEveryConnectedPhone() async throws {
+        let fixture = await makeFixture()
+        defer { cleanUp(fixture) }
+        _ = try await allow(fixture, grant: .view)
+        guard case .success(let reply) = await startSession(fixture, mode: .view) else {
+            Issue.record("start refused"); return
+        }
+        let peer = try #require(await fixture.peers.peer(sessionId: reply.sessionId))
+        // Not connected yet: nothing to tell.
+        await fixture.engine.announceScene(.preroll)
+        await peer.emitConnected(.host)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        await fixture.engine.announceScene(.motion)
+        await fixture.engine.announceScene(.still)
+        let notes = await peer.sentData.compactMap {
+            (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+        }.filter { $0["t"] as? String == "scene" }.compactMap { $0["phase"] as? String }
+        #expect(notes == ["motion", "still"])
+    }
+
     @Test func aViewOnlyPhoneInjectsNothingHoweverItAsks() async throws {
         let fixture = await makeFixture()
         defer { cleanUp(fixture) }
