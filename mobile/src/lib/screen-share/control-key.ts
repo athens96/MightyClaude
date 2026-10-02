@@ -216,14 +216,14 @@ export function controlKeyStatus(input: {
   return phone === host ? 'ready' : 'mismatch';
 }
 
-/** The states in which the enrol button is offered: the Mac has no key, or another one. */
+/**
+ * The states in which the enrol button is offered: the Mac has no key for this phone.
+ * Where the Mac holds a key (`phone-missing`, `mismatch`) it answers every enrolment with
+ * 409 until its user removes that key, so the button would be a dead end; the status text
+ * says what to do on the Mac instead, and the button comes back once the key is gone.
+ */
 export function mayEnrolControlKey(status: ControlKeyStatus): boolean {
-  return (
-    status === 'missing' ||
-    status === 'host-missing' ||
-    status === 'phone-missing' ||
-    status === 'mismatch'
-  );
+  return status === 'missing' || status === 'host-missing';
 }
 
 /**

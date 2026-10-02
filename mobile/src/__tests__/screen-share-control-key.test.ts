@@ -103,8 +103,9 @@ describe('where the key stands, without a prompt', () => {
   it('offers enrolment only when the Mac has no key, or another one', () => {
     expect(mayEnrolControlKey('missing')).toBe(true);
     expect(mayEnrolControlKey('host-missing')).toBe(true);
-    expect(mayEnrolControlKey('phone-missing')).toBe(true);
-    expect(mayEnrolControlKey('mismatch')).toBe(true);
+    // The Mac already holds a key and refuses another until its user removes it.
+    expect(mayEnrolControlKey('phone-missing')).toBe(false);
+    expect(mayEnrolControlKey('mismatch')).toBe(false);
     expect(mayEnrolControlKey('ready')).toBe(false);
     expect(mayEnrolControlKey('not-needed')).toBe(false);
     expect(mayEnrolControlKey('unsupported')).toBe(false);
