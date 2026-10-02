@@ -155,6 +155,8 @@ HMAC-SHA1 형식 (coturn REST API):
 
 BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호화 채널 위에 JSON으로 흐른다. 릴레이는 이 프레임을 바이너리 그대로 넘기므로 SDP·ICE 후보·권한·킬 신호 중 어느 것도 읽거나 바꿀 수 없다(X25519/HKDF/ChaCha20-Poly1305 + 엄격한 카운터). 영상은 릴레이를 지나지 않는다: 같은 와이파이에서는 ICE **host** 후보로 바로, 그 밖에서는 **srflx·prflx**로 P2P, 그마저 막히면 coturn TURN(**relay** 후보)으로만 우회한다.
 
+사용자가 Mac과 안드로이드 휴대폰으로 직접 따라 하는 기기 확인표(와이파이·LTE·강제 TURN 경로, 측정, 입력, 안전)는 [`docs/screen-share-device-checklist.md`](screen-share-device-checklist.md)에 있다.
+
 무엇이 어디로 흐르는지:
 
 | 내용 | 경로 |
