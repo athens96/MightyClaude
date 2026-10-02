@@ -185,7 +185,7 @@ function applyHostState(
   if (host.controlChallengeB64) next.controlChallengeB64 = host.controlChallengeB64;
   else delete next.controlChallengeB64;
   if (host.iceServers) next.iceServers = host.iceServers;
-  return applyGrant(next, host.allowed, host.grant, at);
+  return applyGrant(next, host.allowed, host.grant);
 }
 
 /**
@@ -197,7 +197,6 @@ function applyGrant(
   state: ScreenSessionState,
   allowed: boolean,
   grant: ScreenGrant,
-  _at: number,
 ): ScreenTransition {
   if (!isScreenSessionActive(state)) return unchanged(state);
   if (!allowed || grant === 'none') return end(state, 'revoked');
@@ -339,7 +338,7 @@ function applySignal(
       else delete next.controlChallengeB64;
       if (signal.iceServers) next.iceServers = signal.iceServers;
       if (signal.displays) next.displays = signal.displays;
-      return applyGrant(next, signal.allowed, signal.grant, at);
+      return applyGrant(next, signal.allowed, signal.grant);
     }
 
     case 'screen-kill': {
