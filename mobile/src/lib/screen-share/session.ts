@@ -68,6 +68,8 @@ export interface ScreenSessionState {
   refusal?: ScreenRefusal;
   /** The fingerprint of the control key the Mac stores for this phone, if any. */
   controlKeyFingerprint?: string;
+  /** The Mac draws the tap marker (`tapMarker` in its state). */
+  tapMarker?: boolean;
   idleTimeoutSeconds: number;
   /** Phone clock, ms, when `starting` or `connecting` began; the deadline counts from it. */
   phaseStartedAt: number;
@@ -215,6 +217,8 @@ function applyHostState(
   if (host.controlKeyFingerprint) next.controlKeyFingerprint = host.controlKeyFingerprint;
   else delete next.controlKeyFingerprint;
   if (host.iceServers) next.iceServers = host.iceServers;
+  if (host.tapMarker === true) next.tapMarker = true;
+  else delete next.tapMarker;
   // A state read during a session must not shorten or lengthen the live session's ceiling.
   if (isScreenSessionActive(state)) next.idleTimeoutSeconds = state.idleTimeoutSeconds;
   return applyGrant(next, host.allowed, host.grant);

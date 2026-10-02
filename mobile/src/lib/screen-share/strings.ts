@@ -273,10 +273,21 @@ export function measurementLines(summary: MeasurementSummary | undefined): strin
       active: figure(bitrate?.activeKbps),
       idle: figure(bitrate?.idleKbps),
     }),
+    // Only once the Mac has drawn a marker or refused a marked tap.
+    ...(latency?.echoP50Ms !== undefined || latency?.refused
+      ? [
+          t('phone.screenShare.measure.markerEcho', {
+            echo: figure(latency.echoP50Ms),
+            refused: latency.refused ?? 0,
+          }),
+        ]
+      : []),
   ];
 }
 
-/** Why tap-to-visible is only the phone's half of the measurement for now. */
-export function measurementMarkerNote(): string {
-  return t('phone.screenShare.measure.markerMissing');
+/** How tap-to-visible is timed against this Mac: with its marker, or without one. */
+export function measurementMarkerNote(hostTapMarker = false): string {
+  return hostTapMarker
+    ? t('phone.screenShare.measure.markerOn')
+    : t('phone.screenShare.measure.markerMissing');
 }

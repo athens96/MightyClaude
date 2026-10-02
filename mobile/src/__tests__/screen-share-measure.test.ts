@@ -91,3 +91,56 @@ describe('the overlay lines', () => {
     }
   });
 });
+
+describe('against a Mac that draws the tap marker', () => {
+  function marked(): ScreenMeasurement {
+    const measurement = new ScreenMeasurement();
+    measurement.record({ at: 0, framesDecoded: 0, bytesReceived: 0 });
+    measurement.scenePhase('motion', 500);
+    measurement.tapped(1000, 'm1');
+    measurement.record({ at: 1010, framesDecoded: 20, bytesReceived: 100_000 });
+    measurement.markerEcho('m1', true, 1040);
+    measurement.record({ at: 1041, framesDecoded: 21, bytesReceived: 100_000 });
+    measurement.record({ at: 1120, framesDecoded: 23, bytesReceived: 110_000 });
+    measurement.tapped(1500, 'm2');
+    measurement.markerEcho('m2', false, 1530);
+    measurement.scenePhase('still', 2000);
+    return measurement;
+  }
+
+  it('exports the marker method, both sample lists and the scene phases', () => {
+    const report = measurementReport(marked(), { exportedAt: 0, hostTapMarker: true });
+    expect(report.hostTapMarker).toBe(true);
+    expect(report.latencySamplesMs).toEqual([120]);
+    expect(report.markerEchoSamplesMs).toEqual([40]);
+    expect(report.summary.latency).toEqual({
+      count: 1,
+      p50Ms: 120,
+      p95Ms: 120,
+      timeouts: 0,
+      refused: 1,
+      echoP50Ms: 40,
+    });
+    expect(report.scene).toEqual([
+      { phase: 'motion', t: 0.5 },
+      { phase: 'still', t: 2 },
+    ]);
+  });
+
+  it('says how the taps are timed, and adds the echo line once there is one', () => {
+    for (const language of ['ko', 'en'] as const) {
+      resetLanguage(language);
+      const lines = measurementLines(marked().summary());
+      expect(lines).toHaveLength(5);
+      expect(lines[4]).toContain('40');
+      expect(lines[4]).not.toMatch(/\{[a-z0-9]+\}/i);
+      expect(measurementMarkerNote(true)).not.toEqual(measurementMarkerNote(false));
+      expect(measurementMarkerNote(true)).not.toContain('phone.screenShare');
+    }
+  });
+
+  it('reports no marker when the export says nothing about one', () => {
+    expect(measurementReport(new ScreenMeasurement(), { exportedAt: 0 }).hostTapMarker).toBe(false);
+    expect(measurementReport(new ScreenMeasurement(), { exportedAt: 0 }).scene).toEqual([]);
+  });
+});

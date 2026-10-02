@@ -116,14 +116,16 @@ export default function RemoteScreenScreen() {
   const controlling = live && session?.mode === 'control';
   const zoom = snapshot?.zoom;
 
+  const hostTapMarker = session?.tapMarker === true;
   const measure = useScreenMeasurement(controller, {
     enabled: measuring,
     live: live === true,
+    hostTapMarker,
     exportTitle: t('phone.screenShare.measure.exportTitle'),
   });
   // The tap gesture is built once per session; it reaches the latest probe through here.
-  const markTap = useRef(measure.markTap);
-  markTap.current = measure.markTap;
+  const measuredTap = useRef(measure.tap);
+  measuredTap.current = measure.tap;
 
   // A new stream starts with no known frame size; the view reports it with the first frame.
   useEffect(() => setVideoSize(undefined), [streamUrl]);
@@ -177,7 +179,7 @@ export default function RemoteScreenScreen() {
       .runOnJS(true)
       .onEnd((event) => {
         const point = toDisplay(event.x, event.y);
-        if (point && controller.tap(point)) markTap.current();
+        if (point) measuredTap.current(point);
       });
     const longPress = Gesture.LongPress()
       .runOnJS(true)
@@ -400,7 +402,7 @@ export default function RemoteScreenScreen() {
 
         {measuring ? (
           <View style={styles.card}>
-            <Text style={styles.detail}>{measurementMarkerNote()}</Text>
+            <Text style={styles.detail}>{measurementMarkerNote(hostTapMarker)}</Text>
             <Button
               label={t('phone.screenShare.measure.export')}
               compact

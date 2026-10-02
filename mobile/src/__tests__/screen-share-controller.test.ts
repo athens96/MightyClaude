@@ -566,6 +566,38 @@ describe('input in a live session', () => {
     ]);
   });
 
+  it('puts a marker id on a timed tap, and leaves off one the Mac would refuse', async () => {
+    const h = harness({ state: hostState({ tapMarker: true }) });
+    await goLive(h);
+    expect(h.controller.snapshot().session.tapMarker).toBe(true);
+    h.dataFrames.length = 0;
+    h.controller.tap({ x: 0.25, y: 0.75 }, 'm1-a');
+    h.controller.tap({ x: 0.25, y: 0.75 }, 'not ok');
+    expect(h.dataFrames.map((frame) => JSON.parse(frame))).toEqual([
+      { t: 'tap', displayId: 1, x: 0.25, y: 0.75, button: 'left', marker: 'm1-a' },
+      { t: 'tap', displayId: 1, x: 0.25, y: 0.75, button: 'left' },
+    ]);
+  });
+
+  it('hands the Mac’s marker echoes and scene phases to the measurement, not to the clipboard', async () => {
+    const h = harness();
+    await goLive(h);
+    expect(h.controller.snapshot().session.tapMarker).toBeUndefined();
+    const notes: unknown[] = [];
+    const stop = h.controller.onMeasurementNote((note) => notes.push(note));
+    h.peer()?.callbacks.onData({ t: 'marker', id: 'm1', shown: true });
+    h.peer()?.callbacks.onData({ t: 'scene', phase: 'motion' });
+    h.peer()?.callbacks.onData({ t: 'scene', phase: 'sideways' });
+    stop();
+    h.peer()?.callbacks.onData({ t: 'scene', phase: 'still' });
+    await flush();
+    expect(notes).toEqual([
+      { t: 'marker', id: 'm1', shown: true },
+      { t: 'scene', phase: 'motion' },
+    ]);
+    expect(h.clipboard.writes).toBe(0);
+  });
+
   it('never sends text over 4096 UTF-8 bytes', async () => {
     const h = harness();
     await goLive(h);
