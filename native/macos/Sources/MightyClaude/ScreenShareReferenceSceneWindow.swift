@@ -27,10 +27,15 @@ enum ScreenShareReferenceSceneWindow {
         window.contentView = NSHostingView(rootView: ReferenceSceneView(player: player, onStop: { stop() }))
         window.setFrame(frame, display: true)
         window.makeKeyAndOrderFront(nil)
+        // The close box ends the scene too. Only this window's own close tears
+        // down: a replaced scene was torn down before its window closed.
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
-        ) { _ in
-            MainActor.assumeIsolated { finish() }
+        ) { [weak window] _ in
+            MainActor.assumeIsolated {
+                guard let window, window === Self.window else { return }
+                teardown()
+            }
         }
         self.window = window
         self.player = player
@@ -39,11 +44,13 @@ enum ScreenShareReferenceSceneWindow {
 
     static func stop() {
         guard let window else { return }
+        teardown()
         window.close()
     }
 
-    /// The window is closing, by the stop button or its close box.
-    private static func finish() {
+    /// Stops the clock (which announces `done` if the scene had not ended) and
+    /// forgets the window.
+    private static func teardown() {
         player?.stop()
         player = nil
         if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
