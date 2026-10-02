@@ -40,7 +40,16 @@ struct WorkspaceView: View {
         .sheet(isPresented: $store.showSettings) { AppSettingsView().environmentObject(store) }
         .sheet(item: $store.renameTarget) { RenameSheet(target: $0).environmentObject(store) }
         .sheet(item: $store.terminalHistorySession) { LegacyTerminalHistory(session: $0) }
-        .sheet(item: $store.resumePickerWorkspace) { ResumeSessionSheet(workspace: $0).environmentObject(store) }
+        .sheet(item: $store.resumePicker) { request in
+            Group {
+                switch request.stage {
+                case .checking: ResumeChoiceSheet(provider: request.provider, checking: true)
+                case .choice: ResumeChoiceSheet(provider: request.provider)
+                case .list: ResumeSessionSheet(workspace: request.workspace, provider: request.provider)
+                }
+            }
+            .environmentObject(store)
+        }
         .sheet(item: $store.pluginBrowser) { browser in
             ClaudePluginView(model: browser, onClose: { store.pluginBrowser = nil })
                 .interactiveDismissDisabled(browser.isMutating)
@@ -73,8 +82,6 @@ struct WorkspaceView: View {
                 Text("워크스페이스").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                 Text("\(store.snapshot.workspaces.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
-                Button { store.openWorkspace() } label: { Image(systemName: "plus").font(.system(size: 12)) }
-                    .buttonStyle(.plain).help("프로젝트 폴더 열기 (⌘O)").accessibilityLabel("프로젝트 폴더 열기")
             }
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 11)
 
@@ -89,10 +96,15 @@ struct WorkspaceView: View {
                 .padding(.horizontal, 9)
             }
 
-            Button { store.openWorkspace() } label: {
-                Label("폴더 열기", systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(10)
+            // While a workspace is listed, a folder opens from its "창 추가" menu or ⌘O;
+            // with none listed (none yet, or none matching the search) this is the
+            // sidebar's way in.
+            if store.filteredWorkspaces.isEmpty {
+                Button { store.openWorkspace() } label: {
+                    Label("폴더 열기", systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                }
+                .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.bottom, 12)
             }
-            .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.bottom, 12)
             Divider()
             HStack(spacing: 9) {
                 Group {
@@ -391,24 +403,23 @@ struct WorkspaceView: View {
 }
 
 /// The "창 추가" menu's items, shared by the sidebar's last row and the dashboard's
-/// workspace header: new agent panes, an earlier session, a terminal, a browser tab.
+/// workspace header: new agent panes (Claude and Codex then ask whether to continue
+/// an earlier session, `AppStore.addAgentPane`), a terminal, a browser tab, and
+/// another project folder.
 struct WorkspaceAddMenuItems: View {
     let store: AppStore
     let workspace: Workspace
 
     var body: some View {
         ForEach(ProviderOptions.ids, id: \.self) { provider in
-            Button { addSession(kind: "claude", provider: provider) } label: {
+            Button { store.addAgentPane(provider: provider, workspaceId: workspace.id) } label: {
                 Label { Text(ProviderOptions.betaTitle(provider, "새 \(ProviderOptions.label(provider)) 실행 창")) } icon: {
                     if let image = ProviderIconImage.image(provider: provider, pointSize: 12) { Image(nsImage: image) }
                     else { Image(systemName: Palette.symbol(provider)) }
                 }
             }
+            .accessibilityIdentifier("workspace-add-agent-\(provider)-\(workspace.id)")
         }
-        Button { store.openResumePicker(workspace.id) } label: {
-            Label(L("resume.menu"), systemImage: "clock.arrow.circlepath")
-        }
-        .accessibilityIdentifier("workspace-resume-session-\(workspace.id)")
         Divider()
         Button { addSession(kind: "shell") } label: {
             Label(L("workspace.newTerminal"), systemImage: "terminal")
@@ -418,12 +429,17 @@ struct WorkspaceAddMenuItems: View {
             Label(L("browser.newTab"), systemImage: "globe")
         }
         .accessibilityIdentifier("new-browser-tab")
+        Divider()
+        Button { store.openWorkspace() } label: {
+            Label(L("menu.openProject"), systemImage: "folder.badge.plus")
+        }
+        .accessibilityIdentifier("workspace-open-folder-\(workspace.id)")
     }
 
-    private func addSession(kind: String, provider: String = "claude") {
+    private func addSession(kind: String) {
         guard !store.hasModal, store.snapshot.workspaces.contains(where: { $0.id == workspace.id }) else { return }
         store.selectWorkspace(workspace.id)
-        store.addSession(kind: kind, provider: provider)
+        store.addSession(kind: kind)
     }
 }
 

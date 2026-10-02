@@ -218,6 +218,43 @@ struct ResumableSessionsTests {
         #expect(ResumableSessions.list(query(f)).map(\.title) == ["c2", "x1", "c1", "x2"])
     }
 
+    @Test func oneAgentsListingReadsOnlyThatAgentAndTheProbeStopsAtOne() throws {
+        let f = try fixture()
+        try writeClaude(f, folderPath: f.workspace, id: id(1), lines: claudeLines(cwd: f.workspace, prompt: "c1"), modified: ago(30))
+        try writeClaude(f, folderPath: f.workspace, id: id(2), lines: claudeLines(cwd: f.workspace, prompt: "c2"), modified: ago(10))
+        try writeCodex(f, thread: thread(1), lines: codexLines(cwd: f.workspace, thread: thread(1), prompt: "x1"), modified: ago(20))
+        try writeCodex(f, thread: thread(2), lines: codexLines(cwd: f.workspace, thread: thread(2), prompt: "User: 중첩"), modified: ago(5))
+        #expect(ResumableSessions.listing(query(f), provider: "claude").items.map(\.title) == ["c2", "c1"])
+        let codex = ResumableSessions.listing(query(f), provider: "codex")
+        #expect(codex.items.map(\.title) == ["x1"] && codex.hidden == 1)
+        #expect(ResumableSessions.listing(query(f), provider: "gemini") == ResumableSessionListing())
+        #expect(ResumableSessions.listing(query(f), provider: "claude").items.first?.requests == 1)
+        #expect(ResumableSessions.listing(query(f), provider: "claude").items.first?.model == "claude-sonnet-4-5")
+        // The "창 추가" look-up: one session, automated runs hidden even when the picker shows all,
+        // and only the head read: no request count, no model from the end.
+        let probe = ResumableSessions.listing(AddAgentPane.probe(query(f, all: true)), provider: "claude")
+        #expect(probe.items.map(\.title) == ["c2"])
+        #expect(probe.items.first?.requests == nil && probe.items.first?.model == nil)
+        #expect(ResumableSessions.listing(AddAgentPane.probe(query(f, all: true)), provider: "codex").items.map(\.title) == ["x1"])
+        // A Codex folder holding only an automated run and a session a pane uses has nothing to ask about.
+        let used = ResumableSessions.listing(AddAgentPane.probe(query(f, excluding: [thread(1)])), provider: "codex")
+        #expect(used.items.isEmpty)
+        #expect(AddAgentPane.step(provider: "codex", sessions: used.items, inUse: [thread(1)]) == .startNew)
+    }
+
+    @Test func aCancelledScanStopsBeforeReadingARecord() async throws {
+        let f = try fixture()
+        try writeClaude(f, folderPath: f.workspace, id: id(1), lines: claudeLines(cwd: f.workspace, prompt: "c1"), modified: ago(3))
+        try writeCodex(f, thread: thread(1), lines: codexLines(cwd: f.workspace, thread: thread(1), prompt: "x1"), modified: ago(2))
+        let scan = query(f)
+        #expect(ResumableSessions.listing(scan).items.count == 2)
+        let counts = await Task.detached { () -> [Int] in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return [ResumableSessions.listing(scan, provider: "claude").items.count, ResumableSessions.listing(scan, provider: "codex").items.count]
+        }.value
+        #expect(counts == [0, 0])
+    }
+
     @Test func ageCandidateAndSessionLimitsBoundTheScan() throws {
         let f = try fixture()
         for n in 1...5 {

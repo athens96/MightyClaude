@@ -54,6 +54,10 @@ public struct ResumableSessionQuery: Sendable {
     public var maximumScanned: Int
     /// Sessions listed per provider.
     public var maximumSessions: Int
+    /// Reads only what decides whether a record is listed (its first working folder
+    /// and first request): no request count, no model from the record's end. For a
+    /// yes/no look-up such as "창 추가"'s.
+    public var headOnly = false
     public init(workspacePath: String, environment: [String: String] = [:], home: URL = FileManager.default.homeDirectoryForCurrentUser,
                 excluding: Set<String> = [], known: Set<String> = [], includeAutomated: Bool = false,
                 now: Date = Date(), maximumAge: TimeInterval = ResumableSessions.maximumAge,
@@ -100,6 +104,17 @@ public enum ResumableSessions {
         let claude = claude(query, budget: &budget), codex = codex(query, budget: &budget)
         let items = (claude.items + codex.items).sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.id < $1.id }
         return ResumableSessionListing(items: items, hidden: claude.hidden + codex.hidden)
+    }
+
+    /// One agent's sessions alone: the other agent's records are not read. An agent
+    /// the app cannot resume lists nothing.
+    public static func listing(_ query: ResumableSessionQuery, provider: String) -> ResumableSessionListing {
+        var budget = countBudget
+        switch provider {
+        case "claude": return claude(query, budget: &budget)
+        case "codex": return codex(query, budget: &budget)
+        default: return ResumableSessionListing()
+        }
     }
 
     /// A nested non-interactive run sends a flattened transcript as its first
@@ -178,11 +193,11 @@ public enum ResumableSessions {
         }
         var listing = ResumableSessionListing(), read = 0
         for candidate in recent(candidates, query: query) {
-            guard listing.items.count < query.maximumSessions, read < query.maximumCandidates else { break }
+            guard listing.items.count < query.maximumSessions, read < query.maximumCandidates, !Task.isCancelled else { break }
             guard !query.excluding.contains(candidate.id.lowercased()) else { continue }
             let known = query.known.contains(candidate.id.lowercased())
             switch claudeSession(candidate.url, id: candidate.id, modified: candidate.modified, paths: paths, known: known,
-                                 includeAutomated: query.includeAutomated, budget: &budget) {
+                                 includeAutomated: query.includeAutomated, headOnly: query.headOnly, budget: &budget) {
             case .listed(let item): read += 1; listing.items.append(item)
             case .hidden: listing.hidden += 1
             case .skipped: read += 1
@@ -196,7 +211,7 @@ public enum ResumableSessions {
     /// The head alone decides whether a record is listed: its first working
     /// folder and its first request. Only a listed record is read further.
     static func claudeSession(_ url: URL, id: String, modified: Date, paths: Set<String>, known: Bool = false,
-                              includeAutomated: Bool = true, budget: inout Int) -> Outcome {
+                              includeAutomated: Bool = true, headOnly: Bool = false, budget: inout Int) -> Outcome {
         guard let fd = CodexSessionFiles.open(url) else { return .skipped }
         defer { Darwin.close(fd) }
         guard let size = CodexSessionFiles.size(fd), size > 0 else { return .skipped }
@@ -214,7 +229,7 @@ public enum ResumableSessions {
         let automated = !known && automatedPrompt(title)
         if automated && !includeAutomated { return .hidden }
         var requests: Int?
-        if size <= countBytes && budget >= size {
+        if !headOnly && size <= countBytes && budget >= size {
             budget -= size
             var count = 0
             let complete = forEachLine(fd, size: size, limit: size) { line in
@@ -223,7 +238,7 @@ public enum ResumableSessions {
             }
             if complete { requests = count }
         }
-        let model = tailModel(fd, size: size, claudeModel)
+        let model = headOnly ? nil : tailModel(fd, size: size, claudeModel)
         return .listed(ResumableSession(provider: "claude", sessionID: id, title: title.map(oneLine), modified: modified,
                                         requests: requests, model: model, url: url, automated: automated))
     }
@@ -252,11 +267,11 @@ public enum ResumableSessions {
         var listing = ResumableSessionListing(), read = 0
         var seen = Set<String>()
         for candidate in recent(candidates, query: query) {
-            guard listing.items.count < query.maximumSessions, read < query.maximumCandidates else { break }
+            guard listing.items.count < query.maximumSessions, read < query.maximumCandidates, !Task.isCancelled else { break }
             let lowered = candidate.id.lowercased()
             guard CoreValidation.identifier(candidate.id), !query.excluding.contains(lowered), !seen.contains(lowered) else { continue }
             switch codexSession(candidate.url, id: candidate.id, modified: candidate.modified, paths: paths, known: query.known.contains(lowered),
-                                includeAutomated: query.includeAutomated, budget: &budget) {
+                                includeAutomated: query.includeAutomated, headOnly: query.headOnly, budget: &budget) {
             case .listed(let item): read += 1; seen.insert(lowered); listing.items.append(item)
             case .hidden: seen.insert(lowered); listing.hidden += 1
             case .skipped: read += 1
@@ -266,7 +281,7 @@ public enum ResumableSessions {
     }
 
     static func codexSession(_ url: URL, id: String, modified: Date, paths: Set<String>, known: Bool = false,
-                             includeAutomated: Bool = true, budget: inout Int) -> Outcome {
+                             includeAutomated: Bool = true, headOnly: Bool = false, budget: inout Int) -> Outcome {
         guard let fd = CodexSessionFiles.open(url) else { return .skipped }
         defer { Darwin.close(fd) }
         guard let size = CodexSessionFiles.size(fd), size > 0 else { return .skipped }
@@ -298,7 +313,7 @@ public enum ResumableSessions {
         let automated = !known && automatedPrompt(title)
         if automated && !includeAutomated { return .hidden }
         var requests: Int?
-        if size <= countBytes && budget >= size {
+        if !headOnly && size <= countBytes && budget >= size {
             budget -= size
             var count = 0
             let complete = forEachLine(fd, size: size, limit: size) { line in
@@ -308,7 +323,7 @@ public enum ResumableSessions {
             }
             if complete { requests = count }
         }
-        let model = tailModel(fd, size: size, codexModel) ?? headModel
+        let model = headOnly ? headModel : tailModel(fd, size: size, codexModel) ?? headModel
         return .listed(ResumableSession(provider: "codex", sessionID: id, title: title.map(oneLine), modified: modified,
                                         requests: requests, model: model, url: url, automated: automated))
     }
