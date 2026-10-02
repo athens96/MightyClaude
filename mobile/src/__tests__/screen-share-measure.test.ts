@@ -4,7 +4,9 @@ import {
   ScreenMeasurement,
   formatMeasurementReport,
   measurementReport,
+  pollTapProbe,
 } from '@/lib/screen-share/measure';
+import { LATENCY_PROBE_TIMEOUT_MS } from '@/lib/screen-share/latency';
 import { measurementLines, measurementMarkerNote } from '@/lib/screen-share/strings';
 
 /** The overlay's numbers and the file the share sheet hands on. */
@@ -142,5 +144,78 @@ describe('against a Mac that draws the tap marker', () => {
   it('reports no marker when the export says nothing about one', () => {
     expect(measurementReport(new ScreenMeasurement(), { exportedAt: 0 }).hostTapMarker).toBe(false);
     expect(measurementReport(new ScreenMeasurement(), { exportedAt: 0 }).scene).toEqual([]);
+  });
+});
+
+describe('the tap probe poll', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('gives up by the wall clock when no reading ever arrives', async () => {
+    const measurement = new ScreenMeasurement();
+    let now = 0;
+    let reads = 0;
+    measurement.tapped(now);
+    // getStats answers nothing (the peer is gone): no sample ever reaches the tracker.
+    pollTapProbe(measurement, {
+      read: async () => {
+        reads += 1;
+      },
+      isActive: () => true,
+      now: () => now,
+      intervalMs: 30,
+    });
+    for (let step = 0; step < 100; step += 1) {
+      now += 30;
+      await jest.advanceTimersByTimeAsync(30);
+    }
+    expect(measurement.latency.pending).toBe(false);
+    expect(measurement.summary().latency.timeouts).toBe(1);
+    const settled = reads;
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(reads).toBe(settled);
+    expect(settled).toBeLessThanOrEqual(Math.ceil(LATENCY_PROBE_TIMEOUT_MS / 30) + 2);
+  });
+
+  it('stops polling once the overlay or the screen goes away', async () => {
+    const measurement = new ScreenMeasurement();
+    let active = true;
+    let reads = 0;
+    measurement.tapped(0);
+    pollTapProbe(measurement, {
+      read: async () => {
+        reads += 1;
+      },
+      isActive: () => active,
+      now: () => 0,
+      intervalMs: 30,
+    });
+    await jest.advanceTimersByTimeAsync(90);
+    expect(reads).toBeGreaterThan(1);
+    active = false;
+    const atStop = reads;
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(reads).toBeLessThanOrEqual(atStop + 1);
+  });
+
+  it('stops when cancelled, and keeps going through a failed reading until then', async () => {
+    const measurement = new ScreenMeasurement();
+    let reads = 0;
+    measurement.tapped(0);
+    const cancel = pollTapProbe(measurement, {
+      read: async () => {
+        reads += 1;
+        throw new Error('stats failed');
+      },
+      isActive: () => true,
+      now: () => 0,
+      intervalMs: 30,
+    });
+    await jest.advanceTimersByTimeAsync(90);
+    expect(reads).toBeGreaterThan(1);
+    cancel();
+    const atCancel = reads;
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(reads).toBe(atCancel);
   });
 });
