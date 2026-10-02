@@ -1,4 +1,43 @@
+import CoreGraphics
 import Foundation
+
+// MARK: - Tap marker
+
+/// Draws the latency marker: a short-lived, high-contrast ring at a point the
+/// phone tapped, in a click-through window ScreenCaptureKit captures. The phone
+/// times tap-to-visible against it. Injected, so the engine runs without a
+/// window server.
+public protocol ScreenShareTapMarkerSurface: Sendable {
+    /// Puts the marker on screen at `position` (global display coordinates, the
+    /// same space as `CGDisplayBounds`). True once it is showing.
+    func showMarker(at position: CGPoint, displayId: UInt32) async -> Bool
+}
+
+/// The marker half of the data-channel contract (docs/relay.md): a `tap` may
+/// carry `marker`, and the Mac answers `{"t":"marker","id","shown"}`.
+public enum ScreenShareTapMarker {
+    /// How long the ring stays up. Long enough for any encoder to send a frame
+    /// of it, short enough that taps in a row do not pile rings up.
+    public static let visibleSeconds: TimeInterval = 0.5
+
+    /// 1–32 characters of `[A-Za-z0-9_-]`: an id the phone made up, never
+    /// anything the Mac has to interpret.
+    public static func isValidId(_ id: String) -> Bool {
+        guard (1...32).contains(id.utf8.count) else { return false }
+        return id.utf8.allSatisfy { byte in
+            (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x5A) || (byte >= 0x61 && byte <= 0x7A)
+                || byte == 0x2D || byte == 0x5F
+        }
+    }
+
+    /// The echo the phone stops its clock on. `shown` is false when the tap
+    /// was refused (view-only, locked, secure input, the 2 s local-input pause)
+    /// or the marker could not be drawn, so the phone drops the probe instead
+    /// of waiting for a frame that will not come.
+    public static func echo(id: String, shown: Bool) -> [String: Any] {
+        ["t": "marker", "id": id, "shown": shown]
+    }
+}
 
 // MARK: - Zoom
 
@@ -90,6 +129,9 @@ public enum ScreenShareClipboardLimits {
 public enum ScreenShareDataMessage: Sendable, Equatable {
     /// A pointer, scroll, text or key event for `CGEventPost`.
     case input(ScreenShareInputEvent)
+    /// A `tap` that also asks for the latency marker at its point, echoed back
+    /// under `markerId`.
+    case markedTap(ScreenShareInputEvent, markerId: String)
     /// Stream this region at full resolution over the low-res overview.
     case zoom(displayId: UInt32, region: ScreenShareZoomRegion)
     /// Capture another display from now on.
@@ -144,7 +186,13 @@ public enum ScreenShareDataChannel {
         case "tap":
             guard let where_ = point() else { return .failure(.malformed) }
             let button: ScreenShareMouseButton = (object["button"] as? String) == "right" ? .right : .left
-            return .success(.input(.click(where_, button: button, clickCount: 1)))
+            let click = ScreenShareInputEvent.click(where_, button: button, clickCount: 1)
+            // `marker` is optional; present, it has to be a well-formed id.
+            guard let rawMarker = object["marker"] else { return .success(.input(click)) }
+            guard let marker = rawMarker as? String, ScreenShareTapMarker.isValidId(marker) else {
+                return .failure(.malformed)
+            }
+            return .success(.markedTap(click, markerId: marker))
         case "drag":
             guard let where_ = point(), let raw = object["phase"] as? String,
                   let phase = ScreenShareDragPhase(rawValue: raw)

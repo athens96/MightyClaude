@@ -358,6 +358,7 @@ extension AppStore {
             displays: CoreGraphicsDisplaySource(),
             pasteboard: SystemScreenSharePasteboard(),
             confirmer: AlertScreenShareControlKeyConfirmer(mobileRemote: mobileRemote),
+            tapMarker: ScreenShareTapMarkerOverlay(),
             compressor: ZstdScreenShareCompressor())
         screenShareEngine = engine
         backend.setHandlers(
