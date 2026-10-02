@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeRepairNeeded, type RelayState } from '@/api/relay/transport';
 import type { MobileState } from '@/api/types';
 import { HostWorkspaces } from '@/components/host-workspaces';
+import { ScreenShareEntry } from '@/components/screen-share-entry';
 import { EmptyState, ErrorBanner } from '@/components/ui';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { t } from '@/lib/i18n';
@@ -93,6 +94,10 @@ export default function HostScreen() {
         <ErrorBanner message={poll.error} />
       ) : null}
 
+      <View style={styles.actions}>
+        <ScreenShareEntry hostId={host.id} hostName={state?.hostName ?? host.name} />
+      </View>
+
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
         refreshControl={
@@ -113,4 +118,9 @@ const makeStyles = (palette: Palette) =>
   StyleSheet.create({
     screen: { backgroundColor: palette.background, flex: 1 },
     content: { paddingHorizontal: spacing.md + 2, paddingTop: spacing.sm },
+    actions: {
+      alignItems: 'flex-start',
+      paddingHorizontal: spacing.md + 2,
+      paddingTop: spacing.sm,
+    },
   });

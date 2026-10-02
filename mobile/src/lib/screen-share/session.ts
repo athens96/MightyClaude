@@ -1,0 +1,399 @@
+import {
+  SCREEN_BACKGROUND_GRACE_SECONDS,
+  SCREEN_IDLE_TIMEOUT_CONTROL_SECONDS,
+  SCREEN_IDLE_TIMEOUT_VIEW_SECONDS,
+  type ScreenDisplay,
+  type ScreenEndReason,
+  type ScreenGrant,
+  type ScreenIceServer,
+  type ScreenKillReason,
+  type ScreenMode,
+  type ScreenQuality,
+  type ScreenRejectReason,
+  type ScreenShareState,
+  type ScreenSessionResponse,
+} from '@/api/types';
+import {
+  killHitsSession,
+  sessionEndSignal,
+  type ScreenSignal,
+  type ScreenSessionEndSignal,
+} from '@/lib/screen-share/signalling';
+
+/**
+ * The phone's side of one screen-share session, as a pure reducer. The Mac is the one
+ * that enforces every rule — it stops capture and closes the peer connection itself —
+ * so this machine exists to keep the screen honest about what is happening and to let
+ * the phone drop its own session when the Mac could not reach it.
+ */
+
+export type ScreenPhase = 'idle' | 'starting' | 'connecting' | 'live' | 'ended';
+
+/** Why nothing is on screen even though the grant is in place. */
+export type ScreenHold = 'screen-permission' | 'lock-screen' | 'secure-input';
+
+/** How a session finished: our own reasons, the Mac's, or a kill. */
+export type ScreenStopReason = ScreenEndReason | ScreenKillReason;
+
+export interface ScreenSessionState {
+  phase: ScreenPhase;
+  /** The Mac's allow-list flag for this phone. */
+  allowed: boolean;
+  grant: ScreenGrant;
+  /** The mode that was asked for, and once live the mode the Mac granted. */
+  mode: ScreenMode;
+  sessionId?: string;
+  displayId?: number;
+  quality?: ScreenQuality;
+  displays: ScreenDisplay[];
+  controlChallengeB64?: string;
+  iceServers?: ScreenIceServer[];
+  /** Why the picture is held back rather than ended for good. */
+  hold?: ScreenHold;
+  stopReason?: ScreenStopReason;
+  /** Why the Mac refused the last request. */
+  refusal?: ScreenRejectReason;
+  idleTimeoutSeconds: number;
+  /** Phone clock, ms. Reset by any input or any frame. */
+  lastActivityAt: number;
+  /** Phone clock, ms, from the moment the app left the foreground. */
+  backgroundSince?: number;
+}
+
+export type ScreenEvent =
+  /** `GET /m1/screen-share/state` came back. */
+  | { kind: 'host-state'; state: ScreenShareState; at: number }
+  /** The phone asked for a session. */
+  | { kind: 'requested'; mode: ScreenMode; displayId: number; at: number }
+  /** `POST /m1/screen-share/sessions` was accepted. */
+  | { kind: 'accepted'; session: ScreenSessionResponse; at: number }
+  /** The Mac refused with a reason. */
+  | { kind: 'refused'; reason: ScreenRejectReason; at: number }
+  /** One decrypted signalling frame. */
+  | { kind: 'signal'; signal: ScreenSignal; at: number }
+  /** The peer connection reached `connected`. */
+  | { kind: 'connected'; at: number }
+  /** A frame arrived, or the user touched the screen. */
+  | { kind: 'activity'; at: number }
+  /** The peer connection failed or closed under us. */
+  | { kind: 'peer-failed'; at: number }
+  /** The user tapped 중지. */
+  | { kind: 'stop'; at: number }
+  | { kind: 'background'; at: number }
+  | { kind: 'foreground'; at: number }
+  /** A timer tick; the only thing that lets idle and background deadlines fire. */
+  | { kind: 'tick'; at: number };
+
+export interface ScreenTransition {
+  state: ScreenSessionState;
+  /** Frames to put on the E2EE channel, in order. */
+  outgoing: ScreenSignal[];
+  /** True when the peer connection and its data channel must be torn down now. */
+  closePeer: boolean;
+}
+
+export function initialScreenSessionState(at = 0): ScreenSessionState {
+  return {
+    phase: 'idle',
+    allowed: false,
+    grant: 'none',
+    mode: 'view',
+    displays: [],
+    idleTimeoutSeconds: SCREEN_IDLE_TIMEOUT_VIEW_SECONDS,
+    lastActivityAt: at,
+  };
+}
+
+/** True while a session is worth tearing down. */
+export function isScreenSessionActive(state: ScreenSessionState): boolean {
+  return state.phase === 'starting' || state.phase === 'connecting' || state.phase === 'live';
+}
+
+/** The contract's idle ceiling for a mode, unless the Mac named its own. */
+export function idleTimeoutSecondsFor(mode: ScreenMode, hostValue?: number): number {
+  if (typeof hostValue === 'number' && Number.isFinite(hostValue) && hostValue > 0) {
+    return Math.floor(hostValue);
+  }
+  return mode === 'control'
+    ? SCREEN_IDLE_TIMEOUT_CONTROL_SECONDS
+    : SCREEN_IDLE_TIMEOUT_VIEW_SECONDS;
+}
+
+/** A lock screen or a secure input field holds the picture back; it is not a failure. */
+export function holdFor(reason: ScreenStopReason | undefined): ScreenHold | undefined {
+  if (reason === 'lock-screen' || reason === 'secure-input') return reason;
+  return undefined;
+}
+
+/** The reasons that mean "the Mac itself stopped everything", not "we hung up". */
+export function wasStoppedByHost(reason: ScreenStopReason | undefined): boolean {
+  return (
+    reason === 'revoked' ||
+    reason === 'grant-downgrade' ||
+    reason === 'rekey-pairing' ||
+    reason === 'kill-switch' ||
+    reason === 'lock-screen' ||
+    reason === 'secure-input' ||
+    reason === 'concurrency-limit'
+  );
+}
+
+function unchanged(state: ScreenSessionState): ScreenTransition {
+  return { state, outgoing: [], closePeer: false };
+}
+
+/** Ends the session locally and, when we can still speak, tells the Mac why. */
+function end(
+  state: ScreenSessionState,
+  reason: ScreenStopReason,
+  options: { notify: boolean } = { notify: false },
+): ScreenTransition {
+  const outgoing: ScreenSessionEndSignal[] = [];
+  const active = isScreenSessionActive(state);
+  if (options.notify && active && state.sessionId && isOwnReason(reason)) {
+    outgoing.push(sessionEndSignal(state.sessionId, reason));
+  }
+  const next: ScreenSessionState = {
+    ...state,
+    phase: 'ended',
+    stopReason: reason,
+    backgroundSince: undefined,
+  };
+  const hold = holdFor(reason);
+  if (hold) next.hold = hold;
+  else delete next.hold;
+  return { state: next, outgoing, closePeer: true };
+}
+
+/** The three reasons the phone itself may report with `screen-session-end`. */
+function isOwnReason(reason: ScreenStopReason): reason is ScreenEndReason {
+  return reason === 'user-stop' || reason === 'background' || reason === 'peer-failed';
+}
+
+function applyHostState(
+  state: ScreenSessionState,
+  host: ScreenShareState,
+  at: number,
+): ScreenTransition {
+  const next: ScreenSessionState = {
+    ...state,
+    allowed: host.allowed,
+    grant: host.grant,
+    displays: host.displays,
+    idleTimeoutSeconds: idleTimeoutSecondsFor(state.mode, host.idleTimeoutSeconds),
+  };
+  if (host.controlChallengeB64) next.controlChallengeB64 = host.controlChallengeB64;
+  else delete next.controlChallengeB64;
+  if (host.iceServers) next.iceServers = host.iceServers;
+  return applyGrant(next, host.allowed, host.grant, at);
+}
+
+/**
+ * A grant that no longer covers the live session ends it. Withdrawal and a device coming
+ * off the allow-list read as `revoked`; a control session whose grant fell back to
+ * view-only reads as `grant-downgrade`, the same words the Mac uses.
+ */
+function applyGrant(
+  state: ScreenSessionState,
+  allowed: boolean,
+  grant: ScreenGrant,
+  _at: number,
+): ScreenTransition {
+  if (!isScreenSessionActive(state)) return unchanged(state);
+  if (!allowed || grant === 'none') return end(state, 'revoked');
+  if (state.mode === 'control' && grant !== 'control') return end(state, 'grant-downgrade');
+  return unchanged(state);
+}
+
+export function screenSessionReducer(
+  state: ScreenSessionState,
+  event: ScreenEvent,
+): ScreenTransition {
+  switch (event.kind) {
+    case 'host-state':
+      return applyHostState(state, event.state, event.at);
+
+    case 'requested': {
+      const next: ScreenSessionState = {
+        ...state,
+        phase: 'starting',
+        mode: event.mode,
+        displayId: event.displayId,
+        idleTimeoutSeconds: idleTimeoutSecondsFor(event.mode),
+        lastActivityAt: event.at,
+        backgroundSince: undefined,
+      };
+      delete next.stopReason;
+      delete next.refusal;
+      delete next.hold;
+      delete next.sessionId;
+      return { state: next, outgoing: [], closePeer: false };
+    }
+
+    case 'accepted': {
+      const next: ScreenSessionState = {
+        ...state,
+        phase: 'connecting',
+        sessionId: event.session.sessionId,
+        mode: event.session.mode,
+        displayId: event.session.displayId,
+        quality: event.session.quality,
+        idleTimeoutSeconds: idleTimeoutSecondsFor(event.session.mode, state.idleTimeoutSeconds),
+        lastActivityAt: event.at,
+      };
+      return { state: next, outgoing: [], closePeer: false };
+    }
+
+    case 'refused': {
+      const next: ScreenSessionState = {
+        ...state,
+        phase: 'idle',
+        refusal: event.reason,
+      };
+      delete next.sessionId;
+      // A missing or expired Screen Recording grant is the one refusal the phone
+      // explains as "Mac에서 승인 필요" rather than as a flat no.
+      if (event.reason === 'screen-permission') next.hold = 'screen-permission';
+      else delete next.hold;
+      return { state: next, outgoing: [], closePeer: true };
+    }
+
+    case 'connected': {
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      return {
+        state: { ...state, phase: 'live', lastActivityAt: event.at },
+        outgoing: [],
+        closePeer: false,
+      };
+    }
+
+    case 'activity': {
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      return { state: { ...state, lastActivityAt: event.at }, outgoing: [], closePeer: false };
+    }
+
+    case 'peer-failed': {
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      return end(state, 'peer-failed', { notify: true });
+    }
+
+    case 'stop': {
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      return end(state, 'user-stop', { notify: true });
+    }
+
+    case 'background': {
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      return {
+        state: { ...state, backgroundSince: event.at },
+        outgoing: [],
+        closePeer: false,
+      };
+    }
+
+    case 'foreground': {
+      if (state.backgroundSince === undefined) return unchanged(state);
+      const next = { ...state };
+      delete next.backgroundSince;
+      return { state: next, outgoing: [], closePeer: false };
+    }
+
+    case 'tick': {
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      // 30 s in the background ends the session even if the user never comes back.
+      if (state.backgroundSince !== undefined) {
+        const away = event.at - state.backgroundSince;
+        if (away >= SCREEN_BACKGROUND_GRACE_SECONDS * 1000) {
+          return end(state, 'background', { notify: true });
+        }
+      }
+      // 10 min driving, 30 min watching, counted from the last frame or touch.
+      const idle = event.at - state.lastActivityAt;
+      if (state.phase === 'live' && idle >= state.idleTimeoutSeconds * 1000) {
+        return end(state, 'idle-timeout', { notify: true });
+      }
+      return unchanged(state);
+    }
+
+    case 'signal':
+      return applySignal(state, event.signal, event.at);
+
+    default:
+      return unchanged(state);
+  }
+}
+
+function applySignal(
+  state: ScreenSessionState,
+  signal: ScreenSignal,
+  at: number,
+): ScreenTransition {
+  switch (signal.type) {
+    case 'screen-grant': {
+      const next: ScreenSessionState = {
+        ...state,
+        allowed: signal.allowed,
+        grant: signal.grant,
+      };
+      if (signal.controlChallengeB64) next.controlChallengeB64 = signal.controlChallengeB64;
+      else delete next.controlChallengeB64;
+      if (signal.iceServers) next.iceServers = signal.iceServers;
+      if (signal.displays) next.displays = signal.displays;
+      return applyGrant(next, signal.allowed, signal.grant, at);
+    }
+
+    case 'screen-kill': {
+      if (!killHitsSession(signal, state.sessionId)) return unchanged(state);
+      // The kill is a courtesy note: the Mac has already stopped capture and closed
+      // the connection. We only make the screen say the same thing.
+      if (!isScreenSessionActive(state)) {
+        const next: ScreenSessionState = { ...state, phase: 'ended', stopReason: signal.reason };
+        const hold = holdFor(signal.reason);
+        if (hold) next.hold = hold;
+        return { state: next, outgoing: [], closePeer: true };
+      }
+      return end(state, signal.reason);
+    }
+
+    case 'screen-session-end': {
+      if (signal.sessionId !== state.sessionId) return unchanged(state);
+      if (!isScreenSessionActive(state)) return unchanged(state);
+      return end(state, signal.reason);
+    }
+
+    case 'screen-offer': {
+      if (signal.sessionId !== state.sessionId) return unchanged(state);
+      return {
+        state: {
+          ...state,
+          mode: signal.mode,
+          displayId: signal.displayId,
+          quality: signal.quality,
+          lastActivityAt: at,
+        },
+        outgoing: [],
+        closePeer: false,
+      };
+    }
+
+    default:
+      return unchanged(state);
+  }
+}
+
+/** Runs a list of events in order; handy for screens and for tests. */
+export function runScreenEvents(
+  state: ScreenSessionState,
+  events: readonly ScreenEvent[],
+): ScreenTransition {
+  let current = state;
+  const outgoing: ScreenSignal[] = [];
+  let closePeer = false;
+  for (const event of events) {
+    const step = screenSessionReducer(current, event);
+    current = step.state;
+    outgoing.push(...step.outgoing);
+    closePeer = closePeer || step.closePeer;
+  }
+  return { state: current, outgoing, closePeer };
+}

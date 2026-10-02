@@ -61,6 +61,7 @@ it('keeps every link the app and the Mac hand out', () => {
       '/pair',
       '/connect',
       '/host/[hostId]',
+      '/host/[hostId]/screen',
       '/host/[hostId]/session/[sessionId]',
       '/host/[hostId]/workspace/[workspaceId]/files',
       '/host/[hostId]/workspace/[workspaceId]/file',
@@ -78,6 +79,7 @@ it('keeps a pane and its files above the tabs, not inside them', () => {
   const top = (root as RouteNode).children.map((child) => child.route);
   expect(top).toEqual(
     expect.arrayContaining([
+      'host/[hostId]/screen',
       'host/[hostId]/session/[sessionId]',
       'host/[hostId]/workspace/[workspaceId]/files',
       'host/[hostId]/workspace/[workspaceId]/file',
