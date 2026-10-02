@@ -106,11 +106,19 @@ enum Palette {
 
     static func token(_ path: KeyPath<DesignPalette, DesignColor>) -> Color { Color(nsColor: nsToken(path)) }
 
+    /// A colour the palette works out (`glyph(_:)`, `discFill(_:)`…), picked from the
+    /// light or the dark palette by the appearance it is drawn in.
+    static func dynamic(_ pick: (DesignPalette) -> DesignColor) -> Color { Color(nsColor: nsDynamic(pick)) }
+
+    static func nsToken(_ path: KeyPath<DesignPalette, DesignColor>, alpha: CGFloat = 1) -> NSColor {
+        nsDynamic({ $0[keyPath: path] }, alpha: alpha)
+    }
+
     /// `alpha` is applied per appearance here, since a provider colour is not
     /// guaranteed to stay dynamic through `withAlphaComponent`.
-    static func nsToken(_ path: KeyPath<DesignPalette, DesignColor>, alpha: CGFloat = 1) -> NSColor {
-        let light = nsColor(DesignTokens.light[keyPath: path]).withAlphaComponent(alpha)
-        let dark = nsColor(DesignTokens.dark[keyPath: path]).withAlphaComponent(alpha)
+    static func nsDynamic(_ pick: (DesignPalette) -> DesignColor, alpha: CGFloat = 1) -> NSColor {
+        let light = nsColor(pick(DesignTokens.light)).withAlphaComponent(alpha)
+        let dark = nsColor(pick(DesignTokens.dark)).withAlphaComponent(alpha)
         return NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
         }

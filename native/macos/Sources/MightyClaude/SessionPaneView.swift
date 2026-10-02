@@ -179,8 +179,8 @@ struct SessionPaneView: View {
         store.selectSession(session.id)
     }
 
-    /// The pane as concept D draws it: the shell keeps the slim ink bar; an agent pane
-    /// gets the hero, filled in its status colour.
+    /// The pane's header: the shell keeps the slim ink bar; an agent pane gets one 34pt
+    /// line on the pane's own surface (status v2), the same in 기본 and 마이티.
     @ViewBuilder private var header: some View {
         if session.kind == "shell" {
             SlimPaneHeader(kind: SessionKind.shell, title: session.title,
@@ -189,67 +189,74 @@ struct SessionPaneView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
         } else {
-            hero
+            agentHeader
         }
     }
 
-    /// The card the hero reads: the pane as the dashboard sees it, running while a
-    /// request is still being started. The hero never shows the last activity line, so
-    /// the log scan behind it is skipped on every streamed redraw.
-    private var heroCard: WorkDashboard.Card {
+    /// The card the header reads: the pane as the dashboard sees it, running while a
+    /// request is still being started. The header never shows the last activity line,
+    /// so the log scan behind it is skipped on every streamed redraw.
+    private var headerCard: WorkDashboard.Card {
         var shown = session
         if running { shown.status = "running" }
         return WorkDashboard.card(shown, permissions: store.toolPermissions[session.id], activity: false)
     }
 
-    private var hero: some View {
-        let card = heroCard
-        let ink = Palette.heroInk(card.tone)
+    /// Glyph, title, a small status word in its ink, then the figures in mono, which
+    /// give way (faded at the right) before the title does; the 기본 | 마이티 switch and
+    /// the pane's buttons stay at the right.
+    private var agentHeader: some View {
+        let card = headerCard
         let usageModel = session.sessionUsage?.provider == session.provider ? session.sessionUsage?.model : nil
-        let model = card.model ?? usageModel
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .center, spacing: 8) {
-                Text(session.title).font(Palette.heading(17)).lineLimit(1).truncationMode(.tail)
-                    .help(session.titleTooltip ?? session.title)
-                    .accessibilityAddTraits(.isHeader)
-                HeroStatusPill(text: card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : Palette.status(card.status), ink: ink)
-                Spacer(minLength: 6)
-                heroControls(ink: ink)
-            }
-            HStack(alignment: .bottom, spacing: 12) {
-                PaneHeroFigures(sessionID: session.id, figures: PaneHero.figures(session), running: running)
-                Spacer(minLength: 6)
-                HStack(spacing: 4) {
-                    Text(ProviderOptions.label(session.provider))
-                    if ProviderOptions.isBeta(session.provider) { BetaBadge() }
-                    if let model { Text("· " + model).truncationMode(.middle) }
+        let figures = PaneHero.figures(session)
+        let ticking = running && figures.contains { if case .elapsed(let timing) = $0 { timing.finishedAt == nil } else { false } }
+        return HStack(spacing: 8) {
+            StatusGlyph(tone: card.tone, kind: session.kind)
+            Text(session.title).font(.system(size: 13, weight: .bold)).tracking(-0.1).foregroundStyle(Palette.ink)
+                .lineLimit(1).truncationMode(.tail)
+                .help(session.titleTooltip ?? session.title)
+                .accessibilityAddTraits(.isHeader)
+                .layoutPriority(1)
+            Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : Palette.word(card.tone))
+                .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(card.tone)).lineLimit(1).fixedSize()
+                .accessibilityIdentifier("pane-status-\(session.id)")
+            Group {
+                if ticking {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        PaneHeaderFigures(sessionID: session.id, figures: figures, provider: session.provider, model: card.model ?? usageModel, date: context.date)
+                    }
+                } else {
+                    PaneHeaderFigures(sessionID: session.id, figures: figures, provider: session.provider, model: card.model ?? usageModel, date: Date())
                 }
-                .font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                .help(model.map { "\(ProviderOptions.label(session.provider)) · \($0)" } ?? ProviderOptions.label(session.provider))
             }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 10) { headerControls }
+                .foregroundStyle(Palette.ink2)
+                .padding(.leading, 6)
+                .fixedSize()
         }
-        .foregroundStyle(ink)
-        .padding(.horizontal, 15).padding(.top, 11).padding(.bottom, 12)
-        .background(Palette.heroFill(card.tone), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 4)
+        .padding(.leading, 14).padding(.trailing, 10)
+        .frame(height: 34)
+        .background(Palette.panel)
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1).allowsHitTesting(false) }
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("pane-hero-\(session.id)")
+        .accessibilityIdentifier("pane-header-\(session.id)")
     }
 
-    @ViewBuilder private func heroControls(ink: Color) -> some View {
+    @ViewBuilder private var headerControls: some View {
         if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) {
             HStack(spacing: 2) {
-                agentModeButton("기본", mode: "default", symbol: "text.alignleft", ink: ink)
-                agentModeButton("마이티", mode: "mighty", symbol: "point.3.connected.trianglepath.dotted", ink: ink)
+                agentModeButton("기본", mode: "default", symbol: "text.alignleft")
+                agentModeButton("마이티", mode: "mighty", symbol: "point.3.connected.trianglepath.dotted")
             }
-            .padding(2).background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(2).background(Palette.segmentTrack, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .fixedSize()
             if session.agentViewMode == "mighty", ["claude", "codex"].contains(session.provider) {
                 Button { store.openPluginBrowser(sessionID: session.id) } label: {
                     Image(systemName: "puzzlepiece.extension").font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 24).contentShape(Rectangle())
+                        .frame(width: 22, height: 24).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).disabled(store.hasModal)
                 .help("\(ProviderOptions.label(session.provider)) 플러그인 · 설치 목록 및 마켓플레이스")
@@ -265,7 +272,7 @@ struct SessionPaneView: View {
             .help(L("agentTerminal.terminalPane.open")).accessibilityLabel(L("agentTerminal.terminalPane.open"))
             .accessibilityIdentifier("agent-terminal-open-\(session.id)")
         }
-        paneMenu(ink: ink)
+        paneMenu(ink: Palette.ink2)
     }
 
     private func paneMenu(ink: Color) -> some View {
@@ -292,19 +299,20 @@ struct SessionPaneView: View {
         .help("실행 창 메뉴").accessibilityLabel("실행 창 메뉴")
     }
 
-    /// One side of the hero's 기본 | 마이티 switch: the chosen side is a white chip, the
-    /// other keeps the hero's ink on the darker track.
-    private func agentModeButton(_ title: String, mode: String, symbol: String, ink: Color) -> some View {
+    /// One side of the header's 기본 | 마이티 switch: the chosen side is a raised chip on
+    /// the quiet track, the other keeps the muted ink.
+    private func agentModeButton(_ title: String, mode: String, symbol: String) -> some View {
         let selected = (session.agentViewMode ?? "default") == mode
         return Button {
             store.selectSession(session.id)
             store.setAgentViewMode(session.id, mode: mode)
         } label: {
             Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: selected ? .bold : .semibold))
-                .foregroundStyle(selected ? Palette.ink : ink)
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(selected ? Palette.panel : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(selected ? Palette.ink : Palette.ink2)
+                .padding(.horizontal, 8).frame(height: 20)
+                // The chip's shadow sits on its shape only, never on the words.
+                .background { if selected { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.segmentOn).shadow(color: .black.opacity(0.12), radius: 1, y: 1) } }
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)

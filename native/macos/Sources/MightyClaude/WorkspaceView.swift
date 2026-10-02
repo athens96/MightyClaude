@@ -118,9 +118,10 @@ struct WorkspaceView: View {
         }
     }
 
-    /// "작업 현황" at the top of the sidebar, with what runs and what waits on the user.
+    /// "작업 현황" at the top of the sidebar, with what waits on the user, what runs and
+    /// what stopped on an error, as glyph counts.
     private var dashboardEntry: some View {
-        let stats = WorkDashboard.stats(sessions: store.snapshot.sessions, permissions: store.toolPermissions)
+        let badges = WorkDashboard.badges(sessions: store.snapshot.sessions, permissions: store.toolPermissions)
         let selected = store.showsDashboard
         return Button { store.showsDashboard = true } label: {
             HStack(spacing: 9) {
@@ -129,8 +130,7 @@ struct WorkspaceView: View {
                     .accessibilityHidden(true)
                 Text(L("phone.dashboard.title")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
                 Spacer(minLength: 0)
-                if stats.running > 0 { CountPill(text: "\(stats.running)", fill: Palette.run, ink: Palette.onStatus) }
-                if stats.waiting > 0 { CountPill(text: "\(stats.waiting)", fill: Palette.wait, ink: Palette.onWait) }
+                StatusCounts(badges: badges)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(selected ? Palette.panel : Color.clear)
@@ -140,9 +140,7 @@ struct WorkspaceView: View {
         .buttonStyle(.plain)
         .help(L("dashboard.sidebarHelp"))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([L("phone.dashboard.title"),
-                             DashboardText.countLabel(L("phone.dashboard.stat.running"), stats.running),
-                             DashboardText.countLabel(L("phone.dashboard.stat.waiting"), stats.waiting)].joined(separator: ", "))
+        .accessibilityLabel(([L("phone.dashboard.title")] + StatusCounts.labels(badges)).joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("sidebar-dashboard")
     }
@@ -186,78 +184,66 @@ struct WorkspaceView: View {
                 Button(L("menu.showInFinder")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
             }
             if expanded {
-                ForEach(sessions) { session in paneCard(session) }
+                ForEach(sessions) { session in paneRow(session) }
                 workspaceAddMenu(workspace)
             }
         }.padding(.bottom, selected ? 12 : 1)
     }
 
-    /// What in this workspace wants a look: questions and permission requests in amber,
-    /// errors in red, panes running (and not waiting on the user) in blue.
+    /// What in this workspace wants a look: requests waiting on the user, panes running
+    /// (and not waiting), panes stopped by an error — each a glyph and a count.
     private func workspaceBadges(_ badges: WorkDashboard.Badges, workspace: Workspace) -> some View {
-        HStack(spacing: 4) {
-            if badges.questions > 0 {
-                CountPill(text: L("phone.card.questions", ["count": "\(badges.questions)"]), fill: Palette.wait, ink: Palette.onWait)
-            }
-            if badges.permissions > 0 {
-                CountPill(text: L("phone.card.permissions", ["count": "\(badges.permissions)"]), fill: Palette.wait, ink: Palette.onWait)
-            }
-            if badges.errors > 0 {
-                CountPill(text: "\(badges.errors)", fill: Palette.err, ink: Palette.onStatus)
-                    .help(DashboardText.countLabel(L("session.state.error"), badges.errors))
-                    .accessibilityLabel(DashboardText.countLabel(L("session.state.error"), badges.errors))
-            }
-            if badges.running > 0 {
-                CountPill(text: "\(badges.running)", fill: Palette.run, ink: Palette.onStatus)
-                    .help(DashboardText.countLabel(L("session.state.running"), badges.running))
-                    .accessibilityLabel(DashboardText.countLabel(L("session.state.running"), badges.running))
-                    .accessibilityIdentifier("workspace-running-\(workspace.id)")
-            }
-        }
+        StatusCounts(badges: badges, runningIdentifier: "workspace-running-\(workspace.id)")
     }
 
-    /// A pane in the sidebar as a compact status card: a status edge, the provider mark,
-    /// the title and status word, and a mono line with what the app knows of its run.
-    private func paneCard(_ session: RunSession) -> some View {
+    /// A pane in the sidebar as a plain row on the sidebar surface: its status glyph,
+    /// the title, and a muted line with the provider, the clock and the context. Only a
+    /// pane waiting on the user carries a word on the right ("질문 1").
+    private func paneRow(_ session: RunSession) -> some View {
         let card = WorkDashboard.card(session, permissions: store.toolPermissions[session.id])
         let active = !store.showsDashboard && session.id == store.snapshot.activeSessionId
         let beta = session.kind == "claude" && ProviderOptions.isBeta(session.provider)
         let status = DashboardText.status(card)
         let localTerminal = store.usesLocalTerminal(session)
+        let settled = [.done, .stop, .idle].contains(card.tone)
         return Button { store.selectSession(session.id) } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                StatusGlyph(tone: card.tone, kind: session.kind).padding(.top, 1.5).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Text(session.title).font(.system(size: 12.5, weight: settled ? .medium : .semibold)).foregroundStyle(Palette.ink)
+                            .lineLimit(1).help(session.titleHelp)
+                        if beta { BetaBadge() }
+                    }
+                    .frame(minHeight: 17)
+                    // Only a running pane with a clock of its own ticks every second.
                     Group {
-                        if session.kind == "claude" { ProviderIcon(provider: session.provider, size: 10) }
-                        else { Image(systemName: paneSymbol(session.kind)).font(.system(size: 10)).foregroundStyle(Palette.ink2) }
-                    }.frame(width: 12)
-                    Text(session.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.ink).lineLimit(1).help(session.titleHelp)
-                    if beta { BetaBadge() }
-                    Spacer(minLength: 0)
-                    Text(status).font(.system(size: 10.5, weight: .bold)).foregroundStyle(Palette.text(card.displayStatus)).lineLimit(1).fixedSize()
-                        .accessibilityIdentifier(card.isRunning ? "sidebar-running-\(session.id)" : "sidebar-status-\(session.id)")
+                        if card.isRunning, let timing = card.timing, timing.finishedAt == nil {
+                            TimelineView(.periodic(from: .now, by: 1)) { context in paneMeta(card, localTerminal: localTerminal, at: context.date) }
+                        } else {
+                            TimelineView(.everyMinute) { context in paneMeta(card, localTerminal: localTerminal, at: context.date) }
+                        }
+                    }
+                    .foregroundStyle(active ? Palette.ink2 : Palette.sidebarInk2)
                 }
-                // Only a running pane with a clock of its own ticks every second.
-                if card.isRunning, let timing = card.timing, timing.finishedAt == nil {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in paneMeta(card, localTerminal: localTerminal, at: context.date) }
-                } else {
-                    TimelineView(.everyMinute) { context in paneMeta(card, localTerminal: localTerminal, at: context.date) }
+                Spacer(minLength: 0)
+                if card.attention.total > 0 {
+                    Text(status).font(.system(size: 10.5, weight: .bold)).foregroundStyle(Palette.waitText).lineLimit(1).fixedSize()
+                        .frame(minHeight: 17)
                 }
             }
-            .padding(.leading, 13).padding(.trailing, 9).padding(.vertical, 7)
+            .padding(.leading, 8).padding(.trailing, 9).padding(.top, 6).padding(.bottom, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.panel)
-            .overlay(alignment: .leading) { Rectangle().fill(Palette.edge(card.tone)).frame(width: 3) }
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(active ? Palette.run : Color.clear, lineWidth: 1.5))
-            // The shadow belongs to the card's shape alone, not to every view on it.
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.panel).shadow(color: .black.opacity(0.05), radius: 1, y: 1))
+            .modifier(SidebarRowHighlight(selected: active))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.leading, 22).padding(.trailing, 2).padding(.vertical, 1)
-        .accessibilityLabel("\(session.title)\(beta ? ", " + L("badge.betaAccessibility") : ""), \(status)")
+        // The Button stays the accessibility element (its own press action); only its
+        // label is replaced, so the meta line's ticking clock is not read out.
+        .accessibilityLabel("\(session.title)\(beta ? ", " + L("badge.betaAccessibility") : ""), \(card.attention.total > 0 ? status : Palette.word(card.tone))")
         .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityIdentifier(card.isRunning ? "sidebar-running-\(session.id)" : "sidebar-status-\(session.id)")
         .contextMenu {
             Button(L("menu.rename")) { store.beginRenameSession(session.id) }
             Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
@@ -267,14 +253,16 @@ struct WorkspaceView: View {
     private func paneMeta(_ card: WorkDashboard.Card, localTerminal: Bool, at date: Date) -> some View {
         let parts = WorkDashboard.sidebarMeta(card, now: date).compactMap { part -> String? in
             switch part {
+            case .provider: ProviderOptions.label(card.provider)
             case .elapsed: card.timing.map { DashboardText.clock($0, at: date) }
             case .context(let percent): L("phone.card.context", ["percent": "\(percent)"])
+            case .reason(let text, let isTool): DashboardText.reason(text, isTool: isTool)
             case .age(let age): DashboardText.age(age)
             }
         }
-        return Text(parts.isEmpty ? DashboardText.kind(card, localTerminal: localTerminal) : parts.joined(separator: " · "))
-            .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1)
-            .padding(.leading, 18)
+        return Text(parts.isEmpty ? DashboardText.kindLine(card, localTerminal: localTerminal) : parts.joined(separator: " · "))
+            .font(.system(size: 11)).monospacedDigit().lineLimit(1).truncationMode(.tail)
+            .frame(minHeight: 15)
     }
 
     private func workspaceHeader(_ workspace: Workspace) -> some View {
@@ -293,6 +281,9 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            StatusCounts(badges: WorkDashboard.badges(sessions: store.snapshot.sessions.filter { $0.workspaceId == workspace.id }, permissions: store.toolPermissions),
+                         runningIdentifier: "workspace-header-running-\(workspace.id)", long: true)
+                .accessibilityIdentifier("workspace-header-status-\(workspace.id)")
             Button { store.openFilePane(workspaceId: workspace.id) } label: {
                 Image(systemName: "folder").font(.system(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
             }
@@ -433,6 +424,82 @@ struct WorkspaceAddMenuItems: View {
         guard !store.hasModal, store.snapshot.workspaces.contains(where: { $0.id == workspace.id }) else { return }
         store.selectWorkspace(workspace.id)
         store.addSession(kind: kind, provider: provider)
+    }
+}
+
+/// Counts as glyphs (status v2): "? 1  ✻ 2  ! 1" in the sidebar — waiting on the user,
+/// running, stopped by an error. `long` is the workspace header's summary, which also
+/// counts what has settled and names each state: "? 1 응답 대기  ✻ 1 실행 중  ✓ 1 완료  ○ 1 준비".
+/// A zero is left out.
+private struct StatusCounts: View {
+    let badges: WorkDashboard.Badges
+    var runningIdentifier = "sidebar-dashboard-running"
+    var long = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            ForEach(Self.entries(badges, long: long), id: \.tone) { entry in
+                count(entry)
+                    .accessibilityIdentifier(entry.tone == .run ? runningIdentifier : "status-count-\(entry.tone.rawValue)")
+            }
+        }
+        .fixedSize()
+    }
+
+    private func count(_ entry: Entry) -> some View {
+        HStack(spacing: 3) {
+            StatusGlyph(tone: entry.tone, size: 12)
+            Text("\(entry.count)").font(.system(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(Palette.ink)
+            if long { Text(Palette.word(entry.tone)).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.ink2).padding(.leading, 1) }
+        }
+        .help(entry.label)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(entry.label)
+    }
+
+    struct Entry {
+        let tone: DesignTone
+        let count: Int
+        let label: String
+    }
+
+    /// In the mockup's order: waiting, running, error, then (long only) done, stopped, idle.
+    static func entries(_ badges: WorkDashboard.Badges, long: Bool) -> [Entry] {
+        let waiting = badges.questions + badges.permissions
+        var entries: [Entry] = []
+        if waiting > 0 { entries.append(Entry(tone: .wait, count: waiting, label: waitingLabel(badges))) }
+        var counted: [(DesignTone, Int)] = [(.run, badges.running), (.err, badges.errors)]
+        if long { counted += [(.done, badges.done), (.stop, badges.stopped), (.idle, badges.idle)] }
+        for (tone, count) in counted where count > 0 {
+            entries.append(Entry(tone: tone, count: count, label: DashboardText.countLabel(Palette.word(tone), count)))
+        }
+        return entries
+    }
+
+    /// Questions and permission requests in words, as the amber pills used to say them.
+    static func waitingLabel(_ badges: WorkDashboard.Badges) -> String {
+        [badges.questions > 0 ? L("phone.card.questions", ["count": "\(badges.questions)"]) : nil,
+         badges.permissions > 0 ? L("phone.card.permissions", ["count": "\(badges.permissions)"]) : nil]
+            .compactMap { $0 }.joined(separator: ", ")
+    }
+
+    static func labels(_ badges: WorkDashboard.Badges) -> [String] {
+        entries(badges, long: false).map(\.label)
+    }
+}
+
+/// The neutral rounded wash behind a sidebar row: the card surface while selected,
+/// a faint tint under the pointer, never a status colour.
+private struct SidebarRowHighlight: ViewModifier {
+    let selected: Bool
+    @ViewState private var hovering = false
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        content
+            .background(selected ? Palette.panel : hovering ? Palette.subtle : Color.clear, in: shape)
+            .overlay { if selected { shape.strokeBorder(Color.black.opacity(0.07), lineWidth: 0.5).allowsHitTesting(false) } }
+            .onHover { hovering = $0 }
     }
 }
 

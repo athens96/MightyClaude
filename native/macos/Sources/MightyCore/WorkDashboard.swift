@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the "작업 현황" view and the sidebar's status cards count and show, read only
+/// What the "작업 현황" view and the sidebar's pane rows count and show, read only
 /// from what the app already holds: the pane list, the pending tool requests, each
 /// pane's own run clock and usage reading. Nothing is estimated — a number the app
 /// does not have is left out (nil) rather than filled with zero. Mirrors the phone's
@@ -25,7 +25,8 @@ public enum WorkDashboard {
         public init(running: Int = 0, waiting: Int = 0, done: Int = 0) { self.running = running; self.waiting = waiting; self.done = done }
     }
 
-    /// A workspace row's badges in the sidebar.
+    /// A workspace's counts by state: the sidebar shows what wants a look (requests,
+    /// running, errors); the workspace header also what has settled.
     public struct Badges: Equatable, Sendable {
         public var questions: Int
         public var permissions: Int
@@ -33,8 +34,13 @@ public enum WorkDashboard {
         public var errors: Int
         /// Panes running and not waiting on the user (those show as waiting instead).
         public var running: Int
-        public init(questions: Int = 0, permissions: Int = 0, errors: Int = 0, running: Int = 0) {
+        /// Panes finished, stopped by the user, and idle (not waiting on the user).
+        public var done: Int
+        public var stopped: Int
+        public var idle: Int
+        public init(questions: Int = 0, permissions: Int = 0, errors: Int = 0, running: Int = 0, done: Int = 0, stopped: Int = 0, idle: Int = 0) {
             self.questions = questions; self.permissions = permissions; self.errors = errors; self.running = running
+            self.done = done; self.stopped = stopped; self.idle = idle
         }
     }
 
@@ -79,7 +85,10 @@ public enum WorkDashboard {
             switch DesignTone(status: displayStatus(session.status, attention: pending)) {
             case .err: badges.errors += 1
             case .run: badges.running += 1
-            default: break
+            case .done: badges.done += 1
+            case .stop: badges.stopped += 1
+            case .idle: badges.idle += 1
+            case .wait: break
             }
         }
         return badges
@@ -89,10 +98,12 @@ public enum WorkDashboard {
     public struct LastActivity: Equatable, Sendable {
         public var text: String
         public var isError: Bool
-        public init(text: String, isError: Bool) { self.text = text; self.isError = isError }
+        /// The tool the entry was a call to, when it was one.
+        public var tool: String?
+        public init(text: String, isError: Bool, tool: String? = nil) { self.text = text; self.isError = isError; self.tool = tool }
     }
 
-    /// One pane as a status card. Every optional is absent when the app does not have it.
+    /// One pane as a status row. Every optional is absent when the app does not have it.
     public struct Card: Equatable, Sendable, Identifiable {
         public var id: String
         public var workspaceId: String
@@ -118,7 +129,7 @@ public enum WorkDashboard {
     }
 
     /// `activity: false` skips the log scan for `lastActivity` (left nil), for a caller
-    /// that redraws on every streamed line and never shows it (the pane's hero).
+    /// that redraws on every streamed line and never shows it (the pane's header).
     public static func card(_ session: RunSession, permissions: [ToolPermissionRequest]?, activity: Bool = true) -> Card {
         let pending = attention(permissions)
         let usage = session.sessionUsage?.provider == session.provider ? session.sessionUsage : nil
@@ -143,7 +154,7 @@ public enum WorkDashboard {
                 let tool = activity.toolName.map(oneLine) ?? ""
                 let text = tool.isEmpty ? summary : summary.isEmpty ? tool : tool + " · " + summary
                 guard !text.isEmpty else { continue }
-                return LastActivity(text: text, isError: activity.state == "error")
+                return LastActivity(text: text, isError: activity.state == "error", tool: tool.isEmpty ? nil : tool)
             }
             let text = oneLine(entry.text)
             guard !text.isEmpty, entry.kind != "image" else { continue }
@@ -212,25 +223,39 @@ public enum WorkDashboard {
         return .days(hours / 24)
     }
 
-    /// What the sidebar card's mono line holds, in order.
+    /// What the sidebar row's second line holds, in order.
     public enum MetaPart: Equatable, Sendable {
+        /// The agent's provider (Claude, Codex, Gemini).
+        case provider
         case elapsed
         case context(Int)
+        /// Why a pane stopped on an error: the tool that failed (worded "Bash 실패"),
+        /// else the error's own first line, cut to `reasonLimit` characters.
+        case reason(String, isTool: Bool)
         case age(Age)
     }
 
-    /// A running pane shows its clock and context; one at rest its clock and how long ago
-    /// it was active. A part the app has no number for is left out; an empty result
-    /// means the view names the pane's kind instead (a shell, a browser, the files pane).
+    /// The longest error line the sidebar row's second line carries.
+    public static let reasonLimit = 40
+
+    /// An agent pane names its provider first. A running pane (one waiting on the user
+    /// included) then shows its clock and context; one at rest how long ago it was
+    /// active, after why it failed for a pane stopped by an error ("Claude · Bash 실패 ·
+    /// 3분 전"). A part the app has no number for is left out; an empty result means the
+    /// view names the pane's kind instead (a shell, a browser, the files pane).
     public static func sidebarMeta(_ card: Card, now: Date) -> [MetaPart] {
         guard card.isAgent else { return [] }
-        var parts: [MetaPart] = []
-        if card.timing != nil { parts.append(.elapsed) }
+        var parts: [MetaPart] = [.provider]
         if card.isRunning {
+            if card.timing != nil { parts.append(.elapsed) }
             if let percent = card.contextPercent { parts.append(.context(Int(percent.rounded()))) }
-        } else if let date = card.updatedAt {
-            parts.append(.age(age(of: date, now: now)))
+            return parts
         }
+        if card.tone == .err, let last = card.lastActivity, last.isError {
+            if let tool = last.tool { parts.append(.reason(tool, isTool: true)) }
+            else { parts.append(.reason(last.text.count > reasonLimit ? String(last.text.prefix(reasonLimit - 1)) + "…" : last.text, isTool: false)) }
+        }
+        if let date = card.updatedAt { parts.append(.age(age(of: date, now: now))) }
         return parts
     }
 }

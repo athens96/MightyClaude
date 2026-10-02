@@ -2,11 +2,12 @@ import SwiftUI
 import AppKit
 import MightyCore
 
-/// Concept D's pane chrome: the status-coloured hero over an agent pane, the slim ink
+/// The pane chrome: the one-line header's figures over an agent pane, the slim ink
 /// header over terminal, browser and files panes, and the card buttons the question
 /// and permission cards share.
 extension Palette {
-    /// The hero's fill for a tone: the status colour, the ink for an idle pane.
+    /// A tone's solid fill, the ink for an idle pane: the graph's result strip and
+    /// timeline nodes.
     static func heroFill(_ tone: DesignTone) -> Color {
         switch tone {
         case .run: run
@@ -18,13 +19,17 @@ extension Palette {
         }
     }
 
-    /// The words and glyphs on a hero: the amber takes only its own ink, the rest white.
+    /// The words and glyphs on a `heroFill`: the amber takes only its own ink, the rest white.
     static func heroInk(_ tone: DesignTone) -> Color {
         tone == .wait ? onWait : onStatus
     }
+
+    /// The header's 기본 | 마이티 switch: its track and its chosen side (`DesignPalette`).
+    static let segmentTrack = token(\.segmentTrack)
+    static let segmentOn = token(\.segmentOn)
 }
 
-/// The pane's status as an outlined pill on its hero or slim header.
+/// The pane's status as an outlined pill on the slim ink header.
 struct HeroStatusPill: View {
     let text: String
     let ink: Color
@@ -39,49 +44,53 @@ struct HeroStatusPill: View {
     }
 }
 
-/// The hero's row of figures (`PaneHero.figures`); the clock ticks only while the pane runs.
-struct PaneHeroFigures: View {
+/// The figures on an agent pane's one-line header, in mono: `02:14 · 41% · $0.38 · 도구 12`.
+/// They give way at the right (faded) on a narrow pane; the tooltip and the
+/// accessibility label carry every value with its name, and the provider and model.
+struct PaneHeaderFigures: View {
     let sessionID: String
     let figures: [PaneHero.Figure]
-    let running: Bool
+    let provider: String
+    let model: String?
+    let date: Date
 
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            ForEach(Array(figures.enumerated()), id: \.offset) { _, figure in figureView(figure) }
-        }
+        let full = (figures.map { L("pane.hero.figure", ["label": label($0), "value": value($0)]) }
+            + [ProviderOptions.label(provider)] + (model.map { [$0] } ?? [])).joined(separator: " · ")
+        let timing = figures.lazy.compactMap { if case .elapsed(let timing) = $0 { timing } else { nil } }.first
+        Text(figures.map { if case .tools = $0 { L("pane.hero.figure", ["label": label($0), "value": value($0)]) } else { value($0) } }.joined(separator: " · "))
+            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.ink2)
+            .lineLimit(1).fixedSize()
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            // Clipped figures fade out over the last 18pt rather than end in an ellipsis.
+            .mask(HStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+            })
+            .help(timing.map { full + "\n" + AgentElapsedView.help($0) } ?? full)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(full)
+            .accessibilityIdentifier(timing != nil ? "agent-elapsed-\(sessionID)" : "pane-figures-\(sessionID)")
     }
 
-    @ViewBuilder private func figureView(_ figure: PaneHero.Figure) -> some View {
+    /// A figure's bare value: `02:14`, `41%`, `$0.38`, `12`.
+    private func value(_ figure: PaneHero.Figure) -> String {
         switch figure {
-        case .elapsed(let timing):
-            if running && timing.finishedAt == nil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in elapsed(timing, at: context.date) }
-            } else {
-                elapsed(timing, at: Date())
-            }
-        case .context(let percent):
-            cell("\(percent)%", label: L("phone.session.hero.context"))
-        case .cost(let cost):
-            cell(PaneHero.cost(cost), label: L("phone.session.hero.cost"))
-        case .tools(let count):
-            cell("\(count)", label: L("phone.session.hero.tools"))
+        case .elapsed(let timing): DashboardText.clock(timing, at: date)
+        case .context(let percent): "\(percent)%"
+        case .cost(let cost): PaneHero.cost(cost)
+        case .tools(let count): "\(count)"
         }
     }
 
-    private func elapsed(_ timing: AgentRunTiming, at date: Date) -> some View {
-        cell(DashboardText.clock(timing, at: date), label: L("phone.session.hero.elapsed"))
-            .help(AgentElapsedView.help(timing))
-            .accessibilityIdentifier("agent-elapsed-\(sessionID)")
-    }
-
-    private func cell(_ value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(value).font(Palette.heading(19)).monospacedDigit().lineLimit(1)
-            Text(label).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+    private func label(_ figure: PaneHero.Figure) -> String {
+        switch figure {
+        case .elapsed: L("phone.session.hero.elapsed")
+        case .context: L("phone.session.hero.context")
+        case .cost: L("phone.session.hero.cost")
+        case .tools: L("phone.session.hero.tools")
         }
-        .fixedSize()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("pane.hero.figure", ["label": label, "value": value]))
     }
 }
 
@@ -125,7 +134,7 @@ struct PaneSlimHeader: View {
 
     var body: some View {
         let card = WorkDashboard.card(session, permissions: nil)
-        SlimPaneHeader(kind: session.kind, title: session.title, subtitle: DashboardText.kind(card, localTerminal: false))
+        SlimPaneHeader(kind: session.kind, title: session.title, subtitle: DashboardText.kind(card))
             .contentShape(Rectangle())
             .simultaneousGesture(TapGesture().onEnded { store.selectSession(session.id) })
     }

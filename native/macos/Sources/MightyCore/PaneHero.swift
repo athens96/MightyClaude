@@ -1,10 +1,10 @@
 import Foundation
 
-/// The figures under an agent pane's hero (concept D): how long the latest request has
-/// taken, how full the context is, what the session has cost and how many tool calls
-/// the latest request made. Read only from what the pane already holds; a figure the
-/// app has no number for is left out rather than shown as zero. Mirrors the phone's
-/// `SessionHeader` figures.
+/// The figures on an agent pane's one-line header (status v2, after concept D's hero):
+/// how long the latest request has taken, how full the context is, what the session
+/// has cost and how many tool calls the latest request made. Read only from what the
+/// pane already holds; a figure the app has no number for is left out rather than
+/// shown as zero. Mirrors the phone's `SessionHeader` figures.
 public enum PaneHero {
     public enum Figure: Equatable, Sendable {
         /// `RunSession.runTiming`, when valid. The view ticks it only while it runs.

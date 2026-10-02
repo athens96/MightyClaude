@@ -42,6 +42,8 @@ struct DesignTokenContrastTests {
             ("errText on errSoft", \.errText, \.errSoft), ("stopText on stopSoft", \.stopText, \.stopSoft),
             ("ink2 on stopSoft", \.ink2, \.stopSoft),
             ("codeText on codeSurface", \.codeText, \.codeSurface),
+            // The pane header's 기본 | 마이티 switch: the unchosen side on the track, the chosen chip.
+            ("ink2 on segmentTrack", \.ink2, \.segmentTrack), ("ink on segmentOn", \.ink, \.segmentOn),
             // The user's ink bubble in the transcript: its words and time, and its links,
             // which keep the bubble's words colour (underlined) since the accent fails there.
             ("bubble text (card) on ink", \.card, \.ink),
