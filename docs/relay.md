@@ -182,11 +182,12 @@ BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호
 
 세션을 **시작**하는 쪽은 휴대폰이고, 새 푸시 타입을 쓰지 않고 위의 요청/응답 터널을 그대로 쓴다(`{"id":…,"method":…,"path":…}`). 본문 규약은 이 문서가 기준이다.
 
-- `GET /m1/screen-share/state` → `{"screenShare":{"allowed":bool,"grant":"none"|"view"|"control","isBeta":true,"displays":[{"displayId":N,"width":N,"height":N,"main":bool}],"controlChallengeB64":"…","controlKeyFingerprint":"XXXX-XXXX-XXXX-XXXX","iceServers":[…],"idleTimeoutSeconds":600}}`
+- `GET /m1/screen-share/state` → `{"screenShare":{"allowed":bool,"grant":"none"|"view"|"control","isBeta":true,"displays":[{"displayId":N,"width":N,"height":N,"main":bool}],"controlChallengeB64":"…","controlKeyFingerprint":"XXXX-XXXX-XXXX-XXXX","iceServers":[…],"idleTimeoutSeconds":600,"tapMarker":true}}`
   - `controlChallengeB64`는 한 번만 쓰는 바이트열(`screen-control-challenge:<id>:<무작위>`)이며 허용 목록에 있고 `grant`가 `control`일 때만 들어 있다. 상태를 읽을 때마다 새로 만들어지고, 2분 안에 한 번의 조작 세션 시작에만 쓰인다(성공하든 실패하든 그 시도로 소진된다).
   - `controlKeyFingerprint`는 Mac이 이 휴대폰의 조작 키를 저장해 두었을 때만 들어 있는 짧은 지문(공개키 SHA-256 앞 8바이트, 4글자씩 `-`로 묶은 16진수)이다. 비밀이 아니다. 휴대폰은 이 값으로 "키를 등록해야 하는가"를 판단하므로, 화면을 열 때 생체 인증을 띄울 필요가 없다. 값이 없는데 휴대폰에 키가 있으면 Mac이 키를 잊은 것이므로 다시 등록한다.
   - `iceServers`는 릴레이가 발급한 짧은 수명(기본 1시간)의 TURN 자격증명이다(위 [TURN 자격증명 발급](#turn-자격증명-발급-릴레이-평문-e2ee-아님)). coturn 비밀값은 릴레이에만 있고 Mac·휴대폰에는 절대 오지 않는다.
   - `idleTimeoutSeconds`는 조작 600초, 보기 전용 1800초다.
+  - `tapMarker`는 Mac이 아래 [탭 표식](#탭-표식과-측정-장면)을 그릴 수 있을 때 `true`다. 없거나 `false`(구버전 Mac)면 휴대폰은 표식 없이 재는 예전 방식으로 돌아간다.
 - `POST /m1/screen-share/sessions` 본문 `{"mode":"view"|"control","displayId":N,"controlSignatureB64":"…","network":"wifi"|"cellular","decodes":["H264","VP9","AV1"]}` → `200 {"sessionId":"…","mode":"…","displayId":N,"codec":"H264"|"VP9"|"AV1","quality":{"width":N,"height":N,"fps":N,"maxBitrateKbps":N}}`
   - `mode:"control"`은 매 세션 `controlSignatureB64`가 필요하다. 생체·PIN이 걸린 Android Keystore 키(P-256)로 `controlChallengeB64`에 서명한 ECDSA DER 서명이고, 권한을 줄 때 등록해 둔 공개키(`controlKeyPublic`)로 **Mac이** 검증한다. 휴대폰 쪽 확인만으로는 조작 세션이 열리지 않는다.
   - `decodes`는 휴대폰이 `getCapabilities`로 확인한 디코딩 가능 코덱이다. 기본값은 하드웨어 H.264이고, 모바일 데이터에서 Mac CPU에 여유가 있고 휴대폰이 디코딩할 수 있을 때만 VP9/AV1을 고른다. CPU·발열 압박이 생기면 H.264로 되돌린다. HEVC는 쓰지 않는다.
@@ -234,7 +235,7 @@ Mac이 만드는 offer에는 보내기 전용 영상 트랙 두 개와 데이터
 
 | t | 방향 | 필드 | Mac이 하는 일 |
 |---|---|---|---|
-| `tap` | 휴대폰 → Mac | `displayId`, `x`, `y`, `button`: `"left"`\|`"right"` | 그 지점에서 클릭 한 번. 오른쪽 클릭(길게 누르기)은 `"right"` |
+| `tap` | 휴대폰 → Mac | `displayId`, `x`, `y`, `button`: `"left"`\|`"right"`, `marker`? (`[A-Za-z0-9_-]` 1–32자) | 그 지점에서 클릭 한 번. 오른쪽 클릭(길게 누르기)은 `"right"`. `marker`가 있으면 클릭이 받아들여졌을 때 그 지점에 표식을 그리고 `marker`로 답한다. 모양이 틀린 `marker`는 탭째로 버린다 |
 | `drag` | 휴대폰 → Mac | `displayId`, `x`, `y`, `phase`: `"begin"`\|`"move"`\|`"end"` | 왼쪽 버튼 누름·끌기·놓기 |
 | `scroll` | 휴대폰 → Mac | `displayId`, `x`, `y`, `dx`, `dy` (화면 비율, 아래·오른쪽이 +) | 포인터를 그 지점에 두고 줄 단위로 스크롤. 1 % ≈ 1줄, 한 번에 ±120줄까지 |
 | `text` | 휴대폰 → Mac | `text` (UTF-8 4096바이트 이하, 빈 문자열 불가) | **확정된 문자열**을 주입한다. 한글은 휴대폰 IME가 조합을 끝낸 글자만 온다. Mac은 `CGEventKeyboardSetUnicodeString`으로 UTF-16 20단위 이하씩 나눠 보내며, 한 글자(자소 결합·이모지 포함)를 두 조각으로 자르지 않는다 |
@@ -243,6 +244,8 @@ Mac이 만드는 offer에는 보내기 전용 영상 트랙 두 개와 데이터
 | `display` | 휴대폰 → Mac | `displayId` | 그 디스플레이로 캡처를 바꾸고(없으면 주 디스플레이) 모든 휴대폰에 `iceRestart:true` offer를 다시 보낸다 |
 | `clipboard` | 양방향 | 아래 | 클립보드 한 조각 |
 | `clipboard-request` | 휴대폰 → Mac | (없음) | Mac 클립보드를 한 번 보낸다(`dir:"to-phone"` 조각들) |
+| `marker` | Mac → 휴대폰 | `id`, `shown`(bool) | `marker`가 붙은 `tap`의 답. 표식이 화면에 올라간 뒤 보낸다. `shown:false`는 탭이 거절됐거나(보기 전용·잠금·보안 입력·사람 입력 뒤 2초) 표식을 못 그렸다는 뜻이다 |
+| `scene` | Mac → 휴대폰 | `phase`: `"preroll"`\|`"motion"`\|`"still"`\|`"done"` | Mac에서 측정 장면의 단계가 바뀌었다. 연결된 모든 휴대폰(보기 전용 포함)에 보낸다 |
 
 **`key`의 `combo` 문법.** 소문자, `+`로 잇는다: 수식키 0–4개(`ctrl`, `opt`, `shift`, `cmd`, 각 한 번씩) 뒤에 키 이름 정확히 하나. 키 이름은 닫힌 목록이다: `a`–`z`, `0`–`9`, `return`, `tab`, `space`, `backspace`, `delete`(앞으로 지우기), `escape`, `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`. 예: `cmd+c`, `cmd+v`, `shift+cmd+z`, `opt+left`, `return`. 목록 밖의 이름·가상 키 코드·같은 수식키 두 번은 거절한다.
 
@@ -261,6 +264,27 @@ Mac이 만드는 offer에는 보내기 전용 영상 트랙 두 개와 데이터
 - Mac 쪽 클립보드가 비밀로 표시된 항목(`org.nspasteboard.ConcealedType` 등, 암호 관리자)이면 읽지 않고 `{"t":"clipboard","dir":"to-phone","id":"…","seq":0,"total":1,"enc":"raw","bytes":0,"data":"","concealed":true}` 하나만 보낸다.
 
 **판단은 전부 Mac이 한다.** 보기 전용 세션의 `tap`·`drag`·`scroll`·`text`·`key`·`clipboard`·`clipboard-request`는 전부 거절된다. 조작 세션이어도 잠금 화면·보안 입력 중이거나, Mac에서 사람이 키보드·마우스를 쓴 뒤 2초 동안은 거절된다. 주입은 안전 정책(`ScreenShareService.deliver`)을 지난 것만 `CGEventPost`에 닿고, Mac이 주입한 이벤트에는 표식(`eventSourceUserData`)이 붙어 "사람이 Mac을 쓴 것"으로 오인되지 않는다. 입력한 글자·키는 어디에도 기록하지 않는다.
+
+### 탭 표식과 측정 장면
+
+탭→화면 지연은 휴대폰 시계로 잰다. Mac은 화면이 멈춰 있으면 프레임을 보내지 않으므로, 탭이 화면을 바꾸지 않으면 잴 프레임이 없다. 그래서 측정 중인 휴대폰은 `tap`에 `marker` id를 붙이고(상태의 `tapMarker:true`일 때만), Mac은:
+
+1. 클릭을 평소처럼 안전 정책(`ScreenShareService.deliver`)에 넘긴다. 표식은 조작 권한을 넓히지 않는다 — 받아들여진 탭에만 그린다.
+2. 받아들여졌으면 Mac이 환산한 그 지점에 지름 48pt의 검정·흰색·자홍 고리를 0.5초 동안 그린다. 테두리 없는 창이고 클릭을 통과시키며(포커스를 빼앗지 않는다) 모든 창 위에 뜬다. ScreenCaptureKit은 이 앱의 창도 캡처하므로 표식은 탭의 효과와 같은 스트림으로 간다.
+3. 표식이 화면에 올라간 뒤 `{"t":"marker","id":"…","shown":true}`를 데이터 채널로 보낸다. 거절된 탭은 그리지 않고 `shown:false`로 답한다.
+
+휴대폰은 탭을 보낸 시각을 기록하고, `shown:true` 답을 받는 즉시 `getStats`를 읽어 디코드된 프레임 수를 기준으로 삼은 뒤, 그 수를 넘는 첫 읽기까지를 탭→화면 시간으로 센다. 영상은 인코드·지터 버퍼·디코드를 거치므로 표식 프레임은 거의 언제나 답보다 늦게 도착한다. 답이 오기까지의 시간(입력 경로)도 따로 기록한다. `shown:false`면 그 표본을 버리고 거절로 센다. 2초 안에 끝나지 않은 표본은 시간 초과다. `tapMarker`가 없는 Mac에는 `marker`를 보내지 않고, 탭 직후 기준을 잡아 첫 새 프레임까지 재는 예전 방식을 쓴다(멈춘 화면에서만 의미가 있다).
+
+**측정 장면.** Mac 설정의 화면 보기·조작 항목에 있는 **측정용 장면 재생**은 주 디스플레이에 전용 창을 띄워 항상 같은 장면을 재생한다. 사용자의 다른 앱이나 문서는 건드리지 않는다.
+
+| 단계 | 시작 | 길이 | 화면 |
+|---|---|---|---|
+| `preroll` | 0초 | 3초 | 창만 뜨고 움직이지 않는다(카운트다운) |
+| `motion` | 3초 | 60초 | 문서가 초당 90pt로 올라가고, 옆의 터미널에 초당 18자가 입력된다. 남은 초가 보인다 |
+| `still` | 63초 | 30초 | 아무 픽셀도 바뀌지 않는다. 카운트다운 대신 끝나는 시각을 한 번만 보여 준다 |
+| `done` | 93초 | — | 끝. 도중에 창을 닫아도 `done`을 보낸다 |
+
+단계가 바뀔 때마다 Mac은 연결된 모든 휴대폰에 `scene`을 보내고, 휴대폰은 측정 내보내기에 단계와 시각을 남긴다. 그래서 움직일 때·멈춰 있을 때의 비트레이트와 지연을 장면 단계로 나눠 볼 수 있다. 장면을 재생하는 동안 휴대폰이 연결되어 있지 않았다면 위 표의 시각으로 나눈다.
 
 ### 중단은 Mac이 한다
 
