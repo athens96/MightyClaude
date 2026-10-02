@@ -204,11 +204,16 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     public func settings(for deviceId: String) -> ScreenShareDeviceSettings? { store.settings(for: deviceId) }
 
     /// Puts a phone on, or takes it off, the allow-list. Taking it off stops
-    /// whatever it is doing right now.
+    /// whatever it is doing right now, and takes its grant and its enrolled
+    /// control key with it: allowing it again starts from nothing, so control
+    /// needs a freshly confirmed key.
     public func setAllowed(deviceId: String, allowed: Bool) async throws {
         var row = store.settings(for: deviceId) ?? ScreenShareDeviceSettings(deviceId: deviceId)
         row.allowed = allowed
-        if !allowed { row.grant = .none }
+        if !allowed {
+            row.grant = .none
+            row.controlKeyPublicData = nil
+        }
         try store.update(row)
         await host.setDeviceSettings(row)
         if !allowed { await kill(deviceId: deviceId, reason: .revoked) }
@@ -233,6 +238,30 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         await host.setDeviceSettings(row)
         if grant < previous { await kill(deviceId: deviceId, reason: .grantDowngrade) }
         await publish()
+    }
+
+    /// What `enrolControlKey` did.
+    public enum ControlKeyEnrolment: Sendable, Equatable {
+        case stored
+        case notAllowed
+        case notControl
+        /// A key is already stored; it is never silently replaced.
+        case keyPresent
+    }
+
+    /// Stores a control key the person at the Mac confirmed — only if the phone
+    /// is still allowed, still holds the control grant and still has no key.
+    /// The check and the write happen in one actor turn, so a grant withdrawn
+    /// (or a key stored) while the dialog was open can never be overwritten.
+    public func enrolControlKey(deviceId: String, key: Data) async throws -> ControlKeyEnrolment {
+        guard var row = store.settings(for: deviceId), row.allowed else { return .notAllowed }
+        guard row.grant == .control else { return .notControl }
+        guard row.controlKeyPublicData == nil else { return .keyPresent }
+        row.controlKeyPublicData = key
+        try store.update(row)
+        await host.setDeviceSettings(row)
+        await publish()
+        return .stored
     }
 
     // MARK: Sessions
