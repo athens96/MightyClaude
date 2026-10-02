@@ -81,7 +81,7 @@ public final class ScreenShareSettingsStore: @unchecked Sendable {
         defer { if !placed { try? FileManager.default.removeItem(at: temporary) } }
         guard FileManager.default.createFile(atPath: temporary.path, contents: data,
                                             attributes: [.posixPermissions: 0o600]) else {
-            throw MightyError("화면 공유 허용 목록을 저장하지 못했습니다.")
+            throw MightyError(L("screenShare.error.allowListNotSaved"))
         }
         if FileManager.default.fileExists(atPath: url.path) {
             _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
@@ -140,6 +140,10 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     /// One challenge admits one attempt: a signature the phone has already used
     /// cannot start a second control session.
     private var pendingChallenges: [String: (challenge: Data, issuedAt: Date)] = [:]
+    private var stopObserver: (@Sendable ([ScreenShareStoppedSession]) async -> Void)?
+    private var frameBlockObserver: (@Sendable (Bool, ScreenShareStopReason) async -> Void)?
+    /// What `refreshEnvironment` last reported, so a transition is announced once.
+    private var framesBlocked = false
     /// How long a control challenge stays usable.
     public static let challengeLifetime: TimeInterval = 120
 
@@ -155,6 +159,19 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         self.displays = displays
         self.input = input
         self.environment = environment
+    }
+
+    /// Told whenever the host stopped sessions by itself — kill switch, revoke,
+    /// downgrade, rekey, idle timeout. The engine uses it to close its peers and
+    /// send the courtesy note; the host has already stopped everything.
+    public func observeStops(_ observer: @escaping @Sendable ([ScreenShareStoppedSession]) async -> Void) {
+        stopObserver = observer
+    }
+
+    /// Told when the lock screen or secure input started or stopped blocking
+    /// frames, with the reason that applies.
+    public func observeFrameBlock(_ observer: @escaping @Sendable (Bool, ScreenShareStopReason) async -> Void) {
+        frameBlockObserver = observer
     }
 
     public func observeIndicator(_ observer: @escaping @Sendable (ScreenShareIndicatorState) -> Void) async {
@@ -250,9 +267,44 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         return challenge
     }
 
+    /// Moves a challenge the phone was handed before it had a session id onto the
+    /// session it is actually starting, so `join` spends it under that id and a
+    /// signature still cannot be used twice. Nil when there is nothing fresh to
+    /// move, which refuses the control start.
+    public func adoptChallenge(from key: String, to sessionId: String) -> Data? {
+        let now = Date()
+        guard let issued = pendingChallenges.removeValue(forKey: key),
+              now.timeIntervalSince(issued.issuedAt) < Self.challengeLifetime
+        else { return nil }
+        pendingChallenges[sessionId] = issued
+        return issued.challenge
+    }
+
+    /// Drops a challenge nobody is going to use (a start that failed before
+    /// `join` reached it).
+    public func discardChallenge(sessionId: String) {
+        pendingChallenges.removeValue(forKey: sessionId)
+    }
+
+    /// Whether the host would admit an injection on this session right now.
+    /// The clipboard asks before it reads or writes a pasteboard.
+    public func mayInject(sessionId: String) async -> Bool {
+        guard await host.mode(of: sessionId) == .control else { return false }
+        await refreshEnvironment()
+        return await host.canInject()
+    }
+
+    /// Remote activity that is not an input event (a clipboard transfer, a zoom)
+    /// still keeps the session alive.
+    public func noteActivity(sessionId: String) async {
+        await host.noteActivity(sessionId: sessionId)
+    }
+
     /// The phone left, or its peer failed.
     public func endSession(sessionId: String, reason: ScreenShareStopReason = .peerLeft) async {
+        let before = await host.liveSessions()
         if let timing = await host.endSession(sessionId: sessionId, reason: reason) { record(timing) }
+        await announceStops(before: before, reason: reason)
         await publish()
     }
 
@@ -284,6 +336,11 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
             guard let resolved = resolve(point) else { return .failure(.noDisplay) }
             await input.click(at: resolved.position, displayId: resolved.displayId,
                               button: button, clickCount: max(1, min(3, clickCount)))
+            await host.noteActivity(sessionId: sessionId)
+            return .success(resolved)
+        case .drag(let point, let phase):
+            guard let resolved = resolve(point) else { return .failure(.noDisplay) }
+            await input.drag(at: resolved.position, displayId: resolved.displayId, phase: phase)
             await host.noteActivity(sessionId: sessionId)
             return .success(resolved)
         case .scroll(let point, let deltaX, let deltaY):
@@ -320,8 +377,17 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     /// Reads the lock screen and secure-input state and applies it: frames stop
     /// and injection is refused while either holds.
     public func refreshEnvironment() async {
-        await host.setLocked(environment.screenLocked())
-        await host.setSecureInput(environment.secureInputActive())
+        let locked = environment.screenLocked()
+        let secure = environment.secureInputActive()
+        await host.setLocked(locked)
+        await host.setSecureInput(secure)
+        let blocked = locked || secure
+        if blocked != framesBlocked {
+            framesBlocked = blocked
+            // The lock screen wins the reason when both hold: it is the one the
+            // person at the Mac can see for themselves.
+            await frameBlockObserver?(blocked, locked ? .lockScreen : .secureInput)
+        }
         await publish()
     }
 
@@ -330,8 +396,10 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
     /// The menu-bar action and the hotkey. Stops every session.
     @discardableResult
     public func killSwitch() async -> ScreenShareKillTiming {
+        let before = await host.liveSessions()
         let timing = await host.killAll(reason: .killSwitch)
         record(timing)
+        await announceStops(before: before, reason: .killSwitch)
         await publish()
         return timing
     }
@@ -354,15 +422,31 @@ public actor ScreenShareService: ScreenShareSafetyTarget {
         }
         // Kill before anything else that needs the host, so injection and
         // capture go off at the first hop.
+        let before = await host.liveSessions()
         let timing = await host.killAll(reason: .rekeyPairing, triggeredAt: rekeyedAt)
         await host.forgetAllDeviceSettings()
         record(timing)
+        await announceStops(before: before, reason: .rekeyPairing)
         await publish()
     }
 
     private func kill(deviceId: String, reason: ScreenShareStopReason) async {
+        let before = await host.liveSessions()
         let timing = await host.killDevice(deviceId: deviceId, reason: reason)
         record(timing)
+        await announceStops(before: before, reason: reason)
+    }
+
+    /// Diffs the live list around a kill and tells the observer what went. The
+    /// host has already stopped capture, injection and the peers by now, so this
+    /// is bookkeeping and a courtesy note — never a safety step.
+    private func announceStops(before: [ScreenShareLiveSession], reason: ScreenShareStopReason) async {
+        guard let stopObserver, !before.isEmpty else { return }
+        let after = Set(await host.liveSessions().map(\.sessionId))
+        let gone = before.filter { !after.contains($0.sessionId) }
+            .map { ScreenShareStoppedSession(sessionId: $0.sessionId, deviceId: $0.deviceId, reason: reason) }
+        guard !gone.isEmpty else { return }
+        await stopObserver(gone)
     }
 
     /// t0 at the trigger, t1 when everything stopped — milliseconds on the Mac

@@ -80,6 +80,13 @@ public enum ScreenShareMouseButton: String, Sendable, Codable, Equatable {
     case left, right
 }
 
+/// A drag the phone performs with one finger: press, move, release. Sent as
+/// three phases rather than a single gesture so a drag that the Mac interrupts
+/// (a kill, a lock) can never leave a button held down.
+public enum ScreenShareDragPhase: String, Sendable, Codable, Equatable {
+    case begin, move, end
+}
+
 /// Modifier keys carried by a remote key event.
 public struct ScreenShareModifiers: OptionSet, Sendable, Equatable {
     public let rawValue: Int
@@ -95,6 +102,7 @@ public struct ScreenShareModifiers: OptionSet, Sendable, Equatable {
 public enum ScreenShareInputEvent: Sendable, Equatable {
     case move(ScreenShareNormalizedPoint)
     case click(ScreenShareNormalizedPoint, button: ScreenShareMouseButton, clickCount: Int)
+    case drag(ScreenShareNormalizedPoint, phase: ScreenShareDragPhase)
     case scroll(ScreenShareNormalizedPoint, deltaX: Int32, deltaY: Int32)
     case text(String)
     case key(code: UInt16, modifiers: ScreenShareModifiers)
@@ -104,6 +112,8 @@ public enum ScreenShareInputEvent: Sendable, Equatable {
 public protocol ScreenShareInputSink: Sendable {
     func move(to position: CGPoint, displayId: UInt32) async
     func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) async
+    /// One phase of a left-button drag.
+    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) async
     func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) async
     /// Committed text — the whole string at once, so Hangul arrives composed.
     func commitText(_ text: String) async
@@ -120,6 +130,26 @@ public enum ScreenShareInputRejection: Error, Sendable, Equatable {
     case blocked
     /// The named display is gone and there is no main display to fall back to.
     case noDisplay
+}
+
+/// The Mac pasteboard, as the clipboard buttons reach it. Concealed types (a
+/// password manager's) are never read: the Mac answers `concealed` instead, and
+/// the phone shows that rather than a blank paste.
+public protocol ScreenSharePasteboard: Sendable {
+    func read() -> ScreenSharePasteboardRead
+    func write(_ text: String)
+}
+
+public struct ScreenSharePasteboardRead: Sendable, Equatable {
+    public var text: String?
+    /// True when the pasteboard carries a type marked concealed; `text` is nil.
+    public var concealed: Bool
+
+    public init(text: String?, concealed: Bool = false) {
+        self.text = text; self.concealed = concealed
+    }
+
+    public static let empty = ScreenSharePasteboardRead(text: nil)
 }
 
 // MARK: - Environment

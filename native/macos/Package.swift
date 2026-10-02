@@ -10,12 +10,17 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.5.20260906"),
+        // Bundled libwebrtc (Google's build, M154) for the BETA screen-share
+        // feature. Pinned exactly: a WebRTC bump is a deliberate decision, not a
+        // resolver's.
+        .package(url: "https://github.com/stasel/WebRTC.git", exact: "154.0.0"),
     ],
     targets: [
         .target(name: "MightyCore", resources: [.copy("Resources/Styles"), .copy("Resources/Locales")]),
         .executableTarget(name: "MightyClaude", dependencies: [
             "MightyCore",
             .product(name: "GhosttyTerminal", package: "libghostty-spm"),
+            .product(name: "WebRTC", package: "WebRTC"),
         ]),
         .testTarget(name: "MightyCoreTests", dependencies: ["MightyCore"]),
     ]

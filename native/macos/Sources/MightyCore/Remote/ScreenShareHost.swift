@@ -151,14 +151,17 @@ public actor ScreenShareHost {
         if !captureActive, !framesBlocked {
             captureActive = true
             await surface.startCapture()
-            // The actor is re-entrant: a kill can run while capture starts. If it
-            // took this session, the join is refused before injection is enabled,
-            // and unless capture is wanted again by now (`captureActive`), what
-            // just started is stopped within the deadline.
-            if sessions[sessionId] == nil {
-                if !captureActive { _ = await runWithinDeadline([surface.stopCapture]) }
-                return .failure(.sessionStopped)
+            // The actor is re-entrant, so anything may have happened while
+            // capture was starting: a kill that took this session, or a lock
+            // screen / password field that must stop the frames. Either way the
+            // capture that just came up is unwanted unless capture is still
+            // both wanted (`captureActive`) and permitted (`framesBlocked`).
+            let wanted = captureActive && !framesBlocked
+            if !wanted {
+                captureActive = false
+                _ = await runWithinDeadline([surface.stopCapture])
             }
+            if sessions[sessionId] == nil { return .failure(.sessionStopped) }
         }
         if requestedMode == .control { injectionEnabled = true }
         armIdleTimer(sessionId: sessionId)
