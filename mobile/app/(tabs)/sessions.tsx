@@ -41,7 +41,7 @@ function HostSection({ host }: { host: PairedHost }) {
   );
 }
 
-/** "세션": every paired host's workspaces and panes as cards, one host after another. */
+/** "세션": every paired host's workspaces and their panes as rows, one host after another. */
 export default function SessionsTab() {
   const palette = usePalette();
   const styles = useStyles(makeStyles);

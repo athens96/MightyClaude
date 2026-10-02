@@ -41,6 +41,7 @@ import { QuestionnaireCard } from '@/components/questionnaire-card';
 import { QueuedList } from '@/components/queued-list';
 import {
   SessionHeader,
+  SessionTitle,
   optionsFor,
   settingTitles,
   valueFor,
@@ -54,7 +55,6 @@ import { useFollowBottom } from '@/hooks/use-follow-bottom';
 import { useLongPoll } from '@/hooks/use-long-poll';
 import { hasCapability } from '@/lib/capabilities';
 import { commandActionOf, isMessageAction } from '@/lib/commands';
-import { toolCount } from '@/lib/dashboard';
 import {
   combineEntries,
   isHistoryExhausted,
@@ -817,12 +817,6 @@ export default function SessionScreen() {
     [canStyle, client, followNewest, panel, poll, sessionId, text],
   );
 
-  // Tool calls are counted only from a transcript the phone holds whole.
-  const tools = useMemo(
-    () => toolCount(entries, detail !== undefined && (!detail.hasOlder || exhausted)),
-    [detail, entries, exhausted],
-  );
-
   const headerNode = detail ? (
     <View>
       <SessionHeader
@@ -830,8 +824,6 @@ export default function SessionScreen() {
         settings={settings}
         showStatus={hasCapability(capabilities, 'status')}
         styleAware={canStyle}
-        tools={tools}
-        {...(receivedAt !== undefined ? { receivedAt } : {})}
         onEditSetting={openPicker}
       />
       {mighty ? (
@@ -893,6 +885,11 @@ export default function SessionScreen() {
       <Stack.Screen
         options={{
           title: session?.title || '세션',
+          // The compact header: the title, and under it the status glyph and the figures.
+          headerTitle: detail
+            ? () => <SessionTitle detail={detail} {...(receivedAt !== undefined ? { receivedAt } : {})} />
+            : undefined,
+          headerTitleAlign: 'center',
           headerRight: canPane
             ? () => (
                 <Pressable

@@ -1,6 +1,5 @@
 import {
   isAgentIOPane,
-  type LogEntry,
   type MobileSessionDetail,
   type MobileSessionSummary,
   type MobileState,
@@ -229,16 +228,6 @@ export function relativeAge(updatedAt: string, now: number): { unit: AgeUnit; co
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return { unit: 'hours', count: hours };
   return { unit: 'days', count: Math.floor(hours / 24) };
-}
-
-/**
- * Tool calls in the transcript — activities that name a tool — counted only when the
- * whole record is on the phone: with older entries still on the host the count would be
- * short, so it is left out.
- */
-export function toolCount(entries: readonly LogEntry[], complete: boolean): number | undefined {
-  if (!complete) return undefined;
-  return entries.reduce((total, entry) => (entry.activity?.toolName ? total + 1 : total), 0);
 }
 
 /** The host the "현황" tab shows: the one picked, or the first paired one. */

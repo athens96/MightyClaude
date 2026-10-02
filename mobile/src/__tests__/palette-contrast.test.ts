@@ -29,8 +29,9 @@ type Pair = [foreground: keyof Palette, background: keyof Palette];
  * - the status inks as words on the page and on cards (status labels, reachability,
  *   reasons in "알림", the "완료" figure) and on their own soft tints (soft pills, the
  *   quiet stat tiles, the error banner);
- * - the text on every status fill: white on run, done, error, stop and the idle hero,
- *   dark ink on wait (stat tiles, the hero, filled pills, timeline glyphs, tool chips);
+ * - the text on every status fill: white on run, done, error, stop and the idle avatar,
+ *   dark ink on wait (stat tiles, filled pills, timeline glyphs, tool chips, and the
+ *   "?" and "!" inside the wait and error glyph discs);
  * - the accent as links and the selected tab on page and card, and on its blue wash
  *   (selected picker option, inline code); white on the primary button;
  * - the user's ink bubble, the toast, fenced code, the badge;
@@ -62,6 +63,7 @@ const textPairs: Pair[] = [
   ['success', 'doneSoft'],
   ['danger', 'background'],
   ['danger', 'surface'],
+  ['danger', 'surfaceRaised'],
   ['danger', 'dangerSurface'],
   ['warning', 'background'],
   ['warning', 'surface'],
@@ -115,6 +117,17 @@ describe.each([
     }
   });
 
+  it('keeps the status glyphs visible on the page, on cards and on a pressed row', () => {
+    // The turning spark, the check, the slashed ring and the error disc are marks
+    // (WCAG 1.4.11): 3:1 on every ground a row or the conversation header sits on. The
+    // amber wait disc is carried by its "?" (onWait on wait, checked as text above).
+    for (const mark of ['markRun', 'markDone', 'markStop', 'err', 'textMuted'] as const) {
+      for (const ground of ['background', 'surface', 'surfaceRaised'] as const) {
+        expect(contrast(palette[mark], palette[ground])).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   it('lifts the cards off the page without turning them into panels', () => {
     // The page and its cards are told apart, but stay within a step of each other.
     expect(contrast(palette.surface, palette.background)).toBeGreaterThan(1.05);
@@ -130,7 +143,7 @@ it('keeps the dark page ink navy rather than black', () => {
 });
 
 it('keeps the status fills one set of colours across both modes', () => {
-  // A tile, the hero and a node mean the same thing by day and by night.
+  // A tile, a glyph disc and a node mean the same thing by day and by night.
   for (const fill of ['run', 'wait', 'done', 'err', 'stop'] as const) {
     expect(darkPalette[fill]).toBe(lightPalette[fill]);
   }

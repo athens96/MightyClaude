@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { describeError } from '@/api/client';
 import { isAgentIOPane, type MobileSessionSummary, type MobileState } from '@/api/types';
 import { NewSessionSheet, type NewSessionChoice } from '@/components/new-session-sheet';
-import { SessionCard } from '@/components/session-card';
+import { SessionRow } from '@/components/session-card';
 import { Button, EmptyState } from '@/components/ui';
 import { useCapabilities } from '@/hooks/use-capabilities';
 import { hasCapability } from '@/lib/capabilities';
@@ -12,7 +12,7 @@ import { t } from '@/lib/i18n';
 import { groupSessionsByWorkspace } from '@/lib/merge';
 import { useHostClient } from '@/store/live';
 import { showToast } from '@/store/toast';
-import { headingFontFamily, monoFontFamily, spacing, useStyles, type Palette } from '@/theme';
+import { cardShadow, headingFontFamily, monoFontFamily, spacing, useStyles, type Palette } from '@/theme';
 
 /** Opens a pane, or says why an agent's own terminal or browser stays on the Mac. */
 export function openSession(hostId: string, session: MobileSessionSummary): void {
@@ -23,9 +23,9 @@ export function openSession(hostId: string, session: MobileSessionSummary): void
 }
 
 /**
- * One host's workspaces as sections of status cards: the workspace name in bold with its
- * path in mono, 파일 and 새 창 beside it, then a card per pane. Used by the "현황" tab
- * (with `glance`, so cards may show context and elapsed time), the "세션" tab and the
+ * One host's workspaces as sections: the workspace name in bold with its path in mono,
+ * 파일 and 새 창 beside it, then one plain list with a row per pane. Used by the "현황" tab
+ * (with `glance`, so rows may show context and elapsed time), the "세션" tab and the
  * host screen. Creating a pane opens it; `onCreated` lets a screen read the host again.
  */
 export function HostWorkspaces({
@@ -107,15 +107,20 @@ export function HostWorkspaces({
             {group.sessions.length === 0 ? (
               <Text style={styles.noSessions}>{t('phone.workspaces.noSessions')}</Text>
             ) : (
-              group.sessions.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  hostId={hostId}
-                  session={session}
-                  glance={glance}
-                  onPress={() => openSession(hostId, session)}
-                />
-              ))
+              <View style={styles.list}>
+                <View style={styles.listClip}>
+                  {group.sessions.map((session, index) => (
+                    <SessionRow
+                      key={session.id}
+                      hostId={hostId}
+                      session={session}
+                      glance={glance}
+                      first={index === 0}
+                      onPress={() => openSession(hostId, session)}
+                    />
+                  ))}
+                </View>
+              </View>
             )}
           </View>
         ))
@@ -153,6 +158,9 @@ const makeStyles = (palette: Palette) =>
       maxWidth: '60%',
     },
     workspacePath: { color: palette.textFaint, flex: 1, fontFamily: monoFontFamily, fontSize: 12 },
+    // The shadow on the outside, the clip on the inside: a clipped view casts no iOS shadow.
+    list: { ...cardShadow, backgroundColor: palette.surface, borderRadius: 18 },
+    listClip: { borderRadius: 18, overflow: 'hidden' },
     noSessions: {
       color: palette.textFaint,
       fontSize: 13,
