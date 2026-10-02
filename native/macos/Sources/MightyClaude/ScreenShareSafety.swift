@@ -420,6 +420,15 @@ extension AppStore {
         Task { await screenShare.endSession(sessionId: sessionId, reason: .killSwitch) }
     }
 
+    /// Settings: plays the measurement reference scene on the main display and
+    /// tells connected phones as each phase starts.
+    func playScreenShareReferenceScene() {
+        ScreenShareReferenceSceneWindow.play { [weak self] phase in
+            guard let engine = self?.screenShareEngine else { return }
+            Task { await engine.announceScene(phase) }
+        }
+    }
+
     /// The menu command and the hotkey both land here.
     func stopScreenShareSessions() { screenShareMenuBar?.killNow() }
 }

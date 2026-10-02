@@ -594,6 +594,13 @@ public actor ScreenShareEngine {
         _ = await peer.sendData(Self.encode(ScreenShareTapMarker.echo(id: markerId, shown: shown)))
     }
 
+    /// The reference scene moved to `phase`: every connected phone hears it on
+    /// its data channel, so its measurement export can mark the readings.
+    public func announceScene(_ phase: ScreenShareReferenceScene.Phase) async {
+        let message = Self.encode(ScreenShareReferenceScene.announcement(phase))
+        for session in sessions.values where session.connected { _ = await session.peer.sendData(message) }
+    }
+
     /// One capture serves every phone, so zoom and the display switch change
     /// what everyone sees. A phone may do either when it is alone, or when it
     /// is the one in control; a viewer cannot pull the controller's screen away.
