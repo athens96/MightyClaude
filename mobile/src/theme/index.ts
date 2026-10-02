@@ -37,7 +37,7 @@ export interface Palette {
   /** Dimming behind modals. */
   overlay: string;
   /**
-   * Status fills — stat tiles, the conversation hero, timeline nodes and filled pills.
+   * Status fills — stat tiles, timeline nodes, filled pills and the wait/error glyph discs.
    * Each carries its own text colour: white on run/done/err/stop/idle, dark ink on wait.
    */
   run: string;
@@ -50,9 +50,16 @@ export interface Palette {
   err: string;
   stop: string;
   stopSoft: string;
-  /** The hero behind a pane that is simply idle. */
+  /** The neutral fill: the idle tone, and the square behind an unknown provider's mark. */
   idle: string;
   onStatus: string;
+  /**
+   * Status glyphs drawn as lines on a card or the page (the turning spark, the check, the
+   * slashed ring): the fill itself by day, a lifted tint by night. Marks, so 3:1.
+   */
+  markRun: string;
+  markDone: string;
+  markStop: string;
   /** Fenced code: an ink block in both modes. */
   codeSurface: string;
   codeText: string;
@@ -106,6 +113,9 @@ export const lightPalette: Palette = {
   stopSoft: '#EEF0F4',
   idle: '#0E1320',
   onStatus: '#FFFFFF',
+  markRun: '#2A5FEE',
+  markDone: '#08804A',
+  markStop: '#667085',
   codeSurface: '#0E1320',
   codeText: '#D8DEEA',
   blockAgent: '#6D3FD9',
@@ -117,8 +127,8 @@ export const lightPalette: Palette = {
 
 /**
  * The night side of D: the page is ink navy (never pure black), cards are slate, and the
- * status inks lift to pale tints so they read as words on the dark. Fills stay saturated:
- * the same white-on-colour tiles and hero, the same dark ink on amber.
+ * status inks and glyph marks lift to pale tints so they read on the dark. Fills stay
+ * saturated: the same white-on-colour tiles, the same dark ink on amber.
  */
 export const darkPalette: Palette = {
   background: '#0B0F19',
@@ -153,6 +163,9 @@ export const darkPalette: Palette = {
   stopSoft: '#222939',
   idle: '#2A3347',
   onStatus: '#FFFFFF',
+  markRun: '#7FA3FF',
+  markDone: '#5BD49A',
+  markStop: '#A9B1C2',
   codeSurface: '#05070D',
   codeText: '#D8DEEA',
   blockAgent: '#B9A0FF',
@@ -203,7 +216,7 @@ export const spacing = {
   xxl: 32,
 } as const;
 
-/** Moulded, not cut: pills are round, rows and fields 12–14, cards 20, the hero 24. */
+/** Moulded, not cut: pills are round, rows and fields 12–14, cards 20, sheets 24. */
 export const radius = {
   sm: 6,
   md: 12,
@@ -238,7 +251,7 @@ export const monoText: TextStyle = {
 
 /**
  * The type scale. The heading steps are bold Avenir Next with a little negative tracking;
- * `number` is the big tabular figure on stat tiles, cards and the hero.
+ * `number` is the big tabular figure on the stat tiles.
  */
 export const typeScale = {
   display: { fontFamily: headingFontFamily, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.5 },
@@ -343,9 +356,9 @@ export interface ToneColors {
 }
 
 /**
- * D's colour for a tone (`toneOf` in `@/lib/status-tone`): stat tiles, the hero, filled
- * pills and timeline nodes use `fill`/`onFill`; soft pills and the card edge use
- * `soft`/`ink`. `idle` is neutral ink rather than a state colour.
+ * D's colour for a tone (`toneOf` in `@/lib/status-tone`): stat tiles, filled pills and
+ * timeline nodes use `fill`/`onFill`; soft pills and status words use `soft`/`ink`.
+ * `idle` is neutral ink rather than a state colour.
  */
 export function toneColors(palette: Palette, tone: Tone): ToneColors {
   switch (tone) {

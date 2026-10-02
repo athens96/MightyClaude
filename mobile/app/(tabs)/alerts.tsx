@@ -2,14 +2,22 @@ import { useMemo } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openSession } from '@/components/host-workspaces';
-import { PaneAvatar, SessionPill, ageText } from '@/components/session-card';
+import { ROW_GAP, ROW_GLYPH, ROW_PADDING, ROW_TEXT_INSET, ageText } from '@/components/session-card';
+import { StatusGlyph } from '@/components/status-glyph';
 import { EmptyState, ScreenTitle } from '@/components/ui';
 import { useNow } from '@/hooks/use-now';
-import { buildAttentionList, sessionTone, type AttentionItem, type AttentionReason } from '@/lib/dashboard';
+import {
+  buildAttentionList,
+  displayStatus,
+  sessionTone,
+  type AttentionItem,
+  type AttentionReason,
+} from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
+import { waitLabel } from '@/lib/session-row';
 import { useHostsStore } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
-import { radius, spacing, toneColors, useStyles, usePalette, type Palette } from '@/theme';
+import { spacing, toneColors, useStyles, usePalette, type Palette } from '@/theme';
 
 const REASON_KEYS: Record<AttentionReason, string> = {
   question: 'phone.alerts.reason.question',
@@ -18,22 +26,35 @@ const REASON_KEYS: Record<AttentionReason, string> = {
   finished: 'phone.alerts.reason.finished',
 };
 
-function AlertRow({ item }: { item: AttentionItem }) {
+/**
+ * One pane in a section's list, drawn as the session rows are (concept A): the status
+ * glyph, the title, why it is here in its status ink, the host and age, and the amber
+ * `질문 1` while it waits on the user. The section's rows read as one rounded list.
+ */
+function AlertRow({ item, first, last }: { item: AttentionItem; first: boolean; last: boolean }) {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
   const colors = toneColors(palette, sessionTone(item.session));
   const title = item.session.title || t('phone.card.untitled');
   const now = useNow(60_000);
   const age = ageText(item.session.updatedAt, now);
+  const ask = waitLabel(item.session);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t('phone.alerts.rowLabel', { title, reason: t(REASON_KEYS[item.reason]), host: item.hostName })}
       onPress={() => openSession(item.hostId, item.session)}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.row,
+        first && styles.first,
+        last && styles.last,
+        pressed && styles.pressed,
+      ]}
     >
-      <View style={[styles.edge, { backgroundColor: colors.fill }]} />
-      <PaneAvatar session={item.session} size={30} />
+      {first ? null : <View style={styles.rule} />}
+      <View style={styles.glyph}>
+        <StatusGlyph status={displayStatus(item.session)} kind={item.session.kind} size={ROW_GLYPH} decorative />
+      </View>
       <View style={styles.body}>
         <Text numberOfLines={1} style={styles.rowTitle}>
           {title}
@@ -45,7 +66,7 @@ function AlertRow({ item }: { item: AttentionItem }) {
           {age ? `${item.hostName} · ${age}` : item.hostName}
         </Text>
       </View>
-      <SessionPill session={item.session} />
+      {ask ? <Text style={styles.ask}>{ask}</Text> : null}
     </Pressable>
   );
 }
@@ -80,13 +101,14 @@ export default function AlertsTab() {
       ]}
       sections={sections}
       keyExtractor={(item) => item.key}
-      renderItem={({ item }) => <AlertRow item={item} />}
+      renderItem={({ item, index, section }) => (
+        <AlertRow item={item} first={index === 0} last={index === section.data.length - 1} />
+      )}
       renderSectionHeader={({ section }) => (
         <Text accessibilityRole="header" style={styles.sectionTitle}>
           {section.title}
         </Text>
       )}
-      ItemSeparatorComponent={() => <View style={styles.separator} />}
       stickySectionHeadersEnabled={false}
       ListHeaderComponent={<ScreenTitle title={t('phone.tabs.alerts')} style={styles.title} />}
       ListEmptyComponent={
@@ -113,22 +135,29 @@ const makeStyles = (palette: Palette) =>
       paddingHorizontal: spacing.xs,
       paddingTop: spacing.md,
     },
-    separator: { height: spacing.sm },
     row: {
-      alignItems: 'center',
+      alignItems: 'flex-start',
       backgroundColor: palette.surface,
-      borderRadius: radius.card,
       flexDirection: 'row',
-      gap: spacing.sm + 2,
-      overflow: 'hidden',
-      paddingLeft: spacing.lg + 2,
-      paddingRight: spacing.md,
-      paddingVertical: spacing.md,
+      gap: ROW_GAP,
+      paddingHorizontal: ROW_PADDING,
+      paddingVertical: 12,
     },
-    pressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
-    edge: { bottom: 0, left: 0, position: 'absolute', top: 0, width: 5 },
-    body: { flex: 1, gap: 1 },
-    rowTitle: { color: palette.text, fontSize: 15, fontWeight: '700' },
-    reason: { fontSize: 12.5, fontWeight: '700' },
-    meta: { color: palette.textMuted, fontSize: 12 },
+    first: { borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+    last: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18 },
+    pressed: { backgroundColor: palette.surfaceRaised },
+    rule: {
+      backgroundColor: palette.border,
+      height: 1,
+      left: ROW_TEXT_INSET,
+      position: 'absolute',
+      right: 0,
+      top: 0,
+    },
+    glyph: { marginTop: 1 },
+    body: { flex: 1, gap: 1, minWidth: 0 },
+    rowTitle: { color: palette.text, fontSize: 15, fontWeight: '600', lineHeight: 20 },
+    reason: { fontSize: 12.5, fontWeight: '600', lineHeight: 17 },
+    meta: { color: palette.textMuted, fontSize: 12.5, lineHeight: 17 },
+    ask: { color: palette.warning, fontSize: 12.5, fontWeight: '700', lineHeight: 20 },
   });

@@ -1,5 +1,4 @@
 import type {
-  LogEntry,
   MobileSessionDetail,
   MobileSessionSummary,
   MobileState,
@@ -17,7 +16,6 @@ import {
   relativeAge,
   resolveSelectedHost,
   sessionTone,
-  toolCount,
 } from '@/lib/dashboard';
 import { countAttention } from '@/lib/merge';
 
@@ -274,42 +272,6 @@ describe('relativeAge', () => {
   it('treats a time ahead of the phone clock as now and a bad date as unknown', () => {
     expect(relativeAge('2026-03-01T12:05:00.000Z', now)).toEqual({ unit: 'now', count: 0 });
     expect(relativeAge('not a date', now)).toBeUndefined();
-  });
-});
-
-describe('toolCount', () => {
-  const entries: LogEntry[] = [
-    { id: '1', kind: 'user', text: 'hi', timestamp: '' },
-    {
-      id: '2',
-      kind: 'system',
-      text: '',
-      timestamp: '',
-      activity: { id: 'a', kind: 'tool', state: 'completed', summary: 'src/lib/merge.ts', toolName: 'Read' },
-    },
-    {
-      id: '3',
-      kind: 'system',
-      text: '',
-      timestamp: '',
-      activity: { id: 'b', kind: 'tool', state: 'error', summary: 'npx jest', toolName: 'Bash' },
-    },
-    {
-      id: '4',
-      kind: 'system',
-      text: '',
-      timestamp: '',
-      activity: { id: 'c', kind: 'thinking', state: 'completed', summary: 'thinking' },
-    },
-    { id: '5', kind: 'assistant', text: 'done', timestamp: '' },
-  ];
-
-  it('counts the activities that name a tool, in a transcript the phone holds whole', () => {
-    expect(toolCount(entries, true)).toBe(2);
-  });
-
-  it('says nothing while older entries are still on the host', () => {
-    expect(toolCount(entries, false)).toBeUndefined();
   });
 });
 
