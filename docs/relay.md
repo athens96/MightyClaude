@@ -59,7 +59,7 @@ WebSocket `GET /ws` + 쿼리. `serverId`는 `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
   2. 호스트 → `{"type":"ready","v":1,"serverKey":"<b64 32B>","nonce":"<b64 16B>"}`. 클라이언트는 `serverKey`가 페어링 때 받은 공개키와 같은지 확인한다.
 - 키 유도: `shared = X25519(내 비밀키, 상대 공개키)`, `key = HKDF-SHA256(ikm=shared, salt=clientNonce‖serverNonce, info="mightyclaude-relay-v1", 32B)`. 공유 비밀이 모두 0이면 거부.
 - 프레임: 바이너리 `[12B nonce][ChaCha20-Poly1305 암호문+16B 태그]`. nonce = `[방향 1B][0,0,0][카운터 8B big-endian]`, 방향은 클라이언트→호스트 0x01, 호스트→클라이언트 0x02. 카운터는 0부터 프레임마다 1씩 증가하고, 받는 쪽은 **직전보다 큰 카운터만** 받아들인다(재전송·순서 뒤바뀜 거부). 평문은 UTF-8 JSON.
-- 인증(암호화된 첫 메시지): 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…"}`, 호스트 → `{"type":"auth_ok","hostName":"…","hostId":"…","appVersion":"…"}` 또는 `{"type":"auth_error","reason":"pairing-key"}`를 보낸 뒤 소켓을 닫음(클라이언트는 이를 재페어링 필요로 표시). 호스트는 `auth_ok` 전에는 다른 메시지를 처리하지 않는다.
+- 인증(암호화된 첫 메시지): 클라이언트 → `{"type":"auth","pairingKey":"…","clientName":"…"}`, 호스트 → `{"type":"auth_ok","hostName":"…","hostId":"…","appVersion":"…","capabilities":["…"]}`(`capabilities`는 `GET /m1/info`와 같은 목록) 또는 `{"type":"auth_error","reason":"pairing-key"}`를 보낸 뒤 소켓을 닫음(클라이언트는 이를 재페어링 필요로 표시). 호스트는 `auth_ok` 전에는 다른 메시지를 처리하지 않는다.
 
 ### 기기 토큰과 연결 키 교체
 
@@ -166,7 +166,7 @@ BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호
 
 ### 호스트 기능 광고 (`screenShare`)
 
-기능 광고는 기존 방식을 그대로 쓴다. 호스트는 `GET /m1/info`의 `capabilities` 배열(`docs/mobile-remote.md`의 `MobileInfo.capabilities`)에 이름 하나를 더한다: **`"screenShare"`**.
+기능 광고는 기존 방식을 그대로 쓴다. 호스트는 `GET /m1/info`의 `capabilities` 배열(`docs/mobile-remote.md`의 `MobileInfo.capabilities`)과 `auth_ok`의 `capabilities`에 이름 하나를 더한다: **`"screenShare"`**. 화면 공유 엔진(캡처·WebRTC)이 붙은 앱에서만 넣는다 — 엔진이 없으면 아래 경로가 503으로 답하므로 이름도 빠진다.
 
 ```json
 { "protocol": 1, "hostId": "…", "hostName": "…", "appVersion": "…", "platform": "macOS",
@@ -182,15 +182,22 @@ BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호
 
 세션을 **시작**하는 쪽은 휴대폰이고, 새 푸시 타입을 쓰지 않고 위의 요청/응답 터널을 그대로 쓴다(`{"id":…,"method":…,"path":…}`). 본문 규약은 이 문서가 기준이다.
 
-- `GET /m1/screen-share/state` → `{"screenShare":{"allowed":bool,"grant":"none"|"view"|"control","isBeta":true,"displays":[{"displayId":N,"width":N,"height":N,"main":bool}],"controlChallengeB64":"…","iceServers":[…],"idleTimeoutSeconds":600}}`
-  - `controlChallengeB64`는 이 세션 한 번만 쓰는 바이트열(`screen-control-challenge:<sessionId>:<unix초>`)이며 `grant`가 `control`일 때만 들어 있다.
+- `GET /m1/screen-share/state` → `{"screenShare":{"allowed":bool,"grant":"none"|"view"|"control","isBeta":true,"displays":[{"displayId":N,"width":N,"height":N,"main":bool}],"controlChallengeB64":"…","controlKeyFingerprint":"XXXX-XXXX-XXXX-XXXX","iceServers":[…],"idleTimeoutSeconds":600}}`
+  - `controlChallengeB64`는 한 번만 쓰는 바이트열(`screen-control-challenge:<id>:<무작위>`)이며 허용 목록에 있고 `grant`가 `control`일 때만 들어 있다. 상태를 읽을 때마다 새로 만들어지고, 2분 안에 한 번의 조작 세션 시작에만 쓰인다(성공하든 실패하든 그 시도로 소진된다).
+  - `controlKeyFingerprint`는 Mac이 이 휴대폰의 조작 키를 저장해 두었을 때만 들어 있는 짧은 지문(공개키 SHA-256 앞 8바이트, 4글자씩 `-`로 묶은 16진수)이다. 비밀이 아니다. 휴대폰은 이 값으로 "키를 등록해야 하는가"를 판단하므로, 화면을 열 때 생체 인증을 띄울 필요가 없다. 값이 없는데 휴대폰에 키가 있으면 Mac이 키를 잊은 것이므로 다시 등록한다.
   - `iceServers`는 릴레이가 발급한 짧은 수명(기본 1시간)의 TURN 자격증명이다(위 [TURN 자격증명 발급](#turn-자격증명-발급-릴레이-평문-e2ee-아님)). coturn 비밀값은 릴레이에만 있고 Mac·휴대폰에는 절대 오지 않는다.
   - `idleTimeoutSeconds`는 조작 600초, 보기 전용 1800초다.
 - `POST /m1/screen-share/sessions` 본문 `{"mode":"view"|"control","displayId":N,"controlSignatureB64":"…","network":"wifi"|"cellular","decodes":["H264","VP9","AV1"]}` → `200 {"sessionId":"…","mode":"…","displayId":N,"codec":"H264"|"VP9"|"AV1","quality":{"width":N,"height":N,"fps":N,"maxBitrateKbps":N}}`
   - `mode:"control"`은 매 세션 `controlSignatureB64`가 필요하다. 생체·PIN이 걸린 Android Keystore 키(P-256)로 `controlChallengeB64`에 서명한 ECDSA DER 서명이고, 권한을 줄 때 등록해 둔 공개키(`controlKeyPublic`)로 **Mac이** 검증한다. 휴대폰 쪽 확인만으로는 조작 세션이 열리지 않는다.
   - `decodes`는 휴대폰이 `getCapabilities`로 확인한 디코딩 가능 코덱이다. 기본값은 하드웨어 H.264이고, 모바일 데이터에서 Mac CPU에 여유가 있고 휴대폰이 디코딩할 수 있을 때만 VP9/AV1을 고른다. CPU·발열 압박이 생기면 H.264로 되돌린다. HEVC는 쓰지 않는다.
   - `quality`는 네트워크별 상한이다: 와이파이 최대 1080p30(약 6 Mbps), 모바일 데이터 최대 720p15(약 1 Mbps, 5–15 fps). TURN relay 경로에서는 세션 대역 할당량(기본 2 Mbps)까지로 더 낮춘다. 화면이 멈춰 있으면 프레임을 보내지 않아 유휴 트래픽은 0에 가깝다.
-  - 거절은 `403 {"error":{"reason":"…"}}`: `legacy-client`, `device-not-allowed`(허용 목록 밖 — 새로 페어링한 휴대폰의 기본값), `insufficient-grant`, `control-signature`, `concurrency-limit`(조작 1대 + 보기 전용 2대까지), `screen-permission`(Mac의 화면 기록 권한이 없거나 만료됨 — 휴대폰은 "Mac에서 승인 필요"를 보여 준다).
+  - 거절은 `403 {"error":{"reason":"…"}}`: `legacy-client`, `device-not-allowed`(허용 목록 밖 — 새로 페어링한 휴대폰의 기본값), `insufficient-grant`, `control-signature`, `concurrency-limit`(조작 1대 + 보기 전용 2대까지), `screen-permission`(Mac의 화면 기록 권한이 없거나 만료됨 — 휴대폰은 "Mac에서 승인 필요"를 보여 준다), `lock-screen`·`secure-input`(Mac이 잠겨 있거나 암호 입력란이 보안 입력을 쥐고 있어 프레임을 보낼 수 없음), `session-stopped`(시작하는 사이에 킬 스위치·회수·강등·페어링 키 재생성이 일어남). 본문이 틀리면 `400` `bad-request`.
+  - **첫 offer는 이 응답 뒤에 온다.** Mac은 응답을 봉인한 다음에 `screen-offer`를 보내고, 그 전에 모은 ICE 후보는 offer 뒤에 순서대로 보낸다. 그래서 휴대폰은 `sessionId`를 모르는 offer·후보를 받지 않는다. 연결이 30초 안에 `connected`에 이르지 않으면 Mac이 세션을 끝낸다(`peer-left`).
+- `POST /m1/screen-share/control-key` 본문 `{"publicKeyB64":"…"}`(ANSI X9.62 비압축 P-256 공개키 65바이트, base64) → `200 {"fingerprint":"XXXX-XXXX-XXXX-XXXX"}`
+  - 허용 목록에 있고 `grant`가 `control`인 휴대폰만 등록할 수 있다(`device-not-allowed`·`insufficient-grant`).
+  - **저장된 키가 없을 때만** 받는다. Mac은 받은 키의 지문을 화면에 띄우고 Mac 사용자가 휴대폰에 보이는 지문과 같다고 확인해야 저장한다. 거절하면 `403` `control-key-not-confirmed`, 확인 창이 이미 떠 있으면 `409` `control-key-pending`.
+  - 같은 키를 다시 보내면 같은 지문으로 `200`(응답을 못 받은 재시도). **다른 키는 `409` `control-key-present`** — Mac은 키를 조용히 바꾸지 않는다. 휴대폰이 키를 잃었으면 Mac 사용자가 조작 권한을 거두었다가 다시 주어야 하고, 권한을 거두면 저장된 키도 지워진다.
+  - 모양이 틀린 키는 `400` `bad-request`.
 - 세션이 열리면 Mac은 알림을 한 번 띄우고 '원격 조작 중' 표시와 메뉴바 항목을 보여 준다. 세션마다 Mac에서 따로 승인을 묻지는 않는다.
 
 ### 새 암호화 메시지 타입
@@ -202,42 +209,58 @@ BETA 기능인 **화면 보기·조작**의 WebRTC 시그널링은 위의 암호
 | `screen-offer` | 호스트 → 클라이언트 | `sdp`, `mode`, `displayId`, `codec`, `quality`, `iceRestart` | 영상을 보내는 쪽이 Mac이므로 offer도 Mac이 만든다. SDP에는 화면 글자 가독성을 위한 설정(contentHint `text`/`detail`, degradationPreference `maintain-resolution`)이 반영된다. 디스플레이 전환이나 TURN 자격증명 교체 때는 `iceRestart:true`로 다시 보낸다 |
 | `screen-answer` | 클라이언트 → 호스트 | `sdp` | 휴대폰의 SDP answer |
 | `screen-ice` | 양방향 | `candidate`, `sdpMid`, `sdpMLineIndex`, `usernameFragment` | ICE 후보 1개. 빈 `candidate`(`""`)는 후보 끝을 뜻한다 |
-| `screen-session-end` | 양방향 | `reason` | 정상 종료. 휴대폰 쪽 이유: `user-stop`, `background`(앱이 백그라운드로 간 뒤 30초), `peer-failed`. 호스트 쪽 이유: `idle-timeout`(조작 10분·보기 30분), `peer-left`, `display-gone` |
+| `screen-session-end` | 양방향 | `reason` | 정상 종료. 휴대폰 쪽 이유: `user-stop`, `background`(앱이 백그라운드로 간 뒤 30초), `peer-failed`. 호스트 쪽 이유: `idle-timeout`(조작 10분·보기 30분), `background`(아래 `screen-background` 뒤 30초), `peer-left`, `display-gone` |
+| `screen-background` | 클라이언트 → 호스트 | `background`(bool) | 휴대폰 앱이 백그라운드로 갔다(`true`)·돌아왔다(`false`). **30초 규칙은 Mac이 집행한다**: `true` 뒤 30초 안에 `false`가 오지 않으면 Mac이 세션을 끝내고 `screen-session-end`(`background`)를 보낸다. 아무 말 없이 조용해진 휴대폰은 유휴 타임아웃에 걸린다 |
 | `screen-grant` | 호스트 → 클라이언트 | `allowed`, `grant`, `controlChallengeB64`?, `iceServers`?, `displays`? | 허용 목록과 보기/조작 권한이 Mac 설정에서 바뀌었음을 알린다(부여·승격·강등·회수). TURN 자격증명을 만료 전에 교체할 때도 이 메시지로 새 `iceServers`를 보내고 뒤이어 `iceRestart:true` offer를 보낸다. 세션 밖에서 보낼 때는 `sessionId`를 생략한다 |
 | `screen-kill` | 호스트 → 클라이언트 | `reason`, `sessionId`? | 즉시 중단. `reason`: `revoked`, `grant-downgrade`, `rekey-pairing`, `kill-switch`, `lock-screen`, `secure-input`, `concurrency-limit`. `sessionId`가 없으면 그 휴대폰의 모든 세션이다 |
 
-### 피어 연결 데이터 채널 메시지 (릴레이를 지나지 않음)
+### 피어 연결: 영상 트랙 두 개와 데이터 채널
 
-입력 이벤트와 클립보드는 시그널링이 아니라 **피어 연결의 데이터 채널**(`screen-control`, ordered·reliable)로 흐른다. 릴레이를 지나지 않으므로 릴레이 프레임 한도와 무관하지만, 양쪽이 같은 상한을 쓰도록 **JSON 한 개는 64 KiB를 넘기지 않는다**. 봉투는 `{"t":"…", …}`이고 Mac은 모르는 `t`를 조용히 버린다.
+Mac이 만드는 offer에는 보내기 전용 영상 트랙 두 개와 데이터 채널 하나가 있다.
 
-좌표는 시그널링과 같은 규약이다: `displayId` + 정규화된 0–1 `x`/`y`. Mac이 `CGDisplayBounds`에 맞춰 환산하고, 그 디스플레이가 빠졌으면 주 디스플레이로 되돌린다.
+| 이름 | 무엇 | 비고 |
+|---|---|---|
+| 스트림 id `screen` (첫 번째 영상 트랙) | 사용자가 읽는 화면. 확대하지 않았으면 디스플레이 전체, 확대했으면 그 영역만 전체 화질로 | 네트워크별 상한(위 `quality`)과 TURN 경로의 2 Mbps 상한이 이 트랙에 걸린다 |
+| 스트림 id `overview` (두 번째 영상 트랙) | 확대 중일 때 깔아 주는 디스플레이 전체의 저해상도 화면(가로 최대 640 px, 2 fps, 최대 150 kbps) | 확대하지 않았으면 프레임이 하나도 없다 |
+| 데이터 채널 `screen-control` (ordered·reliable) | 아래 입력·클립보드 메시지 | Mac이 연다 |
 
-| t | 방향 | 본문 | Mac이 하는 일 |
+두 트랙 모두 화면용 소스(libwebrtc의 screencast 소스 — 그 안에서 contentHint `text`/`detail`이 되는 설정)이고 degradationPreference는 `maintain-resolution`이다. 코덱은 하드웨어 H.264가 기본이며 HEVC는 offer에 넣지 않는다. 캡처는 Mac 하나에 하나이므로, 확대와 디스플레이 전환은 **조작 중인 휴대폰이거나 혼자 보고 있는 휴대폰**만 할 수 있다(보기 전용 휴대폰이 조작하는 사람의 화면을 바꾸지 못하게). 화면이 멈춰 있으면 프레임을 보내지 않고, 늦게 붙은 디코더를 위해 5초에 한 번만 마지막 화면을 다시 보낸다.
+
+### 데이터 채널 메시지 형식 (`screen-control`, 릴레이를 지나지 않음)
+
+**이 형식이 Mac과 휴대폰의 기준이다.** 메시지 하나는 UTF-8 JSON 텍스트 한 개이고 **64 KiB를 넘지 않는다**(넘으면 Mac이 버린다). 봉투는 `{"t":"…", …}`이며, Mac은 모르는 `t`·모양이 틀린 메시지를 내용을 기록하지 않고 조용히 버린다. 입력 이벤트는 압축하지 않는다.
+
+좌표는 `displayId` + 정규화된 0–1 `x`/`y`(0이 왼쪽·위)이다. Mac이 `CGDisplayBounds(displayId)`에 맞춰 환산하고, 범위 밖 값은 0–1로 자르며, 그 디스플레이가 빠졌으면 주 디스플레이로 되돌린다. 확대 중에도 좌표는 **디스플레이 전체** 기준이다(휴대폰이 확대 영역 안의 터치를 디스플레이 좌표로 바꿔 보낸다).
+
+| t | 방향 | 필드 | Mac이 하는 일 |
 |---|---|---|---|
-| `tap` | 휴대폰 → Mac | `displayId`, `x`, `y`, `button`(`left`\|`right`) | 그 지점에 클릭 1회(`CGEventPost`). 길게 누르기는 `right` |
-| `drag` | 휴대폰 → Mac | `displayId`, `x`, `y`, `phase`(`begin`\|`move`\|`end`) | 왼쪽 버튼 누름·끌기·놓기. 3단계로 보내므로 중간에 끊겨도 버튼이 눌린 채 남지 않는다 |
-| `scroll` | 휴대폰 → Mac | `displayId`, `x`, `y`, `dx`, `dy` | 정규화된 델타(화면 비율)를 줄 수로 환산해 스크롤. 1 % ≈ 1줄, ±120줄로 제한 |
-| `text` | 휴대폰 → Mac | `text` | **확정된 문자열**을 그대로 주입한다(최대 4 KiB). 한글은 휴대폰 IME가 조합을 마친 뒤 통째로 오므로 Mac은 자모를 다루지 않는다 |
-| `key` | 휴대폰 → Mac | `combo`(`cmd+c`\|`cmd+v`) | 베타가 보내는 단축키는 클립보드용 둘뿐이다. 그 밖의 조합은 거절한다(휴대폰이 임의의 조합을 만들어 낼 수 없다) |
-| `zoom` | 휴대폰 → Mac | `displayId`, `region`(`x`,`y`,`width`,`height` 0–1) | 그 영역만 전체 화질로 캡처해 영상 트랙으로 보내고, 저해상도 전체 화면(최대 640 px·2 fps)은 아래의 `overview` 메시지로 따로 보낸다. 변의 길이가 2 % 미만이면 거절 |
-| `display` | 휴대폰 → Mac | `displayId` | 그 디스플레이로 캡처를 바꾸고 `iceRestart:true` offer를 다시 보낸다. 빠진 디스플레이면 주 디스플레이로 되돌린다 |
-| `background` | 휴대폰 → Mac | `background`(bool) | 휴대폰이 백그라운드로 갔다고 알린다. **30초 규칙은 Mac이 집행한다** — 휴대폰은 상태만 알리고, 아무 말도 없이 조용해진 휴대폰은 유휴 타임아웃에 걸린다 |
-| `overview` | Mac → 휴대폰 | `displayId`, `jpegB64` | 확대 중일 때 깔아 주는 저해상도 전체 화면 스틸(최대 640 px). 영상 트랙은 사용자가 읽고 있는 영역만 나르므로, 배경은 데이터 채널로 2초에 한 번 이하·최대 256 KiB로 보낸다. 화면이 멈춰 있으면 아예 보내지 않는다 |
-| `clipboard` | 양방향 | `dir`, `enc`, `bytes`, `id`, `seq`, `total`, `data`, `concealed`? | 아래 참조 |
-| `clipboard-request` | 휴대폰 → Mac | (없음) | Mac의 클립보드를 한 번 보낸다. 버튼을 눌렀을 때만 오고, 조작 권한이 있어야 한다 |
+| `tap` | 휴대폰 → Mac | `displayId`, `x`, `y`, `button`: `"left"`\|`"right"` | 그 지점에서 클릭 한 번. 오른쪽 클릭(길게 누르기)은 `"right"` |
+| `drag` | 휴대폰 → Mac | `displayId`, `x`, `y`, `phase`: `"begin"`\|`"move"`\|`"end"` | 왼쪽 버튼 누름·끌기·놓기 |
+| `scroll` | 휴대폰 → Mac | `displayId`, `x`, `y`, `dx`, `dy` (화면 비율, 아래·오른쪽이 +) | 포인터를 그 지점에 두고 줄 단위로 스크롤. 1 % ≈ 1줄, 한 번에 ±120줄까지 |
+| `text` | 휴대폰 → Mac | `text` (UTF-8 4096바이트 이하, 빈 문자열 불가) | **확정된 문자열**을 주입한다. 한글은 휴대폰 IME가 조합을 끝낸 글자만 온다. Mac은 `CGEventKeyboardSetUnicodeString`으로 UTF-16 20단위 이하씩 나눠 보내며, 한 글자(자소 결합·이모지 포함)를 두 조각으로 자르지 않는다 |
+| `key` | 휴대폰 → Mac | `combo` | 키 조합 한 번(누름·뗌). 문법은 아래 |
+| `zoom` | 휴대폰 → Mac | `displayId`, `region`: `{x, y, width, height}` (0–1) | 그 영역을 `screen` 트랙에 전체 화질로, 디스플레이 전체를 `overview` 트랙에 보낸다. 변이 2 % 미만이면 버리고, 디스플레이 밖으로 나간 부분은 잘라 낸다. `{0,0,1,1}`이면 확대 해제 |
+| `display` | 휴대폰 → Mac | `displayId` | 그 디스플레이로 캡처를 바꾸고(없으면 주 디스플레이) 모든 휴대폰에 `iceRestart:true` offer를 다시 보낸다 |
+| `clipboard` | 양방향 | 아래 | 클립보드 한 조각 |
+| `clipboard-request` | 휴대폰 → Mac | (없음) | Mac 클립보드를 한 번 보낸다(`dir:"to-phone"` 조각들) |
 
-**클립보드 (양방향·수동 버튼·조작 권한 필요·최대 1 MB).** 한 번의 전송이 64 KiB 메시지 하나에 들어가지 않으므로 **조각으로 나눈다**:
+**`key`의 `combo` 문법.** 소문자, `+`로 잇는다: 수식키 0–4개(`ctrl`, `opt`, `shift`, `cmd`, 각 한 번씩) 뒤에 키 이름 정확히 하나. 키 이름은 닫힌 목록이다: `a`–`z`, `0`–`9`, `return`, `tab`, `space`, `backspace`, `delete`(앞으로 지우기), `escape`, `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`. 예: `cmd+c`, `cmd+v`, `shift+cmd+z`, `opt+left`, `return`. 목록 밖의 이름·가상 키 코드·같은 수식키 두 번은 거절한다.
 
-- `id`: 이 전송의 식별자(최대 64자). 세션마다 한 번에 하나의 전송만 모으며, 새 `id`가 오면 앞의 미완성 전송은 버린다.
-- `seq`·`total`: 0부터 세는 조각 번호와 조각 수. 받는 쪽은 `seq` 순서로 이어 붙인다.
-- `data`: 그 조각의 base64. 압축한 뒤 자르므로 조각마다 따로 풀지 않는다. 한 조각의 원본은 32 KiB이고, base64와 봉투를 더해도 64 KiB 안에 들어간다.
-- `enc`: `zstd` 또는 `raw`. 받는 쪽은 **태그를 읽고 추측하지 않는다**. 압축기가 없는 빌드는 `raw`로 보내고, `zstd`를 받으면 풀지 못했다고 거절한다.
-- `bytes`: 압축 전 전체 평문 바이트 수. **한 바이트도 버퍼에 담기 전에** 이 값이 1 MB를 넘는지 보므로, 휴대폰이 "1 GB를 보내겠다"고 선언해서 Mac의 메모리를 늘릴 수는 없다. 압축을 푼 결과가 1 MB를 넘으면 거절한다(압축 폭탄).
-- `dir`: `to-mac`(휴대폰 클립보드 → Mac 붙여넣기) 또는 `to-phone`(Mac 클립보드 → 휴대폰).
-- `concealed`: Mac이 비밀로 표시된 pasteboard 항목(암호 관리자 등)을 만났을 때만 `true`로 보내며, 그 경우 `data`는 비어 있다. **읽지 않고 보내지 않는다.**
-- 입력 이벤트는 압축하지 않는다(포인터 이동이 압축기를 기다려서는 안 된다). 클립보드는 한 번 읽은 것을 **혼자** 압축하므로, 공격자가 고른 바이트와 같은 사전을 공유해 비밀의 길이가 새는 일이 없다.
+**`clipboard` 조각 (양방향·수동 버튼·조작 권한·최대 1 MB).** 모든 필드가 필수다.
 
-**무엇을 보내도 판단은 Mac이 한다.** 보기 전용 세션이 보낸 입력 이벤트와 클립보드는 전부 거절되고, 잠금 화면·보안 입력 중에도, Mac에서 사람이 키보드·마우스를 쓴 뒤 2초 동안에도 거절된다. Mac이 스스로 주입한 이벤트에는 표식(`eventSourceUserData`)이 붙어 있어 "사람이 Mac을 쓴 것"으로 오인되지 않는다.
+```json
+{"t":"clipboard","dir":"to-mac","id":"<전송 id, 1–64자>","seq":0,"total":3,
+ "enc":"zstd","bytes":70000,"data":"<이 조각의 base64>"}
+```
+
+- `dir`: 휴대폰이 보내는 것은 언제나 `"to-mac"`, Mac이 보내는 것은 `"to-phone"`. Mac은 `"to-mac"`이 아닌 조각을 받지 않는다.
+- 보내는 쪽은 클립보드 한 번 읽은 것을 **혼자** 압축(`enc:"zstd"`, 압축이 오히려 크면 `"raw"`)한 뒤 바이트열을 잘라 조각마다 base64로 담는다. 조각 하나의 원본은 32 KiB(Mac이 보내는 크기) — 어느 쪽이든 메시지 한 개가 64 KiB 안에 들어가면 된다. `total`은 1–64, `seq`는 0부터 `total-1`.
+- `bytes`는 압축 전 전체 평문 바이트 수(1 이상 1 MiB 이하)이고 모든 조각에 같은 값이 들어간다. Mac은 **조각을 하나도 모으기 전에** 이 값을 확인하고, 모은 크기도 1 MiB를 넘으면 버린다. 압축을 푼 결과가 1 MiB를 넘거나(압축 폭탄) UTF-8이 아니면 버린다. 받는 쪽은 `enc` 태그를 읽고 추측하지 않는다.
+- 한 세션에서 한 번에 한 전송만 모은다. 새 `id`가 오면 앞의 미완성 전송은 버리고, 30초 안에 끝나지 않은 전송도 버린다. `id`·`enc`·`bytes`·`total`이 앞 조각과 다르면 그 전송을 버린다.
+- Mac은 조각을 다 모은 뒤 **조작 권한이 그때도 살아 있는지 다시 확인한 뒤** Mac 클립보드에 쓴다. ⌘V를 대신 누르지는 않는다 — 붙여넣기는 휴대폰이 `key` `cmd+v`로 따로 보낸다.
+- Mac 쪽 클립보드가 비밀로 표시된 항목(`org.nspasteboard.ConcealedType` 등, 암호 관리자)이면 읽지 않고 `{"t":"clipboard","dir":"to-phone","id":"…","seq":0,"total":1,"enc":"raw","bytes":0,"data":"","concealed":true}` 하나만 보낸다.
+
+**판단은 전부 Mac이 한다.** 보기 전용 세션의 `tap`·`drag`·`scroll`·`text`·`key`·`clipboard`·`clipboard-request`는 전부 거절된다. 조작 세션이어도 잠금 화면·보안 입력 중이거나, Mac에서 사람이 키보드·마우스를 쓴 뒤 2초 동안은 거절된다. 주입은 안전 정책(`ScreenShareService.deliver`)을 지난 것만 `CGEventPost`에 닿고, Mac이 주입한 이벤트에는 표식(`eventSourceUserData`)이 붙어 "사람이 Mac을 쓴 것"으로 오인되지 않는다. 입력한 글자·키는 어디에도 기록하지 않는다.
 
 ### 중단은 Mac이 한다
 

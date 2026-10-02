@@ -49,7 +49,10 @@ public struct MobileInfo: Codable, Sendable, Equatable {
 /// The m1 extensions this host implements. A phone shows a feature only when
 /// its name is listed, so a name appears here once the route behind it works.
 public enum MobileCapability {
-    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files", "screenShare"]
+    public static let all = ["submit-mode", "queue", "pane", "history", "settings", "commands", "mighty", "status", "attachments", "style", "files"]
+    /// Listed on top of `all` only by a host whose screen-share engine is
+    /// running (`MobileRemoteService.capabilities`).
+    public static let screenShare = "screenShare"
 }
 
 /// The fixed string vocabularies of the extension (docs/mobile-remote.md,

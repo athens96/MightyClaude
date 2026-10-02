@@ -237,7 +237,8 @@ public enum ScreenShareWireReason {
     public static func sessionEnd(_ reason: ScreenShareStopReason) -> String {
         switch reason {
         case .idleTimeout: return "idle-timeout"
-        case .peerLeft: return "peer-left"
+        case .background: return "background"
+        case .displayGone: return "display-gone"
         default: return "peer-left"
         }
     }
@@ -253,7 +254,7 @@ public enum ScreenShareWireReason {
         case .lockScreen: return "lock-screen"
         case .secureInput: return "secure-input"
         case .concurrencyLimit: return "concurrency-limit"
-        case .idleTimeout, .peerLeft: return nil
+        case .idleTimeout, .peerLeft, .background, .displayGone: return nil
         }
     }
 }
@@ -270,6 +271,9 @@ public enum ScreenShareSignal: Sendable, Equatable {
                controlChallengeB64: String?, iceServers: [ScreenShareIceServer]?,
                displays: [ScreenShareDisplayInfo]?)
     case kill(sessionId: String?, reason: String)
+    /// The phone went to the background (`true`) or came back (`false`). The
+    /// 30 s rule is the Mac's: the phone only reports what it is doing.
+    case background(sessionId: String, background: Bool)
 
     /// One plaintext signalling frame never exceeds this: the relay drops a
     /// binary frame over 1 MiB and closes a socket at 4 MiB buffered, and a
@@ -284,13 +288,14 @@ public enum ScreenShareSignal: Sendable, Equatable {
         case .sessionEnd: return "screen-session-end"
         case .grant: return "screen-grant"
         case .kill: return "screen-kill"
+        case .background: return "screen-background"
         }
     }
 
     public var sessionId: String? {
         switch self {
         case .offer(let id, _, _, _, _, _, _), .answer(let id, _), .ice(let id, _, _, _, _),
-             .sessionEnd(let id, _):
+             .sessionEnd(let id, _), .background(let id, _):
             return id
         case .grant(let id, _, _, _, _, _), .kill(let id, _):
             return id
@@ -325,6 +330,8 @@ public enum ScreenShareSignal: Sendable, Equatable {
             if let challenge { object["controlChallengeB64"] = challenge }
             if let iceServers { object["iceServers"] = iceServers.map(\.json) }
             if let displays { object["displays"] = displays.map(\.json) }
+        case .background(_, let background):
+            object["background"] = background
         }
         return object
     }
@@ -337,7 +344,8 @@ public enum ScreenShareSignal: Sendable, Equatable {
         return data
     }
 
-    /// Reads what a phone may send: an answer, one ICE candidate, or an end.
+    /// Reads what a phone may send: an answer, one ICE candidate, an end, or a
+    /// background notice.
     /// Anything else — including a host-only type a hostile phone echoes back —
     /// is nil, so a phone can never pose as the Mac's own signalling.
     public static func inbound(_ object: [String: Any]) -> ScreenShareSignal? {
@@ -361,6 +369,9 @@ public enum ScreenShareSignal: Sendable, Equatable {
             let reason = object["reason"] as? String ?? "user-stop"
             guard ["user-stop", "background", "peer-failed"].contains(reason) else { return nil }
             return .sessionEnd(sessionId: sessionId, reason: reason)
+        case "screen-background":
+            guard let background = object["background"] as? Bool else { return nil }
+            return .background(sessionId: sessionId, background: background)
         default:
             return nil
         }

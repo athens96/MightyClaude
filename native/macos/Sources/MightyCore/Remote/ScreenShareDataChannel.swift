@@ -74,8 +74,10 @@ public enum ScreenShareClipboardLimits {
     /// Raw bytes per frame before base64, chosen so one JSON message —
     /// base64 plus the envelope — stays under the 64 KiB data-channel ceiling.
     public static let chunkBytes = 32 * 1_024
-    /// A transfer may not claim more frames than the ceiling allows.
-    public static var maximumChunks: Int { (maximumBytes / chunkBytes) + 2 }
+    /// A transfer may not claim more frames than this — enough for a phone that
+    /// slices as finely as 16 KiB, few enough that a transfer cannot be spread
+    /// over thousands of tiny frames.
+    public static let maximumChunks = 64
     /// An unfinished transfer is dropped after this long rather than held.
     public static let assemblyTimeout: TimeInterval = 30
 }
@@ -94,11 +96,9 @@ public enum ScreenShareDataMessage: Sendable, Equatable {
     case display(displayId: UInt32)
     /// One frame of a clipboard transfer from the phone.
     case clipboard(ScreenShareClipboardFrame)
-    /// The phone pressed "Mac에서 가져오기": send the Mac's pasteboard once.
+    /// The phone pressed its "take the Mac's clipboard" button: send the Mac's
+    /// pasteboard once.
     case clipboardRequest
-    /// The phone went to (or came back from) the background. The host runs the
-    /// 30 s rule; the phone only reports the state.
-    case background(Bool)
 }
 
 /// Why a data-channel frame was dropped. Nothing here names a key or a
@@ -117,14 +117,6 @@ public enum ScreenShareDataChannel {
     /// One data-channel JSON message. Matches the phone's signalling ceiling so
     /// both sides agree without a second constant.
     public static let maximumMessageBytes = 64 * 1_024
-
-    /// The two shortcuts the beta sends, both for the clipboard. Anything else
-    /// is refused rather than guessed at: a remote phone must not be able to
-    /// synthesize an arbitrary key combination.
-    public static let shortcuts: [String: (code: UInt16, modifiers: ScreenShareModifiers)] = [
-        "cmd+c": (8, [.command]),   // kVK_ANSI_C
-        "cmd+v": (9, [.command]),   // kVK_ANSI_V
-    ]
 
     /// Reads one data-channel frame. The Mac is the party that enforces the
     /// grant, so this only establishes *what* was asked for.
@@ -170,10 +162,12 @@ public enum ScreenShareDataChannel {
             guard text.utf8.count <= maximumTextBytes else { return .failure(.textTooLong) }
             return .success(.input(.text(text)))
         case "key":
-            guard let combo = object["combo"] as? String, let key = shortcuts[combo] else {
+            // A closed vocabulary of named keys and modifiers; a combo outside it
+            // is refused rather than guessed at.
+            guard let raw = object["combo"] as? String, let combo = ScreenShareKeyCombo.parse(raw) else {
                 return .failure(.unknownType)
             }
-            return .success(.input(.key(code: key.code, modifiers: key.modifiers)))
+            return .success(.input(.key(code: combo.code, modifiers: combo.modifiers)))
         case "zoom":
             guard let display = (object["displayId"] as? NSNumber)?.uint32Value,
                   let raw = object["region"] as? [String: Any],
@@ -187,9 +181,6 @@ public enum ScreenShareDataChannel {
             return clipboardFrame(object).map(ScreenShareDataMessage.clipboard)
         case "clipboard-request":
             return .success(.clipboardRequest)
-        case "background":
-            guard let value = object["background"] as? Bool else { return .failure(.malformed) }
-            return .success(.background(value))
         default:
             return .failure(.unknownType)
         }
@@ -211,26 +202,29 @@ public enum ScreenShareDataChannel {
         return ScreenShareZoomRegion(x: x, y: y, width: width, height: height).normalized
     }
 
+    /// Reads one phone → Mac clipboard frame. Every field is required: the
+    /// transfer id, the frame's place in it, the encoding and the declared
+    /// plaintext size, so a frame can never be mistaken for another transfer's.
     static func clipboardFrame(_ object: [String: Any]) -> Result<ScreenShareClipboardFrame, ScreenShareDataRejection> {
-        guard let base64 = object["data"] as? String, let data = Data(base64Encoded: base64),
+        guard object["dir"] as? String == "to-mac",
+              let base64 = object["data"] as? String, let data = Data(base64Encoded: base64),
               let rawEncoding = object["enc"] as? String,
-              let encoding = ScreenShareClipboardEncoding(rawValue: rawEncoding)
+              let encoding = ScreenShareClipboardEncoding(rawValue: rawEncoding),
+              let bytes = (object["bytes"] as? NSNumber)?.intValue,
+              let total = (object["total"] as? NSNumber)?.intValue,
+              let seq = (object["seq"] as? NSNumber)?.intValue,
+              let id = object["id"] as? String
         else { return .failure(.malformed) }
-        let bytes = (object["bytes"] as? NSNumber)?.intValue ?? data.count
         guard bytes > 0 else { return .failure(.malformed) }
         // The declared plaintext size is checked before a byte is buffered, so a
         // phone cannot make the Mac hold a gigabyte by claiming it will send one.
         guard bytes <= ScreenShareClipboardLimits.maximumBytes else { return .failure(.clipboardTooLarge) }
-        let total = (object["total"] as? NSNumber)?.intValue ?? 1
-        let seq = (object["seq"] as? NSNumber)?.intValue ?? 0
         guard total >= 1, total <= ScreenShareClipboardLimits.maximumChunks, seq >= 0, seq < total else {
             return .failure(.malformed)
         }
-        let id = (object["id"] as? String) ?? "single"
         guard !id.isEmpty, id.utf8.count <= 64 else { return .failure(.malformed) }
         return .success(ScreenShareClipboardFrame(
-            id: id, encoding: encoding, bytes: bytes, seq: seq, total: total, data: data,
-            concealed: object["concealed"] as? Bool == true))
+            id: id, encoding: encoding, bytes: bytes, seq: seq, total: total, data: data))
     }
 
     /// Splits one clipboard payload into frames the phone can read back. Called

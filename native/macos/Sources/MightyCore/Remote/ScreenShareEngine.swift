@@ -85,16 +85,25 @@ public enum ScreenShareRouteRefusal: String, Error, Sendable, Equatable {
     case controlSignature = "control-signature"
     case concurrencyLimit = "concurrency-limit"
     case screenPermission = "screen-permission"
+    /// The Mac is on the lock screen, or a password field holds secure input:
+    /// no frames may flow, so no session starts.
+    case lockScreen = "lock-screen"
+    case secureInput = "secure-input"
+    /// A kill (kill switch, revoke, downgrade, rekey) landed while this session
+    /// was starting.
+    case sessionStopped = "session-stopped"
     case badRequest = "bad-request"
     /// A control key is already stored: the Mac never silently replaces one.
     case controlKeyPresent = "control-key-present"
+    /// The person at the Mac is still looking at this phone's fingerprint.
+    case controlKeyPending = "control-key-pending"
     /// The person at the Mac did not confirm the key's fingerprint.
     case controlKeyNotConfirmed = "control-key-not-confirmed"
 
     public var status: Int {
         switch self {
         case .badRequest: return 400
-        case .controlKeyPresent: return 409
+        case .controlKeyPresent, .controlKeyPending: return 409
         default: return 403
         }
     }
@@ -131,10 +140,21 @@ public enum ScreenShareControlKey {
 /// capture, the peer connections, the data channel and the TURN renewal.
 ///
 /// Every safety decision still belongs to `ScreenShareService`/`ScreenShareHost`.
-/// This actor is what turns those decisions into a stream and an injected event,
-/// and what tells the phone what happened.
+/// Capture is started only through the surface the host is handed, so the
+/// host's lock-screen, secure-input and kill rules apply to the very first
+/// frame. This actor turns the host's decisions into a stream and an injected
+/// event, and tells the phone what happened.
 public actor ScreenShareEngine {
     private static let log = Logger(subsystem: "dev.mightyclaude.native", category: "screen-share-engine")
+
+    /// A peer that has not connected this long after its offer went out is
+    /// given up on, so a phone that vanished mid-start never holds capture.
+    public static let connectDeadline: TimeInterval = 30
+    /// How often a running non-H.264 session checks the Mac's CPU and heat.
+    public static let loadCheckInterval: TimeInterval = 10
+    /// A failed TURN renewal is retried this often until the old credential
+    /// expires; the relay's own rate limit stays far away.
+    public static let renewalRetry: TimeInterval = 60
 
     // MARK: Dependencies
 
@@ -148,9 +168,9 @@ public actor ScreenShareEngine {
     private let pasteboard: ScreenSharePasteboard
     private let compressor: ScreenShareCompressor?
     private let confirmer: ScreenShareControlKeyConfirmer
-    private let stills: ScreenShareStillEncoder?
     private let now: @Sendable () -> Date
     private let sleeper: @Sendable (TimeInterval) async throws -> Void
+    private let frameClock: @Sendable () -> Int64
 
     // MARK: State
 
@@ -161,18 +181,48 @@ public actor ScreenShareEngine {
         var codec: ScreenShareVideoCodec
         var quality: ScreenShareQualityProfile
         var network: ScreenShareNetworkKind
-        var decodes: [ScreenShareVideoCodec]
         var peer: ScreenSharePeerConnection
+        var turnExpiresAt: Date?
         var path: ScreenShareIcePath?
+        var connected = false
         var clipboard = ScreenShareClipboardAssembler()
-        var renewal: Task<Void, Never>?
+        /// The first offer, held until the route's reply has gone out so the
+        /// phone always knows the session id before the offer arrives.
+        var pendingOffer: String?
+        /// Candidates gathered before that first offer left, in order.
+        var queuedCandidates: [ScreenShareSignal] = []
+        var tasks: [Task<Void, Never>] = []
         var background: Task<Void, Never>?
+
+        init(deviceId: String, mode: ScreenShareGrant, displayId: UInt32, codec: ScreenShareVideoCodec,
+             quality: ScreenShareQualityProfile, network: ScreenShareNetworkKind,
+             peer: ScreenSharePeerConnection, turnExpiresAt: Date?) {
+            self.deviceId = deviceId; self.mode = mode; self.displayId = displayId; self.codec = codec
+            self.quality = quality; self.network = network; self.peer = peer; self.turnExpiresAt = turnExpiresAt
+        }
+    }
+
+    /// What a session being admitted needs for its capture start, before it
+    /// is a full session.
+    private struct Starting {
+        var displayId: UInt32
+        var quality: ScreenShareQualityProfile
+        var captureFailed = false
     }
 
     private var sessions: [String: Session] = [:]
+    private var starting: [String: Starting] = [:]
     private var credential: ScreenShareTurnCredential?
     private var framesBlocked = false
-    private var lastOverview: Date?
+    private var blockReason: ScreenShareStopReason = .lockScreen
+    /// Phones whose control-key fingerprint is on screen at the Mac right now.
+    private var confirming: Set<String> = []
+    /// The last admitted frame of each layer: what a newly connected phone, or
+    /// a decoder that lost a keyframe while the screen stood still, is sent.
+    private var lastFrames: [ScreenShareCaptureLayer.Kind: ScreenShareVideoFrame] = [:]
+    private var lastFrameAt: Date?
+    private var refresher: Task<Void, Never>?
+    private var loadWatch: Task<Void, Never>?
 
     public init(
         service: ScreenShareService,
@@ -185,17 +235,17 @@ public actor ScreenShareEngine {
         confirmer: ScreenShareControlKeyConfirmer,
         load: ScreenShareMachineLoad = SystemScreenShareLoad(),
         compressor: ScreenShareCompressor? = nil,
-        stills: ScreenShareStillEncoder? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         sleeper: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        }
+        },
+        frameClock: @escaping @Sendable () -> Int64 = { Int64(DispatchTime.now().uptimeNanoseconds) }
     ) {
         self.service = service; self.peers = peers; self.capture = capture
         self.signals = signals; self.turn = turn; self.displays = displays
         self.pasteboard = pasteboard; self.confirmer = confirmer
-        self.load = load; self.compressor = compressor; self.stills = stills
-        self.now = now; self.sleeper = sleeper
+        self.load = load; self.compressor = compressor; self.now = now; self.sleeper = sleeper
+        self.frameClock = frameClock
     }
 
     // MARK: GET /m1/screen-share/state
@@ -205,25 +255,25 @@ public actor ScreenShareEngine {
         let row = await service.settings(for: deviceId)
         let grant = row?.grant ?? .none
         let allowed = row?.allowed == true
-        var challenge: String?
-        // A challenge is minted only for a phone that may actually control, and
-        // the session id it is bound to is the one the phone will start with.
-        if allowed, grant == .control {
-            challenge = await service.controlChallenge(sessionId: Self.challengeSession(deviceId)).base64EncodedString()
-        }
-        let servers = allowed ? await iceServers()?.map(ScreenShareIceServerBody.init) : nil
         let body = ScreenShareStateBody(
             allowed: allowed, grant: grant.rawValue, displays: displays.info(),
-            controlChallengeB64: challenge,
-            controlKeyFingerprint: row?.controlKeyPublicData.map(ScreenShareControlKey.fingerprint),
-            iceServers: servers,
+            controlChallengeB64: await challenge(for: deviceId, allowed: allowed, grant: grant),
+            controlKeyFingerprint: allowed ? row?.controlKeyPublicData.map(ScreenShareControlKey.fingerprint) : nil,
+            iceServers: allowed ? await iceServers()?.map(ScreenShareIceServerBody.init) : nil,
             idleTimeoutSeconds: Int(ScreenSharePolicy.idleTimeout(for: grant == .control ? .control : .view)))
         return .success(ScreenShareStateEnvelope(screenShare: body))
     }
 
-    /// The session id a `state` challenge is bound to. A control start reuses it,
-    /// so the signature covers the challenge the Mac actually handed out.
+    /// The session id a `state` challenge is bound to. A control start moves it
+    /// onto the session it opens, so the signature covers the challenge the Mac
+    /// actually handed out and cannot be used twice.
     public static func challengeSession(_ deviceId: String) -> String { "pending:" + deviceId }
+
+    /// A fresh challenge, minted only for a phone that may actually control.
+    private func challenge(for deviceId: String, allowed: Bool, grant: ScreenShareGrant) async -> String? {
+        guard allowed, grant == .control else { return nil }
+        return await service.controlChallenge(sessionId: Self.challengeSession(deviceId)).base64EncodedString()
+    }
 
     // MARK: POST /m1/screen-share/control-key
 
@@ -252,10 +302,14 @@ public actor ScreenShareEngine {
             }
             return .failure(.controlKeyPresent)
         }
+        // One question at a time per phone: a phone repeating the request while
+        // the dialog is open must not stack a second dialog behind it.
+        guard !confirming.contains(deviceId) else { return .failure(.controlKeyPending) }
+        confirming.insert(deviceId)
         let fingerprint = ScreenShareControlKey.fingerprint(key)
-        guard await confirmer.confirmControlKey(deviceId: deviceId, fingerprint: fingerprint) else {
-            return .failure(.controlKeyNotConfirmed)
-        }
+        let confirmed = await confirmer.confirmControlKey(deviceId: deviceId, fingerprint: fingerprint)
+        confirming.remove(deviceId)
+        guard confirmed else { return .failure(.controlKeyNotConfirmed) }
         // The grant may have been withdrawn while the dialog was open.
         guard let fresh = await service.settings(for: deviceId), fresh.allowed,
               fresh.grant == .control, fresh.controlKeyPublicData == nil
@@ -268,6 +322,9 @@ public actor ScreenShareEngine {
 
     // MARK: POST /m1/screen-share/sessions
 
+    /// Admits a session and prepares its first offer. The offer itself goes out
+    /// in `sendInitialOffer`, which the route calls once its reply has left, so
+    /// the phone never sees an offer for a session id it has not been told.
     public func start(
         deviceId: String, request: ScreenShareSessionRequestBody
     ) async -> Result<ScreenShareSessionReply, ScreenShareRouteRefusal> {
@@ -289,8 +346,6 @@ public actor ScreenShareEngine {
         let quality = ScreenShareQuality.profile(
             network: network, displayWidth: Int(bounds.width), displayHeight: Int(bounds.height))
 
-        // The challenge the phone signed was handed out by `state`, which binds
-        // it to a per-device id; the host verifies against that same id.
         var signature: Data?
         var challenge: Data?
         if mode == .control {
@@ -301,74 +356,109 @@ public actor ScreenShareEngine {
             // The challenge was handed out by `state`, before the phone could
             // know a session id; it moves onto this session so `join` spends it
             // there and the same signature can never start a second one.
-            challenge = await service.adoptChallenge(
-                from: Self.challengeSession(deviceId), to: sessionId)
+            challenge = await service.adoptChallenge(from: Self.challengeSession(deviceId), to: sessionId)
             guard challenge != nil else { return .failure(.controlSignature) }
         }
 
         let servers = await iceServers() ?? []
+        let turnExpiry = servers.contains { $0.username != nil } ? credential?.expiresAt : nil
         let events = ScreenSharePeerEvents(
             localCandidate: { [weak self] candidate, mid, index, fragment in
                 await self?.localCandidate(sessionId: sessionId, candidate: candidate,
                                            sdpMid: mid, sdpMLineIndex: index, usernameFragment: fragment)
             },
-            failed: { [weak self] in await self?.peerFailed(sessionId: sessionId) },
+            failed: { [weak self] in await self?.end(sessionId: sessionId, reason: .peerLeft) },
             connected: { [weak self] path in await self?.peerConnected(sessionId: sessionId, path: path) },
             data: { [weak self] data in await self?.dataChannel(sessionId: sessionId, data: data) })
 
         let peer: ScreenSharePeerConnection
         do { peer = try await peers.makePeer(sessionId: sessionId, iceServers: servers, events: events) }
-        catch { return .failure(.screenPermission) }
+        catch {
+            await service.discardChallenge(sessionId: sessionId)
+            return .failure(.screenPermission)
+        }
 
+        // Capture starts only through the host: the host decides whether frames
+        // may flow at all (lock screen, secure input, a kill racing the join),
+        // and stops a late capture itself.
+        starting[sessionId] = Starting(displayId: requestedDisplay, quality: quality)
         let surface = ScreenShareSurface(
-            startCapture: { [weak self] in await self?.startCapture(sessionId: sessionId) },
-            stopCapture: { [weak self] in await self?.stopCapture() },
+            startCapture: { [weak self] in await self?.hostStartCapture(sessionId: sessionId) },
+            stopCapture: { [weak self] in await self?.hostStopCapture() },
             closePeer: { await peer.close() })
-
         let admitted = await service.join(
             sessionId: sessionId, deviceId: deviceId, mode: mode,
             controlChallenge: challenge, controlSignature: signature, surface: surface)
+        let captureFailed = starting.removeValue(forKey: sessionId)?.captureFailed ?? false
         if case .failure(let error) = admitted {
             await peer.close()
-            // `join` spends the challenge whether it admits the session or not,
-            // so a refused control attempt has to ask for a new one. This only
-            // clears a challenge a refusal never reached.
+            // `join` spends the challenge whether it admits the session or not;
+            // this only clears one a refusal never reached.
             await service.discardChallenge(sessionId: sessionId)
             return .failure(Self.refusal(error))
         }
 
-        var session = Session(
-            deviceId: deviceId, mode: mode, displayId: requestedDisplay, codec: codec,
-            quality: quality, network: network, decodes: decodes, peer: peer)
+        // Admitted, but frames may not flow: refuse with the reason the phone
+        // shows rather than open a session with a frozen picture.
+        let refusal: ScreenShareRouteRefusal?
+        if captureFailed {
+            // Screen Recording missing or expired after an update: the phone
+            // asks the person at the Mac rather than showing a black frame.
+            refusal = .screenPermission
+        } else if framesBlocked {
+            refusal = blockReason == .lockScreen ? .lockScreen : .secureInput
+        } else {
+            refusal = nil
+        }
+        if let refusal {
+            await service.endSession(sessionId: sessionId, reason: .peerLeft)
+            await peer.close()
+            return .failure(refusal)
+        }
 
-        // Screen Recording may be missing or expired after an update; the phone
-        // is told to ask the person at the Mac rather than shown a black frame.
-        let captured: UInt32
-        do { captured = try await capture.start(displayId: requestedDisplay, quality: quality) }
+        let captured = await capture.displayId ?? requestedDisplay
+        sessions[sessionId] = Session(
+            deviceId: deviceId, mode: mode, displayId: captured, codec: codec,
+            quality: quality, network: network, peer: peer, turnExpiresAt: turnExpiry)
+        // A stop the host made between the join and this line (a kill, an idle
+        // timer) found no session here to tell; from now on `hostStopped` does.
+        guard await service.isLive(sessionId: sessionId) else {
+            if forget(sessionId) != nil { await peer.close() }
+            return .failure(.sessionStopped)
+        }
+
+        let sdp: String
+        do { sdp = try await peer.createOffer(codec: codec, quality: quality, iceRestart: false) }
         catch {
-            await service.endSession(sessionId: sessionId, reason: .peerLeft)
-            await peer.close()
+            await end(sessionId: sessionId, reason: .peerLeft, notify: false)
             return .failure(.screenPermission)
         }
-        session.displayId = captured
-
-        // The offer leaves only after the session exists and capture is running,
-        // so a phone can never answer a session the Mac has already refused.
-        do {
-            let sdp = try await peer.createOffer(codec: codec, quality: quality, iceRestart: false)
-            session.renewal = renewalTask(sessionId: sessionId)
-            sessions[sessionId] = session
-            await signals.send(.offer(sessionId: sessionId, sdp: sdp, mode: mode, displayId: captured,
-                                      codec: codec, quality: quality, iceRestart: false), to: deviceId)
-        } catch {
-            await service.endSession(sessionId: sessionId, reason: .peerLeft)
-            await peer.close()
-            return .failure(.screenPermission)
-        }
+        // A kill may have taken the session while the offer was being made.
+        guard sessions[sessionId] != nil else { return .failure(.sessionStopped) }
+        sessions[sessionId]?.pendingOffer = sdp
+        sessions[sessionId]?.tasks = [
+            renewalTask(sessionId: sessionId),
+            connectDeadlineTask(sessionId: sessionId),
+        ]
+        if codec != .h264 { startLoadWatch() }
+        startRefresher()
 
         return .success(ScreenShareSessionReply(
             sessionId: sessionId, mode: mode.rawValue, displayId: captured,
             codec: codec.rawValue, quality: quality))
+    }
+
+    /// Sends the first offer once the route's reply is out, then whatever
+    /// candidates were gathered in the meantime, in order.
+    public func sendInitialOffer(sessionId: String) async {
+        guard let session = sessions[sessionId], let sdp = session.pendingOffer else { return }
+        sessions[sessionId]?.pendingOffer = nil
+        let queued = session.queuedCandidates
+        sessions[sessionId]?.queuedCandidates = []
+        await signals.send(.offer(sessionId: sessionId, sdp: sdp, mode: session.mode,
+                                  displayId: session.displayId, codec: session.codec,
+                                  quality: session.quality, iceRestart: false), to: session.deviceId)
+        for candidate in queued { await signals.send(candidate, to: session.deviceId) }
     }
 
     static func refusal(_ error: ScreenShareError) -> ScreenShareRouteRefusal {
@@ -377,14 +467,15 @@ public actor ScreenShareEngine {
         case .insufficientGrant: return .insufficientGrant
         case .controlSignatureInvalid: return .controlSignature
         case .concurrencyLimit: return .concurrencyLimit
-        case .sessionStopped: return .deviceNotAllowed
+        case .sessionStopped: return .sessionStopped
         }
     }
 
     // MARK: Inbound signalling
 
-    /// One `screen-answer`, `screen-ice` or `screen-session-end` from a phone.
-    /// A frame naming a session that phone does not own is dropped.
+    /// One `screen-answer`, `screen-ice`, `screen-session-end` or
+    /// `screen-background` from a phone. A frame naming a session that phone
+    /// does not own is dropped.
     public func handle(_ signal: ScreenShareSignal, from deviceId: String) async {
         guard let sessionId = signal.sessionId, let session = sessions[sessionId],
               session.deviceId == deviceId
@@ -397,6 +488,8 @@ public actor ScreenShareEngine {
             await session.peer.addRemoteCandidate(candidate: candidate, sdpMid: mid, sdpMLineIndex: index)
         case .sessionEnd:
             await end(sessionId: sessionId, reason: .peerLeft)
+        case .background(_, let backgrounded):
+            setBackground(backgrounded, sessionId: sessionId)
         default:
             // Host-only types: a phone echoing one back is not the Mac.
             break
@@ -407,48 +500,56 @@ public actor ScreenShareEngine {
         sessionId: String, candidate: String, sdpMid: String?, sdpMLineIndex: Int?, usernameFragment: String?
     ) async {
         guard let session = sessions[sessionId] else { return }
-        await signals.send(.ice(sessionId: sessionId, candidate: candidate, sdpMid: sdpMid,
-                                sdpMLineIndex: sdpMLineIndex, usernameFragment: usernameFragment),
-                           to: session.deviceId)
+        let signal = ScreenShareSignal.ice(sessionId: sessionId, candidate: candidate, sdpMid: sdpMid,
+                                           sdpMLineIndex: sdpMLineIndex, usernameFragment: usernameFragment)
+        // Before the first offer the phone has no description to add it to.
+        if session.pendingOffer != nil {
+            sessions[sessionId]?.queuedCandidates.append(signal)
+            return
+        }
+        await signals.send(signal, to: session.deviceId)
     }
 
     private func peerConnected(sessionId: String, path: ScreenShareIcePath?) async {
-        guard var session = sessions[sessionId], session.path != path else { return }
-        // No suspension before the write-back below, so the snapshot is current.
+        guard var session = sessions[sessionId] else { return }
+        let firstConnect = !session.connected
+        session.connected = true
         session.path = path
         // A relayed path has a bandwidth quota, so the sender caps itself to it
         // rather than letting coturn drop packets.
-        let fresh = ScreenShareQuality.profile(
+        let capped = ScreenShareQuality.profile(
             network: session.network, path: path ?? .host,
             displayWidth: session.quality.width, displayHeight: session.quality.height)
-        if fresh.maxBitrateKbps != session.quality.maxBitrateKbps {
-            session.quality.maxBitrateKbps = fresh.maxBitrateKbps
-            sessions[sessionId] = session
-            await renegotiate(sessionId: sessionId, iceRestart: false)
-        } else {
-            sessions[sessionId] = session
+        let changed = capped.maxBitrateKbps != session.quality.maxBitrateKbps
+        session.quality.maxBitrateKbps = capped.maxBitrateKbps
+        sessions[sessionId] = session
+        if changed { await session.peer.setQuality(session.quality) }
+        // A still screen sends nothing new, so the phone that just connected is
+        // handed the picture the encoder already has.
+        if firstConnect {
+            for layer in [ScreenShareCaptureLayer.Kind.primary, .overview] {
+                guard var frame = lastFrames[layer] else { continue }
+                frame.timestampNanos = frameClock()
+                await session.peer.send(frame: frame)
+            }
         }
-    }
-
-    private func peerFailed(sessionId: String) async {
-        await end(sessionId: sessionId, reason: .peerLeft)
     }
 
     // MARK: Data channel
 
     private func dataChannel(sessionId: String, data: Data) async {
-        guard let session = sessions[sessionId] else { return }
+        guard sessions[sessionId] != nil else { return }
         switch ScreenShareDataChannel.decode(data) {
         case .failure:
             // A frame the Mac does not understand is dropped in silence; nothing
             // about its contents is logged.
             return
         case .success(let message):
-            await apply(message, sessionId: sessionId, session: session)
+            await apply(message, sessionId: sessionId)
         }
     }
 
-    private func apply(_ message: ScreenShareDataMessage, sessionId: String, session: Session) async {
+    private func apply(_ message: ScreenShareDataMessage, sessionId: String) async {
         switch message {
         case .input(let event):
             // The host refuses everything a view-only phone sends, everything
@@ -456,49 +557,64 @@ public actor ScreenShareEngine {
             // for 2 s after the person at the Mac touched the keyboard.
             _ = await service.deliver(event, sessionId: sessionId)
         case .zoom(let displayId, let region):
-            guard displayId == session.displayId else { return }
+            guard mayReshape(sessionId: sessionId), sessions[sessionId]?.displayId == displayId else { return }
             try? await capture.setZoom(region)
-            await service.noteFrameDelivered(sessionId: sessionId)
+            await service.noteActivity(sessionId: sessionId)
         case .display(let displayId):
-            await switchDisplay(sessionId: sessionId, to: displayId)
+            guard mayReshape(sessionId: sessionId) else { return }
+            await switchDisplay(to: displayId)
+            await service.noteActivity(sessionId: sessionId)
         case .clipboard(let frame):
             await acceptClipboard(frame, sessionId: sessionId)
         case .clipboardRequest:
             await sendClipboard(sessionId: sessionId)
-        case .background(let backgrounded):
-            await setBackground(backgrounded, sessionId: sessionId)
         }
     }
 
-    private func switchDisplay(sessionId: String, to displayId: UInt32) async {
-        guard sessions[sessionId] != nil else { return }
+    /// One capture serves every phone, so zoom and the display switch change
+    /// what everyone sees. A phone may do either when it is alone, or when it
+    /// is the one in control; a viewer cannot pull the controller's screen away.
+    private func mayReshape(sessionId: String) -> Bool {
+        guard let session = sessions[sessionId] else { return false }
+        return sessions.count == 1 || session.mode == .control
+    }
+
+    private func switchDisplay(to displayId: UInt32) async {
         let captured: UInt32
         do { captured = try await capture.setDisplay(displayId) }
-        catch { await end(sessionId: sessionId, reason: .peerLeft); return }
-        // The actor suspended while capture was reconfiguring, so the session may
-        // be gone by now; writing a stale copy back would resurrect it.
-        guard var session = sessions[sessionId] else { return }
-        session.displayId = captured
-        sessions[sessionId] = session
-        // A new display means new geometry, so the stream is renegotiated with
+        catch {
+            await endAll(reason: .displayGone)
+            return
+        }
+        // A new display means new geometry, so every stream is renegotiated with
         // an ICE restart exactly as the contract says.
-        await renegotiate(sessionId: sessionId, iceRestart: true)
+        for sessionId in sessions.keys {
+            sessions[sessionId]?.displayId = captured
+            await renegotiate(sessionId: sessionId, iceRestart: true)
+        }
+    }
+
+    /// The capture stream stopped on its own — its display was unplugged, or
+    /// the system took the stream away. Capture restarts (on the main display
+    /// when the old one is gone) and the phones get a fresh offer.
+    public func captureInterrupted() async {
+        guard !sessions.isEmpty, !framesBlocked, let current = await capture.displayId else { return }
+        await switchDisplay(to: current)
     }
 
     /// The phone's clipboard, reassembled and pasted. Control grant only, and
     /// the host is what enforces that.
     private func acceptClipboard(_ frame: ScreenShareClipboardFrame, sessionId: String) async {
-        guard sessions[sessionId] != nil else { return }
-        guard await service.mayInject(sessionId: sessionId) else { return }
-        // Asking the host was a suspension: a kill may have taken the session,
-        // and a half-assembled transfer must not bring it back.
-        guard var session = sessions[sessionId] else { return }
-        let outcome = session.clipboard.accept(frame, now: now())
-        sessions[sessionId] = session
+        guard await service.mayInject(sessionId: sessionId), var assembler = sessions[sessionId]?.clipboard else { return }
+        let outcome = assembler.accept(frame, now: now())
+        sessions[sessionId]?.clipboard = assembler
         guard case .complete(let encoding, let declared, let payload) = outcome else { return }
         guard case .success(let text) = ScreenShareClipboardCodec.decode(
             encoding: encoding, declaredBytes: declared, payload: payload, compressor: compressor)
         else { return }
+        // Asked again: the transfer took several frames, and a lock or a kill
+        // may have landed between the first and the last.
+        guard await service.mayInject(sessionId: sessionId) else { return }
         pasteboard.write(text)
         await service.noteActivity(sessionId: sessionId)
     }
@@ -507,21 +623,19 @@ public actor ScreenShareEngine {
     /// A concealed pasteboard item is never read: the phone is told it was
     /// skipped rather than handed an empty paste.
     private func sendClipboard(sessionId: String) async {
-        guard sessions[sessionId] != nil else { return }
-        guard await service.mayInject(sessionId: sessionId) else { return }
-        guard let session = sessions[sessionId] else { return }
+        guard await service.mayInject(sessionId: sessionId), let session = sessions[sessionId] else { return }
         let read = pasteboard.read()
+        let id = UUID().uuidString
         if read.concealed {
             _ = await session.peer.sendData(Self.encode([
                 "t": "clipboard", "dir": "to-phone", "enc": "raw", "bytes": 0,
-                "id": UUID().uuidString, "seq": 0, "total": 1, "data": "", "concealed": true,
+                "id": id, "seq": 0, "total": 1, "data": "", "concealed": true,
             ]))
             return
         }
         guard let text = read.text,
               let packed = ScreenShareClipboardCodec.encode(text: text, compressor: compressor)
         else { return }
-        let id = UUID().uuidString
         for object in ScreenShareDataChannel.clipboardFrames(
             id: id, encoding: packed.encoding, plaintextBytes: packed.plaintextBytes, payload: packed.payload) {
             guard await session.peer.sendData(Self.encode(object)) else { return }
@@ -536,95 +650,140 @@ public actor ScreenShareEngine {
     /// The phone reported that it went to the background. The 30 s rule is the
     /// host's: the phone only says what it is doing, and a phone that never says
     /// anything again still hits the idle timeout.
-    private func setBackground(_ backgrounded: Bool, sessionId: String) async {
-        guard var session = sessions[sessionId] else { return }
-        session.background?.cancel()
-        session.background = nil
-        guard backgrounded else {
-            sessions[sessionId] = session
-            await service.noteActivity(sessionId: sessionId)
-            return
-        }
-        session.background = Task { [weak self, sleeper] in
+    private func setBackground(_ backgrounded: Bool, sessionId: String) {
+        guard sessions[sessionId] != nil else { return }
+        sessions[sessionId]?.background?.cancel()
+        sessions[sessionId]?.background = nil
+        guard backgrounded else { return }
+        sessions[sessionId]?.background = Task { [weak self, sleeper] in
             try? await sleeper(ScreenSharePolicy.backgroundTimeout)
             guard !Task.isCancelled else { return }
-            await self?.end(sessionId: sessionId, reason: .peerLeft)
+            await self?.end(sessionId: sessionId, reason: .background)
         }
-        sessions[sessionId] = session
     }
 
     // MARK: Capture
 
     /// The host asks for capture when the first session starts, and again once a
     /// lock screen or a password field has cleared.
-    private func startCapture(sessionId: String) async {
-        guard let session = sessions[sessionId] ?? sessions.values.first else { return }
-        _ = try? await capture.start(displayId: session.displayId, quality: session.quality)
-    }
-
-    private func stopCapture() async { await capture.stop() }
-
-    /// One captured frame. Idle frames are dropped before an encoder is woken,
-    /// which is what keeps an untouched screen near zero traffic.
-    ///
-    /// The video track carries the primary layer only — the region the user is
-    /// reading, at the full pixel budget. The whole-screen overview goes down the
-    /// data channel as an occasional small still, so a zoomed phone has something
-    /// real underneath its window without a second video stream.
-    public func deliver(frame: ScreenShareVideoFrame, status: ScreenShareFrameStatus, dirtyRects: Int) async {
-        guard await capture.admit(layer: frame.layer, status: status, dirtyRects: dirtyRects) else { return }
-        guard frame.layer == .primary else { await deliverOverview(frame); return }
-        for (sessionId, session) in sessions {
-            await session.peer.send(frame: frame)
-            await service.noteFrameDelivered(sessionId: sessionId)
+    private func hostStartCapture(sessionId: String) async {
+        let target: (displayId: UInt32, quality: ScreenShareQualityProfile)?
+        if let session = sessions[sessionId] {
+            target = (session.displayId, session.quality)
+        } else if let pending = starting[sessionId] {
+            target = (pending.displayId, pending.quality)
+        } else if let session = sessions.values.first {
+            target = (session.displayId, session.quality)
+        } else {
+            target = nil
+        }
+        guard let target else { return }
+        do { _ = try await capture.start(displayId: target.displayId, quality: target.quality) }
+        catch {
+            Self.log.error("screen-share capture did not start: \(String(describing: error), privacy: .public)")
+            if starting[sessionId] != nil {
+                starting[sessionId]?.captureFailed = true
+            } else {
+                // Capture was coming back after an unlock and could not: the
+                // sessions cannot show anything, so they end and say why. Run
+                // outside this call, which the host is waiting on.
+                Task { [weak self] in await self?.endAll(reason: .displayGone) }
+            }
         }
     }
 
-    /// How often an overview still is sent at most. The overview is a backdrop,
-    /// not the picture: a slow refresh is what keeps it nearly free.
-    public static let overviewInterval: TimeInterval = 2
-    /// JPEG quality for the overview still. Low: it is a 640-pixel backdrop.
-    public static let overviewJPEGQuality = 0.5
-
-    private func deliverOverview(_ frame: ScreenShareVideoFrame) async {
-        guard let stills, !sessions.isEmpty else { return }
-        if let lastOverview, now().timeIntervalSince(lastOverview) < Self.overviewInterval { return }
-        guard let jpeg = stills.jpeg(frame, quality: Self.overviewJPEGQuality),
-              jpeg.count <= Self.maximumOverviewBytes
-        else { return }
-        lastOverview = now()
-        let message = Self.encode([
-            "t": "overview", "displayId": NSNumber(value: overviewDisplayId()),
-            "jpegB64": jpeg.base64EncodedString(),
-        ])
-        for session in sessions.values { _ = await session.peer.sendData(message) }
+    private func hostStopCapture() async {
+        await capture.stop()
+        lastFrames = [:]
     }
 
-    /// A still larger than this is dropped rather than sent: a 640-pixel JPEG
-    /// that big means the encoder produced something unexpected.
-    static let maximumOverviewBytes = 256 * 1_024
+    /// One captured frame. Idle frames are dropped before an encoder is woken,
+    /// which is what keeps an untouched screen near zero traffic.
+    public func deliver(frame: ScreenShareVideoFrame, status: ScreenShareFrameStatus, dirtyRects: Int) async {
+        guard !sessions.isEmpty,
+              await capture.admit(layer: frame.layer, status: status, dirtyRects: dirtyRects)
+        else { return }
+        lastFrames[frame.layer] = frame
+        lastFrameAt = now()
+        for (sessionId, session) in sessions {
+            await session.peer.send(frame: frame)
+            if frame.layer == .primary { await service.noteFrameDelivered(sessionId: sessionId) }
+        }
+    }
 
-    private func overviewDisplayId() -> UInt32 {
-        sessions.values.first?.displayId ?? displays.mainDisplayId()
+    /// While the screen stands still nothing is encoded — but once every
+    /// keepalive interval the last picture goes out again, so a decoder that
+    /// lost a keyframe recovers without anyone touching the Mac.
+    private func startRefresher() {
+        guard refresher == nil else { return }
+        refresher = Task { [weak self, sleeper] in
+            while !Task.isCancelled {
+                try? await sleeper(ScreenShareFrameGate.keepaliveInterval)
+                guard !Task.isCancelled, let self, await self.refreshStillFrame() else { return }
+            }
+        }
+    }
+
+    /// False once there is nothing left to refresh, which ends the loop.
+    private func refreshStillFrame() async -> Bool {
+        guard !sessions.isEmpty else { refresher = nil; return false }
+        guard let last = lastFrameAt, now().timeIntervalSince(last) >= ScreenShareFrameGate.keepaliveInterval,
+              var frame = lastFrames[.primary]
+        else { return true }
+        frame.timestampNanos = frameClock()
+        lastFrameAt = now()
+        for session in sessions.values where session.connected { await session.peer.send(frame: frame) }
+        return true
+    }
+
+    // MARK: Codec pressure
+
+    private func startLoadWatch() {
+        guard loadWatch == nil else { return }
+        loadWatch = Task { [weak self, sleeper] in
+            while !Task.isCancelled {
+                try? await sleeper(Self.loadCheckInterval)
+                guard !Task.isCancelled, let self, await self.checkMachineLoad() else { return }
+            }
+        }
+    }
+
+    /// Once the Mac heats up or runs out of CPU, every software-codec stream
+    /// goes back to hardware H.264 with a renegotiation. False when no session
+    /// runs a software codec any more, which ends the watch.
+    @discardableResult
+    public func checkMachineLoad() async -> Bool {
+        let conditions = ScreenShareCodecConditions(
+            network: .cellular, phoneDecodes: [], cpuHeadroom: load.cpuHeadroom(),
+            thermalPressure: load.thermalPressure())
+        for (sessionId, session) in sessions
+        where ScreenShareCodecPolicy.mustFallBack(to: session.codec, conditions: conditions) {
+            sessions[sessionId]?.codec = .h264
+            await renegotiate(sessionId: sessionId, iceRestart: false)
+        }
+        guard sessions.values.contains(where: { $0.codec != .h264 }) else { loadWatch = nil; return false }
+        return true
     }
 
     // MARK: TURN renewal
 
     private func iceServers() async -> [ScreenShareIceServer]? {
         if let credential, !credential.needsRenewal(now: now()) { return credential.iceServers }
-        guard let fresh = await turn.mintTurnCredential() else { return credential?.iceServers }
+        guard let fresh = await turn.mintTurnCredential() else {
+            // An expired credential is worth nothing to the phone.
+            guard let credential, !credential.isExpired(now: now()) else { return nil }
+            return credential.iceServers
+        }
         credential = fresh
         return fresh.iceServers
     }
 
-    /// Waits until the credential is close to expiry, mints a new one, hands it
-    /// to the phone in a `screen-grant` and renegotiates with an ICE restart —
-    /// with the renewed servers already on the peer, so the restart gathers
-    /// against them rather than the pair about to expire.
+    /// Waits until the session's credential is close to expiry, then renews it.
+    /// A session without TURN has nothing to renew.
     private func renewalTask(sessionId: String) -> Task<Void, Never> {
         Task { [weak self, sleeper] in
             while !Task.isCancelled {
-                guard let delay = await self?.renewalDelay() else { return }
+                guard let delay = await self?.renewalDelay(sessionId: sessionId) else { return }
                 try? await sleeper(delay)
                 guard !Task.isCancelled else { return }
                 await self?.renewCredential(sessionId: sessionId)
@@ -632,20 +791,35 @@ public actor ScreenShareEngine {
         }
     }
 
-    private func renewalDelay() -> TimeInterval {
-        guard let credential else { return ScreenShareTurnCredential.renewalMargin }
-        let until = credential.expiresAt.addingTimeInterval(-ScreenShareTurnCredential.renewalMargin)
-        return max(1, until.timeIntervalSince(now()))
+    private func renewalDelay(sessionId: String) -> TimeInterval? {
+        guard let session = sessions[sessionId], let expiry = session.turnExpiresAt,
+              now() < expiry else { return nil }
+        let due = expiry.addingTimeInterval(-ScreenShareTurnCredential.renewalMargin)
+        let wait = due.timeIntervalSince(now())
+        // Past due means the last attempt failed: retry, but not in a tight loop.
+        return wait > 0 ? wait : Self.renewalRetry
     }
 
+    /// Mints a fresh credential (or reuses one another session just minted),
+    /// hands it to the peer, tells the phone in a `screen-grant`, then
+    /// renegotiates with an ICE restart — with the renewed servers already on
+    /// the peer, so the restart gathers against them rather than the pair about
+    /// to expire.
     func renewCredential(sessionId: String) async {
         guard let session = sessions[sessionId] else { return }
-        guard let fresh = await turn.mintTurnCredential() else { return }
-        credential = fresh
+        let current = session.turnExpiresAt ?? .distantPast
+        // Another session may already have renewed; its credential is reused.
+        var fresh = credential
+        let reusable = fresh.map { $0.expiresAt > current && !$0.needsRenewal(now: now()) } ?? false
+        if !reusable {
+            fresh = await turn.mintTurnCredential()
+            if let fresh { credential = fresh }
+        }
+        guard let fresh, fresh.expiresAt > current, sessions[sessionId] != nil else { return }
+        sessions[sessionId]?.turnExpiresAt = fresh.expiresAt
         let servers = fresh.iceServers
         await session.peer.setConfiguration(iceServers: servers)
-        await signals.send(.grant(sessionId: sessionId, allowed: true, grant: session.mode,
-                                  controlChallengeB64: nil, iceServers: servers, displays: nil),
+        await signals.send(await grantSignal(deviceId: session.deviceId, sessionId: sessionId, iceServers: servers),
                            to: session.deviceId)
         await renegotiate(sessionId: sessionId, iceRestart: true)
     }
@@ -657,28 +831,64 @@ public actor ScreenShareEngine {
         else { await end(sessionId: sessionId, reason: .peerLeft); return }
         // The session may have been killed while the offer was being made; an
         // offer for a session that no longer exists must never go out.
-        guard sessions[sessionId] != nil else { return }
-        await signals.send(.offer(sessionId: sessionId, sdp: sdp, mode: session.mode,
-                                  displayId: session.displayId, codec: session.codec,
-                                  quality: session.quality, iceRestart: iceRestart),
-                           to: session.deviceId)
+        guard let current = sessions[sessionId] else { return }
+        // The first offer has not left yet: this one replaces it.
+        if current.pendingOffer != nil { sessions[sessionId]?.pendingOffer = sdp; return }
+        await signals.send(.offer(sessionId: sessionId, sdp: sdp, mode: current.mode,
+                                  displayId: current.displayId, codec: current.codec,
+                                  quality: current.quality, iceRestart: iceRestart),
+                           to: current.deviceId)
+    }
+
+    /// Gives up on a peer that never connected.
+    private func connectDeadlineTask(sessionId: String) -> Task<Void, Never> {
+        Task { [weak self, sleeper] in
+            try? await sleeper(Self.connectDeadline)
+            guard !Task.isCancelled, let self else { return }
+            await self.connectDeadlineReached(sessionId: sessionId)
+        }
+    }
+
+    private func connectDeadlineReached(sessionId: String) async {
+        guard let session = sessions[sessionId], !session.connected else { return }
+        await end(sessionId: sessionId, reason: .peerLeft)
     }
 
     // MARK: Stopping
 
     /// Ends one session on the Mac and tells the phone.
     public func end(sessionId: String, reason: ScreenShareStopReason) async {
-        guard let session = sessions.removeValue(forKey: sessionId) else { return }
-        session.renewal?.cancel()
-        session.background?.cancel()
+        await end(sessionId: sessionId, reason: reason, notify: true)
+    }
+
+    private func end(sessionId: String, reason: ScreenShareStopReason, notify: Bool) async {
+        guard let session = forget(sessionId) else { return }
         await service.endSession(sessionId: sessionId, reason: reason)
-        if let kill = ScreenShareWireReason.kill(reason) {
-            await signals.send(.kill(sessionId: sessionId, reason: kill), to: session.deviceId)
-        } else {
-            await signals.send(.sessionEnd(sessionId: sessionId,
-                                           reason: ScreenShareWireReason.sessionEnd(reason)),
-                               to: session.deviceId)
+        await session.peer.close()
+        guard notify else { return }
+        await signals.send(Self.stopSignal(sessionId: sessionId, reason: reason), to: session.deviceId)
+    }
+
+    private func endAll(reason: ScreenShareStopReason) async {
+        for sessionId in sessions.keys { await end(sessionId: sessionId, reason: reason) }
+    }
+
+    /// Drops the engine's own record and timers of a session.
+    private func forget(_ sessionId: String) -> Session? {
+        guard let session = sessions.removeValue(forKey: sessionId) else { return nil }
+        session.tasks.forEach { $0.cancel() }
+        session.background?.cancel()
+        if sessions.isEmpty {
+            refresher?.cancel(); refresher = nil
+            loadWatch?.cancel(); loadWatch = nil
+            lastFrames = [:]
         }
+        return session
+    }
+
+    static func stopSignal(sessionId: String, reason: ScreenShareStopReason) -> ScreenShareSignal {
+        if let kill = ScreenShareWireReason.kill(reason) { return .kill(sessionId: sessionId, reason: kill) }
+        return .sessionEnd(sessionId: sessionId, reason: ScreenShareWireReason.sessionEnd(reason))
     }
 
     /// Called after the host stopped sessions on its own (kill switch, revoke,
@@ -687,17 +897,9 @@ public actor ScreenShareEngine {
     /// sends the courtesy note.
     public func hostStopped(_ stopped: [ScreenShareStoppedSession]) async {
         for entry in stopped {
-            guard let session = sessions.removeValue(forKey: entry.sessionId) else { continue }
-            session.renewal?.cancel()
-            session.background?.cancel()
+            guard let session = forget(entry.sessionId) else { continue }
             await session.peer.close()
-            if let kill = ScreenShareWireReason.kill(entry.reason) {
-                await signals.send(.kill(sessionId: entry.sessionId, reason: kill), to: entry.deviceId)
-            } else {
-                await signals.send(.sessionEnd(sessionId: entry.sessionId,
-                                               reason: ScreenShareWireReason.sessionEnd(entry.reason)),
-                                   to: entry.deviceId)
-            }
+            await signals.send(Self.stopSignal(sessionId: entry.sessionId, reason: entry.reason), to: entry.deviceId)
         }
     }
 
@@ -705,27 +907,32 @@ public actor ScreenShareEngine {
     /// already stopped the frames; the sessions go too, so their slots are free
     /// and the phone is told why rather than watching a frozen picture.
     public func framesBlockedChanged(_ blocked: Bool, reason: ScreenShareStopReason) async {
+        if blocked { blockReason = reason }
         guard blocked != framesBlocked else { return }
         framesBlocked = blocked
         guard blocked else { return }
-        for sessionId in sessions.keys { await end(sessionId: sessionId, reason: reason) }
+        await endAll(reason: reason)
     }
 
     /// Settings changed for a phone: it learns its new allow-list and grant
     /// state even when it has no session open.
     public func pushGrant(to deviceId: String) async {
         let row = await service.settings(for: deviceId)
+        let servers = row?.allowed == true ? await iceServers() : nil
+        await signals.send(await grantSignal(deviceId: deviceId, sessionId: nil, iceServers: servers),
+                           to: deviceId)
+    }
+
+    /// One `screen-grant` with the phone's real allow-list and grant — never a
+    /// session's mode in its place — and a fresh challenge when it may control.
+    private func grantSignal(deviceId: String, sessionId: String?, iceServers: [ScreenShareIceServer]?) async -> ScreenShareSignal {
+        let row = await service.settings(for: deviceId)
         let grant = row?.grant ?? .none
         let allowed = row?.allowed == true
-        var challenge: String?
-        if allowed, grant == .control {
-            challenge = await service.controlChallenge(sessionId: Self.challengeSession(deviceId)).base64EncodedString()
-        }
-        await signals.send(.grant(sessionId: nil, allowed: allowed, grant: grant,
-                                  controlChallengeB64: challenge,
-                                  iceServers: allowed ? await iceServers() : nil,
-                                  displays: displays.info()),
-                           to: deviceId)
+        return .grant(sessionId: sessionId, allowed: allowed, grant: grant,
+                      controlChallengeB64: await challenge(for: deviceId, allowed: allowed, grant: grant),
+                      iceServers: allowed ? iceServers : nil,
+                      displays: displays.info())
     }
 
     // MARK: Read-only state

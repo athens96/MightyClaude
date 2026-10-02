@@ -55,6 +55,10 @@ public struct ScreenSessionEntry: Sendable, Equatable {
 public enum ScreenShareStopReason: Sendable, Equatable {
     case revoked, grantDowngrade, rekeyPairing, killSwitch
     case idleTimeout, peerLeft, lockScreen, secureInput, concurrencyLimit
+    /// The phone stayed in the background past `backgroundTimeout`.
+    case background
+    /// The captured display went away and there was none to fall back to.
+    case displayGone
 }
 
 /// One session the host stopped by itself, so the engine can tell the phone.

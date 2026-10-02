@@ -57,10 +57,16 @@ public protocol ScreenSharePeerConnection: Sendable, AnyObject {
         codec: ScreenShareVideoCodec, quality: ScreenShareQualityProfile, iceRestart: Bool
     ) async throws -> String
 
+    /// Applies a new bitrate and frame-rate ceiling to the live sender — a
+    /// relayed path drops to the TURN quota — without a renegotiation.
+    func setQuality(_ quality: ScreenShareQualityProfile) async
+
     func acceptAnswer(_ sdp: String) async throws
     func addRemoteCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int?) async
 
-    /// One captured frame for the encoder.
+    /// One captured frame for the encoder. A `primary` frame goes on the first
+    /// video track (stream id `screen`), an `overview` frame on the second
+    /// (stream id `overview`), which carries nothing while not zoomed.
     func send(frame: ScreenShareVideoFrame) async
 
     /// One data-channel message. False when the channel is not open or the
@@ -93,14 +99,6 @@ public protocol ScreenShareSignalSender: Sendable {
 /// the same Wi-Fi anyway.
 public protocol ScreenShareTurnSource: Sendable {
     func mintTurnCredential() async -> ScreenShareTurnCredential?
-}
-
-/// Turns one captured frame into a small still image. Used for the low-resolution
-/// overview layer, which travels on the data channel rather than on the video
-/// track: there is one track, and it belongs to the region the user is reading.
-public protocol ScreenShareStillEncoder: Sendable {
-    /// JPEG bytes for this frame, or nil when it could not be encoded.
-    func jpeg(_ frame: ScreenShareVideoFrame, quality: Double) -> Data?
 }
 
 /// Reads the Mac's own pressure, so a software codec is only chosen while there
