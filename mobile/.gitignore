@@ -25,6 +25,10 @@
 /android
 /ios
 android/
+# Local Expo modules keep their native sources in the repo; only the app's generated
+# android/ (from prebuild) is ignored.
+!/modules/*/android/
+/modules/*/android/build/
 dist/
 example
 expo-env.d.ts

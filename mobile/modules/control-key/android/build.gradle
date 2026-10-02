@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'dev.mightyclaude'
+version = '1.0.0'
+
+android {
+  namespace "dev.mightyclaude.controlkey"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // The same version expo-secure-store pulls in, so Gradle never has to pick between two.
+  implementation "androidx.biometric:biometric:1.1.0"
+}
