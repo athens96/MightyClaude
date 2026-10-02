@@ -35,7 +35,8 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.BLUETOOTH",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -64,8 +65,7 @@
       [
         "@config-plugins/react-native-webrtc",
         {
-          "cameraPermission": "호스트 페어링 QR 코드를 스캔하기 위해 카메라를 사용합니다.",
-          "microphonePermission": "원격 화면 연결에 WebRTC를 사용합니다. 마이크는 쓰지 않습니다."
+          "cameraPermission": "호스트 페어링 QR 코드를 스캔하기 위해 카메라를 사용합니다."
         }
       ],
       [
