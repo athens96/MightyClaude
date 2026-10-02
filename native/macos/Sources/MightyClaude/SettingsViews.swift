@@ -305,6 +305,7 @@ struct AppSettingsView: View {
             CLIUpdateSettingsSection().environmentObject(store)
         case .mobile:
             MobileRemoteSettingsSection().environmentObject(store)
+            ScreenShareSettingsSection().environmentObject(store)
         case .companion:
             CompanionSettingsSection(companion: store.companion)
         case .about:
