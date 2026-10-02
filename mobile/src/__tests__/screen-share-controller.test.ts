@@ -273,13 +273,21 @@ describe('the control key lifecycle', () => {
     expect(h.controller.snapshot().controlKey.status).toBe('ready');
   });
 
-  it('reports the Mac’s answer when it already holds another key', async () => {
-    const h = harness({
-      state: hostState({ controlKeyFingerprint: 'AAAA-BBBB-CCCC-DDDD' }),
-      refuseEnrol: new ApiError(409, 'HTTP 409', 'control-key-present'),
-    });
+  it('does not send a key to a Mac that already holds another one', async () => {
+    // The Mac would answer 409 control-key-present until its user removes the key.
+    const h = harness({ state: hostState({ controlKeyFingerprint: 'AAAA-BBBB-CCCC-DDDD' }) });
     await h.controller.refresh();
     expect(h.controller.snapshot().controlKey.status).toBe('phone-missing');
+    await h.controller.enrolControlKey();
+    expect(h.registered).toEqual([]);
+    expect(h.controller.snapshot().controlKey.enrolFailure).toBeUndefined();
+    expect(h.controller.snapshot().controlKey.enrolling).toBe(false);
+  });
+
+  it('reports the Mac’s answer when it turns a key away', async () => {
+    const h = harness({ refuseEnrol: new ApiError(409, 'HTTP 409', 'control-key-present') });
+    await h.controller.refresh();
+    expect(h.controller.snapshot().controlKey.status).toBe('missing');
     await h.controller.enrolControlKey();
     expect(h.controller.snapshot().controlKey.enrolFailure).toBe('control-key-present');
     expect(h.controller.snapshot().controlKey.enrolling).toBe(false);
