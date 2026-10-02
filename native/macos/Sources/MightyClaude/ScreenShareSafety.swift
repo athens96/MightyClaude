@@ -79,8 +79,10 @@ struct SystemScreenShareInput: ScreenShareInputSink {
 /// The item only exists while a session is live — an idle Mac shows nothing —
 /// and both the menu action and ⌃⌥⌘K go to the same place: the host's kill
 /// switch, which stops capture, injection and the PeerConnection inside 1 s
-/// whether the relay is up or not. The same monitors report local keyboard and
-/// mouse activity, which pauses remote input for 2 s.
+/// whether the relay is up or not. The hotkey is a Carbon hot key, which needs
+/// no Accessibility or Input Monitoring permission and fires whichever app is in
+/// front. Event monitors report local keyboard and mouse activity, which pauses
+/// remote input for 2 s.
 @MainActor
 final class ScreenShareMenuBarController {
     private let service: ScreenShareService
@@ -90,11 +92,16 @@ final class ScreenShareMenuBarController {
     private var globalMonitor: Any?
     private var environmentTimer: Timer?
     private let hotkey = ScreenShareKillHotkey.standard
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
+    /// 'MCsk' — tells this app's hot key apart from any other registered one.
+    private static let hotKeyID = EventHotKeyID(signature: 0x4D43_736B, id: 1)
 
     init(service: ScreenShareService) { self.service = service }
 
     func start() {
         installMonitors()
+        registerHotKey()
         // The lock screen and secure input are polled: neither posts a
         // notification an unprivileged app may rely on.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
@@ -116,6 +123,7 @@ final class ScreenShareMenuBarController {
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         localMonitor = nil; globalMonitor = nil
+        unregisterHotKey()
         removeItem()
     }
 
@@ -162,42 +170,73 @@ final class ScreenShareMenuBarController {
         item = nil
     }
 
+    // MARK: Kill-switch hot key
+
+    private func registerHotKey() {
+        guard hotKeyRef == nil else { return }
+        var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let installed = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+            guard let event, let context else { return OSStatus(eventNotHandledErr) }
+            var id = EventHotKeyID()
+            let read = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                         nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+            guard read == noErr, id.signature == ScreenShareMenuBarController.hotKeyID.signature,
+                  id.id == ScreenShareMenuBarController.hotKeyID.id else { return OSStatus(eventNotHandledErr) }
+            let controller = Unmanaged<ScreenShareMenuBarController>.fromOpaque(context).takeUnretainedValue()
+            // Carbon delivers application-target events on the main thread.
+            MainActor.assumeIsolated { controller.killNow() }
+            return noErr
+        }, 1, &pressed, context, &hotKeyHandler)
+        guard installed == noErr else {
+            NSLog("screen-share kill hot key handler not installed: %d", installed)
+            return
+        }
+        var ref: EventHotKeyRef?
+        let registered = RegisterEventHotKey(UInt32(hotkey.keyCode), Self.carbonModifiers(hotkey.modifiers),
+                                             Self.hotKeyID, GetApplicationEventTarget(), 0, &ref)
+        if registered == noErr {
+            hotKeyRef = ref
+        } else {
+            // Another app holds ⌃⌥⌘K; the menu-bar item still stops every session.
+            NSLog("screen-share kill hot key not registered: %d", registered)
+        }
+    }
+
+    private func unregisterHotKey() {
+        if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
+        if let hotKeyHandler { RemoveEventHandler(hotKeyHandler) }
+        hotKeyRef = nil; hotKeyHandler = nil
+    }
+
+    private static func carbonModifiers(_ modifiers: ScreenShareModifiers) -> UInt32 {
+        var flags = 0
+        if modifiers.contains(.command) { flags |= cmdKey }
+        if modifiers.contains(.shift) { flags |= shiftKey }
+        if modifiers.contains(.option) { flags |= optionKey }
+        if modifiers.contains(.control) { flags |= controlKey }
+        return UInt32(flags)
+    }
+
     // MARK: Monitors
 
     private func installMonitors() {
         let types: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown, .mouseMoved, .scrollWheel]
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: types) { [weak self] event in
-            guard let self else { return event }
-            if self.handle(event) { return nil }
+            self?.handle(event)
             return event
         }
         // Local HID activity while the app is in the background still has to
-        // pause remote input, and the kill switch has to work from anywhere.
+        // pause remote input. The kill switch does not depend on these monitors.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: types) { [weak self] event in
-            _ = self?.handle(event)
+            self?.handle(event)
         }
     }
 
-    /// Returns true when the event was the kill-switch hotkey and must not
-    /// travel any further.
-    private func handle(_ event: NSEvent) -> Bool {
-        if event.type == .keyDown, hotkey.matches(keyCode: event.keyCode, modifiers: Self.modifiers(event)) {
-            killNow()
-            return true
-        }
-        guard state.isActive else { return false }
+    /// Local keyboard or mouse activity pauses remote input while a session is live.
+    private func handle(_ event: NSEvent) {
+        guard state.isActive else { return }
         Task { await service.localHIDActivity() }
-        return false
-    }
-
-    private static func modifiers(_ event: NSEvent) -> ScreenShareModifiers {
-        var modifiers: ScreenShareModifiers = []
-        let flags = event.modifierFlags
-        if flags.contains(.command) { modifiers.insert(.command) }
-        if flags.contains(.shift) { modifiers.insert(.shift) }
-        if flags.contains(.option) { modifiers.insert(.option) }
-        if flags.contains(.control) { modifiers.insert(.control) }
-        return modifiers
     }
 }
 
