@@ -164,11 +164,16 @@ PLIST
     rm -rf "$EXTRACT_TEMP"
     trap - EXIT
 fi
-# Ad-hoc signatures differ per build, so the Keychain treats every rebuild as a
-# new app and asks again for Keychain access (Claude usage lookup). A stable local
-# code-signing certificate (Keychain Access → Certificate Assistant, type
-# "Code Signing") makes "Always Allow" stick across rebuilds.
-CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:--}"
+# A stable self-signed identity (created by scripts/setup-codesign.sh) keeps
+# TCC grants (Screen Recording, Accessibility) and Keychain "Always Allow"
+# valid across rebuilds. Override with MIGHTY_CODESIGN_IDENTITY=- for ad-hoc
+# signing (grants reset on every rebuild).
+CODESIGN_IDENTITY="${MIGHTY_CODESIGN_IDENTITY:-Mighty Claude Dev}"
+if [ -z "${MIGHTY_CODESIGN_IDENTITY:-}" ] && \
+   ! security find-identity -v -p codesigning 2>/dev/null | grep -qF "\"$CODESIGN_IDENTITY\""; then
+    echo "warning: signing identity '$CODESIGN_IDENTITY' not found; signing ad-hoc (TCC grants reset on every build). Run scripts/setup-codesign.sh once." >&2
+    CODESIGN_IDENTITY="-"
+fi
 # Sign CEF inner dylibs explicitly (not reached by --deep on the main bundle)
 if [ "${MIGHTY_BROWSER_ENGINE:-}" = "1" ]; then
     CEF_FW="$APP_PATH/Contents/Frameworks/Chromium Embedded Framework.framework"
