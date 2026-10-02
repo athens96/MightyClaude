@@ -309,23 +309,28 @@ final class ScreenShareMenuBarController {
 
     private func registerHotKey() {
         guard hotKeyRef == nil else { return }
-        var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        let installed = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
-            guard let event, let context else { return OSStatus(eventNotHandledErr) }
-            var id = EventHotKeyID()
-            let read = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                                         nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
-            guard read == noErr, id.signature == ScreenShareMenuBarController.hotKeyID.signature,
-                  id.id == ScreenShareMenuBarController.hotKeyID.id else { return OSStatus(eventNotHandledErr) }
-            let controller = Unmanaged<ScreenShareMenuBarController>.fromOpaque(context).takeUnretainedValue()
-            // Carbon delivers application-target events on the main thread.
-            MainActor.assumeIsolated { controller.killNow() }
-            return noErr
-        }, 1, &pressed, context, &hotKeyHandler)
-        guard installed == noErr else {
-            NSLog("screen-share kill hot key handler not installed: %d", installed)
-            return
+        // One handler at most: a registration that failed earlier removed its
+        // own, so a retry never stacks a second one behind it.
+        if hotKeyHandler == nil {
+            var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            let context = Unmanaged.passUnretained(self).toOpaque()
+            let installed = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+                guard let event, let context else { return OSStatus(eventNotHandledErr) }
+                var id = EventHotKeyID()
+                let read = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                             nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+                guard read == noErr, id.signature == ScreenShareMenuBarController.hotKeyID.signature,
+                      id.id == ScreenShareMenuBarController.hotKeyID.id else { return OSStatus(eventNotHandledErr) }
+                let controller = Unmanaged<ScreenShareMenuBarController>.fromOpaque(context).takeUnretainedValue()
+                // Carbon delivers application-target events on the main thread.
+                MainActor.assumeIsolated { controller.killNow() }
+                return noErr
+            }, 1, &pressed, context, &hotKeyHandler)
+            guard installed == noErr else {
+                hotKeyHandler = nil
+                NSLog("screen-share kill hot key handler not installed: %d", installed)
+                return
+            }
         }
         var ref: EventHotKeyRef?
         let registered = RegisterEventHotKey(UInt32(hotkey.keyCode), Self.carbonModifiers(hotkey.modifiers),
@@ -334,6 +339,8 @@ final class ScreenShareMenuBarController {
             hotKeyRef = ref
         } else {
             // Another app holds ⌃⌥⌘K; the menu-bar item still stops every session.
+            if let hotKeyHandler { RemoveEventHandler(hotKeyHandler) }
+            hotKeyHandler = nil
             NSLog("screen-share kill hot key not registered: %d", registered)
         }
     }
