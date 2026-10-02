@@ -23,11 +23,11 @@ struct SystemScreenShareEnvironment: ScreenShareEnvironmentProbe {
 /// is injected as a unicode string rather than as jamo keystrokes, so no input
 /// method has to be driven from the outside.
 struct SystemScreenShareInput: ScreenShareInputSink {
-    func move(to position: CGPoint, displayId: UInt32) async {
+    func move(to position: CGPoint, displayId: UInt32) {
         post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left))
     }
 
-    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) async {
+    func drag(at position: CGPoint, displayId: UInt32, phase: ScreenShareDragPhase) {
         let type: CGEventType
         switch phase {
         case .begin: type = .leftMouseDown
@@ -39,7 +39,7 @@ struct SystemScreenShareInput: ScreenShareInputSink {
         post(event)
     }
 
-    func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) async {
+    func click(at position: CGPoint, displayId: UInt32, button: ScreenShareMouseButton, clickCount: Int) {
         let mouseButton: CGMouseButton = button == .right ? .right : .left
         let down: CGEventType = button == .right ? .rightMouseDown : .leftMouseDown
         let up: CGEventType = button == .right ? .rightMouseUp : .leftMouseUp
@@ -50,13 +50,13 @@ struct SystemScreenShareInput: ScreenShareInputSink {
         }
     }
 
-    func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) async {
+    func scroll(at position: CGPoint, displayId: UInt32, deltaX: Int32, deltaY: Int32) {
         post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: position, mouseButton: .left))
         post(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2,
                      wheel1: deltaY, wheel2: deltaX, wheel3: 0))
     }
 
-    func commitText(_ text: String) async {
+    func commitText(_ text: String) {
         // `CGEventKeyboardSetUnicodeString` carries at most 20 UTF-16 units per
         // event; the chunks never split a Hangul syllable or an emoji.
         for chunk in ScreenShareTextChunks.split(text) {
@@ -68,7 +68,7 @@ struct SystemScreenShareInput: ScreenShareInputSink {
         }
     }
 
-    func key(code: UInt16, modifiers: ScreenShareModifiers) async {
+    func key(code: UInt16, modifiers: ScreenShareModifiers) {
         var flags: CGEventFlags = []
         if modifiers.contains(.command) { flags.insert(.maskCommand) }
         if modifiers.contains(.shift) { flags.insert(.maskShift) }

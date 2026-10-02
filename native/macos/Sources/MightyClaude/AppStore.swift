@@ -1042,6 +1042,9 @@ final class AppStore: ObservableObject {
         for task in starting { task.cancel() }
         await providers.shutdown()
         await runner.shutdown()
+        // Screen sharing ends before the relay goes: a held remote drag is let
+        // go and the phones hear why.
+        if screenShareEngine != nil { await screenShare.shutdown() }
         await shutdownMobileRemote()
         stopAgentIO()
         // Processes started from agent terminal panes stop with the app (bounded to about 1 s).
