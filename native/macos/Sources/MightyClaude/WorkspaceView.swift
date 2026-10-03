@@ -262,17 +262,26 @@ struct WorkspaceView: View {
         }
     }
 
+    /// `[mark] Claude · 02:14 · 컨텍스트 41%`: the provider's mark, in its brand colour, goes
+    /// before its name; a pane that is not an agent's names its kind with no mark.
     private func paneMeta(_ card: WorkDashboard.Card, localTerminal: Bool, at date: Date) -> some View {
-        let parts = WorkDashboard.sidebarMeta(card, now: date).compactMap { part -> String? in
-            switch part {
+        let parts = WorkDashboard.sidebarMeta(card, now: date).compactMap { part -> Text? in
+            let words: String? = switch part {
             case .provider: ProviderOptions.label(card.provider)
             case .elapsed: card.timing.map { DashboardText.clock($0, at: date) }
             case .context(let percent): L("phone.card.context", ["percent": "\(percent)"])
             case .reason(let text, let isTool): DashboardText.reason(text, isTool: isTool)
             case .age(let age): DashboardText.age(age)
             }
+            guard let words else { return nil }
+            if part == .provider, let mark = ProviderBadgeIcon.mark(provider: card.provider, font: .systemFont(ofSize: 11)) {
+                return mark + Text(verbatim: " " + words)
+            }
+            return Text(verbatim: words)
         }
-        return Text(parts.isEmpty ? DashboardText.kindLine(card, localTerminal: localTerminal) : parts.joined(separator: " · "))
+        let line = parts.first.map { first in parts.dropFirst().reduce(first) { $0 + Text(verbatim: " · ") + $1 } }
+            ?? Text(verbatim: DashboardText.kindLine(card, localTerminal: localTerminal))
+        return line
             .font(.system(size: 11)).monospacedDigit().lineLimit(1).truncationMode(.tail)
             .frame(minHeight: 15)
     }

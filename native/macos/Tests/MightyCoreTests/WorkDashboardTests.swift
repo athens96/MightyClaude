@@ -198,6 +198,22 @@ struct WorkDashboardTests {
         #expect(WorkDashboard.sidebarMeta(shell, now: now) == [])
     }
 
+    @Test func onlyAnAgentRowNamesItsProviderSoOnlyItCarriesTheMark() {
+        let now = Self.date("2026-10-01T10:20:00Z")
+        // The sidebar draws the provider's mark at `.provider`: Claude and Codex rows get theirs.
+        for provider in ["claude", "codex", "gemini"] {
+            let agent = WorkDashboard.card(Self.pane("a", provider: provider, status: "running"), permissions: nil)
+            #expect(WorkDashboard.sidebarMeta(agent, now: now).first == .provider)
+            #expect(ProviderMark.markedProvider(agent.provider) == provider)
+        }
+        // A shell, a browser, an agent's own terminal or browser and the files pane name their
+        // kind instead, with no provider part and so no mark, whatever provider they carry.
+        for kind in [SessionKind.shell, SessionKind.browser, AgentIOPaneKind.terminal, AgentIOPaneKind.browser, FilePaneKind.kind] {
+            let pane = WorkDashboard.card(Self.pane("b", kind: kind, provider: "codex", status: "running"), permissions: nil)
+            #expect(WorkDashboard.sidebarMeta(pane, now: now) == [])
+        }
+    }
+
     @Test func anErrorRowSaysWhyBeforeHowLongAgo() {
         let now = Self.date("2026-10-01T10:20:00Z")
         // A failed tool call: "Claude · Bash 실패 · 3분 전".
