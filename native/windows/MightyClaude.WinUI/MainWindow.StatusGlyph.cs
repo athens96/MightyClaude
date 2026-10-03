@@ -143,9 +143,13 @@ public sealed partial class MainWindow
         var id = service.Snapshot.Sessions[0].Id; var original = service.Snapshot.Sessions[0].Status;
         try
         {
-            Require(sessionIndicators.Count > 0 && sessionIndicators.Values.All(v => v.Mark.View.Parent is not null), "sidebar rows have no status glyph");
+            // Read the rows through their panels' own children: FrameworkElement.Parent is not set on
+            // rows just built in code (the same reason MainWindow.Layout.cs owns paneHosts explicitly).
+            var sidebarRowMarks = RowMarks(sessionLinks);
+            Require(sessionIndicators.Count > 0 && sessionIndicators.Values.All(v => sidebarRowMarks.Contains(v.Mark.View)), "sidebar rows have no status glyph");
             Require(sessionLinks.Children.OfType<Button>().All(b => b.Content is Grid row && !row.Children.OfType<ProgressRing>().Any() && row.Children[0] is Canvas), "a sidebar row still has the spinning ring");
-            Require(tabIndicators.Count > 0 && tabIndicators.Values.All(v => v.Mark.View.Parent is not null), "tabs have no status glyph");
+            var tabRowMarks = RowMarks(panes);
+            Require(tabIndicators.Count > 0 && tabIndicators.Values.All(v => tabRowMarks.Contains(v.Mark.View)), "tabs have no status glyph");
             checks["sidebarAndTabsDrawGlyphs"] = true;
             StatusMark.AnimationsEnabledOverride = false;
             var seen = new Dictionary<string, string>();
@@ -180,6 +184,28 @@ public sealed partial class MainWindow
             RefreshRunningIndicators(); if (views.TryGetValue(id, out var pane)) pane.Refresh();
         }
         return checks;
+    }
+
+    /// <summary>
+    /// The status marks drawn in the button rows under <paramref name="element"/>: the canvas
+    /// each row grid starts with. Walks panels, borders and content controls by their own
+    /// children, so it needs neither a layout pass nor FrameworkElement.Parent.
+    /// </summary>
+    private static HashSet<object> RowMarks(object? element)
+    {
+        var marks = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        void Walk(object? value)
+        {
+            switch (value)
+            {
+                case Button { Content: Grid row } when row.Children.Count > 0 && row.Children[0] is Canvas mark: marks.Add(mark); break;
+                case Panel panel: foreach (var child in panel.Children) Walk(child); break;
+                case Border border: Walk(border.Child); break;
+                case ContentControl content: Walk(content.Content); break;
+            }
+        }
+        Walk(element);
+        return marks;
     }
 
     private sealed partial class PaneView
