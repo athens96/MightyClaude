@@ -43,16 +43,19 @@ import {
   SessionHeader,
   SessionTitle,
   optionsFor,
+  settingFields,
   settingTitles,
   valueFor,
   type SettingField,
 } from '@/components/session-header';
+import { SessionPanel } from '@/components/session-panel';
 import { ConfirmDialog, MessageSheet, PickerSheet, PromptDialog, Sheet } from '@/components/sheets';
 import { Button, EmptyState, ErrorBanner, SegmentedControl } from '@/components/ui';
 import { useAttachments } from '@/hooks/use-attachments';
 import { useCapabilities } from '@/hooks/use-capabilities';
 import { useFollowBottom } from '@/hooks/use-follow-bottom';
 import { useLongPoll } from '@/hooks/use-long-poll';
+import { usePanelExpanded } from '@/hooks/use-panel-expanded';
 import { hasCapability } from '@/lib/capabilities';
 import { commandActionOf, isMessageAction } from '@/lib/commands';
 import {
@@ -69,6 +72,7 @@ import { fillDraft, latestNextActions } from '@/lib/next-actions';
 import { composerRunning, stopVerdict, type StopVerdict } from '@/lib/resync';
 import { guidedRequestFor, panelOf } from '@/lib/styles';
 import { sendWithAttachments, type SendRequest } from '@/lib/send';
+import { panelContent, panelShownExpanded, settingsSummary, toggledPanel } from '@/lib/session-panel';
 import { useForgetRefusedSecret } from '@/store/hosts';
 import {
   useDetailReceivedAt,
@@ -144,6 +148,12 @@ export default function SessionScreen() {
   const headerHeight = useHeaderHeight();
   const { height: windowHeight } = useWindowDimensions();
   const [keyboardShown, setKeyboardShown] = useState(false);
+  const [panelExpanded, setPanelExpanded] = usePanelExpanded();
+  /** The question (`requestKey`) the panel was opened for while it was docked above it. */
+  const [panelPeekFor, setPanelPeekFor] = useState<string | undefined>(undefined);
+  /** Clears a keyboard flag no hide event came for after the panel lowered the keyboard. */
+  const keyboardCheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(keyboardCheck.current), []);
   const [sending, setSending] = useState(false);
   const [deciding, setDeciding] = useState(false);
   /**
@@ -817,34 +827,50 @@ export default function SessionScreen() {
     [canStyle, client, followNewest, panel, poll, sessionId, text],
   );
 
+  // The settings and the status line live in the panel above the composer, the log/blocks
+  // switch in its row: at the top of the transcript, reaching them also paged in history.
+  const showStatus = hasCapability(capabilities, 'status');
+  const panelHas = panelContent({
+    fieldCount: settingFields(settings, canStyle).length,
+    showStatus,
+    statusLine: detail?.statusLine,
+    rateLimits: detail?.rateLimits,
+    mighty: Boolean(mighty),
+  });
+  const questionKey = questionRequest ? requestKey(questionRequest) : undefined;
+  const panelView = {
+    expanded: panelExpanded,
+    keyboardShown,
+    questionPending,
+    peeking: questionKey !== undefined && panelPeekFor === questionKey,
+  };
+  const panelOpen = panelShownExpanded(panelView);
+  const togglePanel = () => {
+    const next = toggledPanel(panelView);
+    if (next.dismissKeyboard) {
+      Keyboard.dismiss();
+      // A hide event that never comes would leave the panel compact for good.
+      clearTimeout(keyboardCheck.current);
+      keyboardCheck.current = setTimeout(() => setKeyboardShown(Keyboard.isVisible()), 300);
+    }
+    setPanelPeekFor(next.peeking ? questionKey : undefined);
+    // A peek leaves the remembered choice alone, so it is not even rewritten.
+    if (next.expanded !== panelExpanded) setPanelExpanded(next.expanded);
+  };
+
+  // The top of the transcript holds only the history note. It is a button too, so a
+  // transcript too short to scroll can still page in what came before it.
   const headerNode = detail ? (
     <View>
-      <SessionHeader
-        detail={detail}
-        settings={settings}
-        showStatus={hasCapability(capabilities, 'status')}
-        styleAware={canStyle}
-        onEditSetting={openPicker}
-      />
-      {mighty ? (
-        <View style={styles.viewSwitch}>
-          <SegmentedControl
-            options={[
-              { id: 'log', label: t('phone.session.view.log') },
-              { id: 'blocks', label: t('phone.session.view.blocks') },
-            ]}
-            value={view}
-            onChange={setChosenView}
-          />
-        </View>
-      ) : null}
       {view === 'log' && loadingOlder ? (
         <View style={styles.olderRow}>
           <ActivityIndicator size="small" />
-          <Text style={styles.olderText}>이전 기록 불러오는 중…</Text>
+          <Text style={styles.olderText}>{t('phone.session.loadingOlder')}</Text>
         </View>
       ) : view === 'log' && canLoadOlder ? (
-        <Text style={styles.olderText}>위로 당기면 이전 기록을 더 불러옵니다.</Text>
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => void loadOlder()}>
+          <Text style={styles.olderText}>{t('phone.session.loadOlder')}</Text>
+        </Pressable>
       ) : null}
     </View>
   ) : null;
@@ -1002,6 +1028,36 @@ export default function SessionScreen() {
             <NextActionChips actions={nextActions.actions} onFill={fillComposer} />
           </View>
         ) : null}
+        {detail && (panelHas.body || panelHas.viewSwitch) ? (
+          <SessionPanel
+            summary={settingsSummary(settings, t('phone.session.panel.title'))}
+            expanded={panelOpen}
+            maxHeight={Math.round(windowHeight * 0.35)}
+            onToggle={togglePanel}
+            accessory={
+              panelHas.viewSwitch ? (
+                <SegmentedControl
+                  options={[
+                    { id: 'log', label: t('phone.session.view.log') },
+                    { id: 'blocks', label: t('phone.session.view.blocks') },
+                  ]}
+                  value={view}
+                  onChange={setChosenView}
+                />
+              ) : undefined
+            }
+          >
+            {panelHas.body ? (
+              <SessionHeader
+                detail={detail}
+                settings={settings}
+                showStatus={showStatus}
+                styleAware={canStyle}
+                onEditSetting={openPicker}
+              />
+            ) : undefined}
+          </SessionPanel>
+        ) : null}
         <Composer
           text={text}
           onChangeText={setText}
@@ -1077,7 +1133,7 @@ export default function SessionScreen() {
         title={picker ? settingTitles[picker] : ''}
         note={
           settings && !settings.editable
-            ? '실행 중에는 설정을 바꿀 수 없습니다.'
+            ? t('phone.session.settingsLocked')
             : pendingViewMode
               ? 'Mighty 보기와 함께 적용합니다.'
               : undefined
@@ -1135,5 +1191,4 @@ const makeStyles = (palette: Palette) =>
     olderRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
     olderText: { color: palette.textFaint, fontSize: 12, paddingVertical: spacing.xs },
     pullRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'center' },
-    viewSwitch: { paddingBottom: spacing.md },
   });

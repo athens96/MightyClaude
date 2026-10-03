@@ -144,9 +144,23 @@ export function SessionTitle({
   );
 }
 
+/** The chips a pane shows: a field the host sends no options or no value for is left out. */
+export function settingFields(settings: MobileSettings | undefined, styleAware: boolean): SettingField[] {
+  if (!settings) return [];
+  return (
+    [
+      'model',
+      'permissionMode',
+      'effort',
+      'agentViewMode',
+      styleAware ? 'styleId' : 'mightyStyle',
+    ] as const
+  ).filter((field) => optionsFor(settings, field).length > 0 && valueFor(settings, field).length > 0);
+}
+
 /**
- * Under the title, at the top of the transcript: the settings chips (on a host that
- * advertised "settings") and the status line (on one that sends it).
+ * The expanded session panel above the composer (`SessionPanel`): the settings chips (on
+ * a host that advertised "settings") and the status line (on one that sends it).
  */
 export function SessionHeader({
   detail,
@@ -167,19 +181,7 @@ export function SessionHeader({
   const palette = usePalette();
   const styles = useStyles(makeStyles);
 
-  const fields: SettingField[] = settings
-    ? (
-        [
-          'model',
-          'permissionMode',
-          'effort',
-          'agentViewMode',
-          styleAware ? 'styleId' : 'mightyStyle',
-        ] as const
-      ).filter(
-        (field) => optionsFor(settings, field).length > 0 && valueFor(settings, field).length > 0,
-      )
-    : [];
+  const fields = settingFields(settings, styleAware);
   const chips = settings !== undefined && fields.length > 0;
   if (!chips && !showStatus) return null;
 
@@ -199,7 +201,7 @@ export function SessionHeader({
             ))}
           </View>
           {settings.editable ? null : (
-            <Text style={styles.settingNote}>실행 중에는 설정을 바꿀 수 없습니다.</Text>
+            <Text style={styles.settingNote}>{t('phone.session.settingsLocked')}</Text>
           )}
         </View>
       ) : null}
@@ -218,7 +220,7 @@ const makeStyles = (palette: Palette) =>
     subtitle: { alignItems: 'center', flexDirection: 'row', gap: 5, marginTop: 1 },
     subtitleText: { color: palette.textMuted, flexShrink: 1, fontSize: 12, lineHeight: 16 },
     word: { fontWeight: '600' },
-    header: { gap: spacing.sm, marginBottom: spacing.md },
+    header: { gap: spacing.sm },
     settings: { gap: spacing.xs },
     settingChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     settingNote: { color: palette.textFaint, fontSize: 11 },
