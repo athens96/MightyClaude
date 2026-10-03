@@ -405,10 +405,18 @@ public sealed partial class MainWindow
             var header = BuildGraphCardHeader(block, files);
             body.Children.Add(header);
 
-            var content = new StackPanel { Spacing = 6 };
+            // Top-aligned: a stretched child of the scrolling body is arranged at least as tall
+            // as the body, so it would report the card's own height and never its content's.
+            var content = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Top };
             // The body scrolls, so the content takes its natural height: with the
-            // header and the card's chrome that is the newest result's content height.
-            if (resizable) content.SizeChanged += (_, _) => ResultMeasured(block.Id, GraphCardChrome + header.ActualHeight + content.ActualHeight);
+            // header and the card's chrome that is the newest result's content height
+            // (macOS AgentTranscriptView.onContentHeight). Neither depends on the card's
+            // height, so fitting the card to it changes nothing measured here.
+            if (resizable)
+            {
+                void Measured(object sender, SizeChangedEventArgs args) => ResultMeasured(block.Id, GraphCardChrome + header.ActualHeight + content.ActualHeight);
+                content.SizeChanged += Measured; header.SizeChanged += Measured;
+            }
             if (block.Request.Length > 0)
                 content.Children.Add(new TextBlock { Text = block.Request, FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = .85 });
             if (block.Entries.Count > 0)
