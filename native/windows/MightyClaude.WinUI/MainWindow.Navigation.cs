@@ -96,7 +96,7 @@ public sealed partial class MainWindow
                 AddPaneMenu.OpenProject => OpenProjectMenuItem(),
                 _ => AddPaneMenu.AgentProvider(entry) is { } provider
                     ? MenuItem(ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider)), () => AddAgentPane(provider, groupId))
-                    : throw new InvalidOperationException("unknown 창 추가 entry " + entry),
+                    : throw new InvalidOperationException("unknown add-pane menu entry " + entry),
             });
         return menu;
     }

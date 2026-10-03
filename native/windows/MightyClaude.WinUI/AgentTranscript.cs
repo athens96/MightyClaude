@@ -23,7 +23,7 @@ internal sealed class AgentTranscript
     private string? workspaceRoot;
     internal AgentTranscript()
     {
-        AutomationProperties.SetName(View, "에이전트 출력 · 여러 문단을 선택해 복사할 수 있습니다");
+        AutomationProperties.SetName(View, Locale.Get("transcript.accessibility"));
         ScrollViewer.SetVerticalScrollBarVisibility(View, ScrollBarVisibility.Auto);
         View.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, e) => { if (e.GetCurrentPoint(View).Properties.IsLeftButtonPressed) selecting = true; }), true);
         void Finish(object sender, PointerRoutedEventArgs args) { selecting = false; if (deferred is { } value) { deferred = null; Update(value.Session, value.Light); } }
@@ -114,7 +114,7 @@ internal static class TranscriptRtf
             }
             else
             {
-                if (entry.Kind == "user") body.Append(@"\pard\sb220\sa90\cf3\b ").Append(Escape("↑ 요청")).Append(@"\b0\par ");
+                if (entry.Kind == "user") body.Append(@"\pard\sb220\sa90\cf3\b ").Append(Escape(Locale.Get("transcript.requestHeading"))).Append(@"\b0\par ");
                 else if (entry.Kind == "error") body.Append(@"\pard\sb160\cf4 ").Append(Escape("⚠ "));
                 else if (entry.Kind is "system") body.Append(@"\pard\sb100\fs23\cf2 ").Append(Escape("· "));
                 var contentStart = body.Length;

@@ -144,8 +144,8 @@ public sealed class OutputParser
             if (provider != "claude" || closed) return;
             Resume(root.Text("claudeSessionId")); usage.ConsumeMod(root);
             var kind = root.Text("event");
-            if (kind == "turn.start" && root.Text("agentId") is null) { Turn("Claude 응답 생성 중"); return; }
-            if (kind == "turn.complete") { if (root.Text("agentId") is null) Turn("Claude 응답 마무리 중"); return; }
+            if (kind == "turn.start" && root.Text("agentId") is null) { Turn(Locale.Get("run.turn.generating", new Dictionary<string, string> { ["name"] = "Claude" })); return; }
+            if (kind == "turn.complete") { if (root.Text("agentId") is null) Turn(Locale.Get("run.turn.finishing", new Dictionary<string, string> { ["name"] = "Claude" })); return; }
             if (kind is not ("tool.call" or "tool.waiting" or "tool.complete")) return;
             if (root.Text("toolUseId") is not { } rawId || root.Text("tool") is not { } name) return;
             var id = ActivitySupport.Id(activityNamespace, rawId);
@@ -165,7 +165,7 @@ public sealed class OutputParser
                 {
                     double? duration = previous.DurationMs;
                     if (starts.Remove(id, out var start) && ActivitySupport.ValidDuration(clock() - start)) duration = clock() - start;
-                    var value = previous with { State = stopped ? "stopped" : "error", Output = previous.Output ?? "도구 결과를 받기 전에 실행이 종료되었습니다.", DurationMs = duration };
+                    var value = previous with { State = stopped ? "stopped" : "error", Output = previous.Output ?? Locale.Get("run.tool.endedBeforeResult"), DurationMs = duration };
                     activities[id] = value; activity?.Invoke(value);
                 }
         }
@@ -196,19 +196,19 @@ public sealed class OutputParser
                         Tool(block.Text("tool_use_id"), MetadataJson.Flag(block, "is_error") ? "error" : "completed", output: ActivitySupport.Output(MetadataJson.Property(block, "content")));
                         if (block.Text("tool_use_id") is { Length: > 0 } toolId && Encoding.UTF8.GetByteCount(toolId) <= 512) Images(AgentImageSupport.Payloads(MetadataJson.Property(block, "content")), toolId, toolId, child);
                     }
-                if (type == "system" && root.Text("subtype") == "permission_denied") Tool(root.Text("tool_use_id"), "error", root.Text("tool_name"), output: Error(MetadataJson.Property(root, "message"), "선택한 권한 모드 또는 Claude 규칙에서 거부했습니다."));
+                if (type == "system" && root.Text("subtype") == "permission_denied") Tool(root.Text("tool_use_id"), "error", root.Text("tool_name"), output: Error(MetadataJson.Property(root, "message"), Locale.Get("run.tool.permissionDenied")));
                 if (type == "result" && !child && !ClaudeStream.IsNotificationResult(root))
                 {
                     if (MetadataJson.Flag(root, "is_error") || root.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true)
-                    { Failed = true; log("error", root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array ? string.Join('\n', errors.EnumerateArray().Select(e => Error(e, "실행 오류"))) : root.Text("result") ?? "Claude 실행 오류"); }
+                    { Failed = true; log("error", root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array ? string.Join('\n', errors.EnumerateArray().Select(e => Error(e, Locale.Get("run.activity.error")))) : root.Text("result") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Claude" })); }
                     else if (!assistantSeen) Assistant(root.Text("result") ?? "");
-                    Turn("Claude 응답 마무리 중");
+                    Turn(Locale.Get("run.turn.finishing", new Dictionary<string, string> { ["name"] = "Claude" }));
                 }
             }
             else if (provider == "codex")
             {
                 if (type == "thread.started") Resume(root.Text("thread_id"));
-                if (type is "turn.started" or "turn.completed") Turn(type == "turn.started" ? "Codex 응답 생성 중" : "Codex 응답 마무리 중");
+                if (type is "turn.started" or "turn.completed") Turn(Locale.Get(type == "turn.started" ? "run.turn.generating" : "run.turn.finishing", new Dictionary<string, string> { ["name"] = "Codex" }));
                 var item = MetadataJson.Property(root, "item");
                 if (type is "item.started" or "item.updated" or "item.completed" && item.ValueKind == JsonValueKind.Object)
                 {
@@ -233,34 +233,34 @@ public sealed class OutputParser
                                 else PathImage(item.Text("saved_path") ?? item.Text("savedPath"), generatedId);
                             }
                             break;
-                        case "error": log("error", item.Text("message") ?? "Codex 작업 오류"); break;
+                        case "error": log("error", item.Text("message") ?? Locale.Get("run.error.providerTask", new Dictionary<string, string> { ["name"] = "Codex" })); break;
                     }
                 }
-                if (type is "turn.failed" or "error") { Failed = true; log("error", root.TryGetProperty("error", out var error) ? Error(error, "Codex 실행 오류") : root.Text("message") ?? "Codex 실행 오류"); }
+                if (type is "turn.failed" or "error") { Failed = true; log("error", root.TryGetProperty("error", out var error) ? Error(error, Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })) : root.Text("message") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Codex" })); }
             }
             else
             {
-                if (type == "init") { Resume(root.Text("session_id")); Turn("Gemini 응답 생성 중"); }
+                if (type == "init") { Resume(root.Text("session_id")); Turn(Locale.Get("run.turn.generating", new Dictionary<string, string> { ["name"] = "Gemini" })); }
                 if (type == "message" && root.Text("role") == "assistant")
                 {
                     if (MetadataJson.Flag(root, "delta")) { var text = root.Text("content") ?? ""; var remaining = Math.Max(0, ActivitySupport.MaximumMessageBytes - Encoding.UTF8.GetByteCount(pending.ToString())); if (Encoding.UTF8.GetByteCount(text) > remaining) pendingTruncated = true; pending.Append(ActivitySupport.PrefixUtf8(text, remaining)); }
                     else { Flush(); if (root.Text("content") is { Length: > 0 } text) log("assistant", ActivitySupport.PrefixUtf8(text, ActivitySupport.MaximumMessageBytes)); }
                 }
-                if (type == "tool_use") { Flush(); Tool(root.Text("tool_id"), "running", root.Text("tool_name"), MetadataJson.Property(root, "parameters")); if (activity is null) log("system", $"도구 실행 · {root.Text("tool_name")}"); }
-                if (type == "tool_result") { Flush(); var failed = root.Text("status") == "error"; var output = failed ? Error(MetadataJson.Property(root, "error"), "Gemini 도구 실행 오류") : root.Text("output"); Tool(root.Text("tool_id"), failed ? "error" : "completed", output: output); if (activity is null && output is not null) log("output", output); }
-                if (type == "error" || type == "result" && root.Text("status") == "error") { Flush(); var fatal = root.Text("severity") != "warning"; Failed |= fatal; log(fatal ? "error" : "system", root.TryGetProperty("error", out var error) ? Error(error, "Gemini 실행 오류") : root.Text("message") ?? "Gemini 실행 오류"); }
-                if (type == "result") { Flush(); Turn("Gemini 응답 마무리 중"); }
+                if (type == "tool_use") { Flush(); Tool(root.Text("tool_id"), "running", root.Text("tool_name"), MetadataJson.Property(root, "parameters")); if (activity is null) log("system", Locale.Get("run.tool.started", new Dictionary<string, string> { ["name"] = root.Text("tool_name") ?? "" })); }
+                if (type == "tool_result") { Flush(); var failed = root.Text("status") == "error"; var output = failed ? Error(MetadataJson.Property(root, "error"), Locale.Get("run.error.providerTool", new Dictionary<string, string> { ["name"] = "Gemini" })) : root.Text("output"); Tool(root.Text("tool_id"), failed ? "error" : "completed", output: output); if (activity is null && output is not null) log("output", output); }
+                if (type == "error" || type == "result" && root.Text("status") == "error") { Flush(); var fatal = root.Text("severity") != "warning"; Failed |= fatal; log(fatal ? "error" : "system", root.TryGetProperty("error", out var error) ? Error(error, Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Gemini" })) : root.Text("message") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Gemini" })); }
+                if (type == "result") { Flush(); Turn(Locale.Get("run.turn.finishing", new Dictionary<string, string> { ["name"] = "Gemini" })); }
             }
         }
         catch (JsonException) { log("output", line); }
-        catch (InvalidOperationException) { log("system", "지원하지 않는 CLI 출력 레코드를 생략했습니다."); }
+        catch (InvalidOperationException) { log("system", Locale.Get("run.notice.unsupportedRecord")); }
     }
     private static bool Decodes(string base64)
     {
         try { AgentImageSupport.DecodeBase64(base64); return true; }
         catch (AgentImageException ex) when (ex.Error is AgentImageError.InvalidEncoding or AgentImageError.TooLarge or AgentImageError.Empty) { return false; }
     }
-    public void Flush() { lock (sync) { if (pending.Length > 0) log("assistant", pending.ToString()); if (pendingTruncated) log("system", "응답 한 메시지가 128 KiB를 넘어 뒷부분을 생략했습니다."); pending.Clear(); pendingTruncated = false; } }
+    public void Flush() { lock (sync) { if (pending.Length > 0) log("assistant", pending.ToString()); if (pendingTruncated) log("system", Locale.Get("run.notice.messageTruncated")); pending.Clear(); pendingTruncated = false; } }
 }
 
 public static class ClaudeStream
