@@ -15,6 +15,8 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow : Window
 {
     private readonly DesktopService service;
+    /// <summary>Thumbnails of the pictures agents showed, shared by every transcript.</summary>
+    private readonly AgentPictures pictures;
     private readonly Grid root = new() { Padding = new Thickness(12), ColumnSpacing = 12, RowSpacing = 8, Background = WindowBackground(false) };
     private static SolidColorBrush WindowBackground(bool light) => new(light
         ? Windows.UI.Color.FromArgb(255, 245, 246, 249)
@@ -53,6 +55,7 @@ public sealed partial class MainWindow : Window
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
         service = new(options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative"), options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
+        pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());
         coordinator = new((provider, token) =>
         {
@@ -96,6 +99,7 @@ public sealed partial class MainWindow : Window
         footer.Children.Add(statusRow); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
         AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; clock.Stop(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
+        InitFilePane(); InitAddPaneShortcuts();
         _ = Initialize();
     }
     private async Task Initialize()
@@ -133,9 +137,9 @@ public sealed partial class MainWindow : Window
         await Act(async () => { var picker = new FolderPicker(); picker.FileTypeFilter.Add("*"); WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this)); if (await picker.PickSingleFolderAsync() is { } folder) { await service.AddWorkspaceAsync(folder.Path); Render(); } });
     }
     private async Task RemoveWorkspace() { await Act(async () => { if (service.Snapshot.ActiveWorkspaceId is { } id) { await service.RemoveWorkspaceAsync(id); Render(); } }); }
-    private async Task AddPane(string kind, string provider = "claude", string? groupId = null)
+    private async Task AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
     {
-        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
+        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
     }
     private async Task RefreshRuntime() { await Act(async () => { status.Text = Locale.Get("window.status.checkingRuntimeAndModels"); runtime = await service.Providers.GetRuntimeAsync(true); RefreshEnvironment(); }); }
     private void RefreshEnvironment()
@@ -148,12 +152,16 @@ public sealed partial class MainWindow : Window
     {
         var previous = rendering; rendering = true;
         var state = service.Snapshot; workspaces.Items.Clear();
-        foreach (var workspace in state.Workspaces.Where(w => (w.Name + w.Path).Contains(search.Text, StringComparison.OrdinalIgnoreCase)))
+        // As on macOS, the open-folder button shows only while the list is empty (no workspace
+        // yet, or none matching the search); otherwise 창 추가 → 프로젝트 폴더 열기… or Ctrl+O.
+        var listed = AddPaneMenu.Filtered(state.Workspaces, search.Text);
+        addFolderButton.Visibility = listed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var workspace in listed)
         {
             var label = new StackPanel { Spacing = 3 }; label.Children.Add(new TextBlock { Text = workspace.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }); label.Children.Add(new TextBlock { Text = Locale.Get("workspace.location.thisComputer"), FontSize = 11, Opacity = .65 });
             var item = new ListViewItem { Content = label, Tag = workspace.Id, ContextFlyout = WorkspaceMenu(workspace.Id) }; ToolTipService.SetToolTip(item, workspace.Path); workspaces.Items.Add(item); if (workspace.Id == state.ActiveWorkspaceId) workspaces.SelectedItem = item;
         }
-        sessionLinks.Children.Clear(); sessionIndicators.Clear();
+        sessionLinks.Children.Clear(); sessionIndicators.Clear(); sidebarMarks.Clear(); sidebarBetas.Clear();
         foreach (var session in state.Sessions.Where(s => s.WorkspaceId == state.ActiveWorkspaceId))
         {
             var button = Button(session.Title, () => SelectLayoutSession(session.Id)); button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.Content = SessionIndicator(session); button.ContextFlyout = SessionMenu(session.Id); sessionLinks.Children.Add(button);
@@ -163,13 +171,13 @@ public sealed partial class MainWindow : Window
     private void Render()
     {
         if (closing) return; rendering = true; var state = service.Snapshot;
-        root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark;
+        root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; darkTheme = state.Theme != "light";
         root.Background = WindowBackground(state.Theme == "light"); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar();
         RenderAccountUsage();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
         // A closed session runs nothing more: end its refresher before dropping the pane.
-        foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { views[stale].Refresher?.Close(); views.Remove(stale); }
+        foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { views[stale].Refresher?.Close(); views[stale].ForgetGraphHistory(); views.Remove(stale); }
         RenderPaneLayout(state);
         status.Text = runtime is null ? Locale.Get("window.status.checkingRuntime") : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
         rendering = false;
@@ -248,7 +256,7 @@ public sealed partial class MainWindow : Window
             var grid = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
             var header = new Grid { ColumnSpacing = 8 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
+            var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(headerMark.View); state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
             var copy = Button(Locale.Get("pane.copyButton"), () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
             ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
@@ -438,9 +446,8 @@ public sealed partial class MainWindow : Window
             var caps = Capabilities;
             Label(provider, pane.Provider == "claude" ? "Claude ⌄" : pane.Provider == "codex" ? "Codex ⌄" : "Gemini ⌄", Locale.Get("composer.label.runner")); ToolTipService.SetToolTip(provider, ProviderCatalog.IsBeta(pane.Provider) ? ProviderCatalog.BetaLabel(pane.Provider, ProviderCatalog.Name(pane.Provider)) : null);
             var providers = new MenuFlyout(); foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.BetaLabel(value, ProviderCatalog.Name(value)), () => owner.Act(async () => { if (Session.Status == "running" || Session.Provider == value) return; await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); }), pane.Provider == value)); provider.Flyout = providers;
-            var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, (pane.Model == "default" ? Locale.Get("composer.model.default") : selectedModel?.DisplayName ?? pane.Model) + " ⌄", Locale.Get("composer.label.model")); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
-            var models = new MenuFlyout(); foreach (var row in catalog.Models) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
-            if (!catalog.Models.Any(m => m.Value == pane.Model)) models.Items.Add(Item(pane.Model, () => ChangeModel(pane.Model), true));
+            var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, ModelLabel.Selection(pane, catalog) + " ⌄", Locale.Get("composer.label.model")); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
+            var models = new MenuFlyout(); foreach (var row in ModelLabel.PickerOptions(pane, catalog)) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
             if (pane.Provider != "gemini") { models.Items.Add(new MenuFlyoutSeparator()); models.Items.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); } model.Flyout = models;
             var registeredModels2 = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot);
             var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels2); var knownEffort = pane.Settings.Effort == "default" || levels.Contains(pane.Settings.Effort);
@@ -498,8 +505,10 @@ public sealed partial class MainWindow : Window
         }
         internal void Refresh()
         {
+            // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
+            if (FilePaneKind.IsFilePane(Session.Kind)) { EnsureFilesView(); return; }
             var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            label.Text = StateLabel(pane.Status); output.Update(pane, owner.service.Snapshot.Theme == "light"); RefreshElapsed();
+            var state = owner.service.Snapshot; RefreshHeaderStatus(pane, state.Theme != "light"); output.Update(pane, state.Theme == "light", owner.pictures, state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path); RefreshElapsed(pane);
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);

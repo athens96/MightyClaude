@@ -49,9 +49,7 @@ public sealed partial class MainWindow
             var runtime = owner.Runtime(pane.Provider);
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var usage = pane.SessionUsage;
-            var option = catalog.Models.FirstOrDefault(m => m.Value == (usage?.Model ?? pane.Model));
-            var modelId = usage?.Model ?? (pane.Model == "default" ? "default" : pane.Model);
-            var modelName = option?.DisplayName ?? usage?.Model ?? pane.Model;
+            var (modelId, modelName) = ModelLabel.StatusLine(pane, catalog);
             var elapsedMs = pane.RunTiming is { } timing ? (long)Math.Max(0, timing.Elapsed() * 1000) : (long?)null;
             var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var configDir = StatusLineSupport.ConfigDir(homeDir) ?? Path.Combine(homeDir, ".claude");

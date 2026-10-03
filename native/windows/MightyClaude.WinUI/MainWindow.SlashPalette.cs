@@ -105,9 +105,7 @@ public sealed partial class MainWindow
             if (argument == SlashArgument.Model)
             {
                 var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-                var options = catalog.Models.Select(m => (m.Value, m.DisplayName)).ToList();
-                if (!options.Any(o => o.Value == pane.Model)) options.Add((pane.Model, pane.Model));
-                return SlashPalette.ModelChoices(command, options, pane.Model);
+                return SlashPalette.ModelChoices(command, ModelLabel.PickerOptions(pane, catalog).Select(m => (m.Value, m.DisplayName)), pane.Model);
             }
             var modes = (Capabilities.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains);
             return SlashPalette.PermissionChoices(command, modes, pane.Settings.PermissionMode, mode => PermissionLabel(pane.Provider, mode));
@@ -254,7 +252,7 @@ public sealed partial class MainWindow
                     if (argument is not { } model) return false;
                     if (running) { await SlashNote(SlashCommandStrings.NoteModelRunning); break; }
                     var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-                    var name = catalog.Models.FirstOrDefault(m => m.Value == model)?.DisplayName ?? model;
+                    var name = ModelLabel.Selection(pane with { Model = model }, catalog);
                     if (pane.Model == model) { await SlashNote(SlashCommandStrings.NoteModelAlreadyTemplate.Replace("{name}", name)); break; }
                     await ChangeModel(model);
                     await SlashNote(SlashCommandStrings.NoteModelChangedTemplate.Replace("{name}", name).Replace("{particle}", KoreanParticle.Ro(name)));

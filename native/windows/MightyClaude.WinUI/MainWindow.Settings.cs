@@ -200,7 +200,8 @@ public sealed partial class MainWindow
                 row.Value,
                 row.Mixed,
                 PhaseRowIdPrefix + phase,
-                value => ApplyPhaseModelRow(phase, value)));
+                value => ApplyPhaseModelRow(phase, value),
+                PhaseModelLabel));
         }
 
         foreach (var block in PhaseModelSection.ToolBlocks(config, tools))
@@ -221,7 +222,8 @@ public sealed partial class MainWindow
                     knob.Value,
                     false,
                     KnobRowIdPrefix + id,
-                    value => ApplyPhaseModelKnob(id, value)));
+                    value => ApplyPhaseModelKnob(id, value),
+                    knob.IsEffort ? null : (Func<string, string>)PhaseModelLabel));
             }
         }
 
@@ -259,13 +261,27 @@ public sealed partial class MainWindow
             .Distinct(StringComparer.Ordinal)];
     }
 
+    // A model name as the composer's picker shows it (macOS PhaseModelSettingsView uses
+    // ModelLabel): the catalogue row's label when a runner lists it, else the id read alone.
+    // Only the shown text changes; the value written to the files stays the same.
+    private string PhaseModelLabel(string value)
+    {
+        foreach (var provider in new[] { "claude", "codex" })
+        {
+            var catalog = runtime?.Providers?.FirstOrDefault(item => item.Id == provider)?.ModelCatalog ?? ProviderCatalog.Fallback(provider);
+            if (catalog.Models.FirstOrDefault(model => model.Value == value) is { } option) return ModelLabel.Option(option);
+        }
+        return ModelLabel.Text(value);
+    }
+
     private static ComboBox PhaseModelPicker(
         string label,
         IReadOnlyList<string> values,
         string current,
         bool mixed,
         string automationId,
-        Func<string, Task> onPick)
+        Func<string, Task> onPick,
+        Func<string, string>? display = null)
     {
         var box = new ComboBox { Header = label, HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetAutomationId(box, automationId);
@@ -274,10 +290,10 @@ public sealed partial class MainWindow
             box.Items.Add(new ComboBoxItem { Content = PhaseModelSection.MixedLabel, Tag = PhaseModelSection.MixedSentinel });
         foreach (var value in values)
             if (value != "default")
-                box.Items.Add(new ComboBoxItem { Content = value, Tag = value });
+                box.Items.Add(new ComboBoxItem { Content = display?.Invoke(value) ?? value, Tag = value });
         // 목록에 없는 이름이 이미 들어 있으면 그 이름도 보여 준다 — 고른 값을 잃지 않는다.
         if (!mixed && current != "default" && !values.Contains(current))
-            box.Items.Add(new ComboBoxItem { Content = current, Tag = current });
+            box.Items.Add(new ComboBoxItem { Content = display?.Invoke(current) ?? current, Tag = current });
 
         var wanted = mixed ? PhaseModelSection.MixedSentinel : current;
         box.SelectedIndex = Math.Max(0, box.Items

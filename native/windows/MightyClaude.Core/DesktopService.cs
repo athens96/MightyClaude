@@ -12,6 +12,8 @@ public sealed class DesktopService : IAsyncDisposable
     private AppSnapshot snapshot = new();
     private bool closing;
     public ProviderCatalog Providers { get; }
+    /// <summary>Pictures agents showed, under the app data folder (macOS <c>image-cache</c>); transcripts hold only references.</summary>
+    public AgentImageCache Images { get; }
     public event Action<RunEvent>? RunEventReceived;
     /// <summary>
     /// A Claude tool-permission request waiting in — or settled by — the local
@@ -23,7 +25,8 @@ public sealed class DesktopService : IAsyncDisposable
     public AppSnapshot Snapshot { get { lock (sync) { var copy = Wire.Clone(snapshot); return copy with { Sessions = copy.Sessions.Select(s => s with { CurrentActivity = snapshot.Sessions.FirstOrDefault(original => original.Id == s.Id)?.CurrentActivity }).ToList() }; } } }
     public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null)
     {
-        store = new(directory, legacyDirectory); Providers = providers ?? new(); local = new(ResolveLocal, Providers, pluginDirectory, Receive, value => ToolPermissionChanged?.Invoke(value));
+        store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache"));
+        local = new(ResolveLocal, Providers, pluginDirectory, Receive, value => ToolPermissionChanged?.Invoke(value), Images);
     }
     /// <summary>이번만 허용 / 거부 — the only way a request is ever answered, one request at a time.</summary>
     public void RespondToToolPermission(string sessionId, string requestId, bool allow)
@@ -46,6 +49,7 @@ public sealed class DesktopService : IAsyncDisposable
     }
     public Task RenameWorkspaceAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameWorkspace(s, id, name));
     public Task RenameSessionAsync(string id, string name) => UpdateAsync(s => RenameSupport.RenameSession(s, id, name));
+    public Task SetSessionAutoTitleAsync(string id) => UpdateAsync(s => PaneTitle.SetAutomatic(s, id));
     public Task UpdateAsync(Func<AppSnapshot, AppSnapshot> update)
     {
         lock (sync) { ObjectDisposedException.ThrowIf(closing, this); snapshot = StateStore.Normalize(update(snapshot), false); return QueueSave(); }
@@ -59,7 +63,28 @@ public sealed class DesktopService : IAsyncDisposable
     {
         if (!value.Valid()) return;
         lock (sync) { snapshot = snapshot.Apply(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") routes.Remove(value.SessionId); _ = QueueSave(); }
+        if (value.Type == "resume" && value.ResumeId is { } resumed) RememberSession(resumed);
         RunEventReceived?.Invoke(value);
+    }
+    // Session ids this app's panes started or resumed (macOS KnownSessionIDs):
+    // the "기존 세션 이어가기" list never hides them as automated runs.
+    private readonly object knownSync = new();
+    private List<string>? knownSessions;
+    public string KnownSessionsPath => Path.Combine(store.DirectoryPath, KnownSessionIDs.FileName);
+    public IReadOnlySet<string> KnownSessions()
+    {
+        lock (knownSync) return (knownSessions ??= KnownSessionIDs.Load(KnownSessionsPath)).Select(id => id.ToLowerInvariant()).ToHashSet();
+    }
+    public void RememberSession(string id)
+    {
+        lock (knownSync)
+        {
+            knownSessions ??= KnownSessionIDs.Load(KnownSessionsPath);
+            if (KnownSessionIDs.Adding(id, knownSessions) is not { } next) return;
+            knownSessions = next;
+            try { KnownSessionIDs.Save(next, KnownSessionsPath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { PersistenceFailed?.Invoke(ex); }
+        }
     }
     public async Task StartAsync(StartRunRequest value)
     {
@@ -71,7 +96,7 @@ public sealed class DesktopService : IAsyncDisposable
             if (!snapshot.Sessions.Any(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind)) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
             route = new();
             if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
-            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? s with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
+            snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
             snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null)); _ = QueueSave();
         }

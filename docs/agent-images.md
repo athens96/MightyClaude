@@ -45,3 +45,7 @@
 ## 확인
 
 `AgentImagePipelineTests`가 실제 자식 프로세스가 내보내는 약 30 MB 스크린샷 줄과 그 뒤의 줄이 느린 소비자에서도 온전히 도착하고 그림이 캐시에 남는지, 줄 나누기, 미리 푼 그림 표식, 긴 비 JSON 줄을 확인한다. `AgentImageTests`(MightyCore)가 stream-json 고정 입력(Claude `Read`·MCP 스크린샷·하위 에이전트, Codex MCP·`image_view`·`image_generation`), 1 MiB를 넘는 그림 줄, Markdown 추출과 경로 규칙(작업 폴더·임시 폴더 허용, 밖·`..`·심볼릭 링크·`~` 거절, http는 링크만), 캐시 쓰기·읽기·LRU 정리·변조 거부와 다시 쓰기, 크기·픽셀·변 길이·형식 상한, SVG 문서 판별, 한글·공백 이름의 퍼센트 인코딩 경로, 도구를 모르는 하위 에이전트 그림, 저장 상태 정규화, 그래프 미리보기 블록의 위치, 휴대폰 페이로드를 확인한다. 화면(썸네일 그리기, 클릭·메뉴, 보기 창)은 GUI 실행으로만 확인할 수 있다.
+
+## Windows
+
+Windows 앱도 같은 규칙으로 대화 기록 안에 그림을 그린다(`native/windows/MightyClaude.Core/AgentImages.cs`, `MightyClaude.WinUI/AgentPictures.cs`·`AgentTranscript.cs`). 대화 기록이 RichEdit 문서 하나라서 그림은 긴 변 960 픽셀 썸네일(불투명하면 JPEG, 투명하면 PNG)을 문서 안의 그림(`\pict\jpegblip`·`\pict\pngblip`)으로 넣고, 최대 480 × 640으로 그린다. 캐시는 `<상태 폴더>\image-cache\`. 다른 점: 그림의 실제 형식은 ImageIO 대신 파일 머리에서 읽고(png·jpeg·gif·webp·bmp, svg 문서), tiff·heic는 지원하지 않는 형식으로 알린다. 적힌 경로가 먼저 작업 폴더나 임시 폴더 안이어야 디스크를 보므로, 네트워크 공유(`\\host\share\…`) 그림은 연결을 시도하기 전에 거절한다. svg는 대화 기록에 그리지 않고 출처 줄만 남긴다. 그림 누르기·우클릭 메뉴·마이티 모드 그림 미리보기 블록은 아직 없다. 대응 현황과 검사 이름은 [docs/windows-parity.md](windows-parity.md)의 `에이전트 그림 미리보기` 행.

@@ -15,11 +15,137 @@ public static class MightyGraphCamera
         Math.Max(trailing + Margin, RequestWidth + Margin * 2) - OriginX(leading);
 
     public const string PendingNodeID = "pending-input";
-    public static bool IsAuxiliary(string nodeID) => nodeID == PendingNodeID || nodeID.EndsWith(":result-files", StringComparison.Ordinal);
+    public static bool IsAuxiliary(string nodeID) => nodeID == PendingNodeID || nodeID == MightyGraphLayout.HistoryNodeID || nodeID.EndsWith(":result-files", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The camera shows the top of the diagram (the history block, or the first
+    /// card when there is none), so scrolling further up asks for older requests.
+    /// <paramref name="cameraY"/> is the pan in node coordinates times the zoom
+    /// (screen y = node y × zoom + cameraY); <paramref name="slack"/> is how far
+    /// below that top the viewport may start (macOS MightyGraphCamera.showsTop).
+    /// </summary>
+    public static bool ShowsTop(double cameraY, double zoom, double top, double slack = 8) =>
+        double.IsFinite(zoom) && zoom > 0 && double.IsFinite(cameraY) && double.IsFinite(top) && -cameraY / zoom <= top + slack;
 
     public static (double X, double Y) CameraOffset(GraphRect frame, (double W, double H) viewport, double zoom, bool alignTop) =>
         ((viewport.W - frame.W * zoom) / 2 - frame.X * zoom,
          (alignTop ? 16 : Math.Max(16, (viewport.H - frame.H * zoom) / 2)) - frame.Y * zoom);
+
+    /// A newly finished result card (macOS <c>MightyGraphLayout.revealOffset</c>):
+    /// its bottom 16pt above the viewport's bottom edge, right above the
+    /// composer, or — taller than the viewport — its top where an align-top
+    /// re-aim puts it, so its beginning is what shows.
+    public static (double X, double Y) RevealOffset(GraphRect frame, (double W, double H) viewport, double zoom)
+    {
+        var top = CameraOffset(frame, viewport, zoom, alignTop: true);
+        return (top.X, Math.Max(top.Y, viewport.H - 16 - frame.MaxY * zoom));
+    }
+
+    /// <paramref name="alignBottom"/> (a revealed result) wins over <paramref name="alignTop"/>.
+    public static (double X, double Y) CameraOffset(GraphRect frame, (double W, double H) viewport, double zoom, bool alignTop, bool alignBottom) =>
+        alignBottom ? RevealOffset(frame, viewport, zoom) : CameraOffset(frame, viewport, zoom, alignTop);
+
+    /// <summary>
+    /// When the camera puts a newly finished request's result card right above
+    /// the composer (<see cref="RevealOffset"/>; macOS <c>MightyGraphCamera.ResultReveal</c>).
+    /// It happens once, for a request of the pane's own that finishes while the
+    /// diagram watches — never for runs a pane opens or hydrates with, nor for
+    /// ones read back from the session record, nor when the newest result moves
+    /// back to an older request. A card whose content was not measured yet is
+    /// held without a camera move, so it lands once at its real height (or at
+    /// its cap if the measurement never comes). While held, the card settling
+    /// to a new height or the canvas changing size places it again. The user's
+    /// own scroll, a drag, a zoom, a draft being typed or a new request ends
+    /// the hold.
+    ///
+    /// Windows records a request's diagram only when it finishes, so a run is
+    /// never seen unfinished first: a finished run that is new to the pane while
+    /// one of its requests was in flight (<see cref="PaneRunning"/>) is the one
+    /// that just finished, as an unfinished-then-finished run is on macOS.
+    /// </summary>
+    public sealed class ResultReveal
+    {
+        /// A request as the reveal rule sees it.
+        public sealed record RunProgress(string Id, bool Finished);
+
+        /// The card the camera is holding above the composer.
+        public string? HoldingID { get; private set; }
+        /// The held card was not placed yet: its measurement is awaited.
+        public bool AwaitingMeasure { get; private set; }
+        /// A request of the pane's own was seen running and its diagram has not arrived yet.
+        public bool RequestInFlight { get; private set; }
+
+        /// The run whose result has just appeared: the newest finished run,
+        /// which the previous observation saw unfinished or — with a request in
+        /// flight — did not have yet and which is the newest run. A run seen for
+        /// the first time already finished with nothing in flight (a launch, a
+        /// hydration, history) and a newest result moving back to an earlier run
+        /// never qualify.
+        public static string? FinishedRunID(IReadOnlyList<RunProgress> previous, IReadOnlyList<RunProgress> current, bool requestInFlight = false)
+        {
+            var latest = current.LastOrDefault(r => r.Finished);
+            if (latest is null) return null;
+            var before = previous.FirstOrDefault(r => r.Id == latest.Id);
+            if (before is not null) return before.Finished ? null : latest.Id;
+            return requestInFlight && current[^1].Id == latest.Id ? latest.Id : null;
+        }
+
+        /// The pane's running state, at every observation. A request starting
+        /// is a new request: it ends any hold and marks a request in flight.
+        public void PaneRunning(bool wasRunning, bool isRunning)
+        {
+            if (!isRunning) return;
+            if (!wasRunning) Cancel();
+            RequestInFlight = true;
+        }
+
+        /// The pane's own runs changed. <paramref name="resultID"/> maps a run to
+        /// its result card; <paramref name="measured"/> says whether that card's
+        /// height is known already. Returns the card to place now, if any.
+        public string? RunsChanged(IReadOnlyList<RunProgress> previous, IReadOnlyList<RunProgress> current,
+            Func<string, string> resultID, Func<string, bool> measured)
+        {
+            var run = FinishedRunID(previous, current, RequestInFlight);
+            if (run is null) return null;
+            RequestInFlight = false;
+            var id = resultID(run);
+            HoldingID = id;
+            AwaitingMeasure = !measured(id);
+            return AwaitingMeasure ? null : id;
+        }
+
+        /// A card's measured content height changed; returns it when it is the
+        /// one held, since its new height moved its bottom.
+        public string? ContentMeasured(string id)
+        {
+            if (id != HoldingID) return null;
+            AwaitingMeasure = false;
+            return id;
+        }
+
+        /// The measurement did not come (the card was never drawn): place it at
+        /// its cap, which draws it, and its measurement places it again.
+        public string? MeasureTimedOut(string id)
+        {
+            if (id != HoldingID || !AwaitingMeasure) return null;
+            AwaitingMeasure = false;
+            return id;
+        }
+
+        /// The canvas changed size; returns the held card to place again, unless
+        /// it is still waiting for its first placement.
+        public string? ViewportChanged() => AwaitingMeasure ? null : HoldingID;
+
+        /// The composer started holding a draft: the draft's block is what the
+        /// camera keeps from now on.
+        public void DraftChanged(bool wasEmpty, bool isEmpty)
+        {
+            if (wasEmpty && !isEmpty) Cancel();
+        }
+
+        /// The user moved or zoomed the camera, or something else re-aimed it.
+        public void Cancel() { HoldingID = null; AwaitingMeasure = false; }
+    }
 
     public sealed class Anchor
     {

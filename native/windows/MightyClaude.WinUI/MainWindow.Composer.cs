@@ -32,8 +32,7 @@ public sealed partial class MainWindow
             foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.BetaLabel(value, ProviderCatalog.Name(value)), () => ChangeProvider(value), pane.Provider == value)); menu.Items.Add(providers);
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var models = new MenuFlyoutSubItem { Text = Locale.Get("composer.label.model") };
-            foreach (var value in catalog.Models) models.Items.Add(Item(value.DisplayName, () => ChangeModel(value.Value), value.Value == pane.Model));
-            if (!catalog.Models.Any(m => m.Value == pane.Model)) models.Items.Add(Item(pane.Model, () => ChangeModel(pane.Model), true));
+            foreach (var value in ModelLabel.PickerOptions(pane, catalog)) models.Items.Add(Item(value.DisplayName, () => ChangeModel(value.Value), value.Value == pane.Model));
             if (pane.Provider != "gemini") models.Items.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); menu.Items.Add(models);
             if (caps.Effort || pane.Settings.Effort != "default")
             {
@@ -48,17 +47,14 @@ public sealed partial class MainWindow
             if (pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode)) menu.Items.Add(Item("Fast", () => ChangeSettings(s => s with { FastMode = !s.FastMode && caps.FastMode }), pane.Settings.FastMode));
             menu.Items.Add(new MenuFlyoutSeparator());
         }
-        internal void RefreshElapsed()
-        {
-            if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
-            elapsed.Text = Session.Kind == "shell" ? "" : Session.RunTiming?.Label() ?? "";
-        }
+        /// <summary>The run clock for the pane's session as already read (the 1-second tick reads the snapshot once).</summary>
+        internal void RefreshElapsed(RunSession pane) => elapsed.Text = pane.Kind == "shell" ? "" : pane.RunTiming?.Label() ?? "";
         private Task ShowContext() => owner.Act(async () =>
         {
             var pane = Session; var usage = pane.SessionUsage;
             var content = new StackPanel { Spacing = 9, MinWidth = 300, MaxWidth = 420 };
             void Row(string name, string? value) { if (!string.IsNullOrEmpty(value)) content.Children.Add(new TextBlock { Text = name + "  " + value, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 12 }); }
-            Row(Locale.Get("composer.sessionInfo.session"), pane.Title); Row(Locale.Get("composer.label.runner"), ProviderCatalog.Name(pane.Provider)); Row(Locale.Get("composer.label.model"), usage?.Model ?? (pane.Model == "default" ? Locale.Get("composer.model.cliDefault") : pane.Model));
+            Row(Locale.Get("composer.sessionInfo.session"), pane.Title); Row(Locale.Get("composer.label.runner"), ProviderCatalog.Name(pane.Provider)); Row(Locale.Get("composer.label.model"), usage?.Model is { } usedModel ? ModelLabel.Text(usedModel) : ModelLabel.Selection(pane, owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider)));
             Row(Locale.Get("composer.sessionInfo.status"), StateLabel(pane.Status)); Row(Locale.Get("composer.sessionInfo.elapsed"), pane.RunTiming?.Label());
             Row(Locale.Get("composer.sessionInfo.context"), usage?.ContextPercent is { } percent ? $"{percent:0.#}% · {usage.ContextUsedTokens:N0} / {usage.ContextWindowTokens:N0} tokens" : Locale.Get("composer.sessionInfo.contextUnavailable"));
             Row(Locale.Get("composer.sessionInfo.input"), usage?.InputTokens?.ToString("N0")); Row(Locale.Get("composer.sessionInfo.output"), usage?.OutputTokens?.ToString("N0"));

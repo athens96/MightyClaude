@@ -105,6 +105,10 @@ public static class MightyGraphSupport
             + run.Agents.Sum(a => 768 + Bytes(a.Id) + Bytes(a.ParentID) + Bytes(a.Title) + Bytes(a.Input) + EntryBytes(a.Entries));
     }
 
+    /// Bytes the runs hold, measured as the live history measures its own
+    /// (macOS MightyGraphSupport.liveHistoryBytes).
+    public static int LiveHistoryBytes(IEnumerable<MightyGraphRun> runs) => runs.Sum(LiveBytes);
+
     public static List<MightyGraphRun> BoundedLiveHistory(List<MightyGraphRun> values)
     {
         var sizes = values.Select(LiveBytes).ToList();
@@ -288,8 +292,31 @@ public static class MightyGraphSupport
     }
 }
 
+/// <summary>
+/// A user-chosen graph card size in canvas points, independent of zoom; saved
+/// as <c>{"width","height"}</c> like macOS <c>MightyGraphBlockSize</c>.
+/// </summary>
+public sealed record GraphBlockSize(
+    [property: JsonPropertyName("width")] double Width,
+    [property: JsonPropertyName("height")] double Height)
+{
+    /// Kept within the drag bounds; null when either side is not a number.
+    [JsonIgnore]
+    public GraphBlockSize? Normalized =>
+        double.IsFinite(Width) && double.IsFinite(Height)
+            ? new(Math.Min(MightyGraphBlockSize.MaximumWidth, Math.Max(MightyGraphBlockSize.MinimumWidth, Width)),
+                  Math.Min(MightyGraphBlockSize.MaximumHeight, Math.Max(MightyGraphBlockSize.MinimumHeight, Height)))
+            : null;
+}
+
 public static class MightyGraphBlockSize
 {
+    /// The smallest and largest size a block may be dragged to (macOS values).
+    public const double MinimumWidth = 300;
+    public const double MinimumHeight = 140;
+    public const double MaximumWidth = 1_400;
+    public const double MaximumHeight = 1_200;
+
     public static string NodeId(string runId, string suffix)
     {
         var len = Encoding.UTF8.GetByteCount(runId);

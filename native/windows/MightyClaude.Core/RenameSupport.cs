@@ -77,6 +77,6 @@ public static class RenameSupport
     {
         if (DisplayName(name) is not { } displayName) throw new ArgumentException(RenameStrings.ErrorTooLong);
         if (!snapshot.Sessions.Any(s => s.Id == sessionId)) throw new ArgumentException(RenameStrings.ErrorNotFound);
-        return snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == sessionId ? s with { Title = displayName } : s).ToList() };
+        return snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == sessionId ? s with { Title = displayName, TitleMode = PaneTitle.Fixed } : s).ToList() };
     }
 }

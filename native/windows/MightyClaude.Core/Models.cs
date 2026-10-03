@@ -61,7 +61,12 @@ public sealed class RunSettingsJsonConverter : JsonConverter<RunSettings>
         writer.WriteEndObject();
     }
 }
-public sealed record LogEntry(string Id, string Kind, string Text, string Timestamp, string? Provider = null, AgentActivity? Activity = null);
+/// <param name="Images">Pictures an <c>image</c> entry shows, by reference (macOS LogEntry.images); <c>Text</c> stands in for them where pictures are not drawn.</param>
+public sealed record LogEntry(string Id, string Kind, string Text, string Timestamp, string? Provider = null, AgentActivity? Activity = null, List<AgentImageRef>? Images = null)
+{
+    /// <summary>The entry kinds a transcript keeps (macOS LogEntry.stored).</summary>
+    public static readonly IReadOnlySet<string> Stored = new HashSet<string>(StringComparer.Ordinal) { "user", "assistant", "system", "output", "error", "image" };
+}
 public sealed record RunSession
 {
     public string Id { get; init; } = Wire.Id();
@@ -85,9 +90,15 @@ public sealed record RunSession
     [JsonConverter(typeof(AgentViewModeConverter))]
     public string? AgentViewMode { get; init; }
     [JsonPropertyName("graphRuns")] public List<MightyGraphRun>? GraphRuns { get; init; }
+    // The newest result card's remembered maximum, set by dragging it
+    // (macOS RunSession.graphResultSize); null means the window fit.
+    [JsonPropertyName("graphResultSize")] public GraphBlockSize? GraphResultSize { get; init; }
     // Browser pane fields — serialized with the same keys as macOS RunSession.
     [JsonPropertyName("workspaceProfileKey")] public string? WorkspaceProfileKey { get; init; }
     [JsonPropertyName("ownerSessionId")] public string? OwnerSessionId { get; init; }
+    // "auto" (or absent) while an agent pane's title follows its latest request,
+    // "fixed" once renamed (macOS RunSession.titleMode, docs/windows-parity.md).
+    [JsonPropertyName("titleMode")] public string? TitleMode { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {
@@ -105,7 +116,7 @@ public sealed record RunSession
             return value with { Status = ev.Status!, CurrentActivity = terminal ? null : value.CurrentActivity, Logs = terminal ? value.Logs.Select(l => l.Activity is { State: "running" or "waiting" } a ? l with { Activity = a with { State = ev.Status == "stopped" ? "stopped" : "error" } } : l).ToList() : value.Logs };
         }
         if (ev.Type == "resume") return value with { ResumeId = ev.ResumeId };
-        if (ev.Type == "usage" && Kind == "claude" && ev.Usage?.Provider == Provider && SessionUsageSupport.Normalize(ev.Usage) is { } usage) return value with { SessionUsage = usage };
+        if (ev.Type == "usage" && Kind == "claude" && ev.Usage?.Provider == Provider && SessionUsageSupport.Normalize(ev.Usage) is { } usage) return value with { SessionUsage = usage with { SelectedModel = Wire.Model(Model) ? Model : null } };
         if (ev.Type == "activity" && ev.Activity?.Provider == Provider) return value with { CurrentActivity = ActivitySupport.Normalize(ev.Activity) };
         if (ev.Type == "log" && ev.Entry is { } entry)
         {
@@ -255,7 +266,7 @@ public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = n
 {
     public static RunEvent Log(string id, string kind, string text, string? provider = null) => new(id, "log", new(Wire.Id(), kind, ActivitySupport.Clean(text, kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Wire.Now(), provider));
     public static RunEvent State(string id, string state) => new(id, "status", Status: state);
-    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && Entry.Kind is "user" or "assistant" or "system" or "output" or "error" && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id));
+    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id));
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);
 public sealed record ModelCatalog(string Source, List<ModelOption> Models, string Detail);

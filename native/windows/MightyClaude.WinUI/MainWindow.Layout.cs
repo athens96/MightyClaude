@@ -96,7 +96,7 @@ public sealed partial class MainWindow
 
     private void RenderPaneLayout(AppSnapshot state)
     {
-        tabIndicators.Clear();
+        tabIndicators.Clear(); tabBetas.Clear();
         foreach (var stale in layoutDefaults.Keys.Where(id => !state.Workspaces.Any(w => w.Id == id)).ToArray()) layoutDefaults.Remove(stale);
         if (state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } node)
         {

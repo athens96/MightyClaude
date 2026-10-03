@@ -390,7 +390,8 @@ internal static class GraphVectorVerification
 
     /// The saved profile carries the graph under the macOS field names, loads a
     /// snapshot without them unchanged, and restores running blocks as stopped.
-    /// Block resize is out of scope: graphBlockSizes/graphResultSize are absent.
+    /// Per-block resize is out of scope: graphBlockSizes is absent, and
+    /// graphResultSize (the newest result's saved size) only appears once dragged.
     internal static async Task SessionFields()
     {
         var workspace = new Workspace { Path = Path.GetTempPath() };
@@ -421,8 +422,8 @@ internal static class GraphVectorVerification
             Check(document.RootElement.GetProperty("version").GetInt32() == 1, "AppSnapshot version must stay 1");
             Check(saved.Text("agentViewMode") == "mighty", "RunSession must serialize agentViewMode");
             Check(saved.TryGetProperty("graphRuns", out var runs) && runs.GetArrayLength() == 1, "RunSession must serialize graphRuns");
-            foreach (var key in new[] { "graphBlockSizes", "graphResultSize" })
-                Check(!saved.TryGetProperty(key, out _), key + " is block resize, which is out of scope");
+            Check(!saved.TryGetProperty("graphBlockSizes", out _), "graphBlockSizes is per-block resize, which is out of scope");
+            Check(!saved.TryGetProperty("graphResultSize", out _), "graphResultSize is written only once the newest result is dragged");
             var saveNames = runs[0].EnumerateObject().Select(p => p.Name).ToHashSet();
             foreach (var name in new[] { "id", "input", "status", "rootEntries", "agents", "resultEntries", "sourceRunID", "finalOutput", "usage", "responseRecords", "provider", "nodeModelLabel", "configuredModel" })
                 Check(saveNames.Contains(name), "graphRuns must use the macOS MightyGraphRun name " + name);

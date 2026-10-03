@@ -72,7 +72,8 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             lock (approved)
                 foreach (var workspace in snapshot.Workspaces)
                     if (!approved.TryGetValue(workspace.Id, out var original) || workspace.Path != original.Path) throw new InvalidOperationException(Locale.Get("store.error.pathNotApproved"));
-            var encoded = JsonSerializer.SerializeToUtf8Bytes(snapshot, Wire.Json);
+            // Files panes are never written: they do not come back after a restart.
+            var encoded = JsonSerializer.SerializeToUtf8Bytes(FilePaneKind.Stored(snapshot), Wire.Json);
             if (encoded.Length > 8 * 1024 * 1024) throw new InvalidDataException(Locale.Get("store.error.stateTooLarge"));
             await AtomicWriteAsync(StatePath, encoded);
             Snapshot = Wire.Clone(snapshot);
@@ -91,14 +92,17 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         {
             var activity = ActivitySupport.Normalize(log.Activity, restoring);
             if (activity is not null) activity = activity with { Summary = Bounded(activity.Summary, 1000), Output = activity.Output is not null ? Bounded(activity.Output, 8192) : null };
-            return log with { Text = Bounded(log.Text, log.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Provider = Wire.Providers.Contains(log.Provider) ? log.Provider : null, Activity = activity };
+            return log with { Text = Bounded(log.Text, log.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Provider = Wire.Providers.Contains(log.Provider) ? log.Provider : null, Activity = activity, Images = log.Kind == "image" ? AgentImageSupport.Normalized(log.Images) : null };
         }
         RunSession NormalizeSession(RunSession s)
         {
+            // A files pane runs nothing and keeps nothing but its title (docs/file-pane.md).
+            if (FilePaneKind.IsFilePane(s.Kind))
+                return new RunSession { Id = s.Id, WorkspaceId = s.WorkspaceId, Kind = FilePaneKind.Kind, Title = RenameSupport.ClampTitle(s.Title) };
             if (s.Kind == "browser")
-                return s with { Title = RenameSupport.ClampTitle(s.Title), Status = "idle", Logs = [], Draft = "", RunTiming = null, SessionUsage = null, CurrentActivity = null, AgentViewMode = null, GraphRuns = null, ResumeId = null, WorkspaceProfileKey = Wire.Clean(s.WorkspaceProfileKey, 128) is { Length: > 0 } wpk ? wpk : null, OwnerSessionId = Wire.Identifier(s.OwnerSessionId) ? s.OwnerSessionId : null };
+                return s with { Title = RenameSupport.ClampTitle(s.Title), Status = "idle", Logs = [], Draft = "", RunTiming = null, SessionUsage = null, CurrentActivity = null, AgentViewMode = null, GraphRuns = null, GraphResultSize = null, ResumeId = null, WorkspaceProfileKey = Wire.Clean(s.WorkspaceProfileKey, 128) is { Length: > 0 } wpk ? wpk : null, OwnerSessionId = Wire.Identifier(s.OwnerSessionId) ? s.OwnerSessionId : null };
             var provider = Wire.Providers.Contains(s.Provider) ? s.Provider : "claude";
-            var logs = (s.Logs ?? []).Where(l => l is not null && Wire.Identifier(l.Id) && l.Kind is "user" or "assistant" or "system" or "output" or "error").TakeLast(300).Select(NormalizeLog).Where(l => l.Text.Length > 0).ToList();
+            var logs = (s.Logs ?? []).Where(l => l is not null && Wire.Identifier(l.Id) && LogEntry.Stored.Contains(l.Kind)).TakeLast(300).Select(NormalizeLog).Where(l => l.Text.Length > 0).ToList();
             var timing = s.Kind == "shell" ? null : s.RunTiming is { IsValid: true } ? s.RunTiming : AgentRunTiming.Infer(logs);
             if (timing is not null) timing = restoring ? timing.Interrupt() : s.Status == "running" ? timing.Observe() : timing;
             var usage = s.Kind == "claude" && s.SessionUsage?.Provider == provider ? SessionUsageSupport.Normalize(s.SessionUsage) : null;
@@ -106,9 +110,10 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             var graphBudget = MightyGraphSupport.LiveHistoryLimit;
             var graphRuns = s.GraphRuns is { Count: > 0 } ? MightyGraphSupport.Normalized(s.GraphRuns, restoring: true, budget: ref graphBudget) : null;
             if (graphRuns is { Count: 0 }) graphRuns = null;
-            return s with { Title = RenameSupport.ClampTitle(s.Title), Draft = Bounded(s.Draft, 100000), Provider = provider, Model = Wire.Model(s.Model) ? s.Model : "default", Settings = ProviderCatalog.NormalizeSettings(provider, s.Settings), ResumeId = Wire.Identifier(s.ResumeId) ? s.ResumeId : null, Status = restoring && s.Status == "running" ? "stopped" : s.Status is "idle" or "running" or "completed" or "error" or "stopped" ? s.Status : "idle", Logs = logs, RunTiming = timing, SessionUsage = usage, CurrentActivity = restoring ? null : ActivitySupport.Normalize(s.CurrentActivity), AgentViewMode = viewMode, GraphRuns = graphRuns };
+            var normalized = s with { Title = RenameSupport.ClampTitle(s.Title), Draft = Bounded(s.Draft, 100000), Provider = provider, Model = Wire.Model(s.Model) ? s.Model : "default", Settings = ProviderCatalog.NormalizeSettings(provider, s.Settings), ResumeId = Wire.Identifier(s.ResumeId) ? s.ResumeId : null, Status = restoring && s.Status == "running" ? "stopped" : s.Status is "idle" or "running" or "completed" or "error" or "stopped" ? s.Status : "idle", Logs = logs, RunTiming = timing, SessionUsage = usage, CurrentActivity = restoring ? null : ActivitySupport.Normalize(s.CurrentActivity), AgentViewMode = viewMode, GraphRuns = graphRuns, GraphResultSize = s.Kind == "shell" ? null : s.GraphResultSize?.Normalized, TitleMode = PaneTitle.NormalizedMode(s.TitleMode) };
+            return restoring ? PaneTitle.Restored(normalized) : normalized;
         }
-        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && s.Kind is "claude" or "shell" or "browser").DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
+        var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
         var workspaceId = ids.Contains(value.ActiveWorkspaceId ?? "") ? value.ActiveWorkspaceId : workspaces.FirstOrDefault()?.Id;
         var activeSessionId = sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId && s.Id == value.ActiveSessionId)?.Id ?? sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId)?.Id;
         Dictionary<string, PaneLayoutNode>? layouts = null;
