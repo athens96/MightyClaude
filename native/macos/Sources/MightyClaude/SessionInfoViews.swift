@@ -211,8 +211,7 @@ struct SessionInfoView: View {
     private func content(_ session: RunSession) -> some View {
         let usage = session.sessionUsage?.provider == session.provider ? session.sessionUsage : nil
         let workspace = store.snapshot.workspaces.first { $0.id == session.workspaceId }
-        let catalog = store.providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog
-        let selectedModel = catalog.models.first { $0.value == session.model }?.displayName ?? (session.model == "default" ? "CLI 기본값" : session.model)
+        let selectedModel = store.modelLabel(for: session)
         return VStack(alignment: .leading, spacing: sectionSpacing) {
             HStack(spacing: 9) {
                 ProviderIcon(provider: session.provider, size: 20)
@@ -245,7 +244,7 @@ struct SessionInfoView: View {
                     .accessibilityLabel("컨텍스트 사용량 \(SessionUsagePresentation.percent(usage)) · \(SessionUsagePresentation.context(usage))")
                     .accessibilityIdentifier("session-info-context-\(sessionID)")
 
-                    row(usage?.model == nil ? "선택 모델" : "사용 모델", usage?.model ?? selectedModel, key: "model")
+                    row(usage?.model == nil ? "선택 모델" : "사용 모델", usage?.model.map { ModelLabel.text($0) } ?? selectedModel, key: "model")
                     if let timing = session.runTiming, timing.isValid {
                         HStack {
                             Text("최근 요청 시간").foregroundStyle(.secondary)

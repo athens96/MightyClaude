@@ -171,13 +171,18 @@ public struct MobileSessionSummary: Codable, Sendable, Equatable, Identifiable {
     /// "auto" (title follows the latest request) or "fixed" (renamed by user).
     /// Absent on older hosts; the phone treats absence as "auto".
     public var titleMode: String?
+    /// The full id `model` stands for today (`opus` → `claude-opus-5-5`), from
+    /// the CLI's catalogue or the pane's last reported model; absent when unknown.
+    /// Only for the phone's label (`ModelLabel`); older phones ignore it.
+    public var resolvedModel: String?
     public init(id: String, workspaceId: String, title: String, kind: String, provider: String, model: String, status: String, revision: Int, updatedAt: String,
                 preview: MobilePreview? = nil, pendingPermissions: Int = 0, pendingQuestions: Int = 0, queued: Int = 0, resumeId: String? = nil, terminal: Bool = false,
-                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil, titleMode: String? = nil) {
+                agentViewMode: String? = nil, mightyStyle: String? = nil, styleId: String? = nil, titleMode: String? = nil, resolvedModel: String? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.status = status
         self.revision = revision; self.updatedAt = updatedAt; self.preview = preview; self.pendingPermissions = pendingPermissions
         self.pendingQuestions = pendingQuestions; self.queued = queued; self.resumeId = resumeId; self.terminal = terminal
         self.agentViewMode = agentViewMode; self.mightyStyle = mightyStyle; self.styleId = styleId; self.titleMode = titleMode
+        self.resolvedModel = resolvedModel
     }
 }
 

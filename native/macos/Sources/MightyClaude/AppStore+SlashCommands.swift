@@ -36,11 +36,16 @@ extension AppStore {
 
     /// The model list the composer's model menu shows: the runtime catalogue,
     /// the CLI default, and the pane's saved model when it is not in the catalogue.
+    /// Every picker row (composer, /model, phone) with its display label in
+    /// `displayName` (`ModelLabel.pickerOptions`). Values stay untouched.
     func modelOptions(for session: RunSession) -> [ModelOption] {
-        var options = providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog.models
-        if !options.contains(where: { $0.value == "default" }) { options.insert(ModelOption(value: "default", displayName: "CLI 기본값"), at: 0) }
-        if !options.contains(where: { $0.value == session.model }) { options.append(ModelOption(value: session.model, displayName: "\(session.model) · 저장된 모델")) }
-        return options
+        ModelLabel.pickerOptions(session, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog)
+    }
+
+    /// The label displays show (chip, run settings, dashboard, pane header,
+    /// status line): the selected row's label without picker-only marks.
+    func modelLabel(for session: RunSession) -> String {
+        ModelLabel.selection(session, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog)
     }
 
     /// The permission modes the composer's permission menu shows; a runtime
@@ -83,7 +88,8 @@ extension AppStore {
         case .help: slashNote(id, SlashCommandCatalog.helpText(provider: session.provider))
         case .setModel(let model):
             guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
-            let name = modelOptions(for: session).first { $0.value == model }?.displayName ?? model
+            var chosen = session; chosen.model = model
+            let name = modelLabel(for: chosen)
             guard session.model != model else { slashNote(id, "이미 \(name) 모델입니다."); return true }
             changeModel(id, to: model)
             slashNote(id, "모델을 \(name)\(koreanRo(name)) 바꿨습니다. 다음 요청부터 적용됩니다.")

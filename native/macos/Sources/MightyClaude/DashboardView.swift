@@ -302,14 +302,20 @@ struct DashboardRow: View {
         .accessibilityIdentifier("dashboard-card-\(card.id)")
     }
 
-    /// `Claude · opus · 02:14 · 컨텍스트 41%` while it runs, `Codex · gpt-5 · 11분 전` at
+    /// The pane's own model choice, labelled exactly as its composer chip; none for the CLI default.
+    private var modelText: String? {
+        guard card.model != nil, let session = store.snapshot.sessions.first(where: { $0.id == card.id }) else { return card.model }
+        return store.modelLabel(for: session)
+    }
+
+    /// `Claude · Opus 5.5 · 02:14 · 컨텍스트 41%` while it runs, `Codex · GPT-5 · 11분 전` at
     /// rest; a pane that is not an agent's names its kind.
     private func meta(at date: Date) -> some View {
         HStack(spacing: 4) {
             if card.isAgent {
                 ProviderBadgeIcon.labelled(ProviderOptions.label(card.provider), provider: card.provider, font: .systemFont(ofSize: 12))
                 if ProviderOptions.isBeta(card.provider) { BetaBadge() }
-                let rest = ([card.model] + WorkDashboard.sidebarMeta(card, now: date).map { part -> String? in
+                let rest = ([modelText] + WorkDashboard.sidebarMeta(card, now: date).map { part -> String? in
                     switch part {
                     case .provider: nil
                     case .elapsed: card.timing.map { DashboardText.clock($0, at: date) }

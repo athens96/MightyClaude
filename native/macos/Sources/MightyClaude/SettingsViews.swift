@@ -42,7 +42,7 @@ struct RunSettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(selectedModel?.displayName ?? session.model).font(.system(size: 13, weight: .medium))
+                        Text(store.modelLabel(for: currentSession)).font(.system(size: 13, weight: .medium))
                         if let description = selectedModel?.description, !description.isEmpty { Text(description).font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled) }
                         Label(runtime.modelCatalog.source == "cli" ? L("settings.run.modelSourceCli") : L("settings.run.modelSourceDefault"), systemImage: "info.circle")
                             .font(.system(size: 10)).foregroundStyle(.secondary)

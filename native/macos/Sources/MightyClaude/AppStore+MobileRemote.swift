@@ -313,7 +313,8 @@ extension AppStore {
             agentViewMode: session.kind == "shell" ? nil : mobileViewMode(session),
             mightyStyle: session.kind == "shell" ? nil : mobileStyle(session),
             styleId: session.kind == "shell" ? nil : mobileStyleId(session),
-            titleMode: session.titleMode ?? "auto")
+            titleMode: session.titleMode ?? "auto",
+            resolvedModel: session.kind == "shell" ? nil : ModelLabel.resolution(session.model, catalog: providerRuntime(session.provider, workspaceId: session.workspaceId).modelCatalog, hint: ModelLabel.reportedModel(session)))
     }
 
     func mobileViewMode(_ session: RunSession) -> String { MobileRemoteSupport.viewMode(session.agentViewMode) }
@@ -329,7 +330,8 @@ extension AppStore {
     func mobileOptionsDigest(_ session: RunSession) -> Int {
         guard session.kind != "shell" else { return 0 }
         let options = mobileSettingsOptions(session)
-        var ids = options.models.map(\.id) + options.permissionModes.map(\.id) + options.mightyStyles.map(\.id)
+        // Labels too: a catalogue that arrives later relabels the rows (`Opus` → `Opus 5.5`).
+        var ids = options.models.map { $0.id + "\u{1F}" + $0.label } + options.permissionModes.map(\.id) + options.mightyStyles.map(\.id)
         ids += options.styles.map { $0.id + "|" + ($0.source?.rawValue ?? "") }
         ids += (options.efforts ?? []).map(\.id)
         return ids.joined(separator: "|").hashValue
@@ -734,7 +736,7 @@ extension AppStore {
         let session = try mobileAISession(id)
         switch action {
         case "help": return SlashCommandCatalog.helpText(provider: session.provider)
-        case "usage": return MobileUsageText.text(usage: mobileUsage(session), model: session.model, elapsedSeconds: session.runTiming?.elapsed())
+        case "usage": return MobileUsageText.text(usage: mobileUsage(session), model: modelLabel(for: session), elapsedSeconds: session.runTiming?.elapsed())
         case "clear":
             guard !hasModal else { throw MobileHostError.conflict("Mac에서 열린 창을 닫은 뒤 다시 시도하세요.") }
             guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict("실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.") }

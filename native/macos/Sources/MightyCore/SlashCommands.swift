@@ -3,8 +3,10 @@ import Foundation
 /// Korean particles chosen by the last syllable of the preceding word.
 public enum KoreanParticle {
     /// 로/으로: 으로 only after a Korean syllable with a final consonant other
-    /// than ㄹ; Latin words and open syllables take 로.
+    /// than ㄹ, or a digit read with one (0 영, 3 삼, 6 육 — `Opus 4.6으로`);
+    /// Latin words, other digits and open syllables take 로.
     public static func ro(_ word: String) -> String {
+        if let last = word.unicodeScalars.last, ("0"..."9").contains(last) { return "036".unicodeScalars.contains(last) ? "으로" : "로" }
         guard let scalar = word.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(scalar) else { return "로" }
         let final = (scalar - 0xAC00) % 28
         return final == 0 || final == 8 ? "로" : "으로"

@@ -1119,7 +1119,8 @@ struct MobileRemoteExtensionTests {
         #expect(empty.contains("아직 측정된"))
         let usage = MobileUsage(model: "claude-opus-5", contextUsedTokens: 12_000, contextWindowTokens: 200_000, contextPercent: 6, totalTokens: 41_000, costUSD: 0.1234)
         let text = MobileUsageText.text(usage: usage, model: "opus", elapsedSeconds: 12.4)
-        #expect(text.contains("claude-opus-5") && text.contains("6.0%") && text.contains("$0.1234") && text.contains("12초"))
+        // The reported id is labelled with its version, like the Mac's own chip.
+        #expect(text.contains("모델 · Opus 5\n") && text.contains("6.0%") && text.contains("$0.1234") && text.contains("12초"))
         // Nothing measured but the model name: no invented numbers.
         let modelOnly = MobileUsageText.text(usage: MobileUsage(model: "opus"), model: "opus")
         #expect(!modelOnly.contains("$") && !modelOnly.contains("컨텍스트"))

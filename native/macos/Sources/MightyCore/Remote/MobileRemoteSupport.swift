@@ -467,9 +467,10 @@ public enum MobileCommandSupport {
 /// The body `POST …/command {action:"usage"}` answers with. The Mac opens a
 /// sheet for the same action, so the numbers are formatted here instead.
 public enum MobileUsageText {
+    /// `model` is the pane's label; a model the CLI reported is labelled here.
     public static func text(usage: MobileUsage?, model: String, elapsedSeconds: Double? = nil) -> String {
         var lines: [String] = []
-        lines.append("모델 · " + (usage?.model ?? model))
+        lines.append("모델 · " + (usage?.model.map { ModelLabel.text($0) } ?? model))
         if let used = usage?.contextUsedTokens {
             var line = "컨텍스트 · " + tokens(used)
             if let window = usage?.contextWindowTokens { line += " / " + tokens(window) }
