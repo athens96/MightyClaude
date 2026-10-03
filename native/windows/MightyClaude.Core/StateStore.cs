@@ -108,7 +108,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
             var usage = s.Kind == "claude" && s.SessionUsage?.Provider == provider ? SessionUsageSupport.Normalize(s.SessionUsage) : null;
             var viewMode = s.AgentViewMode is "default" or "mighty" ? s.AgentViewMode : null;
             var graphBudget = MightyGraphSupport.LiveHistoryLimit;
-            var graphRuns = s.GraphRuns is { Count: > 0 } ? MightyGraphSupport.Normalized(s.GraphRuns, restoring: true, budget: ref graphBudget) : null;
+            var graphRuns = s.GraphRuns is { Count: > 0 } ? MightyGraphSupport.Normalized(s.GraphRuns, restoring, budget: ref graphBudget) : null;
             if (graphRuns is { Count: 0 }) graphRuns = null;
             var normalized = s with { Title = RenameSupport.ClampTitle(s.Title), Draft = Bounded(s.Draft, 100000), Provider = provider, Model = Wire.Model(s.Model) ? s.Model : "default", Settings = ProviderCatalog.NormalizeSettings(provider, s.Settings), ResumeId = Wire.Identifier(s.ResumeId) ? s.ResumeId : null, Status = restoring && s.Status == "running" ? "stopped" : s.Status is "idle" or "running" or "completed" or "error" or "stopped" ? s.Status : "idle", Logs = logs, RunTiming = timing, SessionUsage = usage, CurrentActivity = restoring ? null : ActivitySupport.Normalize(s.CurrentActivity), AgentViewMode = viewMode, GraphRuns = graphRuns, GraphResultSize = s.Kind == "shell" ? null : s.GraphResultSize?.Normalized, TitleMode = PaneTitle.NormalizedMode(s.TitleMode) };
             return restoring ? PaneTitle.Restored(normalized) : normalized;

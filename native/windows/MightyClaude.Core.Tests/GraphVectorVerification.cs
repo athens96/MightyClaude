@@ -452,6 +452,11 @@ internal static class GraphVectorVerification
         }
         finally { Directory.Delete(directory, true); }
 
+        // A live update (any UpdateAsync) is not a restart: a running request stays running
+        // (macOS StateRepository normalizes graph runs with the caller's `restoring`).
+        var live = StateStore.Normalize(new AppSnapshot { Version = 1, Workspaces = [workspace], Sessions = [session] }, false).Sessions.Single().GraphRuns!.Single();
+        Check(live.Status == "running" && live.Agents.All(a => a.Status == "running"), "a live update must not stop a running graph block");
+
         // Anything other than "default"/"mighty" loads as no choice at all.
         foreach (var raw in new[] { "\"grid\"", "12", "null", "true" })
         {
