@@ -81,6 +81,78 @@ try {
             Write-SmokeAnnotation $msg; throw $msg
         }
     }
+    # Pane auto-titles: 자동 in the rename dialog hands the title back to the latest request.
+    if ($result.rename.automaticFollowsLatestRequest -ne $true) {
+        $msg = "rename.automaticFollowsLatestRequest 값이 없거나 false입니다: $($result.rename.automaticFollowsLatestRequest)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    # Inline agent pictures: a cached picture and a Markdown picture drawn into the transcript.
+    $ai = $result.agentImages
+    if ($null -eq $ai) {
+        $msg = "agentImages 스모크가 실행되지 않았습니다: agentImages 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in @('loadingPlaceholderFirst', 'inlinePicture', 'markdownPicture', 'sourceCaption', 'remoteLinkOnly', 'outsideRefused', 'referencesOnlySaved')) {
+        if ($ai.$key -ne $true) {
+            $msg = "agentImages.$key 값이 없거나 false입니다: $($ai.$key)"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    $fp = $result.filesPane
+    if ($null -eq $fp) {
+        $msg = "filesPane 스모크가 실행되지 않았습니다: filesPane 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in @('paneOpened', 'placedLeft', 'noiseCollapsed', 'folderOpened', 'markdown', 'swift', 'png', 'reopenFocusesSamePane', 'neverSaved')) {
+        if ($fp.$key -ne $true) {
+            $msg = "filesPane.$key 값이 없거나 false입니다: $($fp.$key)"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    if ($fp.shortcut -ne 'Ctrl+Shift+E') {
+        $msg = "filesPane.shortcut 값이 Ctrl+Shift+E가 아닙니다: $($fp.shortcut)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    # The composer model button and picker read family plus version (macOS ModelLabel).
+    $ml = $result.modelLabel
+    if ($null -eq $ml -or $ml.valuesUnchanged -ne $true -or $ml.reportedAlias -ne 'Opus 5.5') {
+        $msg = "modelLabel 스모크 값이 없거나 false입니다: $($ml | ConvertTo-Json -Compress)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    # Codex and Gemini agent rows and tabs carry the 베타 capsule after their titles.
+    $bb = $result.betaBadge
+    if ($null -eq $bb -or $bb.betaRowsCarryBadge -ne $true -or @($bb.providers).Count -ne 2) {
+        $msg = "betaBadge 스모크 값이 없거나 false입니다: $($bb | ConvertTo-Json -Compress)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    $sh = $result.sessionHistory
+    if ($null -eq $sh) {
+        $msg = "sessionHistory 스모크가 실행되지 않았습니다: sessionHistory 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in @('choiceOffered', 'nestedRunHidden', 'resumedInNewPane', 'latestLoadedOnOpen', 'olderLoadedAboveWithoutMoving', 'openSessionNotOffered')) {
+        if ($sh.$key -ne $true) {
+            $msg = "sessionHistory.$key 값이 없거나 false입니다: $($sh.$key)"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    # The 창 추가 menu ends with 프로젝트 폴더 열기…; the sidebar open-folder button shows only
+    # when no workspace is listed; Gemini and Ctrl+N start without asking (macOS WorkspaceView).
+    $ap = $result.addPaneMenu
+    if ($null -eq $ap) {
+        $msg = "addPaneMenu 스모크가 실행되지 않았습니다: addPaneMenu 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in @('openProjectLast', 'openFolderButtonOnlyWhenNoneListed', 'geminiStartsAtOnce', 'ctrlNStartsAtOnce')) {
+        if ($ap.$key -ne $true) {
+            $msg = "addPaneMenu.$key 값이 없거나 false입니다: $($ap.$key)"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    if ($ap.shortcuts -ne 'Ctrl+O, Ctrl+N') {
+        $msg = "addPaneMenu.shortcuts 값이 'Ctrl+O, Ctrl+N'이 아닙니다: $($ap.shortcuts)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     $mg = $result.mightyGraph
     if ($null -eq $mg) {
         $msg = "mighty 그래프 스모크가 실행되지 않았습니다: mightyGraph 키가 없습니다"
@@ -101,6 +173,42 @@ try {
     }
     if ($mg.modeRestored -ne $true) {
         $msg = "mighty 그래프 모드 복원이 실패했습니다: modeRestored=$($mg.modeRestored)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    # The Mighty result box shrinks with the pane and grows back to its saved size.
+    $rf = $mg.resultFit
+    if ($null -eq $rf) {
+        $msg = "결과 박스 스모크가 실행되지 않았습니다: mightyGraph.resultFit 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in 'fitButton', 'grewToSaved', 'shrank', 'grewBack', 'zoomedInside', 'fitCleared') {
+        if ($rf.$key -ne $true) {
+            $msg = "mightyGraph.resultFit.$key 값이 없거나 false입니다: $($rf.$key)"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    # A new result shows right above the composer at its content height under the saved size.
+    $rr = $mg.resultReveal
+    if ($null -eq $rr) {
+        $msg = "새 결과 위치 스모크가 실행되지 않았습니다: mightyGraph.resultReveal 키가 없습니다"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in 'revealed', 'contentFit', 'savedKept', 'followsResize', 'userPanStops') {
+        if ($rr.$key -ne $true) {
+            $msg = "mightyGraph.resultReveal.$key 값이 없거나 false입니다: $($rr.$key)"
+            Write-SmokeAnnotation $msg; throw $msg
+        }
+    }
+    # Request block headers carry the pane's agent mark before its name; other headers none.
+    $rm = $mg.requestMarks
+    if ($null -eq $rm -or [int]$rm.requestHeaders -lt 1 -or [string]::IsNullOrEmpty([string]$rm.provider)) {
+        $msg = "요청 블록 마크 스모크가 실행되지 않았습니다: mightyGraph.requestMarks=$($rm | ConvertTo-Json -Compress)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
+    # Running blocks march a dashed outline (solid with animations off); waiting blocks stay amber.
+    $ol = $mg.outlines
+    if ($null -eq $ol -or $ol.running -ne 'marching' -or $ol.reducedMotion -ne 'solid' -or $ol.waiting -ne 'waiting') {
+        $msg = "실행 표시 테두리 스모크가 실패했습니다: mightyGraph.outlines=$($ol | ConvertTo-Json -Compress)"
         Write-SmokeAnnotation $msg; throw $msg
     }
     $leaks = $result.localeKeyLeaks

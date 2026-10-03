@@ -13,7 +13,8 @@ public interface IRunManager : IAsyncDisposable
 /// --permission-prompts none exactly as before. A request is handed to this
 /// callback alone: it is never an event, so it never reaches a snapshot.
 /// </param>
-public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null) : IRunManager
+/// <param name="images">The picture cache agent runs write what they show into (macOS ProcessRunner.imageCache); null leaves pictures out.</param>
+public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, ProviderCatalog providers, string pluginDirectory, Action<RunEvent> emit, Action<ToolPermissionRequest>? permissionRequested = null, AgentImageCache? images = null) : IRunManager
 {
     private sealed class Run(StartRunRequest request)
     {
@@ -67,7 +68,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     private async Task ExecuteAsync(Run run)
     {
         var request = run.Request; var token = run.Cancel.Token; ModBridge.Connection? mod = null; StagedAttachments? attachments = null; var input = request.Input; Exception? startFailure = null;
-        var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => Activity(run, value), value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId);
+        var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => Activity(run, value), value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
+            images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); });
         ExecutionGraphTracker? tracker = null;
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
             tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, request.Model, _ => { });
@@ -83,6 +85,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         try
         {
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
+            parser.ImageRoot = workspace.Path;
             var environment = ProviderCatalog.QuietEnvironment(); string binary; IEnumerable<string> arguments; var interactive = false;
             if (request.Kind == "shell") { binary = OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("ComSpec") ?? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh"; arguments = OperatingSystem.IsWindows() ? ["/d", "/s", "/c", request.Input] : ["-c", request.Input]; }
             else
@@ -124,7 +127,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             }
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", Locale.Get("run.activity.running", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) })));
-            var output = PumpAsync(child.Output, line =>
+            // An agent's stream-json line may carry a whole picture in base64.
+            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : AgentImageSupport.MaximumLineCharacters, line =>
             {
                 if (run.Finalizing) return;
                 if (request.Kind == "shell") { Log(run, "output", line); return; }
@@ -135,7 +139,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 // so an approval reply is still possible while the turn runs.
                 if (run.Permissions is not null && ClaudeStream.IsTurnResult(line)) CloseChannel(run, child);
             }, token);
-            var error = PumpAsync(child.Error, line => Log(run, "output", line), token);
+            var error = PumpAsync(child.Error, 1024 * 1024, line => Log(run, "output", line), token);
             if (interactive)
             {
                 run.Permissions!.Start();
@@ -192,7 +196,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         }
         catch { }
     }
-    private static async Task PumpAsync(StreamReader reader, Action<string> consume, CancellationToken token) { await foreach (var line in OutputParser.LinesAsync(reader, token)) consume(line); }
+    private static async Task PumpAsync(StreamReader reader, int maximumLineCharacters, Action<string> consume, CancellationToken token) { await foreach (var line in OutputParser.LinesAsync(reader, token, maximumLineCharacters)) consume(line); }
     public async Task StopAsync(string sessionId)
     {
         if (!Wire.Identifier(sessionId)) throw new ArgumentException(Locale.Get("run.error.invalidId"));

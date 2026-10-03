@@ -47,12 +47,12 @@ public sealed class AccountUsageStatus : IAsyncDisposable
 
     public AccountUsageSnapshot? Snapshot(string provider) { lock (gate) return snapshots.TryGetValue(provider, out var value) ? value : null; }
 
-    /// The providers with an AI pane, in the macOS provider order. A shell pane has none.
+    /// The providers with an AI pane, in the macOS provider order. A shell or files pane has none.
     public static IReadOnlyList<string> LocalProviders(AppSnapshot snapshot)
     {
         var ids = snapshot.Workspaces.Select(w => w.Id).ToHashSet();
         return snapshot.Sessions
-            .Where(s => s.Kind != "shell" && ids.Contains(s.WorkspaceId) && Wire.Providers.Contains(s.Provider))
+            .Where(s => s.Kind != "shell" && !FilePaneKind.IsFilePane(s.Kind) && ids.Contains(s.WorkspaceId) && Wire.Providers.Contains(s.Provider))
             .Select(s => s.Provider).Distinct()
             .OrderBy(p => Array.IndexOf(Wire.Providers, p)).ToList();
     }

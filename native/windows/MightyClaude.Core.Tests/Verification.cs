@@ -136,6 +136,17 @@ internal static class Verification
             var version = Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = "0.2.8" }); Check(version is "0.2.8 (베타)" or "0.2.8 (Beta)", "version line " + version);
             return Task.CompletedTask;
         });
+        await Test("beta badge: only a Codex or Gemini agent pane's sidebar row and tab carry the capsule", () =>
+        {
+            Check(!ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "claude" }), "claude agent pane");
+            Check(ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "codex" }) && ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "gemini" }), "codex and gemini agent panes");
+            foreach (var kind in new[] { "shell", "browser", FilePaneKind.Kind })
+                Check(!ProviderCatalog.ShowsBetaBadge(new RunSession { Kind = kind, Provider = "codex" }), kind + " pane carries no badge");
+            Check(!ProviderCatalog.ShowsBetaBadge(new RunSession { Provider = "unknown" }), "an unknown provider is not beta");
+            var codex = new RunSession { Provider = "codex", Title = ProviderCatalog.Name("codex") };
+            Check(ProviderCatalog.ShowsBetaBadge(codex) && codex.Title == "Codex CLI", "the badge sits beside the title, never in it");
+            return Task.CompletedTask;
+        });
         await Test("native profile imports a copy, preserves settings and drafts", async () =>
         {
             var legacy = Temp(); var native = Temp();
@@ -393,6 +404,59 @@ internal static class Verification
         await Test("locale key leak detector flags exact keys", LocalizationVerification.LocaleKeyLeakDetectorFlagsExactKeys);
         await Test("locale key leak detector ignores non-key text", LocalizationVerification.LocaleKeyLeakDetectorIgnoresNonKeyText);
         await Test("locale key leak detector trims invisible characters", LocalizationVerification.LocaleKeyLeakDetectorTrimsInvisibleCharacters);
+        await Test("files pane tree sorts folders first in natural order and keeps noise folders collapsed", FilesPaneVerification.TreeSortsFoldersFirstInNaturalOrderAndKeepsNoiseCollapsed);
+        await Test("files pane listing stops at its ceiling and says it is truncated", FilesPaneVerification.ListingStopsAtItsCeilingAndSaysItIsTruncated);
+        await Test("files pane refuses paths and links that leave the workspace", FilesPaneVerification.PathsAndLinksThatLeaveTheWorkspaceAreRefused);
+        await Test("files pane classifies by name then by sniffing the first bytes", FilesPaneVerification.ClassificationUsesNamesThenSniffing);
+        await Test("files pane text follows the byte order mark then UTF-8 then CP949", FilesPaneVerification.EncodingsFollowTheByteOrderMarkThenUtf8ThenCp949);
+        await Test("files pane preview shows source, markdown and images with the macOS caps", FilesPaneVerification.PreviewLoaderShowsSourceMarkdownAndImagesWithTheMacCaps);
+        await Test("files pane refuses svg that loads outside content", FilesPaneVerification.SvgThatLoadsOutsideContentIsRefused);
+        await Test("files pane line starts and highlighting match macOS", FilesPaneVerification.LinesBreakAndHighlightingMatchMacOS);
+        await Test("files pane filter searches only opened folders and caps results", FilesPaneVerification.FilterSearchesOnlyOpenedFoldersAndCapsResults);
+        await Test("files pane opens with Ctrl+Shift+E, one per workspace, left of the current pane, never saved", FilesPaneVerification.PaneOpensWithCtrlShiftEOnePerWorkspaceLeftAndIsNeverSaved);
+        await Test("files pane links to another machine are refused on paper", FilesPaneVerification.LinksToAnotherMachineAreRefusedOnPaper);
+        await Test("files pane svg size is read from its root element and checked like pdf", FilesPaneVerification.SvgSizeIsReadFromItsRootElement);
+        await Test("files pane on Windows draws at most 2,000 rows and 256 KB of source", FilesPaneVerification.TheWindowsPaneDrawsAtMostTwoThousandRowsAnd256KB);
+        await Test("status glyph design A: each state has its own glyph", StatusGlyphVerification.EachStateHasItsOwnGlyph);
+        await Test("status glyph design A: a pane that is not an agent's shows its own symbol only while idle", StatusGlyphVerification.APaneThatIsNotAnAgentsShowsItsOwnSymbolOnlyWhileIdle);
+        await Test("status glyph design A: status strings and pending requests reach their glyphs", StatusGlyphVerification.StatusStringsReachTheirGlyphs);
+        await Test("status glyph design A: only the spark turns and only wait and error are discs", StatusGlyphVerification.OnlyTheSparkTurnsAndOnlyWaitAndErrorAreDiscs);
+        await Test("status glyph design A: glyph colours follow the macOS palette", StatusGlyphVerification.GlyphColoursFollowTheMacPalette);
+        await Test("status glyph design A: glyph geometry matches the mockup", StatusGlyphVerification.GlyphGeometryMatchesTheMockup);
+        await Test("status glyph design A: status words use the shared locale keys", StatusGlyphVerification.StatusWordsUseTheSharedLocaleKeys);
+        await Test("agent marks: only an agent's sidebar row names its provider, so only it carries the mark", ProviderMarkVerification.OnlyAnAgentRowNamesItsProviderSoOnlyItCarriesTheMark);
+        await Test("agent marks: marks are the macOS outlines in their brand colours", ProviderMarkVerification.MarksAreTheMacOutlinesInTheirBrandColours);
+        await Test("agent marks: right-side cards put the mark before the agent name their title ends with", ProviderMarkVerification.RightSideCardsMarkTheAgentNameTheirTitleEndsWith);
+        await Test("add pane menu: 프로젝트 폴더 열기… comes last, after a separator", AddPaneMenuVerification.TheMenuEndsWithOpenProjectAfterASeparator);
+        await Test("add pane menu: the sidebar open-folder button shows only when no workspace is listed", AddPaneMenuVerification.TheOpenFolderButtonShowsOnlyWhenNoWorkspaceIsListed);
+        await Test("add pane menu: only Claude and Codex picked from the menu may ask 새로 시작 / 이어가기", AddPaneMenuVerification.OnlyClaudeAndCodexFromTheMenuMayAskToResume);
+        await Test("agent images: Claude Read and MCP screenshot results become inline image entries without base64", AgentImageVerification.ClaudeReadAndMcpScreenshotResultsBecomeImageEntriesWithoutBase64);
+        await Test("agent images: without a cache or for a sub-agent pictures stay out of the transcript", AgentImageVerification.WithoutACacheOrForASubAgentPicturesStayOut);
+        await Test("agent images: refused pictures leave a notice and no entry", AgentImageVerification.RefusedPicturesLeaveANoticeAndNoEntry);
+        await Test("agent images: Codex MCP results, image_view and image_generation become entries", AgentImageVerification.CodexMcpResultsImageViewAndImageGenerationBecomeEntries);
+        await Test("agent images: headers give type and size, and the caps refuse oversize pictures", AgentImageVerification.HeadersGiveTypeAndSizeAndCapsRefuseOversizePictures);
+        await Test("agent images: the cache writes once by hash, rewrites a damaged file and evicts the least recently used", AgentImageVerification.TheCacheWritesOnceByHashRewritesADamagedFileAndEvictsTheLeastRecentlyUsed);
+        await Test("agent images: Markdown pictures outside code fences follow the workspace and temporary folder rule", AgentImageVerification.MarkdownPicturesOutsideCodeFencesFollowThePathRule);
+        await Test("agent images: image entries survive saved state with references only", AgentImageVerification.ImageEntriesSurviveSavedStateWithReferencesOnly);
+        await Test("agent images: the transcript draws a PNG thumbnail at most 480 x 640", AgentImageVerification.TheTranscriptDrawsAPngThumbnailAtMost480By640);
+        await Test("agent images: a line carrying a picture over 1 MiB reaches the parser", AgentImageVerification.ALineCarryingAPictureOverOneMiBReachesTheParser);
+        await Test("session history: scrolling up loads the ten requests above the retained one from a Claude record", SessionHistoryVerification.ScrollingUpLoadsTheTenRequestsAboveTheRetainedOneFromAClaudeRecord);
+        await Test("session history: a replaced record starts over and a pane without a session has none", SessionHistoryVerification.AReplacedRecordStartsOverAndAPaneWithoutASessionHasNone);
+        await Test("session history: only what the user typed is a request", SessionHistoryVerification.OnlyWhatTheUserTypedIsARequest);
+        await Test("session history: Codex rollouts replay through the live tracker", SessionHistoryVerification.CodexRolloutsReplayThroughTheLiveTracker);
+        await Test("session history: loaded runs stay bounded and follow a trim", SessionHistoryVerification.LoadedRunsStayBoundedAndFollowATrim);
+        await Test("session history: the layout stacks loaded requests above without moving the retained one", SessionHistoryVerification.TheLayoutStacksLoadedRequestsAboveWithoutMovingTheRetainedOne);
+        await Test("resume picker hides nested Ouroboros runs unless every session is shown", SessionHistoryVerification.ResumePickerHidesNestedOuroborosRunsUnlessEverySessionIsShown);
+        await Test("resume picker lists only this folder's sessions, newest first, minus open panes", SessionHistoryVerification.ResumePickerListsOnlyThisFoldersSessionsNewestFirstMinusOpenPanes);
+        await Test("resume picker continues the session in a new pane and remembers it", SessionHistoryVerification.ResumingContinuesTheSessionInANewPaneAndRemembersIt);
+        // native/contracts/fixtures/model-labels.json is the label table macOS and the phone share.
+        await Test("model labels: every shared vector in native/contracts/fixtures/model-labels.json labels as committed", ModelLabelVerification.EveryFixtureCaseLabelsAsCommitted);
+        await Test("model labels: CLI catalogue rows carry their version while the values sent stay the aliases", ModelLabelVerification.CliCatalogueRowsCarryTheirVersion);
+        await Test("model labels: the fallback catalogue never invents a version", ModelLabelVerification.FallbackCatalogueNeverInventsAVersion);
+        await Test("model labels: a reported model labels only the selection it was reported for", ModelLabelVerification.AReportedModelLabelsOnlyTheSelectionItWasReportedFor);
+        await Test("model labels: picks and displays differ only by picker marks", ModelLabelVerification.PicksAndDisplaysDifferOnlyByPickerMarks);
+        await Test("model labels: the status line names the current selection", ModelLabelVerification.StatusLineNamesTheCurrentSelection);
+        await Test("model labels: graph capsules and resume rows read versions", ModelLabelVerification.GraphCapsulesAndResumeRowsReadVersions);
         // native/contracts/graph-vectors.json is macOS truth; every group must
         // reproduce on Windows exactly as the Swift implementation produces it.
         await Test("graph vectors match macOS claude stream", GraphVectorVerification.ClaudeStream);
@@ -413,6 +477,29 @@ internal static class Verification
         await Test("mighty selection routes the wheel", MightyViewModelVerification.SelectionRoutesTheWheel);
         await Test("mighty result files panel rules match macOS", MightyViewModelVerification.ResultFilesPanelRulesMatchMacOS);
         await Test("mighty indicators respect animations off", MightyViewModelVerification.IndicatorsRespectAnimationsOff);
+        await Test("mighty result box: a saved size larger than the pane is kept within it", ResultFitVerification.ASavedSizeLargerThanThePaneIsKeptWithinIt);
+        await Test("mighty result box shrinks with the agent pane and grows back to its saved size", ResultFitVerification.TheCardShrinksWithThePaneAndGrowsBackToTheSavedSize);
+        await Test("mighty result box: the pane limit is in diagram coordinates at the zoom", ResultFitVerification.TheLimitIsInDiagramCoordinatesAtTheZoom);
+        await Test("mighty result box: a tiny pane keeps the block minimum", ResultFitVerification.ATinyPaneKeepsTheBlockMinimum);
+        await Test("mighty result box: the layout carries the limits a drag uses", ResultFitVerification.TheLayoutCarriesTheLimitsADragUses);
+        await Test("mighty result box: a live drag follows the cursor within the pane only", ResultFitVerification.ALiveDragFollowsTheCursorWithinThePaneOnly);
+        await Test("mighty result box: releasing saves only the sides moved inside the pane", ResultFitVerification.ReleasingSavesOnlyTheSidesMovedInsideThePane);
+        await Test("mighty result box: a saved card the pane bounds follows the pane on resize", ResultFitVerification.ASavedCardThePaneBoundsFollowsThePaneOnResize);
+        await Test("mighty result box: the saved size is kept under the macOS field", ResultFitVerification.TheSavedSizeIsKeptUnderTheMacField);
+        await Test("mighty result reveal: the newest result is as tall as its content up to its cap", ResultRevealVerification.TheNewestResultIsAsTallAsItsContentUpToItsCap);
+        await Test("mighty result reveal: the saved size is a maximum for every new result", ResultRevealVerification.TheSavedSizeIsAMaximumForEveryNewResult);
+        await Test("mighty result reveal: the cap is the visible pane", ResultRevealVerification.TheCapIsTheVisiblePane);
+        await Test("mighty result reveal: shrinking to content never writes the saved size", ResultRevealVerification.ShrinkingToContentNeverWritesTheSavedSize);
+        await Test("mighty result reveal: a shorter result moves nothing above it and pulls the draft up", ResultRevealVerification.AShorterResultMovesNothingAboveItAndPullsTheDraftUp);
+        await Test("mighty result reveal: a new result sits right above the composer", ResultRevealVerification.ANewResultSitsRightAboveTheComposer);
+        await Test("mighty result reveal: a request that finishes while watched is revealed once", ResultRevealVerification.ARequestThatFinishesWhileWatchedIsRevealedOnce);
+        await Test("mighty result reveal: runs a pane opens or hydrates with are never revealed", ResultRevealVerification.RunsAPaneOpensOrHydratesWithAreNeverRevealed);
+        await Test("mighty result reveal: an unmeasured card is held until its height arrives", ResultRevealVerification.AnUnmeasuredCardIsHeldUntilItsHeightArrives);
+        await Test("mighty result reveal: the user's own scroll, zoom or draft ends the hold", ResultRevealVerification.TheUsersOwnScrollZoomOrDraftEndsTheHold);
+        await Test("mighty running outline: running marches, waiting stays amber, finished has none", ActivityOutlineVerification.RunningMarchesWaitingStaysStillAndFinishedHasNone);
+        await Test("mighty running outline: 9/7 dashes fit the card outline", ActivityOutlineVerification.DashesAreNineSevenAndFitTheOutline);
+        await Test("mighty running outline: one period per 1.6 s, still under reduced motion", ActivityOutlineVerification.OnePeriodPassesEveryOnePointSixSecondsAndStaysStillUnderReducedMotion);
+        await Test("mighty running outline: diagram blocks carry their outline", ActivityOutlineVerification.DiagramBlocksCarryTheirOutline);
         await Test("mighty view model exposes the WinUI surface", MightyViewModelVerification.ExposesWinUiSurface);
         await Test("mighty canvas lays out a nested delegation run", MightyViewModelVerification.LaysOutNestedDelegationRun);
         await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);
@@ -487,6 +574,11 @@ internal static class Verification
         await Test("rename save button is disabled exactly when macOS disables it", RenameVerification.renameSaveButtonIsDisabledExactlyWhenMacOSDisablesIt);
         await Test("rename keeps a long emoji name whole across a restart", RenameVerification.renameKeepsALongEmojiNameWholeAcrossARestart);
         await Test("rename clamp title still bounds an overlong stored title", RenameVerification.renameClampTitleStillBoundsAnOverlongStoredTitle);
+        await Test("pane auto-titles: a request is shortened to one line of 40 characters as on macOS", PaneTitleVerification.shortenedFollowsTheMacOSRule);
+        await Test("pane auto-titles: the title follows the latest request until a rename fixes it", PaneTitleVerification.titleFollowsTheLatestRequestUntilARenameFixesIt);
+        await Test("pane auto-titles: a sent request retitles the agent pane through DesktopService", PaneTitleVerification.aRequestRetitlesTheAgentPaneThroughDesktopService);
+        await Test("pane auto-titles: the automatic choice retitles from the latest typed request", PaneTitleVerification.automaticChoiceRetitlesFromTheLatestTypedRequest);
+        await Test("pane auto-titles: a restart retitles automatic agent panes only", PaneTitleVerification.restoreRetitlesAutomaticAgentPanesOnly);
         await Test("claude plugin list reads this workspace's scopes and cached catalog without mutation", ClaudePluginVerification.ListsWorkspaceScopesAndCachedCatalogWithoutMutation);
         await Test("claude plugin list shows an ancestor's record for a nested workspace", ClaudePluginVerification.NestedWorkspaceSeesItsAncestorsRecord);
         await Test("claude plugin missing, old and empty sources are explained without installing", ClaudePluginVerification.MissingOldAndEmptyAreExplainedWithoutInstalling);

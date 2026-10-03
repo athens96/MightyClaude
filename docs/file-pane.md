@@ -1,6 +1,6 @@
 # 파일 창 (Mac)
 
-워크스페이스 폴더를 읽기 전용으로 둘러보는 창이다. 왼쪽은 폴더 트리, 오른쪽은 선택한 파일의 미리보기다. 편집, 에이전트에 첨부하기는 아직 없다. 창 자체는 Mac 전용이고 Windows에는 없다. 휴대폰은 같은 규칙으로 Mac의 워크스페이스를 읽는다(아래 "휴대폰").
+워크스페이스 폴더를 읽기 전용으로 둘러보는 창이다. 왼쪽은 폴더 트리, 오른쪽은 선택한 파일의 미리보기다. 편집, 에이전트에 첨부하기는 아직 없다. Windows 앱에도 같은 규칙의 창이 있다(아래 "Windows"). 휴대폰은 같은 규칙으로 Mac의 워크스페이스를 읽는다(아래 "휴대폰").
 
 ## 여는 방법
 
@@ -101,3 +101,16 @@ release/native-macos/MightyClaude.app/Contents/MacOS/MightyClaude \
 ```
 
 프로필 폴더에 작은 워크스페이스를 만들고 파일 창을 열어 README.md, Sources/App.swift, image.png를 차례로 미리 본 뒤 `files-smoke-result.json`과 화면 이미지를 남긴다. AI 요청은 보내지 않는다.
+
+## Windows
+
+Windows 앱(`native/windows`)은 같은 창을 같은 규칙으로 보인다. 규칙은 `MightyClaude.Core/WorkspaceFiles.cs`가 macOS `WorkspaceFiles.swift`·`SourceHighlighter.swift`를 그대로 옮긴 것이고, 화면은 `MightyClaude.WinUI/MainWindow.Files.cs`다. 검사는 `FilesPaneVerification.cs`(Core.Tests, macOS `WorkspaceFilesTests`와 같은 벡터)와 GUI 스모크 키 `filesPane`이다.
+
+- 여는 방법: **Ctrl+Shift+E**(⇧⌘E의 ⌘를 Ctrl로), 탭 그룹의 `+` 메뉴와 워크스페이스 메뉴의 **파일 창 열기**. 워크스페이스마다 하나이고, 처음 열면 현재 창의 왼쪽으로 분할한다. 저장하지 않으므로 앱을 다시 켜면 없다. 펼친 폴더와 마지막으로 본 파일은 앱이 켜져 있는 동안 기억한다.
+- 경로 규칙: 심볼릭 링크와 정션을 풀어 실제 경로가 루트 안일 때만 보이고 연다. `..`·절대 경로·드라이브 문자·`:`(NTFS 스트림 이름)·NUL은 거절한다. 연 다음에는 핸들의 최종 경로(`GetFinalPathNameByHandle`)가 루트 안인지 다시 보고, 디스크 파일이 아닌 핸들(장치 이름 등)은 "미리볼 수 없는 파일"이다. 숨김 속성 파일도 보인다.
+- 미리보기: 소스는 줄 번호와 같은 강조 색, Markdown은 대화창과 같은 렌더러(그림·로컬 링크 없음), 이미지는 WIC로 풀어 창에 맞추기(긴 변 4,096픽셀 축소본)·축소·실제 크기·확대를 하고 1억 픽셀이 넘으면 맞추기만, 2억 5천만 픽셀이 넘으면 풀지 않는다. svg는 바깥 참조 검사를 통과한 것만 `SvgImageSource`로, pdf는 첫 쪽을 그린다. HEIC·WebP는 Windows에 해당 코덱이 있을 때만 보인다.
+- 미리볼 수 없는 파일 카드의 단추는 **파일 탐색기에서 보기**(`menu.showInExplorer`)다.
+- 줄이 5,000자보다 길어 줄을 접을 때는 줄 번호 칸을 숨긴다(이어지는 줄에 번호가 없는 macOS와 같은 뜻).
+- 색칠한 조각은 화면 스레드가 하나씩 만들어야 하므로 Windows는 처음 20,000개까지만 칠하고, 그보다 많으면 강조 안내가 칠한 곳까지의 UTF-16 단위 수를 보인다. 줄 번호 문자열·Markdown 변환은 macOS처럼 화면 스레드 밖에서 만든다.
+- 창을 닫은 뒤 늦게 끝난 폴더 읽기·미리보기는 화면에 아무것도 쓰지 않는다.
+

@@ -82,7 +82,7 @@ internal static class RenameVerification
         try
         {
             var workspace = new Workspace { Path = workspacePath };
-            var session = new RunSession { WorkspaceId = workspace.Id, Title = "나만의 이름" };
+            var session = new RunSession { WorkspaceId = workspace.Id, Title = "나만의 이름", TitleMode = PaneTitle.Fixed };
             var snap = new AppSnapshot { Workspaces = [workspace], Sessions = [session] };
             await File.WriteAllTextAsync(Path.Combine(native, "workspace-state.json"), JsonSerializer.Serialize(snap, Wire.Json));
             var restored = await new StateStore(native).LoadAsync();
@@ -173,7 +173,7 @@ internal static class RenameVerification
         try
         {
             var workspace = new Workspace { Path = workspacePath };
-            var session = new RunSession { WorkspaceId = workspace.Id, Title = name };
+            var session = new RunSession { WorkspaceId = workspace.Id, Title = name, TitleMode = PaneTitle.Fixed };
             var snap = new AppSnapshot { Workspaces = [workspace], Sessions = [session] };
             await File.WriteAllTextAsync(Path.Combine(native, "workspace-state.json"), JsonSerializer.Serialize(snap, Wire.Json));
             var restored = await new StateStore(native).LoadAsync();

@@ -73,8 +73,13 @@ public static class MightyGraphViewModel
         bool running,
         IReadOnlySet<string> expanded,
         string? resultFilesRunID = null,
-        (double W, double H)? viewport = null)
-        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport);
+        (double W, double H)? viewport = null,
+        double? zoom = null,
+        GraphBlockSize? sharedResultSize = null,
+        int retainedStart = 0,
+        bool history = false,
+        double? resultContentHeight = null)
+        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight);
 
     // ── block capsule ─────────────────────────────────────────────────────────
 
@@ -174,12 +179,14 @@ public static class MightyGraphViewModel
     public static string LocaleKeyResultFilesOpen => "graph.resultFiles.openButton";
     public static string LocaleKeyResultFilesCount => "graph.resultFiles.countLabel";
     public static string LocaleKeyBlockScrolling => "graph.block.scrolling";
+    public static string LocaleKeyResultFitToWindow => "graph.result.fitToWindow";
 }
 
 /// <summary>
 /// One canvas block as the Mighty view draws it: the layout node plus the copy,
-/// state, request and output text, the usage capsule and its tooltip, and the
-/// running/waiting indicator choice. WinUI renders these and decides nothing.
+/// state, request and output text, the usage capsule and its tooltip, the
+/// running/waiting indicator choice and the card's activity outline
+/// (<see cref="MightyGraphActivity"/>). WinUI renders these and decides nothing.
 /// </summary>
 public sealed record MightyGraphBlock(
     string Id,
@@ -192,7 +199,8 @@ public sealed record MightyGraphBlock(
     string? Capsule,
     string CapsuleHelp,
     string Indicator,
-    string? ResultFilesRunId);
+    string? ResultFilesRunId,
+    string Outline = MightyGraphActivity.None);
 
 public static class MightyGraphBlockModel
 {
@@ -212,6 +220,15 @@ public static class MightyGraphBlockModel
     /// <summary>The main request block's title: `요청 N · Claude` (style prefixes are out of scope).</summary>
     public static string RequestTitle(int ordinal, string providerLabel) =>
         Locale.Get("graph.block.requestTitle", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(), ["provider"] = providerLabel });
+
+    /// <summary>
+    /// The provider whose mark goes before the name a block's title ends with, or null: only a
+    /// request block's title (<c>요청 N · Claude</c>) names its agent (macOS MightyGraphView
+    /// <c>transcriptCard(titleProvider:)</c>). Sub-agent, result, draft and file blocks carry none,
+    /// and neither does a provider the app has no mark for.
+    /// </summary>
+    public static string? TitleProvider(MightyGraphBlock block, string paneProvider) =>
+        block.Kind == "request" && ProviderMark.SplitTrailingLabel(block.Title, paneProvider) is not null ? ProviderMark.MarkedProvider(paneProvider) : null;
 
     /// <summary>The result block's title, by how the run ended.</summary>
     public static string ResultTitle(string runStatus) => runStatus switch
@@ -264,22 +281,24 @@ public static class MightyGraphBlockModel
                     blocks.Add(new(node.Id, "request", node.Frame, RequestTitle(runIndex + 1, providerLabel),
                         StateLabel(run.Status), run.Input,
                         run.RootEntries.Where(e => e.Kind != "user").ToList(),
-                        ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog),
+                        ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),
                         Help(run.Usage, run.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
-                        MightyGraphViewModel.BlockIndicator(run.Status, animationsEnabled), null));
+                        MightyGraphViewModel.BlockIndicator(run.Status, animationsEnabled), null,
+                        MightyGraphActivity.Outline(run.Status, animationsEnabled)));
                     break;
                 case "agent" when run is not null && run.Agents.FirstOrDefault(a => a.Id == agentId) is { } agent:
                     blocks.Add(new(node.Id, MightyGraphSupport.BlockKind(agent), node.Frame, MightyGraphSupport.BlockTitle(agent),
                         StateLabel(agent.Status), agent.Input,
                         agent.Entries.Where(e => e.Kind != "user").ToList(),
-                        ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog),
+                        ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog, versioned: true),
                         Help(agent.Usage, agent.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
-                        MightyGraphViewModel.BlockIndicator(agent.Status, animationsEnabled), null));
+                        MightyGraphViewModel.BlockIndicator(agent.Status, animationsEnabled), null,
+                        MightyGraphActivity.Outline(agent.Status, animationsEnabled)));
                     break;
                 case "result" when run is not null:
                     blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status),
                         StateLabel(ResultState(run.Status)), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
-                        ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog),
+                        ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog, versioned: true),
                         Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),
                         "none", run.Status == "completed" ? run.Id : null));
                     break;
@@ -295,7 +314,7 @@ public static class MightyGraphBlockModel
     private static string Help(GraphTokenUsage? usage, IReadOnlyList<GraphResponseRecord> records, string usageLabel, IReadOnlyList<ModelOption>? catalog)
         => records.Count == 0
             ? usage is null ? "" : usageLabel + " · " + usage.Detail
-            : ModelUsageFormat.BlockCapsuleHelp(records, catalog);
+            : ModelUsageFormat.BlockCapsuleHelp(records, catalog, versioned: true);
 
     /// <summary>Which run (and, for an agent node, which agent) a layout node belongs to.</summary>
     private static (int RunIndex, string? AgentId) Locate(MightyGraphLayout.Node node, IReadOnlyList<MightyGraphRun> runs)

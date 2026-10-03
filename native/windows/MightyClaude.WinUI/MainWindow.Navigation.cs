@@ -3,47 +3,68 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.System;
 
 namespace MightyClaude.WinUI;
 
 public sealed partial class MainWindow
 {
-    private readonly Dictionary<string, (ProgressRing Ring, TextBlock Status, TextBlock Time)> sessionIndicators = [];
-    private readonly Dictionary<string, (ProgressRing Ring, TextBlock Status, TextBlock Time)> tabIndicators = [];
-    private static string StateLabel(string state) => Locale.Get(state switch
-    {
-        "running" => "session.state.running",
-        "completed" => "session.state.completed",
-        "error" => "session.state.error",
-        "stopped" => "session.state.stopped",
-        _ => "session.state.idle",
-    });
+    private readonly Dictionary<string, (StatusMark Mark, TextBlock Status, TextBlock Time)> sessionIndicators = [];
+    private readonly Dictionary<string, (StatusMark Mark, TextBlock Status, TextBlock Time)> tabIndicators = [];
+    /// <summary>A status's word, the same one the glyph names (StatusGlyph.WordKey).</summary>
+    private static string StateLabel(string state) => Locale.Get(StatusGlyph.WordKey(StatusGlyph.Tone(state)));
+    /// <summary>The pane's tool requests still waiting on the user; they turn its mark into the amber "?".</summary>
+    private int PendingRequests(string id) => views.TryGetValue(id, out var pane) ? pane.PendingRequests : 0;
+    /// <summary>The theme Render last applied; read per row without copying the snapshot.</summary>
+    private bool DarkTheme => darkTheme;
+    private bool darkTheme = true;
+    /// <summary>
+    /// A sidebar row or tab: the status glyph (design A) before the title, then the state word
+    /// and the run clock. The glyph replaces the spinning ring; no row is filled with a status colour.
+    /// </summary>
     private FrameworkElement SessionIndicator(RunSession session, bool tab = false)
     {
         var row = new Grid { ColumnSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var ring = new ProgressRing { Width = 13, Height = 13, MinWidth = 0, MinHeight = 0, IsActive = session.Status == "running", Visibility = session.Status == "running" ? Visibility.Visible : Visibility.Collapsed };
-        row.Children.Add(ring);
-        var title = new TextBlock { Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 }; Grid.SetColumn(title, 1); row.Children.Add(title);
-        var state = new TextBlock { Text = StateLabel(session.Status), FontSize = 10, Opacity = .65 };
+        var pending = PendingRequests(session.Id); var shown = StatusGlyph.DisplayStatus(session.Status, pending);
+        var mark = new StatusMark(); mark.Update(session.Status, session.Kind, pending, DarkTheme);
+        row.Children.Add(mark.View);
+        var title = new TextBlock { Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 };
+        // A Codex or Gemini agent pane carries the 베타 capsule right after its title (macOS paneRow / PaneDockView).
+        var titleLine = SessionTitle(session, title, tab); Grid.SetColumn(titleLine, 1); row.Children.Add(titleLine);
+        // An automatic agent title is the request cut to 40 characters; hovering shows it whole (macOS titleHelp).
+        ToolTipService.SetToolTip(title, PaneTitle.Help(session));
+        var state = new TextBlock { Text = StateLabel(shown), FontSize = 10, Opacity = .65 };
         var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", FontSize = 10, Opacity = .7 };
         var trailing = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center }; if (!tab) trailing.Children.Add(state); trailing.Children.Add(elapsed); Grid.SetColumn(trailing, 2); row.Children.Add(trailing);
-        (tab ? tabIndicators : sessionIndicators)[session.Id] = (ring, state, elapsed);
-        AutomationProperties.SetName(row, session.Title + ", " + StateLabel(session.Status)); return row;
+        // An agent's sidebar row names its provider on a muted second line, its mark first
+        // (macOS paneMeta: "[mark] Claude"); the glyph and the trailing state span both lines.
+        if (!tab && SidebarProviderLine(session) is { } providerLine)
+        {
+            row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowSpacing = 1;
+            Grid.SetRowSpan(mark.View, 2); Grid.SetRowSpan(trailing, 2);
+            Grid.SetRow(providerLine, 1); Grid.SetColumn(providerLine, 1); row.Children.Add(providerLine);
+        }
+        (tab ? tabIndicators : sessionIndicators)[session.Id] = (mark, state, elapsed);
+        AutomationProperties.SetName(row, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown)); return row;
     }
     private void RefreshRunningIndicators()
     {
         if (closing) return;
-        foreach (var session in service.Snapshot.Sessions)
+        // One snapshot copy per tick: the theme and every session come from it.
+        var state = service.Snapshot; var dark = state.Theme != "light";
+        foreach (var session in state.Sessions)
         {
+            var pending = PendingRequests(session.Id);
             foreach (var values in new[] { sessionIndicators, tabIndicators })
             {
                 if (!values.TryGetValue(session.Id, out var view)) continue;
-                view.Ring.IsActive = session.Status == "running"; view.Ring.Visibility = session.Status == "running" ? Visibility.Visible : Visibility.Collapsed;
-                view.Status.Text = StateLabel(session.Status); view.Time.Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "";
+                view.Mark.Update(session.Status, session.Kind, pending, dark);
+                view.Status.Text = StateLabel(StatusGlyph.DisplayStatus(session.Status, pending)); view.Time.Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "";
             }
-            if (views.TryGetValue(session.Id, out var pane)) pane.RefreshElapsed();
+            if (views.TryGetValue(session.Id, out var pane)) { pane.RefreshElapsed(session); pane.RefreshHeaderStatus(session, dark); }
         }
     }
     private Task SelectWorkspace(string id) => Act(async () =>
@@ -62,12 +83,49 @@ public sealed partial class MainWindow
     }
     private MenuFlyout NewSessionMenu(string? groupId = null)
     {
+        // The macOS "창 추가" order (AddPaneMenu.Entries): agents, terminal, browser and files,
+        // then 프로젝트 폴더 열기… at the bottom.
         var menu = new MenuFlyout();
-        foreach (var provider in Wire.Providers) menu.Items.Add(MenuItem(ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider)), () => AddPane("claude", provider, groupId)));
-        menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem(Locale.Get("session.newTab.shell"), () => AddPane("shell", groupId: groupId)));
-        menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(MenuItem(Locale.Get("browser.newTab"), () => AddBrowserPane(groupId)));
+        foreach (var entry in AddPaneMenu.Entries())
+            menu.Items.Add(entry switch
+            {
+                AddPaneMenu.Separator => (MenuFlyoutItemBase)new MenuFlyoutSeparator(),
+                AddPaneMenu.Shell => MenuItem(Locale.Get("session.newTab.shell"), () => AddPane("shell", groupId: groupId)),
+                AddPaneMenu.Browser => MenuItem(Locale.Get("browser.newTab"), () => AddBrowserPane(groupId)),
+                AddPaneMenu.Files => OpenFilesMenuItem(),
+                AddPaneMenu.OpenProject => OpenProjectMenuItem(),
+                _ => AddPaneMenu.AgentProvider(entry) is { } provider
+                    ? MenuItem(ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider)), () => AddAgentPane(provider, groupId))
+                    : throw new InvalidOperationException("unknown 창 추가 entry " + entry),
+            });
         return menu;
     }
+    private MenuFlyoutItem OpenProjectMenuItem()
+    {
+        var item = MenuItem(Locale.Get(AddPaneMenu.OpenProjectKey), PickFolder);
+        item.KeyboardAcceleratorTextOverride = AddPaneMenu.OpenFolderShortcut;
+        item.Icon = new FontIcon { Glyph = "" };
+        AutomationProperties.SetAutomationId(item, "add-pane-open-folder");
+        return item;
+    }
+    /// <summary>
+    /// Ctrl+O opens a project folder and Ctrl+N adds a Claude pane at once (macOS ⌘O, ⌘N):
+    /// the shortcut never asks 새로 시작 / 이어가기, as on macOS.
+    /// </summary>
+    private void InitAddPaneShortcuts()
+    {
+        var open = new KeyboardAccelerator { Key = VirtualKey.O, Modifiers = VirtualKeyModifiers.Control };
+        open.Invoked += async (_, args) => { args.Handled = true; if (!dialogOpen) await PickFolder(); };
+        var add = new KeyboardAccelerator { Key = VirtualKey.N, Modifiers = VirtualKeyModifiers.Control };
+        add.Invoked += async (_, args) => { args.Handled = true; await AddPaneFromShortcut(); };
+        root.KeyboardAccelerators.Add(open); root.KeyboardAccelerators.Add(add);
+    }
+    private async Task AddPaneFromShortcut()
+    {
+        if (dialogOpen || service.Snapshot.ActiveWorkspaceId is null) return;
+        await AddPane("claude", AddPaneMenu.NewPaneShortcutProvider);
+    }
+    internal bool HasAddPaneShortcuts => new[] { VirtualKey.O, VirtualKey.N }.All(key => root.KeyboardAccelerators.Any(a => a.Key == key && a.Modifiers == VirtualKeyModifiers.Control));
     private MenuFlyout WorkspaceMenu(string id)
     {
         var rename = new MenuFlyoutItem { Text = RenameStrings.MenuEntry };
@@ -75,6 +133,7 @@ public sealed partial class MainWindow
         var menu = new MenuFlyout();
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
+        menu.Items.Add(OpenFilesMenuItem(id));
         menu.Items.Add(MenuItem(Locale.Get("workspace.menu.remove"), () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); })));
         return menu;
     }
@@ -94,8 +153,9 @@ public sealed partial class MainWindow
     /// The rename dialog of RenameViews.swift: the current name selected, the macOS captions under
     /// the field and 저장 disabled while the name is invalid. Every literal comes from RenameStrings
     /// and every rule from RenameSupport, so Windows and macOS accept and refuse the same names.
+    /// An agent pane also offers 자동 (pane.rename.automatic): its title follows its latest request again.
     /// </summary>
-    private async Task<string?> RenameDialog(string heading, string hint, string current)
+    private async Task<(bool Automatic, string? Name)> RenameDialog(string heading, string hint, string current, bool offerAutomatic = false)
     {
         var field = new TextBox { Header = RenameStrings.FieldLabel, Text = current, MinWidth = 300 };
         var hintText = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
@@ -110,6 +170,7 @@ public sealed partial class MainWindow
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root.XamlRoot,
         };
+        if (offerAutomatic) dialog.SecondaryButtonText = Locale.Get("pane.rename.automatic");
         void Validate()
         {
             errors.Children.Clear();
@@ -128,22 +189,26 @@ public sealed partial class MainWindow
             var result = smokeAskName is { } driver
                 ? await driver(dialog, field, errors)
                 : await dialog.ShowAsync();
-            return result == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null;
+            if (offerAutomatic && result == ContentDialogResult.Secondary) return (true, null);
+            return (false, result == ContentDialogResult.Primary ? RenameSupport.DisplayName(field.Text) : null);
         }
         finally { dialogOpen = false; }
     }
     private Task RenameWorkspace(string id) => Act(async () =>
     {
         if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id) is not { } workspace) return;
-        if (await RenameDialog(RenameStrings.HeadingWorkspace, RenameStrings.HintWorkspace, workspace.Name) is not { } name) return;
+        if ((await RenameDialog(RenameStrings.HeadingWorkspace, RenameStrings.HintWorkspace, workspace.Name)).Name is not { } name) return;
         await service.RenameWorkspaceAsync(id, name);
         Render();
     });
     private Task RenameSession(string id) => Act(async () =>
     {
         if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } session) return;
-        if (await RenameDialog(RenameStrings.HeadingSession, RenameStrings.HintSession, session.Title) is not { } name) return;
-        await service.RenameSessionAsync(id, name);
+        // Renaming fixes the title; 자동 hands it back to the latest request (macOS RenameViews.swift).
+        var (automatic, name) = await RenameDialog(RenameStrings.HeadingSession, RenameStrings.HintSession, session.Title, offerAutomatic: session.Kind == "claude");
+        if (automatic) await service.SetSessionAutoTitleAsync(id);
+        else if (name is not null) await service.RenameSessionAsync(id, name);
+        else return;
         Render();
     });
 }

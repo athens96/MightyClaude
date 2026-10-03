@@ -21,6 +21,9 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     public static bool IsBeta(string provider) => provider is "codex" or "gemini";
     // Menu items and plain text rows cannot host the badge, so it rides in their text.
     public static string BetaLabel(string provider, string text) => IsBeta(provider) ? text + " · " + Locale.Get("badge.beta") : text;
+    // A sidebar row or tab carries the capsule after its title only for a beta agent's pane
+    // (macOS paneRow / PaneDockView: kind "claude" and isBeta); shells, browsers and files never do.
+    public static bool ShowsBetaBadge(RunSession session) => session.Kind == "claude" && IsBeta(session.Provider);
     public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "codex" ? ["manual", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
     public static ProviderCapabilities Capabilities(string provider, string? version = null) => new(provider != "gemini", PermissionModes(provider, provider == "claude" && SupportsMods(version)), provider == "claude", provider == "claude", true, provider == "codex", provider == "codex", provider == "codex", true);
     public static RunSettings NormalizeSettings(string provider, RunSettings? value)
@@ -31,7 +34,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     }
     public static ModelCatalog Fallback(string provider)
     {
-        var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = Name(provider) }), Locale.Get("provider.fallback.defaultDescription")) };
+        var models = new List<ModelOption> { new("default", Locale.Get("provider.fallback.defaultLabel", new Dictionary<string, string> { ["name"] = ProviderMark.Label(provider) }), Locale.Get("provider.fallback.defaultDescription")) };
         foreach (var value in provider switch { "claude" => new[] { "best", "fable", "opus", "sonnet", "haiku", "opusplan" }, "codex" => new[] { "gpt-5.6-sol", "gpt-6-astra" }, _ => new[] { "auto", "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash" } }) models.Add(new(value, value, Locale.Get("provider.fallback.exampleDescription"), SupportsEffort: value.Contains("haiku") ? false : null));
         return new("fallback", models, Locale.Get("provider.fallback.source"));
     }
@@ -145,8 +148,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 if (provider == "claude")
                 {
                     if (root.Text("type") != "control_response" || !root.TryGetProperty("response", out var response) || response.Text("request_id") != requestId || !response.TryGetProperty("response", out var payload) || !payload.TryGetProperty("models", out var rows)) continue;
-                    foreach (var row in rows.EnumerateArray().Take(128)) if (ReadModel(row, provider) is { } model && model.Value != "default") models.Add(model);
-                    return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.claudeCliSource"));
+                    return ClaudeCatalog(rows);
                 }
                 if (!root.TryGetProperty("id", out var id) || !id.TryGetInt32(out var number) || number != expected) continue;
                 if (root.TryGetProperty("error", out _)) break;
@@ -157,7 +159,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 }
                 else if (root.TryGetProperty("result", out var result) && result.TryGetProperty("data", out var data))
                 {
-                    foreach (var row in data.EnumerateArray().Take(128 - models.Count)) if (ReadModel(row, provider) is { } model) models.Add(model);
+                    AddCodexModels(models, data);
                     if (++pages < 4 && models.Count < 128 && result.Text("nextCursor") is { Length: > 0 and < 4096 } cursor) await child.Input.WriteLineAsync(JsonSerializer.Serialize(new { id = ++expected, method = "model/list", @params = new { limit = 64, includeHidden = false, cursor } }, Wire.Json));
                     else return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.codexCliSource"));
                 }
@@ -165,6 +167,32 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or System.ComponentModel.Win32Exception or InvalidOperationException) { }
         return Fallback(provider);
+    }
+    // The CLI's own "default" row only lends the fallback "<name> 설정 따름" row the model it
+    // stands for (macOS ProviderService.normalizeClaudeCatalog), so the label reads
+    // "Claude 설정 따름 · Opus 5.5" while the value sent stays "default".
+    public static ModelCatalog ClaudeCatalog(JsonElement rows)
+    {
+        var models = Fallback("claude").Models.Take(1).ToList();
+        foreach (var row in rows.EnumerateArray().Take(128))
+        {
+            if (ReadModel(row, "claude") is not { } model) continue;
+            if (model.Value == "default") models[0] = models[0] with { ResolvedModel = model.ResolvedModel, SupportsEffort = model.SupportsEffort, SupportedEffortLevels = model.SupportedEffortLevels };
+            else models.Add(model);
+        }
+        return new("cli", models.DistinctBy(m => m.Value).ToList(), Locale.Get("provider.claudeCliSource"));
+    }
+    // Codex marks its default with isDefault; the fallback default row resolves to it
+    // (macOS ProviderService.normalizeCodexCatalog).
+    public static void AddCodexModels(List<ModelOption> models, JsonElement data)
+    {
+        foreach (var row in data.EnumerateArray().Take(128 - models.Count))
+        {
+            if (ReadModel(row, "codex") is not { } model) continue;
+            models.Add(model);
+            if (models.Count > 0 && models[0].Value == "default" && row.TryGetProperty("isDefault", out var isDefault) && isDefault.ValueKind == JsonValueKind.True)
+                models[0] = models[0] with { ResolvedModel = model.Value, SupportsEffort = model.SupportsEffort, SupportedEffortLevels = model.SupportedEffortLevels };
+        }
     }
     private static ModelOption? ReadModel(JsonElement row, string provider)
     {

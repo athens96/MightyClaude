@@ -48,6 +48,7 @@ public sealed partial class MainWindow
             result["composerAndTranscript"] = await pane.RunComposerSmoke();
             result["slashCommandPalette"] = await pane.RunSlashCommandPaletteSmoke();
             result["statusLine"] = await pane.RunStatusLineSmoke();
+            result["modelLabel"] = pane.RunModelLabelSmoke();
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
@@ -59,6 +60,10 @@ public sealed partial class MainWindow
             result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
             result["liveWiring"] = await RunLiveWiringSmoke();
             result["rename"] = await RunRenameSmoke();
+            result["statusGlyph"] = await RunStatusGlyphSmoke();
+            result["agentMark"] = RunAgentMarkSmoke();
+            result["agentImages"] = await RunAgentImagesSmoke(workspace);
+            result["betaBadge"] = RunBetaBadgeSmoke();
             result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
             result[CodexPluginSmokeOutcome.ResultKey] = await RunCodexPluginSmoke();
             result[PluginMarketplaceSmokeOutcome.ResultKey] = await RunPluginMarketplaceSmoke();
@@ -66,6 +71,10 @@ public sealed partial class MainWindow
             result["mightyGraph"] = await RunMightyGraphSmoke(pane, workspace, mightyLeakStrings);
             var browserLeakStrings = new List<string>();
             result["browserPane"] = await RunBrowserPaneSmoke(workspace, browserLeakStrings);
+            var filesLeakStrings = new List<string>();
+            result["filesPane"] = await RunFilesPaneSmoke(workspace, filesLeakStrings);
+            result["sessionHistory"] = await RunSessionHistorySmoke(workspace, other);
+            result["addPaneMenu"] = await RunAddPaneMenuSmoke(workspace, other);
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -115,6 +124,7 @@ public sealed partial class MainWindow
             // mighty 그래프 캔버스의 글자도 로케일 키 누수 검사에 넣는다.
             leakStrings.AddRange(mightyLeakStrings);
             leakStrings.AddRange(browserLeakStrings);
+            leakStrings.AddRange(filesLeakStrings);
             var koKeys = Locale.Catalogue("ko").Keys.ToList();
             var keyLeaks = LocaleKeyLeak.Detect(leakStrings, koKeys);
             result["localeKeyLeakScanned"] = leakStrings.Count;
@@ -313,6 +323,7 @@ public sealed partial class MainWindow
         var checks = new Dictionary<string, object?>();
         var fixtureSession = service.Snapshot.Sessions[0];
         var originalTitle = fixtureSession.Title;
+        var originalMode = fixtureSession.TitleMode;
         try
         {
             var currentPrefilled = false;
@@ -378,12 +389,28 @@ public sealed partial class MainWindow
             Require(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).Title == "변경된 이름", "취소 후 이름이 바뀌었습니다.");
             checks["cancelPreservesName"] = true;
 
+            // Auto-titles: the rename fixed the title, so a new request leaves it alone; 자동 hands it back
+            // to the latest request (40 characters), and hovering the sidebar title shows the request whole.
+            Require(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).TitleMode == PaneTitle.Fixed, "이름을 바꾼 창의 제목이 고정되지 않았습니다.");
+            var offersAutomatic = false;
+            smokeAskName = (dialog, _, _) => { offersAutomatic = dialog.SecondaryButtonText == Locale.Get("pane.rename.automatic"); return Task.FromResult(ContentDialogResult.Secondary); };
+            await RenameSession(fixtureSession.Id);
+            Require(offersAutomatic, "이름 변경 대화창에 자동 (요청 따름) 단추가 없습니다.");
+            var latest = PaneTitle.Tooltip(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id)) ?? "";
+            Require(latest.Length > 0, "스모크 창에 제목이 될 요청이 없습니다.");
+            await WaitUI(() => service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id) is { TitleMode: PaneTitle.Automatic } p && p.Title == PaneTitle.Shortened(latest));
+            var sidebarTitle = sessionLinks.Children.OfType<Button>().Select(b => b.Content).OfType<Grid>()
+                .Where(g => g.Children.Count > 1).Select(g => g.Children[1]).OfType<TextBlock>()
+                .FirstOrDefault(t => t.Text == PaneTitle.Shortened(latest));
+            Require(sidebarTitle is not null && ToolTipService.GetToolTip(sidebarTitle) as string == latest, "자동 제목의 사이드바 도움말이 최근 요청과 다릅니다.");
+            checks["automaticFollowsLatestRequest"] = true;
+
             checks["passed"] = true;
         }
         finally
         {
             smokeAskName = null;
-            await service.RenameSessionAsync(fixtureSession.Id, originalTitle);
+            await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == fixtureSession.Id ? p with { Title = originalTitle, TitleMode = originalMode } : p).ToList() });
             Render();
         }
         return checks;
@@ -501,6 +528,85 @@ public sealed partial class MainWindow
         try { await service.DisposeAsync(); } catch (Exception ex) { options.WriteStartupFailure(ex); passed = false; }
         Environment.ExitCode = passed ? 0 : 1; canClose = true; Close(); Application.Current.Exit();
     }
+    // 파일 창 스모크 (docs/file-pane.md): 임시 워크스페이스에 Markdown·Swift·PNG 픽스처를 두고
+    // Ctrl+Shift+E와 같은 길(OpenFilePane)로 실제 창을 연다. 루트 목록과 잡음 폴더 접힘, 폴더 펼치기,
+    // 세 미리보기(렌더링한 Markdown, 줄 여섯 개의 UTF-8 소스, 40×30 PNG)를 확인하고, 다시 열면 같은
+    // 창으로 가는지, 상태 파일에 쓰이지 않는지 본다. 픽스처 밖의 파일은 읽지 않고 AI 요청도 없다.
+    private async Task<Dictionary<string, object?>> RunFilesPaneSmoke(Workspace workspace, List<string> leakStrings)
+    {
+        var previousMode = LayoutMode(service.Snapshot, workspace.Id);
+        var previousTree = EffectiveLayout(service.Snapshot, workspace.Id);
+        var previousActive = service.Snapshot.ActiveSessionId;
+        var project = workspace.Path;
+        Directory.CreateDirectory(Path.Combine(project, "Sources"));
+        Directory.CreateDirectory(Path.Combine(project, "node_modules", "pkg"));
+        await File.WriteAllTextAsync(Path.Combine(project, "README.md"), "# Files pane\n\n- rendered **markdown**\n\n```swift\nlet x = 1\n```\n");
+        await File.WriteAllTextAsync(Path.Combine(project, "Sources", "App.swift"), "import Foundation\n\n// A comment\nlet answer = 42\nprint(\"hello\")\n");
+        using (var png = new InMemoryRandomAccessStream())
+        {
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, png);
+            encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, 40, 30, 96, 96, new byte[40 * 30 * 4]); await encoder.FlushAsync();
+            using var reader = new DataReader(png.GetInputStreamAt(0)); await reader.LoadAsync((uint)png.Size); var bytes = new byte[(int)png.Size]; reader.ReadBytes(bytes);
+            await File.WriteAllBytesAsync(Path.Combine(project, "image.png"), bytes);
+        }
+
+        Require(HasOpenFilesAccelerator, "Ctrl+Shift+E 단축키가 창에 등록되지 않았습니다.");
+        // placedLeft must not depend on the layout an earlier smoke left behind: in tabs mode
+        // every pane shares one group, so the files pane has room to split off to its left.
+        Require(service.Snapshot.ActiveWorkspaceId == workspace.Id, "파일 창 스모크가 다른 워크스페이스에서 시작했습니다.");
+        await ApplyLayoutPreset("tabs");
+        await OpenFilePane(workspace.Id);
+        var paneId = FilePaneKind.PaneId(workspace.Id);
+        var paneOpened = service.Snapshot.ActiveSessionId == paneId && service.Snapshot.Sessions.Any(s => s.Id == paneId && s.Kind == FilePaneKind.Kind);
+        var placedLeft = EffectiveLayout(service.Snapshot, workspace.Id) is { Kind: "split" } placed && PaneLayout.Groups(placed).First().SessionIds.SequenceEqual([paneId]);
+        await WaitUI(() => views.TryGetValue(paneId, out var opened) && opened.FilesHost is not null);
+        var view = views[paneId];
+        await WaitUI(() => view.FilesTree.Children.ContainsKey("") && view.FilesTreeItemCount > 0);
+        var rootEntries = view.FilesTree.Children[""].Select(e => e.Name).ToList();
+        var noiseCollapsed = view.FilesTree.Children[""].FirstOrDefault(e => e.Name == "node_modules")?.IsNoise == true && !view.FilesTree.Expanded.Contains("node_modules");
+        await view.FilesSmokeOpenFolder("Sources");
+        await WaitUI(() => view.FilesTree.Children.ContainsKey("Sources"));
+        var folderOpened = view.FilesTree.Children["Sources"].Any(e => e.RelativePath == "Sources/App.swift");
+
+        await view.FilesSmokePreview("README.md");
+        var markdown = view.FilesShown is { Kind.Tag: FilePreviewKindTag.Markdown, MarkdownRenderable: true };
+        await view.FilesSmokePreview("Sources/App.swift");
+        var swift = view.FilesShown is { Kind.Tag: FilePreviewKindTag.Source, Encoding: TextEncodingKind.Utf8, Text: { } source } && SourceLines.Scan(source).Starts.Count == 6;
+        await view.FilesSmokePreview("image.png");
+        var image = view.FilesShown is { Kind.Tag: FilePreviewKindTag.Image } && view.FilesPreviewPixels == (40, 30);
+        root.UpdateLayout(); await Task.Delay(150);
+        var screenshot = await CaptureSmoke(Path.Combine(options.ProfileDirectory!, "smoke-files.png"));
+        CollectVisibleStrings(view.FilesHost!, leakStrings);
+
+        await OpenFilePane(workspace.Id);
+        var reopenFocusesSamePane = service.Snapshot.Sessions.Count(s => s.Id == paneId) == 1 && service.Snapshot.ActiveSessionId == paneId && ReferenceEquals(view, views[paneId]);
+        // What the app actually wrote: wait for the queued save, then read the state file.
+        await service.UpdateAsync(s => s);
+        var written = await File.ReadAllTextAsync(Path.Combine(StateDirectory, "workspace-state.json"));
+        var neverSaved = !written.Contains(paneId, StringComparison.Ordinal) && service.Snapshot.Sessions.Any(s => s.Id == paneId);
+        await CloseSession(paneId);
+        // Put back the tree and mode the earlier smokes left, not a rebuilt preset.
+        await service.UpdateAsync(s => SaveLayoutMode(SaveLayout(s, workspace.Id, previousTree), workspace.Id, previousMode)); Render();
+        if (previousActive is not null && service.Snapshot.Sessions.Any(s => s.Id == previousActive)) await SelectLayoutSession(previousActive);
+        Require(paneOpened && placedLeft && noiseCollapsed && folderOpened && markdown && swift && image && reopenFocusesSamePane && neverSaved,
+            $"파일 창 스모크 실패: opened={paneOpened} left={placedLeft} noise={noiseCollapsed} folder={folderOpened} md={markdown} swift={swift} png={image} reopen={reopenFocusesSamePane} unsaved={neverSaved}");
+        return new Dictionary<string, object?>
+        {
+            ["shortcut"] = FilePaneKind.Shortcut,
+            ["paneOpened"] = paneOpened,
+            ["placedLeft"] = placedLeft,
+            ["rootEntries"] = rootEntries,
+            ["noiseCollapsed"] = noiseCollapsed,
+            ["folderOpened"] = folderOpened,
+            ["markdown"] = markdown,
+            ["swift"] = swift,
+            ["png"] = image,
+            ["reopenFocusesSamePane"] = reopenFocusesSamePane,
+            ["neverSaved"] = neverSaved,
+            ["screenshot"] = screenshot,
+        };
+    }
+
     private async Task<string> CaptureSmoke(string path)
     {
         var bitmap = new RenderTargetBitmap(); await bitmap.RenderAsync(root);
@@ -546,6 +652,16 @@ public sealed partial class MainWindow
         Require(reading.Edges >= 2, "mighty 스모크: 엣지가 2개 미만입니다: " + reading.Edges);
         Require(reading.Kinds.Contains("request") && reading.Kinds.Contains("result"), "mighty 스모크: 요청·결과 블록이 없습니다.");
 
+        // Right-side cards (macOS a65a65b): every request block's header carries the pane's
+        // agent mark before `· Claude`; sub-agent, result and draft headers carry none.
+        var paneProvider = pane.SessionForSmoke.Provider;
+        var titleMarks = pane.GraphTitleMarksForSmoke();
+        var requestTitles = titleMarks.Where(t => t.Kind == "request").ToList();
+        Require(requestTitles.Count > 0, "mighty 스모크: 요청 블록 머리가 그려지지 않았습니다.");
+        Require(requestTitles.All(t => t.Mark == ProviderMark.MarkedProvider(paneProvider)), "mighty 스모크: 요청 블록 머리에 " + paneProvider + " 마크가 없습니다.");
+        Require(titleMarks.Where(t => t.Kind != "request").All(t => t.Mark is null), "mighty 스모크: 요청이 아닌 블록 머리에 에이전트 마크가 있습니다.");
+        var requestMarks = new Dictionary<string, object?> { ["provider"] = paneProvider, ["requestHeaders"] = requestTitles.Count, ["otherHeadersWithoutMark"] = titleMarks.Count - requestTitles.Count };
+
         // Zoom: 50% at the bottom, 100% on reset, 150% at the top, disabled at the ends.
         pane.SetGraphZoom(MightyGraphViewModel.ZoomMin);
         Require(MightyGraphViewModel.ZoomOutDisabled(pane.GraphZoom), "최소 배율에서 축소 단추가 잠기지 않았습니다.");
@@ -556,6 +672,9 @@ public sealed partial class MainWindow
         Require(MightyGraphViewModel.ZoomInDisabled(pane.GraphZoom), "최대 배율에서 확대 단추가 잠기지 않았습니다.");
         var maximum = (int)Math.Round(pane.GraphZoom * 100);
         pane.SetGraphZoom(MightyGraphViewModel.ZoomDefault);
+
+        var resultFit = await RunResultFitSmoke(pane);
+        var resultReveal = await RunResultRevealSmoke(pane);
 
         // Selection routes the wheel into the block; the empty background clears it.
         var first = pane.GraphBlockIds.First();
@@ -575,6 +694,8 @@ public sealed partial class MainWindow
         PaneView.AnimationsEnabledOverride = null;
         pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
 
+        var outlines = await RunActivityOutlineSmoke(pane);
+
         // The canvas text joins the locale-key leak scan.
         CollectVisibleStrings(pane.GraphCanvas, leakStrings);
         leakStrings.Add(pane.GraphTotalText);
@@ -593,6 +714,201 @@ public sealed partial class MainWindow
             ["resultFiles"] = reading.ResultFiles,
             ["zoom"] = new[] { minimum, reset, maximum },
             ["modeRestored"] = modeRestored,
+            ["resultFit"] = resultFit,
+            ["resultReveal"] = resultReveal,
+            ["requestMarks"] = requestMarks,
+            ["outlines"] = outlines,
+        };
+    }
+
+    /// Running blocks have the slowly moving dashed outline (macOS MightyGraphActivityOutline):
+    /// 9/7 dashes fitted to the card, solid with Windows animations off; a waiting block
+    /// keeps a still amber line. The first request is set running, then waiting, then put back.
+    private async Task<Dictionary<string, object?>> RunActivityOutlineSmoke(PaneView pane)
+    {
+        // SessionForSmoke is a copy of the saved snapshot: the runs change through the
+        // service (as RunResultRevealSmoke does) so the canvas really draws the new status.
+        var original = (pane.SessionForSmoke.GraphRuns ?? []).Select(r => r.Copy()).ToList();
+        Require(original.Count > 0, "실행 표시 테두리 스모크: 요청 블록이 없습니다.");
+        var requestId = MightyGraphLayout.NodeID(original[0], "request");
+        async Task<(string Kind, double[] Dash)> Draw(string next, bool animations)
+        {
+            PaneView.AnimationsEnabledOverride = animations;
+            var runs = original.Select(r => r.Copy()).ToList(); runs[0].Status = next;
+            await pane.SetGraphRunsForSmoke(runs);
+            Require((pane.SessionForSmoke.GraphRuns ?? []).FirstOrDefault()?.Status == next, "실행 표시 테두리 스모크: 요청 상태가 " + next + "(으)로 저장되지 않았습니다.");
+            pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+            Require(pane.GraphOutlinesForSmoke.TryGetValue(requestId, out var drawn),
+                "실행 표시 테두리 스모크: " + next + " 요청 블록에 테두리가 없습니다.");
+            return drawn;
+        }
+        try
+        {
+            var marching = await Draw("running", true);
+            Require(marching.Kind == MightyGraphActivity.Marching && marching.Dash.Length == 2,
+                "실행 중 블록의 테두리가 움직이는 점선이 아닙니다: " + marching.Kind);
+            // Fitted 9/7 dashes in 2pt stroke widths: the dash-to-gap ratio stays 9:7.
+            Require(Math.Abs(marching.Dash[0] / marching.Dash[1] - 9.0 / 7) < 1e-6, "점선의 9/7 비율이 macOS와 다릅니다.");
+            var still = await Draw("running", false);
+            Require(still.Kind == MightyGraphActivity.Solid && still.Dash.Length == 0, "애니메이션이 꺼졌는데 실행 테두리가 점선입니다.");
+            var waiting = await Draw("waiting", true);
+            Require(waiting.Kind == MightyGraphActivity.Waiting && waiting.Dash.Length == 0, "대기 블록의 테두리가 멈춘 주황 선이 아닙니다.");
+            return new Dictionary<string, object?> { ["running"] = marching.Kind, ["reducedMotion"] = still.Kind, ["waiting"] = waiting.Kind };
+        }
+        finally
+        {
+            PaneView.AnimationsEnabledOverride = null;
+            await pane.SetGraphRunsForSmoke(original);
+            pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+        }
+    }
+
+    /// The Mighty result box fits the agent pane (macOS 1d5a0db): with a saved
+    /// size larger than a narrow pane the newest result card is drawn inside
+    /// the pane, and once the pane is wide again it is back at the saved size;
+    /// zoomed in it still stays inside; 창에 맞추기 clears the saved size.
+    /// Every expected size is Core's own rule for the viewport actually drawn.
+    private async Task<Dictionary<string, object?>> RunResultFitSmoke(PaneView pane)
+    {
+        var runs = pane.SessionForSmoke.GraphRuns ?? [];
+        var resultId = MightyGraphLayout.LatestResultID(runs);
+        Require(resultId is not null, "결과 박스 스모크: 최신 결과 카드가 없습니다.");
+        var saved = new GraphBlockSize(500, 300);
+        await pane.SetGraphResultSizeForSmoke(saved);
+        var fitShown = pane.GraphFitResultButtonShownForSmoke;
+        Require(fitShown, "저장한 결과 크기가 있는데 창에 맞추기 단추가 없습니다.");
+
+        // The card is as tall as its measured content under the cap (the saved
+        // size kept within the pane), so the expected size is Core's rule for
+        // the cap and the height the pane measured; a new width re-measures,
+        // so the drawing is given a few passes to settle.
+        async Task<((double W, double H) Card, (double W, double H) Cap, (double W, double H) Expected, (double W, double H) Viewport)> Draw(double width, double height, double zoom)
+        {
+            pane.SetGraphViewportSizeForSmoke(width, height);
+            pane.SetGraphZoom(zoom);
+            root.UpdateLayout(); await Task.Delay(60);
+            pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+            var viewport = pane.GraphViewportSizeForSmoke;
+            var limit = MightyGraphLayout.ResultViewportLimit(viewport, zoom, MightyGraphLayout.FilesPanelOpen(runs, pane.GraphResultFilesRunId));
+            var cap = MightyGraphLayout.ResultCap((saved.Width, saved.Height), limit);
+            (double W, double H) card = default, expected = default;
+            for (var pass = 0; pass < 10; pass++)
+            {
+                card = pane.GraphCardSizeForSmoke(resultId!) ?? throw new InvalidOperationException("결과 박스 스모크: 최신 결과 카드가 그려지지 않았습니다.");
+                expected = MightyGraphLayout.ResultSize(cap, pane.GraphResultContentHeightForSmoke(resultId!));
+                if (Math.Abs(card.W - expected.W) < 0.5 && Math.Abs(card.H - expected.H) < 0.5) break;
+                root.UpdateLayout(); await Task.Delay(30);
+            }
+            Require(Math.Abs(card.W - expected.W) < 0.5 && Math.Abs(card.H - expected.H) < 0.5,
+                $"결과 박스가 창 크기 규칙과 다릅니다: 창 {viewport.W}×{viewport.H} @{zoom}, 카드 {card.W}×{card.H}, 기대 {expected.W}×{expected.H}");
+            Require(card.H <= cap.H + 0.5, "결과 박스가 저장한 크기(창 안)보다 높습니다.");
+            Require(card.W * zoom <= Math.Max(viewport.W - 48, MightyGraphBlockSize.MinimumWidth * zoom) + 0.5, "결과 박스가 창보다 넓습니다.");
+            return (card, cap, expected, viewport);
+        }
+
+        var wide = await Draw(1000, 700, 1);
+        var grewToSaved = wide.Cap == (saved.Width, saved.Height) && wide.Card.W == saved.Width;
+        Require(grewToSaved, $"넓은 창에서 결과 박스가 저장한 크기가 아닙니다: {wide.Card.W}×{wide.Card.H} (최대 {wide.Cap.W}×{wide.Cap.H})");
+        var narrow = await Draw(600, 300, 1);
+        var shrank = narrow.Card.W < saved.Width && narrow.Cap.H < saved.Height && narrow.Card.H <= narrow.Cap.H + 0.5;
+        Require(shrank, $"좁은 창에서 결과 박스가 줄어들지 않았습니다: {narrow.Card.W}×{narrow.Card.H}");
+        Require(pane.SessionForSmoke.GraphResultSize == saved, "창이 좁아졌다고 저장한 결과 크기가 바뀌었습니다.");
+        var back = await Draw(1000, 700, 1);
+        var grewBack = back.Cap == (saved.Width, saved.Height) && back.Card.W == saved.Width;
+        Require(grewBack, $"창을 다시 키웠는데 결과 박스가 저장한 크기로 돌아오지 않았습니다: {back.Card.W}×{back.Card.H}");
+        var zoomed = await Draw(700, 400, MightyGraphViewModel.ZoomMax);
+        var zoomedInside = zoomed.Card.H * MightyGraphViewModel.ZoomMax <= zoomed.Viewport.H - 48 + 0.5;
+        Require(zoomedInside, "확대했을 때 결과 박스가 창 높이를 넘습니다.");
+
+        await pane.FitResultToWindowForSmoke();
+        var fitCleared = pane.SessionForSmoke.GraphResultSize is null && !pane.GraphFitResultButtonShownForSmoke;
+        Require(fitCleared, "창에 맞추기가 저장한 결과 크기를 지우지 않았습니다.");
+
+        pane.SetGraphViewportSizeForSmoke(double.NaN, double.NaN);
+        pane.SetGraphZoom(MightyGraphViewModel.ZoomDefault);
+        root.UpdateLayout(); await Task.Delay(30);
+        return new Dictionary<string, object?>
+        {
+            ["fitButton"] = fitShown,
+            ["grewToSaved"] = grewToSaved,
+            ["shrank"] = shrank,
+            ["grewBack"] = grewBack,
+            ["zoomedInside"] = zoomedInside,
+            ["fitCleared"] = fitCleared,
+        };
+    }
+
+    /// A new result right above the composer (macOS 1e7b48d): the pane runs a
+    /// request and its finished diagram arrives while it still runs (RunManager
+    /// emits graph_run before the state event). The camera scrolls once so the
+    /// new card's bottom sits 16pt above the diagram's bottom edge — the
+    /// composer — with the card as tall as its short answer under the saved
+    /// size, which is never rewritten. A resize keeps the card there; the
+    /// user's own pan ends the hold.
+    private async Task<Dictionary<string, object?>> RunResultRevealSmoke(PaneView pane)
+    {
+        var before = pane.SessionForSmoke.GraphRuns ?? [];
+        var statusBefore = pane.SessionForSmoke.Status;
+        var saved = new GraphBlockSize(900, 600);
+        pane.SetGraphViewportSizeForSmoke(1000, 700);
+        pane.SetGraphZoom(MightyGraphViewModel.ZoomDefault);
+        await pane.SetGraphResultSizeForSmoke(saved);
+        root.UpdateLayout(); await Task.Delay(60);
+
+        await pane.SetPaneStatusForSmoke("running");
+        root.UpdateLayout(); await Task.Delay(30);
+        var run = new MightyGraphRun { Id = "smoke-reveal", Input = "짧은 요청", Status = "completed", FinalOutput = "짧은 답입니다." };
+        MightyGraphSupport.RefreshResult(run);
+        await pane.SetGraphRunsForSmoke([.. before, run]);
+        pane.RefreshMightyView(pane.SessionForSmoke);
+        await pane.SetPaneStatusForSmoke(statusBefore);
+        var resultId = MightyGraphBlockSize.NodeId(run.Id, "result");
+
+        bool AtComposer() => pane.GraphCardFrameForSmoke(resultId) is { } frame
+            && Math.Abs(pane.GraphPan.Y + frame.MaxY * pane.GraphZoom - (pane.GraphViewportSizeForSmoke.H - 16)) < 1;
+        async Task<bool> Settle()
+        {
+            for (var pass = 0; pass < 20; pass++)
+            {
+                root.UpdateLayout(); await Task.Delay(50);
+                if (pane.GraphResultContentHeightForSmoke(resultId) is not null && AtComposer()) return true;
+            }
+            return false;
+        }
+
+        var revealed = await Settle();
+        Require(revealed, $"새 결과가 입력창 바로 위에 오지 않았습니다: 카드 {pane.GraphCardFrameForSmoke(resultId)}, 이동 {pane.GraphPan}, 창 {pane.GraphViewportSizeForSmoke}");
+        var card = pane.GraphCardSizeForSmoke(resultId) ?? throw new InvalidOperationException("새 결과 카드가 그려지지 않았습니다.");
+        var contentFit = card.H < saved.Height - 0.5 && card.H >= MightyGraphLayout.MinimumResultHeight - 0.5 && card.W <= saved.Width + 0.5;
+        Require(contentFit, $"짧은 결과가 내용 높이로 줄지 않았습니다: {card.W}×{card.H}, 저장한 크기 {saved.Width}×{saved.Height}");
+        var savedKept = pane.SessionForSmoke.GraphResultSize == saved;
+        Require(savedKept, "결과 카드가 내용에 맞춰 줄면서 저장한 크기를 바꿨습니다.");
+
+        pane.SetGraphViewportSizeForSmoke(1000, 560);
+        root.UpdateLayout(); await Task.Delay(60);
+        var followsResize = await Settle();
+        Require(followsResize, "창 크기가 바뀐 뒤 새 결과가 입력창 바로 위에 남지 않았습니다.");
+
+        pane.PanGraphForSmoke(-40);
+        var panned = pane.GraphPan;
+        pane.SetGraphViewportSizeForSmoke(1000, 700);
+        root.UpdateLayout(); await Task.Delay(60);
+        pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+        var userPanStops = pane.GraphRevealHoldingForSmoke is null && pane.GraphPan == panned && !AtComposer();
+        Require(userPanStops, "사용자가 스크롤한 뒤에도 새 결과를 계속 따라갑니다.");
+
+        await pane.SetGraphRunsForSmoke([.. before]);
+        await pane.SetGraphResultSizeForSmoke(null);
+        pane.SetGraphViewportSizeForSmoke(double.NaN, double.NaN);
+        pane.RefreshMightyView(pane.SessionForSmoke);
+        root.UpdateLayout(); await Task.Delay(30);
+        return new Dictionary<string, object?>
+        {
+            ["revealed"] = revealed,
+            ["contentFit"] = contentFit,
+            ["savedKept"] = savedKept,
+            ["followsResize"] = followsResize,
+            ["userPanStops"] = userPanStops,
         };
     }
 
@@ -651,6 +967,156 @@ public sealed partial class MainWindow
             CollectVisibleStrings(VisualTreeHelper.GetChild(element, i), strings);
     }
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+
+    /// <summary>
+    /// Session history and resume (macOS b393741, c5e04e5) in the real window, on a
+    /// fixture Claude record in a temporary home: 창 추가 → Claude asks 새로 시작 /
+    /// 이어가기…, the list shows the folder's one typed session with the nested
+    /// Ouroboros run hidden, picking it adds a pane that resumes it (titled after
+    /// its first request, remembered in known-sessions.json), the Mighty view loads
+    /// the latest ten requests from the record at once and the next ten from the
+    /// history block without moving the cards already drawn, and a second 창 추가
+    /// no longer offers the session the pane holds. Every pane it adds is closed again.
+    /// </summary>
+    private async Task<Dictionary<string, object?>> RunSessionHistorySmoke(Workspace workspace, Workspace other)
+    {
+        var checks = new Dictionary<string, object?>();
+        var home = Path.Combine(options.ProfileDirectory!, "history-home");
+        var before = service.Snapshot.Sessions.Select(s => s.Id).ToHashSet();
+        PaneView.HistoryHomeOverride = home;
+        try
+        {
+            await SelectWorkspace(other.Id);
+            var folder = Path.Combine(home, ".claude", "projects", SessionHistory.ClaudeProjectFolder(other.Path));
+            Directory.CreateDirectory(folder);
+            const string typed = "6a1e2c1a-1111-4222-8333-444455556666", nested = "7a1e2c1a-1111-4222-8333-444455556666";
+            var start = DateTimeOffset.UtcNow.AddDays(-1);
+            var lines = new List<string>();
+            for (var i = 1; i <= 12; i++)
+            {
+                var at = start.AddMinutes(i * 5);
+                lines.Add(JsonSerializer.Serialize(new { type = "user", message = new { role = "user", content = "이전 요청 " + i }, uuid = "u" + i, timestamp = at.ToString("O"), cwd = other.Path }));
+                lines.Add(JsonSerializer.Serialize(new { type = "assistant", message = new { id = "m" + i, role = "assistant", model = "claude-opus-4-5", content = new[] { new { type = "text", text = "이전 답 " + i } } }, uuid = "a" + i, timestamp = at.AddSeconds(3).ToString("O") }));
+            }
+            await File.WriteAllTextAsync(Path.Combine(folder, typed + ".jsonl"), string.Join("\n", lines) + "\n");
+            await File.WriteAllTextAsync(Path.Combine(folder, nested + ".jsonl"), JsonSerializer.Serialize(new { type = "user", message = new { role = "user", content = "User: 단계 실행\n\nAssistant: 네" }, uuid = "n1", timestamp = start.ToString("O"), cwd = other.Path }) + "\n");
+
+            var titles = new List<string?>(); var listed = -1; var hiddenText = "";
+            smokeResumeDialog = async dialog =>
+            {
+                titles.Add(dialog.Title as string);
+                if (AutomationProperties.GetAutomationId(dialog) == "add-pane-choice") return ContentDialogResult.Secondary;
+                var content = (StackPanel)dialog.Content;
+                var list = content.Children.OfType<ListView>().First();
+                await WaitUI(() => list.Items.Count > 0);
+                listed = list.Items.Count;
+                hiddenText = content.Children.OfType<StackPanel>().First().Children.OfType<TextBlock>().First().Text;
+                ((Action<ResumableSession>)dialog.Tag)((ResumableSession)((FrameworkElement)list.Items[0]).Tag);
+                return ContentDialogResult.None;
+            };
+            await AddAgentPane("claude", null);
+            var name = ProviderCatalog.BetaLabel("claude", ProviderCatalog.Name("claude"));
+            Require(titles.Count == 2 && titles[0] == Locale.Get("resume.choice.title", new Dictionary<string, string> { ["provider"] = name }) && titles[1] == Locale.Get("resume.title"), "창 추가가 새로 시작 / 이어가기… 선택과 세션 목록을 차례로 열지 않았습니다: " + string.Join(" | ", titles));
+            checks["choiceOffered"] = true;
+            Require(listed == 1 && hiddenText == Locale.Get("resume.hiddenCount", new Dictionary<string, string> { ["count"] = "1" }), $"세션 목록이 자동 실행 기록을 숨기지 않았습니다: 줄 {listed}, 숨김 '{hiddenText}'");
+            checks["nestedRunHidden"] = true;
+            var added = service.Snapshot.Sessions.FirstOrDefault(s => !before.Contains(s.Id));
+            Require(added is { Kind: "claude", Provider: "claude", ResumeId: typed, Title: "이전 요청 1", TitleMode: PaneTitle.Automatic }, "고른 세션을 이어가는 새 창이 생기지 않았습니다.");
+            Require(service.KnownSessions().Contains(typed) && File.Exists(service.KnownSessionsPath), "이어간 세션이 known-sessions.json에 남지 않았습니다.");
+            checks["resumedInNewPane"] = true;
+
+            await WaitUI(() => views.TryGetValue(added!.Id, out var view) && view.Container.ActualWidth > 0);
+            var pane = views[added!.Id];
+            pane.EnsureMightyView();
+            await pane.SetAgentViewMode("mighty");
+            root.UpdateLayout();
+            await WaitUI(() => pane.GraphHistoryForSmoke.Runs.Count == 10 && pane.GraphHistoryForSmoke.Phase == SessionHistoryState.Phases.Idle);
+            Require(pane.GraphHistoryForSmoke.Runs.Select(r => r.Input).SequenceEqual(Enumerable.Range(3, 10).Select(i => "이전 요청 " + i)), "마이티 화면이 기록의 최근 요청 10개를 불러오지 않았습니다.");
+            Require(pane.GraphHistoryTextForSmoke() == pane.GraphHistoryForSmoke.BlockText(10), "다이어그램 맨 위 기록 블록의 문구가 다릅니다: " + pane.GraphHistoryTextForSmoke());
+            checks["latestLoadedOnOpen"] = true;
+            var firstLoaded = MightyGraphLayout.NodeID(pane.GraphHistoryForSmoke.Runs[0], "request");
+            var position = pane.GraphCardPositionForSmoke(firstLoaded);
+            pane.LoadOlderGraphHistory();
+            await WaitUI(() => pane.GraphHistoryForSmoke.Phase == SessionHistoryState.Phases.Start);
+            root.UpdateLayout();
+            Require(pane.GraphHistoryForSmoke.Runs.Count == 12 && pane.GraphOriginYForSmoke < 0, "맨 위에서 이전 요청을 더 불러오지 않았습니다.");
+            var after = pane.GraphCardPositionForSmoke(firstLoaded);
+            Require(position is { } p0 && after is { } p1 && Math.Abs(p0.Y - p1.Y) < 0.5, $"이전 요청을 불러올 때 화면의 카드가 움직였습니다: {position} → {after}");
+            Require(pane.GraphHistoryTextForSmoke() == pane.GraphHistoryForSmoke.BlockText(12), "기록의 처음에 닿았다는 문구가 없습니다.");
+            checks["olderLoadedAboveWithoutMoving"] = true;
+
+            // The pane holds the typed session and the nested one is hidden: nothing left to offer.
+            var asked = false;
+            smokeResumeDialog = _ => { asked = true; return Task.FromResult(ContentDialogResult.None); };
+            var count = service.Snapshot.Sessions.Count;
+            await AddAgentPane("claude", null);
+            Require(!asked && service.Snapshot.Sessions.Count == count + 1 && service.Snapshot.Sessions[^1].ResumeId is null, "열린 창이 이어가는 세션이 다시 이어가기로 제안되었습니다.");
+            checks["openSessionNotOffered"] = true;
+        }
+        finally
+        {
+            smokeResumeDialog = null;
+            PaneView.HistoryHomeOverride = null;
+            foreach (var id in service.Snapshot.Sessions.Where(s => !before.Contains(s.Id)).Select(s => s.Id).ToList()) await CloseSession(id);
+            await SelectWorkspace(workspace.Id);
+        }
+        return checks;
+    }
+    /// <summary>
+    /// Smoke key <c>addPaneMenu</c> (macOS WorkspaceView.swift <c>WorkspaceAddMenuItems</c>):
+    /// the real 창 추가 menu ends with 프로젝트 폴더 열기… after a separator, showing Ctrl+O;
+    /// the sidebar open-folder button hides while a workspace is listed and shows for a
+    /// search that lists none; Ctrl+O and Ctrl+N are registered; and Gemini from the menu
+    /// and Ctrl+N add their panes without asking 새로 시작 / 이어가기. Every pane it adds
+    /// is closed again.
+    /// </summary>
+    private async Task<Dictionary<string, object?>> RunAddPaneMenuSmoke(Workspace workspace, Workspace other)
+    {
+        var checks = new Dictionary<string, object?>();
+        var items = NewSessionMenu().Items.ToList();
+        Require(items.Count == AddPaneMenu.Entries().Count, $"창 추가 메뉴 항목 수가 다릅니다: {items.Count}");
+        var last = items[^1] as MenuFlyoutItem;
+        Require(last is not null && last.Text == Locale.Get(AddPaneMenu.OpenProjectKey) && last.KeyboardAcceleratorTextOverride == AddPaneMenu.OpenFolderShortcut && items[^2] is MenuFlyoutSeparator,
+            "창 추가 메뉴 맨 아래에 구분선과 프로젝트 폴더 열기…가 없습니다: " + last?.Text);
+        checks["openProjectLast"] = true;
+        checks["openProjectText"] = last!.Text;
+
+        RenderSidebar();
+        Require(workspaces.Items.Count > 0 && addFolderButton.Visibility == Visibility.Collapsed, "워크스페이스가 보이는데 사이드바 폴더 열기 단추가 보입니다.");
+        var previous = search.Text;
+        try
+        {
+            search.Text = "no-such-folder-" + Wire.Id(); RenderSidebar();
+            Require(workspaces.Items.Count == 0 && addFolderButton.Visibility == Visibility.Visible, "검색 결과가 없는데 사이드바 폴더 열기 단추가 숨어 있습니다.");
+        }
+        finally { search.Text = previous; RenderSidebar(); }
+        Require(addFolderButton.Visibility == Visibility.Collapsed, "검색을 지운 뒤에도 폴더 열기 단추가 남았습니다.");
+        checks["openFolderButtonOnlyWhenNoneListed"] = true;
+        Require(HasAddPaneShortcuts, "Ctrl+O·Ctrl+N 단축키가 창에 등록되지 않았습니다.");
+        checks["shortcuts"] = AddPaneMenu.OpenFolderShortcut + ", Ctrl+N";
+
+        var before = service.Snapshot.Sessions.Select(s => s.Id).ToHashSet();
+        var asked = false;
+        smokeResumeDialog = _ => { asked = true; return Task.FromResult(ContentDialogResult.None); };
+        try
+        {
+            await SelectWorkspace(other.Id);
+            var count = service.Snapshot.Sessions.Count;
+            await AddAgentPane("gemini", null);
+            Require(!asked && service.Snapshot.Sessions.Count == count + 1 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: "gemini" }, "창 추가 → Gemini가 묻지 않고 곧바로 창을 만들지 않았습니다.");
+            checks["geminiStartsAtOnce"] = true;
+            await AddPaneFromShortcut();
+            Require(!asked && service.Snapshot.Sessions.Count == count + 2 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: AddPaneMenu.NewPaneShortcutProvider, ResumeId: null }, "Ctrl+N이 묻지 않고 곧바로 Claude 창을 만들지 않았습니다.");
+            checks["ctrlNStartsAtOnce"] = true;
+        }
+        finally
+        {
+            smokeResumeDialog = null;
+            foreach (var id in service.Snapshot.Sessions.Where(s => !before.Contains(s.Id)).Select(s => s.Id).ToList()) await CloseSession(id);
+            await SelectWorkspace(workspace.Id);
+        }
+        return checks;
+    }
     private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "")
     {
         var deadline = DateTime.UtcNow.AddSeconds(4);

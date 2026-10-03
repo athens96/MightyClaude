@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
 using Line = Microsoft.UI.Xaml.Shapes.Line;
+using Rectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
 
 namespace MightyClaude.WinUI;
 
@@ -41,12 +42,37 @@ public sealed partial class MainWindow
         private string? graphSelection;
         private readonly Dictionary<string, ScrollViewer> graphBodies = [];
         private readonly Dictionary<string, Border> graphCards = [];
+        private readonly Dictionary<string, (string Kind, Rectangle Line)> graphOutlines = [];
         private readonly Dictionary<string, string> graphBlockKinds = [];
+        // Each card's header title as drawn, so the smoke can read which carry an agent mark.
+        private readonly Dictionary<string, FrameworkElement> graphTitles = [];
         private bool graphDragging, graphDrawing;
         private Windows.Foundation.Point graphDragOrigin;
         private double graphDragPanX, graphDragPanY;
         private string? graphResultFilesRunId, graphResultFilesLastRunId, graphAimedRunId, graphAimedResultId;
         private bool graphResultFilesClosedByHand;
+        // The newest result card's drag (macOS MightyGraphView.resize): the layout
+        // it started on carries the pane limit and window fit it is kept within.
+        private MightyGraphLayout? graphLayout, graphResizeLayout;
+        private string? graphLatestResultId;
+        private GraphBlockSize? graphLiveResultSize;
+        private Button? graphFitResultButton;
+        private bool graphResizing;
+        private Windows.Foundation.Point graphResizeOrigin;
+        private (double W, double H) graphResizeStart;
+        // A new result right above the composer (macOS MightyGraphView reveal):
+        // the rule is Core's; the pane's own runs, running state, draft and
+        // viewport as last drawn are what it compares. Null progress is a view
+        // just shown, whose runs were not watched finishing.
+        private MightyGraphCamera.ResultReveal graphReveal = new();
+        private List<MightyGraphCamera.ResultReveal.RunProgress>? graphRunProgress;
+        private bool graphWasRunning, graphDraftWasEmpty = true;
+        private (double W, double H)? graphLastViewport;
+        private string? graphRevealPendingId;
+        // The newest result card's natural height (chrome, header and answer),
+        // measured as drawn; the layout fits the card to it under its cap.
+        private readonly Dictionary<string, double> graphResultHeights = [];
+        private const double GraphCardChrome = 12 * 2 + 1 * 2 + 6;
 
         /// Windows animation setting; the smoke overrides it to prove the static
         /// indicator. Null means "ask the system".
@@ -105,8 +131,15 @@ public sealed partial class MainWindow
             graphViewport.PointerPressed += OnGraphPointerPressed;
             graphViewport.PointerMoved += OnGraphPointerMoved;
             graphViewport.PointerReleased += OnGraphPointerReleased;
-            graphViewport.PointerCaptureLost += (_, _) => graphDragging = false;
-            graphViewport.KeyDown += (_, args) => { if (args.Key == Windows.System.VirtualKey.Escape) { ClearGraphSelection(); args.Handled = true; } };
+            graphViewport.PointerCaptureLost += (_, _) => { graphDragging = false; if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Cancelled, null); };
+            graphViewport.KeyDown += (_, args) =>
+            {
+                if (args.Key != Windows.System.VirtualKey.Escape) return;
+                // Escape abandons a result drag first; the card goes back as it was.
+                if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Cancelled, null);
+                else ClearGraphSelection();
+                args.Handled = true;
+            };
             graphViewport.IsTabStop = true;
             Grid.SetRow(graphViewport, 1); graphHost.Children.Add(graphViewport);
             Grid.SetRow(graphHost, 1); grid.Children.Add(graphHost);
@@ -187,6 +220,8 @@ public sealed partial class MainWindow
             graphHost.Visibility = mighty ? Visibility.Visible : Visibility.Collapsed;
             output.View.Visibility = mighty ? Visibility.Collapsed : Visibility.Visible;
             if (mighty) DrawGraph(pane);
+            // Hidden, the diagram watches nothing: a result that finishes meanwhile is not revealed.
+            else { graphReveal = new(); graphRunProgress = null; graphRevealPendingId = null; }
         }
 
         /// Rebuilds the canvas from the pane's recorded graph runs. The block and
@@ -201,7 +236,11 @@ public sealed partial class MainWindow
 
         private void DrawGraphCore(RunSession pane)
         {
-            var runs = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
+            // Older requests loaded from the session record sit above the retained
+            // ones (macOS SessionPaneView: history.runs + retained).
+            var retained = (IReadOnlyList<MightyGraphRun>)(pane.GraphRuns ?? []);
+            var older = GraphHistoryRuns(pane, retained);
+            var runs = (IReadOnlyList<MightyGraphRun>)[.. older, .. retained];
             var latest = MightyGraphBlockModel.LatestCompletedRun(runs);
             List<ResultFiles.ResultFile> files = latest is null ? [] : MightyGraphBlockModel.FilesFor(latest, Workspace.Path);
             // A new result clears a previous manual close; only one panel is open.
@@ -209,18 +248,31 @@ public sealed partial class MainWindow
             graphResultFilesRunId = MightyGraphViewModel.NextResultFilesRunID(graphResultFilesRunId, graphResultFilesClosedByHand, latest?.Id, files.Count > 0);
 
             var viewport = graphViewport is { ActualWidth: > 0 } v ? ((double W, double H)?)(v.ActualWidth, v.ActualHeight) : null;
-            var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", new HashSet<string>(), graphResultFilesRunId, viewport);
+            // The newest result card takes its saved size (or the window fit) kept
+            // within the pane at this zoom, so it shrinks with the pane and grows
+            // back to the saved size when the pane does. Under that cap it is as
+            // tall as its measured content; a drag in progress shows its own size.
+            var latestResultId = MightyGraphLayout.LatestResultID(runs);
+            double? resultContentHeight = graphLiveResultSize is null && latestResultId is not null && graphResultHeights.TryGetValue(latestResultId, out var measured) ? measured : null;
+            var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", new HashSet<string>(), graphResultFilesRunId, viewport,
+                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight);
+            graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
-            var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderCatalog.Name(pane.Provider), AnimationsEnabled, catalog);
+            // `요청 N · Claude`: the short name, as macOS ProviderOptions.label, so its mark can go before it.
+            var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
 
-            graphCanvas.Children.Clear(); graphBodies.Clear(); graphCards.Clear(); graphBlockKinds.Clear();
+            graphCanvas.Children.Clear(); graphBodies.Clear(); graphCards.Clear(); graphOutlines.Clear(); graphBlockKinds.Clear(); graphTitles.Clear(); graphFitResultButton = null;
             graphCanvas.Width = Math.Max(1, layout.Size.W); graphCanvas.Height = Math.Max(1, layout.Size.H);
             var frames = new Dictionary<string, GraphRect>();
             foreach (var block in blocks)
             {
-                var frame = block.Frame with { X = block.Frame.X - layout.OriginX };
+                var frame = block.Frame with { X = block.Frame.X - layout.OriginX, Y = block.Frame.Y - layout.OriginY };
                 frames[block.Id] = frame;
             }
+            // Loading older requests grows the canvas upward: shift the pan by as
+            // much so nothing already on screen moves.
+            if (graphOriginY is { } previousOrigin && previousOrigin != layout.OriginY) graphPan.Y += (layout.OriginY - previousOrigin) * graphZoom;
+            graphOriginY = layout.OriginY;
             foreach (var edge in layout.Edges)
             {
                 if (!frames.TryGetValue(edge.Source, out var from) || !frames.TryGetValue(edge.Target, out var to)) continue;
@@ -236,27 +288,97 @@ public sealed partial class MainWindow
                 Canvas.SetLeft(card, frames[block.Id].X); Canvas.SetTop(card, frames[block.Id].Y);
                 card.Width = frames[block.Id].W; card.Height = frames[block.Id].H;
                 graphCards[block.Id] = card; graphBlockKinds[block.Id] = block.Kind; graphCanvas.Children.Add(card);
+                AddActivityOutline(block, frames[block.Id]);
+                if (LoadedFromRecord(block.Id, older)) ToolTipService.SetToolTip(card, Locale.Get("graph.history.tag"));
             }
-            graphTotal.Text = MightyGraphBlockModel.ToolbarSummary(runs);
-            var help = MightyGraphBlockModel.ToolbarHelp(runs);
+            if (layout.Nodes.FirstOrDefault(n => n.Kind == "history") is { } history)
+            {
+                var card = BuildHistoryCard(pane, retained, older.Count, history.Frame);
+                Canvas.SetLeft(card, history.Frame.X - layout.OriginX); Canvas.SetTop(card, history.Frame.Y - layout.OriginY);
+                graphCanvas.Children.Add(card);
+            }
+            // The total counts the retained requests; loaded ones are named apart.
+            graphTotal.Text = MightyGraphBlockModel.ToolbarSummary(retained)
+                + (older.Count > 0 ? " · " + Locale.Get("graph.history.headerLoaded", new Dictionary<string, string> { ["count"] = older.Count.ToString() }) : "");
+            var help = MightyGraphBlockModel.ToolbarHelp(retained);
             ToolTipService.SetToolTip(graphTotal, help); AutomationProperties.SetHelpText(graphTotal, help);
             ApplyGraphSelectionStyle();
-            ReaimGraphCamera(runs, layout, frames, viewport);
+            ReaimGraphCamera(runs, layout, frames, viewport, ObserveResultReveal(pane, retained, viewport));
+            AutoLoadGraphHistory(pane, retained);
         }
 
-        /// A new request or a new result re-aims the camera the way macOS does.
-        private void ReaimGraphCamera(IReadOnlyList<MightyGraphRun> runs, MightyGraphLayout layout, Dictionary<string, GraphRect> frames, (double W, double H)? viewport)
+        /// One observation for the reveal rule: the pane's own runs (not those
+        /// read back from the record), its running state, its draft and the
+        /// viewport. Returns the result card to place above the composer now.
+        private string? ObserveResultReveal(RunSession pane, IReadOnlyList<MightyGraphRun> own, (double W, double H)? viewport)
+        {
+            var running = pane.Status == "running";
+            var draftEmpty = string.IsNullOrEmpty(pane.Draft);
+            var current = own.Select(r => new MightyGraphCamera.ResultReveal.RunProgress(r.Id, MightyGraphLayout.Finished(r))).ToList();
+            var shown = graphRunProgress is not null;
+            graphReveal.PaneRunning(shown && graphWasRunning, running);
+            if (shown) graphReveal.DraftChanged(graphDraftWasEmpty, draftEmpty);
+            var (holding, awaiting) = (graphReveal.HoldingID, graphReveal.AwaitingMeasure);
+            var place = graphReveal.RunsChanged(graphRunProgress ?? current, current, run => MightyGraphBlockSize.NodeId(run, "result"), graphResultHeights.ContainsKey);
+            // An answer that is never drawn is never measured: place it at its cap.
+            if (graphReveal.AwaitingMeasure && graphReveal.HoldingID is { } held && (!awaiting || held != holding)) RevealAfterTimeout(held);
+            if (graphRevealPendingId is { } pending && pending == graphReveal.HoldingID) place ??= pending;
+            graphRevealPendingId = null;
+            // A result still held above the composer stays there when the pane resizes.
+            if (place is null && shown && graphLastViewport is not null && viewport is not null && viewport != graphLastViewport) place = graphReveal.ViewportChanged();
+            graphRunProgress = current; graphWasRunning = running; graphDraftWasEmpty = draftEmpty; graphLastViewport = viewport;
+            return place;
+        }
+
+        private void RevealAfterTimeout(string nodeId) =>
+            _ = Task.Delay(300).ContinueWith(_ => Container.DispatcherQueue.TryEnqueue(() =>
+            {
+                if (graphReveal.MeasureTimedOut(nodeId) is not { } place) return;
+                graphRevealPendingId = place;
+                if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
+            }), TaskScheduler.Default);
+
+        /// The newest result card's content measured a new height: the card fits
+        /// it, and a card held above the composer is placed again at that height.
+        private void ResultMeasured(string nodeId, double height)
+        {
+            if (graphResizing || graphLiveResultSize is not null || !double.IsFinite(height)) return;
+            if (graphResultHeights.TryGetValue(nodeId, out var known) && Math.Abs(known - height) <= 0.5) return;
+            graphResultHeights.Clear(); graphResultHeights[nodeId] = height;
+            if (graphReveal.ContentMeasured(nodeId) is { } place) graphRevealPendingId = place;
+            Container.DispatcherQueue.TryEnqueue(() => { if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session); });
+        }
+
+        /// The user's own scroll, drag or zoom, or any other re-aim: the result
+        /// above the composer is no longer followed.
+        private void CancelResultReveal() { graphReveal.Cancel(); graphRevealPendingId = null; }
+
+        /// A new request or a new result re-aims the camera the way macOS does;
+        /// <paramref name="reveal"/>, a result of the pane's own that just
+        /// finished, goes right above the composer instead.
+        private void ReaimGraphCamera(IReadOnlyList<MightyGraphRun> runs, MightyGraphLayout layout, Dictionary<string, GraphRect> frames, (double W, double H)? viewport, string? reveal)
         {
             if (viewport is not { } size) return;
             var newestRunId = runs.Count > 0 ? runs[^1].Id : null;
             var latestResultId = MightyGraphLayout.LatestResultID(runs);
+            if (reveal is not null && frames.TryGetValue(reveal, out var revealed))
+            {
+                graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
+                var place = MightyGraphCamera.CameraOffset(revealed, size, graphZoom, alignTop: false, alignBottom: true);
+                graphPan.X = place.X; graphPan.Y = place.Y;
+                return;
+            }
             if (newestRunId == graphAimedRunId && latestResultId == graphAimedResultId) return;
-            var ids = layout.Nodes.Select(n => n.Id).ToHashSet();
-            var anchor = latestResultId is not null && latestResultId != graphAimedResultId && graphSelection is null
-                ? MightyGraphCamera.Anchor.Reaim(latestResultId, true)
-                : MightyGraphCamera.ReaimAnchor(newestRunId, graphSelection, ids);
+            var newResult = latestResultId is not null && latestResultId != graphAimedResultId;
             graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
+            // The held result waits for its height, so it lands once, not twice.
+            if (latestResultId is not null && graphReveal.HoldingID == latestResultId) return;
+            var ids = layout.Nodes.Select(n => n.Id).ToHashSet();
+            var anchor = newResult && graphSelection is null
+                ? MightyGraphCamera.Anchor.Reaim(latestResultId!, true)
+                : MightyGraphCamera.ReaimAnchor(newestRunId, graphSelection, ids);
             if (anchor.NodeID is not { } target || !frames.TryGetValue(target, out var frame)) return;
+            CancelResultReveal();
             var camera = MightyGraphCamera.CameraOffset(frame, size, graphZoom, anchor.AlignTop);
             graphPan.X = camera.X; graphPan.Y = camera.Y;
         }
@@ -275,13 +397,18 @@ public sealed partial class MainWindow
             card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
 
             if (block.Kind == "resultFiles") { card.Child = BuildResultFilesPanel(block, files); return card; }
+            var resizable = block.Kind == "result" && block.Id == graphLatestResultId;
 
             var body = new Grid { RowSpacing = 6 };
             body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            body.Children.Add(BuildGraphCardHeader(block, files));
+            var header = BuildGraphCardHeader(block, files);
+            body.Children.Add(header);
 
             var content = new StackPanel { Spacing = 6 };
+            // The body scrolls, so the content takes its natural height: with the
+            // header and the card's chrome that is the newest result's content height.
+            if (resizable) content.SizeChanged += (_, _) => ResultMeasured(block.Id, GraphCardChrome + header.ActualHeight + content.ActualHeight);
             if (block.Request.Length > 0)
                 content.Children.Add(new TextBlock { Text = block.Request, FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = .85 });
             if (block.Entries.Count > 0)
@@ -294,6 +421,7 @@ public sealed partial class MainWindow
             var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Enabled };
             graphBodies[block.Id] = scroll;
             Grid.SetRow(scroll, 1); body.Children.Add(scroll);
+            if (resizable) body.Children.Add(BuildResultResizeGrip(block.Id));
             card.Child = body;
             return card;
         }
@@ -303,7 +431,10 @@ public sealed partial class MainWindow
             var header = new Grid { ColumnSpacing = 6 };
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            header.Children.Add(new TextBlock { Text = block.Title, FontSize = 12, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+            // A request block's title ends with its agent's name; its mark goes before it.
+            var title = ProviderMarkView.Labelled(block.Title, MightyGraphBlockModel.TitleProvider(block, Session.Provider), 12, FontWeights.SemiBold);
+            graphTitles[block.Id] = title;
+            header.Children.Add(title);
 
             var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
             if (graphSelection == block.Id)
@@ -322,6 +453,17 @@ public sealed partial class MainWindow
                 AutomationProperties.SetName(pill, block.CapsuleHelp);
                 ToolTipService.SetToolTip(pill, block.CapsuleHelp);
                 right.Children.Add(pill);
+            }
+            // A saved size is in force: offer the way back to the window fit.
+            if (block.Kind == "result" && block.Id == graphLatestResultId && Session.GraphResultSize is not null)
+            {
+                var label = Locale.Get(MightyGraphViewModel.LocaleKeyResultFitToWindow);
+                var fit = new Button { Content = new TextBlock { Text = label, FontSize = 10 }, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
+                AutomationProperties.SetAutomationId(fit, "mighty-fit-result-" + block.Id);
+                AutomationProperties.SetName(fit, label);
+                ToolTipService.SetToolTip(fit, label);
+                fit.Click += async (_, _) => await FitResultToWindow();
+                right.Children.Add(fit); graphFitResultButton = fit;
             }
             if (block.ResultFilesRunId is { } runId && files.Count > 0)
             {
@@ -348,6 +490,70 @@ public sealed partial class MainWindow
             "waiting" => new TextBlock { Text = "❙❙", FontSize = 9, Opacity = .7, VerticalAlignment = VerticalAlignment.Center },
             _ => null,
         };
+
+        /// <summary>
+        /// The edge of a block in motion, drawn over its card (macOS MightyGraphActivityOutline):
+        /// a running block's 2pt run-blue line of 9/7 dashes walks one period per 1.6 s
+        /// round the card over the soft run halo, still and solid with Windows animations
+        /// off; a waiting block keeps a still amber line. Only the line's dash offset is
+        /// animated: the card, its transcript and the layout never see the clock.
+        /// </summary>
+        private void AddActivityOutline(MightyGraphBlock block, GraphRect frame)
+        {
+            var outline = block.Outline;
+            if (outline == MightyGraphActivity.None) return;
+            if (MightyGraphActivity.HaloHex(outline, owner.DarkTheme) is { } halo)
+            {
+                // Rectangle strokes sit inside their bounds: the halo is the 4pt band outside the card.
+                var band = 2 * MightyGraphActivity.LineWidth;
+                var glow = new Rectangle
+                {
+                    Width = frame.W + 2 * band, Height = frame.H + 2 * band,
+                    RadiusX = MightyGraphActivity.CornerRadius + band, RadiusY = MightyGraphActivity.CornerRadius + band,
+                    Stroke = OutlineBrush(halo), StrokeThickness = band, IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(glow, frame.X - band); Canvas.SetTop(glow, frame.Y - band);
+                graphCanvas.Children.Insert(Math.Max(0, graphCanvas.Children.Count - 1), glow);
+            }
+            var line = new Rectangle
+            {
+                Width = frame.W, Height = frame.H,
+                RadiusX = MightyGraphActivity.CornerRadius - 1, RadiusY = MightyGraphActivity.CornerRadius - 1,
+                Stroke = OutlineBrush(MightyGraphActivity.StrokeHex(outline)), StrokeThickness = MightyGraphActivity.LineWidth,
+                StrokeDashCap = PenLineCap.Flat, IsHitTestVisible = false,
+            };
+            AutomationProperties.SetAutomationId(line, "mighty-outline-" + block.Id);
+            AutomationProperties.SetAccessibilityView(line, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            if (outline == MightyGraphActivity.Marching)
+            {
+                // XAML dash lengths and offsets count in stroke widths.
+                var dash = MightyGraphActivity.DashForCard(frame.W, frame.H);
+                var dashes = new DoubleCollection();
+                foreach (var length in dash) dashes.Add(length / MightyGraphActivity.LineWidth);
+                line.StrokeDashArray = dashes;
+                var march = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+                {
+                    From = MightyGraphActivity.DashOffset(0, dash) / MightyGraphActivity.LineWidth,
+                    To = MightyGraphActivity.DashOffset(1, dash) / MightyGraphActivity.LineWidth,
+                    Duration = new Duration(MightyGraphActivity.Period),
+                    RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+                    EnableDependentAnimation = true,
+                };
+                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(march, line);
+                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(march, "StrokeDashOffset");
+                var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard(); story.Children.Add(march);
+                line.Loaded += (_, _) => story.Begin(); line.Unloaded += (_, _) => story.Stop();
+            }
+            Canvas.SetLeft(line, frame.X); Canvas.SetTop(line, frame.Y);
+            graphCanvas.Children.Add(line);
+            graphOutlines[block.Id] = (outline, line);
+        }
+
+        private static SolidColorBrush OutlineBrush(string hex)
+        {
+            var rgb = Convert.ToInt32(hex[1..], 16);
+            return new SolidColorBrush(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
+        }
 
         private static Border Animated(Border bar)
         {
@@ -402,14 +608,86 @@ public sealed partial class MainWindow
         /// A manual close sticks until the next result.
         private void CloseResultFiles() { graphResultFilesRunId = null; graphResultFilesClosedByHand = true; RefreshMightyView(Session); }
 
+        // ── the newest result card's size ─────────────────────────────────────
+
+        /// The corner grip of the newest result card. The viewport captures the
+        /// pointer, since every redraw replaces the card and its grip.
+        private Border BuildResultResizeGrip(string nodeId)
+        {
+            var grip = new Border
+            {
+                Width = 16, Height = 16, Margin = new Thickness(0, 0, -10, -10), Background = new SolidColorBrush(Colors.Transparent),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+                Child = new TextBlock { Text = "◢", FontSize = 10, Opacity = .45, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false },
+            };
+            Grid.SetRowSpan(grip, 2);
+            AutomationProperties.SetAutomationId(grip, "mighty-resize-result-" + nodeId);
+            grip.PointerPressed += (_, args) =>
+            {
+                if (graphViewport is null || !graphCards.TryGetValue(nodeId, out var card)) return;
+                graphViewport.Focus(FocusState.Pointer);
+                graphResizing = true; graphDragging = false; CancelResultReveal();
+                graphResizeOrigin = args.GetCurrentPoint(graphViewport).Position;
+                graphResizeStart = (card.Width, card.Height);
+                graphResizeLayout = graphLayout;
+                graphViewport.CapturePointer(args.Pointer);
+                args.Handled = true;
+            };
+            return grip;
+        }
+
+        /// The size under the cursor, in diagram coordinates.
+        private (double W, double H) DraggedResultSize(Windows.Foundation.Point point)
+        {
+            var scale = graphZoom > 0 ? graphZoom : 1;
+            return (graphResizeStart.W + (point.X - graphResizeOrigin.X) / scale, graphResizeStart.H + (point.Y - graphResizeOrigin.Y) / scale);
+        }
+
+        /// Live: the card follows the cursor up to the pane's edge and stops there.
+        private void MoveResultResize(Windows.Foundation.Point point)
+        {
+            var drag = MightyGraphLayout.ResultDrag(DraggedResultSize(point), true, true, MightyGraphLayout.ResizePhase.Live,
+                Session.GraphResultSize, graphResizeLayout?.ResultLimit, graphResizeLayout?.ResultWindowFit);
+            if (drag.Live is not { } live || graphLatestResultId is null || !graphCards.TryGetValue(graphLatestResultId, out var card)) return;
+            graphLiveResultSize = live;
+            card.Width = live.Width; card.Height = live.Height;
+        }
+
+        /// Released or abandoned. A release saves the new remembered maximum
+        /// (only the sides moved inside the pane); a cancel saves nothing.
+        private void EndResultResize(MightyGraphLayout.ResizePhase phase, Windows.Foundation.Point? point)
+        {
+            if (!graphResizing) return;
+            graphResizing = false;
+            // The card started at the size it showed (shorter than the saved
+            // maximum when it fits a short answer): a side the pointer did not
+            // move keeps the maximum, and a release that moved nothing saves nothing.
+            var dragged = point is { } at ? DraggedResultSize(at) : graphResizeStart;
+            var sides = MightyGraphLayout.ResultDragSides(graphResizeStart, dragged);
+            if (sides is (false, false)) phase = MightyGraphLayout.ResizePhase.Cancelled;
+            var drag = MightyGraphLayout.ResultDrag(dragged, sides.Horizontal, sides.Vertical, phase,
+                Session.GraphResultSize, graphResizeLayout?.ResultLimit, graphResizeLayout?.ResultWindowFit);
+            graphResizeLayout = null; graphLiveResultSize = null;
+            if (drag.Save is { } save) _ = owner.Act(async () => { await Change(p => p with { GraphResultSize = save }); RefreshMightyView(Session); });
+            else RefreshMightyView(Session);
+        }
+
+        /// Clears the saved size: the newest result card fits the window again.
+        private Task FitResultToWindow() =>
+            owner.Act(async () => { await Change(p => p with { GraphResultSize = null }); RefreshMightyView(Session); });
+
         // ── zoom, pan and selection ───────────────────────────────────────────
 
         internal void SetGraphZoom(double value)
         {
+            var changed = graphZoom != value;
             graphZoom = value; graphScale.ScaleX = graphScale.ScaleY = value;
             if (zoomResetButton is not null) ((TextBlock)zoomResetButton.Content).Text = MightyGraphViewModel.ZoomLabel(value);
             if (zoomOutButton is not null) zoomOutButton.IsEnabled = !MightyGraphViewModel.ZoomOutDisabled(value);
             if (zoomInButton is not null) zoomInButton.IsEnabled = !MightyGraphViewModel.ZoomInDisabled(value);
+            // The newest result card's pane limit is in diagram coordinates at this zoom.
+            if (changed) CancelResultReveal();
+            if (changed && graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
         }
 
         internal double GraphZoom => graphZoom;
@@ -429,8 +707,17 @@ public sealed partial class MainWindow
                 // The block body only scrolls up and down.
                 if (panY != 0) body.ChangeView(null, Math.Max(0, body.VerticalOffset - panY), null, true);
             }
-            else { graphPan.X += panX; graphPan.Y += panY; }
+            else UserPan(panX, panY);
             args.Handled = true;
+        }
+
+        /// The user's own wheel pan: it ends a result held above the composer,
+        /// and only a move towards the top loads more.
+        private void UserPan(double dx, double dy)
+        {
+            CancelResultReveal();
+            graphPan.X += dx; graphPan.Y += dy;
+            if (dy > 0) LoadOlderAtTop();
         }
 
         private void OnGraphPointerPressed(object sender, PointerRoutedEventArgs args)
@@ -447,15 +734,22 @@ public sealed partial class MainWindow
 
         private void OnGraphPointerMoved(object sender, PointerRoutedEventArgs args)
         {
+            if (graphResizing) { MoveResultResize(args.GetCurrentPoint(graphViewport).Position); args.Handled = true; return; }
             if (!graphDragging) return;
             var point = args.GetCurrentPoint(graphViewport).Position;
+            var previousY = graphPan.Y;
+            // A click alone keeps a result held above the composer; a move does not.
+            if (point != graphDragOrigin) CancelResultReveal();
             graphPan.X = graphDragPanX + (point.X - graphDragOrigin.X);
             graphPan.Y = graphDragPanY + (point.Y - graphDragOrigin.Y);
+            // Only the user's own move towards the top loads more.
+            if (graphPan.Y > previousY) LoadOlderAtTop();
             args.Handled = true;
         }
 
         private void OnGraphPointerReleased(object sender, PointerRoutedEventArgs args)
         {
+            if (graphResizing) EndResultResize(MightyGraphLayout.ResizePhase.Finished, args.GetCurrentPoint(graphViewport).Position);
             graphDragging = false; graphViewport?.ReleasePointerCapture(args.Pointer);
         }
 
@@ -480,11 +774,41 @@ public sealed partial class MainWindow
         // ── smoke accessors ───────────────────────────────────────────────────
 
         internal IReadOnlyList<string> GraphBlockIds => graphCards.Keys.ToList();
+        /// Each drawn activity outline: its kind, its dash in stroke widths and whether it moves.
+        internal IReadOnlyDictionary<string, (string Kind, double[] Dash)> GraphOutlinesForSmoke =>
+            graphOutlines.ToDictionary(p => p.Key, p => (p.Value.Kind, p.Value.Line.StrokeDashArray?.ToArray() ?? Array.Empty<double>()));
         internal Canvas GraphCanvas => graphCanvas;
         internal string GraphTotalText => graphTotal.Text;
         internal (double X, double Y) GraphPan => (graphPan.X, graphPan.Y);
         internal string? GraphResultFilesRunId => graphResultFilesRunId;
         internal RunSession SessionForSmoke => Session;
+
+        /// The result box smoke: the viewport pinned to a size (NaN lets the pane
+        /// decide again), the saved size set or cleared, and what was drawn.
+        internal void SetGraphViewportSizeForSmoke(double width, double height)
+        {
+            if (graphViewport is null) return;
+            graphViewport.Width = width; graphViewport.Height = height;
+            graphViewport.HorizontalAlignment = double.IsNaN(width) ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+            graphViewport.VerticalAlignment = double.IsNaN(height) ? VerticalAlignment.Stretch : VerticalAlignment.Top;
+        }
+        internal (double W, double H) GraphViewportSizeForSmoke => graphViewport is null ? (0, 0) : (graphViewport.ActualWidth, graphViewport.ActualHeight);
+        internal Task SetGraphResultSizeForSmoke(GraphBlockSize? size) =>
+            owner.Act(async () => { await Change(p => p with { GraphResultSize = size }); RefreshMightyView(Session); });
+        internal (double W, double H)? GraphCardSizeForSmoke(string nodeId) =>
+            graphCards.TryGetValue(nodeId, out var card) ? (card.Width, card.Height) : null;
+        internal bool GraphFitResultButtonShownForSmoke => graphFitResultButton is not null;
+        /// The result reveal smoke: the newest result's measured content height,
+        /// the card's frame on the canvas, the held card, the pane's running state
+        /// as a real request sets it, and the user's own pan.
+        internal double? GraphResultContentHeightForSmoke(string nodeId) => graphResultHeights.TryGetValue(nodeId, out var height) ? height : null;
+        internal GraphRect? GraphCardFrameForSmoke(string nodeId) =>
+            graphCards.TryGetValue(nodeId, out var card) ? new GraphRect(Canvas.GetLeft(card), Canvas.GetTop(card), card.Width, card.Height) : null;
+        internal string? GraphRevealHoldingForSmoke => graphReveal.HoldingID;
+        internal Task SetPaneStatusForSmoke(string status) =>
+            owner.Act(async () => { await Change(p => p with { Status = status }); RefreshMightyView(Session); });
+        internal void PanGraphForSmoke(double dy) => UserPan(0, dy);
+        internal Task FitResultToWindowForSmoke() => FitResultToWindow();
 
         internal Task SetGraphRunsForSmoke(List<MightyGraphRun> runs) =>
             owner.Act(async () => { await Change(p => p with { GraphRuns = runs }); Refresh(); });
@@ -499,6 +823,10 @@ public sealed partial class MainWindow
             var files = latest is null ? 0 : MightyGraphBlockModel.FilesFor(latest, Workspace.Path).Count;
             return (graphCards.Count, edges, kinds, files);
         }
+
+        /// Each drawn card's kind and the provider whose mark its header carries (null for none).
+        internal List<(string Id, string Kind, string? Mark)> GraphTitleMarksForSmoke() =>
+            graphTitles.Select(pair => (pair.Key, graphBlockKinds.GetValueOrDefault(pair.Key) ?? "", ProviderMarkView.LabelledProvider(pair.Value))).ToList();
 
         /// Header strings of every card; they are not reachable from the canvas
         /// tree walk once a card body scrolls, so the leak scan gets them directly.

@@ -6,5 +6,6 @@
        against, so the two platforms cannot drift apart. -->
   <ItemGroup>
     <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyClaude.Core.Tests.GraphVectors.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/model-labels.json" LogicalName="MightyClaude.Core.Tests.ModelLabels.json" />
   </ItemGroup>
 </Project>
