@@ -114,9 +114,8 @@ extension AppStore {
     func statusLineContext(_ session: RunSession, workspace: Workspace) -> StatusLineContext {
         let runtime = providerRuntime(session.provider, workspaceId: session.workspaceId)
         let usage = session.sessionUsage?.provider == session.provider ? session.sessionUsage : nil
-        let option = runtime.modelCatalog.models.first { $0.value == session.model }
-        let modelId = usage?.model ?? option?.resolvedModel ?? (session.model == "default" ? "default" : session.model)
-        let modelName = option?.displayName ?? usage?.model ?? session.model
+        // `display_name` is the family + version label; `id` is what scripts should match on.
+        let (modelId, modelName) = ModelLabel.statusLine(session, catalog: runtime.modelCatalog)
         let elapsed = session.runTiming?.elapsed() ?? 0
         return StatusLineContext(
             sessionId: session.resumeId ?? session.id, cwd: workspace.path, projectDir: workspace.path,

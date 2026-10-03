@@ -95,5 +95,8 @@ struct SlashCommandTests {
         #expect(KoreanParticle.ro("전체 접근") == "으로"); #expect(KoreanParticle.ro("읽기 전용") == "으로")
         #expect(KoreanParticle.ro("계획") == "으로"); #expect(KoreanParticle.ro("작업 폴더") == "로"); #expect(KoreanParticle.ro("CLI 기본값") == "으로")
         #expect(KoreanParticle.ro("Bypass") == "로"); #expect(KoreanParticle.ro("opus") == "로"); #expect(KoreanParticle.ro("하늘") == "로"); #expect(KoreanParticle.ro("") == "로")
+        // Model labels end in a version: 0 영, 3 삼, 6 육 close the syllable; 1 일, 7 칠, 8 팔 end in ㄹ.
+        #expect(KoreanParticle.ro("Opus 4.6") == "으로"); #expect(KoreanParticle.ro("Sonnet 5.0") == "으로"); #expect(KoreanParticle.ro("GPT-5.3") == "으로")
+        #expect(KoreanParticle.ro("Opus 5.5") == "로"); #expect(KoreanParticle.ro("Fable 5.1") == "로"); #expect(KoreanParticle.ro("Gemini 2") == "로"); #expect(KoreanParticle.ro("GPT-4.7") == "로")
     }
 }

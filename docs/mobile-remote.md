@@ -39,9 +39,12 @@ MobileSessionSummary {
   preview?: { kind, text },            // 마지막 기록 항목 (200자)
   pendingPermissions: number, pendingQuestions: number, queued: number,
   resumeId?: string, terminal: boolean, // terminal: 앱 안 로컬 터미널 창이라 모바일에서 명령 불가
-  titleMode?: "auto" | "fixed"         // "auto"=요청 따름, "fixed"=직접 지정; 없으면 "auto"로 처리
+  titleMode?: "auto" | "fixed",        // "auto"=요청 따름, "fixed"=직접 지정; 없으면 "auto"로 처리
+  resolvedModel?: string               // model이 지금 가리키는 전체 id(opus → claude-opus-5-5); 모르면 없음
 }
 ```
+
+모델 이름은 양쪽이 같은 규칙으로 버전까지 붙여 보여 준다(`claude-opus-5-5` → `Opus 5.5`, `gpt-5.2-codex` → `GPT-5.2 Codex`, `gemini-3-pro-preview` → `Gemini 3 Pro`). 규칙은 `MightyCore/ModelLabel.swift`와 `mobile/src/lib/model-label.ts`가 함께 지키고, 둘 다 `native/contracts/fixtures/model-labels.json`으로 검사한다. `resolvedModel`(선택)은 별칭(`opus`)에 버전을 붙일 근거다: 설치된 CLI 모델 목록의 `resolvedModel`, 목록에 없으면 같은 계열 별칭에 한해, 그 별칭이 지금처럼 선택돼 있던 동안 그 창이 보고한 모델. `default`·`opusplan` 같은 다른 별칭은 제 이름 뒤에 ` · Opus 5.5`처럼 붙인다(휴대폰의 `default` 이름은 `provider.fallback.defaultLabel`, 예: `Claude 설정 따름`). 근거가 없으면 보내지 않고, 휴대폰은 버전 없이 `Opus`로 보여 준다(버전을 지어내지 않는다). 휴대폰은 이 값을 표시에만 쓰고, 설정 변경으로 보내는 값은 언제나 `model`·옵션 `id` 그대로다. 구버전 휴대폰은 이 필드를 무시하고, 구버전 호스트에서는 필드가 없으므로 `model`만으로 라벨을 만든다. 모델 선택지(`options.models[].label`)는 Mac이 같은 규칙으로 만든 라벨이다.
 
 에이전트 창이 소유한 창 두 가지도 같은 목록에 실린다: 전용 터미널 창(`kind: "agent-terminal"`,
 id `agent-terminal:<에이전트 창 id>`)과 에이전트가 앱 안에서 연 브라우저 창(`kind: "agent-browser"`,

@@ -246,6 +246,25 @@ breadcrumbs plus made-up edge cases (NFD `또는`, trailing NEL/BOM, a combining
 mark after ` or `, CRLF, U+3000, a blank code span); `NextActionsTests` (Swift)
 and `next-actions.test.ts` (jest) both read it and must agree with every case.
 
+## Model labels (`fixtures/model-labels.json`)
+
+Every place a model is chosen or shown labels it with its family and version:
+`claude-opus-5-5` → `Opus 5.5`, `claude-haiku-4-5-20251001` → `Haiku 4.5`,
+`gpt-5.2-codex` → `GPT-5.2 Codex`, `gemini-3-pro-preview` → `Gemini 3 Pro`. Only the
+label changes; the value saved and sent to the CLI is untouched. An alias
+(`opus`) takes its version from the id it resolves to — the CLI catalogue's
+`resolvedModel`, or, for a family alias only, the model the pane last reported
+while that same alias was selected (`SessionUsage.selectedModel`, optional,
+absent in older saves) — and stays the bare family name (`Opus`) when nothing
+says which version it is. Other aliases (`default`, `opusplan`, `best`) keep their
+own name and add the resolved model after ` · `. `[1m]` adds ` (1M)`; a Bedrock
+`-v1:0` is dropped, any other trailing `v2` is kept. Formatters: `MightyCore/ModelLabel.swift` and
+`mobile/src/lib/model-label.ts`; `ModelLabelTests` (Swift) and
+`model-label.test.ts` (jest) both read the fixture
+`[{model, resolved?, fallback?, expected}]`. The graph vectors below keep the
+catalogue-only names (`ModelUsageFormat` with `versioned: false`); the Mac views
+pass `versioned: true`. Windows does not apply these labels yet.
+
 ## Execution graph vectors (`graph-vectors.json`)
 
 `graph-vectors.json` is the shared execution-graph contract: one file that both

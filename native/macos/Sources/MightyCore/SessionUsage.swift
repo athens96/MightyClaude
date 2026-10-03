@@ -55,6 +55,10 @@ public struct SessionUsage: Codable, Sendable, Equatable {
     public var rateLimits: [SessionRateLimit]?
     public var rateLimitsUpdatedAt: String?
     public var updatedAt: String
+    /// The pane's model selection (`opus`, `default`, …) when this was
+    /// recorded, so a later selection never borrows `model` for its label.
+    /// Optional and absent in older saves.
+    public var selectedModel: String?
 
     public var contextPercent: Double? {
         guard let used = contextUsedTokens, let window = contextWindowTokens, used >= 0, window > 0 else { return nil }
@@ -82,6 +86,7 @@ public enum SessionUsageSupport {
               value.updatedAt.utf8.count <= 80, validDate(value.updatedAt) else { return nil }
         var clean = value
         clean.model = value.model.flatMap { CoreValidation.model($0) ? $0 : nil }
+        clean.selectedModel = value.selectedModel.flatMap { CoreValidation.model($0) ? $0 : nil }
         clean.providerSessionId = value.providerSessionId.flatMap { CoreValidation.identifier($0) ? $0 : nil }
         clean.inputTokens = valid(value.inputTokens); clean.outputTokens = valid(value.outputTokens)
         clean.cacheReadTokens = valid(value.cacheReadTokens); clean.cacheWriteTokens = valid(value.cacheWriteTokens)
@@ -159,7 +164,8 @@ public enum SessionUsageSupport {
 public extension RunSession {
     mutating func recordSessionUsage(_ event: RunEvent) {
         guard event.sessionId == id, event.type == "usage", kind == "claude", let usage = event.usage,
-              usage.provider == provider, let clean = SessionUsageSupport.normalized(usage) else { return }
+              usage.provider == provider, var clean = SessionUsageSupport.normalized(usage) else { return }
+        clean.selectedModel = CoreValidation.model(model) ? model : nil
         sessionUsage = clean
     }
 }

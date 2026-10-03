@@ -42,7 +42,7 @@ enum AgentTranscriptFormat {
             if live { line.append(NSAttributedString(string: "  · " + toolState(activity.state), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: accent])) }
             else if activity.state == "error" { line.append(NSAttributedString(string: "  · " + toolState(activity.state), attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: Palette.nsErrText])) }
             if !records.isEmpty,
-               let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: childBlocks[activity.id], catalog: catalog) {
+               let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: childBlocks[activity.id], catalog: catalog, versioned: true) {
                 line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
             }
             if !(activity.output ?? "").isEmpty, let link = disclosureLink(entry.id) {
@@ -236,7 +236,7 @@ enum AgentTranscriptFormat {
             if live { line.append(NSAttributedString(string: "  · " + AgentTranscriptFormat.toolState(activity.state), attributes: [.font: small, .foregroundColor: activity.state == "waiting" ? Palette.nsToken(\.waitText) : AgentTranscriptFormat.accent])) }
             else if activity.state == "error" { line.append(NSAttributedString(string: "  · " + AgentTranscriptFormat.toolState(activity.state), attributes: [.font: small, .foregroundColor: Palette.nsErrText])) }
             if !records.isEmpty,
-               let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: childBlocks[activity.id], catalog: catalog) {
+               let suffix = ModelUsageFormat.activitySuffix(activityId: activity.id, records: records, childBlock: childBlocks[activity.id], catalog: catalog, versioned: true) {
                 line.append(NSAttributedString(string: "  " + suffix, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular), .foregroundColor: secondary]))
             }
             if !(activity.output ?? "").isEmpty, let link = AgentTranscriptFormat.disclosureLink(entry.id) {

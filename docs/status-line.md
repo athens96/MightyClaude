@@ -25,7 +25,7 @@ CLI 2.1.x의 `Status` 페이로드와 같은 이름을 쓴다. 앱이 잴 수 �
 | `hook_event_name` | `Status` |
 | `session_id`, `transcript_path` | 실행 창의 Claude 세션 ID와 `<config>/projects/<cwd 슬러그>/<id>.jsonl` (슬러그는 영숫자 외 글자를 `-`로) |
 | `cwd`, `workspace.current_dir`, `workspace.project_dir` | 워크스페이스 경로 |
-| `model.id`, `model.display_name` | 실행 창의 모델 (기본값이면 사용량에 기록된 실제 모델) |
+| `model.id`, `model.display_name` | 실행 창의 모델. `id`는 CLI가 보고한 실제 모델 id(없으면 CLI 모델 목록이 알려 준 id, 그것도 없으면 선택값 그대로), `display_name`은 버전까지 붙인 표시 이름(`Opus 5.5`, `GPT-6.1 Sol`, 기본값이면 `Claude 설정 따름 · Opus 5.5`)이다. 보고된 모델은 그때 고른 모델이 지금도 선택돼 있을 때만 쓰고, 그 뒤 모델을 바꾸면 새 선택에서 만든다. 표시 이름은 바뀔 수 있으니 스크립트는 `model.id`로 비교한다 |
 | `version` | 설치된 Claude CLI 버전 |
 | `cost.total_cost_usd`, `cost.total_duration_ms` | 세션 사용량의 비용, 실행 경과 시간. `total_api_duration_ms`·줄 수는 0 |
 | `context_window.*` | 입력·출력·캐시 토큰, 컨텍스트 크기, `used_percentage`/`remaining_percentage` (측정 전에는 null) |

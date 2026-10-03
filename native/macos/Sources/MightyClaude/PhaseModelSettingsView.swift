@@ -165,11 +165,12 @@ private struct PhaseModelProviderBlock: View {
         for option in catalog.models where option.value != "default" {
             let resolved = option.resolvedModel.flatMap { $0.isEmpty || $0 == option.value ? nil : $0 }
             if seen.insert(option.value).inserted {
-                entries.append(VersionEntry(value: option.value, label: resolved == nil ? option.displayName : L("settings.phaseModels.latestTemplate", ["name": option.displayName])))
+                let name = ModelLabel.option(option)
+                entries.append(VersionEntry(value: option.value, label: resolved == nil ? name : L("settings.phaseModels.latestTemplate", ["name": name])))
             }
-            if let resolved, seen.insert(resolved).inserted { entries.append(VersionEntry(value: resolved, label: resolved)) }
+            if let resolved, seen.insert(resolved).inserted { entries.append(VersionEntry(value: resolved, label: ModelLabel.text(resolved))) }
         }
-        if !seen.contains(current) { entries.append(VersionEntry(value: current, label: current)) }
+        if !seen.contains(current) { entries.append(VersionEntry(value: current, label: ModelLabel.text(current))) }
         return entries
     }
 
@@ -179,7 +180,7 @@ private struct PhaseModelProviderBlock: View {
         ForEach(versionEntries(current: current), id: \.self) { entry in Text(verbatim: entry.label).tag(entry.value) }
         if !registered.isEmpty {
             Divider()
-            ForEach(registered, id: \.name) { e in Text(verbatim: e.name).tag(e.name) }
+            ForEach(registered, id: \.name) { e in Text(verbatim: ModelLabel.text(e.name)).tag(e.name) }
         }
     }
 

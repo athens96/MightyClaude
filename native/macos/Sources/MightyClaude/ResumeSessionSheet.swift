@@ -140,7 +140,7 @@ struct ResumeSessionSheet: View {
         let title = item.title ?? L("resume.untitled")
         let details = [ResumableSessions.relativeTime(item.modified),
                        item.requests.map { L("resume.requests", ["count": "\($0)"]) },
-                       item.model, item.automated ? L("resume.automated") : nil].compactMap { $0 }.joined(separator: " · ")
+                       item.model.map { ModelLabel.text($0) }, item.automated ? L("resume.automated") : nil].compactMap { $0 }.joined(separator: " · ")
         // Written moments ago: a CLI elsewhere may still be running it.
         let busy = ResumableSessions.mayBeRunning(item)
         return Button { store.resumeSession(item, workspaceId: workspace.id) } label: {

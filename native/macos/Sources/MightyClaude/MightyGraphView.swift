@@ -498,8 +498,8 @@ struct MightyGraphView: View {
                     MightyGraphActivityIndicator(status: status, tint: Palette.run)
                     MightyStatusPill(text: statusLabel(status), tone: DesignTone(blockStatus: status))
                 }
-                if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog) {
-                    let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog)
+                if let capsuleText = ModelUsageFormat.blockCapsule(usage: usage, records: records, nodeModelLabel: nodeModelLabel, catalog: catalog, versioned: true) {
+                    let helpText = records.isEmpty ? (usage.map { usageLabel + " · " + $0.detail } ?? "") : ModelUsageFormat.blockCapsuleHelp(records: records, catalog: catalog, versioned: true)
                     Text(capsuleText).font(.system(size: 10, design: .monospaced)).foregroundStyle(quiet).lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(onStrip ? Color.black.opacity(0.18) : Palette.raised, in: Capsule())
@@ -793,9 +793,9 @@ struct MightyGraphView: View {
     /// its records span once it settled. Only figures the block has.
     private func timelineMeta(_ row: MightyTimeline.Row, run: MightyGraphRun) -> [String] {
         let capsule: String? = if let agentIndex = row.agentIndex {
-            ModelUsageFormat.blockCapsule(usage: run.agents[agentIndex].usage, records: run.agents[agentIndex].responseRecords ?? [], nodeModelLabel: nil, catalog: catalog)
+            ModelUsageFormat.blockCapsule(usage: run.agents[agentIndex].usage, records: run.agents[agentIndex].responseRecords ?? [], nodeModelLabel: nil, catalog: catalog, versioned: true)
         } else {
-            ModelUsageFormat.blockCapsule(usage: run.usage, records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, catalog: catalog)
+            ModelUsageFormat.blockCapsule(usage: run.usage, records: run.responseRecords ?? [], nodeModelLabel: run.nodeModelLabel, catalog: catalog, versioned: true)
         }
         return [capsule, MightyTimelineText.duration(row.block.durationMs)].compactMap { $0 }
     }

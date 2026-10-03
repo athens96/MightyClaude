@@ -37,7 +37,7 @@ struct SessionPaneView: View {
         }
         return nil
     }
-    private var selectedModelName: String { models.first(where: { $0.value == session.model })?.displayName ?? session.model }
+    private var selectedModelName: String { store.modelLabel(for: session) }
     /// Sending stays possible while a run is busy: a local Claude turn takes
     /// the text immediately, other panes queue it for after the current request.
     private var canSend: Bool {
@@ -207,7 +207,9 @@ struct SessionPaneView: View {
     /// the pane's buttons stay at the right.
     private var agentHeader: some View {
         let card = headerCard
-        let usageModel = session.sessionUsage?.provider == session.provider ? session.sessionUsage?.model : nil
+        let usageModel = ModelLabel.reportedModel(session)
+        // The pane's own choice when it names one, else what the CLI reported; both labelled.
+        let modelText = card.model != nil ? store.modelLabel(for: session) : usageModel.map { ModelLabel.text($0) }
         let figures = PaneHero.figures(session)
         let ticking = running && figures.contains { if case .elapsed(let timing) = $0 { timing.finishedAt == nil } else { false } }
         return HStack(spacing: 8) {
@@ -223,10 +225,10 @@ struct SessionPaneView: View {
             Group {
                 if ticking {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        PaneHeaderFigures(sessionID: session.id, figures: figures, provider: session.provider, model: card.model ?? usageModel, date: context.date)
+                        PaneHeaderFigures(sessionID: session.id, figures: figures, provider: session.provider, model: modelText, date: context.date)
                     }
                 } else {
-                    PaneHeaderFigures(sessionID: session.id, figures: figures, provider: session.provider, model: card.model ?? usageModel, date: Date())
+                    PaneHeaderFigures(sessionID: session.id, figures: figures, provider: session.provider, model: modelText, date: Date())
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
