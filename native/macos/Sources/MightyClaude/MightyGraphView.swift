@@ -103,7 +103,7 @@ struct MightyGraphView: View {
     // has to stand in for it or the card would only change on release.
     private var layout: MightyGraphLayout { layout(executionLinks) }
     private func layout(_ links: [OuroborosExecutionLink]) -> MightyGraphLayout {
-        .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, sharedResultSize: liveResultSize ?? graphResultSize,
+        .make(runs: runs, draft: draft, running: running, expanded: expanded, blockSizes: blockSizes.merging(resized) { _, new in new }, resultFilesRunID: resultFiles.selectedRunID, viewport: canvasViewport, zoom: zoom, sharedResultSize: liveResultSize ?? graphResultSize,
               resultContentHeight: latestResultContentHeight,
               executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
               galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
@@ -212,7 +212,7 @@ struct MightyGraphView: View {
                                   if size == .zero { bubbleWidth = MightyGraphReferenceBubble.defaultWidth; bubbleHeight = 0 }
                                   else { bubbleWidth = Double(size.width); bubbleHeight = Double(size.height) }
                               },
-                              onResize: resize, onResetSize: resetSize,
+                              onResize: { resize(graph, $0, $1, $2, $3) }, onResetSize: resetSize,
                               onStranded: { reaim(graph, after: $0) }, newestRunID: runs.last?.id,
                               onReachTop: { if history?.phase == .idle { onLoadOlder() } },
                               onUserMove: { if reveal.holdingID != nil { reveal.cancel() } },
@@ -259,7 +259,8 @@ struct MightyGraphView: View {
                     let resized = layout
                     let frames = Dictionary(resized.nodes.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
                     let requested = scrollTarget.flatMap { frames[$0.nodeID] == nil ? nil : $0 }
-                    publish(MightyGraphCamera.resizeAnchor(fittedResultID: resized.fittedResultID,
+                    // A saved-size card the pane now bounds follows the pane as a fitted one does.
+                    publish(MightyGraphCamera.resizeAnchor(fittedResultID: resized.fittedResultID ?? resized.viewportBoundResultID,
                                                            targetID: requested?.nodeID ?? initialTarget(resized),
                                                            targetAlignTop: requested?.alignTop ?? false,
                                                            frames: frames))
@@ -334,19 +335,20 @@ struct MightyGraphView: View {
         reference = MightyGraphReference(path: path, line: line, url: ReferenceLinkSupport.resolve(path, root: workspaceRoot))
     }
 
-    private func resize(_ id: String, _ size: CGSize, _ edges: ResizeEdges, _ phase: MightyGraphLayout.ResizePhase) {
+    /// `graph` is the layout the drag started on: its viewport limit and
+    /// window fit are what the newest result card is kept within.
+    private func resize(_ graph: MightyGraphLayout, _ id: String, _ size: CGSize, _ edges: ResizeEdges, _ phase: MightyGraphLayout.ResizePhase) {
         guard let value = MightyGraphBlockSize(width: size.width, height: size.height).normalized else { return }
         if reveal.holdingID != nil { reveal.cancel() }
         resized[id] = value
         if isRecordNode(id) { return }
         if id == MightyGraphLayout.latestResultID(runs: runs) {
             // The saved size is the newest result's maximum, not what it shows.
-            liveResultSize = phase == .live ? value : nil
+            let drag = MightyGraphLayout.resultDrag(dragged: size, edges: edges, phase: phase, saved: graphResultSize,
+                                                    limit: graph.resultLimit, windowFit: graph.resultWindowFit)
+            liveResultSize = drag.live
             guard phase != .live else { return }
-            if let cap = MightyGraphLayout.resultDragCap(released: size, edges: edges, cancelled: phase == .cancelled,
-                                                         saved: graphResultSize, viewport: canvasViewport) {
-                onSaveResultSize(cap)
-            }
+            if let save = drag.save { onSaveResultSize(save) }
             if let measured = measuredDuringDrag.value {
                 measuredDuringDrag.value = nil
                 resultMeasured(measured.nodeID, measured.height)

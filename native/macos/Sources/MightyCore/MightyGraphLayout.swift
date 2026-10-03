@@ -76,6 +76,15 @@ public struct MightyGraphLayout {
     /// the viewport. nil when no viewport is supplied, when a shared result size
     /// overrides the fit, or when there is no finished run yet.
     public var fittedResultID: String? = nil
+    /// The newest result card's node id when the viewport limit, not its
+    /// saved size or window fit, decides its size in some direction: it then
+    /// follows the pane as a fitted card does. nil without a limit.
+    public var viewportBoundResultID: String? = nil
+    /// The viewport limit on the newest result card (`resultViewportLimit`)
+    /// and the window fit in force (`resultFitSize`), for a drag of it; nil
+    /// without a viewport (the limit also without a zoom) or a result.
+    public var resultLimit: CGSize? = nil
+    public var resultWindowFit: CGSize? = nil
     static let siblingGap: CGFloat = 32
     static let rowGap: CGFloat = 52
     public static let historyNodeID = "history-top"
@@ -117,21 +126,72 @@ public struct MightyGraphLayout {
     public static func resultFitSize(viewport: CGSize, filesPanelOpen: Bool) -> CGSize {
         CGSize(width: max(500, viewport.width - 48 - (filesPanelOpen ? 336 : 0)), height: max(200, viewport.height - 48))
     }
+    /// The most of the pane the newest result card may take, in diagram
+    /// coordinates at `zoom`: the viewport less the window fit's 24pt margins
+    /// (screen points, so they stay 24pt at any zoom) and, with the result
+    /// files panel open, that panel and its gap beside the card. Drawn at
+    /// `zoom` the card — and its panel — stay inside the visible canvas, so
+    /// the reveal can always put its bottom right above the composer. Never
+    /// below a dragged block's minimum, so a tiny pane keeps a usable card.
+    public static func resultViewportLimit(viewport: CGSize, zoom: CGFloat, filesPanelOpen: Bool) -> CGSize {
+        let scale = zoom.isFinite && zoom > 0 ? zoom : 1
+        return CGSize(width: max(CGFloat(MightyGraphBlockSize.minimumWidth), (viewport.width - 48) / scale - (filesPanelOpen ? 336 : 0)),
+                      height: max(minimumResultHeight, (viewport.height - 48) / scale))
+    }
+    /// The newest result card's cap in force: `maximum` (the saved size, else
+    /// the window fit) kept within `limit` side by side; nil keeps it whole.
+    /// Only what is drawn shrinks — the saved size is left as it is, so the
+    /// card grows back to it when the pane does. A drag in progress is kept
+    /// within the same limit.
+    public static func resultCap(_ maximum: CGSize, within limit: CGSize?) -> CGSize {
+        guard let limit else { return maximum }
+        return CGSize(width: min(maximum.width, limit.width), height: min(maximum.height, limit.height))
+    }
+    /// Whether the result files panel is open beside the newest result card.
+    public static func filesPanelOpen(runs: [MightyGraphRun], resultFilesRunID: String?) -> Bool {
+        guard let index = runs.indices.last(where: { finished(runs[$0]) }), let resultFilesRunID,
+              runs[index].id == resultFilesRunID, runs[index].status == "completed" else { return false }
+        return true
+    }
     /// Where a block drag is: still moving, released, or abandoned (Escape,
     /// the window losing key) with the block back at its starting size.
     public enum ResizePhase: Equatable, Sendable { case live, finished, cancelled }
-    /// What a drag of the newest result card saves as its remembered maximum;
-    /// nil saves nothing. A cancelled drag saves nothing. A drag that moved a
-    /// top or bottom side saves the size it was released at — it started from
-    /// the card as shown. A drag of only the left or right side changes the
-    /// width alone and keeps the height of the maximum already in force (the
-    /// saved one, else the window fit), never the shorter fitted height shown.
-    public static func resultDragCap(released: CGSize, edges: ResizeEdges, cancelled: Bool,
-                                     saved: MightyGraphBlockSize?, viewport: CGSize?) -> MightyGraphBlockSize? {
-        guard !cancelled else { return nil }
-        let height: CGFloat = edges.vertical ? released.height
-            : saved.map { CGFloat($0.height) } ?? viewport.map { resultFitSize(viewport: $0, filesPanelOpen: false).height } ?? released.height
-        return MightyGraphBlockSize(width: released.width, height: height).normalized
+    /// A drag of the newest result card, both what it shows and what it saves.
+    /// `dragged` is the size under the cursor; `limit` the pane's
+    /// (`resultViewportLimit`, nil for none); `windowFit` the window fit in
+    /// force (`resultFitSize`, nil without a viewport).
+    ///
+    /// `live` (only while it moves): the dragged size kept within the limit,
+    /// so the card follows the cursor exactly up to the pane's edge and stops
+    /// there. `save` (only on release; nil when cancelled) is the new
+    /// remembered maximum, side by side:
+    /// - a side the drag did not move keeps the maximum in force — the saved
+    ///   size, else the window fit, never the smaller size shown;
+    /// - a moved side released at (or pushed past) the limit keeps the larger
+    ///   of that maximum and the limit: the card was at the pane's edge, so
+    ///   the drag cannot tell a smaller size, and a narrow pane never
+    ///   overwrites a larger saved size with the size it shrank the card to;
+    /// - a moved side released inside the limit saves what it was released at.
+    public static func resultDrag(dragged: CGSize, edges: ResizeEdges, phase: ResizePhase, saved: MightyGraphBlockSize?,
+                                  limit: CGSize?, windowFit: CGSize?) -> (live: MightyGraphBlockSize?, save: MightyGraphBlockSize?) {
+        switch phase {
+        case .cancelled: return (nil, nil)
+        case .live:
+            let shown = resultCap(dragged, within: limit)
+            return (MightyGraphBlockSize(width: shown.width, height: shown.height).normalized, nil)
+        case .finished:
+            func side(moved: Bool, dragged: CGFloat, saved: CGFloat?, fit: CGFloat?, limit: CGFloat?) -> CGFloat {
+                let maximum = saved ?? fit
+                guard moved else { return maximum ?? dragged }
+                guard let limit, dragged >= limit - 0.5 else { return dragged }
+                return max(maximum ?? limit, limit)
+            }
+            let width = side(moved: edges.horizontal, dragged: dragged.width, saved: saved.map { CGFloat($0.width) },
+                             fit: windowFit?.width, limit: limit?.width)
+            let height = side(moved: edges.vertical, dragged: dragged.height, saved: saved.map { CGFloat($0.height) },
+                              fit: windowFit?.height, limit: limit?.height)
+            return (nil, MightyGraphBlockSize(width: width, height: height).normalized)
+        }
     }
 
     public func route(_ edge: Edge) -> [CGPoint] {
@@ -181,32 +241,33 @@ public struct MightyGraphLayout {
     /// upward from there. `history` adds the block at the top that loads more.
     /// `resultContentHeight` is the newest result card's measured content
     /// height (`resultSize(cap:contentHeight:)`); nil keeps it at its cap.
-    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, sharedResultSize: MightyGraphBlockSize? = nil, resultContentHeight: CGFloat? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false) -> Self {
-        // The latest result card is the result of the last finished run in the list.
-        let latestFinishedRunIndex = runs.indices.last(where: { finished(runs[$0]) })
+    /// `zoom`, with a viewport, also keeps the newest result card within the
+    /// viewport at that zoom (`resultViewportLimit`); nil leaves its cap whole.
+    public static func make(runs: [MightyGraphRun], draft: String, running: Bool, expanded: Set<String>, blockSizes: [String: MightyGraphBlockSize] = [:], resultFilesRunID: String? = nil, viewport: CGSize? = nil, zoom: CGFloat? = nil, sharedResultSize: MightyGraphBlockSize? = nil, resultContentHeight: CGFloat? = nil, executions: [Execution] = [], galleries: [ImageGallery] = [], retainedStart: Int = 0, history: Bool = false) -> Self {
         let latestResultID = Self.latestResultID(runs: runs)
 
         // The files panel reduces available width only when it is open for the latest result.
-        let filesPanelOpenForLatest: Bool = {
-            guard let idx = latestFinishedRunIndex,
-                  let panelRunID = resultFilesRunID,
-                  runs[idx].id == panelRunID,
-                  runs[idx].status == "completed" else { return false }
-            return true
-        }()
+        let filesPanelOpenForLatest = filesPanelOpen(runs: runs, resultFilesRunID: resultFilesRunID)
 
         // Auto-fit size for the latest result card (no .normalized clamp applied).
         let autoFitResultSize: CGSize? = {
             guard let vp = viewport, latestResultID != nil else { return nil }
             return resultFitSize(viewport: vp, filesPanelOpen: filesPanelOpenForLatest)
         }()
+        let resultLimit: CGSize? = {
+            guard let vp = viewport, let zoom, latestResultID != nil else { return nil }
+            return resultViewportLimit(viewport: vp, zoom: zoom, filesPanelOpen: filesPanelOpenForLatest)
+        }()
 
         func size(_ id: String, width: CGFloat, height: CGFloat) -> CGSize {
             // Latest result card: the shared or auto-fit size, when a viewport
-            // is active, is the most it takes; it shrinks to its content.
+            // is active, is the most it takes, kept within the viewport; it
+            // shrinks to its content.
             if let latestID = latestResultID, id == latestID, viewport != nil {
-                if let shared = sharedResultSize { return resultSize(cap: CGSize(width: shared.width, height: shared.height), contentHeight: resultContentHeight) }
-                if let autoFit = autoFitResultSize { return resultSize(cap: autoFit, contentHeight: resultContentHeight) }
+                if let shared = sharedResultSize {
+                    return resultSize(cap: resultCap(CGSize(width: shared.width, height: shared.height), within: resultLimit), contentHeight: resultContentHeight)
+                }
+                if let autoFit = autoFitResultSize { return resultSize(cap: resultCap(autoFit, within: resultLimit), contentHeight: resultContentHeight) }
             }
             guard let custom = blockSizes[id]?.normalized else { return CGSize(width: width, height: height) }
             return CGSize(width: custom.width, height: custom.height)
@@ -376,6 +437,12 @@ public struct MightyGraphLayout {
             nextY[runIndex] = frame.maxY + executionGap
         }
         result.fittedResultID = Self.fittedResultID(runs: runs, viewport: viewport, sharedResultSize: sharedResultSize)
+        result.resultLimit = resultLimit
+        result.resultWindowFit = autoFitResultSize
+        if viewport != nil, let maximum = sharedResultSize.map({ CGSize(width: $0.width, height: $0.height) }) ?? autoFitResultSize,
+           resultCap(maximum, within: resultLimit) != maximum {
+            result.viewportBoundResultID = latestResultID
+        }
         return result
     }
 }
