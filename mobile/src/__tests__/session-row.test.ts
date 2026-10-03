@@ -30,20 +30,20 @@ const line = ({ lead, rest }: { lead: string[]; rest: string[] }) => [...lead, .
 describe('rowMeta', () => {
   it('shows elapsed time and context while a pane runs', () => {
     expect(line(rowMeta(session({ status: 'running' }), glance, undefined))).toBe(
-      'Claude · opus · 2:14 · 컨텍스트 41%',
+      'Claude · Opus · 2:14 · 컨텍스트 41%',
     );
   });
 
   it('shows them while a pane waits on the user, whatever its own status', () => {
     const asking = session({ status: 'idle', pendingQuestions: 1, model: 'sonnet' });
-    expect(line(rowMeta(asking, glance, '방금'))).toBe('Claude · sonnet · 2:14 · 컨텍스트 41% · 방금');
+    expect(line(rowMeta(asking, glance, '방금'))).toBe('Claude · Sonnet · 2:14 · 컨텍스트 41% · 방금');
   });
 
   it.each(['completed', 'stopped', 'error', 'idle'] as const)(
     'leaves them out of a %s pane at rest, which says only how long ago it settled',
     (status) => {
       const meta = rowMeta(session({ status, provider: 'codex', model: 'gpt-5' }), glance, '11분 전');
-      expect(meta).toEqual({ lead: ['Codex'], beta: true, rest: ['gpt-5', '11분 전'] });
+      expect(meta).toEqual({ lead: ['Codex'], beta: true, rest: ['GPT-5', '11분 전'] });
     },
   );
 
@@ -53,7 +53,22 @@ describe('rowMeta', () => {
   });
 
   it('never makes up a figure the host did not send', () => {
-    expect(line(rowMeta(session({ status: 'running' }), undefined, undefined))).toBe('Claude · opus');
+    expect(line(rowMeta(session({ status: 'running' }), undefined, undefined))).toBe('Claude · Opus');
+  });
+
+  it('names the model with the version the host resolved it to, and never invents one', () => {
+    const named = (overrides: Partial<MobileSessionSummary>) => rowMeta(session(overrides), undefined, undefined).rest;
+    expect(named({ resolvedModel: 'claude-opus-5-5' })).toEqual(['Opus 5.5']);
+    expect(named({ model: 'haiku', resolvedModel: 'claude-haiku-4-5-20251001' })).toEqual(['Haiku 4.5']);
+    expect(named({ model: 'claude-fable-5-1' })).toEqual(['Fable 5.1']);
+    expect(named({ model: 'sonnet', resolvedModel: 'claude-opus-5-5' })).toEqual(['Sonnet']);
+    expect(named({ model: 'default', resolvedModel: 'claude-opus-5-5' })).toEqual(['Claude 설정 따름 · Opus 5.5']);
+    expect(named({ model: 'default' })).toEqual(['Claude 설정 따름']);
+    expect(named({ provider: 'codex', model: 'default', resolvedModel: 'gpt-6.1-sol' })).toEqual([
+      'Codex 설정 따름 · GPT-6.1 Sol',
+    ]);
+    expect(named({ model: 'opusplan', resolvedModel: 'claude-opus-5-5' })).toEqual(['opusplan · Opus 5.5']);
+    expect(named({ provider: 'gemini', model: 'gemini-3-pro-preview' })).toEqual(['Gemini 3 Pro']);
   });
 });
 
