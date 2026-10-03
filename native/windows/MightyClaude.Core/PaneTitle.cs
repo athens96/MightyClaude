@@ -12,7 +12,10 @@ public static class PaneTitle
     public const int MaximumTextElements = 40;
     public const string Automatic = "auto";
     public const string Fixed = "fixed";
-    private const string AttachmentMarker = "첨부: ";
+    /// The "첨부: " prefix AttachmentSupport.Summary writes before a request's attachment list. It is
+    /// stored log data, not UI text: it stays Korean in every language, so it is spelled with escapes
+    /// rather than read from the locale catalogues.
+    internal const string AttachmentMarker = "\uCCA8\uBD80: ";
 
     /// <summary>
     /// The one-line title for a request, or null for empty or whitespace-only input so the previous

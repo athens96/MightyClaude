@@ -22,7 +22,7 @@ public sealed record SessionHistoryAnchor(string Text, DateTimeOffset? Date)
     /// What the user typed: the transcript adds one "첨부: " line per attachment.
     public static string Typed(string text)
     {
-        var typed = text.StartsWith("첨부: ", StringComparison.Ordinal) ? "" : text.Split("\n\n첨부: ")[0];
+        var typed = text.StartsWith(PaneTitle.AttachmentMarker, StringComparison.Ordinal) ? "" : text.Split("\n\n" + PaneTitle.AttachmentMarker)[0];
         return typed.Trim();
     }
     /// 2 when the record prompt is the retained text, 1 when it only contains it,

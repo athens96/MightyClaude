@@ -101,8 +101,8 @@ public sealed partial class MainWindow
         if (state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } node)
         {
             var empty = new StackPanel { Spacing = 18, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(32) };
-            empty.Children.Add(new TextBlock { Text = state.Workspaces.Count == 0 ? "프로젝트 폴더를 추가해 시작하세요." : "새 실행 창을 추가하세요.", FontSize = 20, Opacity = .6, TextWrapping = TextWrapping.Wrap });
-            if (state.ActiveWorkspaceId is not null) empty.Children.Add(new Button { Content = "+ 실행 창", Flyout = NewSessionMenu(), HorizontalAlignment = HorizontalAlignment.Center });
+            empty.Children.Add(new TextBlock { Text = Locale.Get(state.Workspaces.Count == 0 ? "layout.empty.addProjectFolder" : "layout.empty.addPane"), FontSize = 20, Opacity = .6, TextWrapping = TextWrapping.Wrap });
+            if (state.ActiveWorkspaceId is not null) empty.Children.Add(new Button { Content = Locale.Get("layout.empty.addPaneButton"), Flyout = NewSessionMenu(), HorizontalAlignment = HorizontalAlignment.Center });
             panes.Children.Add(empty);
             return;
         }
@@ -138,7 +138,7 @@ public sealed partial class MainWindow
         if (horizontal) Grid.SetColumn(second, 2); else Grid.SetRow(second, 2);
         grid.Children.Add(first); grid.Children.Add(second);
         var divider = new Thumb { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(65, 135, 135, 135)), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
-        AutomationProperties.SetName(divider, horizontal ? "좌우 분할 크기 조절" : "상하 분할 크기 조절"); ToolTipService.SetToolTip(divider, "드래그하여 분할 크기 조절");
+        AutomationProperties.SetName(divider, Locale.Get(horizontal ? "layout.divider.horizontal" : "layout.divider.vertical")); ToolTipService.SetToolTip(divider, Locale.Get("layout.divider.tooltip"));
         if (horizontal) Grid.SetColumn(divider, 1); else Grid.SetRow(divider, 1);
         divider.DragDelta += (_, args) =>
         {
@@ -170,7 +170,7 @@ public sealed partial class MainWindow
         var bar = new ScrollViewer { Content = tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
         var tabHeader = new Grid { ColumnSpacing = 4 }; tabHeader.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tabHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         tabHeader.Children.Add(bar);
-        var add = new Button { Content = "+", Width = 30, Height = 30, MinWidth = 0, Padding = new(0), Flyout = NewSessionMenu(node.Id) }; AutomationProperties.SetName(add, "이 그룹에 실행 창 추가"); Grid.SetColumn(add, 1); tabHeader.Children.Add(add); group.Children.Add(tabHeader);
+        var add = new Button { Content = "+", Width = 30, Height = 30, MinWidth = 0, Padding = new(0), Flyout = NewSessionMenu(node.Id) }; AutomationProperties.SetName(add, Locale.Get("layout.group.addPane")); Grid.SetColumn(add, 1); tabHeader.Children.Add(add); group.Children.Add(tabHeader);
         var selected = node.SelectedSessionId ?? node.SessionIds[0];
         foreach (var id in node.SessionIds)
         {
@@ -179,7 +179,7 @@ public sealed partial class MainWindow
             tab.Content = SessionIndicator(session, tab: true); tab.ContextFlyout = SessionMenu(id);
             tab.DoubleTapped += async (_, args) => { args.Handled = true; await RenameSession(id); };
             if (id == selected) tab.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(90, 100, 149, 237));
-            ToolTipService.SetToolTip(tab, "드래그하여 탭 이동 · 실행 창 가장자리에 놓아 분할");
+            ToolTipService.SetToolTip(tab, Locale.Get("layout.tab.dragTooltip"));
             tab.DragStarting += (_, args) => { draggedSessionId = id; draggedWorkspaceId = workspace; args.Data.SetData(PaneDragFormat, id); args.Data.RequestedOperation = DataPackageOperation.Move; };
             tab.DropCompleted += (_, _) => { draggedSessionId = null; draggedWorkspaceId = null; };
             tab.DragOver += (_, args) => { if (!IsPaneDrag(args, workspace)) return; args.AcceptedOperation = DataPackageOperation.Move; args.Handled = true; tab.BorderBrush = new SolidColorBrush(Colors.CornflowerBlue); tab.BorderThickness = new(2); };
@@ -191,13 +191,13 @@ public sealed partial class MainWindow
                 await DockSession(moved, workspace, node.Id, "center", index);
             };
             var tabCell = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 }; tabCell.Children.Add(tab);
-            var close = Button("×", () => CloseSession(id)); close.MinWidth = 0; close.Width = 22; close.Height = 30; close.Padding = new(0); close.Background = new SolidColorBrush(Colors.Transparent); close.BorderThickness = new(0); AutomationProperties.SetName(close, session.Title + " 닫기"); tabCell.Children.Add(close); tabs.Children.Add(tabCell);
+            var close = Button("×", () => CloseSession(id)); close.MinWidth = 0; close.Width = 22; close.Height = 30; close.Padding = new(0); close.Background = new SolidColorBrush(Colors.Transparent); close.BorderThickness = new(0); AutomationProperties.SetName(close, Locale.Get("layout.tab.closeAccessibility", new Dictionary<string, string> { ["title"] = session.Title })); tabCell.Children.Add(close); tabs.Children.Add(tabCell);
         }
         if (!views.TryGetValue(selected, out var pane)) { pane = new(this, selected); pane.InitRefresher(); views[selected] = pane; }
-        if (paneHosts.ContainsKey(selected)) throw new InvalidOperationException("같은 실행 창이 두 레이아웃 그룹에 연결되어 있습니다.");
+        if (paneHosts.ContainsKey(selected)) throw new InvalidOperationException(Locale.Get("layout.error.paneInTwoGroups"));
         var paneHost = new Border(); paneHosts.Add(selected, paneHost);
         paneHost.Child = pane.Container; paneHost.ContextFlyout = SessionMenu(selected); Grid.SetRow(paneHost, 1); group.Children.Add(paneHost); pane.Refresh();
-        var hint = new Border { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 100, 149, 237)), BorderBrush = new SolidColorBrush(Colors.CornflowerBlue), BorderThickness = new(2), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = new TextBlock { Text = "탭으로 합치기", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        var hint = new Border { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 100, 149, 237)), BorderBrush = new SolidColorBrush(Colors.CornflowerBlue), BorderThickness = new(2), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = new TextBlock { Text = Locale.Get("layout.drop.merge"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         Grid.SetRowSpan(hint, 2); group.Children.Add(hint);
         group.DragOver += (_, args) =>
         {
@@ -207,7 +207,7 @@ public sealed partial class MainWindow
             hint.Width = edge is "left" or "right" ? group.ActualWidth / 2 : double.NaN; hint.Height = edge is "top" or "bottom" ? group.ActualHeight / 2 : double.NaN;
             hint.HorizontalAlignment = edge == "left" ? HorizontalAlignment.Left : edge == "right" ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
             hint.VerticalAlignment = edge == "top" ? VerticalAlignment.Top : edge == "bottom" ? VerticalAlignment.Bottom : VerticalAlignment.Stretch;
-            ((TextBlock)hint.Child).Text = edge switch { "left" => "왼쪽으로 분할", "right" => "오른쪽으로 분할", "top" => "위로 분할", "bottom" => "아래로 분할", _ => "탭으로 합치기" };
+            ((TextBlock)hint.Child).Text = Locale.Get(edge switch { "left" => "layout.drop.left", "right" => "layout.drop.right", "top" => "layout.drop.top", "bottom" => "layout.drop.bottom", _ => "layout.drop.merge" });
         };
         group.DragLeave += (_, _) => hint.Visibility = Visibility.Collapsed;
         group.Drop += async (_, args) =>
