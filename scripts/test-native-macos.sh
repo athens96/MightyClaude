@@ -2,6 +2,21 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Locally the unfiltered suite currently deadlocks (about 200 async tests, mostly
+# ScreenShare*/Relay*, park at 0% CPU and never finish), which stalls automated
+# workers until they are abandoned. Outside CI, require --filter unless the full
+# run is asked for explicitly with MIGHTY_FULL_SUITE=1.
+if [[ -z "${GITHUB_ACTIONS:-}" && "${MIGHTY_FULL_SUITE:-}" != "1" ]]; then
+  has_filter=0
+  for arg in "$@"; do
+    case "$arg" in --filter|--filter=*) has_filter=1 ;; esac
+  done
+  if [[ "$has_filter" -eq 0 ]]; then
+    echo "test-native-macos.sh: pass --filter \"SuiteA|SuiteB\" (the unfiltered suite deadlocks locally); set MIGHTY_FULL_SUITE=1 to run everything anyway." >&2
+    exit 2
+  fi
+fi
 # Respect an explicit DEVELOPER_DIR, otherwise use xcode-select (including CI's selected Xcode).
 # Never replace the selected toolchain with a hard-coded Command Line Tools path.
 SWIFT_EXECUTABLE="$(xcrun --find swift)"
