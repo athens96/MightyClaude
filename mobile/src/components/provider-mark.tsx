@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { providerMarkOutline } from '@/lib/provider-marks';
@@ -10,7 +11,7 @@ import { providerColorsFor, providerIsBeta, providerLabel, spacing, usePalette }
  * mark is a gradient through its three stops, bottom-left to top-right. A provider we do
  * not know has no outline, so it keeps a neutral chip.
  */
-export function ProviderMark({
+export const ProviderMark = memo(function ProviderMark({
   provider,
   size = 12,
   color,
@@ -54,7 +55,7 @@ export function ProviderMark({
       )}
     </View>
   );
-}
+});
 
 /**
  * Mark plus the provider's name, then the Beta badge for a beta provider. The brand

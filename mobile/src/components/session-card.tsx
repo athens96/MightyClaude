@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MobileSessionSummary } from '@/api/types';
+import { ProviderMark } from '@/components/provider-mark';
 import { BetaBadge } from '@/components/ui';
 import { StatusGlyph } from '@/components/status-glyph';
 import {
@@ -11,7 +12,7 @@ import {
   type AgeUnit,
 } from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
-import { rowMeta, rowNote, waitLabel } from '@/lib/session-row';
+import { rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
 import { statusWord } from '@/lib/status-glyph';
 import { useNow } from '@/hooks/use-now';
 import { useDetailReceivedAt, useSessionDetail } from '@/store/live';
@@ -35,16 +36,19 @@ export const ROW_GLYPH = 18;
 export const ROW_GAP = 11;
 export const ROW_PADDING = 14;
 export const ROW_TEXT_INSET = ROW_PADDING + ROW_GLYPH + ROW_GAP;
+/** The provider's mark before its name, sized to the 12.5pt meta line. */
+const MARK_SIZE = 12;
 
 /**
  * One pane as a row in its workspace's list (concept A, "글리프 행"): the status glyph,
- * the title, and one muted line — what runs it, then the elapsed time and context while
- * it runs or waits, or how long ago it settled (`rowMeta`). A running pane adds its last
- * step in mono, a pane stopped on an error its reason in the error ink (`rowNote`); a
- * pane waiting on the user ends in an amber `질문 1`. `glance` lets the row show elapsed
- * and context — only when the phone holds a session detail of the same revision
- * (`freshGlance`); the pane list itself carries neither number. Rows after the first
- * draw a hairline rule from the title's edge.
+ * the title, and one muted line — what runs it, an agent's pane with its provider's brand
+ * mark before the name (`rowMark`; decorative, as the name says it), then the elapsed time
+ * and context while it runs or waits, or how long ago it settled (`rowMeta`). A running
+ * pane adds its last step in mono, a pane stopped on an error its reason in the error ink
+ * (`rowNote`); a pane waiting on the user ends in an amber `질문 1`. `glance` lets the
+ * row show elapsed and context — only when the phone holds a session detail of the same
+ * revision (`freshGlance`); the pane list itself carries neither number. Rows after the
+ * first draw a hairline rule from the title's edge.
  */
 export function SessionRow({
   hostId,
@@ -74,6 +78,7 @@ export function SessionRow({
   const attention = attentionOf(session);
   const ask = waitLabel(session);
   const { lead, beta, rest } = rowMeta(session, numbers, age);
+  const mark = rowMark(session);
   const note = rowNote(session);
   const word = attention > 0 ? t('phone.card.attention', { count: attention }) : statusWord(status);
 
@@ -95,12 +100,13 @@ export function SessionRow({
         <Text numberOfLines={1} style={[styles.title, settled && styles.titleSettled]}>
           {title}
         </Text>
-        {beta ? (
+        {beta || mark ? (
           <View style={styles.metaRow}>
+            {mark ? <ProviderMark provider={mark} size={MARK_SIZE} /> : null}
             <Text numberOfLines={1} style={styles.meta}>
               {lead.join(' · ')}
             </Text>
-            <BetaBadge />
+            {beta ? <BetaBadge /> : null}
             {rest.length > 0 ? (
               <Text numberOfLines={1} style={[styles.meta, styles.metaRest]}>
                 · {rest.join(' · ')}

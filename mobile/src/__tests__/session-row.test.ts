@@ -1,6 +1,6 @@
 import type { MobileSessionSummary } from '@/api/types';
 import { resetLanguage } from '@/lib/i18n';
-import { rowMeta, rowNote, waitLabel } from '@/lib/session-row';
+import { rowMark, rowMeta, rowNote, waitLabel } from '@/lib/session-row';
 
 beforeAll(() => resetLanguage('ko'));
 afterAll(() => resetLanguage());
@@ -69,6 +69,23 @@ describe('rowMeta', () => {
     ]);
     expect(named({ model: 'opusplan', resolvedModel: 'claude-opus-5-5' })).toEqual(['opusplan · Opus 5.5']);
     expect(named({ provider: 'gemini', model: 'gemini-3-pro-preview' })).toEqual(['Gemini 3 Pro']);
+  });
+});
+
+describe('rowMark', () => {
+  it.each(['claude', 'codex', 'gemini'] as const)("puts %s's mark before an agent pane's provider name", (provider) => {
+    expect(rowMark(session({ provider }))).toBe(provider);
+  });
+
+  it.each(['shell', 'browser', 'agent-terminal', 'agent-browser'] as const)(
+    'gives a %s pane no mark, whatever provider it carries',
+    (kind) => {
+      expect(rowMark(session({ kind, provider: 'codex' }))).toBeUndefined();
+    },
+  );
+
+  it('gives no mark for a provider the phone has no outline for', () => {
+    expect(rowMark(session({ provider: 'rovo' as MobileSessionSummary['provider'] }))).toBeUndefined();
   });
 });
 

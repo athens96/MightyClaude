@@ -1,7 +1,8 @@
-import { isAgentIOPane, type MobileSessionSummary } from '@/api/types';
+import { isAgentIOPane, type MobileSessionSummary, type Provider } from '@/api/types';
 import { attentionOf, formatClock, sessionTone, type CardGlance } from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
 import { modelLabel } from '@/lib/model-label';
+import { providerMarkOutline } from '@/lib/provider-marks';
 import { kindLabel, providerIsBeta, providerLabel } from '@/theme';
 
 /**
@@ -20,6 +21,16 @@ export function waitLabel(session: MobileSessionSummary): string | undefined {
 /** An agent's pane, or a pane an agent owns, names its provider; a shell or browser does not. */
 function showsProvider(session: MobileSessionSummary): boolean {
   return session.kind === 'claude' || isAgentIOPane(session.kind);
+}
+
+/**
+ * The provider whose brand mark goes before its name on the meta line: an agent's own
+ * pane with a provider we have an outline for. A shell, a browser and an agent's own
+ * terminal or browser get none, though the last two name their agent's provider too.
+ */
+export function rowMark(session: MobileSessionSummary): Provider | undefined {
+  if (session.kind !== 'claude' || providerMarkOutline(session.provider) === undefined) return undefined;
+  return session.provider;
 }
 
 /**
