@@ -151,6 +151,11 @@ export interface MobileSessionSummary {
    * Absent on older hosts; treat absence as "auto".
    */
   titleMode?: 'auto' | 'fixed';
+  /**
+   * The full id `model` stands for today (`opus` → `claude-opus-5-5`), only for its label
+   * (`modelLabel`). Absent on older hosts and whenever the host does not know it.
+   */
+  resolvedModel?: string;
 }
 
 export interface MobileState {

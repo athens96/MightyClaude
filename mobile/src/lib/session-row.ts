@@ -1,6 +1,7 @@
 import { isAgentIOPane, type MobileSessionSummary } from '@/api/types';
 import { attentionOf, formatClock, sessionTone, type CardGlance } from '@/lib/dashboard';
 import { t } from '@/lib/i18n';
+import { modelLabel } from '@/lib/model-label';
 import { kindLabel, providerIsBeta, providerLabel } from '@/theme';
 
 /**
@@ -22,7 +23,7 @@ function showsProvider(session: MobileSessionSummary): boolean {
 }
 
 /**
- * The muted line under the title: `Claude [베타] · opus · 2:14 · 컨텍스트 41%`, split
+ * The muted line under the title: `Claude [베타] · Opus 5.5 · 2:14 · 컨텍스트 41%`, split
  * around the beta badge, which follows the provider's name. Elapsed time and context are
  * live figures, shown only while the pane runs or waits on the user; a pane at rest says
  * how long ago it settled instead (`age`, which the caller leaves out while it runs).
@@ -43,7 +44,7 @@ export function rowMeta(
   if (showsProvider(session)) lead.push(providerLabel(session.provider));
   const beta = showsProvider(session) && providerIsBeta(session.provider);
   const rest: string[] = [];
-  if (session.model) rest.push(session.model);
+  if (session.model) rest.push(rowModel(session));
   if (session.terminal && !isAgentIOPane(session.kind)) rest.push(t('phone.card.localTerminal'));
   const live = session.status === 'running' || attentionOf(session) > 0;
   if (live && numbers?.elapsedSeconds !== undefined) rest.push(formatClock(numbers.elapsedSeconds));
@@ -53,6 +54,19 @@ export function rowMeta(
   if (session.queued > 0) rest.push(t('phone.card.queued', { count: session.queued }));
   if (age) rest.push(age);
   return { lead, beta, rest };
+}
+
+/**
+ * The pane's model with its version (`Opus 5.5`), by the rules the Mac's chip uses. The
+ * CLI default keeps the Mac's name for it (`Claude 설정 따름`) and adds the model it
+ * stands for when the host knows it.
+ */
+function rowModel(session: MobileSessionSummary): string {
+  const fallback =
+    session.model === 'default'
+      ? t('provider.fallback.defaultLabel', { name: providerLabel(session.provider) })
+      : undefined;
+  return modelLabel(session.model, session.resolvedModel, fallback);
 }
 
 /**
