@@ -19,7 +19,7 @@ struct ResumableSessionsTests {
     private static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
     private func fixture() throws -> Fixture {
-        let root = URL(fileURLWithPath: realpath(FileManager.default.temporaryDirectory.path, nil).map { defer { free($0) }; return String(cString: $0) }!)
+        let root = URL(fileURLWithPath: realpath(FileManager.default.temporaryDirectory.path, nil).map { resolved in defer { free(resolved) }; return String(cString: resolved) }!)
             .appendingPathComponent("mc-resume-\(UUID().uuidString)", isDirectory: true)
         let home = root.appendingPathComponent("home", isDirectory: true)
         let real = root.appendingPathComponent("work/real project", isDirectory: true)
