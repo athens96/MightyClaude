@@ -210,7 +210,8 @@ public sealed partial class MainWindow
     {
         var id = AutomationProperties.GetAutomationId(button);
         var resourceKey = "ButtonBackground" + state;
-        Require(button.Resources.TryGetValue(resourceKey, out var resource) && ReferenceEquals(resource, expectedResource),
+        var resource = ThemeResource(button, resourceKey);
+        Require(ReferenceEquals(resource, expectedResource),
             $"{key}: the button {id} must carry the shared {Describe(expectedResource)} brush as {resourceKey}; got {Describe(resource as Brush)}");
         await WaitUI(() => button.IsLoaded);
         button.ApplyTemplate();
@@ -491,5 +492,273 @@ public sealed partial class MainWindow
             var got = value is { } c ? $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}" : "unset";
             Require(got == "#FF" + expected[1..], $"{key} ({theme}): AppWindow.TitleBar.{name} must be token {token} {expected}; got {got}");
         }
+    }
+    private const string PaneChromeKey = "paneChromeDesign";
+
+    /// <summary>A derived value of the fixture for the current theme (<c>derived.{theme}.{name}</c>).</summary>
+    private string DerivedHex(string name) => DesignFixture.Value.GetProperty("derived").GetProperty(SmokeTheme).GetProperty(name).GetString()!;
+
+    /// <summary>A tone's text ink in the current theme (<c>derived.{theme}.tones.{tone}.text</c>).</summary>
+    private string ToneTextHex(DesignTone tone) =>
+        DesignFixture.Value.GetProperty("derived").GetProperty(SmokeTheme).GetProperty("tones").GetProperty(tone.ToString().ToLowerInvariant()).GetProperty("text").GetString()!;
+
+    /// <summary>A brush is an opaque fixture hex that is not a palette token (a derived value), named for the message.</summary>
+    private void RequireHex(Brush? actual, string expected, string name, string what, string key)
+    {
+        var want = "#FF" + expected[1..].ToUpperInvariant();
+        Require(Describe(actual) == want, $"{key} ({SmokeTheme}): {what} must be {name} {expected}; got {Describe(actual)}");
+    }
+
+    private sealed partial class PaneView
+    {
+        /// <summary>The brushes the pane's long-lived chrome holds; a theme toggle must recolour these instances, never replace them.</summary>
+        internal Brush?[] PaneChromeBrushes() =>
+            [paneHeader?.Background, paneHeader?.BorderBrush, headerTitle.Foreground, label.Foreground, elapsed.Foreground, modeSwitch?.Background, modeDefaultChip?.Fill, composerCard.Background, composerShadow.Fill];
+
+        /// <summary>
+        /// Stage 4 in the theme just rendered, on this (reused) pane: the tab strip and the pane's tab
+        /// (M/PaneDockView.swift:194-262), the 34pt header with its title, state word in each tone's
+        /// ink and figures (M/SessionPaneView.swift:208-251), the … menu holding Copy (decision Q4), the
+        /// Default | Mighty switch (segmentTrack, segmentOn, shadow 0.12), the composer card with its
+        /// focus ring and shadow (M/SessionPaneView.swift:654-656), the pills, the send / stop shape, the
+        /// context ring, the status-line toggle and the permission card. Every colour is read off the tree.
+        /// </summary>
+        internal async Task RequirePaneChromeInTheme()
+        {
+            const string key = PaneChromeKey; var o = owner; var theme = o.SmokeTheme; var b = o.brushes;
+            o.root.UpdateLayout();
+            var pane = Session;
+
+            // The tab strip of the group holding this pane, and its tabs: sizes are read as laid out, and
+            // every tab button must fit inside its cell and the cell inside the strip (nothing clipped).
+            var group = PaneLayout.Groups(o.EffectiveLayout(o.service.Snapshot, pane.WorkspaceId)!).First(g => g.SessionIds.Contains(id));
+            Require(o.tabStrips.TryGetValue(group.Id, out var stripParts), $"{key} ({theme}): the tab group {group.Id} holding pane {id} has no tab strip");
+            var (strip, rule) = stripParts;
+            Require(strip.Height == DesignMetrics.Layout.TabStrip && Math.Abs(strip.ActualHeight - DesignMetrics.Layout.TabStrip) < .5,
+                $"{key} ({theme}): the tab strip must be Layout.TabStrip {DesignMetrics.Layout.TabStrip} tall; got {strip.Height} (actual {strip.ActualHeight:F1})");
+            o.RequireSubtle(strip.Background, "the tab strip", key);
+            Require(strip.CornerRadius == new CornerRadius(DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane, 0, 0),
+                $"{key} ({theme}): the tab strip must have the card's top corners (Radius.Pane {DesignMetrics.Radius.Pane}); got {strip.CornerRadius}");
+            var ruleTop = rule.TransformToVisual(strip).TransformPoint(new Windows.Foundation.Point()).Y;
+            Require(Math.Abs(rule.ActualHeight - DesignMetrics.Stroke.Line) < .01 && Math.Abs(ruleTop + rule.ActualHeight - strip.ActualHeight) < .5,
+                $"{key} ({theme}): the strip's rule must be a Stroke.Line {DesignMetrics.Stroke.Line} overlay on its bottom edge; got {rule.ActualHeight:F2} tall at y {ruleTop:F1} of {strip.ActualHeight:F1}");
+            o.RequireBrush(rule, e => ((Border)e).Background, DesignToken.Accent, "the rule under the active group's tab strip (tabActiveRule)", DesignMetrics.Opacity.TabActiveRule, key);
+            bool Inside(FrameworkElement inner, FrameworkElement outer, out string where)
+            {
+                var top = inner.TransformToVisual(outer).TransformPoint(new Windows.Foundation.Point());
+                where = $"{inner.ActualWidth:F1}x{inner.ActualHeight:F1} at ({top.X:F1}, {top.Y:F1}) in {outer.ActualWidth:F1}x{outer.ActualHeight:F1}";
+                return inner.ActualHeight > 0 && top.Y >= -.5 && top.Y + inner.ActualHeight <= outer.ActualHeight + .5;
+            }
+            foreach (var sessionId in group.SessionIds)
+            {
+                var parts = o.tabCells[sessionId];
+                Require(Math.Abs(parts.Cell.ActualHeight - 30) < .5 && Math.Abs(parts.Tab.ActualHeight - 30) < .5 && Math.Abs(parts.Close.ActualHeight - 30) < .5,
+                    $"{key} ({theme}): tab {sessionId} must lay out 30 tall with its tab and close buttons 30 tall; got cell {parts.Cell.ActualHeight:F1}, tab {parts.Tab.ActualHeight:F1}, close {parts.Close.ActualHeight:F1}");
+                foreach (var (inner, outer, what) in new (FrameworkElement, FrameworkElement, string)[] { (parts.Tab, parts.Cell, "tab button in its cell"), (parts.Close, parts.Cell, "close button in its cell"), (parts.Cell, strip, "tab cell in the strip") })
+                    Require(Inside(inner, outer, out var where), $"{key} ({theme}): the {what} of {sessionId} is clipped: {where}");
+            }
+            var (cell, shape, tab, close, title) = o.tabCells[id];
+            o.RequireBrush(shape, e => ((Border)e).Background, DesignToken.Card, "the selected tab", key: key);
+            o.RequireBrush(shape, e => ((Border)e).BorderBrush, DesignToken.Line, "the selected tab's border", key: key);
+            Require(shape.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && shape.BorderThickness == new Thickness(DesignMetrics.Stroke.Line) && Math.Abs(shape.ActualHeight - cell.ActualHeight) < .5
+                && tab.MinWidth == 56 && tab.Padding == new Thickness(10, 0, 6, 0),
+                $"{key} ({theme}): the selected tab must be a radius {DesignMetrics.Radius.Segment} shape with a Stroke.Line border filling its cell, at least 56 wide, padding l10 r6; got {shape.CornerRadius}, {shape.BorderThickness}, {shape.ActualHeight:F1}/{cell.ActualHeight:F1}, {tab.MinWidth}, {tab.Padding}");
+            RequireFont(title, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) the selected tab's title", key);
+            Require(title.MaxWidth == 125, $"{key} ({theme}): a tab title must be at most 125 wide; got {title.MaxWidth}");
+            o.RequireBrush(title, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the selected tab's title", key: key);
+            // The Mac's tab order puts the 12pt mark last; it shows for a counted pane that is not idle.
+            var tabRow = (StackPanel)tab.Content; var tabMark = o.tabIndicators[id];
+            var markShown = WorkDashboard.IsCounted(pane.Kind) && StatusGlyph.Tone(StatusGlyph.DisplayStatus(pane.Status, PendingRequests)) != DesignTone.Idle;
+            Require(ReferenceEquals(tabRow.Children[tabRow.Children.Count - 1], tabMark.View) && tabMark.View.Width == StatusGlyph.TabSize
+                && tabMark.View.Visibility == (markShown ? Visibility.Visible : Visibility.Collapsed),
+                $"{key} ({theme}): the tab's {StatusGlyph.TabSize}pt mark must come last and show only for a counted pane that is not idle ({pane.Kind}, {pane.Status}); got width {tabMark.View.Width}, {tabMark.View.Visibility}");
+            if (group.SessionIds.FirstOrDefault(s => s != id) is { } otherId && o.tabCells.TryGetValue(otherId, out var other))
+            {
+                o.RequireClear(other.Shape.Background, "an unselected tab", key);
+                o.RequireClear(other.Shape.BorderBrush, "an unselected tab's border", key);
+                RequireFont(other.Title, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.Normal, $"({theme}) an unselected tab's title", key);
+                o.RequireBrush(other.Title, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "an unselected tab's title", key: key);
+            }
+
+            // The 34pt header line.
+            var header = paneHeader ?? throw new InvalidOperationException($"{key} ({theme}): the pane has no header");
+            Require(header.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(header.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && header.Padding == new Thickness(14, 0, 10, 0),
+                $"{key} ({theme}): the pane header must be Layout.PaneHeader {DesignMetrics.Layout.PaneHeader} tall with padding l14 r10; got {header.Height} (actual {header.ActualHeight:F1}), {header.Padding}");
+            Require(Math.Abs(header.ActualWidth - (Container.ActualWidth - 2 * DesignMetrics.Stroke.Line)) < 1,
+                $"{key} ({theme}): the pane header must run edge to edge inside the card ({Container.ActualWidth - 2 * DesignMetrics.Stroke.Line:F1}); got {header.ActualWidth:F1}");
+            o.RequireBrush(header, e => ((Grid)e).Background, DesignToken.Card, "the pane header", key: key);
+            o.RequireBrush(header, e => ((Grid)e).BorderBrush, DesignToken.Line, "the line under the pane header", key: key);
+            Require(header.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), $"{key} ({theme}): the line under the header must be a bottom Stroke.Line only; got {header.BorderThickness}");
+            Require(headerMark.View.Width == StatusGlyph.HeaderSize && StatusGlyph.HeaderSize == 14, $"{key} ({theme}): the header glyph must be 14; got {headerMark.View.Width}");
+            RequireFont(headerTitle, DesignMetrics.Type.Title, Microsoft.UI.Text.FontWeights.Bold, $"({theme}) the header title", key);
+            Require(headerTitle.Text == pane.Title, $"{key} ({theme}): the header title must be the pane's title '{pane.Title}'; got '{headerTitle.Text}'");
+            o.RequireBrush(headerTitle, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the header title", key: key);
+            RequireFont(label, DesignMetrics.Type.State, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) the header state word", key);
+            Require(elapsed.FontFamily?.Source == DesignMetrics.Font.Mono && elapsed.FontSize == DesignMetrics.Type.Mono,
+                $"{key} ({theme}): the header figures must be Font.Mono at Type.Mono {DesignMetrics.Type.Mono}; got '{elapsed.FontFamily?.Source}' at {elapsed.FontSize}");
+            o.RequireBrush(elapsed, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the header figures", key: key);
+            var dark = theme == "dark";
+            // The state words below are the pane's own; a pending request would turn every one amber.
+            Require(PendingRequests == 0, $"{key} ({theme}): the header colour check needs a pane with no pending requests; pane {id} has {PendingRequests}");
+            try
+            {
+                foreach (var (status, tone) in new[] { ("running", DesignTone.Run), ("completed", DesignTone.Done), ("error", DesignTone.Err), ("stopped", DesignTone.Stop), ("idle", DesignTone.Idle) })
+                {
+                    RefreshHeaderStatus(pane with { Status = status }, dark);
+                    o.RequireHex(label.Foreground, o.ToneTextHex(tone), $"derived.tones.{tone.ToString().ToLowerInvariant()}.text", $"the header state word while {status}", key);
+                }
+            }
+            finally { RefreshHeaderStatus(Session, dark); }
+            Require(HeaderFitsSmoke(header.ActualWidth < NarrowHeader), $"{key} ({theme}): the header controls must sit inside its one {DesignMetrics.Layout.PaneHeader}pt line at width {header.ActualWidth:F1}");
+
+            // The … menu holds Copy before the separator and Close (decision Q4); the header has no Copy button.
+            var menuButton = paneMenuButton ?? throw new InvalidOperationException($"{key} ({theme}): the header has no pane menu button");
+            Require(menuButton.Width == 22 && menuButton.Height == 24 && paneHeaderControls.Children.Contains(menuButton),
+                $"{key} ({theme}): the pane menu button must be a 22x24 header control; got {menuButton.Width}x{menuButton.Height}");
+            o.RequireBrush(menuButton, e => ((Control)e).Foreground, DesignToken.Ink2, "the pane menu button", key: key);
+            o.RequireSubtle(await StateBackground(menuButton, "PointerOver", b.Subtle, key), "the pane menu button under the pointer", key);
+            var items = ((MenuFlyout)menuButton.Flyout).Items;
+            var copyIndex = -1;
+            for (var i = 0; i < items.Count; i++) if (items[i] is MenuFlyoutItem item && AutomationProperties.GetAutomationId(item) == "pane-menu-copy-" + id) copyIndex = i;
+            Require(copyIndex >= 0 && ((MenuFlyoutItem)items[copyIndex]).Text == Locale.Get("pane.menu.copyLog") && copyIndex + 2 == items.Count - 1 && items[copyIndex + 1] is MenuFlyoutSeparator
+                && items[items.Count - 1] is MenuFlyoutItem { Text: var closeText } && closeText == Locale.Get("session.menu.close"),
+                $"{key} ({theme}): the pane menu must end with '{Locale.Get("pane.menu.copyLog")}', a separator and '{Locale.Get("session.menu.close")}'; got copy at {copyIndex} of {items.Count}");
+            Require(!VisualChildren(header).OfType<Button>().Any(button => AutomationProperties.GetName(button) == Locale.Get("pane.copyButton")),
+                $"{key} ({theme}): Copy moved into the pane menu (decision Q4), so the header must hold no '{Locale.Get("pane.copyButton")}' button");
+
+            // The Default | Mighty switch.
+            Require(modeSwitch is not null && modeDefaultChip is not null && modeMightyChip is not null && modeDefaultButton is not null && modeMightyButton is not null,
+                $"{key} ({theme}): the smoke pane shows no Default | Mighty switch");
+            Require(ReferenceEquals(modeSwitch!.Background, b.SegmentTrack) && modeSwitch.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && modeSwitch.Padding == new Thickness(2),
+                $"{key} ({theme}): the switch track must be the shared segmentTrack brush, radius {DesignMetrics.Radius.Row}, padding 2; got {Describe(modeSwitch.Background)}, {modeSwitch.CornerRadius}, {modeSwitch.Padding}");
+            o.RequireHex(modeSwitch.Background, o.DerivedHex("segmentTrack"), "derived.segmentTrack", "the switch track", key);
+            var mighty = pane.AgentViewMode == "mighty";
+            var (onChip, offChip, onButton, offButton) = mighty ? (modeMightyChip!, modeDefaultChip!, modeMightyButton!, modeDefaultButton!) : (modeDefaultChip!, modeMightyChip!, modeDefaultButton!, modeMightyButton!);
+            Require(onChip.Visibility == Visibility.Visible && offChip.Visibility == Visibility.Collapsed, $"{key} ({theme}): only the chosen side ({(mighty ? "mighty" : "default")}) may show its chip; got {onChip.Visibility} / {offChip.Visibility}");
+            Require(ReferenceEquals(onChip.Fill, b.SegmentOn), $"{key} ({theme}): the chip must be the shared segmentOn brush; got {Describe(onChip.Fill)}");
+            o.RequireHex(onChip.Fill, o.DerivedHex("segmentOn"), "derived.segmentOn", "the chosen side's chip", key);
+            var chipShadow = CardShadow.Of(onChip);
+            Require(onChip.RadiusX == DesignMetrics.Radius.Segment && chipShadow is not null && Math.Abs(chipShadow.Opacity - CardShadow.SegmentChip) < .001 && Math.Abs(chipShadow.Offset.Y - 1) < .01,
+                $"{key} ({theme}): the chip must be radius {DesignMetrics.Radius.Segment} with a {CardShadow.SegmentChip} shadow one point down; got radius {onChip.RadiusX}, shadow {(chipShadow is null ? "none" : $"{chipShadow.Opacity} at y {chipShadow.Offset.Y}")}");
+            foreach (var (button, ink, what) in new[] { (onButton, DesignToken.Ink, "the chosen side"), (offButton, DesignToken.Ink2, "the other side") })
+            {
+                Require(button.Height == 20 && button.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && button.Padding == new Thickness(8, 0, 8, 0),
+                    $"{key} ({theme}): {what} of the switch must be 20 tall, radius {DesignMetrics.Radius.Segment}, padding h8; got {button.Height}, {button.CornerRadius}, {button.Padding}");
+                var words = ((Panel)button.Content).Children.OfType<TextBlock>().Single();
+                RequireFont(words, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.SemiBold, $"({theme}) {what}'s words", key);
+                o.RequireBrush(words, e => ((TextBlock)e).Foreground, ink, $"{what}'s words", key: key);
+            }
+
+            // The composer card: card, r16, line at 1pt; accent x 0.8 at 1.5pt while the editor has focus; shadow 0.05.
+            var card = composerCard;
+            RequireRadius(card, DesignMetrics.Radius.Composer, "the composer card (Radius.Composer)", key);
+            o.RequireBrush(card, e => ((Border)e).Background, DesignToken.Card, "the composer card", key: key);
+            var cardShadow = CardShadow.Of(composerShadow);
+            Require(cardShadow is not null && Math.Abs(cardShadow.Opacity - CardShadow.Composer) < .001 && Math.Abs(cardShadow.Offset.Y - 1) < .01 && composerShadow.RadiusX == DesignMetrics.Radius.Composer,
+                $"{key} ({theme}): the composer card must cast a {CardShadow.Composer} shadow one point down; got {(cardShadow is null ? "none" : $"{cardShadow.Opacity} at y {cardShadow.Offset.Y}")}");
+            var previousFocus = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(o.root.XamlRoot) as Control;
+            try
+            {
+                // Programmatic focus can be refused (a window that is not in front); the ring is then
+                // driven through the same flag the focus events set, so the colours are still checked.
+                async Task Blur()
+                {
+                    if (menuButton.Focus(FocusState.Programmatic)) await WaitUI(() => !composerFocused);
+                    else { composerFocused = false; PaintComposerRing(); }
+                }
+                if (composerFocused) await Blur();
+                o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "the composer edge without focus", key: key);
+                RequireThickness(card, DesignMetrics.Stroke.Line, "the composer edge without focus (Stroke.Line)", key);
+                if (input.Focus(FocusState.Programmatic)) await WaitUI(() => composerFocused);
+                else { composerFocused = true; PaintComposerRing(); }
+                o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Accent, "the composer focus ring (composerFocus)", DesignMetrics.Opacity.ComposerFocus, key);
+                RequireThickness(card, DesignMetrics.Stroke.Focus, "the composer focus ring (Stroke.Focus)", key);
+                Require(card.Padding == new Thickness(9.5, 1.5, 9.5, 9.5), $"{key} ({theme}): the focus ring must give its extra half point back from the padding; got {card.Padding}");
+                await Blur();
+                o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "the composer edge after the editor lost focus", key: key);
+                RequireThickness(card, DesignMetrics.Stroke.Line, "the composer edge after the editor lost focus (Stroke.Line)", key);
+            }
+            finally { previousFocus?.Focus(FocusState.Programmatic); composerFocused = input.FocusState != FocusState.Unfocused; PaintComposerRing(); }
+            RequireShared(input.Resources["TextControlBackgroundFocused"] as Brush, b.Transparent, "the editor's focused fill", key);
+
+            // The pills: card with a 1pt line at rest; accentSoft with accent x 0.35 while on.
+            foreach (var (pill, what) in new[] { (model, "the model pill"), (attach, "the attach pill") })
+            {
+                o.RequireBrush(pill, e => ((Control)e).Background, DesignToken.Card, what, key: key);
+                o.RequireBrush(pill, e => ((Control)e).BorderBrush, DesignToken.Line, what + "'s border", key: key);
+                Require(pill.CornerRadius == new CornerRadius(16) && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Line) && pill.Height == DesignMetrics.Layout.Toolbar,
+                    $"{key} ({theme}): {what} must be a {DesignMetrics.Layout.Toolbar}-tall capsule with a Stroke.Line border; got {pill.Height}, {pill.CornerRadius}, {pill.BorderThickness}");
+            }
+            o.RequireBrush(model, e => ((Control)e).Foreground, DesignToken.Ink, "the model pill's words", key: key);
+            RequireFont((TextBlock)model.Content, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.Medium, $"({theme}) the model pill's words", key);
+            var fullAccess = pane.Settings.PermissionMode == "fullAccess";
+            try
+            {
+                PaintPill(permission, true);
+                o.RequireBrush(permission, e => ((Control)e).Background, DesignToken.AccentSoft, "an active pill", key: key);
+                o.RequireBrush(permission, e => ((Control)e).BorderBrush, DesignToken.Accent, "an active pill's border (pillActiveBorder)", DesignMetrics.Opacity.PillActiveBorder, key);
+                o.RequireBrush(permission, e => ((Control)e).Foreground, DesignToken.Accent, "an active pill's words", key: key);
+            }
+            finally { PaintPill(permission, fullAccess); }
+            Require(ReferenceEquals(ThemeResource(fast, "ToggleButtonBackgroundChecked"), b.Brush(DesignToken.AccentSoft)) && ReferenceEquals(ThemeResource(fast, "ToggleButtonBorderBrushChecked"), b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder))
+                && ReferenceEquals(ThemeResource(fast, "ToggleButtonBackground"), b.Brush(DesignToken.Card)),
+                $"{key} ({theme}): the Fast pill must be card at rest and accentSoft with accent x {DesignMetrics.Opacity.PillActiveBorder} when on");
+
+            // Send and stop: the run circle with a draft, the track circle without, the err square while stopping.
+            // The shared pane still holds an attachment from the composer check, which alone makes it
+            // sendable: set the attachments aside and put them back afterwards.
+            Require(ReferenceEquals(ThemeResource(send, "ButtonForeground"), b.Brush(DesignToken.OnStatus)) && ReferenceEquals(ThemeResource(send, "ButtonForegroundDisabled"), b.Brush(DesignToken.Ink2)),
+                $"{key} ({theme}): the send arrow must be onStatus, ink2 while disabled; got {Describe(ThemeResource(send, "ButtonForeground") as Brush)} / {Describe(ThemeResource(send, "ButtonForegroundDisabled") as Brush)}");
+            var previousDraft = input.Text; var attachments = pendingAttachments.ToArray();
+            try
+            {
+                pendingAttachments.Clear(); RefreshAttachments();
+                input.Text = "paneChromeDesign"; await WaitUI(() => send.IsEnabled && Session.Draft == input.Text);
+                o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Run, "the send circle with a draft", key: key);
+                Require(sendDisc.Width == 32 && sendDisc.Height == 32 && sendDisc.CornerRadius == new CornerRadius(16), $"{key} ({theme}): the send shape must be a 32 circle; got {sendDisc.Width}x{sendDisc.Height} r{sendDisc.CornerRadius}");
+                input.Text = ""; await WaitUI(() => !send.IsEnabled && Session.Draft == "");
+                o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Track, "the send circle with nothing to send", key: key);
+                sendIsStop = true; PaintSend();
+                o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Err, "the stop square", key: key);
+                Require(sendDisc.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row), $"{key} ({theme}): the stop square must have radius {DesignMetrics.Radius.Row}; got {sendDisc.CornerRadius}");
+                Require(ReferenceEquals(ThemeResource(send, "ButtonForegroundDisabled"), b.Brush(DesignToken.OnStatus)),
+                    $"{key} ({theme}): the stop symbol must stay onStatus while the run is stopping; got {Describe(ThemeResource(send, "ButtonForegroundDisabled") as Brush)}");
+            }
+            finally
+            {
+                updating = true; input.Text = previousDraft; updating = false; await Change(p => p with { Draft = previousDraft });
+                pendingAttachments.Clear(); pendingAttachments.AddRange(attachments); RefreshAttachments(); RefreshComposerState();
+            }
+
+            // The context ring: a line track, an accent arc, waitText from 95%.
+            Require(contextIndicator is not null, $"{key} ({theme}): the composer has no context ring");
+            o.RequireBrush(contextIndicator!.View, _ => contextIndicator.TrackStroke, DesignToken.Line, "the context ring's track", key: key);
+            var ring = new ContextUsageRing(b, 28); ring.Update(40);
+            o.RequireBrush(ring.View, _ => ring.ArcStroke, DesignToken.Accent, "the context arc under 95%", key: key);
+            ring.Update(96);
+            o.RequireBrush(ring.View, _ => ring.ArcStroke, DesignToken.WaitText, "the context arc from 95%", key: key);
+
+            // The status-line toggle: a 22x24 header button, ink2 off and accent on, the subtle wash under the pointer.
+            var toggleTheme = statusLineToggle.Resources.ThemeDictionaries[theme == "light" ? "Light" : "Dark"] as ResourceDictionary;
+            Require(statusLineToggle.Width == 22 && statusLineToggle.Height == 24 && toggleTheme is not null
+                && ReferenceEquals(toggleTheme["ToggleButtonForeground"], b.Brush(DesignToken.Ink2)) && ReferenceEquals(toggleTheme["ToggleButtonForegroundChecked"], b.Brush(DesignToken.Accent))
+                && ReferenceEquals(toggleTheme["ToggleButtonBackgroundPointerOver"], b.Subtle),
+                $"{key} ({theme}): the status-line toggle must be 22x24 with the shared ink2 / accent / subtle brushes; got {statusLineToggle.Width}x{statusLineToggle.Height}");
+
+            // The permission card: the wait card, its buttons r9.
+            RequireRadius(permissionCard, DesignMetrics.Radius.Composer, "the permission card (Radius.Composer)", key);
+            RequireThickness(permissionCard, DesignMetrics.Stroke.Active, "the permission card's wait edge (Stroke.Active)", key);
+            o.RequireBrush(permissionCard, e => ((Border)e).BorderBrush, DesignToken.Wait, "the permission card's edge", key: key);
+            o.RequireBrush(permissionCard, e => ((Border)e).Background, DesignToken.Card, "the permission card", key: key);
+            o.RequireBrush(permAllowButton, e => ((Control)e).Background, DesignToken.Ink, "the allow button", key: key);
+            o.RequireBrush(permAllowButton, e => ((Control)e).Foreground, DesignToken.Card, "the allow button's words", key: key);
+            o.RequireBrush(permDenyButton, e => ((Control)e).Background, DesignToken.CardRaised, "the deny button", key: key);
+            o.RequireBrush(permDenyButton, e => ((Control)e).BorderBrush, DesignToken.Line, "the deny button's border", key: key);
+            Require(permAllowButton.CornerRadius == new CornerRadius(DesignMetrics.Radius.CardButton) && permDenyButton.CornerRadius == new CornerRadius(DesignMetrics.Radius.CardButton),
+                $"{key} ({theme}): the card buttons must have radius {DesignMetrics.Radius.CardButton}; got {permAllowButton.CornerRadius}, {permDenyButton.CornerRadius}");
+        }
+
+        private void RequireShared(Brush? actual, Brush expected, string what, string key) =>
+            Require(ReferenceEquals(actual, expected), $"{key} ({owner.SmokeTheme}): {what} must be the shared {Describe(expected)} brush; got {Describe(actual)}");
     }
 }

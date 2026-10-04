@@ -85,10 +85,13 @@ public sealed record DesignPalette(
     };
 
     /// <summary>The text-safe ink for a tone: words and icons on page, card or raised strip.</summary>
-    public DesignColor Text(DesignTone tone) => tone switch
+    public DesignColor Text(DesignTone tone) => this[TextToken(tone)];
+
+    /// <summary>The token <see cref="Text"/> reads for a tone, so a brush registry can share one brush per tone ink.</summary>
+    public static DesignToken TextToken(DesignTone tone) => tone switch
     {
-        DesignTone.Run => Accent, DesignTone.Wait => WaitText, DesignTone.Done => DoneText,
-        DesignTone.Err => ErrText, DesignTone.Stop => StopText, _ => Ink2,
+        DesignTone.Run => DesignToken.Accent, DesignTone.Wait => DesignToken.WaitText, DesignTone.Done => DesignToken.DoneText,
+        DesignTone.Err => DesignToken.ErrText, DesignTone.Stop => DesignToken.StopText, _ => DesignToken.Ink2,
     };
 
     /// <summary>The soft tint behind a tone's ink.</summary>

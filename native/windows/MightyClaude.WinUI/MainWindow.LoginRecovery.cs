@@ -212,8 +212,10 @@ public sealed partial class MainWindow
             var fingerprint = $"{owner.service.Snapshot.LanguagePreference}:{retry.Generation}:{job?.Phase}:{progress?.Url}:{progress?.AsksForCode}:{failure}:{note}";
             if (loginCardFingerprint == fingerprint) return;
             loginCardFingerprint = fingerprint; loginRecoveryHost.Children.Clear(); loginRecoveryHost.Visibility = Visibility.Visible;
-            loginRecoveryHost.Children.Add(new TextBlock { Text = Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            loginRecoveryHost.Children.Add(new TextBlock { Text = note is not null ? Locale.Get("loginRecovery.resendBlockedTemplate", new Dictionary<string, string> { ["reason"] = note }) : failure ?? Locale.Get(job?.Phase == "starting" ? "loginRecovery.starting" : job is not null ? "loginRecovery.waiting" : "loginRecovery.body"), TextWrapping = TextWrapping.Wrap, FontSize = 11 });
+            // The Mac's card (M/CLILoginRecoveryCard.swift:14-30): the title in ink, the explanation in ink2,
+            // and a note or failure in the amber waitText.
+            loginRecoveryHost.Children.Add(new TextBlock { Text = Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = owner.brushes.Brush(DesignToken.Ink) });
+            loginRecoveryHost.Children.Add(new TextBlock { Text = note is not null ? Locale.Get("loginRecovery.resendBlockedTemplate", new Dictionary<string, string> { ["reason"] = note }) : failure ?? Locale.Get(job?.Phase == "starting" ? "loginRecovery.starting" : job is not null ? "loginRecovery.waiting" : "loginRecovery.body"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = owner.brushes.Brush(note is not null || failure is not null ? DesignToken.WaitText : DesignToken.Ink2) });
             if (progress?.Url is { } url)
                 loginRecoveryHost.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.openLink"), () => { Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); return Task.CompletedTask; }));
             if (progress?.AsksForCode == true)

@@ -80,10 +80,11 @@ public sealed partial class MainWindow
         private int terminalColumns = 100, terminalRows = 30;
         private void RefreshTerminalTheme() => PostTerminal(new { type = "theme", light = owner.service.Snapshot.Theme == "light" });
 
-        private void InitializeTerminal(Grid grid, FrameworkElement composer, Button copyButton)
+        private void InitializeTerminal(Grid grid, FrameworkElement composer, IEnumerable<UIElement> copyItems)
         {
             if (Session.Kind is not ("shell" or AgentIOPaneKind.Terminal) || owner.options.SmokeTest && !owner.smokeTerminalEnabled) return;
-            output.View.Visibility = composer.Visibility = copyButton.Visibility = Visibility.Collapsed;
+            output.View.Visibility = composer.Visibility = Visibility.Collapsed;
+            foreach (var item in copyItems) item.Visibility = Visibility.Collapsed;
             var host = terminalHost = new Grid(); Grid.SetRow(host, 1); grid.Children.Add(host);
             host.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
             host.RowDefinitions.Add(new() { Height = GridLength.Auto });

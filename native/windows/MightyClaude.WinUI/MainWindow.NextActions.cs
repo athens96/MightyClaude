@@ -1,5 +1,4 @@
 using MightyClaude.Core;
-using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -38,7 +37,7 @@ public sealed partial class MainWindow
                 button.Padding = new(14, 9, 14, 9); button.CornerRadius = new(12);
                 var row = new Grid { ColumnSpacing = 10 }; row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 row.Children.Add(new TextBlock { Text = action.DisplayLabel, FontSize = 13, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
-                var arrow = new TextBlock { Text = "→", FontSize = 13, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Colors.CornflowerBlue), VerticalAlignment = VerticalAlignment.Center };
+                var arrow = new TextBlock { Text = "→", FontSize = 13, FontWeight = FontWeights.Bold, Foreground = owner.brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(arrow, 1); row.Children.Add(arrow); button.Content = row;
                 AutomationProperties.SetAutomationId(button, "next-action-" + id + "-" + index);
                 AutomationProperties.SetName(button, action.DisplayLabel); AutomationProperties.SetHelpText(button, Locale.Get("pane.nextActions.fillHint")); ToolTipService.SetToolTip(button, action.DisplayLabel);

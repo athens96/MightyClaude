@@ -96,7 +96,7 @@ public sealed partial class MainWindow
 
     private void RenderPaneLayout(AppSnapshot state)
     {
-        tabIndicators.Clear(); tabBetas.Clear();
+        tabIndicators.Clear(); tabBetas.Clear(); tabStrips.Clear(); tabCells.Clear(); tabTitles.Clear();
         foreach (var stale in layoutDefaults.Keys.Where(id => !state.Workspaces.Any(w => w.Id == id)).ToArray()) layoutDefaults.Remove(stale);
         if (state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } node)
         {
@@ -172,27 +172,59 @@ public sealed partial class MainWindow
         if (x < .2) return "left"; if (x > .8) return "right"; if (y < .2) return "top"; if (y > .8) return "bottom"; return "center";
     }
 
+    /// <summary>
+    /// Each tab group's strip and its bottom rule, by group id, and each tab's cell, its drawn shape,
+    /// its buttons and title, by session id (read by the paneChromeDesign smoke).
+    /// </summary>
+    private readonly Dictionary<string, (Grid Strip, Border Rule)> tabStrips = [];
+    private readonly Dictionary<string, (Grid Cell, Border Shape, Button Tab, Button Close, TextBlock Title)> tabCells = [];
+    /// <summary>The fill of the drop-zone hint while a tab is dragged over a group: accent at 0.18, a Windows-only affordance.</summary>
+    private const double DropHintOpacity = 0.18;
+
+    /// <summary>
+    /// A tab group is one card (M/PaneDockView.swift:162-193): the 38pt strip on top, the selected
+    /// pane under it. The strip (M/PaneDockView.swift:194-216) is the subtle wash with the card's top
+    /// corners and a 1pt rule over its bottom edge (an overlay, as on the Mac, so it takes no room from
+    /// the tabs), accent x 0.55 on the group holding the active pane.
+    /// </summary>
     private FrameworkElement BuildTabGroup(PaneLayoutNode node, string workspace, AppSnapshot state)
     {
-        var group = new Grid { AllowDrop = true, Background = new SolidColorBrush(Colors.Transparent) };
+        var group = new Grid { AllowDrop = true, Background = brushes.Brush(DesignToken.Card), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
         group.RowDefinitions.Add(new() { Height = GridLength.Auto }); group.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Padding = new Thickness(5, 4, 5, 4) };
         var bar = new ScrollViewer { Content = tabs, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
         var tabHeader = new Grid { ColumnSpacing = 4 }; tabHeader.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tabHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         tabHeader.Children.Add(bar);
-        var add = new Button { Content = "+", Width = 30, Height = 30, MinWidth = 0, Padding = new(0), Flyout = NewSessionMenu(node.Id) }; AutomationProperties.SetName(add, Locale.Get("layout.group.addPane")); Grid.SetColumn(add, 1); tabHeader.Children.Add(add); group.Children.Add(tabHeader);
+        // The Windows-only add button, drawn as a header icon button.
+        var add = new Button { Content = new FontIcon { Glyph = "\uE710", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }, Width = 22, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0), Margin = new(0, 0, 8, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), VerticalAlignment = VerticalAlignment.Center, Flyout = NewSessionMenu(node.Id) };
+        PaintPlainButton(add, brushes.Transparent, brushes.Subtle, ink: brushes.Brush(DesignToken.Ink2));
+        AutomationProperties.SetName(add, Locale.Get("layout.group.addPane")); ToolTipService.SetToolTip(add, Locale.Get("layout.group.addPane")); Grid.SetColumn(add, 1); tabHeader.Children.Add(add);
+        var holdsActive = state.ActiveSessionId is { } activeId && node.SessionIds.Contains(activeId);
+        var strip = new Grid { Height = DesignMetrics.Layout.TabStrip, Background = brushes.Subtle, CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane, 0, 0) };
+        var rule = new Border
+        {
+            Height = DesignMetrics.Stroke.Line, VerticalAlignment = VerticalAlignment.Bottom, IsHitTestVisible = false,
+            Background = holdsActive ? brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.TabActiveRule) : brushes.Brush(DesignToken.Line),
+        };
+        strip.Children.Add(tabHeader); strip.Children.Add(rule);
+        AutomationProperties.SetAutomationId(strip, "pane-tab-strip-" + node.Id); tabStrips[node.Id] = (strip, rule);
+        group.Children.Add(strip);
         var selected = node.SelectedSessionId ?? node.SessionIds[0];
         foreach (var id in node.SessionIds)
         {
-            var session = state.Sessions.First(s => s.Id == id);
-            var tab = Button(session.Title, () => SelectLayoutSession(id)); tab.CanDrag = true; tab.AllowDrop = true; tab.MaxWidth = 250; tab.Padding = new(10, 6, 10, 6); tab.Margin = new(0, 0, 0, 4);
-            tab.Content = SessionIndicator(session, tab: true); tab.ContextFlyout = SessionMenu(id);
+            var session = state.Sessions.First(s => s.Id == id); var isSelected = id == selected;
+            // PaneDockTab (M/PaneDockView.swift:219-262): the handle covers the tab up to its close button,
+            // l10 r6, at least 56x30; the selected tab is a card with a line border, r6, drawn as a shape
+            // under the buttons so the border takes no room from them.
+            var tab = Button(session.Title, () => SelectLayoutSession(id)); tab.CanDrag = true; tab.AllowDrop = true; tab.MinWidth = 56; tab.Height = 30; tab.MinHeight = 0; tab.Padding = new(10, 0, 6, 0); tab.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment);
+            tab.HorizontalContentAlignment = HorizontalAlignment.Left; tab.VerticalAlignment = VerticalAlignment.Center;
+            PlainSidebarButton(tab, brushes.Transparent, brushes.Transparent);
+            tab.Content = TabIndicator(session, isSelected); tab.ContextFlyout = SessionMenu(id);
             tab.DoubleTapped += async (_, args) => { args.Handled = true; await RenameSession(id); };
-            if (id == selected) tab.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(90, 100, 149, 237));
             ToolTipService.SetToolTip(tab, Locale.Get("layout.tab.dragTooltip"));
             tab.DragStarting += (_, args) => { draggedSessionId = id; draggedWorkspaceId = workspace; args.Data.SetData(PaneDragFormat, id); args.Data.RequestedOperation = DataPackageOperation.Move; };
             tab.DropCompleted += (_, _) => { draggedSessionId = null; draggedWorkspaceId = null; };
-            tab.DragOver += (_, args) => { if (!IsPaneDrag(args, workspace)) return; args.AcceptedOperation = DataPackageOperation.Move; args.Handled = true; tab.BorderBrush = new SolidColorBrush(Colors.CornflowerBlue); tab.BorderThickness = new(2); };
+            tab.DragOver += (_, args) => { if (!IsPaneDrag(args, workspace)) return; args.AcceptedOperation = DataPackageOperation.Move; args.Handled = true; tab.BorderBrush = brushes.Brush(DesignToken.Accent); tab.BorderThickness = new(DesignMetrics.Stroke.Active); };
             tab.DragLeave += (_, _) => tab.BorderThickness = new(0);
             tab.Drop += async (_, args) =>
             {
@@ -200,14 +232,25 @@ public sealed partial class MainWindow
                 args.Handled = true; var moved = draggedSessionId!; var index = node.SessionIds.IndexOf(id) + (args.GetPosition(tab).X > tab.ActualWidth / 2 ? 1 : 0);
                 await DockSession(moved, workspace, node.Id, "center", index);
             };
-            var tabCell = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 }; tabCell.Children.Add(tab);
-            var close = Button("×", () => CloseSession(id)); close.MinWidth = 0; close.Width = 22; close.Height = 30; close.Padding = new(0); close.Background = new SolidColorBrush(Colors.Transparent); close.BorderThickness = new(0); AutomationProperties.SetName(close, Locale.Get("layout.tab.closeAccessibility", new Dictionary<string, string> { ["title"] = session.Title })); tabCell.Children.Add(close); tabs.Children.Add(tabCell);
+            var close = Button("×", () => CloseSession(id)); close.Content = new FontIcon { Glyph = "\uE711", FontSize = 8, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; close.MinWidth = 0; close.MinHeight = 0; close.Width = 20; close.Height = 30; close.Padding = new(0); close.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment);
+            close.Foreground = brushes.Brush(DesignToken.Ink2); PlainSidebarButton(close, brushes.Transparent, brushes.Transparent);
+            AutomationProperties.SetName(close, Locale.Get("layout.tab.closeAccessibility", new Dictionary<string, string> { ["title"] = session.Title }));
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Padding = new Thickness(0, 0, 2, 0) }; row.Children.Add(tab); row.Children.Add(close);
+            var shape = new Border
+            {
+                CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), IsHitTestVisible = false,
+                Background = isSelected ? brushes.Brush(DesignToken.Card) : brushes.Transparent, BorderBrush = isSelected ? brushes.Brush(DesignToken.Line) : brushes.Transparent,
+            };
+            var tabCell = new Grid { Height = 30, VerticalAlignment = VerticalAlignment.Center }; tabCell.Children.Add(shape); tabCell.Children.Add(row);
+            AutomationProperties.SetAutomationId(tabCell, "pane-tab-" + id);
+            tabCells[id] = (tabCell, shape, tab, close, tabTitles[id]);
+            tabs.Children.Add(tabCell);
         }
         if (!views.TryGetValue(selected, out var pane)) { pane = new(this, selected); pane.InitRefresher(); views[selected] = pane; }
         if (paneHosts.ContainsKey(selected)) throw new InvalidOperationException(Locale.Get("layout.error.paneInTwoGroups"));
         var paneHost = new Border(); paneHosts.Add(selected, paneHost);
         paneHost.Child = pane.Container; paneHost.ContextFlyout = SessionMenu(selected); Grid.SetRow(paneHost, 1); group.Children.Add(paneHost); pane.Refresh();
-        var hint = new Border { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 100, 149, 237)), BorderBrush = new SolidColorBrush(Colors.CornflowerBlue), BorderThickness = new(2), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = new TextBlock { Text = Locale.Get("layout.drop.merge"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        var hint = new Border { Background = brushes.Brush(DesignToken.Accent, DropHintOpacity), BorderBrush = brushes.Brush(DesignToken.Accent), BorderThickness = new(DesignMetrics.Stroke.Active), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = new TextBlock { Text = Locale.Get("layout.drop.merge"), Foreground = brushes.Brush(DesignToken.Ink), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         Grid.SetRowSpan(hint, 2); group.Children.Add(hint);
         group.DragOver += (_, args) =>
         {

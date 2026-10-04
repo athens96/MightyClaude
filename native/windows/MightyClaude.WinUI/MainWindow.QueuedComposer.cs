@@ -1,5 +1,4 @@
 using MightyClaude.Core;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -24,10 +23,12 @@ public sealed partial class MainWindow
             composer.Children.Insert(Math.Min(2, composer.Children.Count), queuedInputHost);
             AutomationProperties.SetAutomationId(queuedInputHost, "queue-" + id);
             queueStopButton = Button("■", StopActiveRun); queueStopButton.Width = queueStopButton.Height = 28; queueStopButton.MinWidth = 0; queueStopButton.Padding = new(0); queueStopButton.Visibility = Visibility.Collapsed;
-            queueStopButton.Background = new SolidColorBrush(Colors.Firebrick); queueStopButton.Foreground = new SolidColorBrush(Colors.White);
+            // With text waiting, stop shrinks to the 28pt err square beside send (M/SessionPaneView.swift:737-750).
+            queueStopButton.CornerRadius = new(7); queueStopButton.FontSize = 10; queueStopButton.VerticalAlignment = VerticalAlignment.Center;
+            owner.PaintPlainButton(queueStopButton, owner.brushes.Brush(DesignToken.Err), owner.brushes.Brush(DesignToken.Err), ink: owner.brushes.Brush(DesignToken.OnStatus), disabledInk: owner.brushes.Brush(DesignToken.OnStatus));
             AutomationProperties.SetName(queueStopButton, Locale.Get("composer.stop.name"));
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            bottom.Children.Remove(send); actions.Children.Add(queueStopButton); actions.Children.Add(send); Grid.SetColumn(actions, 2); bottom.Children.Add(actions);
+            bottom.Children.Remove(sendHost); actions.Children.Add(queueStopButton); actions.Children.Add(sendHost); Grid.SetColumn(actions, 2); bottom.Children.Add(actions);
             queueDrainTimer.Tick += async (_, _) =>
             {
                 if (!QueuePaneAlive) { queueDrainTimer.Stop(); return; }
@@ -80,7 +81,7 @@ public sealed partial class MainWindow
             if (queueStopButton is not null) { queueStopButton.Visibility = queueable ? Visibility.Visible : Visibility.Collapsed; queueStopButton.IsEnabled = !stopping; }
             if (queueable)
             {
-                send.Content = "+"; send.FontSize = 20; send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems;
+                send.Content = "+"; send.FontSize = 18; sendIsStop = false; send.IsEnabled = !starting && !queueStarting && !attachmentsLoading && !stopping && queuedInputs.Items.Count < QueuedInputBuffer.MaximumItems;
                 AutomationProperties.SetName(send, Locale.Get("queue.add")); ToolTipService.SetToolTip(send, Locale.Get(Session.Provider == "claude" ? "queue.addOrSteerHint" : "queue.addHint"));
             }
             RenderQueuedInputs();
@@ -100,7 +101,7 @@ public sealed partial class MainWindow
             if (queuedInputs.Items.Count == 0) return;
             var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
             var header = new Grid(); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            header.Children.Add(new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }), FontSize = 10, Opacity = .7, TextWrapping = TextWrapping.Wrap });
+            header.Children.Add(new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }), FontSize = 10, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
             if (!busy)
             {
                 var next = Button(Locale.Get("queue.runNext"), StartNextQueuedInput); next.FontSize = 10; next.Padding = new(5, 2, 5, 2); next.MinWidth = 0; Grid.SetColumn(next, 1); header.Children.Add(next);
@@ -113,7 +114,7 @@ public sealed partial class MainWindow
                 row.Children.Add(new TextBlock { Text = detail, FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxLines = 2 });
                 var remove = Button("×", () => { queuedInputs.Remove(item.Id); RenderQueuedInputs(); RefreshComposerState(); return Task.CompletedTask; }); remove.MinWidth = 0; remove.Padding = new(5, 1, 5, 1); AutomationProperties.SetName(remove, Locale.Get("queue.remove")); Grid.SetColumn(remove, 1); row.Children.Add(remove);
                 AutomationProperties.SetAutomationId(row, "queue-item-" + item.Id);
-                queuedInputHost.Children.Add(new Border { Child = row, CornerRadius = new(8), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 135, 135, 135)) });
+                queuedInputHost.Children.Add(new Border { Child = row, CornerRadius = new(DesignMetrics.Radius.Row), Background = owner.brushes.Brush(DesignToken.CardRaised), BorderBrush = owner.brushes.Brush(DesignToken.Line), BorderThickness = new(DesignMetrics.Stroke.Line) });
             }
         }
 

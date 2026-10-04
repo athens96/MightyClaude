@@ -27,7 +27,7 @@ public sealed partial class MainWindow
             var pane = owner.service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id);
             if (pane is null) return;
             var usage = pane.SessionUsage?.Provider == pane.Provider ? pane.SessionUsage : null;
-            contextIndicator ??= new(28); contextIndicator.Update(usage?.ContextPercent);
+            contextIndicator ??= new(owner.brushes, 28); contextIndicator.Update(usage?.ContextPercent);
             context.Content = contextIndicator.View;
             AutomationProperties.SetName(context, Locale.Get("composer.sessionInfo.title") + " · " + contextIndicator.Text);
             RefreshSessionInfo();
@@ -51,7 +51,7 @@ public sealed partial class MainWindow
             var details = new StackPanel { Spacing = 8 };
             var contextLine = new Grid { ColumnSpacing = 11 };
             contextLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); contextLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-            contextDetailRing = new(42); contextLine.Children.Add(contextDetailRing.View);
+            contextDetailRing = new(owner.brushes, 42); contextLine.Children.Add(contextDetailRing.View);
             var contextText = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
             contextText.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.context"), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
             var contextValue = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = .7 };
@@ -137,11 +137,16 @@ public sealed partial class MainWindow
         private readonly Microsoft.UI.Xaml.Shapes.Path arc;
         private readonly Ellipse full;
         private readonly double size;
+        private readonly DesignBrushes brushes;
         internal string Text => label.Text;
-        internal ContextUsageRing(double size)
+        /// <summary>The track's and the filled arc's strokes, for the smoke.</summary>
+        internal Brush? TrackStroke => (View.Children[0] as Ellipse)?.Stroke;
+        internal Brush? ArcStroke => arc.Stroke;
+        /// <summary>The context ring (M/SessionInfoViews.swift:157-172): a 2pt <c>line</c> track under an accent arc, <c>waitText</c> from 95%.</summary>
+        internal ContextUsageRing(DesignBrushes brushes, double size)
         {
-            this.size = size; View = new Grid { Width = size, Height = size };
-            View.Children.Add(new Ellipse { Stroke = new SolidColorBrush(Windows.UI.Color.FromArgb(35, 135, 135, 135)), StrokeThickness = 2, Margin = new Thickness(1) });
+            this.size = size; this.brushes = brushes; View = new Grid { Width = size, Height = size };
+            View.Children.Add(new Ellipse { Stroke = brushes.Brush(DesignToken.Line), StrokeThickness = 2, Margin = new Thickness(1) });
             arc = new() { StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round }; View.Children.Add(arc);
             full = new() { StrokeThickness = 2, Margin = new Thickness(1), Visibility = Visibility.Collapsed }; View.Children.Add(full);
             label = new() { FontSize = size > 32 ? 12 : 8, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }; View.Children.Add(label);
@@ -150,7 +155,7 @@ public sealed partial class MainWindow
         {
             var value = percent is { } p && double.IsFinite(p) ? p : (double?)null;
             label.Text = value is { } shown ? $"{shown:0}%" : "—";
-            var fraction = Math.Clamp((value ?? 0) / 100, 0, 1); var brush = new SolidColorBrush(value >= 95 ? Colors.Orange : Colors.CornflowerBlue);
+            var fraction = Math.Clamp((value ?? 0) / 100, 0, 1); var brush = brushes.Brush(value >= 95 ? DesignToken.WaitText : DesignToken.Accent);
             arc.Stroke = full.Stroke = brush; full.Visibility = fraction >= 1 ? Visibility.Visible : Visibility.Collapsed; arc.Visibility = fraction is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
             var radius = size / 2 - 2; var center = size / 2; var angle = fraction * 2 * Math.PI - Math.PI / 2;
             var figure = new PathFigure { StartPoint = new Point(center, 2) };

@@ -152,7 +152,7 @@ public sealed partial class MainWindow
             Require(sessionIndicators.Count > 0 && sessionIndicators.Values.All(v => sidebarRowMarks.Contains(v.Mark.View)), "sidebar rows have no status glyph");
             Require(sidebarSessionButtons.Values.All(b => b.Content is Grid row && !row.Children.OfType<ProgressRing>().Any() && row.Children[0] is Canvas), "a sidebar row still has the spinning ring");
             var tabRowMarks = RowMarks(panes);
-            Require(tabIndicators.Count > 0 && tabIndicators.Values.All(v => tabRowMarks.Contains(v.Mark.View)), "tabs have no status glyph");
+            Require(tabIndicators.Count > 0 && tabIndicators.Values.All(v => tabRowMarks.Contains(v.View)), "tabs have no status glyph");
             checks["sidebarAndTabsDrawGlyphs"] = true;
             StatusMark.AnimationsEnabledOverride = false;
             var seen = new Dictionary<string, string>();
@@ -191,7 +191,8 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// The status marks drawn in the button rows under <paramref name="element"/>: the canvas
-    /// each row grid starts with. Walks panels, borders and content controls by their own
+    /// each sidebar row grid starts with, and the canvas each tab row ends with (the Mac's tab
+    /// order: symbol, title, beta, mark). Walks panels, borders and content controls by their own
     /// children, so it needs neither a layout pass nor FrameworkElement.Parent.
     /// </summary>
     private static HashSet<object> RowMarks(object? element)
@@ -202,6 +203,7 @@ public sealed partial class MainWindow
             switch (value)
             {
                 case Button { Content: Grid row } when row.Children.Count > 0 && row.Children[0] is Canvas mark: marks.Add(mark); break;
+                case Button { Content: StackPanel tabRow } when tabRow.Children.Count > 0 && tabRow.Children[tabRow.Children.Count - 1] is Canvas tabMark: marks.Add(tabMark); break;
                 case Panel panel: foreach (var child in panel.Children) Walk(child); break;
                 case Border border: Walk(border.Child); break;
                 case ContentControl content: Walk(content.Content); break;
@@ -219,14 +221,16 @@ public sealed partial class MainWindow
         internal StatusMark HeaderMark => headerMark;
 
         /// <summary>
-        /// Redraws the header's mark and word for the pane's status and its pending requests,
-        /// from the session and theme the caller already read (no snapshot copy per call).
+        /// Redraws the header's mark, title and word for the pane's status and its pending requests,
+        /// from the session and theme the caller already read (no snapshot copy per call). The word
+        /// takes its tone's ink, <c>text(tone)</c> (M/SessionPaneView.swift:219-221).
         /// </summary>
         internal void RefreshHeaderStatus(RunSession pane, bool dark)
         {
-            var pending = PendingRequests;
+            var pending = PendingRequests; var shown = StatusGlyph.DisplayStatus(pane.Status, pending);
             headerMark.Update(pane.Status, pane.Kind, pending, dark);
-            label.Text = StateLabel(StatusGlyph.DisplayStatus(pane.Status, pending));
+            label.Text = StateLabel(shown); label.Foreground = owner.brushes.Text(StatusGlyph.Tone(shown));
+            if (headerTitle.Text != pane.Title) { headerTitle.Text = pane.Title; ToolTipService.SetToolTip(headerTitle, PaneTitle.Help(pane)); }
         }
     }
 }

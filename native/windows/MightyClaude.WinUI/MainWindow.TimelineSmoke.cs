@@ -64,7 +64,9 @@ public sealed partial class MainWindow
                 try
                 {
                     Container.Width = 320; Container.HorizontalAlignment = HorizontalAlignment.Left; owner.root.UpdateLayout(); await Task.Delay(80); owner.root.UpdateLayout();
-                    await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside the pane on two rows");
+                    // Design stage 4: the header stays one 34pt line at any width (the Mac's); a narrow pane
+                    // shows the Default | Mighty switch as icons instead of moving it to a second row.
+                    await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside its one 34pt line, the switch as icons only");
                     Require(graphToolbar is { ActualHeight: > 45 }, "320px pane moves toolbar controls below summary");
                     foreach (var control in new FrameworkElement[] { diagramButton!, timelineButton!, zoomOutButton!, zoomResetButton!, zoomInButton! })
                     {
@@ -75,7 +77,7 @@ public sealed partial class MainWindow
                     captures.Add(await owner.CaptureSmoke(Path.Combine(owner.options.ProfileDirectory!, "smoke-mighty-toolbar-320.png")));
                 }
                 finally { Container.Width = width; Container.HorizontalAlignment = horizontal; owner.root.UpdateLayout(); }
-                await WaitUI(() => paneHeader is { ActualWidth: >= 420 } && HeaderFitsSmoke(false), "Growing the pane must return fully visible header controls to one row");
+                await WaitUI(() => paneHeader is { ActualWidth: >= NarrowHeader } && HeaderFitsSmoke(false), "Growing the pane must show the switch words again with every header control inside the line");
                 return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
             }
             finally

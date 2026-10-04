@@ -284,18 +284,15 @@ public sealed partial class MainWindow
     /// <summary>
     /// A sidebar button drawn the Mac's <c>.plain</c> way: <paramref name="normal"/> at rest,
     /// <paramref name="hover"/> under the pointer and while pressed, and no stock fill or border in
-    /// any state (lightweight styling: the template's state setters read these resources). All the
-    /// brushes are the window's shared ones, so a theme toggle recolours them in place.
+    /// any state; its own foreground, when set, in every enabled state (<see cref="PaintPlainButton"/>:
+    /// lightweight styling in the button's theme dictionaries). All the brushes are the window's shared
+    /// ones, so a theme toggle recolours them in place.
     /// </summary>
     private void PlainSidebarButton(Button button, SolidColorBrush normal, SolidColorBrush hover, SolidColorBrush? border = null, double? radius = null)
     {
-        button.Background = normal; button.BorderBrush = border ?? brushes.Transparent;
         if (border is null) button.BorderThickness = new Thickness(0);
         if (radius is { } r) button.CornerRadius = new CornerRadius(r);
-        button.Resources["ButtonBackground"] = normal; button.Resources["ButtonBackgroundPointerOver"] = hover; button.Resources["ButtonBackgroundPressed"] = hover; button.Resources["ButtonBackgroundDisabled"] = normal;
-        foreach (var key in new[] { "ButtonBorderBrush", "ButtonBorderBrushPointerOver", "ButtonBorderBrushPressed", "ButtonBorderBrushDisabled" }) button.Resources[key] = border ?? brushes.Transparent;
-        if (button.ReadLocalValue(Control.ForegroundProperty) is SolidColorBrush ink)
-            foreach (var key in new[] { "ButtonForeground", "ButtonForegroundPointerOver", "ButtonForegroundPressed" }) button.Resources[key] = ink;
+        PaintPlainButton(button, normal, hover, border, button.ReadLocalValue(Control.ForegroundProperty) as SolidColorBrush);
     }
 
     /// <summary>The theme button's two glyphs (Segoe Fluent Icons): Brightness (sun) and QuietHours (moon).</summary>

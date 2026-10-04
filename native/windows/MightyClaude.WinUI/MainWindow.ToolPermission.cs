@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.UI;
 
 namespace MightyClaude.WinUI;
 
@@ -27,6 +26,29 @@ public sealed partial class MainWindow
         private Button permDenyButton = null!;
         private Button permAllowButton = null!;
         private TextBlock permInputBlock = null!;
+        /// <summary>The permission card: the Mac's wait card, <c>card</c> inside a 2pt <c>wait</c> edge, r16, padding 14 (M/PaneChrome.swift:185-190).</summary>
+        private Border permissionCard = null!;
+
+        /// <summary>
+        /// A button on the question and permission cards (M/PaneChrome.swift:145-169): 12 bold, padding
+        /// h13, 28 high, r9; the prominent one <c>ink</c> behind <c>card</c> words, the other
+        /// <c>cardRaised</c> with a 1pt <c>line</c> and <c>ink</c> words; <c>ink3</c> words while disabled.
+        /// </summary>
+        private void PaintCardButton(Button button, bool prominent)
+        {
+            button.CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton); button.FontSize = 12; button.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+            button.Padding = new Thickness(13, 0, 13, 0); button.MinHeight = 28; button.Height = 28;
+            button.BorderThickness = new Thickness(prominent ? 0 : DesignMetrics.Stroke.Line);
+            var fill = owner.brushes.Brush(prominent ? DesignToken.Ink : DesignToken.CardRaised);
+            owner.PaintPlainButton(button, fill, fill, prominent ? null : owner.brushes.Brush(DesignToken.Line), owner.brushes.Brush(prominent ? DesignToken.Card : DesignToken.Ink), owner.brushes.Brush(DesignToken.Ink3));
+        }
+
+        /// <summary>The wait card the permission and question cards share (M/PaneChrome.swift:185-190).</summary>
+        private Border WaitCard(UIElement body) => new()
+        {
+            Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), BorderThickness = new Thickness(DesignMetrics.Stroke.Active),
+            BorderBrush = owner.brushes.Brush(DesignToken.Wait), Background = owner.brushes.Brush(DesignToken.Card), Padding = new Thickness(14),
+        };
 
         // Builds the card once; RenderToolPermissions updates its text later.
         private void InitPermissionBar()
@@ -37,7 +59,8 @@ public sealed partial class MainWindow
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             AutomationProperties.SetAutomationId(permTitleBlock, "permission-title-" + id);
-            permCountBlock = new TextBlock { FontSize = 11, Opacity = .65 };
+            permTitleBlock.Foreground = owner.brushes.Brush(DesignToken.Ink);
+            permCountBlock = new TextBlock { FontSize = 11, Foreground = owner.brushes.Brush(DesignToken.Ink2) };
             AutomationProperties.SetAutomationId(permCountBlock, "permission-count-" + id);
 
             var titleRow = new Grid { ColumnSpacing = 8 };
@@ -46,23 +69,18 @@ public sealed partial class MainWindow
             titleRow.Children.Add(permTitleBlock);
             Grid.SetColumn(permCountBlock, 1); titleRow.Children.Add(permCountBlock);
 
-            permPathBlock = new TextBlock { FontSize = 11, Opacity = .75, TextTrimming = TextTrimming.CharacterEllipsis };
+            permPathBlock = new TextBlock { FontSize = 11, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis };
             AutomationProperties.SetAutomationId(permPathBlock, "permission-path-" + id);
-            permReasonBlock = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap, MaxHeight = 60 };
-            permCannotAllowBlock = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap };
-            var noteBlock = new TextBlock { Text = ToolPermissionStrings.BarOnceOnlyNote, FontSize = 10, Opacity = .55 };
+            permReasonBlock = new TextBlock { FontSize = 11, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, MaxHeight = 60 };
+            permCannotAllowBlock = new TextBlock { FontSize = 11, Foreground = owner.brushes.Brush(DesignToken.ErrText), TextWrapping = TextWrapping.Wrap };
+            var noteBlock = new TextBlock { Text = ToolPermissionStrings.BarOnceOnlyNote, FontSize = 10, Foreground = owner.brushes.Brush(DesignToken.Ink2) };
 
-            permDenyButton = new Button { Content = ToolPermissionStrings.ButtonDeny, Height = 28, MinHeight = 0, Padding = new Thickness(10, 0, 10, 0) };
+            permDenyButton = new Button { Content = ToolPermissionStrings.ButtonDeny }; PaintCardButton(permDenyButton, prominent: false);
             AutomationProperties.SetName(permDenyButton, ToolPermissionStrings.ButtonDeny);
             AutomationProperties.SetAutomationId(permDenyButton, "permission-deny-" + id);
             permDenyButton.Click += (_, _) => OnPermissionDeny();
 
-            permAllowButton = new Button
-            {
-                Content = ToolPermissionStrings.ButtonAllowOnce, Height = 28, MinHeight = 0,
-                Padding = new Thickness(10, 0, 10, 0),
-                Background = new SolidColorBrush(Color.FromArgb(200, 99, 179, 237)),
-            };
+            permAllowButton = new Button { Content = ToolPermissionStrings.ButtonAllowOnce }; PaintCardButton(permAllowButton, prominent: true);
             AutomationProperties.SetName(permAllowButton, ToolPermissionStrings.ButtonAllowOnce);
             AutomationProperties.SetAutomationId(permAllowButton, "permission-allow-" + id);
             permAllowButton.Click += (_, _) => OnPermissionAllow();
@@ -78,13 +96,7 @@ public sealed partial class MainWindow
             body.Children.Add(new ScrollViewer { Content = permInputBlock, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
             body.Children.Add(noteBlock); body.Children.Add(buttons);
 
-            var card = new Border
-            {
-                Child = body, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(75, 135, 135, 135)),
-                Background = new SolidColorBrush(Color.FromArgb(20, 255, 180, 50)),
-                Padding = new Thickness(12, 8, 12, 8), Margin = new Thickness(0, 0, 0, 4),
-            };
+            var card = permissionCard = WaitCard(body); card.Margin = new Thickness(0, 0, 0, 4);
             AutomationProperties.SetAutomationId(card, "permission-bar-" + id);
             toolPermissionHost.Children.Add(card);
         }

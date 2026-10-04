@@ -1,4 +1,4 @@
-using Microsoft.UI;
+using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -33,25 +33,30 @@ public sealed partial class MainWindow
         private void InitializeStatusLineGlyph()
         {
             // Retain the native ToggleButton template, focus and UIA Toggle pattern.
-            // Only light/dark brushes change; the empty HighContrast dictionary
-            // lets the platform's system contrast resources resolve unchanged.
-            foreach (var dark in new[] { false, true })
+            // Only the light/dark brushes change, and both take the window's shared
+            // token brushes (recoloured in place on a theme toggle): no fill at rest,
+            // the subtle wash under the pointer, ink2 off and accent on, as the Mac's
+            // header buttons. The empty HighContrast dictionary lets the platform's
+            // system contrast resources resolve unchanged.
+            var b = owner.brushes;
+            foreach (var key in new[] { "Light", "Dark" })
             {
                 var theme = new ResourceDictionary();
-                SolidColorBrush Brush(byte alpha, byte shade) => new(Windows.UI.Color.FromArgb(alpha, shade, shade, shade));
                 foreach (var suffix in new[] { "", "Checked", "Disabled", "CheckedDisabled" })
                 {
-                    theme["ToggleButtonBackground" + suffix] = new SolidColorBrush(Colors.Transparent);
-                    theme["ToggleButtonBorderBrush" + suffix] = new SolidColorBrush(Colors.Transparent);
+                    theme["ToggleButtonBackground" + suffix] = b.Transparent;
+                    theme["ToggleButtonBorderBrush" + suffix] = b.Transparent;
                 }
                 foreach (var suffix in new[] { "PointerOver", "CheckedPointerOver", "Pressed", "CheckedPressed" })
                 {
-                    theme["ToggleButtonBackground" + suffix] = Brush(suffix.Contains("Pressed", StringComparison.Ordinal) ? (byte)30 : (byte)18, dark ? (byte)255 : (byte)0);
-                    theme["ToggleButtonBorderBrush" + suffix] = new SolidColorBrush(Colors.Transparent);
+                    theme["ToggleButtonBackground" + suffix] = b.Subtle;
+                    theme["ToggleButtonBorderBrush" + suffix] = b.Transparent;
                 }
+                foreach (var suffix in new[] { "", "PointerOver", "Pressed" })
+                    theme["ToggleButtonForeground" + suffix] = b.Brush(DesignToken.Ink2);
                 foreach (var suffix in new[] { "Checked", "CheckedPointerOver", "CheckedPressed" })
-                    theme["ToggleButtonForeground" + suffix] = OutlineBrush(dark ? "#7FA3FF" : "#2A5FEE");
-                statusLineToggle.Resources.ThemeDictionaries[dark ? "Dark" : "Light"] = theme;
+                    theme["ToggleButtonForeground" + suffix] = b.Brush(DesignToken.Accent);
+                statusLineToggle.Resources.ThemeDictionaries[key] = theme;
             }
             statusLineToggle.Resources.ThemeDictionaries["HighContrast"] = new ResourceDictionary();
             statusLineToggle.Content = statusLineGlyph;

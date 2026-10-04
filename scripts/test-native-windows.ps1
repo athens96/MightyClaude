@@ -128,6 +128,14 @@ try {
         $msg = "sidebarDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: sidebarDesign=$($result.sidebarDesign)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    # Design stage 4, the tab strip, pane header and composer: strip and tabs, the 34pt header and its
+    # state word per tone, the ... menu holding Copy, the Default|Mighty switch, the composer card with its
+    # focus ring and shadow, pills, send/stop, context ring and the permission card, in both themes on the
+    # same reused pane (MainWindow.DesignSmoke.cs).
+    if ($result.paneChromeDesign -ne $true) {
+        $msg = "paneChromeDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: paneChromeDesign=$($result.paneChromeDesign)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg

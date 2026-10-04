@@ -347,6 +347,8 @@
   "menu.workspace": "워크스페이스",
   "pane.copyButton": "복사",
   "pane.hero.figure": "{label} {value}",
+  "pane.menu.accessibility": "실행 창 메뉴",
+  "pane.menu.copyLog": "실행 기록 복사",
   "pane.nextActions.fillHint": "입력창에 넣기",
   "pane.nextActions.label": "다음 작업 제안",
   "pane.rename.automatic": "자동 (요청 따름)",

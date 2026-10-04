@@ -17,7 +17,7 @@ internal sealed class DesignBrushes
     private readonly Dictionary<(DesignToken Token, double Opacity), SolidColorBrush> brushes = [];
     private readonly Dictionary<string, SolidColorBrush> syntax = [];
     private readonly Dictionary<string, Brush> providers = [];
-    private SolidColorBrush? subtle;
+    private SolidColorBrush? subtle, segmentTrack, segmentOn;
     /// <summary>The palette each window's title bar was last given, by <c>AppWindow.Id</c>.</summary>
     private readonly Dictionary<ulong, DesignPalette> titleBars = [];
 
@@ -44,6 +44,20 @@ internal sealed class DesignBrushes
     /// Not a palette token, so it never changes colour. Shared: never mutate it.
     /// </summary>
     internal SolidColorBrush RowSelectedBorder { get; } = new(ToColor(new DesignColor(0x000000), DesignMetrics.Opacity.SidebarRowSelectedBorder));
+
+    /// <summary>
+    /// The track of a segmented switch on a card (<see cref="DesignPalette.SegmentTrack"/>: <c>track</c> by
+    /// day, <c>page</c> by night) and its chosen side (<see cref="DesignPalette.SegmentOn"/>: <c>card</c> by
+    /// day, <c>idle</c> by night). Derived per theme, so each is its own brush. Shared: never mutate them.
+    /// </summary>
+    internal SolidColorBrush SegmentTrack => segmentTrack ??= new SolidColorBrush(ToColor(Palette.SegmentTrack));
+    internal SolidColorBrush SegmentOn => segmentOn ??= new SolidColorBrush(ToColor(Palette.SegmentOn));
+
+    /// <summary>The text-safe ink of a tone (<see cref="DesignPalette.Text"/>): run → accent, wait → waitText, done → doneText, err → errText, stop → stopText, idle → ink2.</summary>
+    internal SolidColorBrush Text(DesignTone tone) => Brush(DesignPalette.TextToken(tone));
+
+    /// <summary>The colour of the Mac's card shadows: black in both themes, at the opacity the caller gives (M/SessionPaneView.swift:654).</summary>
+    internal static Windows.UI.Color ShadowColor => ToColor(new DesignColor(0x000000));
 
     /// <summary>A fully transparent brush for the states of a plain row that draw nothing. Shared: never mutate it.</summary>
     internal SolidColorBrush Transparent { get; } = new(Microsoft.UI.Colors.Transparent);
@@ -78,6 +92,8 @@ internal sealed class DesignBrushes
         Palette = palette;
         foreach (var ((token, opacity), brush) in brushes) brush.Color = ToColor(palette[token], opacity);
         if (subtle is not null) subtle.Color = ToColor(DesignTokens.Subtle(palette), DesignMetrics.Opacity.Subtle);
+        if (segmentTrack is not null) segmentTrack.Color = ToColor(palette.SegmentTrack);
+        if (segmentOn is not null) segmentOn.Color = ToColor(palette.SegmentOn);
         foreach (var (kind, brush) in syntax) if (DesignTokens.Syntax(kind, palette) is { } color) brush.Color = ToColor(color);
     }
 

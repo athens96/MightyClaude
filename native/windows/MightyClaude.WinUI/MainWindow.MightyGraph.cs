@@ -27,7 +27,9 @@ public sealed partial class MainWindow
         // ── pane header switch ────────────────────────────────────────────────
 
         private Button? modeDefaultButton, modeMightyButton;
-        private StackPanel? modeSwitch;
+        /// <summary>The Default | Mighty track (segmentTrack, r8, padding 2) and each side's chip (segmentOn, r6, shadow 0.12).</summary>
+        private Border? modeSwitch;
+        private Rectangle? modeDefaultChip, modeMightyChip;
 
         // ── canvas ────────────────────────────────────────────────────────────
 
@@ -129,15 +131,16 @@ public sealed partial class MainWindow
             // Loaded can already be queued when a pane is closed. Never build
             // native controls or subscribe the removed view to live run events.
             if (graphAttached || !QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
-                !MightyGraphViewModel.ShowsModeSwitch(pane) || Container.Child is not Grid grid) return;
-            if (grid.Children.OfType<Grid>().FirstOrDefault(child => Grid.GetRow(child) == 0) is not { } header) return;
+                !MightyGraphViewModel.ShowsModeSwitch(pane) || Container.Child is not Grid grid || paneHeader is null) return;
             graphAttached = true;
 
-            modeDefaultButton = ModePill(MightyGraphViewModel.LocaleKeyDefault, "default");
-            modeMightyButton = ModePill(MightyGraphViewModel.LocaleKeyMighty, "mighty");
-            modeSwitch = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            modeSwitch.Children.Add(modeDefaultButton); modeSwitch.Children.Add(modeMightyButton);
-            Grid.SetColumn(modeSwitch, 1); header.Children.Add(modeSwitch);
+            // The switch leads the header's controls (M/SessionPaneView.swift:251-256).
+            var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            modeDefaultButton = ModePill(MightyGraphViewModel.LocaleKeyDefault, "default", options, out modeDefaultChip);
+            modeMightyButton = ModePill(MightyGraphViewModel.LocaleKeyMighty, "mighty", options, out modeMightyChip);
+            modeSwitch = new Border { Child = options, Padding = new Thickness(2), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetAutomationId(modeSwitch, "mighty-mode-switch-" + id);
+            paneHeaderControls.Children.Insert(0, modeSwitch);
             modeSwitch.SizeChanged += (_, _) => QueuePaneHeaderLayout();
             QueuePaneHeaderLayout();
 
@@ -241,13 +244,43 @@ public sealed partial class MainWindow
             return button;
         }
 
-        private Button ModePill(string localeKey, string mode)
+        /// <summary>
+        /// One side of the Default | Mighty switch (M/SessionPaneView.swift:306-324): the symbol and its word,
+        /// 11 semibold, height 20, padding h8. The button draws no fill in any state; the chosen side's
+        /// chip is the shadow-casting shape under it (<see cref="PaintModeOption"/>).
+        /// </summary>
+        private Button ModePill(string localeKey, string mode, Panel options, out Rectangle chip)
         {
             var text = Locale.Get(localeKey);
-            var button = new Button { Content = new TextBlock { Text = text, FontSize = 11 }, MinWidth = 0, MinHeight = 0, Height = 26, Padding = new Thickness(10, 0, 10, 0), CornerRadius = new CornerRadius(13), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
-            AutomationProperties.SetAutomationId(button, "mighty-mode-" + mode + "-" + id); AutomationProperties.SetName(button, text);
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+            // Segoe Fluent Icons: AlignLeft for Default (text.alignleft), Relationship for Mighty (point.3.connected).
+            content.Children.Add(new FontIcon { Glyph = mode == "mighty" ? "\uF003" : "\uE8E4", FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+            content.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 20, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0) };
+            owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Transparent);
+            AutomationProperties.SetAutomationId(button, "mighty-mode-" + mode + "-" + id); AutomationProperties.SetName(button, text); ToolTipService.SetToolTip(button, text);
             button.Click += async (_, _) => await SetAgentViewMode(mode);
+            chip = CardShadow.Caster(DesignMetrics.Radius.Segment, CardShadow.SegmentChip, owner.brushes.SegmentOn); chip.Visibility = Visibility.Collapsed;
+            var cell = new Grid(); cell.Children.Add(chip); cell.Children.Add(button); options.Children.Add(cell);
             return button;
+        }
+
+        /// <summary>The chosen side shows its chip and <c>ink</c>; the other keeps the muted <c>ink2</c>.</summary>
+        private void PaintModeOption(Button button, Rectangle chip, bool selected)
+        {
+            chip.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+            var ink = owner.brushes.Brush(selected ? DesignToken.Ink : DesignToken.Ink2);
+            foreach (var part in ((Panel)button.Content).Children)
+                if (part is TextBlock words) words.Foreground = ink; else if (part is IconElement icon) icon.Foreground = ink;
+        }
+
+        /// <summary>Whether the switch shows its words; a narrow header shows its symbols only.</summary>
+        private bool ModeWordsShown => modeDefaultButton?.Content is Panel { Children: [_, TextBlock { Visibility: Visibility.Visible }] };
+
+        private void ShowModeWords(bool shown)
+        {
+            foreach (var button in new[] { modeDefaultButton, modeMightyButton })
+                if (button?.Content is Panel { Children: [_, TextBlock words] }) words.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// Saves the pane's view mode. The run keeps running and the composer
@@ -268,8 +301,7 @@ public sealed partial class MainWindow
         {
             if (graphHost is null || modeDefaultButton is null || modeMightyButton is null) return;
             var mighty = pane.AgentViewMode == "mighty";
-            ((TextBlock)modeDefaultButton.Content).FontWeight = mighty ? FontWeights.Normal : FontWeights.SemiBold;
-            ((TextBlock)modeMightyButton.Content).FontWeight = mighty ? FontWeights.SemiBold : FontWeights.Normal;
+            PaintModeOption(modeDefaultButton, modeDefaultChip!, !mighty); PaintModeOption(modeMightyButton, modeMightyChip!, mighty);
             graphHost.Visibility = mighty ? Visibility.Visible : Visibility.Collapsed;
             output.View.Visibility = mighty ? Visibility.Collapsed : Visibility.Visible;
             var timeline = mighty && MightyTimeline.Mode(pane) == "timeline";

@@ -53,6 +53,73 @@ public sealed partial class MainWindow
             if (pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode)) menu.Items.Add(Item("Fast", () => ChangeSettings(s => s with { FastMode = !s.FastMode && caps.FastMode }), pane.Settings.FastMode));
             menu.Items.Add(new MenuFlyoutSeparator());
         }
+        /// <summary>
+        /// A ComposerPill's look (M/ComposerControls.swift:21-26): <c>card</c> with a 1pt <c>line</c> and
+        /// <c>ink</c>, or, while its setting is on, <c>accentSoft</c> with accent × 0.35 and <c>accent</c>;
+        /// no change under the pointer, <c>ink3</c> while disabled.
+        /// </summary>
+        private void PaintPill(Button pill, bool active)
+        {
+            var fill = owner.brushes.Brush(active ? DesignToken.AccentSoft : DesignToken.Card);
+            var edge = active ? owner.brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder) : owner.brushes.Brush(DesignToken.Line);
+            owner.PaintPlainButton(pill, fill, fill, edge, owner.brushes.Brush(active ? DesignToken.Accent : DesignToken.Ink), owner.brushes.Brush(DesignToken.Ink3));
+        }
+
+        /// <summary>The Fast pill: a toggle whose checked states are the active pill's look (M/SessionPaneView.swift:408).</summary>
+        private void PaintFastPill()
+        {
+            var b = owner.brushes; var off = b.Brush(DesignToken.Card); var on = b.Brush(DesignToken.AccentSoft); var values = new List<(string, object)>();
+            foreach (var state in new[] { "", "PointerOver", "Pressed", "Disabled" })
+            {
+                values.Add(("ToggleButtonBackground" + state, off)); values.Add(("ToggleButtonBackgroundChecked" + state, on));
+                values.Add(("ToggleButtonBorderBrush" + state, b.Brush(DesignToken.Line))); values.Add(("ToggleButtonBorderBrushChecked" + state, b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder)));
+                values.Add(("ToggleButtonForeground" + state, b.Brush(state == "Disabled" ? DesignToken.Ink3 : DesignToken.Ink)));
+                values.Add(("ToggleButtonForegroundChecked" + state, b.Brush(state == "Disabled" ? DesignToken.Ink3 : DesignToken.Accent)));
+            }
+            SetThemeResources(fast, values);
+            fast.Background = off; fast.BorderBrush = b.Brush(DesignToken.Line); fast.Foreground = b.Brush(DesignToken.Ink);
+        }
+
+        /// <summary>
+        /// The shape under the send button (M/SessionPaneView.swift:737-760): the 32pt circle in
+        /// <c>run</c> while there is something to send and <c>track</c> while not; the 32pt <c>err</c>
+        /// square (r8) while it stops the run. The symbol is <c>onStatus</c>; a disabled send arrow is
+        /// <c>ink2</c>, while the stop square keeps <c>onStatus</c> as it stops.
+        /// </summary>
+        private void PaintSend()
+        {
+            var b = owner.brushes;
+            sendDisc.CornerRadius = new CornerRadius(sendIsStop ? DesignMetrics.Radius.Row : 16);
+            sendDisc.Background = b.Brush(sendIsStop ? DesignToken.Err : send.IsEnabled ? DesignToken.Run : DesignToken.Track);
+            owner.PaintPlainButton(send, b.Transparent, b.Transparent, ink: b.Brush(DesignToken.OnStatus), disabledInk: b.Brush(sendIsStop ? DesignToken.OnStatus : DesignToken.Ink2));
+        }
+
+        /// <summary>
+        /// The composer card's edge (M/SessionPaneView.swift:655): 1pt <c>line</c>, or accent × 0.8 at 1.5pt
+        /// while the editor has focus or files are dragged over it. The padding gives back the extra half
+        /// point so the contents never move.
+        /// </summary>
+        private void PaintComposerRing()
+        {
+            var ring = composerFocused || composerDropTargeted;
+            var stroke = ring ? DesignMetrics.Stroke.Focus : DesignMetrics.Stroke.Line; var give = stroke - DesignMetrics.Stroke.Line;
+            composerCard.BorderBrush = ring ? owner.brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.ComposerFocus) : owner.brushes.Brush(DesignToken.Line);
+            composerCard.BorderThickness = new Thickness(stroke);
+            composerCard.Padding = new Thickness(10 - give, 2 - give, 10 - give, 10 - give);
+        }
+
+        /// <summary>The editor draws no box of its own in any state: the card is its frame. The placeholder is <c>ink2</c>.</summary>
+        private void StyleComposerInput()
+        {
+            foreach (var state in new[] { "", "PointerOver", "Focused", "Disabled" })
+            {
+                input.Resources["TextControlBackground" + state] = owner.brushes.Transparent;
+                input.Resources["TextControlBorderBrush" + state] = owner.brushes.Transparent;
+                input.Resources["TextControlPlaceholderForeground" + state] = owner.brushes.Brush(DesignToken.Ink2);
+            }
+            input.Background = owner.brushes.Transparent;
+        }
+
         /// <summary>The run clock for the pane's session as already read (the 1-second tick reads the snapshot once).</summary>
         internal void RefreshElapsed(RunSession pane)
         {

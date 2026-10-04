@@ -347,6 +347,8 @@
   "menu.workspace": "Workspace",
   "pane.copyButton": "Copy",
   "pane.hero.figure": "{label}: {value}",
+  "pane.menu.accessibility": "Pane menu",
+  "pane.menu.copyLog": "Copy run log",
   "pane.nextActions.fillHint": "Put it in the message box",
   "pane.nextActions.label": "Suggested next steps",
   "pane.rename.automatic": "Automatic (follows request)",

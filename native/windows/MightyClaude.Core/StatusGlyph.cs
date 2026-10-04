@@ -75,9 +75,12 @@ public static class StatusGlyph
     /// <summary>The spark turns once every 3.2 s, as on macOS.</summary>
     public const double SparkTurnSeconds = 3.2;
 
-    /// <summary>The mark's size in the sidebar rows and the tabs; the pane header's is <see cref="HeaderSize"/>.</summary>
+    /// <summary>The mark's size in the sidebar rows; the tabs draw <see cref="TabSize"/>, the pane header <see cref="HeaderSize"/>.</summary>
     public const double RowSize = 14;
-    public const double HeaderSize = 16;
+    /// <summary>The pane header's mark: 14, as in the sidebar (design doc §5, M/SessionPaneView.swift:216).</summary>
+    public const double HeaderSize = 14;
+    /// <summary>A tab's mark (M/PaneDockView.swift:249).</summary>
+    public const double TabSize = 12;
 
     /// <summary>A tone's status word: the glyph's accessible name and the pane header's word (shared locale keys).</summary>
     public static string WordKey(DesignTone tone) => tone switch
