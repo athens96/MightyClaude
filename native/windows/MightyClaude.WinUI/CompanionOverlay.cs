@@ -58,6 +58,8 @@ internal sealed class CompanionOverlay : IDisposable
         if (cancel) CancelResize(); else SendMessage(window, 0x0202, 0, 0);
     }
     internal void SmokeResetSize() => ResetSize();
+    // The isolated window's own rendered buffer; this never reads the desktop.
+    internal (uint Width, uint Height, byte[] Pixels) CaptureForSmoke() => ((uint)pixelWidth, (uint)pixelHeight, pixels.ToArray());
 
     internal CompanionOverlay(CompanionPreferences preferences)
     {

@@ -1019,7 +1019,10 @@ public sealed partial class MainWindow
         var dialog = new ContentDialog { Title = Locale.Get("settings.cliAccounts.resetBedrockButton"), Content = new TextBlock { Text = Locale.Get("settings.cliAccounts.resetBedrockConfirm"), TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = Locale.Get("settings.cliAccounts.resetBedrockButton"), CloseButtonText = CliAccountStrings.ButtonCancel, XamlRoot = SettingsXamlRoot };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         RequireIdleAccount("claude");
-        BedrockSettings.ResetUserSettings(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), CliEnvironment.Current());
+        var environment = await CliEnvironment.RefreshAsync(true);
+        if (closing) return;
+        RequireIdleAccount("claude");
+        BedrockSettings.ResetUserSettings(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment);
         await ResetClaudeModels();
     }
 

@@ -76,7 +76,7 @@ try {
         if ($result.smallParity.$key -ne $true) { throw "Windows pane parity smoke failed: smallParity.$key" }
     }
     $companion = $result.companion
-    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating', 'contentDrivenHeightAndEdgeResize', 'keyboardAccessibleAgentStatus')) {
+    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating', 'contentDrivenHeightAndEdgeResize', 'keyboardAccessibleAgentStatus', 'renderedOverlaySnapshots')) {
         if ($companion.$key -ne $true) { throw "Windows companion smoke failed: companion.$key" }
     }
     foreach ($key in @('syntheticGpuCropEncoded', 'displayBoundsEnumerated')) {

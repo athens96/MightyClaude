@@ -363,7 +363,7 @@ public sealed class CliAccountsCoordinator
 
     public async Task<CliAccountStatus> StatusAsync(string provider, CancellationToken cancellation = default)
     {
-        if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(false, cancellation);
+        var environment = fixedEnvironment ?? await CliEnvironment.RefreshAsync(false, cancellation);
         if (provider == "gemini")
         {
             if (FindBinary("gemini") is null)

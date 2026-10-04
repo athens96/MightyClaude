@@ -63,6 +63,9 @@ internal static class CliEnvironmentVerification
         var prior = resolver.ResolveAsync(baseline); await started.Task;
         var fresh = resolver.ResolveAsync(baseline, true); release.SetResult();
         await prior; Check((await fresh).Values["PATH"] == "generation-2" && resolver.Current(baseline)["PATH"] == "generation-2", "Forced refresh cannot join an already-running capture or be overwritten by the older result.");
+        var expiring = new WindowsShellEnvironment((_, nonce, _) => Task.FromResult<string?>(Frame(nonce, "{\"PATH\":\"profile-path\"}")), lifetime: TimeSpan.Zero);
+        await expiring.ResolveAsync(baseline);
+        Check(expiring.Current(baseline)["PATH"] == "profile-path", "Cache TTL never removes credentials from synchronous terminal launches; async entrypoints refresh them.");
     }
 
     internal static async Task WindowsCaptureWire()

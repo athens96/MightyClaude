@@ -342,6 +342,13 @@ public sealed partial class MainWindow
         overlay.SmokeResize(CompanionResizeEdges.Right, 40, 0, cancel: true); Require(overlay.SmokeLayout == taller, "Cancelled resize changed saved geometry.");
         overlay.SmokeResetSize(); Require(overlay.SmokeLayout.AutomaticHeight && overlay.SmokeLayout.Width == CompanionBubbleLayout.DefaultWidth, "Double-click reset must restore automatic sizing.");
         Require(CompanionOverlay.ForegroundWindow == foreground, "Companion resize acquired foreground focus.");
+        var captures = new List<string>();
+        foreach (var light in new[] { false, true })
+        {
+            overlay.SetCard(new("smoke-design-" + light, "Claude", "Fixture project · 00:42", "Checking Korean input, native controls and pane layout.", "1 / 2",
+                [new("open", Locale.Get("companion.button.open"))], light, "Match macOS features and design on Windows."), true);
+            overlay.Draw(7, 0); captures.Add(await CaptureCompanionSmoke(overlay, "smoke-companion-overlay-" + (light ? "light" : "dark") + ".png"));
+        }
         Require(companionStatusControl is not null && companionStatusFlyout is not null, "Companion keyboard status controls are missing.");
         companionStatusFlyout!.ShowAt(companionStatusControl!);
         try
@@ -358,6 +365,15 @@ public sealed partial class MainWindow
         finally { companionStatusFlyout.Hide(); }
         return new() { ["bundledAtlasDecoded"] = pixels.Length == pet.Width * pet.Height * 4, ["allAnimationRowsRendered"] = true,
             ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["selectedPetPreview"] = true, ["contextMenuNonActivating"] = true,
-            ["contentDrivenHeightAndEdgeResize"] = true, ["keyboardAccessibleAgentStatus"] = true, ["physicalInputTested"] = false };
+            ["contentDrivenHeightAndEdgeResize"] = true, ["keyboardAccessibleAgentStatus"] = true, ["renderedOverlaySnapshots"] = captures.Count == 2, ["screenshots"] = captures, ["physicalInputTested"] = false };
+    }
+    private async Task<string> CaptureCompanionSmoke(CompanionOverlay overlay, string name)
+    {
+        var frame = overlay.CaptureForSmoke();
+        Require(frame.Pixels.Length == frame.Width * frame.Height * 4 && frame.Pixels.Any(value => value != 0), "Companion rendered buffer is empty.");
+        using var stream = new InMemoryRandomAccessStream(); var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, stream);
+        encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, frame.Width, frame.Height, 96, 96, frame.Pixels); await encoder.FlushAsync();
+        using var input = stream.GetInputStreamAt(0); using var reader = new DataReader(input); await reader.LoadAsync((uint)stream.Size);
+        var png = new byte[(int)stream.Size]; reader.ReadBytes(png); var path = Path.Combine(options.ProfileDirectory!, name); await File.WriteAllBytesAsync(path, png); return path;
     }
 }

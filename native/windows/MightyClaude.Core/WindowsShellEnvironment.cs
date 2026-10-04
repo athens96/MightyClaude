@@ -37,7 +37,9 @@ public sealed class WindowsShellEnvironment
 
     public Dictionary<string, string> Current(IReadOnlyDictionary<string, string> baseline)
     {
-        lock (sync) return Merge(baseline, saved is not null && DateTimeOffset.UtcNow - savedAt < lifetime ? saved : null);
+        // Synchronous terminal consumers keep the last resolved snapshot. TTL
+        // decides when async entrypoints refresh, never when credentials vanish.
+        lock (sync) return Merge(baseline, saved);
     }
 
     public async Task<CliEnvironmentSnapshot> ResolveAsync(IReadOnlyDictionary<string, string> baseline, bool force = false, CancellationToken cancellation = default)
