@@ -89,10 +89,14 @@ public sealed record RunSession
     [JsonPropertyName("agentViewMode")]
     [JsonConverter(typeof(AgentViewModeConverter))]
     public string? AgentViewMode { get; init; }
+    public string? MightyStyle { get; init; }
+    public string? MightyStyleHash { get; init; }
+    public string? MightyStyleSince { get; init; }
     [JsonPropertyName("graphRuns")] public List<MightyGraphRun>? GraphRuns { get; init; }
     // The newest result card's remembered maximum, set by dragging it
     // (macOS RunSession.graphResultSize); null means the window fit.
     [JsonPropertyName("graphResultSize")] public GraphBlockSize? GraphResultSize { get; init; }
+    [JsonPropertyName("graphBlockSizes")] public Dictionary<string, GraphBlockSize>? GraphBlockSizes { get; init; }
     // Browser pane fields — serialized with the same keys as macOS RunSession.
     [JsonPropertyName("workspaceProfileKey")] public string? WorkspaceProfileKey { get; init; }
     [JsonPropertyName("ownerSessionId")] public string? OwnerSessionId { get; init; }
@@ -215,6 +219,7 @@ public sealed record AppSnapshot
     public string Theme { get; init; } = "dark";
     public double SidebarWidth { get; init; } = 252;
     public Dictionary<string, string>? TrustedStatusLines { get; init; }
+    public bool StatusLineEnabled { get; init; } = true;
     public bool CompletionNotificationsEnabled { get; init; } = true;
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? AutoUpdateCLIs { get; init; }
@@ -230,6 +235,9 @@ public sealed record AppSnapshot
     public string? AppUpdateManifestUrlOverride { get; init; }
     // "system", "ko", or "en". Applied at next app start via Locale.LanguagePreference.
     public string LanguagePreference { get; init; } = "system";
+    public string SettingsPane { get; init; } = "general";
+    public Dictionary<string, string>? AgentWebOpenChoices { get; init; }
+    public MobileRemoteSettings MobileRemote { get; init; } = new();
     // App-level per-provider per-mode model defaults; null means all modes use "default".
     // Additive with a default (null) so Version stays 1.
     public ModelDefaultsConfig? ModelDefaults { get; init; }
@@ -245,6 +253,9 @@ public sealed record AppSnapshot
 }
 public sealed record StartRunRequest(string SessionId, string WorkspaceId, string Kind, string Input, IReadOnlyList<RegisteredModelEntry> RegisteredModels, string Model = "default", string Provider = "claude", RunSettings? Settings = null, string? ResumeId = null, IReadOnlyList<RunAttachment>? Attachments = null)
 {
+    // Local style selection is the only source of these grants. Never accepted
+    // from remote JSON, persisted to history, or inferred from a style id alone.
+    [JsonIgnore] public IReadOnlyList<string>? StyleAutoAllow { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];
@@ -255,17 +266,20 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         if (!Wire.Identifier(SessionId) || !Wire.Identifier(WorkspaceId) || Kind is not ("claude" or "shell") || !Wire.Model(Model) || !Wire.Providers.Contains(Provider) || ResumeId is not null && !Wire.Identifier(ResumeId)) throw new ArgumentException(Locale.Get("wire.startRun.invalidFormat"));
         if (Input is null || string.IsNullOrWhiteSpace(Input) && files is null || Input.Length > 100000 || Input.Contains('\0')) throw new ArgumentException(Locale.Get("wire.startRun.emptyInput"));
         if (Kind == "shell" && files is not null) throw new ArgumentException(Locale.Get("wire.startRun.attachmentAiOnly"));
-        if (settings.Effort != "default" && !Wire.Efforts.Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
+        if (settings.Effort != "default" && !Wire.Efforts.Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
+        if (settings.PermissionMode == "onRequest" && (Provider != "codex" || Kind != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
-        if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode != "acceptEdits") throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
+        if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode is not ("acceptEdits" or "onRequest")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default" || Provider == "claude" && Model.Contains("haiku", StringComparison.OrdinalIgnoreCase) && settings.Effort != "default")) throw new ArgumentException(Locale.Get("wire.startRun.unsupportedSettings"));
-        return this with { Settings = settings, Attachments = files };
+        if (StyleAutoAllow is { Count: > 0 } grants && (Provider != "claude" || Kind != "claude" || grants.Count > 32 || grants.Any(g => !StyleRunPermissions.ValidWireName(g))))
+            throw new ArgumentException("Invalid local style tool permissions.");
+        return this with { Settings = settings, Attachments = files, StyleAutoAllow = StyleAutoAllow is { Count: > 0 } validGrants ? Array.AsReadOnly(validGrants.ToArray()) : null };
     }
 }
-public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null)
+public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null, string? Reason = null)
 {
     public static RunEvent Log(string id, string kind, string text, string? provider = null) => new(id, "log", new(Wire.Id(), kind, ActivitySupport.Clean(text, kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Wire.Now(), provider));
-    public static RunEvent State(string id, string state) => new(id, "status", Status: state);
+    public static RunEvent State(string id, string state, string? reason = null) => new(id, "status", Status: state, Reason: reason);
     public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id));
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);

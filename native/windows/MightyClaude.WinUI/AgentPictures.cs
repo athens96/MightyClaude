@@ -49,7 +49,6 @@ internal sealed class AgentPictures(AgentImageCache cache, DispatcherQueue dispa
     /// <summary>A picture the agent returned, by its cache reference.</summary>
     internal Picture For(AgentImageRef value)
     {
-        if (AgentImageSupport.MediaType(value.MediaType) == "image/svg+xml") return new(State.Unsupported);
         return Lookup("ref:" + value.Hash, () => cache.Data(value) ?? throw new FileNotFoundException());
     }
 
@@ -109,10 +108,8 @@ internal sealed class AgentPictures(AgentImageCache cache, DispatcherQueue dispa
         {
             case AgentImageLocation.File file:
                 if (found.Stamp is not { } stamp) return new(State.Missing);
-                if (AgentImageSupport.MediaTypeForFileName(file.Path) == "image/svg+xml") return new(State.Unsupported);
                 return Lookup("file:" + file.Path + ":" + stamp, () => AgentImagePaths.Read(file.Path, file.Root));
             case AgentImageLocation.Inline inline:
-                if (inline.MediaType == "image/svg+xml") return new(State.Unsupported);
                 return Lookup("inline:" + AgentImageSupport.Sha256(System.Text.Encoding.ASCII.GetBytes(inline.Base64)), () => AgentImageSupport.DecodeBase64(inline.Base64));
             default: return new(State.Missing);
         }
@@ -136,10 +133,11 @@ internal sealed class AgentPictures(AgentImageCache cache, DispatcherQueue dispa
         try
         {
             var data = read();
-            // svg never reaches here; any bitmap is read as what its header says.
-            var inspected = AgentImageSupport.Inspect(data, "image/png");
+            var isSvg = AgentImageSupport.SvgDocument(data);
+            _ = AgentImageSupport.Inspect(data, isSvg ? "image/svg+xml" : "image/png");
+            if (isSvg) data = (await NativeSvgRaster.Render(data, AgentImageSupport.ThumbnailPixels)).Png;
             var (encoded, width, height) = await Thumbnail(data);
-            rtf = AgentImageRtf.Picture(encoded, width, height, AgentImageRtf.DisplaySize(inspected.Width, inspected.Height));
+            rtf = AgentImageRtf.Picture(encoded, width, height, AgentImageRtf.DisplaySize(width, height));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { rtf = null; }
         finally { decodes.Release(); }
@@ -185,14 +183,20 @@ internal sealed class AgentPictures(AgentImageCache cache, DispatcherQueue dispa
         }
         input.Seek(0);
         var decoder = await BitmapDecoder.CreateAsync(input);
-        uint width = decoder.PixelWidth, height = decoder.PixelHeight;
+        uint width = decoder.OrientedPixelWidth, height = decoder.OrientedPixelHeight;
         if (FilePreviewClassifier.PixelCount(width, height) is not { } pixels || pixels > AgentImageSupport.MaximumPixels || Math.Max(width, height) > AgentImageSupport.MaximumSide)
             throw new AgentImageException(AgentImageError.TooManyPixels);
         var scale = Math.Min(1.0, (double)AgentImageSupport.ThumbnailPixels / Math.Max(width, height));
         var thumbnailWidth = (uint)Math.Max(1, Math.Round(width * scale)); var thumbnailHeight = (uint)Math.Max(1, Math.Round(height * scale));
-        var transform = new BitmapTransform { ScaledWidth = thumbnailWidth, ScaledHeight = thumbnailHeight, InterpolationMode = BitmapInterpolationMode.Fant };
-        var frame = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight, transform, ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
+        var transform = new BitmapTransform
+        {
+            ScaledWidth = (uint)Math.Max(1, Math.Round(decoder.PixelWidth * scale)),
+            ScaledHeight = (uint)Math.Max(1, Math.Round(decoder.PixelHeight * scale)),
+            InterpolationMode = BitmapInterpolationMode.Fant
+        };
+        var frame = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Straight, transform, ExifOrientationMode.RespectExifOrientation, ColorManagementMode.ColorManageToSRgb);
         var pixelData = frame.DetachPixelData();
+        if ((long)thumbnailWidth * thumbnailHeight * 4 != pixelData.Length) throw new InvalidDataException("Unexpected oriented bitmap dimensions.");
         var opaque = true;
         for (var i = 3; i < pixelData.Length && opaque; i += 4) opaque = pixelData[i] == 255;
         using var output = new InMemoryRandomAccessStream();

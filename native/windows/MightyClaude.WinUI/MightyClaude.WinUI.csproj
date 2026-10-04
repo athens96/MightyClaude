@@ -37,6 +37,8 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Stable 2026-08-13: https://learn.microsoft.com/windows/apps/windows-app-sdk/release-channels -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <ProjectReference Include="../MightyClaude.Core/MightyClaude.Core.csproj" />
     <Content Include="../../../LICENSE" Link="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
@@ -50,5 +52,17 @@
     <!-- The GUI smoke feeds recorded claudeStream cases through the execution graph
          tracker so the Mighty canvas it renders comes from macOS truth, not a fixture. -->
     <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyClaude.WinUI.GraphVectors.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets/ScreenShare/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets/Terminal/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets/pets/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../licenses/BouncyCastle-LICENSE" Link="ThirdPartyLicenses/BouncyCastle-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/ZstdSharp-LICENSE" Link="ThirdPartyLicenses/ZstdSharp-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/zstd-LICENSE" Link="ThirdPartyLicenses/zstd-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/Win2D-LICENSE" Link="ThirdPartyLicenses/Win2D-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../licenses/QRCoder-LICENSE" Link="ThirdPartyLicenses/QRCoder-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

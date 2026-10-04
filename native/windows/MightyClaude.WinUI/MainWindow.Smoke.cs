@@ -16,9 +16,11 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     private Func<StartRunRequest, Task>? smokeStart;
-    private Task StartFromComposer(StartRunRequest request) => options.SmokeTest
-        ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("스모크 모드에서는 실제 CLI를 실행하지 않습니다.")
-        : service.StartAsync(request);
+    private Task StartFromComposer(StartRunRequest request)
+    {
+        if (loginBusy.ContainsKey(request.Provider) || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
+        return options.SmokeTest ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("스모크 모드에서는 실제 CLI를 실행하지 않습니다.") : service.StartAsync(request);
+    }
 
     private async Task RunUISmoke()
     {
@@ -46,10 +48,19 @@ public sealed partial class MainWindow
             await WaitUI(() => root.XamlRoot is not null && root.ActualWidth > 0 && views.TryGetValue(sessions[0].Id, out var p) && p.Container.ActualWidth > 0);
             var pane = views[sessions[0].Id];
             result["composerAndTranscript"] = await pane.RunComposerSmoke();
+            result["styles"] = await pane.RunStylesSmoke();
+            result["companion"] = await RunCompanionSmoke();
+            result["screenCapture"] = await WindowsScreenCapture.SmokeAsync();
+            result["screenTransport"] = await WindowsScreenTransportSmoke.RunAsync(root, directory);
+            Require(ScreenShareTapMarkerOverlay.SmokeNoFocus(), "Screen tap marker must preserve focus and pass through input.");
+            result["screenTapMarkerNoFocus"] = true;
+            result["nativeTerminal"] = await RunTerminalSmoke();
+            result["desktopSurfaces"] = await RunDesktopSurfaceSmoke();
             result["slashCommandPalette"] = await pane.RunSlashCommandPaletteSmoke();
             result["statusLine"] = await pane.RunStatusLineSmoke();
             result["modelLabel"] = pane.RunModelLabelSmoke();
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
+            result["transcriptActions"] = await pane.Transcript.RunActionsSmoke();
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
             result["phaseModelsSection"] = RunPhaseModelsSectionSmoke();
@@ -507,6 +518,12 @@ public sealed partial class MainWindow
             Require(statusPane.Refresher!.Result!.Lines.Count > 0,
                 "status line refresher ran and produced output in the real pane");
             checks["statusLineRefresherFiredAndRendered"] = true;
+            await SetStatusLineEnabled(false);
+            Require(statusPane.Refresher is null && statusPane.StatusLineHost.Visibility == Visibility.Collapsed,
+                "disabling status line must close the refresher and hide its output");
+            await SetStatusLineEnabled(true);
+            await WaitUI(() => statusPane.Refresher?.Result is not null);
+            checks["statusLineToggleStopsAndRestarts"] = true;
         }
         finally
         {
@@ -1215,7 +1232,7 @@ public sealed partial class MainWindow
         internal async Task<Dictionary<string, object?>> RunComposerSmoke()
         {
             var checks = new Dictionary<string, object?>();
-            Require(SubmitKeyAllowed(false, false, false, false) && !SubmitKeyAllowed(true, false, false, false) && !SubmitKeyAllowed(false, true, false, false) && !SubmitKeyAllowed(false, false, true, false), "Enter/Shift+Enter/IME 키 정책이 잘못됐습니다.");
+            Require(SubmitKeyAllowed(false, false, false) && !SubmitKeyAllowed(true, false, false) && !SubmitKeyAllowed(false, true, false) && !SubmitKeyAllowed(false, false, true), "Enter/Shift+Enter/IME key policy is invalid.");
             input.Text = "한글 첫 입력"; await WaitUI(() => Session.Draft == input.Text);
             composingInput = true; var nativeInput = input; Refresh(); Require(ReferenceEquals(input, nativeInput) && input.Text == "한글 첫 입력", "상태 갱신이 조합 중인 입력 컨트롤을 변경했습니다."); composingInput = false;
             input.Text = ""; Container.UpdateLayout(); await Task.Delay(40); var singleHeight = input.ActualHeight;

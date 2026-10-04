@@ -14,10 +14,14 @@ internal static class SettingsSectionsVerification
         {
             "화면",
             PhaseModelSection.SectionTitle,
+            Locale.Get("settings.styles.sectionTitle"),
             ComponentSection.SectionTitle,
+            Locale.Get("settings.mobileRemote.sectionTitle"),
             CliUpdateStrings.SectionTitle,
+            Locale.Get("settings.nav.companion"),
             "이 PC의 CLI",
             CliAccountStrings.SectionTitle,
+            "Claude Mods",
             AppUpdateStrings.SectionTitle,
             "앱 정보",
         }), "Windows section titles are not the macOS order: " + string.Join(", ", titles));
@@ -40,13 +44,7 @@ internal static class SettingsSectionsVerification
     // Sections whose feature does not exist on Windows yet are not shown.
     internal static Task SectionsLeaveOutFeaturesNotOnWindowsYet()
     {
-        var absent = new[]
-        {
-            SettingsSections.Styles,
-            SettingsSections.MobileRemote,
-            SettingsSections.Companion,
-            SettingsSections.ClaudeMods,
-        };
+        string[] absent = [];
         foreach (var id in absent)
         {
             var slot = SettingsSections.MacOrder.Single(s => s.Id == id);
@@ -62,17 +60,20 @@ internal static class SettingsSectionsVerification
     // Registering a later feature is one small edit that leaves the others alone.
     internal static Task RegisteringASectionDoesNotTouchTheOthers()
     {
-        var before = SettingsSections.WindowsTitles;
+        var catalogBefore = SettingsSections.WindowsTitles.ToArray();
+        var fixture = SettingsSections.MacOrder.Select(slot => slot.Id == SettingsSections.ClaudeMods
+            ? slot with { WindowsTitle = null } : slot).ToArray();
+        var before = fixture.Where(slot => slot.OnWindows).Select(slot => slot.WindowsTitle!).ToArray();
 
         // Simulate the one-line registration a later feature makes: give an
         // absent slot a title, then filter and order exactly as SettingsSections does.
-        var registered = SettingsSections.MacOrder
+        var registered = fixture
             .Select(slot => slot.Id == SettingsSections.ClaudeMods ? slot with { WindowsTitle = "Claude Mods" } : slot)
             .Where(slot => slot.OnWindows)
             .Select(slot => slot.WindowsTitle!)
             .ToArray();
 
-        Check(registered.Length == before.Count + 1, "registration must add exactly one section");
+        Check(registered.Length == before.Length + 1, "registration must add exactly one section");
         Check(registered.Contains("Claude Mods"), "the registered section must appear");
         // Every previously shown section keeps its title and relative order.
         Check(registered.Where(title => title != "Claude Mods").SequenceEqual(before),
@@ -81,7 +82,7 @@ internal static class SettingsSectionsVerification
         Check(Array.IndexOf(registered, "Claude Mods") == Array.IndexOf(registered, CliAccountStrings.SectionTitle) + 1,
             "the registered section must land in its macOS slot");
         // The real catalog is untouched by the simulation.
-        Check(SettingsSections.WindowsTitles.SequenceEqual(before), "the catalog must not be mutated");
+        Check(SettingsSections.WindowsTitles.SequenceEqual(catalogBefore), "the catalog must not be mutated");
         return Task.CompletedTask;
     }
 

@@ -38,6 +38,8 @@ public sealed partial class MainWindow
         ToolTipService.SetToolTip(title, PaneTitle.Help(session));
         var state = new TextBlock { Text = StateLabel(shown), FontSize = 10, Opacity = .65 };
         var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", FontSize = 10, Opacity = .7 };
+        // Sidebar metadata already contains the elapsed time below the title.
+        if (!tab) elapsed.Visibility = Visibility.Collapsed;
         var trailing = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center }; if (!tab) trailing.Children.Add(state); trailing.Children.Add(elapsed); Grid.SetColumn(trailing, 2); row.Children.Add(trailing);
         // An agent's sidebar row names its provider on a muted second line, its mark first
         // (macOS paneMeta: "[mark] Claude"); the glyph and the trailing state span both lines.
@@ -55,9 +57,11 @@ public sealed partial class MainWindow
         if (closing) return;
         // One snapshot copy per tick: the theme and every session come from it.
         var state = service.Snapshot; var dark = state.Theme != "light";
+        foreach (var pair in workspaceStatusCounts) UpdateWorkspaceStatusCounts(pair.Key, pair.Value);
         foreach (var session in state.Sessions)
         {
             var pending = PendingRequests(session.Id);
+            if (sidebarDetails.TryGetValue(session.Id, out var meta)) meta.Text = WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow);
             foreach (var values in new[] { sessionIndicators, tabIndicators })
             {
                 if (!values.TryGetValue(session.Id, out var view)) continue;
@@ -66,9 +70,11 @@ public sealed partial class MainWindow
             }
             if (views.TryGetValue(session.Id, out var pane)) { pane.RefreshElapsed(session); pane.RefreshHeaderStatus(session, dark); }
         }
+        RenderDashboard();
     }
     private Task SelectWorkspace(string id) => Act(async () =>
     {
+        HideDashboard();
         await service.UpdateAsync(s =>
         {
             var preferred = s.PaneLayoutActiveSessionIds?.GetValueOrDefault(id);
@@ -76,6 +82,7 @@ public sealed partial class MainWindow
             return s with { ActiveWorkspaceId = id, ActiveSessionId = selected };
         });
         Render();
+        await RefreshRuntime();
     });
     private static MenuFlyoutItem MenuItem(string text, Func<Task> action)
     {

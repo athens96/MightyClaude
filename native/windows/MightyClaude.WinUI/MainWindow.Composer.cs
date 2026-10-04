@@ -10,14 +10,19 @@ public sealed partial class MainWindow
     {
         private void ArrangeComposer()
         {
-            var pane = Session; var width = selectors.ActualWidth;
+            // WinUI can finish a layout pass after its pane was removed from
+            // the snapshot. A detached editor must not resolve a live session.
+            var pane = owner.service.Snapshot.Sessions.FirstOrDefault(s => s.Id == id);
+            if (pane is null) return;
+            var width = selectors.ActualWidth;
+            var capabilities = owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             composerMode = width >= 660 ? 2 : width >= 430 ? 1 : 0;
             if (pane.Kind == "shell") { provider.Visibility = model.Visibility = effort.Visibility = permission.Visibility = fast.Visibility = more.Visibility = Visibility.Collapsed; return; }
             provider.Width = composerMode == 2 ? 90 : 72; provider.Visibility = width >= 250 ? Visibility.Visible : Visibility.Collapsed;
             effort.Width = composerMode == 2 ? 80 : 66; permission.Width = composerMode == 2 ? 110 : 90; fast.Width = 58; more.Width = 32;
-            effort.Visibility = composerMode > 0 && (Capabilities.Effort || pane.Settings.Effort != "default") ? Visibility.Visible : Visibility.Collapsed;
+            effort.Visibility = composerMode > 0 && (capabilities.Effort || pane.Settings.Effort != "default") ? Visibility.Visible : Visibility.Collapsed;
             permission.Visibility = composerMode > 0 ? Visibility.Visible : Visibility.Collapsed;
-            fast.Visibility = composerMode == 2 && pane.Provider == "codex" && (Capabilities.FastMode || pane.Settings.FastMode) ? Visibility.Visible : Visibility.Collapsed;
+            fast.Visibility = composerMode == 2 && pane.Provider == "codex" && (capabilities.FastMode || pane.Settings.FastMode) ? Visibility.Visible : Visibility.Collapsed;
             model.Visibility = more.Visibility = Visibility.Visible;
         }
         private Task ChangeProvider(string value) => owner.Act(async () =>
@@ -42,7 +47,7 @@ public sealed partial class MainWindow
                 menu.Items.Add(strengths);
             }
             var permissions = new MenuFlyoutSubItem { Text = Locale.Get("composer.label.permission") };
-            foreach (var value in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, value), () => ChangeSettings(s => s with { PermissionMode = value, NetworkAccess = pane.Provider == "codex" && value == "acceptEdits" && s.NetworkAccess }), pane.Settings.PermissionMode == value, PermissionHelp(pane.Provider, value)));
+            foreach (var value in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, value), () => ChangeSettings(s => s with { PermissionMode = value, NetworkAccess = pane.Provider == "codex" && value is ("acceptEdits" or "onRequest") && s.NetworkAccess }), pane.Settings.PermissionMode == value, PermissionHelp(pane.Provider, value)));
             menu.Items.Add(permissions);
             if (pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode)) menu.Items.Add(Item("Fast", () => ChangeSettings(s => s with { FastMode = !s.FastMode && caps.FastMode }), pane.Settings.FastMode));
             menu.Items.Add(new MenuFlyoutSeparator());

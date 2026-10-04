@@ -229,7 +229,7 @@ public sealed partial class MainWindow
         /// </summary>
         internal void AttachBrowserView(FrameworkElement anchor)
         {
-            if (Session.Kind != "browser") return;
+            if (Session.Kind is not ("browser" or AgentIOPaneKind.Browser)) return;
             anchor.Loaded += (_, _) => BuildBrowserView();
         }
 

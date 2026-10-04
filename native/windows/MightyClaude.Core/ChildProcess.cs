@@ -45,7 +45,7 @@ public sealed class ChildProcess : IAsyncDisposable
     {
         if (info.UseShellExecute || !info.RedirectStandardInput || !info.RedirectStandardOutput || !info.RedirectStandardError) throw new ArgumentException("Redirected direct process execution is required.");
         if (OperatingSystem.IsWindows()) { lock (WindowsLaunchGate) return StartWindows(info, shellCommand); }
-        return new(Process.Start(info) ?? throw new IOException("프로세스를 시작하지 못했습니다."));
+        return new(Process.Start(info) ?? throw new IOException(Locale.Get("windows.process.startFailed")));
     }
     public void Kill()
     {
@@ -68,7 +68,7 @@ public sealed class ChildProcess : IAsyncDisposable
                 {
                     if (!Native.QueryInformationJobObject(job, 1, out var state, (uint)Marshal.SizeOf<Native.BasicAccounting>(), 0)) throw new System.ComponentModel.Win32Exception();
                     if (state.ActiveProcesses == 0) break;
-                    if (deadline.Elapsed >= TimeSpan.FromSeconds(3)) throw new TimeoutException($"Windows 실행의 자식 프로세스 {state.ActiveProcesses}개가 아직 종료 중입니다.");
+                    if (deadline.Elapsed >= TimeSpan.FromSeconds(3)) throw new TimeoutException(Locale.Get("windows.process.childrenClosing", new Dictionary<string, string> { ["count"] = state.ActiveProcesses.ToString() }));
                     await Task.Delay(10);
                 }
             }
@@ -137,7 +137,7 @@ public sealed class ChildProcess : IAsyncDisposable
             foreach (var handle in new[] { stdinRead, stdinWrite, stdoutRead, stdoutWrite, stderrRead, stderrWrite, child.Process, child.Thread, job }) if (handle != 0) Native.CloseHandle(handle);
         }
     }
-    private static class Native
+    internal static class Native
     {
         [StructLayout(LayoutKind.Sequential)] internal struct SecurityAttributes { public int Length; public nint Descriptor; public int InheritHandle; }
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] internal struct StartupInfo { public int Size; public string? Reserved, Desktop, Title; public int X, Y, XSize, YSize, XCountChars, YCountChars, FillAttribute, Flags; public short ShowWindow, Reserved2Size; public nint Reserved2, StdInput, StdOutput, StdError; }

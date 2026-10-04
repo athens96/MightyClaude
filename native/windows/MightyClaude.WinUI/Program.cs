@@ -20,19 +20,19 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
             {
                 case "--profile":
                     if (profile is not null || ++index >= args.Length || !Path.IsPathFullyQualified(args[index]))
-                        throw new ArgumentException("--profile에는 중복되지 않는 절대 폴더 경로가 필요합니다.");
+                        throw new ArgumentException(Locale.Get("windows.startup.profileArgument"));
                     profile = Path.GetFullPath(args[index]);
                     break;
                 case "--smoke-test": smoke = true; break;
                 case "--smoke-exit": exit = true; break;
-                default: throw new ArgumentException("지원하지 않는 실행 인자입니다: " + args[index]);
+                default: throw new ArgumentException(Locale.Get("windows.startup.unsupportedArgument", new Dictionary<string, string> { ["argument"] = args[index] }));
             }
         }
-        if (exit && !smoke) throw new ArgumentException("--smoke-exit에는 --smoke-test가 필요합니다.");
-        if (smoke && profile is null) throw new ArgumentException("스모크 검증에는 별도 --profile 폴더가 필요합니다.");
-        if (profile is not null && File.Exists(profile)) throw new ArgumentException("프로필 경로가 파일입니다.");
+        if (exit && !smoke) throw new ArgumentException(Locale.Get("windows.startup.smokeExitNeedsSmoke"));
+        if (smoke && profile is null) throw new ArgumentException(Locale.Get("windows.startup.smokeNeedsProfile"));
+        if (profile is not null && File.Exists(profile)) throw new ArgumentException(Locale.Get("windows.startup.profileIsFile"));
         if (smoke && Directory.Exists(profile) && Directory.EnumerateFileSystemEntries(profile!).Any())
-            throw new ArgumentException("스모크 프로필은 새 폴더이거나 비어 있어야 합니다.");
+            throw new ArgumentException(Locale.Get("windows.startup.smokeProfileNotEmpty"));
         return new(profile, smoke, exit);
     }
 
@@ -77,6 +77,7 @@ internal static class Program
         // started detached with a minimal environment just before the app quits,
         // waits for the app to exit, verifies the package again and replaces the
         // install. It opens no window and reads no saved state.
+        if (args.SequenceEqual(new[] { "--agent-io-mcp" })) return AgentIOMcp.MainAsync().GetAwaiter().GetResult();
         if (AppUpdateInstallPlan.TryParse(args) is { } plan) return RunUpdateHelper(plan);
 
         StartupOptions? options = null;

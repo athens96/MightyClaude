@@ -17,10 +17,10 @@ public static class ResultFiles
     public const int MaximumPathBytes = 1_024;
     public const int MaximumMatchesPerText = 200;
 
-    /// A path needs at least one directory segment and an ASCII extension, so
-    /// version numbers, "and/or" and bare file names are left alone.
+    /// A path needs a directory segment or Windows drive prefix and an ASCII
+    /// extension, so version numbers, "and/or" and bare file names are left alone.
     private static readonly Regex PathPattern = new(
-        @"(?<![A-Za-z0-9_/.:@~-])((?:\.{1,2}/|/)?(?:[\p{L}\p{N}_.@-]+/)+[\p{L}\p{N}_.@-]+\.[A-Za-z0-9]{1,8})(?::(\d{1,6}))?(?![A-Za-z0-9_/])",
+        @"(?<![A-Za-z0-9_/\\.:@~-])((?:[A-Za-z]:[/\\](?:[\p{L}\p{N}_.@-]+[/\\])*|(?:\.{1,2}[/\\]|[/\\])?(?:[\p{L}\p{N}_.@-]+[/\\])+)[\p{L}\p{N}_.@-]+\.[A-Za-z0-9]{1,8})(?::(\d{1,6}))?(?![A-Za-z0-9_/\\])",
         RegexOptions.Compiled);
     private static readonly Regex WebPattern = new(@"https?://[^\s<>""'`)\]]+", RegexOptions.Compiled);
     /// Inline Markdown link: the destination is a reference, its label is not.
@@ -57,9 +57,10 @@ public static class ResultFiles
     {
         if (destination.Length == 0) return null;
         var scheme = Regex.Match(destination, @"^([A-Za-z][A-Za-z0-9+.-]*):");
-        if (scheme.Success && !scheme.Groups[1].Value.Equals("file", StringComparison.OrdinalIgnoreCase)) return null;
+        var drive = destination.Length >= 3 && char.IsAsciiLetter(destination[0]) && destination[1] == ':' && destination[2] is '/' or '\\';
+        if (scheme.Success && !drive && !scheme.Groups[1].Value.Equals("file", StringComparison.OrdinalIgnoreCase)) return null;
         var value = destination;
-        if (scheme.Success)
+        if (scheme.Success && !drive)
         {
             if (!value.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return null;
             value = value["file://".Length..];
@@ -70,6 +71,7 @@ public static class ResultFiles
         }
         string clean;
         try { clean = Uri.UnescapeDataString(value); } catch (UriFormatException) { clean = value; }
+        if (clean.Length >= 4 && clean[0] == '/' && char.IsAsciiLetter(clean[1]) && clean[2] == ':' && clean[3] == '/') clean = clean[1..];
         if (clean.Length == 0 || clean.Contains("://", StringComparison.Ordinal) || clean.Contains('\0')) return null;
         return Encoding.UTF8.GetByteCount(clean) <= MaximumPathBytes ? clean : null;
     }
@@ -78,17 +80,17 @@ public static class ResultFiles
     public static string? Resolve(string path, string? root)
     {
         if (root is null || path.Length == 0 || path.Contains('\0') || Encoding.UTF8.GetByteCount(path) > MaximumPathBytes) return null;
-        var basePath = RealPath(root);
-        if (basePath is null) return null;
-        string candidate;
-        try { candidate = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(basePath, path)); }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
-        candidate = RealPath(Path.GetDirectoryName(candidate)) is { } directory
-            ? Path.Combine(directory, Path.GetFileName(candidate)) : candidate;
-        var prefix = basePath.EndsWith(Path.DirectorySeparatorChar) ? basePath : basePath + Path.DirectorySeparatorChar;
-        if (!candidate.StartsWith(prefix, StringComparison.Ordinal)) return null;
-        var info = new FileInfo(candidate);
-        return info.Exists && (info.Attributes & FileAttributes.Directory) == 0 ? candidate : null;
+        try
+        {
+            var basePath = Path.GetFullPath(root);
+            var candidate = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(basePath, path));
+            // Reject lexical escapes, UNC paths and stream names before touching the target.
+            if (!WorkspaceFiles.Contains(candidate, basePath)) return null;
+            var relative = Path.GetRelativePath(basePath, candidate).Replace('\\', '/');
+            var resolved = WorkspaceFiles.Resolve(relative, basePath);
+            return resolved is not null && File.Exists(resolved) ? resolved : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException or UnauthorizedAccessException) { return null; }
     }
 
     /// The directory's own path with every symlink resolved (macOS
@@ -98,10 +100,7 @@ public static class ResultFiles
         if (directory is null) return null;
         try
         {
-            var full = Path.GetFullPath(directory);
-            var info = new DirectoryInfo(full);
-            while (info.ResolveLinkTarget(true) is DirectoryInfo target) { if (target.FullName == info.FullName) break; info = target; }
-            return info.FullName.TrimEnd(Path.DirectorySeparatorChar) is { Length: > 0 } trimmed ? trimmed : info.FullName;
+            return WorkspaceFiles.RealPath(directory);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or IOException) { return null; }
     }
@@ -117,7 +116,7 @@ public static class ResultFiles
         if (basePath is null) return [];
         var prefix = basePath.EndsWith(Path.DirectorySeparatorChar) ? basePath : basePath + Path.DirectorySeparatorChar;
         var files = new List<ResultFile>();
-        var seen = new HashSet<string>();
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var remainingBytes = MaximumResultTextBytes;
         var remainingCandidates = 1_000;
 

@@ -41,6 +41,8 @@ public sealed partial class MainWindow
         private double graphZoom = MightyGraphViewModel.ZoomDefault;
         private string? graphSelection;
         private readonly Dictionary<string, ScrollViewer> graphBodies = [];
+        private readonly Dictionary<string, AgentTranscript> graphTranscripts = [];
+        private bool graphDeferredDraw;
         private readonly Dictionary<string, Border> graphCards = [];
         private readonly Dictionary<string, (string Kind, Rectangle Line)> graphOutlines = [];
         private readonly Dictionary<string, string> graphBlockKinds = [];
@@ -230,6 +232,7 @@ public sealed partial class MainWindow
         {
             // Drawing resizes the canvas, which can raise SizeChanged again.
             if (graphDrawing) return;
+            if (graphTranscripts.Values.Any(transcript => transcript.IsSelecting)) { graphDeferredDraw = true; return; }
             graphDrawing = true;
             try { DrawGraphCore(pane); } finally { graphDrawing = false; }
         }
@@ -254,13 +257,16 @@ public sealed partial class MainWindow
             // tall as its measured content; a drag in progress shows its own size.
             var latestResultId = MightyGraphLayout.LatestResultID(runs);
             double? resultContentHeight = graphLiveResultSize is null && latestResultId is not null && graphResultHeights.TryGetValue(latestResultId, out var measured) ? measured : null;
-            var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", new HashSet<string>(), graphResultFilesRunId, viewport,
-                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight);
+            var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, viewport,
+                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight, pane.GraphBlockSizes);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
             // `요청 N · Claude`: the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
 
+            foreach (var transcript in graphTranscripts.Values)
+                if (transcript.View.Parent is Panel parent) parent.Children.Remove(transcript.View);
+            foreach (var stale in graphTranscripts.Keys.Where(key => !blocks.Any(block => block.Id == key)).ToArray()) graphTranscripts.Remove(stale);
             graphCanvas.Children.Clear(); graphBodies.Clear(); graphCards.Clear(); graphOutlines.Clear(); graphBlockKinds.Clear(); graphTitles.Clear(); graphFitResultButton = null;
             graphCanvas.Width = Math.Max(1, layout.Size.W); graphCanvas.Height = Math.Max(1, layout.Size.H);
             var frames = new Dictionary<string, GraphRect>();
@@ -421,15 +427,20 @@ public sealed partial class MainWindow
                 content.Children.Add(new TextBlock { Text = block.Request, FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = .85 });
             if (block.Entries.Count > 0)
             {
-                var transcript = new AgentTranscript();
+                if (!graphTranscripts.TryGetValue(block.Id, out var transcript))
+                {
+                    transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
+                    transcript.SelectionEnded = () => { if (graphDeferredDraw) { graphDeferredDraw = false; Container.DispatcherQueue.TryEnqueue(() => { if (QueuePaneAlive) RefreshMightyView(Session); }); } };
+                    graphTranscripts[block.Id] = transcript;
+                }
                 transcript.View.MinHeight = 0;
-                transcript.Update(pane with { Logs = [.. block.Entries], Kind = "claude" }, owner.service.Snapshot.Theme == "light");
+                transcript.Update(pane with { Logs = [.. block.Entries], Kind = "claude" }, owner.service.Snapshot.Theme == "light", owner.pictures, Workspace.Path);
                 content.Children.Add(transcript.View);
             }
             var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Enabled };
             graphBodies[block.Id] = scroll;
             Grid.SetRow(scroll, 1); body.Children.Add(scroll);
-            if (resizable) body.Children.Add(BuildResultResizeGrip(block.Id));
+            if (block.Kind is "request" or "result" or "agent" or "draft") body.Children.Add(BuildResultResizeGrip(block.Id));
             card.Child = body;
             return card;
         }
@@ -484,6 +495,7 @@ public sealed partial class MainWindow
                 toggle.Click += (_, _) => ToggleResultFiles(runId);
                 right.Children.Add(toggle);
             }
+            AddGraphBlockSizeControls(right, block);
             Grid.SetColumn(right, 1); header.Children.Add(right);
             return header;
         }
@@ -595,17 +607,16 @@ public sealed partial class MainWindow
             {
                 var row = new Button { Content = new TextBlock { Text = file.Path + (file.Line is { } line ? ":" + line : ""), FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, MinHeight = 0, Height = 24, Padding = new Thickness(6, 0, 6, 0), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
                 AutomationProperties.SetName(row, file.Path);
-                row.Click += async (_, _) => await OpenResultFile(file.Path);
+                row.Click += async (_, _) => await OpenReferencePreview(file.Path, file.Line);
                 list.Children.Add(row);
             }
             panel.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 280 });
             return panel;
         }
 
-        /// Opens a result file with the default app. Core resolves the path and
-        /// refuses anything outside the workspace, so nothing else can be opened.
+        /// Both transcript paths and result-list entries open the same in-pane viewer.
         private Task OpenResultFile(string path) =>
-            owner.Act(() => { owner.service.OpenResultFile(path, Workspace.Path); return Task.CompletedTask; });
+            OpenReferencePreview(path);
 
         private void ToggleResultFiles(string runId)
         {
@@ -637,10 +648,12 @@ public sealed partial class MainWindow
                 graphResizing = true; graphDragging = false; CancelResultReveal();
                 graphResizeOrigin = args.GetCurrentPoint(graphViewport).Position;
                 graphResizeStart = (card.Width, card.Height);
-                graphResizeLayout = graphLayout;
+                graphResizeLayout = graphLayout; graphResizeNodeId = nodeId;
                 graphViewport.CapturePointer(args.Pointer);
                 args.Handled = true;
             };
+            grip.DoubleTapped += async (_, args) => { args.Handled = true; await ResetGraphBlockSize(nodeId); };
+            AutomationProperties.SetName(grip, Locale.Get("graph.block.resize"));
             return grip;
         }
 
@@ -654,6 +667,13 @@ public sealed partial class MainWindow
         /// Live: the card follows the cursor up to the pane's edge and stops there.
         private void MoveResultResize(Windows.Foundation.Point point)
         {
+            if (graphResizeNodeId != graphLatestResultId)
+            {
+                var raw = DraggedResultSize(point);
+                if (new GraphBlockSize(raw.W, raw.H).Normalized is { } custom && graphResizeNodeId is { } node && graphCards.TryGetValue(node, out var changed))
+                { changed.Width = custom.Width; changed.Height = custom.Height; }
+                return;
+            }
             var drag = MightyGraphLayout.ResultDrag(DraggedResultSize(point), true, true, MightyGraphLayout.ResizePhase.Live,
                 Session.GraphResultSize, graphResizeLayout?.ResultLimit, graphResizeLayout?.ResultWindowFit);
             if (drag.Live is not { } live || graphLatestResultId is null || !graphCards.TryGetValue(graphLatestResultId, out var card)) return;
@@ -673,6 +693,15 @@ public sealed partial class MainWindow
             var dragged = point is { } at ? DraggedResultSize(at) : graphResizeStart;
             var sides = MightyGraphLayout.ResultDragSides(graphResizeStart, dragged);
             if (sides is (false, false)) phase = MightyGraphLayout.ResizePhase.Cancelled;
+            if (graphResizeNodeId is { } nodeId && nodeId != graphLatestResultId)
+            {
+                graphResizeNodeId = null; graphResizeLayout = null;
+                if (phase != MightyGraphLayout.ResizePhase.Cancelled)
+                    _ = owner.Act(async () => { await Change(p => GraphBlockPreferences.Set(p, nodeId, new(dragged.W, dragged.H))); RefreshMightyView(Session); });
+                else RefreshMightyView(Session);
+                return;
+            }
+            graphResizeNodeId = null;
             var drag = MightyGraphLayout.ResultDrag(dragged, sides.Horizontal, sides.Vertical, phase,
                 Session.GraphResultSize, graphResizeLayout?.ResultLimit, graphResizeLayout?.ResultWindowFit);
             graphResizeLayout = null; graphLiveResultSize = null;

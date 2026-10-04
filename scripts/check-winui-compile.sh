@@ -26,7 +26,7 @@ PROJ="native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj"
 # csproj의 기본값: Configuration=Debug, RuntimeIdentifier=win-x64.
 OBJ="native/windows/MightyClaude.WinUI/obj/Debug/net10.0-windows10.0.19041.0/win-x64/Manifests"
 # XAML 표시 컴파일러만 만들어 주는 멤버 — 맥에서만 나는 유일한 오류다.
-EXPECTED='Program.cs(155,9): error CS0103'
+EXPECTED='Program\.cs\([0-9]+,[0-9]+\): error CS0103: .*InitializeComponent'
 
 mkdir -p "$OBJ"
 cp native/windows/MightyClaude.WinUI/app.manifest "$OBJ/app.manifest"
@@ -38,8 +38,8 @@ trap 'rm -f "$LOG"' EXIT
 dotnet build "$PROJ" -p:EnableWindowsTargeting=true -t:Compile --nologo -v q > "$LOG" 2>&1
 
 # 오류 줄만 모아 중복을 없앤다 (MSBuild가 요약에서 한 번 더 찍는다).
-UNEXPECTED="$(grep -oE '[A-Za-z0-9_.]+\.cs\([0-9]+,[0-9]+\): error [A-Z]+[0-9]+' "$LOG" \
-  | sort -u | grep -vF "$EXPECTED")"
+UNEXPECTED="$(grep -E ': error [A-Z]+[0-9]+' "$LOG" \
+  | sort -u | grep -vE "$EXPECTED")"
 
 if [ -n "$UNEXPECTED" ]; then
   echo "✗ WinUI C# 컴파일 오류가 남아 있습니다:" >&2
@@ -47,7 +47,7 @@ if [ -n "$UNEXPECTED" ]; then
   exit 1
 fi
 
-grep -qF "$EXPECTED" "$LOG" \
+grep -qE "$EXPECTED" "$LOG" \
   || { echo "✗ 예상한 XAML 전용 오류가 사라졌습니다. 스크립트의 $EXPECTED 를 확인하세요." >&2; exit 1; }
 
 echo "  WinUI: C# 컴파일 오류 없음 (XAML 전용 InitializeComponent 1건만 예상대로 남음)"

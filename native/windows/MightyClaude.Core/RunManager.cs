@@ -22,7 +22,12 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal readonly CancellationTokenSource Cancel = new();
         internal readonly TaskCompletionSource? Accepted = request.Attachments is { Count: > 0 } ? new(TaskCreationOptions.RunContinuationsAsynchronously) : null;
         internal ChildProcess? Child;
+        internal AgentIOBinding? PaneBinding;
         internal ClaudePermissionChannel? Permissions;
+        internal CodexApprovalChannel? CodexPermissions;
+        internal bool ProtocolFailed;
+        internal bool AuthenticationFailure;
+        internal ExecutionGraphTracker? Tracker;
         internal Task Task = Task.CompletedTask;
         internal int Bytes;
         internal bool Truncated;
@@ -30,6 +35,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal int ActivityBytes;
         internal volatile bool Finalizing, Finished;
     }
+    public Func<StartRunRequest, Workspace, AgentIOBinding?>? AgentIOBindingFactory { get; set; }
     private readonly ConcurrentDictionary<string, Run> runs = [];
     private readonly object lifecycle = new();
     private readonly ModBridge bridge = new();
@@ -38,18 +44,22 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     public Task StartAsync(StartRunRequest value)
     {
         var request = value.Validate();
+        if (request.Provider == "codex" && request.Settings!.PermissionMode == "onRequest" && permissionRequested is null)
+            throw new InvalidOperationException("Codex approval requests require a local approval surface.");
         lock (lifecycle)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             if (runs.Count >= 16) throw new InvalidOperationException(Locale.Get("run.error.tooManyConcurrent"));
             var run = new Run(request);
             if (!runs.TryAdd(request.SessionId, run)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
-            run.Task = ExecuteAsync(run); return run.Accepted?.Task ?? Task.CompletedTask;
+            run.Task = Task.Run(() => ExecuteAsync(run)); return run.Accepted?.Task ?? Task.CompletedTask;
         }
     }
     private void Log(Run run, string kind, string text)
     {
         if (run.Finished || string.IsNullOrEmpty(text)) return;
+        text = run.PaneBinding?.Redact(text) ?? text;
+        if (kind == "error" && (run.Request.Provider == "claude" ? CliAuthFailure.Claude(text) : run.Request.Provider == "codex" && CliAuthFailure.Codex(text))) run.AuthenticationFailure = true;
         if (kind is "output" or "assistant")
         {
             if (run.Truncated) return;
@@ -67,31 +77,83 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     }
     private async Task ExecuteAsync(Run run)
     {
-        var request = run.Request; var token = run.Cancel.Token; ModBridge.Connection? mod = null; StagedAttachments? attachments = null; var input = request.Input; Exception? startFailure = null;
-        var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => Activity(run, value), value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
-            images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); });
+        var request = run.Request; var token = run.Cancel.Token; var codexApprovals = request.Provider == "codex" && request.Settings!.PermissionMode == "onRequest"; ModBridge.Connection? mod = null; StagedAttachments? attachments = null; var input = request.Input; Exception? startFailure = null;
+        var startedAt = DateTimeOffset.UtcNow;
         ExecutionGraphTracker? tracker = null;
+        var graphDirty = 0;
+        var graphGate = new object();
+        CodexSessionWatcher? watcher = null;
+        var watcherDisabled = false;
+        string? codexHome = null;
+        using var graphCancel = new CancellationTokenSource();
+        Task graphTask = Task.CompletedTask;
+        var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => { if (tracker?.Activity(value) != true) Activity(run, value); }, value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
+            images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); });
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
-            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, request.Model, _ => { });
+            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, request.Model, _ => Interlocked.Exchange(ref graphDirty, 1));
+        run.Tracker = tracker;
+        void ReadChildren(bool closing)
+        {
+            if (watcherDisabled || tracker is null || request.Provider != "codex" || codexHome is null) return;
+            try
+            {
+                if (watcher is null && tracker.CodexRootThread is { } root && Guid.TryParseExact(root, "D", out _))
+                    watcher = new(codexHome, root, startedAt, tracker.RunID);
+                if (watcher is not null) foreach (var child in closing ? watcher.Finish() : watcher.Poll()) tracker.CodexSession(child);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Session-file observation is optional; a concurrent file change
+                // or malformed record must never fail the actual CLI turn.
+                watcherDisabled = true;
+                try { watcher?.Dispose(); } catch (IOException) { }
+                watcher = null;
+            }
+        }
         void Finish(string state)
         {
-            run.Finalizing = true;
-            parser.Flush(); parser.FinishActivities(state == "stopped");
-            if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", state, state == "completed" ? Locale.Get("run.activity.completed") : state == "stopped" ? Locale.Get("run.activity.stopped") : Locale.Get("run.activity.error")));
-            tracker?.Finish(state);
-            if (tracker?.BuildRun() is { } graphRun) emit(new(request.SessionId, "graph_run", GraphRun: graphRun));
-            run.Finished = true; emit(RunEvent.State(request.SessionId, state));
+            run.Finalizing = true; graphCancel.Cancel();
+            lock (graphGate)
+            {
+                parser.Flush(); parser.FinishActivities(state == "stopped");
+                if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", state, state == "completed" ? Locale.Get("run.activity.completed") : state == "stopped" ? Locale.Get("run.activity.stopped") : Locale.Get("run.activity.error")));
+                ReadChildren(true);
+                tracker?.Finish(state);
+                if (tracker?.BuildRun() is { } graphRun) emit(new(request.SessionId, "graph_run", GraphRun: graphRun));
+                run.Finished = true; emit(RunEvent.State(request.SessionId, state, state == "error" && run.AuthenticationFailure ? "authentication" : null));
+            }
+        }
+        async Task PublishGraphs()
+        {
+            try
+            {
+                while (!graphCancel.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), graphCancel.Token);
+                    lock (graphGate)
+                    {
+                        if (run.Finalizing || run.Finished) return;
+                        ReadChildren(false);
+                        if (Interlocked.Exchange(ref graphDirty, 0) != 0 && tracker?.BuildRun(includeRunning: true) is { } live) emit(new(request.SessionId, "graph_run", GraphRun: live));
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (graphCancel.IsCancellationRequested) { }
         }
         try
         {
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
             parser.ImageRoot = workspace.Path;
-            var environment = ProviderCatalog.QuietEnvironment(); string binary; IEnumerable<string> arguments; var interactive = false;
+            var environment = ProviderCatalog.QuietEnvironment();
+            codexHome = request.Provider == "codex" ? CliAccountSupport.CodexHome(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) : null;
+            if (tracker is not null) graphTask = PublishGraphs();
+            string binary; IEnumerable<string> arguments; var interactive = false;
             if (request.Kind == "shell") { binary = OperatingSystem.IsWindows() ? Environment.GetEnvironmentVariable("ComSpec") ?? "C:\\Windows\\System32\\cmd.exe" : "/bin/sh"; arguments = OperatingSystem.IsWindows() ? ["/d", "/s", "/c", request.Input] : ["-c", request.Input]; }
             else
             {
                 var command = await providers.FindAsync(request.Provider, token) ?? throw new InvalidOperationException(Locale.Get("run.error.cliNotInstalled", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) }));
                 token.ThrowIfCancellationRequested();
+                if (codexApprovals && !ProviderCatalog.SupportsCodexApprovals(command.Version)) throw new InvalidOperationException("Codex approval requests require stable Codex CLI 0.153.4 or later.");
                 if (request.Provider == "claude")
                 {
                     if (!ProviderCatalog.SupportsMods(command.Version)) throw new InvalidOperationException(Locale.Get("run.error.modsVersionRequired"));
@@ -101,10 +163,16 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     environment["MIGHTY_CLAUDE_ACTIVITY"] = "1"; environment["MIGHTY_CLAUDE_USAGE"] = "1"; environment["MIGHTY_CLAUDE_GRAPH"] = "1";
                     if (request.Settings!.Effort != "default") environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.Settings.Effort;
                 }
-                if (request.Settings!.Effort != "default") { var runtime = await providers.GetRuntimeAsync(); token.ThrowIfCancellationRequested(); if (!ProviderCatalog.Efforts(request.Provider, request.Model, runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog, request.RegisteredModels).Contains(request.Settings.Effort)) throw new ArgumentException(Locale.Get("run.error.effortNotSupported")); }
+                if (request.Settings!.Effort != "default") { var runtime = await providers.GetRuntimeAsync(workingDirectory: workspace.Path); token.ThrowIfCancellationRequested(); if (!ProviderCatalog.Efforts(request.Provider, request.Model, runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog, request.RegisteredModels).Contains(request.Settings.Effort)) throw new ArgumentException(Locale.Get("run.error.effortNotSupported")); }
                 if (request.Attachments is { Count: > 0 } files) { attachments = await StagedAttachments.CreateAsync(files, token); token.ThrowIfCancellationRequested(); input = attachments.InputFor(request); }
                 binary = command.Binary;
-                var providerArguments = attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory);
+                var providerArguments = codexApprovals ? ProviderCatalog.Arguments(request, pluginDirectory) : attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory);
+                if (request.Provider is "claude" or "codex" && AgentIOBindingFactory?.Invoke(request, workspace) is { } binding)
+                {
+                    run.PaneBinding = binding;
+                    foreach (var pair in binding.Environment) environment[pair.Key] = pair.Value;
+                    binding.AppendArguments(providerArguments);
+                }
                 // Host prompts over stdio only where the approval bar exists.
                 interactive = permissionRequested is not null && request.Provider == "claude";
                 if (interactive) ProviderInput.HostPrompts(providerArguments);
@@ -119,31 +187,72 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 // Fail closed: the prompt itself is only written after a
                 // successful handshake, and a failure stops the run.
                 run.Permissions = new ClaudePermissionChannel(request.SessionId, ProviderInput.PromptFrame(input),
-                    text => { if (run.Finished) return; try { child.Input.Write(text); child.Input.Flush(); } catch (IOException) { } catch (ObjectDisposedException) { } },
+                    text => { if (run.Finished || run.Finalizing) throw new IOException("The Claude input channel is closed."); child.Input.Write(text); child.Input.Flush(); },
                     value => { if (!run.Finished) permissionRequested!(value); },
                     (value, state) => parser.PermissionActivity(value, state),
                     message => Log(run, "system", message),
-                    message => { Log(run, "error", message); run.Cancel.Cancel(); });
+                    message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); });
+            }
+            void Consume(string line)
+            {
+                line = run.PaneBinding?.Redact(line) ?? line;
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(line); var frame = doc.RootElement;
+                    tracker?.Consume(frame);
+                    if (request.Provider == "claude")
+                    {
+                        if (frame.Text("type") == "result") run.AuthenticationFailure = CliAuthFailure.Claude(frame);
+                        else if (CliAuthFailure.Claude(frame)) run.AuthenticationFailure = true;
+                    }
+                    else if (request.Provider == "codex")
+                    {
+                        if (frame.Text("type") == "turn.completed") run.AuthenticationFailure = false;
+                        else if (frame.Text("type") is "turn.failed" or "error")
+                        {
+                            var message = frame.Text("message") ?? MetadataJson.Property(frame, "error").Text("message") ?? "";
+                            if (frame.Text("type") == "turn.failed") run.AuthenticationFailure = CliAuthFailure.Codex(message);
+                            else if (CliAuthFailure.Codex(message)) run.AuthenticationFailure = true;
+                        }
+                    }
+                }
+                catch (System.Text.Json.JsonException) { }
+                parser.Parse(line);
+            }
+            if (codexApprovals)
+            {
+                run.CodexPermissions = new CodexApprovalChannel(request, workspace.Path, input,
+                    attachments?.Files.Where(f => f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal)).Select(f => f.Path).ToArray() ?? [],
+                    text => { if (run.Finished) return; try { child.Input.Write(text); child.Input.Flush(); } catch (IOException) { } catch (ObjectDisposedException) { } }, Consume,
+                    value => { if (!run.Finished) permissionRequested!(value); },
+                    (value, state) => parser.PermissionActivity(value, state),
+                    message => Log(run, "system", message),
+                    message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); },
+                    () => { try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { } });
             }
             emit(RunEvent.State(request.SessionId, "running"));
             if (request.Kind != "shell") Activity(run, new(run.ActivityId, request.Provider, "turn", "running", Locale.Get("run.activity.running", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) })));
             // An agent's stream-json line may carry a whole picture in base64.
-            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : AgentImageSupport.MaximumLineCharacters, line =>
+            var output = PumpAsync(child.Output, request.Kind == "shell" ? 1024 * 1024 : codexApprovals ? CodexApprovalChannel.MaximumFrameBytes : AgentImageSupport.MaximumLineCharacters, line =>
             {
                 if (run.Finalizing) return;
                 if (request.Kind == "shell") { Log(run, "output", line); return; }
+                if (run.CodexPermissions is { } codex) { codex.Receive(line); return; }
                 run.Permissions?.Receive(line);
-                if (tracker is not null) try { using var doc = System.Text.Json.JsonDocument.Parse(line); tracker.Consume(doc.RootElement); } catch { }
-                parser.Parse(line);
+                Consume(line);
                 // One-shot shutdown: EOF only after the CLI's own turn result,
                 // so an approval reply is still possible while the turn runs.
                 if (run.Permissions is not null && ClaudeStream.IsTurnResult(line)) CloseChannel(run, child);
             }, token);
             var error = PumpAsync(child.Error, 1024 * 1024, line => Log(run, "output", line), token);
-            if (interactive)
+            if (interactive || codexApprovals)
             {
-                run.Permissions!.Start();
-                _ = Task.Delay(TimeSpan.FromSeconds(15), token).ContinueWith(_ => run.Permissions?.InitializationTimedOut(), TaskScheduler.Default);
+                run.Permissions?.Start(); run.CodexPermissions?.Start();
+                _ = Task.Delay(TimeSpan.FromSeconds(15), token).ContinueWith(delay =>
+                {
+                    if (delay.IsCanceled || run.Finished) return;
+                    run.Permissions?.InitializationTimedOut(); run.CodexPermissions?.InitializationTimedOut();
+                }, TaskScheduler.Default);
             }
             else
             {
@@ -154,15 +263,21 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             var code = await child.Completion.WaitAsync(token);
             child.Kill(); // Close descendants that inherited stdout after their parent exited.
             await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(3), token); parser.Flush();
+            run.CodexPermissions?.Flush();
             CloseChannel(run, child);
             if (mod is { Received: 0 }) Log(run, "system", Locale.Get("run.warning.noModEvents"));
-            Finish(code == 0 && !parser.Failed ? "completed" : "error");
+            Finish(code == 0 && !parser.Failed && !run.ProtocolFailed && (!codexApprovals || run.CodexPermissions?.TurnCompleted == true) ? "completed" : "error");
         }
-        catch (OperationCanceledException ex) { startFailure = ex; Finish("stopped"); }
-        catch (Exception ex) { startFailure = ex; Log(run, "error", ex.Message); Finish(run.Cancel.IsCancellationRequested ? "stopped" : "error"); }
+        catch (OperationCanceledException ex) { startFailure = ex; Finish(run.ProtocolFailed ? "error" : "stopped"); }
+        catch (Exception ex) { startFailure = ex; Log(run, "error", ex.Message); Finish(run.Cancel.IsCancellationRequested && !run.ProtocolFailed ? "stopped" : "error"); }
         finally
         {
+            graphCancel.Cancel();
+            try { await graphTask; } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+            try { watcher?.Dispose(); } catch (IOException) { }
+            run.Tracker = null;
             run.Permissions?.CancelAll(); run.Permissions = null;
+            run.CodexPermissions?.CancelAll(); run.CodexPermissions = null;
             mod?.Dispose(); run.Child = null;
             try { if (attachments is not null) await attachments.DisposeAsync(); }
             catch (IOException) { Log(run, "error", Locale.Get("run.error.attachmentCleanupFailed")); }
@@ -180,9 +295,21 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     /// <summary>이번만 허용 / 거부 for one waiting request of one run. Nothing else is ever returned.</summary>
     public void RespondToToolPermission(string sessionId, string requestId, bool allow)
     {
-        if (!runs.TryGetValue(sessionId, out var run) || run.Permissions is not { } channel)
+        if (!runs.TryGetValue(sessionId, out var run)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+        if (run.CodexPermissions is { } codex) codex.Respond(requestId, allow);
+        else if (run.Permissions is { } channel) channel.Respond(requestId, allow);
+        else throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+    }
+    public Task<bool> TrySteerAsync(string sessionId, string text)
+    {
+        if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel) return Task.FromResult(false);
+        try { var accepted = channel.TrySteer(text); if (accepted) run.Tracker?.Steer(Wire.Id(), text); return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
+    }
+    public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
+    {
+        if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel)
             throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
-        channel.Respond(requestId, allow);
+        channel.AnswerQuestions(requestId, answers);
     }
     private static void FeedMod(ExecutionGraphTracker tracker, System.Text.Json.JsonElement root)
     {

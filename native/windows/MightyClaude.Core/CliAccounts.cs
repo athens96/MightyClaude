@@ -18,6 +18,7 @@ public sealed record CliAccountStatus
     public string Detail { get; init; } = "";
     /// False when the sign-in cannot be undone by the app (API key in the environment, Vertex AI).
     public bool CanSignOut { get; init; } = true;
+    public bool? AccessVerified { get; init; }
 
     /// "user@example.com · Max · Claude 구독"
     public string Summary
@@ -35,12 +36,13 @@ public sealed record CliAccountStatus
     }
 }
 
-public enum CliLoginOption { Account, Console }
+public enum CliLoginOption { Account, Console, Bedrock }
 
 /// Parsing helpers that depend only on data — no I/O, no runner.
 /// Tests inject fixture JSON and file contents directly.
 public static class CliAccountSupport
 {
+    public static string CodexApiKeyMethod => Locale.Get("windows.cli.method.apiKey");
     private const int FileSizeCap = 1_048_576;
     private const int ClaimsDataCap = 65_536;
 
@@ -56,12 +58,16 @@ public static class CliAccountSupport
                 loggedInProp.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                 return new CliAccountStatus { Provider = "claude", LoggedIn = null, Detail = CliAccountStrings.DetailClaudeParseError };
 
+            var external = root.Text("apiProvider") switch { "bedrock" => "AWS Bedrock", "vertex" => "Google Vertex AI", "foundry" => "Microsoft Foundry", _ => null };
+            if (external is not null || root.Text("authMethod") is "third_party" or "api_key")
+                return new CliAccountStatus { Provider = "claude", LoggedIn = loggedInProp.GetBoolean(), Method = external ?? (root.Text("authMethod") == "api_key" ? "Anthropic API key" : "External provider"), CanSignOut = false, AccessVerified = false, Detail = external == "AWS Bedrock" ? BedrockSettings.ConfigurationOnly : BedrockSettings.ExternalConfigurationOnly };
+
             if (!loggedInProp.GetBoolean())
                 return new CliAccountStatus { Provider = "claude", LoggedIn = false };
 
             var method = root.Text("authMethod") switch
             {
-                "claude.ai" => "Claude 구독",
+                "claude.ai" => Locale.Get("windows.cli.method.claudeSubscription"),
                 "console" => "Anthropic Console",
                 { Length: > 0 } m => Clean(m),
                 _ => null,
@@ -86,7 +92,7 @@ public static class CliAccountSupport
         if (lower.Contains("not logged in"))
             return new CliAccountStatus { Provider = "codex", LoggedIn = false };
 
-        var method = lower.Contains("chatgpt") ? "ChatGPT" : lower.Contains("api key") ? "API 키" : null;
+        var method = lower.Contains("chatgpt") ? "ChatGPT" : lower.Contains("api key") ? Locale.Get("windows.cli.method.apiKey") : null;
         string? account = null, plan = null;
         if (authJson is { Length: > 0 })
         {
@@ -153,11 +159,11 @@ public static class CliAccountSupport
         return selected switch
         {
             "oauth-personal" or null => hasOAuth
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = "Google 계정", Account = active }
+                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.googleAccount"), Account = active }
                 : new CliAccountStatus { Provider = "gemini", LoggedIn = false },
             "gemini-api-key" => env.TryGetValue("GEMINI_API_KEY", out var key) && key.Length > 0
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = "Gemini API 키", Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false }
-                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = "Gemini API 키", Detail = CliAccountStrings.DetailGeminiApiKeyAbsent, CanSignOut = false },
+                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false }
+                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyAbsent, CanSignOut = false },
             "vertex-ai" => env.TryGetValue("GOOGLE_APPLICATION_CREDENTIALS", out var creds) && creds.Length > 0 ||
                            env.TryGetValue("GOOGLE_CLOUD_PROJECT", out var proj) && proj.Length > 0 ||
                            File.Exists(Path.Combine(home, ".config", "gcloud", "application_default_credentials.json"))
@@ -238,7 +244,7 @@ public static class CliAccountSupport
     /// argv for the CLI's own login command (passed to the external terminal).
     public static IReadOnlyList<string>? LoginArguments(string provider, CliLoginOption option = CliLoginOption.Account) => provider switch
     {
-        "claude" => option == CliLoginOption.Console ? ["claude", "auth", "login", "--console"] : ["claude", "auth", "login"],
+        "claude" => option == CliLoginOption.Bedrock ? ["claude", "/setup-bedrock"] : option == CliLoginOption.Console ? ["claude", "auth", "login", "--console"] : ["claude", "auth", "login"],
         "codex" => ["codex", "login"],
         "gemini" => ["gemini"],
         _ => null,
@@ -316,8 +322,9 @@ public sealed class CliAccountsCoordinator
 {
     private readonly ICliRunner runner;
     private readonly string home;
-    private readonly IReadOnlyDictionary<string, string> environment;
-    private readonly Dictionary<string, CliAccountStatus> statuses = new();
+    private readonly IReadOnlyDictionary<string, string>? fixedEnvironment;
+    private IReadOnlyDictionary<string, string> environment => fixedEnvironment ?? CliEnvironment.Current();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CliAccountStatus> statuses = new();
 
     private static readonly TimeSpan StatusTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan LogoutTimeout = TimeSpan.FromSeconds(30);
@@ -330,7 +337,7 @@ public sealed class CliAccountsCoordinator
         string? home = null)
     {
         this.runner = runner;
-        this.environment = environment ?? Runtime();
+        this.fixedEnvironment = environment;
         this.home = home ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
@@ -353,7 +360,7 @@ public sealed class CliAccountsCoordinator
         statuses[provider] = await StatusAsync(provider, cancellation);
     }
 
-    internal async Task<CliAccountStatus> StatusAsync(string provider, CancellationToken cancellation = default)
+    public async Task<CliAccountStatus> StatusAsync(string provider, CancellationToken cancellation = default)
     {
         if (provider == "gemini")
         {
@@ -384,6 +391,11 @@ public sealed class CliAccountsCoordinator
             var status = CliAccountSupport.ParseClaudeStatus(result.Output);
             if (status.LoggedIn is null)
                 status = status with { Detail = result.TimedOut ? CliAccountStrings.DetailClaudeTimeout : CliAccountStrings.DetailClaudeUnknown };
+            if (status.Method == "AWS Bedrock")
+            {
+                var detail = BedrockSettings.ConflictDetail(environment, CliAccountSupport.BoundedFileText(BedrockSettings.SettingsPath(home, environment)));
+                if (detail is not null) status = status with { Detail = status.Detail + " " + detail };
+            }
             return status;
         }
 
@@ -399,9 +411,11 @@ public sealed class CliAccountsCoordinator
     /// separate argument list, so no command line is built from text.
     public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default)
     {
-        var plan = CliAccountTerminal.LaunchPlan(loginArgv, FindBinary("wt") is not null);
+        var plan = CliAccountTerminal.LaunchPlan(loginArgv, !loginArgv.Contains("/setup-bedrock") && FindBinary("wt") is not null);
         var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
         foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
+        foreach (var pair in environment) info.Environment[pair.Key] = pair.Value;
+        if (loginArgv.Contains("/setup-bedrock")) info.Environment["CLAUDE_CODE_USE_BEDROCK"] = "1";
         using var process = System.Diagnostics.Process.Start(info);
         if (process is null) return;
         await process.WaitForExitAsync(cancellation);
@@ -469,10 +483,10 @@ public static class CliAccountSmoke
     // signed in (account + plan), signed out, not installed, cannot sign out.
     public static IReadOnlyList<CliAccountStatus> FixtureStatuses { get; } =
     [
-        new() { Provider = "claude", Installed = true, LoggedIn = true, Account = "me@example.com", Plan = "Max", Method = "Claude 구독", CanSignOut = true },
+        new() { Provider = "claude", Installed = true, LoggedIn = true, Account = "me@example.com", Plan = "Max", Method = Locale.Get("windows.cli.method.claudeSubscription"), CanSignOut = true },
         new() { Provider = "codex", Installed = true, LoggedIn = false },
         new() { Provider = "gemini", Installed = false, LoggedIn = null, Detail = CliAccountStrings.DetailGeminiNotInstalled, CanSignOut = false },
-        new() { Provider = "gemini", Installed = true, LoggedIn = true, Method = "Gemini API 키", Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false },
+        new() { Provider = "gemini", Installed = true, LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false },
     ];
 
     /// Drives the CLI accounts smoke through callbacks, so the whole flow —

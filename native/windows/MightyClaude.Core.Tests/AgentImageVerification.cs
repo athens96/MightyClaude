@@ -177,7 +177,7 @@ internal static class AgentImageVerification
         Check(Refusal(new byte[AgentImageSupport.MaximumImageBytes + 1], "image/png") == AgentImageError.TooLarge, "over 20 MB");
         Check(Refusal([], "image/png") == AgentImageError.Empty, "empty");
         Check(Refusal(Png(), "application/pdf") == AgentImageError.UnsupportedType, "a pdf is not a picture");
-        Check(Refusal("II*\0rest"u8.ToArray(), "image/tiff") == AgentImageError.UnsupportedType, "tiff needs a codec Windows lacks");
+        Check(Refusal("II*\0rest"u8.ToArray(), "image/tiff") == AgentImageError.Undecodable, "a corrupt TIFF image directory is refused before WIC decode");
         Check(Refusal("<html/>"u8.ToArray(), "image/svg+xml") == AgentImageError.Undecodable, "an svg must be an svg document");
         Check(AgentImageSupport.Inspect("<?xml version=\"1.0\"?><!-- c --><!DOCTYPE svg><svg xmlns=\"http://www.w3.org/2000/svg\"/>"u8.ToArray(), "image/svg") == ("image/svg+xml", 0, 0), "an svg after its prologue");
         Check(AgentImageSupport.MediaType("image/JPG") == "image/jpeg" && AgentImageSupport.MediaType("image/x-png") == "image/png" && AgentImageSupport.MediaType("text/plain") is null, "media type aliases");

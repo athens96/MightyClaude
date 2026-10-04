@@ -100,6 +100,8 @@ public sealed partial class MainWindow
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         line.Children.Add(ProviderMarkView.Create(provider));
         line.Children.Add(new TextBlock { Text = ProviderMark.Label(provider), FontSize = 11, Opacity = .65, VerticalAlignment = VerticalAlignment.Center });
+        var details = new TextBlock { Text = WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow), FontSize = 11, Opacity = .65, TextTrimming = TextTrimming.CharacterEllipsis };
+        sidebarDetails[session.Id] = details; line.Children.Add(details);
         sidebarMarks[session.Id] = provider;
         return line;
     }

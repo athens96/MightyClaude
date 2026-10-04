@@ -59,6 +59,7 @@ public sealed partial class MainWindow
 
     private Task SelectLayoutSession(string sessionId) => Act(async () =>
     {
+        HideDashboard();
         await service.UpdateAsync(state =>
         {
             var session = state.Sessions.FirstOrDefault(s => s.Id == sessionId);
