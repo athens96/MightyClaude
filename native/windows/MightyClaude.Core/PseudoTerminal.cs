@@ -76,7 +76,11 @@ public sealed class PseudoTerminal : IAsyncDisposable
             if (job == 0) throw new Win32Exception();
             var limits = new ChildProcess.Native.ExtendedLimits { Basic = new() { LimitFlags = 0x2000 } };
             if (!ChildProcess.Native.SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf<ChildProcess.Native.ExtendedLimits>())) throw new Win32Exception();
-            var startup = new Native.StartupInfoEx { Startup = new() { Size = Marshal.SizeOf<Native.StartupInfoEx>() }, Attributes = attrs };
+            // Explicit null standard handles prevent Windows from duplicating
+            // redirected parent streams into this child instead of connecting
+            // them to its pseudoconsole (also affects launchers and CI hosts).
+            // https://github.com/microsoft/terminal/discussions/15814
+            var startup = new Native.StartupInfoEx { Startup = new() { Size = Marshal.SizeOf<Native.StartupInfoEx>(), Flags = 0x100 }, Attributes = attrs };
             var command = new StringBuilder(string.Join(" ", new[] { executable }.Concat(arguments).Select(ChildProcess.QuoteWindows)));
             var variables = environment ?? CliEnvironment.Current();
             if (variables.Any(pair => pair.Key.Length == 0 || pair.Key.Contains('=') || pair.Key.Contains('\0') || pair.Value.Contains('\0')))
