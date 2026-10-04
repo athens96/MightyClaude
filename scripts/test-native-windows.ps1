@@ -144,6 +144,14 @@ try {
         $msg = "mightyDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: mightyDesign=$($result.mightyDesign)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    # Design stage 6, the dashboard (tiles, usage bars, rows, capsules, the selected entry's shadow), the files pane
+    # (filter row, chosen row, preview head, syntax colours), the settings sheet (800x700, heading, list, section
+    # cards), the start-new-or-resume sheet shown for real, and the usage and session popovers, light then dark on
+    # the same views (MainWindow.PanelsDesignSmoke.cs).
+    if ($result.panelsDesign -ne $true) {
+        $msg = "panelsDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: panelsDesign=$($result.panelsDesign)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg

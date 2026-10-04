@@ -184,8 +184,8 @@ public sealed partial class MainWindow
     }
     private MenuFlyout NewSessionMenu(string? groupId = null)
     {
-        // The macOS "창 추가" order (AddPaneMenu.Entries): agents, terminal, browser and files,
-        // then 프로젝트 폴더 열기… at the bottom.
+        // The macOS add-pane order (AddPaneMenu.Entries): agents, terminal, browser and files,
+        // then the open-project-folder item at the bottom.
         var menu = new MenuFlyout();
         foreach (var entry in AddPaneMenu.Entries())
             menu.Items.Add(entry switch
@@ -199,7 +199,28 @@ public sealed partial class MainWindow
                     ? MenuItem(ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider)), () => AddAgentPane(provider, groupId))
                     : throw new InvalidOperationException("unknown add-pane menu entry " + entry),
             });
+        MarkAddPaneMenu(menu, AddPaneMenu.Entries());
         return menu;
+    }
+
+    /// <summary>
+    /// The add-pane menu's marks at 12 (M/WorkspaceView.swift:418-453): each agent's own mark, a terminal
+    /// and a globe; the files and open-folder items keep their own symbols. <paramref name="entries"/>
+    /// lines up with the menu's items.
+    /// </summary>
+    private void MarkAddPaneMenu(MenuFlyout menu, IReadOnlyList<string> entries)
+    {
+        for (var i = 0; i < menu.Items.Count && i < entries.Count; i++)
+        {
+            if (menu.Items[i] is not MenuFlyoutItem { Icon: null } item) continue;
+            item.Icon = entries[i] switch
+            {
+                AddPaneMenu.Shell => new FontIcon { Glyph = "\uE756", FontSize = 12 },
+                AddPaneMenu.Browser => new FontIcon { Glyph = "\uE774", FontSize = 12 },
+                var entry when AddPaneMenu.AgentProvider(entry) is { } provider => ProviderMarkView.MenuIcon(provider, brushes),
+                _ => null,
+            };
+        }
     }
     private MenuFlyoutItem OpenProjectMenuItem()
     {
@@ -211,7 +232,7 @@ public sealed partial class MainWindow
     }
     /// <summary>
     /// Ctrl+O opens a project folder and Ctrl+N adds a Claude pane at once (macOS ⌘O, ⌘N):
-    /// the shortcut never asks 새로 시작 / 이어가기, as on macOS.
+    /// the shortcut never asks start-new or resume, as on macOS.
     /// </summary>
     private void InitAddPaneShortcuts()
     {
@@ -266,9 +287,9 @@ public sealed partial class MainWindow
     private Task CloseSession(string id) => Act(async () => { await service.StopAsync(id); await service.UpdateAsync(s => s with { Sessions = s.Sessions.Where(p => p.Id != id).ToList() }); Render(); });
     /// <summary>
     /// The rename dialog of RenameViews.swift: the current name selected, the macOS captions under
-    /// the field and 저장 disabled while the name is invalid. Every literal comes from RenameStrings
+    /// the field and Save disabled while the name is invalid. Every literal comes from RenameStrings
     /// and every rule from RenameSupport, so Windows and macOS accept and refuse the same names.
-    /// An agent pane also offers 자동 (pane.rename.automatic): its title follows its latest request again.
+    /// An agent pane also offers Automatic (pane.rename.automatic): its title follows its latest request again.
     /// </summary>
     private async Task<(bool Automatic, string? Name)> RenameDialog(string heading, string hint, string current, bool offerAutomatic = false)
     {
@@ -276,7 +297,7 @@ public sealed partial class MainWindow
         var hintText = new TextBlock { Text = hint, TextWrapping = TextWrapping.Wrap, Opacity = 0.7 };
         var errors = new StackPanel { Spacing = 2 };
         var content = new StackPanel { Spacing = 8, Children = { field, hintText, errors } };
-        var dialog = new ContentDialog
+        var dialog = StyledDialog(new ContentDialog
         {
             Title = heading,
             Content = content,
@@ -284,13 +305,13 @@ public sealed partial class MainWindow
             CloseButtonText = RenameStrings.ButtonCancel,
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = root.XamlRoot,
-        };
+        });
         if (offerAutomatic) dialog.SecondaryButtonText = Locale.Get("pane.rename.automatic");
         void Validate()
         {
             errors.Children.Clear();
             foreach (var message in RenameSupport.Messages(field.Text))
-                errors.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Red) });
+                errors.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Foreground = brushes.Brush(DesignToken.ErrText) });
             dialog.IsPrimaryButtonEnabled = RenameSupport.IsValid(field.Text);
         }
         // TextChanged is raised by the realised text editor, so it stays silent while the dialog is
@@ -319,7 +340,7 @@ public sealed partial class MainWindow
     private Task RenameSession(string id) => Act(async () =>
     {
         if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } session) return;
-        // Renaming fixes the title; 자동 hands it back to the latest request (macOS RenameViews.swift).
+        // Renaming fixes the title; Automatic hands it back to the latest request (macOS RenameViews.swift).
         var (automatic, name) = await RenameDialog(RenameStrings.HeadingSession, RenameStrings.HintSession, session.Title, offerAutomatic: session.Kind == "claude");
         if (automatic) await service.SetSessionAutoTitleAsync(id);
         else if (name is not null) await service.RenameSessionAsync(id, name);

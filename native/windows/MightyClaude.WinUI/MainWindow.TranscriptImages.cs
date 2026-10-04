@@ -73,7 +73,7 @@ public sealed partial class MainWindow
                 })));
                 var actionsScroll = new ScrollViewer { Content = controls, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled };
                 Grid.SetRow(actionsScroll, 1); body.Children.Add(actionsScroll);
-                await new ContentDialog { Title = Locale.Get("images.open"), Content = body, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }.ShowAsync();
+                await owner.StyledDialog(new ContentDialog { Title = Locale.Get("images.open"), Content = body, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }).ShowAsync();
             }
             finally { owner.dialogOpen = false; }
         });

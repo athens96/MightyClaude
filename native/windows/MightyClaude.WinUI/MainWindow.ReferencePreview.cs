@@ -108,12 +108,12 @@ public sealed partial class MainWindow
                 await Windows.System.Launcher.LaunchFileAsync(file);
             });
             open.FontSize = 11; actions.Children.Add(open); footer.Children.Add(actions);
-            var grip = referenceGrip = new Thumb { Width = 22, Height = 22, Background = new SolidColorBrush(Colors.Gray), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
+            var grip = referenceGrip = new Thumb { Width = 22, Height = 22, Background = owner.brushes.Brush(DesignToken.Line), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
             AutomationProperties.SetName(grip, Locale.Get("reference.resize")); AutomationProperties.SetAutomationId(grip, "mighty-reference-resize-" + id);
             grip.DragDelta += (_, args) => { referenceWidth += (referenceOnLeft ? 1 : -1) * args.HorizontalChange; referenceHeight += args.VerticalChange; FitReferencePreview(); };
             grip.DoubleTapped += (_, args) => { referenceWidth = 420; referenceHeight = 480; FitReferencePreview(); args.Handled = true; };
             Grid.SetColumn(grip, 1); footer.Children.Add(grip); Grid.SetRow(footer, 2); panel.Children.Add(footer);
-            referencePanel = new Border { Child = panel, BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray), CornerRadius = new CornerRadius(12), Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top };
+            referencePanel = new Border { Child = panel, BorderThickness = new Thickness(DesignMetrics.Stroke.Line), BorderBrush = owner.brushes.Brush(DesignToken.Line), CornerRadius = new CornerRadius(DesignMetrics.Radius.Block), Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Top };
             AutomationProperties.SetAutomationId(referencePanel, "mighty-reference-bubble-" + id); AutomationProperties.SetName(referencePanel, Locale.Get("reference.title"));
             Grid.SetRow(referencePanel, 1); grid.Children.Add(referencePanel);
             grid.SizeChanged += (_, _) => FitReferencePreview();

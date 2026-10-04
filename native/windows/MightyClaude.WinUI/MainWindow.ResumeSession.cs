@@ -7,7 +7,7 @@ namespace MightyClaude.WinUI;
 
 public sealed partial class MainWindow
 {
-    // ── 창 추가 → 기존 세션 이어가기 (macOS ResumeSessionSheet, docs/session-resume.md) ──
+    // ── Add pane → resume an earlier session (macOS ResumeSessionSheet, docs/session-resume.md) ──
 
     /// One look-up at a time: picking Claude or Codex again while it runs does nothing.
     private bool resumeLookup;
@@ -33,9 +33,9 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// "창 추가" for an agent: Claude and Codex first look for a session this
+    /// "Add pane" for an agent: Claude and Codex first look for a session this
     /// folder recorded (the head of each record only, nested runs hidden, open
-    /// panes' sessions left out). With one, the user picks 새로 시작 or 이어가기…;
+    /// panes' sessions left out). With one, the user picks Start new or Resume…;
     /// without one the pane is made at once. Gemini never asks, and Ctrl+N
     /// (AddPaneFromShortcut) never comes here. It runs under Act: a menu click
     /// awaits it from an async void handler, so no exception may escape.
@@ -62,48 +62,70 @@ public sealed partial class MainWindow
         // Moved to another workspace meanwhile: the answer is about another folder.
         if (service.Snapshot.ActiveWorkspaceId != workspaceId) return;
         if (probe.Items.Count == 0) { await AddPane("claude", provider, groupId); return; }
-        var name = ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider));
-        var choice = new ContentDialog
-        {
-            Title = Locale.Get("resume.choice.title", new Dictionary<string, string> { ["provider"] = name }),
-            Content = new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = name }), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
-            PrimaryButtonText = Locale.Get("resume.choice.startNew"),
-            SecondaryButtonText = Locale.Get("resume.choice.resume"),
-            CloseButtonText = Locale.Get("resume.cancel"),
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = root.XamlRoot,
-        };
-        AutomationProperties.SetAutomationId(choice, "add-pane-choice");
-        var picked = await ShowResumeDialog(choice);
+        var picked = await ShowResumeDialog(ResumeChoiceDialog(provider));
         if (picked == ContentDialogResult.Primary) await AddPane("claude", provider, groupId);
         else if (picked == ContentDialogResult.Secondary) await PickResumedSession(provider, workspace, groupId);
     });
 
     /// <summary>
+    /// Start new / Resume… (M/ResumeSessionSheet.swift): a 400-wide sheet, padding 20, the agent's 18pt mark
+    /// beside the 12pt <c>ink2</c> sentence; Cancel (Esc) | Resume… | Start new (the default, Enter).
+    /// </summary>
+    private ContentDialog ResumeChoiceDialog(string provider)
+    {
+        var name = ProviderCatalog.BetaLabel(provider, ProviderCatalog.Name(provider));
+        var body = new Grid { ColumnSpacing = 12 };
+        body.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); body.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        var mark = ProviderMarkView.Create(provider, ResumeMarkSize); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
+        body.Children.Add(mark);
+        var message = new TextBlock { Text = Locale.Get("resume.choice.message", new Dictionary<string, string> { ["provider"] = name }), FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap };
+        Grid.SetColumn(message, 1); body.Children.Add(message);
+        var choice = StyledDialog(new ContentDialog
+        {
+            Title = Locale.Get("resume.choice.title", new Dictionary<string, string> { ["provider"] = name }),
+            Content = body,
+            PrimaryButtonText = Locale.Get("resume.choice.startNew"),
+            SecondaryButtonText = Locale.Get("resume.choice.resume"),
+            CloseButtonText = Locale.Get("resume.cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root.XamlRoot,
+        }, ChoiceSheetWidth);
+        AutomationProperties.SetAutomationId(choice, "add-pane-choice");
+        return choice;
+    }
+
+    /// <summary>The agent mark on the resume sheets (M/ResumeSessionSheet.swift).</summary>
+    internal const double ResumeMarkSize = 18;
+
+    /// <summary>
     /// The list of one agent's sessions for the folder, newest first: title (the
     /// first request), when, how many requests and the model. Nested Ouroboros
-    /// runs are hidden unless 모든 세션 보기 is on; a session already open in a
+    /// runs are hidden unless Show all sessions is on; a session already open in a
     /// pane never shows. Picking one adds a pane that continues it.
     /// </summary>
     private async Task PickResumedSession(string provider, Workspace workspace, string? groupId)
     {
-        var search = new TextBox { PlaceholderText = Locale.Get("resume.search"), MinWidth = 420 };
+        // The list sheet (M/ResumeSessionSheet.swift, 560x520): the folder's path, the title search, the rows
+        // (mark, title, "5 days ago · 1 request · Opus 5.5"), Show all sessions with the hidden count, and the note.
+        var ink2 = brushes.Brush(DesignToken.Ink2);
+        var path = new Grid { Children = { new TextBlock { Text = workspace.Path, FontSize = DesignMetrics.Type.Mono, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis } } };
+        var search = new TextBox { PlaceholderText = Locale.Get("resume.search"), HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(search, Locale.Get("resume.search"));
-        var list = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true, MaxHeight = 360 };
+        var list = new ListView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true, Height = 300, Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Padding = new Thickness(0, 4, 0, 4) };
         AutomationProperties.SetAutomationId(list, "resume-session-list");
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = .75 };
+        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = ink2 };
         var showAll = new CheckBox { Content = Locale.Get("resume.showAll") };
         AutomationProperties.SetAutomationId(showAll, "resume-show-all");
-        var hidden = new TextBlock { FontSize = 11, Opacity = .65, VerticalAlignment = VerticalAlignment.Center };
+        var hidden = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
         var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { showAll, hidden } };
-        var note = new TextBlock { Text = Locale.Get("resume.note"), FontSize = 11, Opacity = .65 };
-        var dialog = new ContentDialog
+        var note = new TextBlock { Text = Locale.Get("resume.note"), FontSize = DesignMetrics.Type.Pill, Foreground = ink2 };
+        var dialog = StyledDialog(new ContentDialog
         {
             Title = Locale.Get("resume.title"),
-            Content = new StackPanel { Spacing = 8, Children = { search, status, list, footer, note } },
+            Content = new StackPanel { Spacing = 8, Children = { path, search, status, list, footer, note } },
             CloseButtonText = Locale.Get("resume.cancel"),
             XamlRoot = root.XamlRoot,
-        };
+        }, ResumeSheetWidth, ResumeSheetHeight);
         AutomationProperties.SetAutomationId(dialog, "resume-session-picker");
         var listing = ResumableSessionListing.Empty;
         ResumableSession? chosen = null;
@@ -155,13 +177,13 @@ public sealed partial class MainWindow
         await AddPane("claude", session.Provider, groupId, pane => ResumableSessions.Apply(session, pane));
     }
 
-    private static FrameworkElement ResumeRow(ResumableSession item, DateTimeOffset now)
+    private FrameworkElement ResumeRow(ResumableSession item, DateTimeOffset now)
     {
         var title = ResumableSessions.RowTitle(item);
         var details = ResumableSessions.Details(item, now);
         var text = new StackPanel { Spacing = 2 };
-        text.Children.Add(new TextBlock { Text = title, FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 400 });
-        text.Children.Add(new TextBlock { Text = details, FontSize = 11, Opacity = .65, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 400 });
+        text.Children.Add(new TextBlock { Text = title, FontSize = DesignMetrics.Type.Title, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 440 });
+        text.Children.Add(new TextBlock { Text = details, FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 440 });
         var mark = ProviderMarkView.Create(item.Provider, 14);
         mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 3, 0, 0);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Tag = item, Padding = new Thickness(0, 4, 0, 4), Children = { mark, text } };

@@ -20,6 +20,9 @@ public sealed partial class MainWindow
         private bool sessionInfoUnloadHooked;
         private string? sessionInfoLocale;
         private TextBlock? sessionInfoHeading, sessionInfoStatus;
+        private Border? sessionInfoContextBlock;
+        /// <summary>The session popover's parts the design smoke reads, once it was built.</summary>
+        internal (Flyout? Flyout, TextBlock? Status, Border? Context) SessionInfoDesignParts => (sessionInfoFlyout, sessionInfoStatus, sessionInfoContextBlock);
         private readonly Dictionary<string, (FrameworkElement Host, TextBlock Value)> sessionInfoRows = [];
 
         private void RefreshContextIndicator()
@@ -44,40 +47,43 @@ public sealed partial class MainWindow
         {
             sessionInfoRows.Clear();
             sessionInfoLocale = Locale.LanguagePreference + ":" + System.Globalization.CultureInfo.CurrentUICulture.Name;
+            var b = owner.brushes;
             var body = new StackPanel { Spacing = 9, Width = 330, RequestedTheme = owner.root.RequestedTheme };
-            sessionInfoHeading = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-            sessionInfoStatus = new TextBlock { FontSize = 11, Opacity = .65 };
+            sessionInfoHeading = new TextBlock { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
+            sessionInfoStatus = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2) };
             body.Children.Add(sessionInfoHeading); body.Children.Add(sessionInfoStatus);
             var details = new StackPanel { Spacing = 8 };
             var contextLine = new Grid { ColumnSpacing = 11 };
             contextLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); contextLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
             contextDetailRing = new(owner.brushes, 42); contextLine.Children.Add(contextDetailRing.View);
             var contextText = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-            contextText.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.context"), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            var contextValue = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Opacity = .7 };
+            contextText.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.context"), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink) });
+            var contextValue = new TextBlock { FontSize = DesignMetrics.Type.Pill, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink2) };
             contextText.Children.Add(contextValue); Grid.SetColumn(contextText, 1); contextLine.Children.Add(contextText);
-            details.Children.Add(new Border { Child = contextLine, Padding = new Thickness(10), CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 100, 149, 237)) });
+            // The ring's block on the accent's soft tint (M/SessionInfoViews.swift).
+            sessionInfoContextBlock = new Border { Child = contextLine, Padding = new Thickness(10), CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), Background = b.Brush(DesignToken.AccentSoft) };
+            details.Children.Add(sessionInfoContextBlock);
             sessionInfoRows["context"] = (contextLine, contextValue);
             void Add(string key, string label, StackPanel target)
             {
                 var row = new Grid { ColumnSpacing = 12 };
                 row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-                row.Children.Add(new TextBlock { Text = label, FontSize = 11, Opacity = .65 });
-                var value = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Right, IsTextSelectionEnabled = true };
+                row.Children.Add(new TextBlock { Text = label, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2) });
+                var value = new TextBlock { FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Right, IsTextSelectionEnabled = true };
                 Grid.SetColumn(value, 1); row.Children.Add(value); target.Children.Add(row); sessionInfoRows[key] = (row, value);
                 AutomationProperties.SetAutomationId(value, "session-info-" + key + "-" + id);
             }
             Add("model", Locale.Get("composer.label.model"), details); Add("elapsed", Locale.Get("composer.sessionInfo.elapsed"), details);
             Add("workspace", Locale.Get("composer.sessionInfo.workspace"), details);
-            var path = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = .65 };
+            var path = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Foreground = b.Brush(DesignToken.Ink2) };
             details.Children.Add(path); sessionInfoRows["path"] = (path, path); AutomationProperties.SetAutomationId(path, "session-info-path-" + id);
-            details.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(40, 135, 135, 135)) });
+            details.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = b.Brush(DesignToken.Line) });
             Add("scope", Locale.Get("composer.sessionInfo.tokenScope"), details);
             Add("input", Locale.Get("composer.sessionInfo.input"), details); Add("output", Locale.Get("composer.sessionInfo.output"), details);
             Add("cache-read", Locale.Get("composer.sessionInfo.cacheRead"), details); Add("cache-write", Locale.Get("composer.sessionInfo.cacheWrite"), details);
             Add("reasoning", Locale.Get("composer.sessionInfo.reasoning"), details); Add("total", Locale.Get("composer.sessionInfo.total"), details);
             Add("cost", Locale.Get("composer.sessionInfo.cost"), details); Add("cost-scope", Locale.Get("composer.sessionInfo.costScope"), details);
-            details.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.note"), FontSize = 10, Opacity = .55, TextWrapping = TextWrapping.Wrap });
+            details.Children.Add(new TextBlock { Text = Locale.Get("composer.sessionInfo.note"), FontSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink3), TextWrapping = TextWrapping.Wrap });
             var identifiers = new StackPanel { Spacing = 6 };
             Add("identity", Locale.Get("composer.sessionInfo.mightySessionId"), identifiers);
             Add("cli-identity", Locale.Get("composer.sessionInfo.cliSessionId"), identifiers);
@@ -86,7 +92,7 @@ public sealed partial class MainWindow
             Add("source", Locale.Get("composer.sessionInfo.source"), details);
             body.Children.Add(new ScrollViewer { Content = details, MaxHeight = 410, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
             AutomationProperties.SetAutomationId(body, "session-info-" + id);
-            sessionInfoFlyout = new Flyout { Content = body, Placement = FlyoutPlacementMode.Top };
+            sessionInfoFlyout = new Flyout { Content = body, Placement = FlyoutPlacementMode.Top, FlyoutPresenterStyle = owner.CardFlyoutStyle };
             sessionInfoFlyout.Closed += (_, _) => sessionInfoOpen = false;
             if (!sessionInfoUnloadHooked) { context.Unloaded += (_, _) => sessionInfoFlyout?.Hide(); sessionInfoUnloadHooked = true; }
         }

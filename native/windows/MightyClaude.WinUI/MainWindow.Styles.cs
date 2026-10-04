@@ -80,7 +80,7 @@ public sealed partial class MainWindow
                 {
                     var remove = Button(Locale.Get("settings.styles.removeButton"), () => Act(async () =>
                     {
-                        var confirm = new ContentDialog { Title = Locale.Get("settings.styles.removeButton"), Content = new TextBlock { Text = style.Path, TextWrapping = TextWrapping.Wrap }, XamlRoot = SettingsXamlRoot, PrimaryButtonText = Locale.Get("settings.styles.removeButton"), CloseButtonText = Locale.Get("guidedPanel.cancelButton"), DefaultButton = ContentDialogButton.Close };
+                        var confirm = StyledDialog(new ContentDialog { Title = Locale.Get("settings.styles.removeButton"), Content = new TextBlock { Text = style.Path, TextWrapping = TextWrapping.Wrap }, XamlRoot = SettingsXamlRoot, PrimaryButtonText = Locale.Get("settings.styles.removeButton"), CloseButtonText = Locale.Get("guidedPanel.cancelButton"), DefaultButton = ContentDialogButton.Close });
                         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
                         await Task.Run(() =>
                         {
@@ -185,11 +185,18 @@ public sealed partial class MainWindow
                 styleEnterPrefix.Text=Locale.Get("styles.enterPrefix",new Dictionary<string,string>{{"prompt",style.Manifest.Actions.First(a=>a.Id==actionId).Prompt("")}});styleEnterPrefix.Visibility=Visibility.Visible;
             }
         }
-        private static Windows.UI.Color StyleColor(string? tint)=>tint switch
+        /// <summary>
+        /// A style manifest's tint name as the D ink that plays its role (M/GuidedActionChip.swift:8-20):
+        /// purple agentText, teal taskText, indigo questionText, mint compactText, orange steerText,
+        /// green doneText, red errText, secondary ink2, accent (or none) accent.
+        /// </summary>
+        /// <summary>The emphasised guided chip's tint opacity (M/GuidedActionChip.swift:46).</summary>
+        private const double StyleChipTint=0.18;
+        private static DesignToken StyleTint(string? tint)=>tint switch
         {
-            "purple"=>Microsoft.UI.Colors.MediumPurple,"teal"=>Microsoft.UI.Colors.Teal,"indigo"=>Microsoft.UI.Colors.SlateBlue,
-            "mint"=>Microsoft.UI.Colors.MediumSeaGreen,"orange"=>Microsoft.UI.Colors.DarkOrange,"green"=>Microsoft.UI.Colors.ForestGreen,
-            "red"=>Microsoft.UI.Colors.IndianRed,"secondary"=>Microsoft.UI.Colors.Gray,_=>Microsoft.UI.Colors.CornflowerBlue
+            "purple"=>DesignToken.AgentText,"teal"=>DesignToken.TaskText,"indigo"=>DesignToken.QuestionText,
+            "mint"=>DesignToken.CompactText,"orange"=>DesignToken.SteerText,"green"=>DesignToken.DoneText,
+            "red"=>DesignToken.ErrText,"secondary"=>DesignToken.Ink2,_=>DesignToken.Accent
         };
         private void RenderGuidedStyle()
         {
@@ -214,7 +221,7 @@ public sealed partial class MainWindow
                 {
                     if(phases.Children.Count>0)phases.Children.Add(new TextBlock{Text="›",Opacity=.5});
                     var label=new TextBlock{Text=item.Title,FontSize=10,FontWeight=item.Id==phase?.Id?FontWeights.SemiBold:FontWeights.Normal,Opacity=(phase is null||item.Order>phase.Order) ? .55 : 1};
-                    if(item.Id==phase?.Id)label.Foreground=new SolidColorBrush(StyleColor("accent"));phases.Children.Add(label);
+                    if(item.Id==phase?.Id)label.Foreground=owner.brushes.Brush(StyleTint("accent"));phases.Children.Add(label);
                 }
                 guidedBody.Children.Add(new ScrollViewer{Content=phases,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
             }
@@ -233,7 +240,7 @@ public sealed partial class MainWindow
                         var current=await Task.Run(()=>StyleRegistry.Load(owner.StateDirectory,Workspace.Path));
                         if(current.Runnable(style.Id,style.Hash)==null)throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
                         var actual=StyleRunPermissions.InstallCommand(command,PseudoTerminal.DefaultShell);
-                        var confirm=new ContentDialog{Title=Locale.Get("guidedPanel.installButton"),Content=new TextBox{Text=actual,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true},XamlRoot=owner.root.XamlRoot,PrimaryButtonText=Locale.Get("guidedPanel.installButton"),CloseButtonText=Locale.Get("guidedPanel.cancelButton"),DefaultButton=ContentDialogButton.Close};
+                        var confirm=owner.StyledDialog(new ContentDialog{Title=Locale.Get("guidedPanel.installButton"),Content=new TextBox{Text=actual,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,AcceptsReturn=true},XamlRoot=owner.root.XamlRoot,PrimaryButtonText=Locale.Get("guidedPanel.installButton"),CloseButtonText=Locale.Get("guidedPanel.cancelButton"),DefaultButton=ContentDialogButton.Close});
                         if(await confirm.ShowAsync()!=ContentDialogResult.Primary)return;
                         if(!StyleRegistry.Unchanged(style)||Session.MightyStyle!=style.Id||Session.MightyStyleHash!=style.Hash||owner.service.Snapshot.ActiveWorkspaceId!=Session.WorkspaceId)
                             throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
@@ -262,7 +269,7 @@ public sealed partial class MainWindow
                 {
                     var content=new StackPanel{Spacing=2};content.Children.Add(new TextBlock{Text=item.Title,FontWeight=FontWeights.SemiBold,FontSize=11});content.Children.Add(new TextBlock{Text=item.Axis??"",FontSize=9,Opacity=.7});
                     var button=Button("",()=>{styleGroup=item.Id;RenderGuidedStyle();return Task.CompletedTask;});button.Content=content;button.Margin=new(2);button.HorizontalAlignment=HorizontalAlignment.Stretch;
-                    if(group?.Id==item.Id)button.BorderBrush=new SolidColorBrush(StyleColor("accent"));ToolTipService.SetToolTip(button,item.Question??item.Title);AutomationProperties.SetAutomationId(button,"mighty-group-"+item.Id+"-"+id);groups.Children.Add(button);
+                    if(group?.Id==item.Id)button.BorderBrush=owner.brushes.Brush(StyleTint("accent"));ToolTipService.SetToolTip(button,item.Question??item.Title);AutomationProperties.SetAutomationId(button,"mighty-group-"+item.Id+"-"+id);groups.Children.Add(button);
                 }
                 guidedBody.Children.Add(groups);
                 if(group?.Question is {} question)guidedBody.Children.Add(new TextBlock{Text=question,FontSize=11,TextWrapping=TextWrapping.Wrap});
@@ -285,7 +292,11 @@ public sealed partial class MainWindow
                 {
                     var flags=action.Flags??[];var label=(action.Glyph??StylePresentation.Icon(action.Icon))+" "+action.Title+(flags.Contains("userInvoked")?" ♙":"")+(flags.Contains("readOnly")?" ◉":"");
                     var button=Button(label.Trim(),()=>InvokeStyleAction(action.Id));button.FontSize=11;button.Margin=new(2);button.Padding=new(5);button.IsEnabled=!action.RequiresText||!string.IsNullOrWhiteSpace(input.Text);
-                    if(action.Id==prominent||action.Id==recommended){var color=StyleColor(action.Tint);button.BorderBrush=new SolidColorBrush(color);color.A=40;button.Background=new SolidColorBrush(color);button.FontWeight=FontWeights.SemiBold;}
+                    // An emphasised chip on its tint x 0.18, the others on the subtle wash, radius 6 (M/GuidedActionChip.swift:44-46);
+                    // each chip is built anew with every render, so its look is painted once, before it is shown.
+                    var emphasised=action.Id==prominent||action.Id==recommended;button.CornerRadius=new(DesignMetrics.Radius.Segment);button.BorderThickness=new(0);
+                    var chipFill=emphasised?owner.brushes.Brush(StyleTint(action.Tint),StyleChipTint):owner.brushes.Subtle;owner.PaintPlainButton(button,chipFill,chipFill,ink:owner.brushes.Brush(DesignToken.Ink),disabledInk:owner.brushes.Brush(DesignToken.Ink3));
+                    if(emphasised)button.FontWeight=FontWeights.SemiBold;
                     ToolTipService.SetToolTip(button,StylePresentation.ActionHelp(action));AutomationProperties.SetAutomationId(button,"style-action-"+action.Id);chips.Children.Add(button);styleActionButtons[action.Id]=button;
                 }
                 guidedBody.Children.Add(new ScrollViewer{Content=chips,MaxHeight=evaluator.DrawsGroupMap?92:76,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});

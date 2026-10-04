@@ -69,7 +69,7 @@ public sealed partial class MainWindow
                 : (IPluginReader)new ClaudePluginReader(runner);
 
         var rows = new StackPanel { Spacing = 8 };
-        var status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Orange), Visibility = Visibility.Collapsed };
+        var status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = brushes.Brush(DesignToken.WaitText), Visibility = Visibility.Collapsed };
         AutomationProperties.SetAutomationId(status, PluginAutomationId(provider, "load-status"));
         var diagnostics = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
         var diagnosticsToggle = Button(PluginStrings.DiagnosticsDisclosure, () =>
@@ -135,7 +135,7 @@ public sealed partial class MainWindow
         var pickerNote = new TextBlock { FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap };
         AutomationProperties.SetAutomationId(pickerNote, PluginAutomationId(provider, "picker-note"));
 
-        // 마켓플레이스 새로고침 button and the Codex Git-only note.
+        // The marketplace refresh button and the Codex Git-only note.
         var refreshBtn = new Button { Content = PluginStrings.ButtonMarketplaceRefresh };
         AutomationProperties.SetAutomationId(refreshBtn, PluginAutomationId(provider, "refresh-marketplaces"));
         var marketplaceUnavailable = new TextBlock { FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
@@ -215,23 +215,23 @@ public sealed partial class MainWindow
                     var capturedId = row.Id;
                     installBtn.Click += async (_, _) => await OperateAsync(() => operations.InstallAsync(browser, reader, capturedId));
                     panel.Children.Add(installBtn);
-                    rows.Children.Add(panel);
+                    rows.Children.Add(Toned(panel));
                 }
             }
             else
             {
-                foreach (var row in browser.Rows()) rows.Children.Add(PluginRow(provider, row));
+                foreach (var row in browser.Rows()) rows.Children.Add(Toned(PluginRow(provider, row)));
             }
             if (rows.Children.Count == 0)
             {
-                rows.Children.Add(new TextBlock { Text = browser.EmptyMessage, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 28, 0, 28) });
+                rows.Children.Add(Toned(new TextBlock { Text = browser.EmptyMessage, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 28, 0, 28) }));
                 if (browser.ShowsMarketplaceHelpLink)
                     rows.Children.Add(new HyperlinkButton { Content = PluginStrings.MarketplaceHelpLink, NavigateUri = new Uri("https://code.claude.com/docs/en/discover-plugins#add-marketplaces"), HorizontalAlignment = HorizontalAlignment.Center });
                 if (browser.MarketplaceHelpText is { Length: > 0 } help)
                 {
                     var sentence = new TextBlock { Text = help, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center };
                     AutomationProperties.SetAutomationId(sentence, PluginAutomationId(provider, "marketplace-help"));
-                    rows.Children.Add(sentence);
+                    rows.Children.Add(Toned(sentence));
                 }
             }
         }
@@ -316,16 +316,16 @@ public sealed partial class MainWindow
             RenderPlugins();
         }
 
-        var dialog = new ContentDialog
+        var dialog = StyledDialog(new ContentDialog
         {
             Title = browser.Title,
             Content = body,
             CloseButtonText = PluginStrings.ButtonClose,
             XamlRoot = root.XamlRoot,
-        };
+        });
         AutomationProperties.SetAutomationId(dialog, PluginAutomationId(provider, "browser"));
         dialog.Opened += (_, _) => _ = LoadPluginsAsync();
-        // macOS keeps 닫기 disabled while an operation runs; a ContentDialog's
+        // macOS keeps Close disabled while an operation runs; a ContentDialog's
         // close button cannot be disabled, so the close itself is refused.
         dialog.Closing += (_, args) => { if (!browser.CanClose) args.Cancel = true; };
 
@@ -657,9 +657,10 @@ public sealed partial class MainWindow
         }
     }
 
-    private static StackPanel PluginRowPanel(string provider, ClaudePluginRow row)
+    /// <summary>A plugin as a row on the subtle wash at radius 9; secondary words <c>ink2</c>, errors <c>waitText</c>.</summary>
+    private StackPanel PluginRowPanel(string provider, ClaudePluginRow row)
     {
-        var panel = new StackPanel { Spacing = 5, Padding = new Thickness(11), CornerRadius = new CornerRadius(9), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 128, 128, 128)) };
+        var panel = new StackPanel { Spacing = 5, Padding = new Thickness(11), CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton), Background = brushes.Subtle };
         AutomationProperties.SetAutomationId(panel, PluginAutomationId(provider, "row-" + row.Id));
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         title.Children.Add(new TextBlock { Text = row.Name, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
@@ -674,13 +675,13 @@ public sealed partial class MainWindow
         if (row.ProjectPath is { Length: > 0 })
             panel.Children.Add(new TextBlock { Text = row.ProjectPath, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .5, TextTrimming = TextTrimming.CharacterEllipsis });
         foreach (var error in row.Errors)
-            panel.Children.Add(new TextBlock { Text = error, FontSize = 10, Foreground = new SolidColorBrush(Colors.Orange), TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = error, FontSize = 10, Foreground = brushes.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
         foreach (var note in row.Notes)
             panel.Children.Add(new TextBlock { Text = note, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
         return panel;
     }
 
-    private static FrameworkElement PluginRow(string provider, ClaudePluginRow row) => PluginRowPanel(provider, row);
+    private FrameworkElement PluginRow(string provider, ClaudePluginRow row) => PluginRowPanel(provider, row);
 
     // Drives the real plugin window with a fake reader that returns success
     // immediately for install and refresh. Verifies the scope picker options,

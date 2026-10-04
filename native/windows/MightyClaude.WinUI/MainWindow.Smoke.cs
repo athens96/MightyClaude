@@ -264,6 +264,11 @@ public sealed partial class MainWindow
                 if (restoreMightyDesign is not null) await restoreMightyDesign();
                 root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render();
             }
+            // Design stage 6: the dashboard, files pane, settings, sheets and popovers, light then dark on the same views.
+            Checkpoint(PanelsDesignKey, "running");
+            result["panelsDesignChecks"] = await RunPanelsDesignSmoke(workspace);
+            result[PanelsDesignKey] = true;
+            Checkpoint(PanelsDesignKey, "passed");
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             var leakStrings = new List<string>();
             CollectVisibleStrings(root, leakStrings);
