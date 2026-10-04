@@ -2,6 +2,7 @@ using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Windows.System;
 
 namespace MightyClaude.WinUI;
@@ -111,7 +112,9 @@ public sealed partial class MainWindow
         input.TextCompositionEnded += (_, _) => composing = false;
         input.LostFocus += (_, _) => composing = false;
         AutomationProperties.SetAutomationId(input, "phaseModels-add-" + provider);
-        input.TextChanged += (_, _) => draft.Name = input.Text;
+        // WinUI can deliver TextChanged after a following click. Keep the
+        // redraw draft synchronized with the value, not the queued text event.
+        input.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => draft.Name = input.Text);
         var add = new Button { Content = Locale.Get("settings.phaseModels.addButton") };
         AutomationProperties.SetAutomationId(add, "phaseModels-addButton-" + provider);
         var supports = new CheckBox { Content = Locale.Get("settings.phaseModels.supportsEffortLabel"), IsChecked = draft.SupportsEffort };
@@ -123,18 +126,25 @@ public sealed partial class MainWindow
         {
             var chip = new CheckBox { Content = level, IsChecked = draft.Levels.Contains(level) };
             AutomationProperties.SetAutomationId(chip, "phaseModels-addLevel-" + provider + "-" + level);
-            chip.Checked += (_, _) => draft.Levels.Add(level); chip.Unchecked += (_, _) => draft.Levels.Remove(level); chips.Children.Add(chip);
+            chip.RegisterPropertyChangedCallback(ToggleButton.IsCheckedProperty, (_, _) => { if (chip.IsChecked == true) draft.Levels.Add(level); else draft.Levels.Remove(level); }); chips.Children.Add(chip);
         }
         levels.Children.Add(chips);
-        supports.Checked += (_, _) => { draft.SupportsEffort = true; levels.Visibility = Visibility.Visible; };
-        supports.Unchecked += (_, _) => { draft.SupportsEffort = false; draft.Levels.Clear(); foreach (var chip in chips.Children.OfType<CheckBox>()) chip.IsChecked = false; levels.Visibility = Visibility.Collapsed; };
+        supports.RegisterPropertyChangedCallback(ToggleButton.IsCheckedProperty, (_, _) =>
+        {
+            draft.SupportsEffort = supports.IsChecked == true;
+            if (!draft.SupportsEffort) { draft.Levels.Clear(); foreach (var chip in chips.Children.OfType<CheckBox>()) chip.IsChecked = false; }
+            levels.Visibility = draft.SupportsEffort ? Visibility.Visible : Visibility.Collapsed;
+        });
         var validation = PhaseModelErrorText(draft.Error ?? "");
         AutomationProperties.SetAutomationId(validation, "phaseModels-error-" + provider);
         async Task Add()
         {
             try
             {
-                var entry = PhaseModelPreferences.Registration(draft.Name, PhaseRegistered(provider), draft.SupportsEffort, draft.Levels);
+                // The action boundary uses the live form, including a final IME
+                // commit or automation edit whose text event is still queued.
+                var selectedLevels = chips.Children.OfType<CheckBox>().Where(chip => chip.IsChecked == true).Select(chip => (string)chip.Content).ToArray();
+                var entry = PhaseModelPreferences.Registration(input.Text, PhaseRegistered(provider), supports.IsChecked == true, selectedLevels);
                 await UpdatePhaseRegistered(provider, entries => entries.Any(e => e.Name == entry.Name) ? entries : [.. entries, entry], () => { draft.Name = ""; draft.SupportsEffort = false; draft.Levels.Clear(); draft.Error = null; });
             }
             catch (ArgumentException ex) { validation.Text = draft.Error = ex.Message; }

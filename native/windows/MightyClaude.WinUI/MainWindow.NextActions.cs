@@ -69,8 +69,8 @@ public sealed partial class MainWindow
                 await WaitUI(() => nextActionsHost.IsLoaded && nextActionsHost.ActualHeight > 0 && nextActionsHost.Children.OfType<Button>().Count() == 2);
                 input.Text = "\uD55C\uAE00 draft"; await WaitUI(() => Session.Draft == input.Text);
                 var button = nextActionsHost.Children.OfType<Button>().First(); await WaitUI(() => button.IsLoaded && button.ActualWidth > 0);
-                await SettleDesktopCapture(Container);
-                await CaptureElement(Container, Path.Combine(owner.options.ProfileDirectory!, "smoke-next-actions.png"));
+                await SettleDesktopCapture(owner.root);
+                await owner.CaptureSmoke(Path.Combine(owner.options.ProfileDirectory!, "smoke-next-actions.png"));
                 ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
                 await WaitUI(() => Session.Draft.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n') == "\uD55C\uAE00 draft\nooo run");
                 Require(sendCount == 0 && ReferenceEquals(input, VisualChildren(Container).OfType<TextBox>().First(control => ReferenceEquals(control, input))), "Next action must only fill the existing native editor.");
