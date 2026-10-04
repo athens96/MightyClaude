@@ -18,7 +18,7 @@ public sealed partial class MainWindow
         var provider = ProviderMarkView.Labelled(ProviderMark.Label(card.Session.Provider), card.Session.Provider, 11, FontWeights.Normal);
         AutomationProperties.SetAutomationId(provider, "dashboard-provider-" + card.Session.Id);
         line.Children.Add(provider);
-        if (ProviderCatalog.ShowsBetaBadge(card.Session)) line.Children.Add(BetaBadgeView.Create(DarkTheme));
+        if (ProviderCatalog.ShowsBetaBadge(card.Session)) line.Children.Add(BetaBadgeView.Create(brushes));
         if (card.Model is { } model) line.Children.Add(new TextBlock { Text = "· " + ModelLabel.Text(model), FontSize = 11, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis });
         return line;
     }

@@ -23,17 +23,23 @@ public sealed partial class MainWindow : Window
     private readonly Grid root = new();
     /// <summary>The window's background: the token <c>page</c>, one brush for every theme.</summary>
     private SolidColorBrush WindowBackground() => brushes.Brush(DesignToken.Page);
-    private readonly StackPanel sidebar = new() { Spacing = 10 };
+    // No spacing: every sidebar part carries the Mac's own margins (MainWindow.Sidebar.cs).
+    // The search, the work-status entry and the section header stay put; only the list under
+    // them scrolls (M/WorkspaceView.swift:69-96).
+    private readonly StackPanel sidebarTop = new();
+    /// <summary>The scrolling part of the sidebar: the workspace list and its empty text.</summary>
+    private readonly StackPanel sidebar = new();
     private readonly Grid panes = new() { ColumnSpacing = 12, RowSpacing = 12 };
-    private readonly StackPanel workspaces = new() { Spacing = 4 };
-    private readonly TextBox search = new() { Margin = new Thickness(0, 4, 0, 4) };
-    private readonly TextBlock sessionsHeader = new() { FontSize = 11, Opacity = .6, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly StackPanel workspaces = new() { Spacing = 4, Margin = new Thickness(9, 0, 9, 0) };
+    private readonly TextBox search = new() { FontSize = 12, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock sessionsHeader = new() { FontSize = DesignMetrics.Type.Small, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     // The whole Windows app is a beta: the badge beside the sidebar brand.
-    private readonly TextBlock brandBeta = new() { FontSize = 10, Opacity = .75 };
+    private readonly TextBlock brandBeta = new() { FontSize = DesignMetrics.Type.Badge, FontWeight = Microsoft.UI.Text.FontWeights.Medium };
     private readonly Button addFolderButton, settingsButton;
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly ComboBox layout = new() { Width = 105 };
+    // The Windows-only layout picker (decision Q3: kept, styled as a sidebar control).
+    private readonly ComboBox layout = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Dictionary<string, PaneView> views = [];
     private RuntimeInfo? runtime;
     private bool rendering, canClose, closing;
@@ -84,13 +90,14 @@ public sealed partial class MainWindow : Window
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(DesignMetrics.Layout.SidebarDefault), MinWidth = DesignMetrics.Layout.SidebarMin, MaxWidth = DesignMetrics.Layout.SidebarMax }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Tag = name });
         layout.SelectionChanged += async (_, _) => { if (!rendering && layout.SelectedItem is ComboBoxItem item) await ApplyLayoutPreset((string)item.Tag); };
-        addFolderButton = Button("", PickFolder); sidebar.Children.Add(search); sidebar.Children.Add(sessionsHeader); sidebar.Children.Add(workspaces); sidebar.Children.Add(addFolderButton);
+        addFolderButton = Button("", PickFolder); sidebarTop.Children.Add(BuildSidebarSearch()); sidebarTop.Children.Add(BuildSidebarSectionHeader()); sidebar.Children.Add(workspaces); sidebar.Children.Add(sidebarEmpty); StyleSidebarOpenFolder();
         InitAppShell();
-        var sideHost = new Grid { RowSpacing = 10, Padding = new Thickness(12) }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        sideHost.Children.Add(new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
-        var navigation = new StackPanel { Spacing = 6 }; navigation.Children.Add(layout);
-        navigation.Children.Add(BuildCompanionControls());
-        settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); ApplyChromeText(); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
+        var sideHost = new Grid(); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto }); sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        sideHost.Children.Add(sidebarTop);
+        var list = new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled }; Grid.SetRow(list, 1); sideHost.Children.Add(list);
+        // Under the list, the open-folder button (only while none is listed), the layout picker and pet buttons, then the footer.
+        var navigation = new StackPanel(); navigation.Children.Add(addFolderButton); navigation.Children.Add(BuildSidebarTools());
+        settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); ApplyChromeText(); Grid.SetRow(navigation, 2); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
         sidebarSurface.Child = sideHost; Grid.SetRowSpan(sidebarSurface, 3); root.Children.Add(sidebarSurface);
         Grid.SetColumn(workspaceHeader, 1); root.Children.Add(workspaceHeader); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
@@ -126,8 +133,8 @@ public sealed partial class MainWindow : Window
         search.PlaceholderText = Locale.Get("sidebar.searchPlaceholder");
         foreach (var item in layout.Items.OfType<ComboBoxItem>())
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
-        addFolderButton.Content = Locale.Get("sidebar.addProjectFolder"); AutomationProperties.SetName(addFolderButton, (string)addFolderButton.Content);
-        sessionsHeader.Text = Locale.Get("phone.workspaces.title");
+        addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
+        sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
         RefreshSidebarThemeButton();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));

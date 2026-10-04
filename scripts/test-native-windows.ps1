@@ -121,6 +121,13 @@ try {
         $msg = "appShellDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: appShellDesign=$($result.appShellDesign)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    # Design stage 3, the sidebar: search (with and without results), work-status entry, section
+    # header, workspace and pane rows (selected, hover, meta ink, waiting words), counts, beta
+    # capsules, add row, layout picker and footer, in both themes (MainWindow.DesignSmoke.cs).
+    if ($result.sidebarDesign -ne $true) {
+        $msg = "sidebarDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: sidebarDesign=$($result.sidebarDesign)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg

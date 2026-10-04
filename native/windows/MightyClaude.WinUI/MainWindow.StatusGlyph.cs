@@ -71,6 +71,12 @@ internal sealed class StatusMark
         }
     }
 
+    /// <summary>Draws nothing and stops the spark turning, for a mark that is hidden (a count of zero).</summary>
+    internal void Clear()
+    {
+        spin?.Stop(); spin = null; canvas.RenderTransform = null; canvas.Children.Clear(); drawn = null;
+    }
+
     private void Spin()
     {
         var turn = new RotateTransform { CenterX = size / 2, CenterY = size / 2 }; canvas.RenderTransform = turn;
@@ -123,11 +129,8 @@ internal sealed class StatusMark
         return geometry;
     }
 
-    private static SolidColorBrush Paint(string hex)
-    {
-        var rgb = Convert.ToInt32(hex[1..], 16);
-        return new SolidColorBrush(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
-    }
+    /// <summary>A Core palette hex as a brush; the mark redraws with new brushes when the theme changes (<c>drawn</c> holds it).</summary>
+    private static SolidColorBrush Paint(string hex) => new(DesignBrushes.ToColor(new DesignColor(Convert.ToUInt32(hex[1..], 16))));
 }
 
 public sealed partial class MainWindow
