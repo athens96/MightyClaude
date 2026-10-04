@@ -218,7 +218,7 @@ public sealed partial class MainWindow
             meta.Children.Add(new TextBlock { Text = look.Icon, FontSize = 10, Foreground = new SolidColorBrush(StyleColor(look.Tint)) });
             var description = new TextBlock { Text = string.Join(" · ", new[] { MightyTimeline.KindLabel(row.Kind), capsule, MightyTimeline.DurationLabel(row.DurationMs) }.Where(s => s is { Length: > 0 })), FontSize = 11, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis };
             Grid.SetColumn(description, 1); meta.Children.Add(description); text.Children.Add(meta);
-            if (row.Latest is { } latest) text.Children.Add(new TextBlock { Text = latest, FontSize = 11, FontFamily = new FontFamily("Cascadia Mono"), Opacity = .65, TextTrimming = TextTrimming.CharacterEllipsis });
+            if (row.Latest is { } latest) text.Children.Add(new TextBlock { Text = latest, FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .65, TextTrimming = TextTrimming.CharacterEllipsis });
             var header = TimelineHeading(); header.Children.Add(text); var pill = TimelinePill(row.Status); Grid.SetColumn(pill, 1); header.Children.Add(pill);
             var button = TimelineButton(header, "mighty-timeline-row-" + row.NodeId, () => ToggleTimelineRow(row.NodeId));
             button.Padding = new Thickness(11, 7, 11, 7); AutomationProperties.SetName(button, row.Title + ", " + MightyGraphBlockModel.StateLabel(row.Status));
@@ -272,7 +272,7 @@ public sealed partial class MainWindow
                 actions.Children.Add(fileButton);
             }
             var caption = Locale.Get("graph.timeline.requestOrdinal", new Dictionary<string, string> { ["n"] = group.Ordinal.ToString() }) + (run.TotalUsage is { } usage ? " · " + GraphTokenUsage.Compact(usage.Total) : "");
-            actions.Children.Add(new TextBlock { Text = caption, FontSize = 10, FontFamily = new FontFamily("Cascadia Mono"), VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(owner.DarkTheme ? Colors.Black : Colors.White) });
+            actions.Children.Add(new TextBlock { Text = caption, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(owner.DarkTheme ? Colors.Black : Colors.White) });
             Grid.SetColumn(actions, 1); header.Children.Add(actions); body.Children.Add(header);
             if (result.Text is { } answer)
             {

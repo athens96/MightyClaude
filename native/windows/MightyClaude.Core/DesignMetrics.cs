@@ -94,7 +94,10 @@ public static class DesignMetrics
         public const string Mono = "Cascadia Mono, Consolas";
         /// <summary>SF Pro → Segoe UI Variable (Windows 11), Segoe UI on Windows 10; Korean falls back to Malgun Gothic.</summary>
         public const string Body = "Segoe UI Variable Text, Segoe UI";
-        /// <summary>Avenir Next Bold → open decision Q1; its default (a) is the system display face.</summary>
+        /// <summary>
+        /// Avenir Next Bold → Segoe UI Variable Display, drawn with <c>FontWeights.Bold</c> (decision Q1, 2026-10-04):
+        /// the dashboard title, its number tiles and workspace names (M/DashboardView.swift:18-25).
+        /// </summary>
         public const string Heading = "Segoe UI Variable Display, Segoe UI";
     }
 
@@ -114,6 +117,11 @@ public static class DesignMetrics
         public const double PreviewHead = 40;
         /// <summary>The composer toolbar and its chips (M/ComposerControls.swift:39-62).</summary>
         public const double Toolbar = 32;
+        /// <summary>The smallest pane (a tab group) the dock lays out before it scrolls (M/PaneDockView.swift:41-44).</summary>
+        public const double PaneMinWidth = 315;
+        public const double PaneMinHeight = 290;
+        /// <summary>A split's divider: the hit area between two panes, around a visible 3×30 handle (M/PaneDockView.swift:42, 125-158).</summary>
+        public const double SplitDivider = 10;
     }
 
     /// <summary>

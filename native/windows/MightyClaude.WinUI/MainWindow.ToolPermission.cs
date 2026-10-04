@@ -73,7 +73,7 @@ public sealed partial class MainWindow
             var body = new StackPanel { Spacing = 4 };
             body.Children.Add(titleRow); body.Children.Add(permPathBlock);
             body.Children.Add(permReasonBlock); body.Children.Add(permCannotAllowBlock);
-            permInputBlock = new TextBlock { FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+            permInputBlock = new TextBlock { FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
             AutomationProperties.SetAutomationId(permInputBlock, "permission-input-" + id);
             body.Children.Add(new ScrollViewer { Content = permInputBlock, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
             body.Children.Add(noteBlock); body.Children.Add(buttons);

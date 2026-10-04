@@ -202,7 +202,7 @@ public sealed partial class MainWindow
         companionQuestionWindow?.Close();
         if (UserQuestionnaire.Parse(request.InputJson) is not { } questionnaire) return;
         var draft = CompanionDraft(request); var window = new Window { Title = Locale.Get("phone.questionnaire.title") }; var host = new StackPanel { Spacing = 12, Padding = new Thickness(18) };
-        window.Content = new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; window.AppWindow.Resize(new(460, 580));
+        window.Content = new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; window.AppWindow.Resize(new(460, 580)); brushes.ApplyTitleBar(window.AppWindow);
         companionQuestionWindow = window; companionQuestionWindowKey = key;
         window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } };
         void RenderQuestion()
@@ -250,7 +250,7 @@ public sealed partial class MainWindow
         var content = new Grid { Padding = new Thickness(16), RowSpacing = 10, RequestedTheme = root.RequestedTheme };
         content.RowDefinitions.Add(new() { Height = GridLength.Auto }); content.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
         content.Children.Add(new TextBlock { Text = window.Title, FontSize = 17, TextWrapping = TextWrapping.Wrap });
-        var text = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), Text = request.InputJson };
+        var text = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), Text = request.InputJson };
         var scroll = new ScrollViewer { Content = text, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(scroll, 1); content.Children.Add(scroll);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; var error = new TextBlock { TextWrapping = TextWrapping.Wrap };
         Task Respond(bool allow)
@@ -261,7 +261,7 @@ public sealed partial class MainWindow
         }
         buttons.Children.Add(Button(ToolPermissionStrings.ButtonDeny, () => Respond(false))); buttons.Children.Add(Button(ToolPermissionStrings.ButtonAllowOnce, () => Respond(true)));
         var footer = new StackPanel { Spacing = 6 }; footer.Children.Add(error); footer.Children.Add(buttons); Grid.SetRow(footer, 2); content.Children.Add(footer);
-        window.Content = content; window.AppWindow.Resize(new(520, 500)); companionQuestionWindow = window; companionQuestionWindowKey = key;
+        window.Content = content; window.AppWindow.Resize(new(520, 500)); brushes.ApplyTitleBar(window.AppWindow); companionQuestionWindow = window; companionQuestionWindowKey = key;
         window.Closed += (_, _) => { if (companionQuestionWindow == window) { companionQuestionWindow = null; companionQuestionWindowKey = null; } }; window.Activate();
     }
     private StackPanel BuildCompanionSection()

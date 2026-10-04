@@ -86,7 +86,7 @@ public sealed partial class MainWindow
     private sealed partial class PaneView
     {
         private const double FilesLineHeight = 18;
-        private static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas");
+        private static readonly FontFamily MonoFont = new(DesignMetrics.Font.Mono);
         private bool filesAttached, renderingTree, showMarkdownSource;
         private Grid? filesHost;
         private TextBox? filesFilter;

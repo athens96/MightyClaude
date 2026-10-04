@@ -138,7 +138,7 @@ public sealed partial class MainWindow
             grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             var invocation = new TextBlock
             {
-                Text = "/" + command.Invocation, FontSize = 12, FontFamily = new FontFamily("Consolas"),
+                Text = "/" + command.Invocation, FontSize = 12, FontFamily = new FontFamily(DesignMetrics.Font.Mono),
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Top,
             };

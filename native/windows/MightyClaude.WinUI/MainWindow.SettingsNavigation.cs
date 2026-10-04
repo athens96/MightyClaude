@@ -66,8 +66,10 @@ public sealed partial class MainWindow
             var close = Button(Locale.Get("settings.closeButton"), () => { window.Close(); return Task.CompletedTask; });
             close.HorizontalAlignment = HorizontalAlignment.Right; Grid.SetRow(close, 2); frame.Children.Add(close);
             var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            window.Closed += (_, _) => closed.TrySetResult();
-            window.AppWindow.Resize(new Windows.Graphics.SizeInt32(800, 700));
+            // Dropped at once, not after the awaiting continuation runs: a Render in between must not
+            // touch the closed window's AppWindow.
+            window.Closed += (_, _) => { if (ReferenceEquals(settingsWindow, window)) settingsWindow = null; closed.TrySetResult(); };
+            window.AppWindow.Resize(new Windows.Graphics.SizeInt32(800, 700)); brushes.ApplyTitleBar(window.AppWindow);
             window.Activate();
             await closed.Task;
         }

@@ -31,9 +31,9 @@ public sealed partial class MainWindow
         header.RowDefinitions.Add(new() { Height = GridLength.Auto }); header.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var details = new StackPanel { Spacing = 4 };
         var heading = SafeButton(workspace.Name, () => SelectWorkspace(workspace.Id));
-        heading.HorizontalAlignment = HorizontalAlignment.Left; heading.FontSize = 17; heading.FontWeight = FontWeights.SemiBold;
+        heading.HorizontalAlignment = HorizontalAlignment.Left; heading.FontSize = 17; heading.FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Heading); heading.FontWeight = FontWeights.Bold;
         details.Children.Add(heading);
-        var path = new TextBlock { Text = workspace.Path, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"), FontSize = 11, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis };
+        var path = new TextBlock { Text = workspace.Path, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono), FontSize = 11, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis };
         ToolTipService.SetToolTip(path, workspace.Path); details.Children.Add(path);
         var git = new TextBlock { FontSize = 11, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis, Visibility = Visibility.Collapsed };
         AutomationProperties.SetAutomationId(git, "dashboard-git-" + workspace.Id);

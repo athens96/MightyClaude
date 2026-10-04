@@ -58,6 +58,7 @@ public sealed partial class MainWindow
         // One snapshot copy per tick: the theme and every session come from it.
         var state = service.Snapshot; var dark = state.Theme != "light";
         foreach (var pair in workspaceStatusCounts) UpdateWorkspaceStatusCounts(pair.Key, pair.Value);
+        if (workspaceHeaderId is { } headerWorkspace) UpdateWorkspaceStatusCounts(headerWorkspace, workspaceHeaderCounts);
         foreach (var session in state.Sessions)
         {
             var pending = PendingRequests(session.Id);

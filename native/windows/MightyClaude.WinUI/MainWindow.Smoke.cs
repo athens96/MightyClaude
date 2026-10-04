@@ -196,6 +196,14 @@ public sealed partial class MainWindow
                 Checkpoint("designTokens", "running");
                 RequireDesignTokensInTheme(accentProbe);
                 var pageBrush = brushes.Brush(DesignToken.Page); var cardBrush = brushes.Brush(DesignToken.Card);
+                // Design stage 2, the app shell: the same check in both themes, on the same reused
+                // panes, whose border brushes must be recoloured in place by the toggle.
+                Checkpoint(AppShellKey, "running");
+                var inactivePane = views.Where(p => p.Key != service.Snapshot.ActiveSessionId).Select(p => p.Value).FirstOrDefault()
+                    ?? throw new InvalidOperationException($"{AppShellKey}: needs one inactive pane besides the active smoke pane; views {views.Count}");
+                Require(service.Snapshot.ActiveSessionId is { } shellActiveId && views.TryGetValue(shellActiveId, out var shellActiveView) && ReferenceEquals(pane, shellActiveView), $"{AppShellKey}: the smoke pane must be the active pane; active {service.Snapshot.ActiveSessionId ?? "none"}");
+                RequireAppShellInTheme(pane, inactivePane);
+                var activeBorder = pane.Container.BorderBrush; var inactiveBorder = inactivePane.Container.BorderBrush;
                 root.UpdateLayout(); await Task.Delay(120);
                 Checkpoint("lightThemeScreenshot", "running");
                 result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
@@ -207,6 +215,12 @@ public sealed partial class MainWindow
                 Require(ReferenceEquals(pane, views[sessions[0].Id]), "designTokens: the theme toggle rebuilt the pane instead of reusing it");
                 result["designTokens"] = true;
                 Checkpoint("designTokens", "passed");
+                Checkpoint(AppShellKey, "running");
+                Require(views.ContainsValue(inactivePane) && ReferenceEquals(pane.Container.BorderBrush, activeBorder) && ReferenceEquals(inactivePane.Container.BorderBrush, inactiveBorder),
+                    $"{AppShellKey} (dark): the toggle replaced a pane or its border brush instead of recolouring it in place; active {Describe(pane.Container.BorderBrush)}, inactive {Describe(inactivePane.Container.BorderBrush)}");
+                RequireAppShellInTheme(pane, inactivePane);
+                result[AppShellKey] = true;
+                Checkpoint(AppShellKey, "passed");
                 result["opaqueBackgroundInBothThemes"] = true;
             }
             finally { root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }

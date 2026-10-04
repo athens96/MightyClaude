@@ -30,7 +30,7 @@ public sealed partial class MainWindow
             var panel = new StackPanel { Spacing = 4 };
             panel.Children.Add(new TextBlock { Text = section.Title, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
             var lines = new StackPanel { Spacing = 3 };
-            foreach(var text in section.Lines) lines.Children.Add(new TextBlock { Text = text, FontSize = 11, FontFamily = new FontFamily(section.Monospaced ? "Consolas" : "Segoe UI"), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            foreach(var text in section.Lines) lines.Children.Add(new TextBlock { Text = text, FontSize = 11, FontFamily = new FontFamily(section.Monospaced ? DesignMetrics.Font.Mono : "Segoe UI"), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
             panel.Children.Add(lines); if(section.Foldable)collapsible.Add(lines);
             return panel;
         }

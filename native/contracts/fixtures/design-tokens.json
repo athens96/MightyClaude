@@ -371,7 +371,10 @@
       "tabStrip": 38,
       "blockHead": 38,
       "previewHead": 40,
-      "toolbar": 32
+      "toolbar": 32,
+      "paneMinWidth": 315,
+      "paneMinHeight": 290,
+      "splitDivider": 10
     },
     "dash": {
       "running": {

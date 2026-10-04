@@ -120,7 +120,6 @@ public sealed partial class MainWindow
                 if (isExpanded)
                 {
                     var children = new StackPanel { Spacing = 2, Margin = new Thickness(22, 0, 2, 0) };
-                    if (WorkspaceGitBadge(workspace) is { } badge) children.Children.Add(badge);
                     foreach (var session in state.Sessions.Where(session => session.WorkspaceId == workspace.Id))
                     {
                         var button = SidebarButton(session.Title, () => SelectLayoutSession(session.Id));

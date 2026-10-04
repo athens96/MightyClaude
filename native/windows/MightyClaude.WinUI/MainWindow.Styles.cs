@@ -96,7 +96,7 @@ public sealed partial class MainWindow
         }
         panel.Loaded += async (_, _) => await Act(Populate); return panel;
     }
-    private static TextBox StyleContents(RegisteredStyle style) => new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 380, MinWidth = 300, FontFamily = new FontFamily("Consolas"), Text = Encoding.UTF8.GetString(style.Bytes.Span) };
+    private static TextBox StyleContents(RegisteredStyle style) => new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 380, MinWidth = 300, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Text = Encoding.UTF8.GetString(style.Bytes.Span) };
     private Task ApproveStyle(RegisteredStyle style) => Task.Run(() =>
     {
         if (!StyleRegistry.Unchanged(style)) throw new IOException(Locale.Get("guidedPanel.approvalRequired"));
