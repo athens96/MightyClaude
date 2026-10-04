@@ -746,7 +746,12 @@ public sealed partial class MainWindow
             try
             {
                 pendingAttachments.Clear(); RefreshAttachments();
-                input.Text = "paneChromeDesign"; await WaitUI(() => send.IsEnabled && Session.Draft == input.Text);
+                // Whether a draft may be sent also hangs on the pane's runtime, which the runner may not
+                // have; the look is checked for the state the button is in, then for each state set directly.
+                input.Text = "paneChromeDesign"; await WaitUI(() => Session.Draft == input.Text);
+                Require(!sendIsStop, $"{key} ({theme}): an idle pane with a draft must show the send arrow, not the stop square");
+                o.RequireBrush(sendDisc, e => ((Border)e).Background, send.IsEnabled ? DesignToken.Run : DesignToken.Track, $"the send circle with a draft (send {(send.IsEnabled ? "enabled" : "disabled")})", key: key);
+                send.IsEnabled = true; PaintSend();
                 o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Run, "the send circle with a draft", key: key);
                 o.RequireBrush(sendGlyph, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the send arrow", key: key);
                 Require(sendDisc.Width == 32 && sendDisc.Height == 32 && sendDisc.CornerRadius == new CornerRadius(16), $"{key} ({theme}): the send shape must be a 32 circle; got {sendDisc.Width}x{sendDisc.Height} r{sendDisc.CornerRadius}");
