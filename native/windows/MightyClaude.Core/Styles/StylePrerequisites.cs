@@ -22,17 +22,21 @@ public static class StylePrerequisites
         var shown=StyleManifest.Text(p,"report")=="all"?missing:missing.Take(1);
         return new(false,shown.Select(p=>StyleManifest.Text(p,"missing")!).ToArray(),missing.Select(p=>StyleManifest.Text(p,"hint")).FirstOrDefault(),manifest.Root.TryGetProperty("install",out var install)&&missing.Any(p=>!p.TryGetProperty("install",out var v)||v.ValueKind==JsonValueKind.True)?StyleManifest.Text(install,"command"):null);
     }
-    public static (Dictionary<string,string> States,List<(string Title,string Path)> Files) Capabilities(StyleManifest manifest,string workspace)
+    public static (Dictionary<string,string> States,List<StyleAttachmentItem> Files) Capabilities(StyleManifest manifest,string workspace)
     {
         workspace=WorkspaceFiles.RealPath(workspace)??workspace;
-        var states=new Dictionary<string,string>();var files=new List<(string,string)>();if(!StyleManifest.Strings(manifest.Root,"capabilities").Contains("paperthin.casebook"))return(states,files);
+        var states=new Dictionary<string,string>();var files=new List<StyleAttachmentItem>();if(!StyleManifest.Strings(manifest.Root,"capabilities").Contains("paperthin.casebook"))return(states,files);
         states["paperthin.casebook"]="absent";var root=WorkspaceFiles.Resolve(".re0/iteration",workspace);if(root is null||!Directory.Exists(root))return(states,files);
         try
         {
-            var folders=Directory.EnumerateDirectories(root).Take(1024).Where(p=>(File.GetAttributes(p)&FileAttributes.ReparsePoint)==0).OrderByDescending(Directory.GetLastWriteTimeUtc).Take(24);
-            var candidates=folders.Select(folder=>new{Folder=folder,Files=Directory.EnumerateFiles(folder).Take(1024).Where(p=>p.EndsWith(".local.md",StringComparison.Ordinal)&&(File.GetAttributes(p)&FileAttributes.ReparsePoint)==0&&StyleFiles.Read(workspace,Path.GetRelativePath(workspace,p))!=null).Take(24).ToArray()}).Where(c=>c.Files.Length>0).OrderByDescending(c=>c.Files.Max(File.GetLastWriteTimeUtc)).FirstOrDefault();
+            var order=new[]{"DESIGN.local.md","WORKFLOW.local.md","EVIDENCE.local.md","RETRO.local.md"};
+            var folders=Directory.EnumerateDirectories(root).Where(p=>(File.GetAttributes(p)&FileAttributes.ReparsePoint)==0).OrderByDescending(Directory.GetLastWriteTimeUtc).Take(24);
+            var candidates=folders.Select(folder=>new{Folder=folder,Files=Directory.EnumerateFiles(folder).Where(p=>p.EndsWith(".local.md",StringComparison.Ordinal)&&(File.GetAttributes(p)&FileAttributes.ReparsePoint)==0).ToArray()})
+                .Where(c=>c.Files.Length>0).OrderByDescending(c=>c.Files.Max(File.GetLastWriteTimeUtc))
+                .Select(c=>new{c.Folder,Files=c.Files.OrderBy(p=>Array.IndexOf(order,Path.GetFileName(p)) is var i&&i>=0?i:4).ThenBy(Path.GetFileName,StringComparer.Ordinal).Where(p=>StyleFiles.Read(workspace,Path.GetRelativePath(workspace,p))!=null).Take(24).ToArray()}).FirstOrDefault(c=>c.Files.Length>0);
             if(candidates==null)return(states,files);var names=candidates.Files.Select(Path.GetFileName).ToArray();states["paperthin.casebook"]=names.Contains("DESIGN.local.md")&&names.Contains("RETRO.local.md")?"complete":"open";
-            var order=new[]{"DESIGN.local.md","WORKFLOW.local.md","EVIDENCE.local.md","RETRO.local.md"};foreach(var path in candidates.Files.OrderBy(p=>Array.IndexOf(order,Path.GetFileName(p)) is var i&&i>=0?i:4).ThenBy(Path.GetFileName,StringComparer.Ordinal).Take(6))files.Add((StyleText.Safe(Path.GetFileName(path).Replace(".local.md","",StringComparison.Ordinal),80),path));
+            var detail=StyleText.Safe(Path.GetFileName(candidates.Folder)+" · "+(names.Contains("DESIGN.local.md")?"full":"lightweight"),120);
+            foreach(var path in candidates.Files)files.Add(new(StyleText.Safe(Path.GetFileName(path).Replace(".local.md","",StringComparison.Ordinal),80),path,detail));
         }
         catch(Exception e)when(e is IOException or UnauthorizedAccessException){}
         return(states,files);

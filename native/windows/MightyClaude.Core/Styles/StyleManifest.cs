@@ -21,7 +21,7 @@ public static class StyleText
     }
     public static string Folded(string value) => string.Concat(value.Normalize(NormalizationForm.FormKC).ToLowerInvariant().Where(c => !char.IsWhiteSpace(c)));
 }
-public sealed record StyleAction(string Id, string Title, string Help, string PromptTemplate, bool TakesText, bool RequiresText, string? FoldText, string? Match, string? Phase, string? Glyph, string? Icon, string? Tint, string? RequestTitle)
+public sealed record StyleAction(string Id, string Title, string Help, string PromptTemplate, bool TakesText, bool RequiresText, string? FoldText, string? Match, string? Phase, string? Glyph, string? Icon, string? Tint, string? RequestTitle, string? Scope = null, string[]? Flags = null)
 {
     public string Prompt(string text)
     {
@@ -49,7 +49,7 @@ public sealed class StyleManifest
     internal StyleManifest(JsonElement root)
     {
         Root = root.Clone();
-        Actions = Items(root, "actions").Select(a => new StyleAction(Text(a,"id")!,Text(a,"title")!,Text(a,"help")!,Text(a,"prompt")!,a.GetProperty("takesText").GetBoolean(),Bool(a,"requiresText"),Text(a,"foldText"),Text(a,"match"),Text(a,"phase"),Text(a,"glyph"),Text(a,"icon"),Text(a,"tint"),Text(a,"requestTitle"))).ToArray();
+        Actions = Items(root, "actions").Select(a => new StyleAction(Text(a,"id")!,Text(a,"title")!,Text(a,"help")!,Text(a,"prompt")!,a.GetProperty("takesText").GetBoolean(),Bool(a,"requiresText"),Text(a,"foldText"),Text(a,"match"),Text(a,"phase"),Text(a,"glyph"),Text(a,"icon"),Text(a,"tint"),Text(a,"requestTitle"),Text(a,"scope"),Strings(a,"flags"))).ToArray();
         Phases = Items(root,"phases").Select(p => new StylePhase(Text(p,"id")!,Text(p,"title")!,(int)p.GetProperty("order").GetDouble())).ToArray();
         Groups = Items(root,"groups").Select(g => new StyleGroup(Text(g,"id")!,Text(g,"title")!,Text(g,"axis"),Text(g,"question"),Strings(g,"actions"))).ToArray();
     }

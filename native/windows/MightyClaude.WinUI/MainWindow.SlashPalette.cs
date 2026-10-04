@@ -240,7 +240,7 @@ public sealed partial class MainWindow
                 case SlashCommandAction.NewConversation:
                     if (running) await SlashNote(SlashCommandStrings.NoteNewConversationRunning);
                     else if (pane.ResumeId is null) await SlashNote(SlashCommandStrings.NoteNewConversationNothingToResume);
-                    else { await Change(p => p with { ResumeId = null }); Refresh(); }
+                    else await ResetConversation();
                     break;
                 case SlashCommandAction.OpenPlugins: await owner.OpenPluginBrowser(pane.Provider); break;
                 case SlashCommandAction.ShowUsage: await ShowContext(); break;

@@ -116,6 +116,9 @@ internal static class Verification
         await Test("CodexSessionWatcherVerification RunningProcessPublishesGraphBeforeItExits", CodexSessionWatcherVerification.RunningProcessPublishesGraphBeforeItExits);
         await Test("GraphPreviewVerification RememberedGraphSizesDriveLayoutAndNormalize", GraphPreviewVerification.RememberedGraphSizesDriveLayoutAndNormalize);
         await Test("GraphPreviewVerification LocalHtmlReadsOnlyItsOwnBoundedDirectory", GraphPreviewVerification.LocalHtmlReadsOnlyItsOwnBoundedDirectory);
+        await Test("MightyTimelineVerification RecordedOrderAndResultsMatchDiagram", MightyTimelineVerification.RecordedOrderAndResultsMatchDiagram);
+        await Test("MightyTimelineVerification StatusRailsCountsAndDurationStayHonest", MightyTimelineVerification.StatusRailsCountsAndDurationStayHonest);
+        await Test("MightyTimelineVerification SavedModeIsIndependentAndLenient", MightyTimelineVerification.SavedModeIsIndependentAndLenient);
         await Test("WorkDashboardVerification CountsAndAttentionMatchMac", WorkDashboardVerification.CountsAndAttentionMatchMac);
         await Test("WorkDashboardVerification CardsRespectUsageIdentityAndStablePriority", WorkDashboardVerification.CardsRespectUsageIdentityAndStablePriority);
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);
@@ -147,6 +150,11 @@ internal static class Verification
         await Test("Agent IO StdioMcpContract", AgentIOVerification.StdioMcpContract);
         await Test("Agent IO AuthenticatedPipeRejectsRevocation", AgentIOVerification.AuthenticatedPipeRejectsRevocation);
         await Test("Agent IO revocation cancels queued authenticated calls", AgentIORevocationVerification.RevocationCancelsAuthenticatedQueuedRequest);
+        await Test("Agent URL independent choices and thirty-second fallback", AgentWebOpenVerification.IndependentChoicesAndFallback);
+        await Test("Agent URL revocation, cancellation and shutdown", AgentWebOpenVerification.RevocationCancellationAndShutdown);
+        await Test("StyleSurfacesVerification ApprovalAndReset", StyleSurfacesVerification.ApprovalAndReset);
+        await Test("StyleSurfacesVerification MetadataAndCasebook", StyleSurfacesVerification.MetadataAndCasebook);
+        await Test("StyleSurfacesVerification TrustedRequestProjectionAndLockedRegistry", StyleSurfacesVerification.TrustedRequestProjectionAndLockedRegistry);
         await Test("Login recovery authentication errors exclude ordinary content and external credentials", CliLoginRecoveryVerification.ErrorSignalsExcludeContentAndExternalProviders);
         await Test("Login recovery bounded partial URLs and pasted-code prompts", CliLoginRecoveryVerification.OutputHandlesPartialUrlsAndCodePrompts);
         await Test("Login recovery latest request generation and one-shot retry", CliLoginRecoveryVerification.RetryGenerationPreservesAttachmentsAndDropsStaleWork);

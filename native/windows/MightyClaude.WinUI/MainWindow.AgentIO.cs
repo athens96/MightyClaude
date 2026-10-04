@@ -10,11 +10,12 @@ public sealed partial class MainWindow
     private AgentIOPipe? agentIO;
     private readonly Dictionary<string, AgentTerminal> agentTerminals = [];
     private readonly HashSet<Task> agentTerminalClosures = [];
-    private readonly SemaphoreSlim agentUrlPrompts = new(1, 1);
+    private readonly AgentWebOpenPrompts agentUrlPrompts = new();
 
     private void InitializeAgentIO()
     {
         if (options.SmokeTest || agentIO is not null || Environment.ProcessPath is not { } executable) return;
+        agentUrlPrompts.Changed += RefreshAgentWebPrompts;
         var server = new AgentIOPipe(HandleAgentIO); agentIO = server;
         service.ConfigureAgentIO((request, workspace) => server.Bindings.Bind(request.SessionId, workspace, request.Provider, server.Name, executable));
     }
@@ -91,27 +92,10 @@ public sealed partial class MainWindow
         string? destination = service.Snapshot.AgentWebOpenChoices?.GetValueOrDefault(binding.WorkspaceId);
         if (destination is null)
         {
-            await agentUrlPrompts.WaitAsync(cancellation);
-            var ownsDialog = false;
-            try
-            {
-                cancellation.ThrowIfCancellationRequested();
-                while (dialogOpen || Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot).Any(p => p.IsOpen))
-                    await Task.Delay(100, cancellation);
-                dialogOpen = ownsDialog = true;
-                var content = new StackPanel { Spacing = 10 };
-                content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogMessage"), TextWrapping = TextWrapping.Wrap });
-                content.Children.Add(new TextBox { Text = url.AbsoluteUri, IsReadOnly = true, TextWrapping = TextWrapping.Wrap });
-                var remember = new CheckBox { Content = Locale.Get("agentTerminal.urlOpen.rememberToggle") }; content.Children.Add(remember);
-                var dialog = new ContentDialog { Title = Locale.Get("agentTerminal.urlOpen.dialogTitle"), Content = content, XamlRoot = root.XamlRoot, PrimaryButtonText = Locale.Get("agentTerminal.urlOpen.inAppButton"), SecondaryButtonText = Locale.Get("agentTerminal.urlOpen.externalButton"), CloseButtonText = Locale.Get("guidedPanel.cancelButton"), DefaultButton = ContentDialogButton.None };
-                using var cancelled = cancellation.Register(() => DispatcherQueue.TryEnqueue(dialog.Hide));
-                var result = await dialog.ShowAsync(); cancellation.ThrowIfCancellationRequested();
-                RequireActiveAgentBinding(binding);
-                if (result == ContentDialogResult.None) throw new OperationCanceledException();
-                destination = result == ContentDialogResult.Primary ? "inApp" : "external";
-                if (remember.IsChecked == true) await service.UpdateAsync(state => { RequireActiveAgentBinding(binding); return state with { AgentWebOpenChoices = new Dictionary<string, string>(state.AgentWebOpenChoices ?? []) { [binding.WorkspaceId] = destination } }; });
-            }
-            finally { if (ownsDialog) dialogOpen = false; agentUrlPrompts.Release(); }
+            var answer = await agentUrlPrompts.RequestAsync(binding, url, cancellation);
+            cancellation.ThrowIfCancellationRequested(); RequireActiveAgentBinding(binding);
+            destination = answer.Destination;
+            if (answer.Remember) await service.UpdateAsync(state => { cancellation.ThrowIfCancellationRequested(); RequireActiveAgentBinding(binding); return state with { AgentWebOpenChoices = new Dictionary<string, string>(state.AgentWebOpenChoices ?? []) { [binding.WorkspaceId] = destination } }; });
         }
         cancellation.ThrowIfCancellationRequested();
         RequireActiveAgentBinding(binding);
@@ -125,10 +109,20 @@ public sealed partial class MainWindow
                 if (!views.TryGetValue(paneId, out var pane)) { await SelectLayoutSession(paneId); pane = views.GetValueOrDefault(paneId); }
                 if (pane is not null)
                 {
-                    pane.EnsureBrowserView(); await pane.BrowserReady.WaitAsync(cancellation);
-                    cancellation.ThrowIfCancellationRequested();
-                    RequireActiveAgentBinding(binding);
-                    if (pane.OpenAgentBrowserUrl(url)) return new { destination = "inApp", url = url.AbsoluteUri };
+                    try
+                    {
+                        pane.EnsureBrowserView();
+                        // Leave enough of the bounded tool request for the external
+                        // fallback when WebView2 is unavailable or still installing.
+                        await pane.BrowserReady.WaitAsync(TimeSpan.FromSeconds(20), cancellation);
+                        cancellation.ThrowIfCancellationRequested(); RequireActiveAgentBinding(binding);
+                        if (pane.OpenAgentBrowserUrl(url)) return new { destination = "inApp", url = url.AbsoluteUri };
+                    }
+                    catch (Exception ex) when (ex is TimeoutException or System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException or InvalidOperationException)
+                    {
+                        // Only unavailable native browser failures fall through;
+                        // cancellation/revocation always propagates without opening.
+                    }
                 }
             }
             fallback = true;
@@ -154,6 +148,8 @@ public sealed partial class MainWindow
     private readonly HashSet<string> agentBoundPanes = [];
     private async Task ShutdownAgentIO()
     {
+        agentUrlPrompts.Changed -= RefreshAgentWebPrompts;
+        agentUrlPrompts.Dispose();
         service.ConfigureAgentIO(null);
         if (agentIO is not null) { await agentIO.DisposeAsync(); agentIO = null; }
         await Task.WhenAll(agentTerminals.Values.Select(t => t.DisposeAsync().AsTask()).Concat(agentTerminalClosures)); agentTerminals.Clear(); agentTerminalClosures.Clear();

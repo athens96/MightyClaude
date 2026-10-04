@@ -37,8 +37,8 @@ public sealed partial class MainWindow
         private bool statusLineRestartPending;
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton statusLineToggle = new()
         {
-            Content = "≡", Width = 28, Height = 28, MinWidth = 0, MinHeight = 0,
-            Padding = new Thickness(2), CornerRadius = new CornerRadius(14),
+            Width = 28, Height = 28, MinWidth = 0, MinHeight = 0,
+            Padding = new Thickness(2), CornerRadius = new CornerRadius(4),
         };
 
         internal StatusLineRefresher? Refresher => _refresher;
@@ -102,6 +102,7 @@ public sealed partial class MainWindow
 
         private void InitializeStatusLineToggle(StackPanel header)
         {
+            InitializeStatusLineGlyph();
             AutomationProperties.SetName(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
             ToolTipService.SetToolTip(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
             statusLineToggle.Click += async (_, _) => await owner.Act(() => owner.SetStatusLineEnabled(statusLineToggle.IsChecked == true));

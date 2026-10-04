@@ -97,6 +97,9 @@ public sealed record RunSession
     // (macOS RunSession.graphResultSize); null means the window fit.
     [JsonPropertyName("graphResultSize")] public GraphBlockSize? GraphResultSize { get; init; }
     [JsonPropertyName("graphBlockSizes")] public Dictionary<string, GraphBlockSize>? GraphBlockSizes { get; init; }
+    // The Mighty presentation, independent of the outer default/Mighty choice.
+    [JsonPropertyName("graphViewMode"), JsonConverter(typeof(MightyGraphViewModeConverter))]
+    public string? GraphViewMode { get; init; }
     // Browser pane fields — serialized with the same keys as macOS RunSession.
     [JsonPropertyName("workspaceProfileKey")] public string? WorkspaceProfileKey { get; init; }
     [JsonPropertyName("ownerSessionId")] public string? OwnerSessionId { get; init; }

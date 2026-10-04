@@ -72,8 +72,11 @@ try {
     foreach ($key in @('picker', 'fullApprovalContents', 'localRunPermissionSnapshot')) {
         if ($styles.$key -ne $true) { throw "Windows style smoke failed: styles.$key" }
     }
+    foreach ($key in @('liveSessionPopover', 'contextRingAndIdentifiers', 'attachmentMenu', 'imageExternalVerifiedSnapshot', 'agentUrlCardsNonmodalAndBounded', 'conversationResetPreservesDraftAndHistory')) {
+        if ($result.smallParity.$key -ne $true) { throw "Windows pane parity smoke failed: smallParity.$key" }
+    }
     $companion = $result.companion
-    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard')) {
+    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating')) {
         if ($companion.$key -ne $true) { throw "Windows companion smoke failed: companion.$key" }
     }
     foreach ($key in @('syntheticGpuCropEncoded', 'displayBoundsEnumerated')) {
@@ -83,7 +86,7 @@ try {
     foreach ($key in @('packagedWebViewBridge', 'h264Negotiated', 'screenAndOverviewTracksDecoded', 'perPeerResolutionLimit', 'unicodeControlRoundTrip', 'hostDataRoundTrip', 'haltClosedChannel')) {
         if ($result.screenTransport.$key -ne $true) { throw "Windows screen transport smoke failed: screenTransport.$key" }
     }
-    foreach ($key in @('trustedRendererLoaded', 'conptyUtf8RoundTrip', 'resizeBridge', 'externalNavigationBlocked', 'processClosed')) {
+    foreach ($key in @('trustedRendererLoaded', 'conptyUtf8RoundTrip', 'resizeBridge', 'externalNavigationBlocked', 'processClosed', 'restartPreservesRenderer', 'footerMetadata')) {
         if ($result.nativeTerminal.$key -ne $true) { throw "Windows native terminal smoke failed: nativeTerminal.$key" }
     }
     foreach ($key in @('dashboardRetainsPane', 'clockPreservesDashboardControls', 'allSettingsCategories', 'bothThemes')) {
@@ -183,6 +186,9 @@ try {
     if ($ap.shortcuts -ne 'Ctrl+O, Ctrl+N') {
         $msg = "addPaneMenu.shortcuts 값이 'Ctrl+O, Ctrl+N'이 아닙니다: $($ap.shortcuts)"
         Write-SmokeAnnotation $msg; throw $msg
+    }
+    foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "historyAffordance", "narrowToolbar")) {
+        if ($result.mightyTimeline.$key -ne $true) { throw "Mighty timeline smoke failed: mightyTimeline.$key" }
     }
     $mg = $result.mightyGraph
     if ($null -eq $mg) {

@@ -39,6 +39,9 @@ public sealed class AgentIOPipe : IAsyncDisposable
                     var binding = Bindings.Resolve(token) ?? throw new ArgumentException("This pane binding is no longer active.");
                     var tool = request.Text("tool") ?? "";
                     var value = AgentIOTools.Validate(tool, request.GetProperty("arguments"));
+                    // The user has 30 seconds to choose a browser. Only an
+                    // authenticated, validated URL request gets extra launch time.
+                    if (tool == "open_url") deadline.CancelAfter(TimeSpan.FromSeconds(60));
                     using var active = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, binding.Revoked);
                     active.Token.ThrowIfCancellationRequested();
                     var result = await handle(binding, tool, value, active.Token);
@@ -61,7 +64,7 @@ public sealed class AgentIOPipe : IAsyncDisposable
     public static async Task<JsonElement> Call(string pipeName, string token, string tool, JsonElement arguments, CancellationToken cancellation)
     {
         if (!pipeName.StartsWith(Prefix, StringComparison.Ordinal) || pipeName.Length != Prefix.Length + 32 || !pipeName[Prefix.Length..].All(Uri.IsHexDigit) || token.Length != 64) throw new ArgumentException("Invalid pane transport.");
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(tool == "open_url" ? 60 : 30));
         await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         await pipe.ConnectAsync(timeout.Token);
         await WritePacket(pipe, JsonSerializer.SerializeToUtf8Bytes(new { token, tool, arguments }, Wire.Json), timeout.Token);

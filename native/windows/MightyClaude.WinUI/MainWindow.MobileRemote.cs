@@ -130,8 +130,8 @@ public sealed partial class MainWindow
             case "command":
                 if (body.Text("action") == "help") return SlashCommandCatalog.HelpText(pane.MobileSession.Provider);
                 if (body.Text("action") == "usage") return pane.MobileUsage();
-                if (service.IsSessionRunning(request.SessionId)) throw new MobileRequestException(409, "Stop the session before clearing it.");
-                await service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == request.SessionId ? p with { ResumeId = null } : p).ToList() }); pane.Refresh(); return null;
+                if (!await pane.ResetConversationAsync(token)) throw new MobileRequestException(409, "Stop the session before clearing it.");
+                return null;
             default: throw new MobileRequestException(404, "Unknown desktop action.");
         }
     }
@@ -188,16 +188,16 @@ public sealed partial class MainWindow
         private object? MobileStylePanel()
         {
             if (activeStyle is not { } style) return null; var phase = GuidedPhase(style); var job = style.Evaluator.JobOpen(Session);
-            var group = style.Evaluator.InitialGroup(styleCapabilities); var next = style.Evaluator.VisibleActions(phase, group, MobileBusy, job).Select(a => a.Id).ToArray();
+            var group = style.Manifest.Groups.FirstOrDefault(g=>g.Id==styleGroup) ?? style.Evaluator.InitialGroup(styleCapabilities); var next = style.Evaluator.VisibleActions(phase, group, MobileBusy, job).Select(a => a.Id).ToArray();
             var phases = style.Manifest.Phases.OrderBy(p => p.Order).ToArray();
             return new {
-                style = new { id = style.Id, name = style.Manifest.Name, source = style.Source },
+                style = new { id = style.Id, name = style.Manifest.Name, source = style.Source, icon = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"icon"), tint = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"tint") },
                 phase = phase is null ? null : new { phase.Id, phase.Title, index = Array.FindIndex(phases, p => p.Id == phase.Id), count = phases.Length },
                 groups = style.Manifest.Groups.Select(g => new { g.Id, g.Title, g.Axis, g.Question, selected = g.Id == group?.Id, g.Actions }),
-                actions = style.Manifest.Actions.Select(a => new { a.Id, a.Title, a.Help, a.Icon, a.Glyph, a.TakesText, a.RequiresText, flags = Array.Empty<string>(), prominent = next.FirstOrDefault() == a.Id }),
-                next, attachments = styleCapabilityFiles.Select((file, index) => new { id = index.ToString(), title = file.Title, readOnly = true }),
+                actions = style.Manifest.Actions.Select(a => new { a.Id, a.Title, a.Help, a.Icon, a.Glyph, a.Scope, a.TakesText, a.RequiresText, flags = a.Flags ?? [], prominent = next.FirstOrDefault() == a.Id }),
+                next, recommended = style.Evaluator.RecommendedAction(styleCapabilities), attachments = styleCapabilityFiles.Select(file => new { id = StyleText.Safe(Path.GetFileName(file.Path),120), title = file.Title, detail = file.Detail, readOnly = file.ReadOnly }),
                 setup = new { ready = stylePrerequisites?.Ready ?? false, missing = stylePrerequisites?.Missing ?? [], hint = stylePrerequisites?.Hint, installCommand = stylePrerequisites?.InstallCommand },
-                guidance = style.Evaluator.Guidance(phase, MobileBusy, job), presentation = new { headerTitle = style.Manifest.Name + (phase is null ? "" : " · " + phase.Title), source = style.Source }, widgets = styleReading?.Widgets
+                guidance = style.Evaluator.Guidance(phase, MobileBusy, job), presentation = new { headerTitle = style.Manifest.Name + (phase is null ? "" : " · " + phase.Title), source = style.Source, icon = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"icon"), tint = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"tint") }, widgets = styleReading?.Widgets
             };
         }
         internal async Task MobileSettings(JsonElement value, CancellationToken token)

@@ -89,7 +89,7 @@ public sealed partial class MainWindow
             }
             if (draft.Custom.Contains(step))
             {
-                var text = new TextBox { Text = draft.Text.GetValueOrDefault(step) ?? "", PlaceholderText = Locale.Get("phone.questionnaire.customPlaceholder"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 100, MaxLength = 8192, IsEnabled = !draft.Sending };
+                var text = new TextBox { AcceptsReturn = true, Text = draft.Text.GetValueOrDefault(step) ?? "", PlaceholderText = Locale.Get("phone.questionnaire.customPlaceholder"), TextWrapping = TextWrapping.Wrap, MaxHeight = 100, MaxLength = 8192, IsEnabled = !draft.Sending };
                 AutomationProperties.SetName(text, Locale.Get("phone.questionnaire.customLabel", new Dictionary<string, string> { ["header"] = question.Header }));
                 text.TextChanged += (_, _) => { draft.Text[step] = text.Text; if (next is not null) next.IsEnabled = !draft.Sending && (step + 1 < questionnaire.Questions.Count ? draft.Answered(step) : ValidAnswers()); };
                 section.Children.Add(text);
