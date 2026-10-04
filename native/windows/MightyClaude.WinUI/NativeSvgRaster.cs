@@ -30,7 +30,7 @@ internal static class NativeSvgRaster
                 using var target = new CanvasRenderTarget(device, width, height, 96);
                 using (var draw = target.CreateDrawingSession())
                 {
-                    draw.Clear(Windows.UI.Color.FromArgb(0, 0, 0, 0));
+                    draw.Clear(default(Windows.UI.Color)); // transparent black: every channel 0
                     draw.Transform = Matrix3x2.CreateScale((float)(width / source.Width), (float)(height / source.Height));
                     draw.DrawSvg(svg, new Windows.Foundation.Size(source.Width, source.Height));
                 }

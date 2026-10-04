@@ -100,10 +100,8 @@ public sealed partial class MainWindow
         foreach (var stale in layoutDefaults.Keys.Where(id => !state.Workspaces.Any(w => w.Id == id)).ToArray()) layoutDefaults.Remove(stale);
         if (state.ActiveWorkspaceId is not { } workspace || EffectiveLayout(state, workspace) is not { } node)
         {
-            var empty = new StackPanel { Spacing = 18, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(32) };
-            empty.Children.Add(new TextBlock { Text = Locale.Get(state.Workspaces.Count == 0 ? "layout.empty.addProjectFolder" : "layout.empty.addPane"), FontSize = 20, Opacity = .6, TextWrapping = TextWrapping.Wrap });
-            if (state.ActiveWorkspaceId is not null) empty.Children.Add(new Button { Content = Locale.Get("layout.empty.addPaneButton"), Flyout = NewSessionMenu(), HorizontalAlignment = HorizontalAlignment.Center });
-            panes.Children.Add(empty);
+            // No project: the welcome; a project with no panes: the add-pane invitation (MainWindow.EmptyStates.cs).
+            panes.Children.Add(state.Workspaces.Count == 0 ? BuildWelcome() : BuildEmptyPanes(state.ActiveWorkspaceId is not null));
             return;
         }
         if (LayoutMode(state, workspace) == "focus") node = PaneLayout.Groups(node).FirstOrDefault(g => g.SessionIds.Contains(state.ActiveSessionId ?? "")) ?? PaneLayout.Groups(node).First();

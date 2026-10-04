@@ -2,16 +2,11 @@
   "version": 1,
   "note": "Colour literals per Windows source file that still bypass the design tokens. Counts only go down; lower them with node scripts/check-design-tokens.js --write. Exempt files are not counted; each says why.",
   "exempt": {
-    "native/windows/MightyClaude.Core/DesignTokens.cs": "The token source itself, held to native/contracts/fixtures/design-tokens.json by Core.Tests and the macOS suite.",
+    "native/windows/MightyClaude.Core/DesignTokens.cs": "The token source itself (the palette, plus the windowsOnly subtle, syntax and status-line ANSI data), held to native/contracts/fixtures/design-tokens.json by Core.Tests and, for the palette, the macOS suite.",
     "native/windows/MightyClaude.Core/ProviderMark.cs": "Brand colours of the agent marks, held to the fixture's windowsOnly.provider on both platforms.",
     "native/windows/MightyClaude.WinUI/DesignBrushes.cs": "Where token colours become WinUI colours.",
     "native/windows/MightyClaude.WinUI/ScreenShareReferenceSceneWindow.cs": "A fixed reference scene for the screen-share check, not app chrome.",
     "native/windows/MightyClaude.WinUI/WindowsScreenCapture.cs": "Capture pixel code, not app chrome."
   },
-  "files": {
-    "native/windows/MightyClaude.WinUI/CompanionOverlay.cs": 12,
-    "native/windows/MightyClaude.WinUI/MainWindow.Browser.cs": 1,
-    "native/windows/MightyClaude.WinUI/MainWindow.StatusLine.cs": 13,
-    "native/windows/MightyClaude.WinUI/NativeSvgRaster.cs": 1
-  }
+  "files": {}
 }

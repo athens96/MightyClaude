@@ -111,24 +111,27 @@ internal sealed class CompanionOverlay : IDisposable
         if (cardDirty && (showBubble || contextMenu) && card is { } sourceCard)
         {
             var current = DisplayCard(sourceCard);
-            Rounded(0, 0, width, bubbleHeight, 18, current.Light ? (byte)247 : (byte)30, current.Light ? (byte)248 : (byte)33, current.Light ? (byte)251 : (byte)40);
+            // The Mac's bubble (M/AgentCompanionViews.swift:186-193): a card in the app's theme, primary ink,
+            // secondary subtitle, accent actions. GDI draws COLORREF values, so the tokens convert per draw.
+            var palette = DesignTokens.Palette(!current.Light);
+            Rounded(0, 0, width, bubbleHeight, 18, palette.Card.R, palette.Card.G, palette.Card.B);
             Marshal.Copy(pixels, 0, bits, pixels.Length);
-            Text(current.Title, 16, 12, width - 32, 26, 15, true, current.Light ? 0x00302219u : 0x00f2efed);
-            Text(current.Subtitle, 16, 41, width - 32, 23, 11, false, current.Light ? 0x006d6259u : 0x00b9b3ae);
+            Text(current.Title, 16, 12, width - 32, 26, 15, true, ColorRef(palette.Ink));
+            Text(current.Subtitle, 16, 41, width - 32, 23, 11, false, ColorRef(palette.Ink2));
             var buttonsHeight = current.Buttons.Count * 29;
             DrawBody(current, Math.Max(0, bubbleHeight - 88 - buttonsHeight - (current.Page is null ? 0 : 27)));
             int y = bubbleHeight - 10 - buttonsHeight;
             if (current.Page is not null)
             {
-                var ink = current.Light ? 0x00302219u : 0x00f2efed;
+                var ink = ColorRef(palette.Ink);
                 Text("‹", 16, y - 26, 30, 22, 16, true, ink); Text(current.Page, 52, y - 24, width - 104, 22, 11, false, ink); Text("›", width - 44, y - 26, 30, 22, 16, true, ink);
                 hitButtons.Add((new(8, y - 28, 48, y), "previous")); hitButtons.Add((new(width - 48, y - 28, width - 8, y), "next"));
             }
             foreach (var button in current.Buttons)
             {
-                Text(button.Label, 20, y, width - 40, 27, 12, false, current.Light ? 0x00a65a16u : 0x00ffca92); hitButtons.Add((new(12, y, width - 12, y + 27), button.Id)); y += 29;
+                Text(button.Label, 20, y, width - 40, 27, 12, false, ColorRef(palette.Accent)); hitButtons.Add((new(12, y, width - 12, y + 27), button.Id)); y += 29;
             }
-            if (!current.Approval && !contextMenu) Text("◢", width - 20, bubbleHeight - 20, 16, 16, 10, false, 0x008f8880);
+            if (!current.Approval && !contextMenu) Text("◢", width - 20, bubbleHeight - 20, 16, 16, 10, false, ColorRef(palette.Ink3));
             Marshal.Copy(bits, pixels, 0, pixels.Length);
             // GDI text writes RGB with alpha zero. Restore alpha only inside the
             // rounded card, leaving the transparent exterior click-through.
@@ -163,7 +166,9 @@ internal sealed class CompanionOverlay : IDisposable
     {
         var dx = Math.Max(radius - x, Math.Max(0, x - (w - radius))); var dy = Math.Max(radius - y, Math.Max(0, y - (h - radius))); return dx * dx + dy * dy <= radius * radius;
     }
-    private void Text(string value, int x, int y, int w, int h, int size, bool bold, uint color = 0x00f2efed)
+    /// <summary>A token colour as the GDI COLORREF <c>0x00BBGGRR</c> that SetTextColor takes.</summary>
+    private static uint ColorRef(DesignColor color) => (uint)(color.B << 16 | color.G << 8 | color.R);
+    private void Text(string value, int x, int y, int w, int h, int size, bool bold, uint color)
     {
         var font = CreateFont(-(int)(size * scale), 0, 0, 0, bold ? 600 : 400, 0, 0, 0, 1, 0, 0, 4, 0, "Segoe UI");
         var old = SelectObject(dc, font);
@@ -215,7 +220,7 @@ internal sealed class CompanionOverlay : IDisposable
     private void DrawBody(CompanionOverlayCard current, int available)
     {
         if (available <= 0) return;
-        var ink = current.Light ? 0x00302219u : 0x00f2efed;
+        var ink = ColorRef(DesignTokens.Palette(!current.Light).Ink);
         if (current.Request is not { Length: > 0 } request) { Text(current.Body, 16, 70, width - 32, available, 12, false, ink); return; }
         var naturalRequest = MeasureText(request, width - 32); var naturalWork = MeasureText(current.Body, width - 32);
         var automatic = fixedBubbleHeight is null;

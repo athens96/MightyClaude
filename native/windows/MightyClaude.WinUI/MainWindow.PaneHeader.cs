@@ -76,6 +76,8 @@ public sealed partial class MainWindow
     {
         /// <summary>Below this width the header keeps its one line by showing the Default | Mighty switch as icons only.</summary>
         private const double NarrowHeader = 420;
+        /// <summary>The onStatus wash under the pointer on the slim bar's … button (the agent header uses the subtle wash).</summary>
+        private const double SlimHoverOpacity = 0.15;
         private Grid? paneHeader;
         /// <summary>The header's trailing controls: the Default | Mighty switch, the status-line toggle and the … menu, 10 apart (M/SessionPaneView.swift:235-238).</summary>
         private readonly StackPanel paneHeaderControls = new() { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -83,6 +85,12 @@ public sealed partial class MainWindow
         private readonly TextBlock headerTitle = new() { FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.Bold, CharacterSpacing = -8, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         private Button? paneMenuButton;
         private bool paneHeaderLayoutQueued;
+        /// <summary>A terminal pane (a shell, or an agent's terminal) wears the Mac's slim ink bar instead of the agent header.</summary>
+        private bool slimHeader;
+        /// <summary>The slim bar's kind symbol, kind words and status capsule (null on an agent header).</summary>
+        private FontIcon? slimSymbol;
+        private TextBlock? slimSubtitle;
+        private Border? slimStatusPill;
 
         /// <summary>
         /// The agent pane's one 34pt line (M/SessionPaneView.swift:208-251): padding l14 r10 on <c>card</c>
@@ -102,11 +110,46 @@ public sealed partial class MainWindow
             };
             foreach (var width in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) header.ColumnDefinitions.Add(new() { Width = width });
             headerTitle.Foreground = owner.brushes.Brush(DesignToken.Ink); elapsed.Foreground = owner.brushes.Brush(DesignToken.Ink2);
-            var parts = new[] { headerMark.View, headerTitle, label, elapsed, paneHeaderControls };
+            var kind = Session.Kind;
+            slimHeader = kind is "shell" or AgentIOPaneKind.Terminal;
+            var parts = slimHeader ? SlimHeaderParts(header, kind) : new[] { headerMark.View, headerTitle, label, elapsed, paneHeaderControls };
             for (var column = 0; column < parts.Length; column++) { Grid.SetColumn(parts[column], column); header.Children.Add(parts[column]); }
             AutomationProperties.SetAutomationId(header, "pane-header-" + id); AutomationProperties.SetAutomationId(label, "pane-status-" + id);
             return paneHeader = header;
         }
+
+        /// <summary>
+        /// The slim ink bar over a terminal pane (M/PaneChrome.swift:99-122, M/SessionPaneView.swift:185-190):
+        /// 34 high on the <c>idle</c> fill, radius 11, padding h13, set in h8 t8 from the pane's edge; the
+        /// terminal symbol 11 semibold, the title 13 bold, the kind 11.5, then the status word in an 11 bold,
+        /// 20-high capsule with a 1.5pt edge, all in <c>onStatus</c>, and the … menu. The status mark is still
+        /// kept up to date (the header's word and its accessibility follow it) but not shown, as on the Mac.
+        /// </summary>
+        private FrameworkElement[] SlimHeaderParts(Grid header, string kind)
+        {
+            const double inset = 12, edge = 8;
+            var onStatus = owner.brushes.Brush(DesignToken.OnStatus);
+            header.Background = owner.brushes.Brush(DesignToken.Idle); header.BorderThickness = new Thickness(0);
+            header.CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane);
+            header.Margin = new Thickness(edge - inset, edge - inset, edge - inset, 0); header.Padding = new Thickness(13, 0, 13, 0);
+            headerTitle.Foreground = onStatus;
+            label.Foreground = onStatus; label.FontSize = DesignMetrics.Type.Pill; label.FontWeight = Microsoft.UI.Text.FontWeights.Bold;
+            slimSymbol = new FontIcon { Glyph = "\uE756", FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = onStatus, VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetAccessibilityView(slimSymbol, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            var words = kind == "shell" ? Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal") : Locale.Get("dashboard.kind.agentTerminal");
+            slimSubtitle = new TextBlock { Text = words, FontSize = DesignMetrics.Type.State, Foreground = onStatus, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+            slimStatusPill = new Border
+            {
+                Child = label, Height = 20, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(DesignMetrics.Stroke.Focus), BorderBrush = onStatus, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+            };
+            AutomationProperties.SetAutomationId(slimStatusPill, "pane-status-pill-" + id);
+            return [slimSymbol, headerTitle, slimSubtitle, slimStatusPill, paneHeaderControls];
+        }
+
+        /// <summary>The slim bar's parts the design smoke reads (all null on an agent pane).</summary>
+        internal (Grid? Header, FontIcon? Symbol, TextBlock Title, TextBlock? Subtitle, Border? Pill, TextBlock Word)? SlimHeaderForSmoke =>
+            slimHeader ? (paneHeader, slimSymbol, headerTitle, slimSubtitle, slimStatusPill, label) : null;
 
         /// <summary>
         /// The header's … menu (M/SessionPaneView.swift:280-302): the pane's own menu with Copy placed
@@ -128,7 +171,9 @@ public sealed partial class MainWindow
                 Width = 22, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0),
                 Content = new FontIcon { Glyph = "\uE712", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.Bold }, Flyout = menu, VerticalAlignment = VerticalAlignment.Center,
             };
-            owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2));
+            // On the slim ink bar the menu takes the bar's onStatus ink, with a faint onStatus wash under the pointer.
+            if (slimHeader) owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Brush(DesignToken.OnStatus, SlimHoverOpacity), ink: owner.brushes.Brush(DesignToken.OnStatus));
+            else owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2));
             var name = Locale.Get("pane.menu.accessibility");
             AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name); AutomationProperties.SetAutomationId(button, "pane-menu-" + id);
             paneHeaderControls.Children.Add(button);
@@ -159,8 +204,15 @@ public sealed partial class MainWindow
                 ShowModeWords(header.ActualWidth >= NarrowHeader);
                 var unbounded = new Size(double.PositiveInfinity, double.PositiveInfinity);
                 paneHeaderControls.Measure(unbounded); label.Measure(unbounded);
+                // The slim bar's symbol, kind words and capsule stand where the agent header's mark and word do.
+                double lead = headerMark.View.Width, word = label.DesiredSize.Width;
+                if (slimHeader && slimSymbol is not null && slimSubtitle is not null && slimStatusPill is not null)
+                {
+                    slimSymbol.Measure(unbounded); slimSubtitle.Measure(unbounded); slimStatusPill.Measure(unbounded);
+                    lead = slimSymbol.DesiredSize.Width; word = slimSubtitle.DesiredSize.Width + slimStatusPill.DesiredSize.Width;
+                }
                 var taken = header.Padding.Left + header.Padding.Right + header.ColumnSpacing * (header.ColumnDefinitions.Count - 1)
-                    + headerMark.View.Width + label.DesiredSize.Width + paneHeaderControls.DesiredSize.Width;
+                    + lead + word + paneHeaderControls.DesiredSize.Width;
                 var maxTitle = Math.Max(0, header.ActualWidth - taken);
                 if (Math.Abs(headerTitle.MaxWidth - maxTitle) > .5 || double.IsPositiveInfinity(headerTitle.MaxWidth)) headerTitle.MaxWidth = maxTitle;
             })) paneHeaderLayoutQueued = false;

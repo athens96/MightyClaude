@@ -269,6 +269,12 @@ public sealed partial class MainWindow
             result["panelsDesignChecks"] = await RunPanelsDesignSmoke(workspace);
             result[PanelsDesignKey] = true;
             Checkpoint(PanelsDesignKey, "passed");
+            // Design stage 7: the terminal header, the conversation, the empty states, and a walk of every
+            // brush in the main and settings windows against the palette, light then dark.
+            Checkpoint(PaletteDesignKey, "running");
+            result["paletteDesignChecks"] = await RunPaletteDesignSmoke(workspace, sessions);
+            result[PaletteDesignKey] = true;
+            Checkpoint(PaletteDesignKey, "passed");
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             var leakStrings = new List<string>();
             CollectVisibleStrings(root, leakStrings);

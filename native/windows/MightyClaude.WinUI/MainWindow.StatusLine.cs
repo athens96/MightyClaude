@@ -169,7 +169,7 @@ public sealed partial class MainWindow
                 {
                     Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
                     CornerRadius = new CornerRadius(6), Padding = new Thickness(6),
-                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 135, 135, 135)),
+                    Background = owner.brushes.Subtle,
                 });
                 var answers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                 var allow = Button(StatusLineStrings.TrustAllow, () => owner.Act(() => TrustStatusLine(untrusted)));
@@ -196,7 +196,7 @@ public sealed partial class MainWindow
         }
 
         /// <summary>
-        /// --smoke-test: the trust question, 이 워크스페이스에서 허용, the re-ask after an edited
+        /// --smoke-test: the trust question, "allow in this workspace", the re-ask after an edited
         /// command, and a six-line coloured render — all from fixture state, never a real CLI.
         /// </summary>
         internal async Task<bool> RunStatusLineSmoke()
@@ -237,7 +237,7 @@ public sealed partial class MainWindow
             }
         }
 
-        /// <summary>이 워크스페이스에서 허용: Core records the fingerprint, so a changed command asks again.</summary>
+        /// <summary>"Allow in this workspace": Core records the fingerprint, so a changed command asks again.</summary>
         private async Task TrustStatusLine(StatusLineConfig config)
         {
             var workspaceId = Session.WorkspaceId;
@@ -250,15 +250,23 @@ public sealed partial class MainWindow
 
         internal void DismissStatusLine() => _refresher?.Dismiss();
 
-        private static TextBlock Row(IReadOnlyList<AnsiSegment> segments)
+        /// <summary>
+        /// One status-line row in 11pt mono with the terminal's colours (M/StatusLineView.swift:50-79):
+        /// the ANSI colours are data (<see cref="DesignTokens.AnsiStandard"/>, the 256-colour table and
+        /// 24-bit values), so each coloured run gets its own brush; text with no colour takes the
+        /// pane's ink, bright black the secondary ink, both as shared token brushes, and a dim
+        /// segment keeps its colour at <see cref="DesignTokens.AnsiDimOpacity"/>.
+        /// </summary>
+        private TextBlock Row(IReadOnlyList<AnsiSegment> segments)
         {
             var row = new TextBlock { FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
             foreach (var segment in segments)
             {
                 var piece = new Microsoft.UI.Xaml.Documents.Run { Text = segment.Text };
-                var color = Terminal(segment.Foreground);
-                if (color is { } value) piece.Foreground = new SolidColorBrush(segment.Dim ? Windows.UI.Color.FromArgb(150, value.R, value.G, value.B) : value);
-                else if (segment.Dim) piece.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(150, 135, 135, 135));
+                var opacity = segment.Dim ? DesignTokens.AnsiDimOpacity : 1;
+                if (Terminal(segment.Foreground) is { } color) piece.Foreground = new SolidColorBrush(DesignBrushes.ToColor(color, opacity));
+                else if (segment.Foreground is { Kind: AnsiColorKind.Standard, A: 8 }) piece.Foreground = owner.brushes.Brush(DesignToken.Ink2, opacity);
+                else if (segment.Dim) piece.Foreground = owner.brushes.Brush(DesignToken.Ink, opacity);
                 if (segment.Bold) piece.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
                 if (segment.Italic) piece.FontStyle = Windows.UI.Text.FontStyle.Italic;
                 if (segment.Underline) piece.TextDecorations = Windows.UI.Text.TextDecorations.Underline;
@@ -267,27 +275,16 @@ public sealed partial class MainWindow
             return row;
         }
 
-        /// <summary>Terminal colours chosen to stay legible on both themes (macOS StatusLineView.color).</summary>
-        private static Windows.UI.Color? Terminal(AnsiColor value)
+        /// <summary>A segment's terminal colour, or null when it takes an ink (no colour, 0, 7, 8 and 15).</summary>
+        private static DesignColor? Terminal(AnsiColor value)
         {
-            static Windows.UI.Color Rgb(double red, double green, double blue) => Windows.UI.Color.FromArgb(255, (byte)Math.Round(red * 255), (byte)Math.Round(green * 255), (byte)Math.Round(blue * 255));
             switch (value.Kind)
             {
-                case AnsiColorKind.Rgb: return Windows.UI.Color.FromArgb(255, (byte)value.A, (byte)value.B, (byte)value.C);
+                case AnsiColorKind.Rgb: return new DesignColor((byte)value.A, (byte)value.B, (byte)value.C);
                 case AnsiColorKind.Palette:
                     var (r, g, b) = AnsiPalette.ToRgb(value.A);
-                    return Windows.UI.Color.FromArgb(255, r, g, b);
-                case AnsiColorKind.Standard:
-                    return (value.A % 8) switch
-                    {
-                        1 => Rgb(.86, .30, .30),
-                        2 => Rgb(.30, .66, .40),
-                        3 => Rgb(.80, .62, .20),
-                        4 => Rgb(.36, .55, .90),
-                        5 => Rgb(.70, .45, .85),
-                        6 => Rgb(.25, .65, .70),
-                        _ => value.A == 8 ? Windows.UI.Color.FromArgb(170, 135, 135, 135) : null,
-                    };
+                    return new DesignColor(r, g, b);
+                case AnsiColorKind.Standard: return DesignTokens.AnsiStandard(value.A);
                 default: return null;
             }
         }

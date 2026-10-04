@@ -111,6 +111,18 @@ internal static class DesignTokenVerification
                 Equal(DesignTokens.Syntax(kind.Name, palette)?.Hex ?? "none", kind.Value.GetString()!, $"{theme}: syntax {kind.Name}");
             Check(DesignTokens.Syntax("comment", palette) == palette.Ink2 && DesignTokens.Syntax("plain", palette) is null, $"{theme}: comments are ink2, plain text has none");
         }
+        // The status line's ANSI colours: indexes 1-6 and their bright twins, none for 0, 7, 8 and 15.
+        var ansi = windowsOnly.GetProperty("ansi");
+        var standard = ansi.GetProperty("standard");
+        Check(standard.EnumerateObject().Select(p => p.Name).ToHashSet().SetEquals(["1", "2", "3", "4", "5", "6"]), "ansi: the fixture names indexes 1-6");
+        foreach (var entry in standard.EnumerateObject())
+        {
+            var index = int.Parse(entry.Name, System.Globalization.CultureInfo.InvariantCulture);
+            Equal(DesignTokens.AnsiStandard(index)?.Hex ?? "none", entry.Value.GetString()!, $"ansi {index}");
+            Equal(DesignTokens.AnsiStandard(index + 8)?.Hex ?? "none", entry.Value.GetString()!, $"ansi {index + 8} (bright)");
+        }
+        foreach (var plain in new[] { 0, 7, 8, 15 }) Check(DesignTokens.AnsiStandard(plain) is null, $"ansi {plain} takes the ink, not a colour");
+        Check(Near(ansi.GetProperty("dimOpacity").GetDouble(), DesignTokens.AnsiDimOpacity) && (int)Math.Round(DesignTokens.AnsiDimOpacity * 255) == 150, "ansi: dim segments keep 150 of 255");
         return Task.CompletedTask;
     }
 
