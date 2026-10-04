@@ -61,7 +61,7 @@ internal sealed class MightyDotGrid
         AutomationProperties.SetAccessibilityView(control, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         control.Draw += OnDraw;
         // A new or lost device: the tile lived on the old one, so it is drawn again on this one.
-        control.CreateResources += (sender, _) => { DropTile(); BuildTile(sender); };
+        control.CreateResources += (sender, _) => { ResourceCreations++; DropTile(); BuildTile(sender); };
         control.Unloaded += (sender, _) =>
         {
             if (closed || !ReferenceEquals(sender, canvas) || !((FrameworkElement)sender).IsLoaded) return;
@@ -121,6 +121,8 @@ internal sealed class MightyDotGrid
     internal bool Shown => MightyGraphDotGrid.Shown(zoom);
     /// <summary>How many times a tile was drawn: only a zoom or colour change (or a new device) adds one.</summary>
     internal int TileBuilds { get; private set; }
+    /// <summary>How many times Win2D asked for resources again (a new device or a reloaded control); each one rebuilds the tile.</summary>
+    internal int ResourceCreations { get; private set; }
     /// <summary>How many times a Win2D control that stopped drawing after a reversed Unloaded was replaced.</summary>
     internal int Replacements { get; private set; }
     /// <summary>What the last draw put down: whether it filled the surface, the tile's step and colour, the offset it was moved by, the surface size.</summary>
