@@ -34,7 +34,7 @@ public sealed partial class MainWindow
         var flyout = new Flyout { Content = new ScrollViewer { Content = usageDetails, MaxHeight = 520 }, Placement = FlyoutPlacementMode.Top };
         flyout.Opened += (_, _) => { usageDetailsOpen = true; RenderAccountUsageDetails(); QueueAccountUsageRefresh(false); };
         flyout.Closed += (_, _) => usageDetailsOpen = false;
-        usageButton = new Button { Content = usageChips, Padding = new Thickness(2), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0), Flyout = flyout, Visibility = Visibility.Collapsed };
+        usageButton = new Button { Content = usageChips, Padding = new Thickness(0), MinHeight = 0, Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0), Flyout = flyout, Visibility = Visibility.Collapsed };
         AutomationProperties.SetName(usageButton, AccountUsageStrings.Title);
         AutomationProperties.SetAutomationId(usageButton, "statusbar-usage");
         ToolTipService.SetToolTip(usageButton, AccountUsageStrings.ChipsTooltip);
@@ -52,9 +52,9 @@ public sealed partial class MainWindow
         usageChips.Children.Clear();
         foreach (var chip in usage.Chips())
         {
-            var text = new TextBlock { Text = ProviderCatalog.Name(chip.Provider) + " " + chip.Text, FontSize = 10, Opacity = chip.Warning ? 1 : .75 };
-            if (chip.Warning) text.Foreground = new SolidColorBrush(Colors.Orange);
-            var border = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(7, 3, 7, 3), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 128, 128, 128)), Child = text };
+            // A capsule of the subtle wash; ink2 words, waitText when a limit is near (M/StatusBarUsage.swift:180-191).
+            var text = new TextBlock { Text = ProviderCatalog.Name(chip.Provider) + " " + chip.Text, FontSize = DesignMetrics.Type.Small, Foreground = brushes.Brush(chip.Warning ? DesignToken.WaitText : DesignToken.Ink2) };
+            var border = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(7, 3, 7, 3), Background = brushes.Subtle, Child = text };
             AutomationProperties.SetAutomationId(border, "statusbar-usage-" + chip.Provider);
             usageChips.Children.Add(border);
         }

@@ -25,25 +25,33 @@ public sealed partial class MainWindow
         sidebar.Children.Insert(1, button);
         dashboard = new ScrollViewer { Visibility = Visibility.Collapsed, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetRow(dashboard, 1); Grid.SetColumn(dashboard, 1); root.Children.Add(dashboard);
-        var grip = new Thumb { Width = 8, HorizontalAlignment = HorizontalAlignment.Right, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(1, 128, 128, 128)), IsTabStop = true };
+        // Over the sidebar's trailing divider, the full height of the window like the surface it resizes.
+        // Opacity 0 keeps the hit area and hides the stock grey Thumb bar (and with it the focus rect),
+        // so the divider itself turns accent while the grip is hovered, dragged or keyboard-focused.
+        var grip = new Thumb { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Opacity = 0, IsTabStop = true };
         AutomationProperties.SetName(grip, Locale.Get("sidebar.resize")); AutomationProperties.SetAutomationId(grip, "sidebar-resize");
-        Grid.SetRow(grip, 1); root.Children.Add(grip);
-        grip.DragDelta += (_, args) => root.ColumnDefinitions[0].Width = new(Math.Clamp(root.ColumnDefinitions[0].Width.Value + args.HorizontalChange, 200, 400));
+        var gripHost = new ResizeCursorHost(grip, horizontal: true) { Width = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        Grid.SetRowSpan(gripHost, 3); root.Children.Add(gripHost);
+        var gripHovered = false;
+        void ShowGrip() => sidebarSurface.BorderBrush = brushes.Brush(gripHovered || grip.IsDragging || grip.FocusState == FocusState.Keyboard ? DesignToken.Accent : DesignToken.Line);
+        grip.PointerEntered += (_, _) => { gripHovered = true; ShowGrip(); }; grip.PointerExited += (_, _) => { gripHovered = false; ShowGrip(); };
+        grip.GotFocus += (_, _) => ShowGrip(); grip.LostFocus += (_, _) => ShowGrip(); grip.DragCompleted += (_, _) => ShowGrip();
+        grip.DragDelta += (_, args) => root.ColumnDefinitions[0].Width = new(Math.Clamp(root.ColumnDefinitions[0].Width.Value + args.HorizontalChange, DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax));
         grip.DragCompleted += async (_, args) => { var width = args.Canceled ? service.Snapshot.SidebarWidth : root.ColumnDefinitions[0].Width.Value; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width })); root.ColumnDefinitions[0].Width = new(width); };
-        grip.DoubleTapped += async (_, args) => { args.Handled = true; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = 252 })); root.ColumnDefinitions[0].Width = new(252); };
+        grip.DoubleTapped += async (_, args) => { args.Handled = true; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = DesignMetrics.Layout.SidebarDefault })); root.ColumnDefinitions[0].Width = new(DesignMetrics.Layout.SidebarDefault); };
         grip.KeyDown += async (_, args) =>
         {
             if (args.Key is not (Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right)) return;
-            args.Handled = true; var width = Math.Clamp(service.Snapshot.SidebarWidth + (args.Key == Windows.System.VirtualKey.Right ? 10 : -10), 200, 400);
+            args.Handled = true; var width = Math.Clamp(service.Snapshot.SidebarWidth + (args.Key == Windows.System.VirtualKey.Right ? 10 : -10), DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax);
             await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width })); root.ColumnDefinitions[0].Width = new(width);
         };
     }
     private WorkDashboard.Attention DashboardAttention(string id) => views.TryGetValue(id, out var pane) ? pane.DashboardAttention : new();
-    private void HideDashboard() { showsDashboard = false; StopDashboardGit(); dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; }
+    private void HideDashboard() { showsDashboard = false; StopDashboardGit(); dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; RefreshWorkspaceHeader(); }
     private void RenderDashboard()
     {
         if (dashboard is null || closing || !showsDashboard) return;
-        panes.Visibility = Visibility.Collapsed; dashboard.Visibility = Visibility.Visible;
+        panes.Visibility = Visibility.Collapsed; dashboard.Visibility = Visibility.Visible; RefreshWorkspaceHeader();
         var state = service.Snapshot;
         RefreshDashboardGit();
         var accountChips = usage?.Chips() ?? [];
@@ -54,7 +62,7 @@ public sealed partial class MainWindow
         if (key == dashboardFingerprint) return; dashboardFingerprint = key;
         dashboardClocks.Clear(); dashboardGitLabels.Clear();
         var content = new StackPanel { Spacing = 20, Padding = new(24, 10, 24, 24) };
-        content.Children.Add(new TextBlock { Text = Locale.Get("phone.dashboard.title"), FontSize = 29, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+        content.Children.Add(new TextBlock { Text = Locale.Get("phone.dashboard.title"), FontSize = 29, FontFamily = new FontFamily(DesignMetrics.Font.Heading), FontWeight = Microsoft.UI.Text.FontWeights.Bold });
         content.Children.Add(new TextBlock { Text = Locale.Get("dashboard.subtitle", new Dictionary<string, string> { ["workspaces"] = state.Workspaces.Count.ToString(), ["panes"] = state.Sessions.Count.ToString() }), FontSize = 12, Opacity = .7 });
         if (accountChips.Count > 0)
         {
@@ -72,7 +80,7 @@ public sealed partial class MainWindow
         for (var i = 0; i < values.Length; i++)
         {
             tiles.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-            var tile = new StackPanel { Spacing = 6, Padding = new(16) }; tile.Children.Add(new TextBlock { Text = Locale.Get(values[i].Item1), FontSize = 12, Opacity = .75 }); tile.Children.Add(new TextBlock { Text = values[i].Item2.ToString(), FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            var tile = new StackPanel { Spacing = 6, Padding = new(16) }; tile.Children.Add(new TextBlock { Text = Locale.Get(values[i].Item1), FontSize = 12, Opacity = .75 }); tile.Children.Add(new TextBlock { Text = values[i].Item2.ToString(), FontSize = 32, FontFamily = new FontFamily(DesignMetrics.Font.Heading), FontWeight = Microsoft.UI.Text.FontWeights.Bold });
             var border = new Border { Child = tile, CornerRadius = new(12), BorderThickness = new(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(60, 128, 128, 128)) }; Grid.SetColumn(border, i); tiles.Children.Add(border);
         }
         content.Children.Add(tiles);

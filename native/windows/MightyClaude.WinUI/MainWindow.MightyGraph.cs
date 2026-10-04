@@ -621,7 +621,7 @@ public sealed partial class MainWindow
                 {
                     CornerRadius = new CornerRadius(9), Padding = new Thickness(6, 1, 6, 1),
                     Background = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 135, 135, 135)),
-                    Child = new TextBlock { Text = capsule, FontSize = 10, FontFamily = new FontFamily("Cascadia Mono"), Opacity = .8 },
+                    Child = new TextBlock { Text = capsule, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .8 },
                 };
                 AutomationProperties.SetAutomationId(pill, "mighty-tokens-" + block.Id);
                 AutomationProperties.SetName(pill, block.CapsuleHelp);

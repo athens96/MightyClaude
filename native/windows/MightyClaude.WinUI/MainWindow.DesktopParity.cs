@@ -63,7 +63,7 @@ public sealed partial class MainWindow
     private FrameworkElement? WorkspaceGitBadge(Workspace workspace)
     {
         if (workspace.Id != service.Snapshot.ActiveWorkspaceId) return null;
-        var label = new TextBlock { FontSize = 10, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis, Visibility = Visibility.Collapsed };
+        var label = new TextBlock { FontSize = DesignMetrics.Type.Mono, Foreground = brushes.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, Visibility = Visibility.Collapsed };
         gitBadges[workspace.Id] = label; AutomationProperties.SetAutomationId(label, "workspace-git-info");
         if (gitWorkspaceKey == workspace.Id + "|" + workspace.Path) UpdateGitBadge(label);
         return label;

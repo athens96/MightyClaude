@@ -19,7 +19,8 @@ public sealed partial class MainWindow : Window
     private readonly AgentPictures pictures;
     /// <summary>The design-token brushes this window, its settings window and companion share; recoloured in place by <see cref="Render"/>.</summary>
     internal readonly DesignBrushes brushes = new();
-    private readonly Grid root = new() { Padding = new Thickness(12), ColumnSpacing = 12, RowSpacing = 8 };
+    // No padding or spacing: the sidebar surface runs edge to edge and the dock keeps its own inset (MainWindow.Shell.cs).
+    private readonly Grid root = new();
     /// <summary>The window's background: the token <c>page</c>, one brush for every theme.</summary>
     private SolidColorBrush WindowBackground() => brushes.Brush(DesignToken.Page);
     private readonly StackPanel sidebar = new() { Spacing = 10 };
@@ -30,8 +31,8 @@ public sealed partial class MainWindow : Window
     // The whole Windows app is a beta: the badge beside the sidebar brand.
     private readonly TextBlock brandBeta = new() { FontSize = 10, Opacity = .75 };
     private readonly Button addFolderButton, settingsButton;
-    private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Opacity = .75 };
-    private readonly TextBlock error = new() { Foreground = new SolidColorBrush(Colors.OrangeRed), TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock status = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Small, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock error = new() { TextWrapping = TextWrapping.Wrap };
     private readonly ComboBox layout = new() { Width = 105 };
     private readonly Dictionary<string, PaneView> views = [];
     private RuntimeInfo? runtime;
@@ -59,7 +60,7 @@ public sealed partial class MainWindow : Window
         var profile = options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative");
         // The splash paints before the state loads: give it the saved theme, not a navy flash.
         var savedTheme = StateStore.SavedTheme(profile);
-        brushes.Apply(DesignTokens.Palette(savedTheme)); root.RequestedTheme = savedTheme == "light" ? ElementTheme.Light : ElementTheme.Dark;
+        brushes.Apply(DesignTokens.Palette(savedTheme)); root.RequestedTheme = savedTheme == "light" ? ElementTheme.Light : ElementTheme.Dark; brushes.ApplyTitleBar(AppWindow);
         service = new(profile, options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
         pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());
@@ -80,23 +81,25 @@ public sealed partial class MainWindow : Window
         service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; ReceiveCompanionPermission(value); if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = Locale.Get("window.error.saveFailed", new Dictionary<string, string> { ["reason"] = ex.Message }));
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(252) }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(DesignMetrics.Layout.SidebarDefault), MinWidth = DesignMetrics.Layout.SidebarMin, MaxWidth = DesignMetrics.Layout.SidebarMax }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Tag = name });
         layout.SelectionChanged += async (_, _) => { if (!rendering && layout.SelectedItem is ComboBoxItem item) await ApplyLayoutPreset((string)item.Tag); };
         addFolderButton = Button("", PickFolder); sidebar.Children.Add(search); sidebar.Children.Add(sessionsHeader); sidebar.Children.Add(workspaces); sidebar.Children.Add(addFolderButton);
-        var sideHost = new Grid { RowSpacing = 10 }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        InitAppShell();
+        var sideHost = new Grid { RowSpacing = 10, Padding = new Thickness(12) }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
         var navigation = new StackPanel { Spacing = 6 }; navigation.Children.Add(layout);
         navigation.Children.Add(BuildCompanionControls());
         settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); ApplyChromeText(); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
-        Grid.SetRow(sideHost, 1); root.Children.Add(sideHost); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
+        sidebarSurface.Child = sideHost; Grid.SetRowSpan(sidebarSurface, 3); root.Children.Add(sidebarSurface);
+        Grid.SetColumn(workspaceHeader, 1); root.Children.Add(workspaceHeader); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
         var footer = new StackPanel { Spacing = 3 }; footer.Children.Add(error);
         // The bottom status bar: the account usage chips, then the status text.
         var statusRow = new Grid { ColumnSpacing = 10 };
         statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         statusRow.Children.Add(BuildAccountUsage()); Grid.SetColumn(status, 1); statusRow.Children.Add(status);
-        footer.Children.Add(statusRow); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
+        footer.Children.Add(statusRow); statusBar.Child = footer; Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
         AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         InitFilePane(); InitAddPaneShortcuts();
@@ -165,13 +168,16 @@ public sealed partial class MainWindow : Window
         if (closing) return; rendering = true; var state = service.Snapshot;
         brushes.Apply(DesignTokens.Palette(state.Theme));
         root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; darkTheme = state.Theme != "light";
+        // Every open window of this app shares the theme; ApplyTitleBar skips a bar already in this palette.
+        brushes.ApplyTitleBar(AppWindow); if (settingsWindow is { } settings) brushes.ApplyTitleBar(settings.AppWindow); if (companionQuestionWindow is { } companion) brushes.ApplyTitleBar(companion.AppWindow);
         root.Background = WindowBackground(); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
-        layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar();
+        layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar(); RefreshWorkspaceHeader();
         RenderAccountUsage();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
         // A closed session runs nothing more: end its refresher before dropping the pane.
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { CloseStatusLine(views[stale]); views[stale].ForgetGraphHistory(); views[stale].CloseReferencePreview(); views[stale].CloseBrowserView(); CloseTerminal(views[stale]); views.Remove(stale); }
         RenderPaneLayout(state);
+        foreach (var (id, view) in views) view.ShowActive(id == state.ActiveSessionId);
         status.Text = runtime is null ? Locale.Get("window.status.checkingRuntime") : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
         rendering = false;
         RefreshWorkspaceGit();
@@ -277,7 +283,7 @@ public sealed partial class MainWindow : Window
             var composerRegion = new StackPanel(); composerRegion.Children.Add(nextActionsHost); composerRegion.Children.Add(card);
             var composerScroll = new ScrollViewer { Content = composerRegion, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
             Grid.SetRow(composerScroll, 2); grid.Children.Add(composerScroll);
-            Container = new Border { Child = grid, BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray), CornerRadius = new CornerRadius(10) };
+            Container = new Border { Child = grid, Background = owner.brushes.Brush(DesignToken.Card), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), BorderBrush = owner.brushes.Brush(DesignToken.Line), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
             InitializeQueuedComposer(composer, bottom);
             InitializeLoginRecoveryCard(composer);
             InitializeAgentWebPrompts(composer);
@@ -322,6 +328,12 @@ public sealed partial class MainWindow : Window
             input.GotFocus += (_, _) => card.BorderBrush = new SolidColorBrush(Colors.CornflowerBlue);
             input.LostFocus += (_, _) => { composingInput = false; card.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)); };
         }
+        /// <summary>
+        /// The pane card's border: <c>line</c>, or accent × 0.58 on the active pane (M/SessionPaneView.swift:164).
+        /// Both are shared brushes, so a theme toggle recolours a reused pane in place. Render sets it on every pane.
+        /// </summary>
+        internal void ShowActive(bool active) =>
+            Container.BorderBrush = active ? owner.brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.PaneActiveBorder) : owner.brushes.Brush(DesignToken.Line);
         private static bool IsInputKeyDown(Windows.System.VirtualKey key) =>
             (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         private static bool SubmitKeyAllowed(bool composing, bool shift, bool otherModifier) => !composing && !shift && !otherModifier;

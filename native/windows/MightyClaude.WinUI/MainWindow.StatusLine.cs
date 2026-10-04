@@ -166,7 +166,7 @@ public sealed partial class MainWindow
                 prompt.Children.Add(new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source), FontSize = 11, Opacity = .75, TextWrapping = TextWrapping.Wrap });
                 prompt.Children.Add(new Border
                 {
-                    Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = new FontFamily("Consolas"), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+                    Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
                     CornerRadius = new CornerRadius(6), Padding = new Thickness(6),
                     Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 135, 135, 135)),
                 });
@@ -251,7 +251,7 @@ public sealed partial class MainWindow
 
         private static TextBlock Row(IReadOnlyList<AnsiSegment> segments)
         {
-            var row = new TextBlock { FontSize = 11, FontFamily = new FontFamily("Consolas"), TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
+            var row = new TextBlock { FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
             foreach (var segment in segments)
             {
                 var piece = new Microsoft.UI.Xaml.Documents.Run { Text = segment.Text };

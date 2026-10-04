@@ -18,6 +18,8 @@ internal sealed class DesignBrushes
     private readonly Dictionary<string, SolidColorBrush> syntax = [];
     private readonly Dictionary<string, Brush> providers = [];
     private SolidColorBrush? subtle;
+    /// <summary>The palette each window's title bar was last given, by <c>AppWindow.Id</c>.</summary>
+    private readonly Dictionary<ulong, DesignPalette> titleBars = [];
 
     /// <summary>The palette the brushes carry now; dark until the first render, like the window before it.</summary>
     internal DesignPalette Palette { get; private set; } = DesignTokens.Dark;
@@ -67,6 +69,27 @@ internal sealed class DesignBrushes
         foreach (var ((token, opacity), brush) in brushes) brush.Color = ToColor(palette[token], opacity);
         if (subtle is not null) subtle.Color = ToColor(DesignTokens.Subtle(palette), DesignMetrics.Opacity.Subtle);
         foreach (var (kind, brush) in syntax) if (DesignTokens.Syntax(kind, palette) is { } color) brush.Color = ToColor(color);
+    }
+
+    /// <summary>
+    /// The system title bar in the current palette (decision Q2: the system title bar stays and
+    /// only takes the token colours): <c>sidebar</c> behind <c>ink</c>, <c>ink2</c> while the window
+    /// is inactive, <c>line</c> / <c>track</c> under a hovered / pressed caption button. Values,
+    /// not brushes, so the caller re-applies it on every render (M/MightyClaudeApp.swift:44-53); a
+    /// window whose bar already carries this palette is skipped. Null (no window) does nothing.
+    /// </summary>
+    internal void ApplyTitleBar(Microsoft.UI.Windowing.AppWindow? window)
+    {
+        if (window is null || !Microsoft.UI.Windowing.AppWindowTitleBar.IsCustomizationSupported()) return;
+        var p = Palette;
+        if (titleBars.TryGetValue(window.Id.Value, out var applied) && ReferenceEquals(applied, p)) return;
+        titleBars[window.Id.Value] = p; var bar = window.TitleBar;
+        bar.BackgroundColor = ToColor(p.Sidebar); bar.InactiveBackgroundColor = ToColor(p.Sidebar);
+        bar.ButtonBackgroundColor = ToColor(p.Sidebar); bar.ButtonInactiveBackgroundColor = ToColor(p.Sidebar);
+        bar.ForegroundColor = ToColor(p.Ink); bar.ButtonForegroundColor = ToColor(p.Ink);
+        bar.InactiveForegroundColor = ToColor(p.Ink2); bar.ButtonInactiveForegroundColor = ToColor(p.Ink2);
+        bar.ButtonHoverBackgroundColor = ToColor(p.Line); bar.ButtonHoverForegroundColor = ToColor(p.Ink);
+        bar.ButtonPressedBackgroundColor = ToColor(p.Track); bar.ButtonPressedForegroundColor = ToColor(p.Ink);
     }
 
     internal static Windows.UI.Color ToColor(DesignColor color, double opacity = 1) =>

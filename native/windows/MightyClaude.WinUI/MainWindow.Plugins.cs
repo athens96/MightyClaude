@@ -71,7 +71,7 @@ public sealed partial class MainWindow
         var rows = new StackPanel { Spacing = 8 };
         var status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.Orange), Visibility = Visibility.Collapsed };
         AutomationProperties.SetAutomationId(status, PluginAutomationId(provider, "load-status"));
-        var diagnostics = new TextBlock { FontSize = 10, FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        var diagnostics = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
         var diagnosticsToggle = Button(PluginStrings.DiagnosticsDisclosure, () =>
         {
             diagnostics.Visibility = diagnostics.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
@@ -80,7 +80,7 @@ public sealed partial class MainWindow
         diagnosticsToggle.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(diagnosticsToggle, PluginAutomationId(provider, "diagnostics"));
 
-        var version = new TextBlock { FontSize = 10, FontFamily = new FontFamily("Consolas"), Opacity = .7, VerticalAlignment = VerticalAlignment.Center };
+        var version = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .7, VerticalAlignment = VerticalAlignment.Center };
         var progress = new TextBlock { FontSize = 11, Opacity = .7, Text = PluginStrings.ProgressLoading, Visibility = Visibility.Collapsed };
         AutomationProperties.SetAutomationId(progress, PluginAutomationId(provider, "progress"));
 
@@ -282,7 +282,7 @@ public sealed partial class MainWindow
 
         var header = new StackPanel { Spacing = 2 };
         header.Children.Add(new TextBlock { Text = workspace.Name, FontSize = 12, Opacity = .75, TextTrimming = TextTrimming.CharacterEllipsis });
-        header.Children.Add(new TextBlock { Text = workspace.Path, FontSize = 10, FontFamily = new FontFamily("Consolas"), Opacity = .55, TextTrimming = TextTrimming.CharacterEllipsis });
+        header.Children.Add(new TextBlock { Text = workspace.Path, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .55, TextTrimming = TextTrimming.CharacterEllipsis });
         header.Children.Add(version);
 
         var body = new StackPanel { Spacing = 10, Width = 700 };
@@ -664,7 +664,7 @@ public sealed partial class MainWindow
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         title.Children.Add(new TextBlock { Text = row.Name, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         if (row.Version is { Length: > 0 })
-            title.Children.Add(new TextBlock { Text = row.Version, FontSize = 10, FontFamily = new FontFamily("Consolas"), Opacity = .7, VerticalAlignment = VerticalAlignment.Center });
+            title.Children.Add(new TextBlock { Text = row.Version, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .7, VerticalAlignment = VerticalAlignment.Center });
         if (row.State is { Length: > 0 })
             title.Children.Add(new TextBlock { Text = row.State, FontSize = 10, Opacity = .7, VerticalAlignment = VerticalAlignment.Center });
         panel.Children.Add(title);
@@ -672,7 +672,7 @@ public sealed partial class MainWindow
             panel.Children.Add(new TextBlock { Text = row.Description, FontSize = 11, Opacity = .75, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new TextBlock { Text = row.Subtitle, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
         if (row.ProjectPath is { Length: > 0 })
-            panel.Children.Add(new TextBlock { Text = row.ProjectPath, FontSize = 10, FontFamily = new FontFamily("Consolas"), Opacity = .5, TextTrimming = TextTrimming.CharacterEllipsis });
+            panel.Children.Add(new TextBlock { Text = row.ProjectPath, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .5, TextTrimming = TextTrimming.CharacterEllipsis });
         foreach (var error in row.Errors)
             panel.Children.Add(new TextBlock { Text = error, FontSize = 10, Foreground = new SolidColorBrush(Colors.Orange), TextWrapping = TextWrapping.Wrap });
         foreach (var note in row.Notes)

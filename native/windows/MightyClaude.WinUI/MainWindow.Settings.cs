@@ -541,7 +541,7 @@ public sealed partial class MainWindow
                 {
                     Text = string.Join(" ", argv),
                     FontSize = 11,
-                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(DesignMetrics.Font.Mono),
                     TextWrapping = TextWrapping.Wrap,
                     Opacity = .85,
                 });

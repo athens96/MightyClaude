@@ -69,7 +69,7 @@ public sealed partial class MainWindow
             }
             Add("model", Locale.Get("composer.label.model"), details); Add("elapsed", Locale.Get("composer.sessionInfo.elapsed"), details);
             Add("workspace", Locale.Get("composer.sessionInfo.workspace"), details);
-            var path = new TextBlock { FontSize = 10, FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = .65 };
+            var path = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = .65 };
             details.Children.Add(path); sessionInfoRows["path"] = (path, path); AutomationProperties.SetAutomationId(path, "session-info-path-" + id);
             details.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(40, 135, 135, 135)) });
             Add("scope", Locale.Get("composer.sessionInfo.tokenScope"), details);

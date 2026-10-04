@@ -109,17 +109,20 @@ public sealed partial class MainWindow
         if (LayoutMode(state, workspace) == "focus") node = PaneLayout.Groups(node).FirstOrDefault(g => g.SessionIds.Contains(state.ActiveSessionId ?? "")) ?? PaneLayout.Groups(node).First();
         var content = BuildLayoutNode(node, workspace, state);
         var minimum = LayoutMinimum(node);
-        content.Width = Math.Max(minimum.Width, panes.ActualWidth > 0 ? panes.ActualWidth : 900); content.Height = Math.Max(minimum.Height, panes.ActualHeight > 0 ? panes.ActualHeight : 650);
+        // The dock sits DockInset inside its scroll view on every side (M/PaneDockView.swift:62-63).
+        const double inset = DesignMetrics.Layout.DockInset;
+        content.Margin = new Thickness(inset);
+        content.Width = Math.Max(minimum.Width, (panes.ActualWidth > 0 ? panes.ActualWidth : 900) - 2 * inset); content.Height = Math.Max(minimum.Height, (panes.ActualHeight > 0 ? panes.ActualHeight : 650) - 2 * inset);
         var viewport = new ScrollViewer { Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollMode = ScrollMode.Auto };
-        viewport.SizeChanged += (_, args) => { content.Width = Math.Max(minimum.Width, args.NewSize.Width); content.Height = Math.Max(minimum.Height, args.NewSize.Height); };
+        viewport.SizeChanged += (_, args) => { content.Width = Math.Max(minimum.Width, args.NewSize.Width - 2 * inset); content.Height = Math.Max(minimum.Height, args.NewSize.Height - 2 * inset); };
         panes.Children.Add(viewport);
     }
 
     private static Windows.Foundation.Size LayoutMinimum(PaneLayoutNode node)
     {
-        if (node.Kind == "tabs") return new(315, 280);
+        if (node.Kind == "tabs") return new(DesignMetrics.Layout.PaneMinWidth, DesignMetrics.Layout.PaneMinHeight);
         var a = LayoutMinimum(node.Children[0]); var b = LayoutMinimum(node.Children[1]);
-        return node.Axis == "horizontal" ? new(a.Width + b.Width + 8, Math.Max(a.Height, b.Height)) : new(Math.Max(a.Width, b.Width), a.Height + b.Height + 8);
+        return node.Axis == "horizontal" ? new(a.Width + b.Width + DesignMetrics.Layout.SplitDivider, Math.Max(a.Height, b.Height)) : new(Math.Max(a.Width, b.Width), a.Height + b.Height + DesignMetrics.Layout.SplitDivider);
     }
 
     private FrameworkElement BuildLayoutNode(PaneLayoutNode node, string workspace, AppSnapshot state)
@@ -128,21 +131,28 @@ public sealed partial class MainWindow
         var horizontal = node.Axis == "horizontal"; var grid = new Grid(); var ratio = node.Ratio;
         if (horizontal)
         {
-            grid.ColumnDefinitions.Add(new() { Width = new(ratio, GridUnitType.Star), MinWidth = LayoutMinimum(node.Children[0]).Width }); grid.ColumnDefinitions.Add(new() { Width = new(8) }); grid.ColumnDefinitions.Add(new() { Width = new(1 - ratio, GridUnitType.Star), MinWidth = LayoutMinimum(node.Children[1]).Width });
+            grid.ColumnDefinitions.Add(new() { Width = new(ratio, GridUnitType.Star), MinWidth = LayoutMinimum(node.Children[0]).Width }); grid.ColumnDefinitions.Add(new() { Width = new(DesignMetrics.Layout.SplitDivider) }); grid.ColumnDefinitions.Add(new() { Width = new(1 - ratio, GridUnitType.Star), MinWidth = LayoutMinimum(node.Children[1]).Width });
         }
         else
         {
-            grid.RowDefinitions.Add(new() { Height = new(ratio, GridUnitType.Star), MinHeight = LayoutMinimum(node.Children[0]).Height }); grid.RowDefinitions.Add(new() { Height = new(8) }); grid.RowDefinitions.Add(new() { Height = new(1 - ratio, GridUnitType.Star), MinHeight = LayoutMinimum(node.Children[1]).Height });
+            grid.RowDefinitions.Add(new() { Height = new(ratio, GridUnitType.Star), MinHeight = LayoutMinimum(node.Children[0]).Height }); grid.RowDefinitions.Add(new() { Height = new(DesignMetrics.Layout.SplitDivider) }); grid.RowDefinitions.Add(new() { Height = new(1 - ratio, GridUnitType.Star), MinHeight = LayoutMinimum(node.Children[1]).Height });
         }
         var first = BuildLayoutNode(node.Children[0], workspace, state); var second = BuildLayoutNode(node.Children[1], workspace, state);
         if (horizontal) Grid.SetColumn(second, 2); else Grid.SetRow(second, 2);
         grid.Children.Add(first); grid.Children.Add(second);
-        var divider = new Thumb { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(65, 135, 135, 135)), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+        // The Thumb is the invisible hit area (Opacity 0 still takes the pointer and hides the stock
+        // grey hover bar); the handle drawn over it is line, accent while hovered or dragged.
+        var divider = new Thumb { Background = new SolidColorBrush(Colors.Transparent), Opacity = 0, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+        var handle = new Border { Width = horizontal ? 3 : 30, Height = horizontal ? 30 : 3, CornerRadius = new CornerRadius(2), Background = brushes.Brush(DesignToken.Line), IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        AutomationProperties.SetAccessibilityView(handle, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        divider.PointerEntered += (_, _) => handle.Background = brushes.Brush(DesignToken.Accent);
+        divider.PointerExited += (_, _) => { if (!divider.IsDragging) handle.Background = brushes.Brush(DesignToken.Line); };
         AutomationProperties.SetName(divider, Locale.Get(horizontal ? "layout.divider.horizontal" : "layout.divider.vertical")); ToolTipService.SetToolTip(divider, Locale.Get("layout.divider.tooltip"));
-        if (horizontal) Grid.SetColumn(divider, 1); else Grid.SetRow(divider, 1);
+        var dividerHost = new ResizeCursorHost(divider, horizontal);
+        if (horizontal) { Grid.SetColumn(dividerHost, 1); Grid.SetColumn(handle, 1); } else { Grid.SetRow(dividerHost, 1); Grid.SetRow(handle, 1); }
         divider.DragDelta += (_, args) =>
         {
-            var size = (horizontal ? grid.ActualWidth : grid.ActualHeight) - 8; if (size <= 0) return;
+            var size = (horizontal ? grid.ActualWidth : grid.ActualHeight) - DesignMetrics.Layout.SplitDivider; if (size <= 0) return;
             ratio = PaneLayout.ClampRatio(ratio + (horizontal ? args.HorizontalChange : args.VerticalChange) / size);
             if (horizontal) { grid.ColumnDefinitions[0].Width = new(ratio, GridUnitType.Star); grid.ColumnDefinitions[2].Width = new(1 - ratio, GridUnitType.Star); }
             else { grid.RowDefinitions[0].Height = new(ratio, GridUnitType.Star); grid.RowDefinitions[2].Height = new(1 - ratio, GridUnitType.Star); }
@@ -152,7 +162,7 @@ public sealed partial class MainWindow
             if (!args.Canceled) await service.UpdateAsync(s => EffectiveLayout(s, workspace) is { } current ? SaveLayoutMode(SaveLayout(s, workspace, PaneLayout.Resize(current, node.Id, ratio)), workspace, "custom") : s);
             Render();
         });
-        grid.Children.Add(divider); return grid;
+        grid.Children.Add(dividerHost); grid.Children.Add(handle); return grid;
     }
 
     private bool IsPaneDrag(DragEventArgs args, string workspace) => draggedSessionId is not null && draggedWorkspaceId == workspace && args.DataView.Contains(PaneDragFormat);

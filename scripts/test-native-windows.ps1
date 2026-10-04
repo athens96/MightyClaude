@@ -115,6 +115,12 @@ try {
         $msg = "designTokens 스모크가 실행되지 않았거나 통과하지 못했습니다: designTokens=$($result.designTokens)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    # Design stage 2, the app shell: sidebar surface, workspace header, dock inset, pane card
+    # borders (line / accent x 0.58), status bar and title bar, in both themes (MainWindow.DesignSmoke.cs).
+    if ($result.appShellDesign -ne $true) {
+        $msg = "appShellDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: appShellDesign=$($result.appShellDesign)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg
