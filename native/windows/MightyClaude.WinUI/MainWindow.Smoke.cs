@@ -204,6 +204,11 @@ public sealed partial class MainWindow
                 Require(service.Snapshot.ActiveSessionId is { } shellActiveId && views.TryGetValue(shellActiveId, out var shellActiveView) && ReferenceEquals(pane, shellActiveView), $"{AppShellKey}: the smoke pane must be the active pane; active {service.Snapshot.ActiveSessionId ?? "none"}");
                 RequireAppShellInTheme(pane, inactivePane);
                 var activeBorder = pane.Container.BorderBrush; var inactiveBorder = inactivePane.Container.BorderBrush;
+                // Design stage 3, the sidebar: the same check in both themes; its long-lived parts keep
+                // their brush instances across the toggle (recoloured in place).
+                Checkpoint(SidebarDesignKey, "running");
+                await RequireSidebarDesignInTheme();
+                var sidebarBrushes = new[] { sidebarSearchBox.Background, dashboardEntryIcon!.Background, sidebarFooter!.BorderBrush, layout.Background };
                 root.UpdateLayout(); await Task.Delay(120);
                 Checkpoint("lightThemeScreenshot", "running");
                 result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
@@ -221,6 +226,12 @@ public sealed partial class MainWindow
                 RequireAppShellInTheme(pane, inactivePane);
                 result[AppShellKey] = true;
                 Checkpoint(AppShellKey, "passed");
+                Checkpoint(SidebarDesignKey, "running");
+                Require(new[] { sidebarSearchBox.Background, dashboardEntryIcon.Background, sidebarFooter.BorderBrush, layout.Background }.Zip(sidebarBrushes).All(pair => ReferenceEquals(pair.First, pair.Second)),
+                    $"{SidebarDesignKey} (dark): the toggle replaced a sidebar brush instead of recolouring it in place");
+                await RequireSidebarDesignInTheme();
+                result[SidebarDesignKey] = true;
+                Checkpoint(SidebarDesignKey, "passed");
                 result["opaqueBackgroundInBothThemes"] = true;
             }
             finally { root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }

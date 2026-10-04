@@ -38,6 +38,16 @@ internal sealed class DesignBrushes
     /// <summary>The neutral wash for hover and selected rows: black by day, white by night, at 0.035. Shared: never mutate it.</summary>
     internal SolidColorBrush Subtle => subtle ??= new SolidColorBrush(ToColor(DesignTokens.Subtle(Palette), DesignMetrics.Opacity.Subtle));
 
+    /// <summary>
+    /// The hairline around the selected sidebar pane row: black at 0.07 in both themes, as the Mac
+    /// draws <c>Color.black</c> (M/WorkspaceView.swift:525-526; the fixture's <c>opacities.sidebarRowSelectedBorder</c>).
+    /// Not a palette token, so it never changes colour. Shared: never mutate it.
+    /// </summary>
+    internal SolidColorBrush RowSelectedBorder { get; } = new(ToColor(new DesignColor(0x000000), DesignMetrics.Opacity.SidebarRowSelectedBorder));
+
+    /// <summary>A fully transparent brush for the states of a plain row that draw nothing. Shared: never mutate it.</summary>
+    internal SolidColorBrush Transparent { get; } = new(Microsoft.UI.Colors.Transparent);
+
     /// <summary>The files pane's colour for a source span kind (keyword, string, number, comment); null for plain text. Shared: never mutate it.</summary>
     internal SolidColorBrush? Syntax(string kind)
     {

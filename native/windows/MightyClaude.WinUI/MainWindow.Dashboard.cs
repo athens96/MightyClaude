@@ -15,14 +15,37 @@ public sealed partial class MainWindow
     private string? dashboardFingerprint;
     private readonly Dictionary<string, TextBlock> dashboardClocks = [];
     private readonly Dictionary<string, TextBlock> sidebarDetails = [];
-    private readonly Dictionary<string, TextBlock> workspaceStatusCounts = [];
+    private readonly Dictionary<string, StatusCountsView> workspaceStatusCounts = [];
     private Button? dashboardButton;
+    /// <summary>The work-status entry's wash (card at radius 10 while the dashboard shows), its title and its counts.</summary>
+    private Border? dashboardEntry;
+    private TextBlock? dashboardEntryTitle;
+    private Border? dashboardEntryIcon;
+    private StatusCountsView? dashboardCounts;
     private void InitDashboard()
     {
-        var button = dashboardButton = Button(Locale.Get("phone.dashboard.title"), () => { showsDashboard = true; RenderDashboard(); return Task.CompletedTask; });
-        button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Left;
+        var button = dashboardButton = Button(Locale.Get("phone.dashboard.title"), () => { showsDashboard = true; RenderSidebar(); RenderDashboard(); return Task.CompletedTask; });
+        button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        button.Padding = new Thickness(0); button.Margin = new Thickness(9, 12, 9, 0);
+        PlainSidebarButton(button, brushes.Transparent, brushes.Transparent, radius: DesignMetrics.Radius.Entry);
+        // "작업 현황" (M/WorkspaceView.swift:136-158): a 24×24 run tile at radius 7 with the white
+        // grid symbol 11, the 13pt semibold title and the counts, padding h10 v8.
+        var row = new Grid { ColumnSpacing = 9 };
+        row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        dashboardEntryIcon = new Border
+        {
+            Width = 24, Height = 24, CornerRadius = new CornerRadius(DesignMetrics.Radius.Search), Background = brushes.Brush(DesignToken.Run), VerticalAlignment = VerticalAlignment.Center,
+            Child = new FontIcon { Glyph = "\uF0E2", FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.OnStatus), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        AutomationProperties.SetAccessibilityView(dashboardEntryIcon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        row.Children.Add(dashboardEntryIcon);
+        dashboardEntryTitle = new TextBlock { FontSize = DesignMetrics.Type.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(dashboardEntryTitle, 1); row.Children.Add(dashboardEntryTitle);
+        dashboardCounts = new StatusCountsView(brushes, "sidebar-dashboard-running"); Grid.SetColumn(dashboardCounts.View, 2); row.Children.Add(dashboardCounts.View);
+        dashboardEntry = new Border { Child = row, Padding = new Thickness(10, 8, 10, 8), CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry) };
+        button.Content = dashboardEntry;
         AutomationProperties.SetAutomationId(button, "sidebar-dashboard"); ToolTipService.SetToolTip(button, Locale.Get("dashboard.sidebarHelp"));
-        sidebar.Children.Insert(1, button);
+        sidebarTop.Children.Insert(1, button); RefreshDashboardChrome();
         dashboard = new ScrollViewer { Visibility = Visibility.Collapsed, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetRow(dashboard, 1); Grid.SetColumn(dashboard, 1); root.Children.Add(dashboard);
         // Over the sidebar's trailing divider, the full height of the window like the surface it resizes.
@@ -47,7 +70,7 @@ public sealed partial class MainWindow
         };
     }
     private WorkDashboard.Attention DashboardAttention(string id) => views.TryGetValue(id, out var pane) ? pane.DashboardAttention : new();
-    private void HideDashboard() { showsDashboard = false; StopDashboardGit(); dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; RefreshWorkspaceHeader(); }
+    private void HideDashboard() { showsDashboard = false; RefreshDashboardEntry(); StopDashboardGit(); dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; RefreshWorkspaceHeader(); }
     private void RenderDashboard()
     {
         if (dashboard is null || closing || !showsDashboard) return;
@@ -115,15 +138,32 @@ public sealed partial class MainWindow
     }
     private void RefreshDashboardChrome()
     {
-        if (dashboardButton is null) return;
-        dashboardButton.Content = Locale.Get("phone.dashboard.title");
-        AutomationProperties.SetName(dashboardButton, Locale.Get("phone.dashboard.title"));
+        if (dashboardButton is null || dashboardEntryTitle is null) return;
+        dashboardEntryTitle.Text = Locale.Get("phone.dashboard.title");
         ToolTipService.SetToolTip(dashboardButton, Locale.Get("dashboard.sidebarHelp"));
+        // The counts' spoken labels are in the language too.
+        dashboardCounts?.Invalidate(); RefreshDashboardEntry();
     }
-    private TextBlock WorkspaceStatusCounts(Workspace workspace)
+    /// <summary>
+    /// The work-status entry's selected wash (the <c>card</c> surface at radius 10 while the
+    /// dashboard shows, nothing otherwise) and its counts over every pane. The Mac's 0.06 shadow
+    /// under the selected entry waits for the Composition shadow (decision Q5).
+    /// </summary>
+    private void RefreshDashboardEntry()
     {
-        var value = new TextBlock { FontSize = 10, Opacity = .75, TextWrapping = TextWrapping.Wrap };
-        workspaceStatusCounts[workspace.Id] = value; UpdateWorkspaceStatusCounts(workspace.Id, value); return value;
+        if (dashboardEntry is null) return;
+        dashboardEntry.Background = showsDashboard ? brushes.Brush(DesignToken.Card) : brushes.Transparent;
+        var state = service.Snapshot;
+        dashboardCounts?.Update(WorkDashboard.WorkspaceBadges(state.Sessions, DashboardAttention), state.Theme != "light");
+        NameDashboardEntry();
+    }
+    /// <summary>The entry reads as its title and then its counts, "작업 현황, 실행 중 2개" (M/WorkspaceView.swift:155).</summary>
+    private string DashboardEntryName() => string.Join(", ", (dashboardCounts?.Labels ?? []).Prepend(Locale.Get("phone.dashboard.title")));
+    private void NameDashboardEntry()
+    {
+        if (dashboardButton is null) return;
+        var name = DashboardEntryName();
+        if (AutomationProperties.GetName(dashboardButton) != name) AutomationProperties.SetName(dashboardButton, name);
     }
     private void UpdateWorkspaceStatusCounts(string id, TextBlock label)
     {

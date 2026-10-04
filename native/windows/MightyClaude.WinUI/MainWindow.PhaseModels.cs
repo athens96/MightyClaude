@@ -48,7 +48,7 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(block, "phaseModels-provider-" + provider);
             var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             header.Children.Add(ProviderMarkView.Labelled(ProviderMark.Label(provider), provider, 13, Microsoft.UI.Text.FontWeights.SemiBold));
-            if (ProviderCatalog.IsBeta(provider)) header.Children.Add(BetaBadgeView.Create(service.Snapshot.Theme != "light"));
+            if (ProviderCatalog.IsBeta(provider)) header.Children.Add(BetaBadgeView.Create(brushes));
             block.Children.Add(header);
             foreach (var phase in PhaseModelSection.Phases.Where(p => provider != "claude" || p != Phase.Review))
             {

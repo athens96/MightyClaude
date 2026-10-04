@@ -23,53 +23,111 @@ public sealed partial class MainWindow
     /// <summary>
     /// A sidebar row or tab: the status glyph (design A) before the title, then the state word
     /// and the run clock. The glyph replaces the spinning ring; no row is filled with a status colour.
+    /// A sidebar row is the Mac's paneRow (M/WorkspaceView.swift:214-277): the glyph at the top, the
+    /// 12.5pt title (medium once the pane has settled, semibold otherwise) over the meta line, and
+    /// on the right only the amber words of what waits on the user ("질문 1"); <paramref name="active"/>
+    /// is the selected row, whose meta line is <c>ink2</c>.
     /// </summary>
-    private FrameworkElement SessionIndicator(RunSession session, bool tab = false)
+    private FrameworkElement SessionIndicator(RunSession session, bool tab = false, bool active = false)
     {
-        var row = new Grid { ColumnSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        var row = new Grid { ColumnSpacing = tab ? 6 : 8, VerticalAlignment = VerticalAlignment.Center };
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var pending = PendingRequests(session.Id); var shown = StatusGlyph.DisplayStatus(session.Status, pending);
         var mark = new StatusMark(); mark.Update(session.Status, session.Kind, pending, DarkTheme);
         row.Children.Add(mark.View);
         var title = new TextBlock { Text = session.Title, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 };
+        if (!tab)
+        {
+            title.FontSize = DesignMetrics.Type.SideRow; title.FontWeight = SidebarTitleWeight(shown); title.Foreground = brushes.Brush(DesignToken.Ink); title.MinHeight = 17;
+            mark.View.VerticalAlignment = VerticalAlignment.Top; mark.View.Margin = new Thickness(0, 1.5, 0, 0);
+            sidebarTitles[session.Id] = title;
+        }
         // A Codex or Gemini agent pane carries the 베타 capsule right after its title (macOS paneRow / PaneDockView).
         var titleLine = SessionTitle(session, title, tab); Grid.SetColumn(titleLine, 1); row.Children.Add(titleLine);
         // An automatic agent title is the request cut to 40 characters; hovering shows it whole (macOS titleHelp).
         ToolTipService.SetToolTip(title, PaneTitle.Help(session));
         var state = new TextBlock { Text = StateLabel(shown), FontSize = 10, Opacity = .65 };
+        if (!tab)
+        {
+            state.Opacity = 1; state.FontSize = 10.5; state.FontWeight = Microsoft.UI.Text.FontWeights.Bold; state.Foreground = brushes.Brush(DesignToken.WaitText); state.MinHeight = 17;
+            ShowSidebarWait(state, DashboardAttention(session.Id));
+        }
         var elapsed = new TextBlock { Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "", FontSize = 10, Opacity = .7 };
         // Sidebar metadata already contains the elapsed time below the title.
         if (!tab) elapsed.Visibility = Visibility.Collapsed;
-        var trailing = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center }; if (!tab) trailing.Children.Add(state); trailing.Children.Add(elapsed); Grid.SetColumn(trailing, 2); row.Children.Add(trailing);
+        var trailing = new StackPanel { Spacing = 1, VerticalAlignment = tab ? VerticalAlignment.Center : VerticalAlignment.Top }; if (!tab) trailing.Children.Add(state); trailing.Children.Add(elapsed); Grid.SetColumn(trailing, 2); row.Children.Add(trailing);
         // An agent's sidebar row names its provider on a muted second line, its mark first
-        // (macOS paneMeta: "[mark] Claude"); the glyph and the trailing state span both lines.
-        if (!tab && SidebarProviderLine(session) is { } providerLine)
+        // (macOS paneMeta: "[mark] Claude"); any other pane names its kind there ("셸 · 로컬 터미널",
+        // macOS DashboardText.kindLine). The glyph spans both lines.
+        if (!tab && (SidebarProviderLine(session, active) ?? SidebarKindLine(session, active)) is { } providerLine)
         {
-            row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowSpacing = 1;
-            Grid.SetRowSpan(mark.View, 2); Grid.SetRowSpan(trailing, 2);
+            row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            Grid.SetRowSpan(mark.View, 2);
             Grid.SetRow(providerLine, 1); Grid.SetColumn(providerLine, 1); row.Children.Add(providerLine);
         }
         (tab ? tabIndicators : sessionIndicators)[session.Id] = (mark, state, elapsed);
         AutomationProperties.SetName(row, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown)); return row;
+    }
+    /// <summary>
+    /// The meta line of a pane that is not an agent's: its kind in 11pt, <c>ink2</c> on the selected
+    /// row and <c>sidebarInk2</c> otherwise (macOS DashboardText.kindLine). A Windows terminal pane is
+    /// always a local terminal, as every Mac shell pane is outside its smoke run.
+    /// </summary>
+    private TextBlock SidebarKindLine(RunSession session, bool active)
+    {
+        var words = session.Kind switch
+        {
+            "shell" => Locale.Get("dashboard.kind.shell") + " · " + Locale.Get("phone.card.localTerminal"),
+            "browser" => Locale.Get("browser.tab.title"),
+            AgentIOPaneKind.Terminal => Locale.Get("dashboard.kind.agentTerminal"),
+            AgentIOPaneKind.Browser => Locale.Get("dashboard.kind.agentBrowser"),
+            FilePaneKind.Kind => Locale.Get("files.pane.title"),
+            "claude" => Locale.Get("dashboard.kind.agent"),
+            _ => session.Kind,
+        };
+        var line = new TextBlock { Text = words, FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis, MinHeight = 15, VerticalAlignment = VerticalAlignment.Center };
+        sidebarKindLines[session.Id] = line;
+        return line;
+    }
+    /// <summary>The kind line of each sidebar row that is not an agent's, by session id.</summary>
+    private readonly Dictionary<string, TextBlock> sidebarKindLines = [];
+    /// <summary>A sidebar title's weight: medium once the pane is done, stopped or idle, semibold while it runs, waits or failed.</summary>
+    private static Windows.UI.Text.FontWeight SidebarTitleWeight(string shownStatus) =>
+        StatusGlyph.Tone(shownStatus) is DesignTone.Done or DesignTone.Stop or DesignTone.Idle ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.SemiBold;
+    /// <summary>The words of what waits on the user (macOS DashboardText.status): questions first, then permissions; null when nothing waits.</summary>
+    private static string? SidebarWaitText(WorkDashboard.Attention attention) =>
+        attention.Questions > 0 ? Locale.Get("phone.card.questions", new Dictionary<string, string> { ["count"] = attention.Questions.ToString(System.Globalization.CultureInfo.InvariantCulture) })
+        : attention.Permissions > 0 ? Locale.Get("phone.card.permissions", new Dictionary<string, string> { ["count"] = attention.Permissions.ToString(System.Globalization.CultureInfo.InvariantCulture) })
+        : null;
+    /// <summary>Shows a sidebar row's amber waiting words, or collapses them while nothing waits.</summary>
+    private static void ShowSidebarWait(TextBlock label, WorkDashboard.Attention attention)
+    {
+        var text = SidebarWaitText(attention);
+        label.Text = text ?? ""; label.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
     }
     private void RefreshRunningIndicators()
     {
         if (closing) return;
         // One snapshot copy per tick: the theme and every session come from it.
         var state = service.Snapshot; var dark = state.Theme != "light";
-        foreach (var pair in workspaceStatusCounts) UpdateWorkspaceStatusCounts(pair.Key, pair.Value);
+        RefreshSidebarStatusCounts(state, dark);
         if (workspaceHeaderId is { } headerWorkspace) UpdateWorkspaceStatusCounts(headerWorkspace, workspaceHeaderCounts);
         foreach (var session in state.Sessions)
         {
-            var pending = PendingRequests(session.Id);
+            var pending = PendingRequests(session.Id); var shown = StatusGlyph.DisplayStatus(session.Status, pending);
             if (sidebarSessionButtons.TryGetValue(session.Id, out var sidebarButton))
-                AutomationProperties.SetName(sidebarButton, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(StatusGlyph.DisplayStatus(session.Status, pending)));
-            if (sidebarDetails.TryGetValue(session.Id, out var meta)) meta.Text = WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow);
-            foreach (var values in new[] { sessionIndicators, tabIndicators })
+                AutomationProperties.SetName(sidebarButton, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(shown));
+            if (sidebarDetails.TryGetValue(session.Id, out var meta)) meta.Text = SidebarMeta(session);
+            if (sidebarTitles.TryGetValue(session.Id, out var title)) title.FontWeight = SidebarTitleWeight(shown);
+            if (sessionIndicators.TryGetValue(session.Id, out var row))
             {
-                if (!values.TryGetValue(session.Id, out var view)) continue;
-                view.Mark.Update(session.Status, session.Kind, pending, dark);
-                view.Status.Text = StateLabel(StatusGlyph.DisplayStatus(session.Status, pending)); view.Time.Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "";
+                row.Mark.Update(session.Status, session.Kind, pending, dark);
+                ShowSidebarWait(row.Status, DashboardAttention(session.Id));
+            }
+            if (tabIndicators.TryGetValue(session.Id, out var tab))
+            {
+                tab.Mark.Update(session.Status, session.Kind, pending, dark);
+                tab.Status.Text = StateLabel(shown); tab.Time.Text = session.Kind == "shell" ? "" : session.RunTiming?.Label() ?? "";
             }
             if (views.TryGetValue(session.Id, out var pane)) { pane.RefreshElapsed(session); pane.RefreshHeaderStatus(session, dark); }
         }

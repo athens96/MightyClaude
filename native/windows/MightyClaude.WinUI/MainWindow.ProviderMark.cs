@@ -82,7 +82,7 @@ internal static class ProviderMarkView
     internal static string? LabelledProvider(FrameworkElement line) =>
         line is Grid { Tag: string provider } grid && grid.Children.OfType<ShapePath>().Any() ? provider : null;
 
-    private static Windows.UI.Color Color(uint rgb) => Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+    private static Windows.UI.Color Color(uint rgb) => DesignBrushes.ToColor(new DesignColor(rgb));
 }
 
 public sealed partial class MainWindow
@@ -91,20 +91,27 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, string> sidebarMarks = [];
 
     /// <summary>
-    /// The muted line under an agent row's title: <c>[mark] Claude</c> (macOS WorkspaceView
-    /// <c>paneMeta</c> leads with the provider part). Null for a shell, a browser or the files pane.
+    /// The muted line under an agent row's title: <c>[mark] Claude · 4일 전</c> (macOS WorkspaceView
+    /// <c>paneMeta</c> leads with the provider part), 11pt with tabular digits, in <c>ink2</c> on the
+    /// selected row and <c>sidebarInk2</c> on the others. Null for a shell, a browser or the files pane.
     /// </summary>
-    private FrameworkElement? SidebarProviderLine(RunSession session)
+    private FrameworkElement? SidebarProviderLine(RunSession session, bool active)
     {
         if (ProviderMark.SidebarProvider(session) is not { } provider) return null;
-        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        var ink = brushes.Brush(active ? DesignToken.Ink2 : DesignToken.SidebarInk2);
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, MinHeight = 15 };
         line.Children.Add(ProviderMarkView.Create(provider));
-        line.Children.Add(new TextBlock { Text = ProviderMark.Label(provider), FontSize = 11, Opacity = .65, VerticalAlignment = VerticalAlignment.Center });
-        var details = new TextBlock { Text = WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow), FontSize = 11, Opacity = .65, TextTrimming = TextTrimming.CharacterEllipsis };
+        line.Children.Add(new TextBlock { Text = ProviderMark.Label(provider), FontSize = DesignMetrics.Type.Pill, Foreground = ink, VerticalAlignment = VerticalAlignment.Center });
+        var details = new TextBlock { Text = SidebarMeta(session), FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(details, FontNumeralAlignment.Tabular);
         sidebarDetails[session.Id] = details; line.Children.Add(details);
         sidebarMarks[session.Id] = provider;
         return line;
     }
+
+    /// <summary>The meta line's part after the provider name: <c>· 4일 전</c>, or nothing when there is no detail.</summary>
+    private string SidebarMeta(RunSession session) =>
+        WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow) is { Length: > 0 } detail ? "· " + detail : "";
 
     /// <summary>
     /// Smoke key <c>agentMark</c>: every agent row in the sidebar carries its own provider's mark

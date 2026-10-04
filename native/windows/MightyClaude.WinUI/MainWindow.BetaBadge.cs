@@ -7,22 +7,24 @@ using Microsoft.UI.Xaml.Media;
 namespace MightyClaude.WinUI;
 
 /// <summary>
-/// The small capsule drawn after a beta provider's name (macOS BetaBadge.swift). It sits beside
-/// the title and is never part of it; the colours are the macOS stopSoft / stopText tokens.
+/// The small capsule drawn after a beta provider's name (macOS BetaBadge.swift): 9pt medium
+/// <c>stopText</c> on a <c>stopSoft</c> capsule, padding h5 v1. It sits beside the title and is
+/// never part of it. The colours are the window's shared token brushes, so a theme toggle
+/// recolours a badge already on screen.
 /// </summary>
 internal static class BetaBadgeView
 {
-    internal static Border Create(bool dark)
+    internal static Border Create(DesignBrushes brushes)
     {
         var text = new TextBlock
         {
-            Text = Locale.Get("badge.beta"), FontSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.Medium,
-            Foreground = new SolidColorBrush(dark ? Windows.UI.Color.FromArgb(255, 0xA9, 0xB1, 0xC2) : Windows.UI.Color.FromArgb(255, 0x4F, 0x58, 0x69))
+            Text = Locale.Get("badge.beta"), FontSize = DesignMetrics.Type.Badge, FontWeight = Microsoft.UI.Text.FontWeights.Medium,
+            Foreground = brushes.Brush(DesignToken.StopText)
         };
         var badge = new Border
         {
             Child = text, CornerRadius = new CornerRadius(7), Padding = new Thickness(5, 1, 5, 1), VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(dark ? Windows.UI.Color.FromArgb(255, 0x22, 0x29, 0x39) : Windows.UI.Color.FromArgb(255, 0xEE, 0xF0, 0xF4))
+            Background = brushes.Brush(DesignToken.StopSoft)
         };
         AutomationProperties.SetName(badge, Locale.Get("badge.betaAccessibility"));
         return badge;
@@ -44,7 +46,7 @@ public sealed partial class MainWindow
         var line = new Grid { ColumnSpacing = 6, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         line.Children.Add(title);
-        var badge = BetaBadgeView.Create(DarkTheme); Grid.SetColumn(badge, 1); line.Children.Add(badge);
+        var badge = BetaBadgeView.Create(brushes); Grid.SetColumn(badge, 1); line.Children.Add(badge);
         (tab ? tabBetas : sidebarBetas).Add(session.Id);
         return line;
     }
