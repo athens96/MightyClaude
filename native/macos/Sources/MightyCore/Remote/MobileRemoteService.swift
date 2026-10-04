@@ -104,6 +104,12 @@ public actor MobileRemoteService {
     private var networkPath: RelayNetworkPath?
     private var pathWindow = RelayLinkPolicy.Window()
     private var pathPacing = RelayLinkPolicy.Pacing()
+    /// Test seam: the clock the path settle and the redial pacing use.
+    private var pathClock = RelayLinkPolicy.Clock.system
+    /// Settle decisions finished so far, whatever they decided, and when the
+    /// one scheduled now is due (nil when none is); tests wait on these.
+    private(set) var pathSettlePasses = 0
+    private(set) var pathSettleDeadline: Date?
     private var screenShareEngine: ScreenShareEngine?
     /// Waiters on a `turn-credentials` answer from the relay's control socket.
     private var turnWaiters: [UUID: CheckedContinuation<ScreenShareTurnCredential?, Never>] = [:]
@@ -184,6 +190,8 @@ public actor MobileRemoteService {
     func setKeepaliveInterval(_ value: TimeInterval) { keepaliveInterval = value }
     /// Test seam; see `disconnectPause`.
     func setDisconnectPause(_ value: (@Sendable () async -> Void)?) { disconnectPause = value }
+    /// Test seam; see `pathClock`.
+    func setPathClock(_ value: RelayLinkPolicy.Clock) { pathClock = value }
     public func observeStatus(_ observer: @escaping @Sendable (MobileHostStatus) -> Void) { statusObserver = observer }
 
     private static func stableHostId(_ directory: URL) -> String {
@@ -452,7 +460,7 @@ public actor MobileRemoteService {
     /// change it is never paced, and it still waits for a network.
     public func reconnectSoon() {
         guard watchingNetwork else { return }
-        pathWindow.force(now: Date())
+        pathWindow.force(now: pathClock.now())
         schedulePathSettle()
     }
 
@@ -481,7 +489,7 @@ public actor MobileRemoteService {
         pathMonitor?.cancel(); pathMonitor = nil
         pathUpdates?.finish(); pathUpdates = nil
         pathWatch?.cancel(); pathWatch = nil
-        pathSettle?.cancel(); pathSettle = nil
+        pathSettle?.cancel(); pathSettle = nil; pathSettleDeadline = nil
         networkPath = nil; pathWindow = RelayLinkPolicy.Window(); pathPacing = RelayLinkPolicy.Pacing()
     }
 
@@ -490,28 +498,32 @@ public actor MobileRemoteService {
     /// stop arriving for `RelayLinkPolicy.pathSettle`.
     func networkPathChanged(_ path: RelayNetworkPath, watch: Int? = nil) {
         guard watchingNetwork, watch == nil || watch == pathWatchGeneration else { return }
-        pathWindow.report(path, settled: networkPath, now: Date())
+        pathWindow.report(path, settled: networkPath, now: pathClock.now())
         schedulePathSettle()
     }
 
     private func schedulePathSettle(after delay: TimeInterval? = nil) {
         pathSettle?.cancel()
-        let watch = pathWatchGeneration, delay = delay ?? pathWindow.delay(now: Date())
+        let now = pathClock.now(), sleep = pathClock.sleep
+        let watch = pathWatchGeneration, deadline = now.addingTimeInterval(delay ?? pathWindow.delay(now: now))
+        pathSettleDeadline = deadline
         pathSettle = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            try? await sleep(deadline)
             guard !Task.isCancelled else { return }
-            await self?.settleNetworkPath(watch: watch)
+            await self?.settleNetworkPath(watch: watch, deadline: deadline)
         }
     }
 
-    private func settleNetworkPath(watch: Int) async {
+    private func settleNetworkPath(watch: Int, deadline: Date) async {
+        if pathSettleDeadline == deadline { pathSettleDeadline = nil }
+        defer { pathSettlePasses += 1 }
         guard watchingNetwork, watch == pathWatchGeneration, !pathWindow.isEmpty else { return }
         let window = pathWindow
         let action = RelayLinkPolicy.action(from: networkPath, window: window)
         // A flapping link must not redial on every flap. The window stays open
         // meanwhile, so later reports still count toward the decision.
         if action == .reconnect, !window.forced {
-            let wait = pathPacing.wait(now: Date())
+            let wait = pathPacing.wait(now: pathClock.now())
             if wait > 0 { schedulePathSettle(after: wait); return }
         }
         pathWindow = RelayLinkPolicy.Window(); pathSettle = nil
@@ -522,7 +534,7 @@ public actor MobileRemoteService {
         case .none: break
         case .offline: await disconnect(reason: L("settings.mobileRemote.detail.networkOffline"))
         case .reconnect:
-            if !window.forced { pathPacing.record(now: Date()) }
+            if !window.forced { pathPacing.record(now: pathClock.now()) }
             await start()
         }
     }

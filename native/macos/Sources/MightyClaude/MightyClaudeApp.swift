@@ -117,7 +117,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Seconds quit waits for cleanup before the app ends regardless.
-    static let terminationDeadline: Double = 6
+    static let terminationDeadline: Double = LiveRunRegistry.quitDeadline
 
     private func finishTermination(_ sender: NSApplication, deadline: Bool = false) {
         guard !terminationReady else { return }

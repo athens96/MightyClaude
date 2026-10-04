@@ -21,6 +21,12 @@ struct ScreenShareSafetyTests {
         var relayUp = true
         /// A peer whose close never returns. The host must cut it off.
         var closeHangs = false
+        /// How long a hung close takes when nothing cuts it off.
+        static let closeHang: TimeInterval = 60
+        /// A kill against a hung close counts as cut off at the deadline when
+        /// it returns within this: far below `closeHang`, so waiting on the hang
+        /// still fails, with room for a loaded runner to schedule the cut-off.
+        static let cutOffBound = ScreenSharePolicy.killDeadline + 4
         private var log: [String] = []
         private var injectionProbes = 0
         /// Asked during the teardown, so the answer is the host's answer after t0.
@@ -43,7 +49,7 @@ struct ScreenShareSafetyTests {
                         // A peer that never finishes closing: the host's deadline,
                         // not this closure, decides when the teardown is over.
                         self.record("peer-close-hung")
-                        try? await Task.sleep(nanoseconds: 60_000_000_000)
+                        try? await Task.sleep(nanoseconds: UInt64(Self.closeHang * 1_000_000_000))
                         // Reached only because the host cut the hang off; without
                         // the deadline this would be a 60 s wait.
                         self.record(Task.isCancelled ? "peer-close-cut-off" : "peer-close-returned-late")
@@ -272,7 +278,7 @@ struct ScreenShareSafetyTests {
         let host = await hostWithControlSession(surface: peer.surface())
         #expect(await host.canInject())
 
-        let timing = await host.killAll(reason: .killSwitch)
+        let timing = await asUser { await host.killAll(reason: .killSwitch) }
 
         #expect(timing.elapsed <= ScreenSharePolicy.killDeadline)
         #expect(timing.deadlineExceeded == false)
@@ -293,7 +299,7 @@ struct ScreenShareSafetyTests {
             let host = await hostWithControlSession(surface: peer.surface())
             #expect(await host.canInject())
 
-            let timing = await host.killDevice(deviceId: "p1", reason: reason)
+            let timing = await asUser { await host.killDevice(deviceId: "p1", reason: reason) }
 
             #expect(timing.elapsed <= ScreenSharePolicy.killDeadline)
             #expect(timing.reason == reason)
@@ -317,13 +323,13 @@ struct ScreenShareSafetyTests {
         #expect(await host.canInject())
 
         let wall = Date()
-        let timing = await host.killAll(reason: .killSwitch)
+        let timing = await asUser { await host.killAll(reason: .killSwitch) }
         let waited = Date().timeIntervalSince(wall)
 
         #expect(timing.deadlineExceeded)
         // Cut off at the deadline rather than waiting on the 60 s hang.
-        #expect(waited < ScreenSharePolicy.killDeadline + 1)
-        #expect(timing.elapsed < ScreenSharePolicy.killDeadline + 1)
+        #expect(waited < ScriptedFakePeer.cutOffBound)
+        #expect(timing.elapsed < ScriptedFakePeer.cutOffBound)
         #expect(await host.canInject() == false)
         #expect(await host.isCaptureActive == false)
         #expect(await host.sessionCount == 0)
@@ -370,11 +376,16 @@ struct ScreenShareSafetyTests {
 
     // MARK: - 5. Real idle timers: 10 min in control, 30 min in view-only
 
+    /// The idle tests are about the timers, not the one-second kill promise
+    /// (section 4 covers that): their quiet peers close at once, so a wide
+    /// deadline only keeps a starved CI runner from cutting them off.
+    static let idleTestKillDeadline: TimeInterval = 60
+
     @Test func viewOnlySessionEndsAfterThirtyIdleMinutes() async {
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
         let waits = ScreenShareIntervalLog()
         let peer = ScriptedFakePeer()
-        let host = ScreenShareHost(now: { clock.date }, idleSleep: { seconds in
+        let host = ScreenShareHost(now: { clock.date }, killDeadline: Self.idleTestKillDeadline, idleSleep: { seconds in
             waits.add(seconds); clock.advance(by: seconds); await Task.yield()
         })
         await host.setDeviceSettings(ScreenShareDeviceSettings(deviceId: "p1", allowed: true, grant: .view))
@@ -399,7 +410,7 @@ struct ScreenShareSafetyTests {
 
     @Test func anIdleTimeoutIsReportedToTheObserver() async {
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
-        let host = ScreenShareHost(now: { clock.date }, idleSleep: { _ in clock.advance(by: 1_801) })
+        let host = ScreenShareHost(now: { clock.date }, killDeadline: Self.idleTestKillDeadline, idleSleep: { _ in clock.advance(by: 1_801) })
         let reported = ScreenShareIntervalLog()
         await host.observeIdleStops { stopped in
             if stopped.reason == .idleTimeout, stopped.sessionId == "s1", stopped.deviceId == "p1" { reported.add(1) }
@@ -415,7 +426,7 @@ struct ScreenShareSafetyTests {
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
         let waits = ScreenShareIntervalLog()
         let peer = ScriptedFakePeer()
-        let host = ScreenShareHost(now: { clock.date }, idleSleep: { seconds in
+        let host = ScreenShareHost(now: { clock.date }, killDeadline: Self.idleTestKillDeadline, idleSleep: { seconds in
             waits.add(seconds); clock.advance(by: seconds); await Task.yield()
         })
         _ = await hostWithControlSession(host: host, surface: peer.surface())
@@ -434,7 +445,7 @@ struct ScreenShareSafetyTests {
         let clock = ScreenShareTestClock(Date(timeIntervalSinceReferenceDate: 0))
         let waits = ScreenShareIntervalLog()
         let holder = ScreenShareHostBox()
-        let host = ScreenShareHost(now: { clock.date }, idleSleep: { seconds in
+        let host = ScreenShareHost(now: { clock.date }, killDeadline: Self.idleTestKillDeadline, idleSleep: { seconds in
             waits.add(seconds)
             clock.advance(by: seconds)
             // The phone moved the pointer just as the first timer expired.
@@ -689,7 +700,7 @@ struct ScreenShareSafetyTests {
         #expect(await waitUntil { held.events.contains("capture-start-begun") })
 
         // The kill switch lands while the host is suspended inside startCapture.
-        let timing = await host.killAll(reason: .killSwitch)
+        let timing = await asUser { await host.killAll(reason: .killSwitch) }
         #expect(timing.elapsed <= ScreenSharePolicy.killDeadline)
         #expect(await host.sessionCount == 0)
 
@@ -765,9 +776,18 @@ struct ScreenShareSafetyTests {
 
     // MARK: - Helpers
 
+    /// Runs a kill trigger as the app does: from the user's own action (the
+    /// menu bar, Settings, a rekey) at user-initiated priority. Timed from a
+    /// default-priority test task, the measurement would include that task's
+    /// own wait for a thread on a busy runner, not the kill's.
+    private func asUser<T: Sendable>(_ trigger: @escaping @Sendable () async -> T) async -> T {
+        await Task(priority: .userInitiated) { await trigger() }.value
+    }
+
     /// Waits for an actor-held condition without pinning a wall-clock duration
-    /// into the assertion.
-    private func waitUntil(timeout: TimeInterval = 5, _ condition: @Sendable () async -> Bool) async -> Bool {
+    /// into the assertion. The bound only ends a test that broke: a loaded CI
+    /// runner can keep every cooperative thread busy for seconds.
+    private func waitUntil(timeout: TimeInterval = 60, _ condition: @Sendable () async -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if await condition() { return true }

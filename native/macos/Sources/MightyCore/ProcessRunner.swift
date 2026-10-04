@@ -24,6 +24,9 @@ final class NativeChildProcess: @unchecked Sendable {
     static let maximumDrainCredit: TimeInterval = 30
     /// At most this much is read from one pipe after the child exits.
     static let maximumBytesAfterExit = 16 * 1_048_576
+    /// At most this much is read in the last look at a pipe when its drain
+    /// ends on time; see `writerOutlivesDrain`.
+    static let finalDrainBytes = 65_536
     /// A process outside the child's group still wrote when reading stopped
     /// at one of the limits above; the rest of its output was not read.
     var outputAbandoned: Bool { lock.lock(); defer { lock.unlock() }; return abandoned }
@@ -122,7 +125,13 @@ final class NativeChildProcess: @unchecked Sendable {
                     let credit = stopped ? 0 : min(handing, Self.maximumDrainCredit)
                     let overBytes = afterExit > Self.maximumBytesAfterExit
                     if overBytes || Date().timeIntervalSince(ended) - credit > 1 {
-                        if overBytes || handing > Self.maximumDrainCredit { lock.lock(); abandoned = true; lock.unlock() }
+                        var outlived = overBytes || handing > Self.maximumDrainCredit
+                        // A stop drops the rest on purpose. Otherwise a reader
+                        // slowed by a loaded machine can reach the one second
+                        // before the byte cap, so look once more before telling
+                        // a stray writer from the child's own unread tail.
+                        if !outlived, !stopped { outlived = Self.writerOutlivesDrain(fd: fd, buffer: &bytes, deliver: callback) }
+                        if outlived { lock.lock(); abandoned = true; lock.unlock() }
                         return
                     }
                 }
@@ -142,6 +151,29 @@ final class NativeChildProcess: @unchecked Sendable {
                 else if errno != EAGAIN && errno != EINTR { return }
             }
         }
+    }
+
+    /// The last look at a pipe whose drain ended on time, reading at most
+    /// `finalDrainBytes` without blocking. The child's whole group is gone by
+    /// now, so end of file means nobody else holds the pipe: what was left is
+    /// the child's own tail, handed on, and nothing was abandoned. A pipe still
+    /// producing past the cap is a writer outside the group. A holder that
+    /// stays silent (nothing within 50 ms of an empty read) never "kept
+    /// writing" and is not reported either.
+    static func writerOutlivesDrain(fd: Int32, buffer: inout [UInt8], deliver: (Data) -> Void) -> Bool {
+        var drained = 0
+        while drained < finalDrainBytes {
+            let count = Darwin.read(fd, &buffer, min(buffer.count, finalDrainBytes - drained))
+            if count > 0 { drained += count; deliver(Data(buffer.prefix(count))); continue }
+            if count == 0 { return false }
+            if errno == EINTR { continue }
+            guard errno == EAGAIN else { return false }
+            var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = Darwin.poll(&descriptor, 1, 50)
+            if ready < 0, errno == EINTR { continue }
+            if ready <= 0 { return false }
+        }
+        return true
     }
 
     func write(_ data: Data, closeAfter: Bool = false) {
@@ -330,6 +362,9 @@ public final class LiveRunRegistry: @unchecked Sendable {
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
     private var isClosing = false
+    /// Seconds quit waits for cleanup before the app ends regardless, killing
+    /// whatever runs are left (`killAll()`).
+    public static let quitDeadline: TimeInterval = 6
     public init() {}
     /// The app is quitting (`signalAll()` was called): no run starts a child
     /// any more, and one that got past that check is signalled as it registers.

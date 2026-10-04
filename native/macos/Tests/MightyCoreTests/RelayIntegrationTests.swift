@@ -474,6 +474,16 @@ struct RelayIntegrationTests {
         withExtendedLifetime(host) {}
     }
 
+    /// Waits until the host's path settle has decided `count` times; 60 s only
+    /// bounds a settle that never comes.
+    private func waitForSettlePasses(_ service: MobileRemoteService, _ count: Int) async throws {
+        let deadline = Date().addingTimeInterval(60)
+        while await service.pathSettlePasses < count {
+            guard Date() < deadline else { throw MightyError("the network path never settled") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     /// Polls the host until `relayConnected` reads `connected`, for at most
     /// `seconds`; answers what it read last.
     private func waitForRelay(_ service: MobileRemoteService, connected: Bool, seconds: Double) async -> Bool {
@@ -537,15 +547,18 @@ struct RelayIntegrationTests {
         try await withHost(directory: directory, port: port, delegate: host, watchesNetwork: false) { service, _ in
             let wifi = RelayNetworkPath(satisfied: true, interfaces: ["en0"], gateways: ["192.168.0.1"])
             await service.networkPathChanged(wifi) // the first report only sets the baseline
-            try await Task.sleep(for: .seconds(RelayLinkPolicy.pathSettle + 1))
+            // The settle runs on the real clock here; wait for its decision
+            // rather than for a guess at how long it takes.
+            try await waitForSettlePasses(service, 1)
             let before = await service.restarts
-            #expect(await service.status().relayConnected)
+            #expect(await waitForRelay(service, connected: true, seconds: 30))
 
             // A Wi-Fi switch: several reports inside the settle window.
+            let passes = await service.pathSettlePasses
             await service.networkPathChanged(RelayNetworkPath(satisfied: false, interfaces: []))
             await service.networkPathChanged(RelayNetworkPath(satisfied: true, interfaces: ["en0"], gateways: ["10.0.0.1"]))
             await service.networkPathChanged(RelayNetworkPath(satisfied: true, interfaces: ["en0", "utun4"], gateways: ["10.0.0.1"]))
-            try await Task.sleep(for: .seconds(RelayLinkPolicy.pathSettle + 1.5))
+            try await waitForSettlePasses(service, passes + 1)
             #expect(await service.restarts == before + 1)
             #expect(await waitForRelay(service, connected: true, seconds: 30))
         }

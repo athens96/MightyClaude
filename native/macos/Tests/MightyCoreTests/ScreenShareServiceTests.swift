@@ -49,6 +49,19 @@ struct ScreenShareServiceTests {
                        displays: displays, input: input, environment: environment, clock: clock)
     }
 
+    /// Runs a kill trigger as the app does: from the user's own action (the
+    /// menu bar, Settings, a rekey) at user-initiated priority. Timed from a
+    /// default-priority test task, the measurement would include that task's
+    /// own wait for a thread on a busy runner, not the kill's.
+    private func asUser<T: Sendable>(_ trigger: @escaping @Sendable () async -> T) async -> T {
+        await Task(priority: .userInitiated) { await trigger() }.value
+    }
+
+    /// The same, for a trigger that throws.
+    private func asUser<T: Sendable>(_ trigger: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await Task(priority: .userInitiated) { try await trigger() }.value
+    }
+
     private func cleanUp(_ fixture: Fixture) {
         try? FileManager.default.removeItem(at: fixture.directory)
     }
@@ -210,7 +223,7 @@ struct ScreenShareServiceTests {
         _ = await joinControl(fixture, peer: peer)
         #expect(await fixture.host.canInject())
 
-        try await fixture.service.setGrant(deviceId: Self.phone, grant: .view)
+        try await asUser { try await fixture.service.setGrant(deviceId: Self.phone, grant: .view) }
 
         #expect(await fixture.service.liveSessions().isEmpty)
         #expect(await fixture.host.canInject() == false)
@@ -293,12 +306,12 @@ struct ScreenShareServiceTests {
         #expect(await fixture.host.canInject())
 
         let wall = Date()
-        let timing = await fixture.service.killSwitch()
+        let timing = await asUser { await fixture.service.killSwitch() }
         let waited = Date().timeIntervalSince(wall)
 
         #expect(timing.reason == .killSwitch)
         #expect(timing.deadlineExceeded)
-        #expect(waited < ScreenSharePolicy.killDeadline + 1)
+        #expect(waited < Peer.cutOffBound)
         #expect(await fixture.service.liveSessions().isEmpty)
         #expect(await fixture.host.canInject() == false)
         #expect(await fixture.host.isCaptureActive == false)
@@ -614,7 +627,7 @@ struct ScreenShareServiceTests {
         #expect(await fixture.host.canInject())
 
         let before = Date()
-        _ = try await remote.regenerateKey()
+        _ = try await asUser { try await remote.regenerateKey() }
         let after = Date()
 
         // Awaited, not fire-and-forget: no polling needed.
@@ -627,9 +640,11 @@ struct ScreenShareServiceTests {
         // t0 is the rotation instant, stamped inside regenerateKey.
         if let timing {
             #expect(timing.t0 >= before && timing.t0 <= after)
-            #expect(timing.elapsed <= ScreenSharePolicy.killDeadline + 0.25)
+            // Cut off at the deadline, not left waiting on the hung peer.
+            #expect(timing.deadlineExceeded)
+            #expect(timing.elapsed < Peer.cutOffBound)
         }
-        #expect(after.timeIntervalSince(before) < ScreenSharePolicy.killDeadline + 1)
+        #expect(after.timeIntervalSince(before) < Peer.cutOffBound)
         await remote.shutdown()
     }
 

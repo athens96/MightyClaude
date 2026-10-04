@@ -10,6 +10,14 @@ private final class BackpressureRecorder: @unchecked Sendable {
     func values() -> [RunEvent] { lock.lock(); defer { lock.unlock() }; return stored }
 }
 
+/// When something happened, set from whichever task got there.
+private final class Instant: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Date?
+    func mark() { lock.lock(); stored = Date(); lock.unlock() }
+    var value: Date? { lock.lock(); defer { lock.unlock() }; return stored }
+}
+
 /// Runs a blocking call on another thread and reports when it returned.
 private final class Blocking: @unchecked Sendable {
     private let lock = NSLock()
@@ -193,12 +201,17 @@ struct RunnerBackpressureTests {
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "go", provider: "gemini"), workspace: workspace)
             try await wait { events.values().contains { $0.entry?.text == "flood" } }
             let pid = try #require(Int32(String(contentsOf: directory.appendingPathComponent("child.pid"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
-            let began = Date()
-            let stopping = Task(priority: .background) { #expect(runner.signalStop(id: "pane")); await runner.stop(id: "pane") }
+            // Timed from the signal, not from the Task's creation: how long a
+            // busy machine takes to first run a background task at all is the
+            // OS scheduler's business (tens of seconds under full load), not
+            // the runner's. What is the runner's: once a caller this far below
+            // the consumer signals, nothing waits for the actor.
+            let signalled = Instant()
+            let stopping = Task(priority: .background) { signalled.mark(); #expect(runner.signalStop(id: "pane")); await runner.stop(id: "pane") }
             try await wait { Darwin.kill(pid, 0) != 0 }
-            let died = Date().timeIntervalSince(began)
+            let died = Date().timeIntervalSince(try #require(signalled.value))
             await stopping.value
-            let returned = Date().timeIntervalSince(began)
+            let returned = Date().timeIntervalSince(try #require(signalled.value))
             print("background stop: child gone after \(died) s, stop returned after \(returned) s")
             #expect(died < 1)
             #expect(returned < 6)
@@ -237,7 +250,8 @@ struct RunnerBackpressureTests {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
         let service = ProviderService(binaryOverrides: ["gemini": try floodingGemini(in: directory)])
         let events = BackpressureRecorder()
-        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0); if $0.entry?.kind == "assistant" { usleep(1_000) } })
+        let liveRuns = LiveRunRegistry()
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, liveRuns: liveRuns, onEvent: { events.append($0); if $0.entry?.kind == "assistant" { usleep(1_000) } })
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
         let panes = (0..<4).map { "pane-\($0)" }
         do {
@@ -245,11 +259,15 @@ struct RunnerBackpressureTests {
                 try await runner.start(request: StartRunRequest(sessionId: pane, workspaceId: workspace.id, input: "go", provider: "gemini"), workspace: workspace)
             }
             try await wait { Set(events.values().filter { $0.entry?.text == "flood" }.map(\.sessionId)) == Set(panes) }
+            // As the app quits (`AppStore.shutdown`): every run is signalled
+            // first, off the runner's actor, then the runner shuts down from
+            // quit's own task, which the app starts from the main thread.
             let began = Date()
-            await Task(priority: .background) { await runner.shutdown() }.value
+            liveRuns.signalAll()
+            await Task(priority: .userInitiated) { await runner.shutdown() }.value
             let elapsed = Date().timeIntervalSince(began)
             print("shutdown of 4 flooding runs took \(elapsed) s")
-            #expect(elapsed < 6)
+            #expect(elapsed < LiveRunRegistry.quitDeadline)
             for pane in panes { #expect(events.values().last(where: { $0.sessionId == pane && $0.type == "status" })?.status == "stopped") }
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await service.shutdown()
@@ -337,13 +355,61 @@ struct RunnerBackpressureTests {
             let began = Date()
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "go", provider: "gemini"), workspace: workspace)
             try await wait { events.values().contains { $0.type == "status" && ["completed", "error", "stopped"].contains($0.status ?? "") } }
-            // Well inside the 30 s drain credit: the 16 MB read after exit ends it.
+            // Well inside the 30 s drain credit: the 16 MB read after exit ends
+            // it, or on a slow machine the one-second drain does, with the
+            // writer still going past the last look at the pipe.
             #expect(Date().timeIntervalSince(began) < 25)
             #expect(events.values().last(where: { $0.type == "status" })?.status == "completed")
             #expect(events.values().contains { $0.entry?.kind == "system" && $0.entry?.text == L("run.notice.outputAbandoned") })
             stray = try #require(Int32(String(contentsOf: directory.appendingPathComponent("stray.pid"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
             // Its pipe is closed: the next write fails (SIGPIPE / EPIPE) and it ends.
             try await wait { Darwin.kill(stray, 0) != 0 }
+        } catch { await runner.shutdown(); await service.shutdown(); throw error }
+        await runner.shutdown(); await service.shutdown()
+    }
+
+    /// A run the permission channel stops (`fail:` stops the child without
+    /// marking the run stopping) while a slow consumer still has output queued
+    /// in the pipe: that output is the child's own, dropped by the stop, and
+    /// is never reported as another process that kept writing.
+    @Test func aRunTheFailedPermissionChannelStopsIsNotReportedAsAbandoned() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = directory.appendingPathComponent("claude")
+        // The answer to `initialize` is an error, so the channel fails closed
+        // and stops the child. The child shrugs off SIGTERM and floods stderr
+        // until the SIGKILL 0.2 s later, as a CLI slow to die would.
+        let source = #"""
+        #!/bin/sh
+        if [ "$1" = "--version" ]; then printf '2.1.273\n'; exit 0; fi
+        metadata=false
+        for argument in "$@"; do if [ "$argument" = "--safe-mode" ]; then metadata=true; fi; done
+        IFS= read -r initialize || exit 21
+        request_id=$(printf '%s' "$initialize" | /usr/bin/sed -E 's/.*"request_id":"([^"]+)".*/\1/')
+        if [ "$metadata" = true ]; then
+          printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"models":[]}}}\n' "$request_id"
+          /bin/cat >/dev/null; exit 0
+        fi
+        trap '' TERM
+        printf '{"type":"control_response","response":{"subtype":"error","request_id":"%s","error":"refused"}}\n' "$request_id"
+        exec /usr/bin/yes 'stderr flood' 1>&2
+        """#
+        try Data(source.utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
+        try FileManager.default.createDirectory(at: directory.appendingPathComponent(".claude-plugin"), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: directory.appendingPathComponent(".claude-plugin/plugin.json"))
+        let service = ProviderService(binaryOverrides: ["claude": binary])
+        let events = BackpressureRecorder()
+        // Every stderr chunk costs the consumer 30 ms, about 4 s until the 2 MB
+        // display cap: the reader still waits on a full budget when the stop's
+        // one second runs out, so the pipe is not empty when its drain ends.
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0); if $0.entry?.kind == "output" { usleep(30_000) } })
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        do {
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "go", provider: "claude"), workspace: workspace, allowPermissionPrompts: true)
+            try await wait { events.values().contains { $0.type == "status" && ["completed", "error", "stopped"].contains($0.status ?? "") } }
+            #expect(events.values().contains { $0.entry?.kind == "error" && $0.entry?.text == "Claude 승인 채널을 초기화하지 못했습니다." })
+            #expect(events.values().last(where: { $0.type == "status" })?.status == "error")
+            #expect(!events.values().contains { $0.entry?.text == L("run.notice.outputAbandoned") })
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await runner.shutdown(); await service.shutdown()
     }

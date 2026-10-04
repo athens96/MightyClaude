@@ -47,6 +47,18 @@ enum RelayLinkPolicy {
 
     enum PathAction: Equatable { case none, offline, reconnect }
 
+    /// What the path settle and the redial pacing read the time from and wait
+    /// on. The real clock in the app; tests move a manual one by hand, so a
+    /// settle never races a test's own sleep.
+    struct Clock: Sendable {
+        var now: @Sendable () -> Date
+        /// Returns at `deadline` (at once when it has passed).
+        var sleep: @Sendable (_ until: Date) async throws -> Void
+        static let system = Clock(now: { Date() }, sleep: { deadline in
+            try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)))
+        })
+    }
+
     /// Everything reported since the last decision, not only the last report:
     /// a Wi-Fi switch between two routers on the same 192.168.x.1 reports
     /// wifi → nothing → wifi, and the settled path then equals the old one
