@@ -103,6 +103,22 @@ internal static class SlashCommandVerification
         Check(SlashCommandCatalog.Filter(commands, "SC:").Select(c => c.Invocation).SequenceEqual(["sc:analyze", "sc:build"]),
             "case-insensitive prefix SC: matches sc: commands");
         Check(SlashCommandCatalog.Filter(commands, "zzz").Length == 0, "no match returns empty");
+        var language = Locale.LanguagePreference;
+        try
+        {
+            var fixture = new SlashCommand[] { new("review", "Fixture command", "fixture", SlashCommandOrigin.Project), new("deploy", "", "fixture", SlashCommandOrigin.User) };
+            foreach (var locale in new[] { "ko", "en" })
+            foreach (var provider in Wire.Providers)
+            {
+                Locale.LanguagePreference = locale;
+                string[] expected = locale == "en" ? ["review", provider == "codex" ? "new" : "clear"] : ["review"];
+                Check(SlashPalette.Rows(provider, "claude", "/rev", fixture).Select(c => c.Invocation).SequenceEqual(expected),
+                    "Partial search must include English previous-description matches after the review prefix, and retain the Korean result.");
+                Check(SlashPalette.Rows(provider, "claude", "/review", fixture).Select(c => c.Invocation).SequenceEqual(["review"]),
+                    "The native smoke selection query must select exactly review in both supported locales.");
+            }
+        }
+        finally { Locale.LanguagePreference = language; }
         return Task.CompletedTask;
     }
 

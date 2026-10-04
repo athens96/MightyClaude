@@ -1415,7 +1415,14 @@ public sealed partial class MainWindow
                 checks["opensAboveComposerWithFixtureRows"] = true;
 
                 input.Text = "/rev";
-                await WaitUI(() => paletteState.Commands.Length == 1);
+                // Description matches are part of the palette contract. In
+                // English, "previous" also matches /rev in the clear command.
+                var partialMatches = SlashCommandCatalog.Filter([.. SlashPalette.Builtins(Session.Provider), .. fixture], "rev").Select(c => c.Invocation).ToArray();
+                await WaitUI(() => paletteState.Commands.Select(c => c.Invocation).SequenceEqual(partialMatches));
+                Require(paletteState.Commands[0].Invocation == "review" && slashRows.Children.Count == partialMatches.Length,
+                    "Partial search must keep the invocation prefix first and include localized description matches.");
+                input.Text = "/review";
+                await WaitUI(() => paletteState.Commands.Select(c => c.Invocation).SequenceEqual(["review"]));
                 Require(paletteState.Commands[0].Invocation == "review", "입력에 따른 슬래시 팔레트 필터가 잘못됐습니다.");
                 checks["typingFilters"] = true;
 
@@ -1426,8 +1433,8 @@ public sealed partial class MainWindow
                 Require(HandlePaletteKey(Windows.System.VirtualKey.Up) && paletteState.SafeIndex == expected - 1, "↑ 키가 마지막 줄로 넘어가지 않았습니다.");
                 checks["arrowsMoveHighlight"] = true;
 
-                input.Text = "/rev";
-                await WaitUI(() => paletteState.Commands.Length == 1);
+                input.Text = "/review";
+                await WaitUI(() => paletteState.Commands.Select(c => c.Invocation).SequenceEqual(["review"]));
                 Require(HandlePaletteKey(Windows.System.VirtualKey.Enter), "Enter가 팔레트 대신 입력창으로 갔습니다.");
                 await WaitUI(() => input.Text == "/review " && Session.Draft == "/review ");
                 Require(!paletteState.IsOpen && slashPaletteHost.Visibility == Visibility.Collapsed, "명령 선택 후 슬래시 팔레트가 닫히지 않았습니다.");
