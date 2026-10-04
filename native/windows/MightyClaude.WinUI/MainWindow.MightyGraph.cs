@@ -116,7 +116,8 @@ public sealed partial class MainWindow
         /// </summary>
         internal void AttachMightyView(FrameworkElement anchor)
         {
-            if (!MightyGraphViewModel.ShowsModeSwitch(Session)) return;
+            if (owner.closing || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
+                !MightyGraphViewModel.ShowsModeSwitch(pane)) return;
             anchor.Loaded += (_, _) => BuildMightyView();
         }
 
@@ -125,7 +126,10 @@ public sealed partial class MainWindow
 
         private void BuildMightyView()
         {
-            if (graphAttached || Container.Child is not Grid grid) return;
+            // Loaded can already be queued when a pane is closed. Never build
+            // native controls or subscribe the removed view to live run events.
+            if (graphAttached || !QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
+                !MightyGraphViewModel.ShowsModeSwitch(pane) || Container.Child is not Grid grid) return;
             if (grid.Children.OfType<Grid>().FirstOrDefault(child => Grid.GetRow(child) == 0) is not { } header) return;
             graphAttached = true;
 
@@ -134,6 +138,8 @@ public sealed partial class MainWindow
             modeSwitch = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             modeSwitch.Children.Add(modeDefaultButton); modeSwitch.Children.Add(modeMightyButton);
             Grid.SetColumn(modeSwitch, 1); header.Children.Add(modeSwitch);
+            modeSwitch.SizeChanged += (_, _) => QueuePaneHeaderLayout();
+            QueuePaneHeaderLayout();
 
             graphHost = new Grid { RowSpacing = 0, Visibility = Visibility.Collapsed };
             graphHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -174,7 +180,7 @@ public sealed partial class MainWindow
             // canvas when one arrives, and drop the handler once the pane is gone.
             owner.service.RunEventReceived += OnGraphRunEvent;
             SetGraphZoom(graphZoom);
-            RefreshMightyView(Session);
+            RefreshMightyView(pane);
         }
 
         private void OnGraphRunEvent(RunEvent value)

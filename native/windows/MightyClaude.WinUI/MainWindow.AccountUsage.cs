@@ -46,6 +46,8 @@ public sealed partial class MainWindow
     private void RenderAccountUsage()
     {
         if (usage is null || usageButton is null) return;
+        AutomationProperties.SetName(usageButton, AccountUsageStrings.Title);
+        ToolTipService.SetToolTip(usageButton, AccountUsageStrings.ChipsTooltip);
         var changed = usage.Update(service.Snapshot);
         usageChips.Children.Clear();
         foreach (var chip in usage.Chips())
@@ -206,19 +208,19 @@ public sealed partial class MainWindow
                     : pane).ToList(),
             });
             Render();
-            Require(usage is not null && usageButton is not null && usageButton.Visibility == Visibility.Visible, "계정 사용량 칩이 상태 줄에 보이지 않습니다.");
+            Require(usage is not null && usageButton is not null && usageButton.Visibility == Visibility.Visible, "\uACC4\uC815 \uC0AC\uC6A9\uB7C9 \uCE69\uC774 \uC0C1\uD0DC \uC904\uC5D0 \uBCF4\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
             RenderAccountUsageDetails();
             await WaitUI(() => usageChips.Children.Count > 0 && usageDetails.Children.Count > 0);
 
             var chips = usage!.Chips();
             var cards = usage.Cards();
-            Require(usageChips.Children.Count == chips.Count && chips.Count == usage.Providers.Count, "실행 창이 있는 모든 실행기에 칩이 필요합니다.");
-            Require(!usage.DirectClaudeLookupEnabled && !usage.Targets().Contains("claude"), "직접 조회는 기본적으로 꺼져 있어야 합니다.");
+            Require(usageChips.Children.Count == chips.Count && chips.Count == usage.Providers.Count, "\uC2E4\uD589 \uCC3D\uC774 \uC788\uB294 \uBAA8\uB4E0 \uC2E4\uD589\uAE30\uC5D0 \uCE69\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.");
+            Require(!usage.DirectClaudeLookupEnabled && !usage.Targets().Contains("claude"), "\uC9C1\uC811 \uC870\uD68C\uB294 \uAE30\uBCF8\uC801\uC73C\uB85C \uAEBC\uC838 \uC788\uC5B4\uC57C \uD569\uB2C8\uB2E4.");
             var claude = chips.First(c => c.Provider == "claude").Text;
-            Require(claude.Contains(AccountUsageStrings.WindowSession) && claude.Contains(AccountUsageStrings.WindowWeekly), "Claude 칩은 CLI가 보고한 한도를 보여야 합니다.");
+            Require(claude.Contains(AccountUsageStrings.WindowSession) && claude.Contains(AccountUsageStrings.WindowWeekly), "Claude \uCE69\uC740 CLI\uAC00 \uBCF4\uACE0\uD55C \uD55C\uB3C4\uB97C \uBCF4\uC5EC\uC57C \uD569\uB2C8\uB2E4.");
             var gemini = cards.First(c => c.Provider == "gemini");
-            Require(usageDetails.Children.OfType<ToggleSwitch>().Any(t => !t.IsOn), "직접 조회 스위치가 꺼진 채로 보여야 합니다.");
-            Require(usageDetails.Children.OfType<TextBlock>().Any(t => t.Text == AccountUsageStrings.SharedLimitsNote), "공유 한도 설명이 팝오버에 없습니다.");
+            Require(usageDetails.Children.OfType<ToggleSwitch>().Any(t => !t.IsOn), "\uC9C1\uC811 \uC870\uD68C \uC2A4\uC704\uCE58\uAC00 \uAEBC\uC9C4 \uCC44\uB85C \uBCF4\uC5EC\uC57C \uD569\uB2C8\uB2E4.");
+            Require(usageDetails.Children.OfType<TextBlock>().Any(t => t.Text == AccountUsageStrings.SharedLimitsNote), "\uACF5\uC720 \uD55C\uB3C4 \uC124\uBA85\uC774 \uD31D\uC624\uBC84\uC5D0 \uC5C6\uC2B5\uB2C8\uB2E4.");
             return new AccountUsageSmokeOutcome
             {
                 Chips = usageChips.Children.Count,

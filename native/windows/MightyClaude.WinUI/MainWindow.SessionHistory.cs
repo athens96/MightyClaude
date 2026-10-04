@@ -79,8 +79,7 @@ public sealed partial class MainWindow
         /// screen, does nothing.
         internal void LoadOlderGraphHistory()
         {
-            if (!owner.service.Snapshot.Sessions.Any(s => s.Id == id)) return;
-            var pane = Session;
+            if (!QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane) return;
             if (pane.Kind != "claude" || !SessionHistory.Providers.Contains(pane.Provider)) return;
             var retained = pane.GraphRuns ?? [];
             var template = new SessionHistoryRequest(pane.Provider, pane.ResumeId ?? "", Workspace.Path)
@@ -101,10 +100,10 @@ public sealed partial class MainWindow
                 catch (Exception ex) { error = ex; }
                 Container.DispatcherQueue.TryEnqueue(() =>
                 {
-                    if (cancel.IsCancellationRequested || !owner.service.Snapshot.Sessions.Any(s => s.Id == id)) return;
+                    if (cancel.IsCancellationRequested || !QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } current) return;
                     if (ReferenceEquals(graphHistoryLoad, cancel)) graphHistoryLoad = null;
                     var restart = graphHistory.Finish(chunk, error, generation);
-                    if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
+                    if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(current);
                     // The record was replaced under the cursor: start over from its end.
                     if (restart) LoadOlderGraphHistory();
                 });

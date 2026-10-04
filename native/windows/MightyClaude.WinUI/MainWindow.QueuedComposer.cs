@@ -31,17 +31,18 @@ public sealed partial class MainWindow
             queueDrainTimer.Tick += async (_, _) =>
             {
                 if (!QueuePaneAlive) { queueDrainTimer.Stop(); return; }
-                if (owner.service.IsSessionRunning(id) || starting || queueStarting) return;
+                if (owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session) || owner.ManualMutationBlockReason(Session) is not null || starting || queueStarting) return;
                 queueDrainTimer.Stop(); await StartNextQueuedInput();
             };
         }
 
-        private bool QueuePaneAlive => !owner.closing && owner.views.TryGetValue(id, out var pane) && ReferenceEquals(pane, this);
+        private bool QueuePaneAlive => !owner.closing && owner.views.TryGetValue(id, out var pane) && ReferenceEquals(pane, this)
+            && owner.service.Snapshot.Sessions.Any(p => p.Id == id);
 
         /// <returns>True when the busy path handled this send, including validation refusals.</returns>
         private async Task<bool> DeferBusyComposer(bool steering)
         {
-            if (Session.Status != "running" && !starting && !owner.service.IsSessionRunning(id)) return false;
+            if (Session.Status != "running" && !starting && !owner.service.IsSessionRunning(id) && !owner.BackgroundUpdateHolds(Session)) return false;
             if (Session.Kind != "claude" || !HasComposerContent || starting || composingInput || attachmentsLoading) return true;
             var text = input.Text; var files = pendingAttachments.ToArray();
             var pane = Session;
@@ -97,7 +98,7 @@ public sealed partial class MainWindow
         {
             queuedInputHost.Children.Clear(); queuedInputHost.Visibility = queuedInputs.Items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             if (queuedInputs.Items.Count == 0) return;
-            var busy = Session.Status == "running" || starting || queueStarting;
+            var busy = Session.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(Session);
             var header = new Grid(); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             header.Children.Add(new TextBlock { Text = Locale.Get(busy ? "queue.waitingBusy" : "queue.waiting", new Dictionary<string, string> { ["count"] = queuedInputs.Items.Count.ToString() }), FontSize = 10, Opacity = .7, TextWrapping = TextWrapping.Wrap });
             if (!busy)
@@ -118,7 +119,7 @@ public sealed partial class MainWindow
 
         private Task StartNextQueuedInput() => owner.Act(async () =>
         {
-            if (!QueuePaneAlive || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || queuedInputs.Items.FirstOrDefault() is not { } item) return;
+            if (!QueuePaneAlive || starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session) || owner.ManualMutationBlockReason(Session) is not null || queuedInputs.Items.FirstOrDefault() is not { } item) return;
             queueStarting = true; RefreshComposerState();
             try
             {

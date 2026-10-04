@@ -30,7 +30,8 @@ public sealed record AccountUsageSmokeOutcome
 /// click, the refresh and the switch.
 public sealed class AccountUsageStatus : IAsyncDisposable
 {
-    private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
+    private static CultureInfo DisplayCulture => Locale.LanguagePreference switch
+    { "ko" => CultureInfo.GetCultureInfo("ko-KR"), "en" => CultureInfo.GetCultureInfo("en-US"), _ => CultureInfo.CurrentCulture };
     private readonly AccountUsageService service;
     private readonly Func<DateTimeOffset> clock;
     private readonly Dictionary<string, AccountUsageSnapshot> snapshots = [];
@@ -144,15 +145,19 @@ public sealed class AccountUsageStatus : IAsyncDisposable
         DirectClaudeLookupEnabled = enabled;
         if (enabled) return;
         lock (gate)
-            if (snapshots.TryGetValue("claude", out var held) && held.Detail is not (AccountUsageStrings.DetailSessionReported or AccountUsageStrings.DetailSessionReportedStale))
+            if (snapshots.TryGetValue("claude", out var held) && !IsSessionReport(held.Detail))
                 snapshots.Remove("claude");
     }
 
     /// The two windows worth a chip: the session window, then the weekly one.
     public static IReadOnlyList<AccountUsageWindow> Leading(IReadOnlyList<AccountUsageWindow> windows) =>
         windows.Where(w => w.Kind != "spend_limit").OrderBy(w => Rank(w.Kind)).Take(2).ToList();
-    private static int Rank(string kind) => AccountUsageSupport.WindowLabel(kind) switch
-    { AccountUsageStrings.WindowSession => 0, AccountUsageStrings.WindowWeekly => 1, _ => 2 };
+    private static int Rank(string kind) => kind.ToLowerInvariant() switch
+    { "session" or "five_hour" or "5h" or "primary" => 0, "weekly" or "seven_day" or "7d" or "secondary" => 1, _ => 2 };
+
+    private static bool IsSessionReport(string? detail) => new[] { "en", "ko" }.Any(language =>
+        detail == Locale.Catalogue(language)["windows.accountUsage.detailSessionReported"]
+        || detail == Locale.Catalogue(language)["windows.accountUsage.detailSessionReportedStale"]);
 
     public IReadOnlyList<AccountUsageChip> Chips() => Providers.Select(provider =>
     {
@@ -185,12 +190,12 @@ public sealed class AccountUsageStatus : IAsyncDisposable
             AccountUsageSupport.WindowLabel(w.Kind) + (w.WindowMinutes == 300 ? AccountUsageStrings.WindowFiveHourSuffix : w.WindowMinutes == 10080 ? AccountUsageStrings.WindowSevenDaySuffix : ""),
             AccountUsageStrings.UsedPercentTemplate.Replace("{percent}", AccountUsageSupport.Percent(w.UsedPercent)),
             Math.Clamp(w.UsedPercent / 100, 0, 1),
-            AccountUsageSupport.Date(w.ResetsAt) is { } reset ? AccountUsageStrings.ResetTemplate.Replace("{date}", reset.ToLocalTime().ToString("g", Korean)) : null,
+            AccountUsageSupport.Date(w.ResetsAt) is { } reset ? AccountUsageStrings.ResetTemplate.Replace("{date}", reset.ToLocalTime().ToString("g", DisplayCulture)) : null,
             w.UsedPercent >= 90)).ToList();
         var account = new[] { usage.AccountLabel, usage.Plan }.Where(v => v is { Length: > 0 }).ToArray();
         var checkedAt = AccountUsageSupport.Date(usage.FetchedAt) is { } stamp
             ? (usage.Status is "error" or "stale" ? AccountUsageStrings.LastKnownPrefix : "")
-              + AccountUsageStrings.CheckedAtTemplate.Replace("{time}", stamp.ToLocalTime().ToString("t", Korean))
+              + AccountUsageStrings.CheckedAtTemplate.Replace("{time}", stamp.ToLocalTime().ToString("t", DisplayCulture))
             : null;
         return new AccountUsageCard(provider, title, account.Length > 0 ? string.Join(" · ", account) : null, rows,
             usage.Status != "available" || rows.Count == 0 ? usage.Detail : null, checkedAt, null);

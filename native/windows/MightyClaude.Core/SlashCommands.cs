@@ -35,12 +35,12 @@ public static class KoreanParticle
 {
     public static string Ro(string word)
     {
-        if (string.IsNullOrEmpty(word)) return "로";
+        if (string.IsNullOrEmpty(word)) return "\uB85C";
         var offset = word.Length >= 2 && char.IsLowSurrogate(word[^1]) ? 2 : 1;
         var last = char.ConvertToUtf32(word, word.Length - offset);
-        if (last < 0xAC00 || last > 0xD7A3) return "로";
+        if (last < 0xAC00 || last > 0xD7A3) return "\uB85C";
         var final = (last - 0xAC00) % 28;
-        return final == 0 || final == 8 ? "로" : "으로";
+        return final == 0 || final == 8 ? "\uB85C" : "\uC73C\uB85C";
     }
 }
 
@@ -85,35 +85,35 @@ public static class SlashCommandCatalog
     {
         SlashCommand App(string name, string desc, SlashCommandAction? action = null, SlashArgument? argument = null) =>
             new(name, desc, SlashCommandStrings.AppSource, SlashCommandOrigin.App, action, argument);
-        var model = App("model", "모델 바꾸기 · 이름을 이어서 고르세요", argument: SlashArgument.Model);
-        var rename = App("rename", "실행 창 이름 바꾸기", SlashCommandAction.Rename);
-        var help = App("help", "이 실행 창에서 쓸 수 있는 앱 명령 보기", SlashCommandAction.Help);
+        var model = App("model", Locale.Get("slash.builtin.model"), argument: SlashArgument.Model);
+        var rename = App("rename", Locale.Get("slash.builtin.rename"), SlashCommandAction.Rename);
+        var help = App("help", Locale.Get("slash.builtin.help"), SlashCommandAction.Help);
         return provider switch
         {
             "claude" =>
             [
-                App("plugin", "플러그인 마켓플레이스 열기", SlashCommandAction.OpenPlugins), model,
-                App("permissions", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: SlashArgument.Permission),
-                App("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", SlashCommandAction.NewConversation),
-                App("cost", "이 실행 창의 토큰·비용 보기", SlashCommandAction.ShowUsage),
-                App("usage", "이 실행 창의 토큰·비용 보기", SlashCommandAction.ShowUsage),
-                App("config", "MightyClaude 설정 열기", SlashCommandAction.OpenSettings), rename, help
+                App("plugin", Locale.Get("slash.builtin.plugin"), SlashCommandAction.OpenPlugins), model,
+                App("permissions", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
+                App("clear", Locale.Get("slash.builtin.newConversation"), SlashCommandAction.NewConversation),
+                App("cost", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("usage", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("config", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
             ],
             "codex" =>
             [
-                App("plugins", "플러그인 마켓플레이스 열기", SlashCommandAction.OpenPlugins), model,
-                App("approvals", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: SlashArgument.Permission),
-                App("new", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", SlashCommandAction.NewConversation),
-                App("status", "이 실행 창의 토큰·비용 보기", SlashCommandAction.ShowUsage),
-                App("settings", "MightyClaude 설정 열기", SlashCommandAction.OpenSettings), rename, help
+                App("plugins", Locale.Get("slash.builtin.plugin"), SlashCommandAction.OpenPlugins), model,
+                App("approvals", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
+                App("new", Locale.Get("slash.builtin.newConversation"), SlashCommandAction.NewConversation),
+                App("status", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("settings", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
             ],
             "gemini" =>
             [
                 model,
-                App("approval-mode", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: SlashArgument.Permission),
-                App("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", SlashCommandAction.NewConversation),
-                App("stats", "이 실행 창의 토큰·비용 보기", SlashCommandAction.ShowUsage),
-                App("settings", "MightyClaude 설정 열기", SlashCommandAction.OpenSettings), rename, help
+                App("approval-mode", Locale.Get("slash.builtin.permission"), argument: SlashArgument.Permission),
+                App("clear", Locale.Get("slash.builtin.newConversation"), SlashCommandAction.NewConversation),
+                App("stats", Locale.Get("slash.builtin.usage"), SlashCommandAction.ShowUsage),
+                App("settings", Locale.Get("slash.builtin.settings"), SlashCommandAction.OpenSettings), rename, help
             ],
             _ => []
         };
@@ -123,9 +123,9 @@ public static class SlashCommandCatalog
     public static string HelpText(string provider)
     {
         var lines = Builtins(provider).Select(c => "/" + c.Invocation + " · " + c.Description);
-        return "앱 명령 · " + ProviderLabel(provider) + " 실행 창\n"
+        return Locale.Get("slash.help.headerTemplate", new Dictionary<string, string> { ["provider"] = ProviderLabel(provider) }) + "\n"
             + string.Join("\n", lines)
-            + "\n그 밖의 /이름은 스킬·사용자 명령·플러그인 명령으로 CLI에 전달됩니다.";
+            + "\n" + Locale.Get("slash.help.footer");
     }
 
     // Prefix matches first (by invocation), then after-colon prefix matches,
@@ -270,7 +270,7 @@ public static class SlashCommandCatalog
                     }
                 }
                 if (path == null) continue;
-                var source = "플러그인 " + plugin;
+                var source = Locale.Get("slash.pluginSourceTemplate", new Dictionary<string, string> { ["plugin"] = plugin });
                 result.AddRange(Skills(Path.Combine(path, "skills"), source, SlashCommandOrigin.Plugin, plugin + ":"));
                 result.AddRange(CommandFiles(Path.Combine(path, "commands"), source, SlashCommandOrigin.Plugin, plugin + ":"));
             }
@@ -491,6 +491,11 @@ public sealed class SlashCatalogCache
 
     public void Set(string provider, string? workspacePath, SlashCommand[] commands) =>
         cache[Key(provider, workspacePath)] = new Entry(commands, DateTimeOffset.UtcNow);
+
+    public void ClearProvider(string provider)
+    {
+        foreach (var key in cache.Keys.Where(key => key.StartsWith(provider + "|", StringComparison.Ordinal)).ToArray()) cache.Remove(key);
+    }
 
     private static string Key(string provider, string? workspacePath) => provider + "|" + (workspacePath ?? "");
 }

@@ -84,6 +84,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     public static AppSnapshot Normalize(AppSnapshot value, bool restoring)
     {
         if (value.Version != 1) return new();
+        value = value with { PhaseModels = PhaseModelPreferences.Normalize(value.PhaseModels) };
         var workspaces = (value.Workspaces ?? []).Where(ValidWorkspace).DistinctBy(w => w.Id).Take(64).Select(w => w with { Name = Wire.Clean(w.Name, 120) }).ToList();
         var ids = workspaces.Select(w => w.Id).ToHashSet();
         var textBudget = 2 * 1024 * 1024;
@@ -115,6 +116,7 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
         }
         var sessions = (value.Sessions ?? []).Where(s => s is not null && Wire.Identifier(s.Id) && ids.Contains(s.WorkspaceId) && (s.Kind is "claude" or "shell" or "browser" || !restoring && FilePaneKind.IsFilePane(s.Kind) && s.Id == FilePaneKind.PaneId(s.WorkspaceId) || !restoring && AgentIOPaneKind.IsAgentIO(s.Kind) && s.OwnerSessionId is { } owner && s.Id == AgentIOPaneKind.PaneId(owner, s.Kind) && (value.Sessions ?? []).Any(parent => parent.Id == owner && parent.Kind == "claude" && parent.WorkspaceId == s.WorkspaceId))).DistinctBy(s => s.Id).Take(128).Select(NormalizeSession).ToList();
         var workspaceId = ids.Contains(value.ActiveWorkspaceId ?? "") ? value.ActiveWorkspaceId : workspaces.FirstOrDefault()?.Id;
+        value = value with { ExpandedWorkspaceIds = value.ExpandedWorkspaceIds?.Where(ids.Contains).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList() };
         var activeSessionId = sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId && s.Id == value.ActiveSessionId)?.Id ?? sessions.FirstOrDefault(s => s.WorkspaceId == workspaceId)?.Id;
         Dictionary<string, PaneLayoutNode>? layouts = null;
         if (value.PaneLayouts is not null)

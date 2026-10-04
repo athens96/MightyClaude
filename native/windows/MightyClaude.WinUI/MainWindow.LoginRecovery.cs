@@ -16,6 +16,7 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, string> loginFailures = [], loginNotes = [];
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> accountChanges = new();
     private readonly HashSet<Task> loginTasks = [];
+    private readonly HashSet<string> loginResendsAwaitingUpdate = [];
     private sealed class LoginJob
     {
         internal readonly CancellationTokenSource Cancellation = new();
@@ -29,7 +30,7 @@ public sealed partial class MainWindow
         service.RequestStarting += request => DispatcherQueue.TryEnqueue(() =>
         {
             if (closing) return;
-            loginRetries.Sent(request); loginNotes.Remove(request.SessionId);
+            loginRetries.Sent(request); loginNotes.Remove(request.SessionId); loginResendsAwaitingUpdate.Remove(request.SessionId);
             CancelUnusedLogin(request.Provider); RefreshLoginCards();
         });
     }
@@ -71,7 +72,7 @@ public sealed partial class MainWindow
     private void DismissLoginRecovery(string session)
     {
         var provider = loginRetries.Requests.GetValueOrDefault(session)?.Request.Provider;
-        loginRetries.Drop(session); loginNotes.Remove(session);
+        loginRetries.Drop(session); loginNotes.Remove(session); loginResendsAwaitingUpdate.Remove(session);
         if (provider is not null) CancelUnusedLogin(provider);
         RefreshLoginCards();
     }
@@ -87,9 +88,9 @@ public sealed partial class MainWindow
     private Task StartBackgroundLogin(string provider)
     {
         if (options.SmokeTest || closing || loginJobs.ContainsKey(provider) || provider is not ("claude" or "codex")) return Task.CompletedTask;
-        if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || coordinator.IsUpdating || service.HasActiveProvider(provider))
+        if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || AnyCliUpdateRunning || service.HasActiveProvider(provider))
         {
-            loginFailures[provider] = Locale.Get(coordinator.IsUpdating ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
+            loginFailures[provider] = Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
         }
         var job = new LoginJob(); loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
         job.Task = RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
@@ -151,10 +152,12 @@ public sealed partial class MainWindow
         if (closing || !loginRetries.Requests.TryGetValue(id, out var retry)) return;
         var pane = service.Snapshot.Sessions.FirstOrDefault(value => value.Id == id);
         if (pane is null || pane.Provider != retry.Request.Provider || pane.Status == "running" || service.IsSessionRunning(id)) { DismissLoginRecovery(id); return; }
-        if (coordinator.IsUpdating || loginBusy.ContainsKey(pane.Provider) || accountChanges.ContainsKey(pane.Provider))
+        if (AnyCliUpdateRunning || ManualMutationBlockReason(pane) is not null || loginBusy.ContainsKey(pane.Provider) || accountChanges.ContainsKey(pane.Provider))
         {
-            loginNotes[id] = Locale.Get(coordinator.IsUpdating ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return;
+            if (AnyCliUpdateRunning || ManualMutationBlockReason(pane) is not null) loginResendsAwaitingUpdate.Add(id);
+            loginNotes[id] = ManualMutationBlockReason(pane) ?? Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return;
         }
+        loginResendsAwaitingUpdate.Remove(id);
         try
         {
             if (await ReloadProviderModels()) RefreshEnvironment();
@@ -168,6 +171,15 @@ public sealed partial class MainWindow
         }
         RefreshLoginCards();
     }
+    private async Task ResendLoginRequestsAfterUpdate()
+    {
+        if (closing || AnyCliUpdateRunning || pluginOperations.IsRunning) return;
+        foreach (var id in loginResendsAwaitingUpdate.Order().ToArray())
+        {
+            loginResendsAwaitingUpdate.Remove(id);
+            await ResendLoginRequest(id);
+        }
+    }
     private async Task TerminalLoginFallback(string provider)
     {
         var previous = loginBusy.GetValueOrDefault(provider);
@@ -180,7 +192,7 @@ public sealed partial class MainWindow
     private async Task ShutdownLoginRecovery()
     {
         foreach (var provider in loginJobs.Keys.ToArray()) CancelBackgroundLogin(provider);
-        await Task.WhenAll(loginTasks.ToArray()); loginTasks.Clear(); loginRetries.Clear(); loginNotes.Clear();
+        await Task.WhenAll(loginTasks.ToArray()); loginTasks.Clear(); loginRetries.Clear(); loginNotes.Clear(); loginResendsAwaitingUpdate.Clear();
     }
     private sealed partial class PaneView
     {

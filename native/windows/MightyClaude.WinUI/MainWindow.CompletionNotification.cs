@@ -64,21 +64,20 @@ public sealed partial class MainWindow
 {
     private readonly CompletionNotificationDecision notificationDecision = new();
     private ICompletionNotifier? notifier;
-    private string notifierStatus = CompletionNotificationStrings.StatusVerificationMode;
+    private enum NotificationPermission { Verification, Allowed, NeedPermission }
+    private NotificationPermission notifierPermission;
 
     private async Task InitNotifierAsync()
     {
         var impl = new WindowsAppNotifier();
         if (!impl.IsSupported)
         {
-            notifierStatus = CompletionNotificationStrings.StatusVerificationMode;
+            notifierPermission = NotificationPermission.Verification;
             notifier = impl;
             return;
         }
         var reason = await impl.TryRegisterAsync(FocusSession);
-        notifierStatus = reason is null
-            ? CompletionNotificationStrings.StatusAllowed
-            : CompletionNotificationStrings.StatusNeedPermission;
+        notifierPermission = reason is null ? NotificationPermission.Allowed : NotificationPermission.NeedPermission;
         notifier = impl;
     }
 
@@ -132,7 +131,8 @@ public sealed partial class MainWindow
         panel.Children.Add(toggle);
         panel.Children.Add(new TextBlock
         {
-            Text = notifierStatus,
+            Text = notifierPermission switch
+            { NotificationPermission.Allowed => CompletionNotificationStrings.StatusAllowed, NotificationPermission.NeedPermission => CompletionNotificationStrings.StatusNeedPermission, _ => CompletionNotificationStrings.StatusVerificationMode },
             FontSize = 12,
             Opacity = .7,
             TextWrapping = TextWrapping.Wrap

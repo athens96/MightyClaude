@@ -90,7 +90,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         var parser = new OutputParser(request.Provider, (kind, text) => Log(run, kind, text), id => emit(new(request.SessionId, "resume", ResumeId: id)), value => { if (tracker?.Activity(value) != true) Activity(run, value); }, value => { if (!run.Finalizing) emit(new(request.SessionId, "usage", Usage: value)); }, run.ActivityId,
             images: request.Kind == "shell" ? null : images, imageEntry: entry => { if (!run.Finished) emit(new(request.SessionId, "log", entry)); });
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
-            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, request.Model, _ => Interlocked.Exchange(ref graphDirty, 1));
+            tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), _ => Interlocked.Exchange(ref graphDirty, 1));
         run.Tracker = tracker;
         void ReadChildren(bool closing)
         {
@@ -155,6 +155,13 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 var command = await providers.FindAsync(request.Provider, token) ?? throw new InvalidOperationException(Locale.Get("run.error.cliNotInstalled", new Dictionary<string, string> { ["name"] = ProviderCatalog.Name(request.Provider) }));
                 token.ThrowIfCancellationRequested();
                 if (codexApprovals && !ProviderCatalog.SupportsCodexApprovals(command.Version)) throw new InvalidOperationException("Codex approval requests require stable Codex CLI 0.153.4 or later.");
+                if (request.Settings!.Effort != "default" || PhaseModelPreferences.MainEffort(request) is not null)
+                {
+                    var runtime = await providers.GetRuntimeAsync(workingDirectory: workspace.Path); token.ThrowIfCancellationRequested();
+                    var catalog = runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog;
+                    request = PhaseModelPreferences.ResolveEffort(request, catalog);
+                    if (request.Settings!.Effort != "default" && !ProviderCatalog.Efforts(request.Provider, PhaseModelPreferences.EffectiveModel(request), catalog, request.RegisteredModels).Contains(request.Settings.Effort)) throw new ArgumentException(Locale.Get("run.error.effortNotSupported"));
+                }
                 if (request.Provider == "claude")
                 {
                     if (!ProviderCatalog.SupportsMods(command.Version)) throw new InvalidOperationException(Locale.Get("run.error.modsVersionRequired"));
@@ -164,7 +171,6 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     environment["MIGHTY_CLAUDE_ACTIVITY"] = "1"; environment["MIGHTY_CLAUDE_USAGE"] = "1"; environment["MIGHTY_CLAUDE_GRAPH"] = "1";
                     if (request.Settings!.Effort != "default") environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.Settings.Effort;
                 }
-                if (request.Settings!.Effort != "default") { var runtime = await providers.GetRuntimeAsync(workingDirectory: workspace.Path); token.ThrowIfCancellationRequested(); if (!ProviderCatalog.Efforts(request.Provider, request.Model, runtime.Providers.Single(p => p.Id == request.Provider).ModelCatalog, request.RegisteredModels).Contains(request.Settings.Effort)) throw new ArgumentException(Locale.Get("run.error.effortNotSupported")); }
                 if (request.Attachments is { Count: > 0 } files) { attachments = await StagedAttachments.CreateAsync(files, token); token.ThrowIfCancellationRequested(); input = attachments.InputFor(request); }
                 binary = command.Binary;
                 var providerArguments = codexApprovals ? ProviderCatalog.Arguments(request, pluginDirectory) : attachments?.ArgumentsFor(request, pluginDirectory) ?? ProviderCatalog.Arguments(request, pluginDirectory);

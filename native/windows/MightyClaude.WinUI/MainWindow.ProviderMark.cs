@@ -123,7 +123,7 @@ public sealed partial class MainWindow
             var expected = ProviderMark.SidebarProvider(session);
             Require(sidebarMarks.GetValueOrDefault(session.Id) == expected, $"sidebar row {session.Id} mark is {sidebarMarks.GetValueOrDefault(session.Id) ?? "none"}, not {expected ?? "none"}");
         }
-        Require(sessionLinks.Children.OfType<Button>().Select(b => b.Content).OfType<Grid>().All(g => g.Children[0] is Canvas && (g.Children[1] is TextBlock || g.Children[1] is Grid line && line.Children.Count == 2 && line.Children[0] is TextBlock && line.Children[1] is Border)), "the mark line moved the status glyph or the title");
+        Require(sidebarSessionButtons.Values.Select(b => b.Content).OfType<Grid>().All(g => g.Children[0] is Canvas && (g.Children[1] is TextBlock || g.Children[1] is Grid line && line.Children.Count == 2 && line.Children[0] is TextBlock && line.Children[1] is Border)), "the mark line moved the status glyph or the title");
         checks["providers"] = agents.Select(s => s.Provider).Distinct().OrderBy(p => p).ToList();
         checks["agentRowsCarryTheirMark"] = true;
         checks["otherRowsCarryNone"] = rows.Count - agents.Count;

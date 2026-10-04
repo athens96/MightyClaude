@@ -229,7 +229,8 @@ public sealed partial class MainWindow
         /// </summary>
         internal void AttachBrowserView(FrameworkElement anchor)
         {
-            if (Session.Kind is not ("browser" or AgentIOPaneKind.Browser)) return;
+            if (owner.closing || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
+                pane.Kind is not ("browser" or AgentIOPaneKind.Browser)) return;
             anchor.Loaded += (_, _) => BuildBrowserView();
         }
 
@@ -247,7 +248,8 @@ public sealed partial class MainWindow
 
         private void BuildBrowserView()
         {
-            if (browserAttached || Container.Child is not Grid grid) return;
+            if (browserAttached || !QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } pane ||
+                pane.Kind is not ("browser" or AgentIOPaneKind.Browser) || Container.Child is not Grid grid) return;
             browserAttached = true;
             // A browser pane runs no agent: hide the transcript and the composer the pane
             // built, so nothing can start a CLI run from here.

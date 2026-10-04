@@ -1,23 +1,15 @@
 namespace MightyClaude.Core;
 
-// Korean copy of completion notification UI, mirrored from AgentCompanion.swift
-// (title and body) and AgentCompanionViews.swift (toggle, status texts, button).
-// WinUI reads these constants and never types Korean of its own.
-// StringsVerification checks every value against its macOS literal.
-// One OS-bound substitution (see docs/windows-completion-notification.md):
-//   ToggleLabel reads "Windows" where macOS reads "Mac".
+// Read on demand so the stored language preference applies after initialization.
+// Korean values retain the macOS copy and documented Windows-specific wording.
 public static class CompletionNotificationStrings
 {
-    // AgentCompanion.swift CompletionNotifications.send
-    public const string NotificationTitle = "MightyClaude · 작업 완료";
-    public const string NotificationBodyTemplate = "{title}의 작업이 완료되었습니다.";
-
-    // AgentCompanionViews.swift Toggle / status texts / settings button.
-    // OS-bound substitution: "Windows" replaces "Mac" in ToggleLabel.
-    public const string ToggleLabel = "작업 완료 시 Windows 알림";
-    public const string StatusAllowed = "허용됨";
-    public const string StatusDenied = "시스템 설정에서 알림을 허용하세요";
-    public const string StatusNeedPermission = "권한 필요";
-    public const string StatusVerificationMode = "검증 모드";
-    public const string SettingsButton = "알림 설정";
+    public static string NotificationTitle => Locale.Get("windows.notifications.notificationTitle");
+    public static string NotificationBodyTemplate => Locale.Get("windows.notifications.notificationBodyTemplate");
+    public static string ToggleLabel => Locale.Get("windows.notifications.toggleLabel");
+    public static string StatusAllowed => Locale.Get("windows.notifications.statusAllowed");
+    public static string StatusDenied => Locale.Get("windows.notifications.statusDenied");
+    public static string StatusNeedPermission => Locale.Get("windows.notifications.statusNeedPermission");
+    public static string StatusVerificationMode => Locale.Get("windows.notifications.statusVerificationMode");
+    public static string SettingsButton => Locale.Get("windows.notifications.settingsButton");
 }

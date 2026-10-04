@@ -12,7 +12,6 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     private const string PaneDragFormat = "dev.mightyclaude.pane-tab";
-    private readonly StackPanel sessionLinks = new() { Spacing = 3 };
     // Keep generated legacy layouts stable until the first user layout action.
     private readonly Dictionary<string, PaneLayoutNode> layoutDefaults = [];
     // Own each attachment explicitly: FrameworkElement.Parent can be unavailable

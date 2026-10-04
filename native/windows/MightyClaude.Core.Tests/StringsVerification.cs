@@ -118,6 +118,11 @@ internal static class StringsVerification
         .Where(f => f.IsLiteral && f.FieldType == typeof(string))
         .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
 
+    private static Dictionary<string, string> LocalizedProperties(Type type) => type
+        .GetProperties(BindingFlags.Public | BindingFlags.Static)
+        .Where(property => property.PropertyType == typeof(string))
+        .ToDictionary(property => property.Name, property => (string)property.GetValue(null)!);
+
     // For classes that use static readonly (loaded from locale files at runtime).
     private static Dictionary<string, string> StaticReadonlyStrings(Type type) => type
         .GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -227,18 +232,23 @@ internal static class StringsVerification
 
     internal static Task CompletionNotificationStringsMatchMacOS()
     {
-        var actual = Constants(typeof(CompletionNotificationStrings));
-        var reason = Validate(nameof(CompletionNotificationStrings), actual, CompletionNotificationMacOS);
-        if (reason is not null) throw new InvalidOperationException(reason);
+        var before = Locale.LanguagePreference; Locale.LanguagePreference = "ko";
+        try
+        {
+            var actual = LocalizedProperties(typeof(CompletionNotificationStrings));
+            var reason = Validate(nameof(CompletionNotificationStrings), actual, CompletionNotificationMacOS);
+            if (reason is not null) throw new InvalidOperationException(reason);
 
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(CompletionNotificationStrings), copy, CompletionNotificationMacOS);
-        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
-        if (Bad(Broken("NotificationTitle", "")) is null) throw new InvalidOperationException("empty title must fail");
-        if (Bad(Broken("NotificationBodyTemplate", "{ title }의 작업이 완료되었습니다.")) is null) throw new InvalidOperationException("malformed placeholder must fail");
-        if (Bad(Broken("StatusAllowed", CompletionNotificationStrings.StatusDenied)) is null) throw new InvalidOperationException("duplicate value must fail");
-        var missing = new Dictionary<string, string>(actual); missing.Remove("SettingsButton");
-        if (Bad(missing) is null) throw new InvalidOperationException("missing literal must fail");
-        return Task.CompletedTask;
+            string? Bad(Dictionary<string, string> copy) => Validate(nameof(CompletionNotificationStrings), copy, CompletionNotificationMacOS);
+            Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+            if (Bad(Broken("NotificationTitle", "")) is null) throw new InvalidOperationException("empty title must fail");
+            if (Bad(Broken("NotificationBodyTemplate", "{ title }의 작업이 완료되었습니다.")) is null) throw new InvalidOperationException("malformed placeholder must fail");
+            if (Bad(Broken("StatusAllowed", CompletionNotificationStrings.StatusDenied)) is null) throw new InvalidOperationException("duplicate value must fail");
+            var missing = new Dictionary<string, string>(actual); missing.Remove("SettingsButton");
+            if (Bad(missing) is null) throw new InvalidOperationException("missing literal must fail");
+            return Task.CompletedTask;
+        }
+        finally { Locale.LanguagePreference = before; }
     }
 
     // StatusBarUsage.swift (chips, popover, toggle, footnote), SessionUsage.swift
@@ -312,18 +322,23 @@ internal static class StringsVerification
     /// Keychain substitutions, and the rules reject their own failures.
     internal static Task AccountUsageStringsMatchMacOS()
     {
-        var actual = Constants(typeof(AccountUsageStrings));
-        var reason = Validate(nameof(AccountUsageStrings), actual, AccountUsageMacOS);
-        if (reason is not null) throw new InvalidOperationException(reason);
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(AccountUsageStrings), copy, AccountUsageMacOS);
-        Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
-        if (Bad(Broken("Title", "")) is null) throw new InvalidOperationException("an empty value must fail");
-        if (Bad(Broken("UsedPercentTemplate", "{ percent }% 사용")) is null) throw new InvalidOperationException("a malformed placeholder must fail");
-        if (Bad(Broken("ChipChecking", AccountUsageStrings.ChipBeforeFirstRun)) is null) throw new InvalidOperationException("a duplicate value must fail");
-        if (Bad(Broken("WindowWeekly", "Weekly")) is null) throw new InvalidOperationException("a value that differs from macOS must fail");
-        var missing = new Dictionary<string, string>(actual); missing.Remove("DetailClaude");
-        if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
-        return Task.CompletedTask;
+        var before = Locale.LanguagePreference; Locale.LanguagePreference = "ko";
+        try
+        {
+            var actual = LocalizedProperties(typeof(AccountUsageStrings));
+            var reason = Validate(nameof(AccountUsageStrings), actual, AccountUsageMacOS);
+            if (reason is not null) throw new InvalidOperationException(reason);
+            string? Bad(Dictionary<string, string> copy) => Validate(nameof(AccountUsageStrings), copy, AccountUsageMacOS);
+            Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
+            if (Bad(Broken("Title", "")) is null) throw new InvalidOperationException("an empty value must fail");
+            if (Bad(Broken("UsedPercentTemplate", "{ percent }% 사용")) is null) throw new InvalidOperationException("a malformed placeholder must fail");
+            if (Bad(Broken("ChipChecking", AccountUsageStrings.ChipBeforeFirstRun)) is null) throw new InvalidOperationException("a duplicate value must fail");
+            if (Bad(Broken("WindowWeekly", "Weekly")) is null) throw new InvalidOperationException("a value that differs from macOS must fail");
+            var missing = new Dictionary<string, string>(actual); missing.Remove("DetailClaude");
+            if (Bad(missing) is null) throw new InvalidOperationException("a missing literal must fail");
+            return Task.CompletedTask;
+        }
+        finally { Locale.LanguagePreference = before; }
     }
 
     // The CLI update section reads locales/ko.json. SectionDescription reads the

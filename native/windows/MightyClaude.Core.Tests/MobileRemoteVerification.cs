@@ -112,6 +112,7 @@ internal static class MobileRemoteVerification
     {
         var directory = Temp(); using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var controlConnections = 0;
         var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory }); builder.Logging.ClearProviders(); builder.WebHost.UseKestrelCore(); builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Loopback, 0));
         await using var app = builder.Build(); app.UseWebSockets(); MobileRelayHost? host = null;
         app.Run(async context =>
@@ -121,7 +122,9 @@ internal static class MobileRemoteVerification
                 using var socket = await context.WebSockets.AcceptWebSocketAsync();
                 if (!context.Request.Query.ContainsKey("connectionId"))
                 {
-                    await socket.SendAsync(Encoding.UTF8.GetBytes("{\"type\":\"connected\",\"connectionId\":\"fixture-connection\"}"), WebSocketMessageType.Text, true, timeout.Token);
+                    if (Interlocked.Increment(ref controlConnections) == 1)
+                        await socket.SendAsync(Encoding.UTF8.GetBytes("{\"type\":\"connected\",\"connectionId\":\"fixture-connection\"}"), WebSocketMessageType.Text, true, timeout.Token);
+                    else reconnected.TrySetResult();
                     var controlBuffer = new byte[1024]; while ((await socket.ReceiveAsync(controlBuffer, timeout.Token)).MessageType != WebSocketMessageType.Close) { } return;
                 }
                 var secret = RandomNumberGenerator.GetBytes(32); var nonce = RandomNumberGenerator.GetBytes(16);
@@ -143,11 +146,34 @@ internal static class MobileRemoteVerification
             await app.StartAsync(timeout.Token); var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             host = new MobileRelayHost(Path.Combine(directory, "identity"), "Fixture", [], (method, path, body, device, ct) => Task.FromResult(new MobileReply(200, new { protocol = 1, ok = true })));
             await host.ApplyAsync(new(true, address, false)); await completed.Task.WaitAsync(timeout.Token); Check(host.Devices.Count == 1, "device registered through live WebSocket handshake");
-            await host.RotateKeyAsync(); Check(host.Devices.Count == 0, "live key rotation clears device registry"); await host.DisposeAsync(); host = null;
+            var link = host.PairingUrl; var serverId = host.PairingServerId;
+            Check(host.PairingKeyForDisplay == Query(link, "key"), "manual pairing key matches QR key");
+            await host.ReconnectAsync(); await reconnected.Task.WaitAsync(timeout.Token);
+            Check(host.Devices.Count == 1 && host.PairingUrl == link && host.PairingServerId == serverId && controlConnections == 2, "reconnect replaces relay socket while retaining pairing and trusted devices");
+            await host.RotateKeyAsync(); Check(host.Devices.Count == 0, "live key rotation clears device registry");
+            var rotated = host.PairingUrl; await host.RotateKeyAsync("abcdefghijklmnopqrstuv"); Check(host.PairingUrl == rotated, "stale device revoke cannot rotate a newer pairing key");
+            await host.DisposeAsync(); host = null;
         }
         finally { if (host is not null) await host.DisposeAsync(); await app.StopAsync(CancellationToken.None); Directory.Delete(directory, true); }
     }
     private static async Task Send(WebSocket socket, JsonElement value, CancellationToken token) => await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(value, Wire.Json), WebSocketMessageType.Text, true, token);
+    internal static async Task DisposedHostCannotRestart()
+    {
+        var directory = Temp();
+        try
+        {
+            await using var host = new MobileRelayHost(directory, "Fixture", [], (_, _, _, _, _) => Task.FromResult(new MobileReply(200, new { ok = true })));
+            var pairing = host.PairingUrl;
+            await host.DisposeAsync(); await host.DisposeAsync();
+            foreach (var operation in new Func<Task>[] { host.ReconnectAsync, () => host.ApplyAsync(new()), () => host.RotateKeyAsync() })
+            {
+                var rejected = false; try { await operation(); } catch (ObjectDisposedException) { rejected = true; }
+                Check(rejected, "disposed relay host must reject reconnect, apply and key rotation");
+            }
+            Check(!host.Status.Connected && host.Devices.Count == 0 && host.PairingUrl == pairing, "shutdown retains identity and cannot reopen sockets");
+        }
+        finally { Directory.Delete(directory, true); }
+    }
     private static async Task<byte[]> Receive(WebSocket socket, CancellationToken token)
     {
         using var result = new MemoryStream(); var buffer = new byte[8192]; WebSocketReceiveResult frame;

@@ -83,7 +83,7 @@ public static class AccountUsageSupport
         if (double.TryParse(value, out var seconds)) return Backoff(seconds);
         return Date(value) is { } date ? Backoff((date - now).TotalSeconds) : DefaultBackoffSeconds;
     }
-    /// The macOS RateLimitWindowLabel, in Korean copy from AccountUsageStrings.
+    /// The macOS RateLimitWindowLabel, in the selected app language.
     public static string WindowLabel(string kind)
     {
         var lowered = kind.ToLowerInvariant();
@@ -97,8 +97,8 @@ public static class AccountUsageSupport
         }
         if (lowered.StartsWith("seven_day_")) return AccountUsageStrings.WindowWeekly + " " + kind[10..];
         if (lowered.StartsWith("five_hour_")) return AccountUsageStrings.WindowSession + " " + kind[10..];
-        if (lowered.Length > 1 && lowered[^1] == 'm' && lowered[..^1].All(char.IsAsciiDigit)) return lowered[..^1] + "분";
-        if (lowered.Length > 1 && lowered[^1] == 'h' && lowered[..^1].All(char.IsAsciiDigit)) return lowered[..^1] + "시간";
+        if (lowered.Length > 1 && lowered[^1] == 'm' && lowered[..^1].All(char.IsAsciiDigit)) return Locale.Get("windows.accountUsage.minutes", new Dictionary<string, string> { ["count"] = lowered[..^1] });
+        if (lowered.Length > 1 && lowered[^1] == 'h' && lowered[..^1].All(char.IsAsciiDigit)) return Locale.Get("windows.accountUsage.hours", new Dictionary<string, string> { ["count"] = lowered[..^1] });
         return kind.Replace('_', ' ');
     }
     public static string Percent(double value) => ((int)Math.Round(value, MidpointRounding.AwayFromZero)).ToString();

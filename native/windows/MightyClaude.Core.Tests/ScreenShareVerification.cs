@@ -122,8 +122,11 @@ internal static class ScreenShareVerification
             var enrollment = hub.RouteAsync("POST", "control-key", Json(new { publicKeyB64 = Convert.ToBase64String(Public(key)) }), Phone, default);
             await hub.SetGrantAsync(Phone, false, "none"); approval.SetResult(true); Check((await enrollment).Status == 403 && hub.Grants.Single().ControlKeyPublic is null, "consent response cannot resurrect a revoked grant");
             foreach (var phone in new[] { Phone, "bbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccc" }) await hub.SetGrantAsync(phone, true, "view");
-            var first = await Start(hub); await Start(hub, "bbbbbbbbbbbbbbbbbbbbbb");
+            var first = await Start(hub); var second = await Start(hub, "bbbbbbbbbbbbbbbbbbbbbb");
             Check((await hub.RouteAsync("POST", "sessions", Json(new { mode = "view", network = "wifi", displayId = 1 }), "cccccccccccccccccccccc", default)).Status == 403, "third concurrent viewer refused");
+            await hub.StopSessionAsync(second); await hub.StopSessionAsync(second);
+            Check(hub.Sessions.Single().SessionId == first && platform.Stopped.Contains(second) && platform.Released.Contains(second) && !platform.Stopped.Contains(first), "per-session Stop tears down only the selected peer and tolerates a stale click");
+            await Start(hub, "bbbbbbbbbbbbbbbbbbbbbb");
             await hub.SignalAsync(Phone, Json(new { type = "screen-background", sessionId = first, background = true }), default); clock = clock.AddSeconds(31); await Task.Delay(400);
             Check(hub.Sessions.Count == 1 && platform.Stopped.Contains(first), "backgrounded phone stops after thirty seconds"); await hub.ResetAsync("rekey-pairing"); Check(hub.Grants.Count == 0 && hub.Sessions.Count == 0, "pairing rotation clears screen trust and active peers");
         }

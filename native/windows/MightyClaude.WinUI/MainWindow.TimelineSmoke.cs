@@ -64,15 +64,18 @@ public sealed partial class MainWindow
                 try
                 {
                     Container.Width = 320; Container.HorizontalAlignment = HorizontalAlignment.Left; owner.root.UpdateLayout(); await Task.Delay(80); owner.root.UpdateLayout();
+                    await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside the pane on two rows");
                     Require(graphToolbar is { ActualHeight: > 45 }, "320px pane moves toolbar controls below summary");
                     foreach (var control in new FrameworkElement[] { diagramButton!, timelineButton!, zoomOutButton!, zoomResetButton!, zoomInButton! })
                     {
                         var edge = control.TransformToVisual(graphToolbar!).TransformPoint(new Windows.Foundation.Point(control.ActualWidth, 0));
                         Require(edge.X <= graphToolbar!.ActualWidth + 1, "narrow toolbar control remains inside pane: " + AutomationProperties.GetAutomationId(control));
                     }
+                    await SettleDesktopCapture(Container);
                     captures.Add(await owner.CaptureSmoke(Path.Combine(owner.options.ProfileDirectory!, "smoke-mighty-toolbar-320.png")));
                 }
                 finally { Container.Width = width; Container.HorizontalAlignment = horizontal; owner.root.UpdateLayout(); }
+                await WaitUI(() => paneHeader is { ActualWidth: >= 420 } && HeaderFitsSmoke(false), "Growing the pane must return fully visible header controls to one row");
                 return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
             }
             finally

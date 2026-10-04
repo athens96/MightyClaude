@@ -25,6 +25,7 @@ public sealed partial class MainWindow
             companionPreferences = companionPreferences with { Enabled = !companionPreferences.Enabled };
             SaveCompanionPreferences(); await ReloadCompanionPets(); RefreshCompanionControls();
         }));
+        InitializeCompanionGlyph();
         companionStatusControl = new Button();
         controls.Children.Add(companionToggleControl); controls.Children.Add(companionStatusControl);
         var body = companionStatusBody = new StackPanel { Spacing = 10, Width = 350, RequestedTheme = root.RequestedTheme };
@@ -46,7 +47,7 @@ public sealed partial class MainWindow
         if (companionStatusHeading is not null) companionStatusHeading.Text = Locale.Get("companion.status.title");
         var sessions = service.Snapshot.Sessions.Where(s => s.Kind == "claude").ToArray();
         var busy = sessions.Count(s => CompanionStatus(s) is "running" or "waiting" or "starting" or "queued");
-        companionToggleControl.Content = companionPreferences.Enabled ? "🐾" : "♧";
+        companionGlyph.Data = companionPreferences.Enabled ? companionGlyphOn : companionGlyphOff;
         AutomationProperties.SetName(companionToggleControl, Locale.Get(companionPreferences.Enabled ? "menu.hidePet" : "companion.settings.enabled"));
         ToolTipService.SetToolTip(companionToggleControl, Locale.Get(companionPreferences.Enabled ? "menu.hidePet" : "companion.settings.enabled"));
         companionStatusControl.Content = "◉ " + busy;

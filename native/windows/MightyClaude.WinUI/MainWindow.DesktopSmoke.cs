@@ -51,6 +51,7 @@ public sealed partial class MainWindow
                 }
                 Require(dashboardGitLabels[workspace.Id].Text.Contains("feature/parity", StringComparison.Ordinal), "Dashboard must display its workspace Git status.");
                 await SettleDesktopCapture(root);
+                CheckSidebarChromeForSmoke();
                 captures.Add(await CaptureSmoke(Path.Combine(options.ProfileDirectory!, "smoke-dashboard-" + theme + ".png")));
                 await SelectLayoutSession(first.Id);
                 Require(!showsDashboard && ReferenceEquals(existing, views[first.Id]), "dashboard navigation must retain the same editor and pane");
@@ -65,6 +66,7 @@ public sealed partial class MainWindow
                     navigation.SelectedItem = item;
                     var category = (SettingsCategory)item.Tag;
                     await WaitUI(() => service.Snapshot.SettingsPane == category.Id);
+                    if (category.Id == "models") await CheckPhaseModelsSettingsActions(frame);
                     if (category.Id == "styles")
                         await WaitUI(() => new[] { "ouroboros", "paperthin", "superpowers" }.All(id => VisualChildren(frame).OfType<StackPanel>().Any(row => row.IsLoaded && AutomationProperties.GetAutomationId(row) == "settings-style-" + id)));
                     if (category.Id == "companion")
@@ -76,7 +78,7 @@ public sealed partial class MainWindow
                     Require(headings.SequenceEqual(expected), "settings category contains missing or misplaced sections: " + category.Id);
                     Require(navigation.SelectedItems.Count == 1 && ReferenceEquals(navigation.SelectedItem, item), "Only the displayed settings category may be selected.");
                     categoryCount++;
-                    if (category.Id is "general" or "styles" or "mobile" or "companion")
+                    if (category.Id is "general" or "models" or "styles" or "mobile" or "companion")
                     {
                         await SettleDesktopCapture(frame);
                         captures.Add(await CaptureElement(frame, Path.Combine(options.ProfileDirectory!, "smoke-settings-" + category.Id + "-" + theme + ".png")));
@@ -85,7 +87,7 @@ public sealed partial class MainWindow
                 settingsWindow.Close(); await opening;
             }
             await CheckDashboardActions(first, original.Workspaces.Last());
-            return new() { ["dashboardRetainsPane"] = true, ["clockPreservesDashboardControls"] = true, ["dashboardWorkspaceActions"] = true, ["dashboardProviderMarks"] = true, ["settingsLoadedBeforeCapture"] = true, ["allSettingsCategories"] = categoryCount == 16, ["bothThemes"] = true, ["screenshots"] = captures };
+            return new() { ["nativeSidebarChrome"] = true, ["phaseModelsControlsPersist"] = true, ["dashboardRetainsPane"] = true, ["clockPreservesDashboardControls"] = true, ["dashboardWorkspaceActions"] = true, ["dashboardProviderMarks"] = true, ["settingsLoadedBeforeCapture"] = true, ["allSettingsCategories"] = categoryCount == 16, ["bothThemes"] = true, ["screenshots"] = captures };
         }
         finally
         {

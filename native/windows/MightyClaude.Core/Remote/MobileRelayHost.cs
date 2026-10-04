@@ -34,6 +34,7 @@ public sealed class MobileRelayHost : IAsyncDisposable
     private Task? loop;
     private MobileRemoteSettings settings = new();
     private int generation;
+    private bool disposed;
     private long turnRenewTicks;
     public Func<string[]>? ExtraCapabilities { get; set; }
     public bool IsTrustedDevice(string device) => identity.Contains(device, false);
@@ -44,6 +45,8 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public MobileRelayStatus Status { get; private set; } = new(false, 0, "disabled");
     public IReadOnlyList<MobileDeviceInfo> Devices => identity.Devices;
     public string HostId => identity.HostId;
+    public string PairingServerId => identity.ServerId;
+    public string PairingKeyForDisplay => identity.PairingKey;
     public string AppVersion { get; init; } = "0.0.0";
     public string PairingUrl => identity.PairingUrl(NormalizeRelay(settings.RelayURL) ?? DefaultRelay, hostName);
     public MobileRelayHost(string directory, string hostName, string[] capabilities, Func<string, string, JsonElement?, string, CancellationToken, Task<MobileReply>> route)
@@ -70,19 +73,26 @@ public sealed class MobileRelayHost : IAsyncDisposable
     public async Task ApplyAsync(MobileRemoteSettings value)
     {
         await lifecycle.WaitAsync();
-        try
-        {
-            await StopInternal(); settings = value.Normalized;
-            if (!settings.Enabled) { Publish(false, "disabled"); return; }
-            var relay = NormalizeRelay(settings.RelayURL.Length == 0 ? DefaultRelay : settings.RelayURL) ?? throw new ArgumentException("Invalid relay address.");
-            lifetime = new(); var current = ++generation; loop = RunAsync(relay, current, lifetime.Token);
-        }
+        try { ObjectDisposedException.ThrowIf(disposed, this); await RestartInternal(value.Normalized); }
         finally { lifecycle.Release(); }
     }
-    public async Task RotateKeyAsync()
+    public async Task ReconnectAsync()
     {
         await lifecycle.WaitAsync();
-        try { identity.Rotate(); foreach (var client in clients.Values) client.Cancel(); }
+        try { ObjectDisposedException.ThrowIf(disposed, this); await RestartInternal(settings); }
+        finally { lifecycle.Release(); }
+    }
+    private async Task RestartInternal(MobileRemoteSettings value)
+    {
+        await StopInternal(); settings = value;
+        if (!settings.Enabled) { Publish(false, "disabled"); return; }
+        var relay = NormalizeRelay(settings.RelayURL.Length == 0 ? DefaultRelay : settings.RelayURL) ?? throw new ArgumentException("Invalid relay address.");
+        lifetime = new(); var current = ++generation; loop = RunAsync(relay, current, lifetime.Token);
+    }
+    public async Task RotateKeyAsync(string? expectedDeviceId = null)
+    {
+        await lifecycle.WaitAsync();
+        try { ObjectDisposedException.ThrowIf(disposed, this); if (expectedDeviceId is not null && !identity.Contains(expectedDeviceId, true)) return; identity.Rotate(); foreach (var client in clients.Values) client.Cancel(); }
         finally { lifecycle.Release(); }
         Publish(Status.Connected, Status.Detail);
     }
@@ -270,5 +280,5 @@ public sealed class MobileRelayHost : IAsyncDisposable
             catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException) { Cancel(); }
         }
     }
-    public async ValueTask DisposeAsync() { await lifecycle.WaitAsync(); try { await StopInternal(); } finally { lifecycle.Release(); } }
+    public async ValueTask DisposeAsync() { await lifecycle.WaitAsync(); try { if (disposed) return; disposed = true; await StopInternal(); } finally { lifecycle.Release(); } }
 }
