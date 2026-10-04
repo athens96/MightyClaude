@@ -17,10 +17,11 @@ public sealed partial class MainWindow : Window
     private readonly DesktopService service;
     /// <summary>Thumbnails of the pictures agents showed, shared by every transcript.</summary>
     private readonly AgentPictures pictures;
-    private readonly Grid root = new() { Padding = new Thickness(12), ColumnSpacing = 12, RowSpacing = 8, Background = WindowBackground(false) };
-    private static SolidColorBrush WindowBackground(bool light) => new(light
-        ? Windows.UI.Color.FromArgb(255, 245, 246, 249)
-        : Windows.UI.Color.FromArgb(255, 24, 26, 31));
+    /// <summary>The design-token brushes this window, its settings window and companion share; recoloured in place by <see cref="Render"/>.</summary>
+    internal readonly DesignBrushes brushes = new();
+    private readonly Grid root = new() { Padding = new Thickness(12), ColumnSpacing = 12, RowSpacing = 8 };
+    /// <summary>The window's background: the token <c>page</c>, one brush for every theme.</summary>
+    private SolidColorBrush WindowBackground() => brushes.Brush(DesignToken.Page);
     private readonly StackPanel sidebar = new() { Spacing = 10 };
     private readonly Grid panes = new() { ColumnSpacing = 12, RowSpacing = 12 };
     private readonly StackPanel workspaces = new() { Spacing = 4 };
@@ -50,11 +51,16 @@ public sealed partial class MainWindow : Window
     public MainWindow(StartupOptions options)
     {
         this.options = options;
+        DesignBrushes.ApplyControlResources(Application.Current.Resources); root.Background = WindowBackground();
         AppWindow.Resize(new SizeInt32(1440, 920));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MightyClaude.ico"));
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var legacy = new[] { "MightyClaude", "mighty-claude" }.Select(name => Path.Combine(appData, name)).FirstOrDefault(path => File.Exists(Path.Combine(path, "workspace-state.json")));
-        service = new(options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative"), options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
+        var profile = options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative");
+        // The splash paints before the state loads: give it the saved theme, not a navy flash.
+        var savedTheme = StateStore.SavedTheme(profile);
+        brushes.Apply(DesignTokens.Palette(savedTheme)); root.RequestedTheme = savedTheme == "light" ? ElementTheme.Light : ElementTheme.Dark;
+        service = new(profile, options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
         pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());
         coordinator = new(UpdateManualProvider);
@@ -157,8 +163,9 @@ public sealed partial class MainWindow : Window
     private void Render()
     {
         if (closing) return; rendering = true; var state = service.Snapshot;
+        brushes.Apply(DesignTokens.Palette(state.Theme));
         root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; darkTheme = state.Theme != "light";
-        root.Background = WindowBackground(state.Theme == "light"); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
+        root.Background = WindowBackground(); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar();
         RenderAccountUsage();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();
@@ -172,7 +179,7 @@ public sealed partial class MainWindow : Window
         ReconcileAgentIO();
         RefreshLoginCards();
         mobileRouter?.Changed();
-        if (settingsWindow?.Content is FrameworkElement settingsRoot) { settingsRoot.RequestedTheme = root.RequestedTheme; if (settingsRoot is Grid settingsFrame) settingsFrame.Background = WindowBackground(state.Theme == "light"); }
+        if (settingsWindow?.Content is FrameworkElement settingsRoot) { settingsRoot.RequestedTheme = root.RequestedTheme; if (settingsRoot is Grid settingsFrame) settingsFrame.Background = WindowBackground(); }
     }
     private static void Copy(string value) { var data = new DataPackage(); data.SetText(value); Clipboard.SetContent(data); }
 

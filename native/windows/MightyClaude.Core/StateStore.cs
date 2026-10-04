@@ -10,6 +10,31 @@ public sealed class StateStore(string directory, string? legacyDirectory = null)
     public string DirectoryPath { get; } = directory;
     public AppSnapshot Snapshot { get; private set; } = new();
     private string StatePath => Path.Combine(DirectoryPath, "workspace-state.json");
+
+    /// <summary>
+    /// The saved theme setting, read before the state loads so the launch splash paints in the
+    /// user's theme rather than a default one: the top-level <c>theme</c> of the saved state, or
+    /// "dark" (the <see cref="AppSnapshot"/> default) when there is no readable file. Never throws.
+    /// </summary>
+    public static string SavedTheme(string directory)
+    {
+        try
+        {
+            var path = Path.Combine(directory, "workspace-state.json");
+            if (!File.Exists(path) || new FileInfo(path).Length > 8 * 1024 * 1024) return "dark";
+            var reader = new Utf8JsonReader(File.ReadAllBytes(path));
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return "dark";
+            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var theme = reader.ValueTextEquals("theme");
+                if (!reader.Read()) break;
+                if (theme) return reader.TokenType == JsonTokenType.String ? reader.GetString() ?? "dark" : "dark";
+                reader.Skip();
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        return "dark";
+    }
     public async Task<AppSnapshot> LoadAsync()
     {
         await gate.WaitAsync();

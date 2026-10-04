@@ -91,24 +91,18 @@ public static class StatusGlyph
     };
 
     /// <summary>
-    /// The colour of a glyph's lines (#RRGGBB), from the macOS design palette
-    /// (<c>DesignPalette.glyph</c>): by day a line mark takes the tone's fill, by night the
-    /// tone's pale ink; the two discs are <see cref="DiscFill"/>; idle is the sidebar's quiet ink.
+    /// The colour of a glyph's lines (#RRGGBB), from the design palette
+    /// (<see cref="DesignPalette.Glyph"/>, macOS <c>DesignPalette.glyph</c>): by day a line mark takes
+    /// the tone's fill, by night the tone's pale ink; the two discs are <see cref="DiscFill"/>; idle
+    /// is the sidebar's quiet ink.
     /// </summary>
-    public static string GlyphHex(DesignTone tone, bool dark) => tone switch
-    {
-        DesignTone.Run => dark ? "#7FA3FF" : "#2A5FEE",
-        DesignTone.Done => dark ? "#5BD49A" : "#08804A",
-        DesignTone.Stop => dark ? "#A9B1C2" : "#667085",
-        DesignTone.Wait or DesignTone.Err => DiscFill(tone),
-        _ => dark ? "#A9B1C2" : "#4F5869",
-    };
+    public static string GlyphHex(DesignTone tone, bool dark) => DesignTokens.Palette(dark).Glyph(tone).Hex;
 
     /// <summary>The disc behind the "?" (amber) and the "!" (red); the same in both modes.</summary>
-    public static string DiscFill(DesignTone tone) => tone == DesignTone.Wait ? "#FFA81F" : "#D42F22";
+    public static string DiscFill(DesignTone tone) => DesignTokens.Light.DiscFill(tone).Hex;
 
     /// <summary>The "?" or "!" drawn on its disc: the amber takes its own dark ink, the red white.</summary>
-    public static string DiscInk(DesignTone tone) => tone == DesignTone.Wait ? "#2B1B00" : "#FFFFFF";
+    public static string DiscInk(DesignTone tone) => DesignTokens.Light.DiscInk(tone).Hex;
 
     /// <summary>
     /// The glyph's strokes on its 16-unit grid (the mockup's SVG), drawn with round caps and

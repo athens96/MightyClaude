@@ -513,6 +513,15 @@ internal static class Verification
         await Test("status glyph design A: glyph colours follow the macOS palette", StatusGlyphVerification.GlyphColoursFollowTheMacPalette);
         await Test("status glyph design A: glyph geometry matches the mockup", StatusGlyphVerification.GlyphGeometryMatchesTheMockup);
         await Test("status glyph design A: status words use the shared locale keys", StatusGlyphVerification.StatusWordsUseTheSharedLocaleKeys);
+        // native/contracts/fixtures/design-tokens.json is the palette macOS (DesignTokenParityTests) shares.
+        await Test("design tokens: every palette field equals native/contracts/fixtures/design-tokens.json in both themes", DesignTokenVerification.EveryFixtureHexEqualsThePaletteField);
+        await Test("design tokens: derived tones, glyph and outline colours match the fixture", DesignTokenVerification.DerivedTonesAndGlyphsMatchTheFixture);
+        await Test("design tokens: provider and Windows-only colours match the fixture", DesignTokenVerification.WindowsOnlyColoursMatchTheFixture);
+        await Test("design tokens: dashes convert to WinUI stroke units ([9,7] at 2pt is [4.5,3.5])", DesignTokenVerification.DashesConvertToStrokeUnits);
+        await Test("design tokens: metrics and opacities match the fixture", DesignTokenVerification.MetricsAndOpacitiesMatchTheFixture);
+        await Test("design tokens: only the light theme setting picks the light palette", DesignTokenVerification.ThemeSettingPicksThePalette);
+        await Test("design tokens: inks, fills and marks clear the macOS contrast rules", DesignTokenVerification.InksFillsAndMarksClearTheirContrast);
+        await Test("design tokens: the launch splash reads the saved theme before the state loads", DesignTokenVerification.TheSplashReadsTheSavedThemeBeforeTheStateLoads);
         await Test("agent marks: only an agent's sidebar row names its provider, so only it carries the mark", ProviderMarkVerification.OnlyAnAgentRowNamesItsProviderSoOnlyItCarriesTheMark);
         await Test("agent marks: marks are the macOS outlines in their brand colours", ProviderMarkVerification.MarksAreTheMacOutlinesInTheirBrandColours);
         await Test("agent marks: right-side cards put the mark before the agent name their title ends with", ProviderMarkVerification.RightSideCardsMarkTheAgentNameTheirTitleEndsWith);

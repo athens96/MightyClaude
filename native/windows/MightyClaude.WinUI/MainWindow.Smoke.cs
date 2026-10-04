@@ -187,20 +187,29 @@ public sealed partial class MainWindow
             result["paneReparentingAcrossImmediateTabAndSplitChanges"] = true;
             result["workspaceModesSelectionSplitDraftPreserved"] = true;
             var originalTheme = service.Snapshot.Theme;
+            var accentProbe = AddAccentProbe();
             try
             {
+                // 디자인 토큰 1단계: 두 테마 모두 창 배경이 공유 page 브러시이고 픽스처의 hex이며,
+                // 토글 전에 받은 브러시가 같은 인스턴스로 새 테마 색이 된다(같은 실행 창 재사용).
                 await service.UpdateAsync(s => s with { Theme = "light" }); Render();
-                Require(root.RequestedTheme == ElementTheme.Light && root.Background is SolidColorBrush { Color.A: 255 }, "밝은 테마의 창 배경이 불투명하지 않습니다.");
-                var lightColor = ((SolidColorBrush)root.Background).Color;
+                Checkpoint("designTokens", "running");
+                RequireDesignTokensInTheme(accentProbe);
+                var pageBrush = brushes.Brush(DesignToken.Page); var cardBrush = brushes.Brush(DesignToken.Card);
                 root.UpdateLayout(); await Task.Delay(120);
                 Checkpoint("lightThemeScreenshot", "running");
                 result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
                 Checkpoint("lightThemeScreenshot", "passed");
                 await service.UpdateAsync(s => s with { Theme = "dark" }); Render();
-                Require(root.RequestedTheme == ElementTheme.Dark && root.Background is SolidColorBrush { Color.A: 255 } dark && dark.Color.R < lightColor.R, "어두운 테마의 창 배경이 투명하거나 밝은 테마와 구분되지 않습니다.");
+                Checkpoint("designTokens", "running");
+                RequireDesignTokensInTheme(accentProbe);
+                RequireDesignBrushesRecolouredInPlace(pageBrush, cardBrush, "light");
+                Require(ReferenceEquals(pane, views[sessions[0].Id]), "designTokens: the theme toggle rebuilt the pane instead of reusing it");
+                result["designTokens"] = true;
+                Checkpoint("designTokens", "passed");
                 result["opaqueBackgroundInBothThemes"] = true;
             }
-            finally { await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }
+            finally { root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             var leakStrings = new List<string>();
             CollectVisibleStrings(root, leakStrings);
