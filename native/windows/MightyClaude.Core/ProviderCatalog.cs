@@ -103,6 +103,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     {
         var directories = (CliEnvironment.Current().GetValueOrDefault("PATH") ?? "").Split(Path.PathSeparator).Concat([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
         var candidates = directories.Select(path => new CliCommand(Path.Combine(path, provider + (OperatingSystem.IsWindows() ? ".exe" : "")), [])).ToList();
+        // npm's global install leaves only claude.cmd on PATH; the executable it forwards to sits inside the package.
+        if (OperatingSystem.IsWindows() && provider == "claude") candidates.AddRange(directories.Select(path => new CliCommand(Path.Combine(path, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"), [])));
         if (OperatingSystem.IsWindows() && provider != "claude")
         {
             var node = directories.Select(path => Path.Combine(path, "node.exe")).Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe")).FirstOrDefault(File.Exists);
