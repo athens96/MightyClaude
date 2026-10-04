@@ -46,7 +46,7 @@ public sealed class AgentTerminal : IAsyncDisposable
             command.Startup = Task.Run(() =>
             {
                 var shell = PseudoTerminal.DefaultShell;
-                var args = Path.GetFileNameWithoutExtension(shell).Equals("powershell", StringComparison.OrdinalIgnoreCase) ? new[] { "-NoLogo", "-NoProfile", "-Command", text } : new[] { "/d", "/s", "/c", text };
+                var args = PseudoTerminal.ShellArguments(shell, text, noProfile: true);
                 var process = PseudoTerminal.Start(directory, value => Receive(command, value), executable: shell, arguments: args);
                 lock (gate) command.Process = process;
             });
