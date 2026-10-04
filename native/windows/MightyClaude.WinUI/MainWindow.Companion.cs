@@ -17,7 +17,7 @@ public sealed partial class MainWindow
     private DispatcherTimer? companionTimer;
     private readonly Dictionary<string, ToolPermissionRequest> companionPermissions = [];
     private readonly Dictionary<string, CompanionQuestionDraft> companionQuestions = [];
-    private string? companionPinned, companionShown, companionLoadedPet, companionCardKey;
+    private string? companionPinned, companionShown, companionLoadedPet, companionCardKey, companionAutomatic;
     private string? companionError;
     private bool companionBubble, companionInitialized;
     private int companionRow, companionTicks;
@@ -46,11 +46,11 @@ public sealed partial class MainWindow
         companionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
         companionTimer.Tick += (_, _) =>
         {
-            if (closing || companionOverlay is null) return;
+            if (closing) return;
             try
             {
                 if (++companionTicks % 16 == 0) RefreshCompanion();
-                companionOverlay.Draw(companionRow, CompanionPet.Frame(companionRow, (DateTimeOffset.UtcNow - companionAnimationStart).TotalSeconds, companionPreferences.ReducedMotion));
+                if (companionPreferences.Enabled) companionOverlay?.Draw(companionRow, CompanionPet.Frame(companionRow, (DateTimeOffset.UtcNow - companionAnimationStart).TotalSeconds, companionPreferences.ReducedMotion), companionPreferences.ReducedMotion);
             }
             catch (Exception ex) { companionError = ex.Message; companionOverlay?.Dispose(); companionOverlay = null; }
         };
@@ -59,9 +59,10 @@ public sealed partial class MainWindow
     private async Task ReloadCompanionPets()
     {
         var generation = ++companionLoadGeneration;
-        companionPets = await Task.Run(() => CompanionPet.Catalog(Path.Combine(AppContext.BaseDirectory, "Assets", "pets"), StateDirectory,
+        var catalog = await Task.Run(() => CompanionPet.Catalog(Path.Combine(AppContext.BaseDirectory, "Assets", "pets"), StateDirectory,
             options.SmokeTest ? Path.Combine(StateDirectory, "smoke-codex") : null));
         if (generation != companionLoadGeneration || closing) return;
+        companionPets = catalog;
         companionOverlay?.Dispose(); companionOverlay = null; companionLoadedPet = null;
         if (!companionPreferences.Enabled || closing) return;
         var selected = companionPets.FirstOrDefault(p => p.Id == companionPreferences.SelectedPet) ?? companionPets.FirstOrDefault();
@@ -76,7 +77,7 @@ public sealed partial class MainWindow
             overlay.Resized += (width, height) => { companionPreferences = companionPreferences with { BubbleWidth = width, BubbleHeight = height }; SaveCompanionPreferences(); };
             companionOverlay = overlay; companionLoadedPet = pet.Id; companionError = null; RefreshCompanion(); overlay.Show(true);
         }
-        catch (Exception ex) { companionError = ex.Message; }
+        catch (Exception ex) { if (!closing && generation == companionLoadGeneration) companionError = ex.Message; }
     }
     private static async Task<byte[]> DecodeCompanionPet(CompanionPet pet)
     {
@@ -107,15 +108,17 @@ public sealed partial class MainWindow
     }
     private void RefreshCompanion()
     {
-        if (companionOverlay is null) return;
         var snapshot = service.Snapshot;
         foreach (var (key, request) in companionPermissions.ToArray()) if (!snapshot.Sessions.Any(s => s.Id == request.RunId && s.Status is "running" or "waiting" or "starting"))
         { companionPermissions.Remove(key); companionQuestions.Remove(key); if (companionQuestionWindowKey == key) companionQuestionWindow?.Close(); }
+        RefreshCompanionControls();
+        if (companionOverlay is null || !companionPreferences.Enabled) return;
         string Status(RunSession s) => companionPermissions.Values.Any(p => p.RunId == s.Id) || s.CurrentActivity?.State == "waiting" ? "waiting" : s.Status;
         var agents = snapshot.Sessions.Where(s => s.Kind == "claude").ToArray();
         var active = agents.Where(s => Status(s) is "running" or "waiting" or "starting" or "queued").Select(s => s.Id).ToArray();
         var automatic = agents.OrderByDescending(s => CompanionAnimation.Priority(Status(s))).ThenByDescending(s => s.RunTiming?.LastObservedAt ?? DateTimeOffset.MinValue).FirstOrDefault();
-        companionShown = CompanionCarousel.Shown(companionPinned, active, automatic?.Id);
+        companionAutomatic = automatic?.Id;
+        companionShown = CompanionCarousel.Shown(companionPinned, active, companionAutomatic);
         if (companionPinned is not null && !active.Contains(companionPinned)) companionPinned = null;
         var current = agents.FirstOrDefault(s => s.Id == companionShown); var status = current is null ? "idle" : Status(current);
         var stamp = current?.Id + "|" + current?.Logs.LastOrDefault(l => l.Kind == "user")?.Id;
@@ -160,6 +163,7 @@ public sealed partial class MainWindow
                 buttons.Add(new("deny", ToolPermissionStrings.ButtonDeny));
             }
         }
+        if (companionPermissions.Values.Any(p => p.RunId != current?.Id && active.Contains(p.RunId))) buttons.Add(new("pending", Locale.Get("companion.button.pending")));
         if (current is not null) buttons.Add(new("open", Locale.Get("companion.button.open")));
         companionOverlay.SetCard(new(companionCardKey, title, subtitle, body, page, buttons, snapshot.Theme == "light"), companionBubble);
     }
@@ -172,11 +176,15 @@ public sealed partial class MainWindow
     private void CompanionAction(string key, string action)
     {
         if (closing || key != companionCardKey) return;
-        if (action == "toggle") { companionBubble = !companionBubble; companionHideAt = null; RefreshCompanion(); return; }
+        if (action == "hide") { companionPreferences = companionPreferences with { Enabled = false }; SaveCompanionPreferences(); companionOverlay?.Show(false); RefreshCompanionControls(); return; }
+        if (action == "toggle") { if (!companionPreferences.ShowsTask) { companionPreferences = companionPreferences with { ShowsTask = true }; SaveCompanionPreferences(); companionBubble = true; } else companionBubble = !companionBubble; companionHideAt = null; RefreshCompanion(); return; }
+        if (action == "pending") { companionPinned = companionPermissions.Values.FirstOrDefault(p => p.RunId != companionShown)?.RunId; RefreshCompanion(); return; }
         if (action is "previous" or "next")
         {
             var agents = service.Snapshot.Sessions.Where(s => s.Kind == "claude" && (s.Status is "running" or "waiting" or "starting" or "queued" || companionPermissions.Values.Any(p => p.RunId == s.Id))).Select(s => s.Id).ToArray();
-            companionPinned = CompanionCarousel.Step(companionShown, agents, action == "next" ? 1 : -1) ?? companionPinned; RefreshCompanion(); return;
+            var next = CompanionCarousel.Step(companionShown, agents, action == "next" ? 1 : -1);
+            if (next is not null) companionPinned = next == companionAutomatic ? null : next;
+            RefreshCompanion(); return;
         }
         if (action == "open" && companionShown is { } shown) { FocusSession(shown); return; }
         if (companionPresentedPermission is not { } presented || !companionPermissions.TryGetValue(PermissionKey(presented), out var request)
@@ -213,7 +221,7 @@ public sealed partial class MainWindow
                 radios.Add(choice); choice.Checked += (_, _) => { if (!question.MultiSelect) { picks.Clear(); foreach (var other in radios.Where(r => r != choice)) other.IsChecked = false; draft.Custom.Remove(step); if (customInput is not null) customInput.Text = ""; } picks.Add(option.Label); };
                 choice.Unchecked += (_, _) => picks.Remove(option.Label); host.Children.Add(choice);
             }
-            var custom = new TextBox { Header = Locale.Get("companion.question.custom"), Text = draft.Custom.GetValueOrDefault(step) ?? "", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70, MaxLength = 8192 }; customInput = custom;
+            var custom = new TextBox { Header = Locale.Get("companion.question.custom"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70, MaxLength = 8192, Text = draft.Custom.GetValueOrDefault(step) ?? "" }; customInput = custom;
             custom.TextChanged += (_, _) => { draft.Custom[step] = custom.Text; if (!question.MultiSelect && !string.IsNullOrWhiteSpace(custom.Text)) { picks.Clear(); foreach (var choice in radios) choice.IsChecked = false; } }; host.Children.Add(custom);
             var error = new TextBlock { TextWrapping = TextWrapping.Wrap }; host.Children.Add(error);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -242,7 +250,7 @@ public sealed partial class MainWindow
         var content = new Grid { Padding = new Thickness(16), RowSpacing = 10, RequestedTheme = root.RequestedTheme };
         content.RowDefinitions.Add(new() { Height = GridLength.Auto }); content.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); content.RowDefinitions.Add(new() { Height = GridLength.Auto });
         content.Children.Add(new TextBlock { Text = window.Title, FontSize = 17, TextWrapping = TextWrapping.Wrap });
-        var text = new TextBox { Text = request.InputJson, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas") };
+        var text = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), Text = request.InputJson };
         var scroll = new ScrollViewer { Content = text, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(scroll, 1); content.Children.Add(scroll);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; var error = new TextBlock { TextWrapping = TextWrapping.Wrap };
         Task Respond(bool allow)
@@ -260,6 +268,17 @@ public sealed partial class MainWindow
     {
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(new TextBlock { Text = Locale.Get("companion.settings.description"), TextWrapping = TextWrapping.Wrap });
+        var preview = new Image { Width = 58, Height = 64, HorizontalAlignment = HorizontalAlignment.Left }; panel.Children.Add(preview);
+        int previewGeneration = 0;
+        async Task RefreshPreview()
+        {
+            var generation = ++previewGeneration;
+            var selected = companionPets.FirstOrDefault(p => p.Id == companionPreferences.SelectedPet) ?? companionPets.FirstOrDefault();
+            if (selected is null) { preview.Source = null; return; }
+            try { var pet = await Task.Run(() => CompanionPet.Load(selected.Source, selected.Id)); var image = await CompanionPreview(pet); if (generation == previewGeneration) preview.Source = image; }
+            catch (Exception ex) { if (generation == previewGeneration) { preview.Source = null; companionError = ex.Message; } }
+        }
+        panel.Loaded += async (_, _) => await RefreshPreview();
         var enabled = new ToggleSwitch { Header = Locale.Get("companion.settings.enabled"), IsOn = companionPreferences.Enabled };
         enabled.Toggled += async (_, _) => { companionPreferences = companionPreferences with { Enabled = enabled.IsOn }; SaveCompanionPreferences(); await ReloadCompanionPets(); }; panel.Children.Add(enabled);
         var task = new ToggleSwitch { Header = Locale.Get("companion.settings.task"), IsOn = companionPreferences.ShowsTask };
@@ -270,16 +289,16 @@ public sealed partial class MainWindow
         alerts.Toggled += async (_, _) => { companionPreferences = companionPreferences with { Notifications = alerts.IsOn }; SaveCompanionPreferences(); await service.UpdateAsync(s => s with { CompletionNotificationsEnabled = alerts.IsOn }); }; panel.Children.Add(alerts);
         var picker = new ComboBox { Header = Locale.Get("companion.settings.pet"), HorizontalAlignment = HorizontalAlignment.Stretch };
         void Populate() { picker.Items.Clear(); foreach (var pet in companionPets) picker.Items.Add(new ComboBoxItem { Content = pet.Name + (pet.Id.StartsWith("codex:", StringComparison.Ordinal) ? " · Codex" : ""), Tag = pet.Id }); picker.SelectedItem = picker.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == (companionLoadedPet ?? companionPreferences.SelectedPet)); }
-        Populate(); picker.SelectionChanged += async (_, _) => { if (picker.SelectedItem is not ComboBoxItem { Tag: string id } || id == companionPreferences.SelectedPet) return; companionPreferences = companionPreferences with { SelectedPet = id }; SaveCompanionPreferences(); await ReloadCompanionPets(); }; panel.Children.Add(picker);
+        Populate(); picker.SelectionChanged += async (_, _) => { if (picker.SelectedItem is not ComboBoxItem { Tag: string id } || id == companionPreferences.SelectedPet) return; companionPreferences = companionPreferences with { SelectedPet = id }; SaveCompanionPreferences(); await ReloadCompanionPets(); await RefreshPreview(); }; panel.Children.Add(picker);
         var message = new TextBlock { Text = companionError ?? "", TextWrapping = TextWrapping.Wrap }; panel.Children.Add(message);
         panel.Children.Add(Button(Locale.Get("companion.settings.import"), async () =>
         {
             var files = new FileOpenPicker(); foreach (var extension in new[] { ".json", ".png", ".webp" }) files.FileTypeFilter.Add(extension); WinRT.Interop.InitializeWithWindow.Initialize(files, WinRT.Interop.WindowNative.GetWindowHandle(settingsWindow ?? this));
             var chosen = await files.PickSingleFileAsync(); if (chosen is null) return;
-            try { var pet = await Task.Run(() => CompanionPet.Load(chosen.Path, "import")); await DecodeCompanionPet(pet); var installed = await Task.Run(() => pet.Install(StateDirectory)); companionPreferences = companionPreferences with { SelectedPet = installed.Id }; SaveCompanionPreferences(); await ReloadCompanionPets(); Populate(); message.Text = companionError ?? ""; }
+            try { var pet = await Task.Run(() => CompanionPet.Load(chosen.Path, "import")); await DecodeCompanionPet(pet); var installed = await Task.Run(() => pet.Install(StateDirectory)); companionPreferences = companionPreferences with { SelectedPet = installed.Id }; SaveCompanionPreferences(); await ReloadCompanionPets(); Populate(); await RefreshPreview(); message.Text = companionError ?? ""; }
             catch (Exception ex) { message.Text = ex.Message; }
         }));
-        panel.Children.Add(Button(Locale.Get("companion.settings.reload"), async () => { await ReloadCompanionPets(); Populate(); message.Text = companionError ?? ""; }));
+        panel.Children.Add(Button(Locale.Get("companion.settings.reload"), async () => { await ReloadCompanionPets(); Populate(); await RefreshPreview(); message.Text = companionError ?? ""; }));
         panel.Children.Add(Button(Locale.Get("companion.settings.resetPosition"), async () => { companionPreferences = companionPreferences with { Left = null, Top = null, BubbleWidth = null, BubbleHeight = null }; SaveCompanionPreferences(); await ReloadCompanionPets(); }));
         return panel;
     }
@@ -292,6 +311,7 @@ public sealed partial class MainWindow
     {
         var pet = CompanionPet.Load(Path.Combine(AppContext.BaseDirectory, "Assets", "pets", "mighty-raccoon"), "mighty-raccoon");
         var pixels = await DecodeCompanionPet(pet); var foreground = CompanionOverlay.ForegroundWindow;
+        var preview = await CompanionPreview(pet); Require(preview.PixelWidth == 192 && preview.PixelHeight == 208, "Companion preview must crop exactly the first atlas frame.");
         using var overlay = new CompanionOverlay(new CompanionPreferences()); overlay.SetAtlas(pixels);
         var clicks = new List<string>(); overlay.Action += (key, action) => clicks.Add(key + ":" + action);
         overlay.SetCard(new("smoke-pet", "Mighty Claude", "Claude · 1 / 2", "\uD55C\uAD6D\uC5B4 \uC785\uB825 \uD3EC\uCEE4\uC2A4\uB97C \uC720\uC9C0\uD569\uB2C8\uB2E4.", "1 / 2", [new("answer", "Answer / \uC751\uB2F5")]), true);
@@ -300,7 +320,9 @@ public sealed partial class MainWindow
         Require(overlay.NonActivating && CompanionOverlay.ForegroundWindow == foreground, "Companion stole foreground focus.");
         Require(overlay.SmokeClick("answer") && clicks.SequenceEqual(new[] { "smoke-pet:answer" }), "Companion pointer action did not match the displayed card.");
         Require(CompanionOverlay.ForegroundWindow == foreground, "Companion click stole foreground focus.");
+        overlay.SmokeContextMenu(); overlay.Draw(0, 0);
+        Require(overlay.SmokeClick("menu-close") && CompanionOverlay.ForegroundWindow == foreground, "Companion context actions stole focus or could not close.");
         return new() { ["bundledAtlasDecoded"] = pixels.Length == pet.Width * pet.Height * 4, ["allAnimationRowsRendered"] = true,
-            ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["physicalInputTested"] = false };
+            ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["selectedPetPreview"] = true, ["contextMenuNonActivating"] = true, ["physicalInputTested"] = false };
     }
 }

@@ -141,7 +141,17 @@ public sealed partial class MainWindow
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
         menu.Items.Add(OpenFilesMenuItem(id));
-        menu.Items.Add(MenuItem(Locale.Get("workspace.menu.remove"), () => Act(async () => { await service.RemoveWorkspaceAsync(id); Render(); })));
+        menu.Items.Add(MenuItem(Locale.Get("workspace.menu.remove"), () => ConfirmRemoveWorkspace(id)));
+        menu.Items.Add(MenuItem(Locale.Get("menu.showInExplorer"), () => Act(() =>
+        {
+            var workspace = service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == id);
+            if (workspace is not null && WorkspaceFiles.RealPath(workspace.Path) is { } path && Directory.Exists(path))
+            {
+                var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")) { UseShellExecute = false };
+                start.ArgumentList.Add(path); using var process = System.Diagnostics.Process.Start(start);
+            }
+            return Task.CompletedTask;
+        })));
         return menu;
     }
     private MenuFlyout SessionMenu(string id)
@@ -152,6 +162,8 @@ public sealed partial class MainWindow
         menu.Opening += (_, _) => rename.IsEnabled = !dialogOpen;
         menu.Items.Add(rename);
         menu.Items.Add(MenuItem(Locale.Get("session.menu.focus"), () => Act(async () => { await SelectLayoutSession(id); await ApplyLayoutPreset(LayoutMode(service.Snapshot, service.Snapshot.ActiveWorkspaceId) == "focus" ? "custom" : "focus"); })));
+        if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id)?.Kind == "shell")
+            menu.Items.Add(MenuItem(Locale.Get("terminal.history.title"), () => Act(() => ShowTerminalHistory(id))));
         menu.Items.Add(MenuItem(Locale.Get("session.menu.close"), () => CloseSession(id)));
         return menu;
     }

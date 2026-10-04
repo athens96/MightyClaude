@@ -38,6 +38,17 @@ public sealed class StyleEvaluator(StyleManifest manifest)
         if(id is null&&capabilities!=null&&capabilities.TryGetValue(S(rule,"capability")!,out var state))id=S(rule.GetProperty("map"),state);
         return Manifest.Groups.FirstOrDefault(g=>g.Id==id)??Manifest.Groups.FirstOrDefault();
     }
+    public bool DrawsPhaseProgress => S(Manifest.Rules.GetProperty("next"),"kind")=="byPhase";
+    public bool DrawsGroupMap => !DrawsPhaseProgress && Manifest.Groups.Length>=2 && Manifest.Groups.Any(g=>g.Axis is not null);
+    public string? ResetTitle => S(Manifest.Rules.GetProperty("start"),"resetTitle");
+    public string? RecommendGroupId => S(Manifest.Rules.GetProperty("recommend"),"group");
+    public string? RecommendedAction(IReadOnlyDictionary<string,string> capabilities)
+    {
+        var rule=Manifest.Rules.GetProperty("recommend");
+        return S(rule,"kind")=="capability" && capabilities.TryGetValue(S(rule,"capability")!,out var state) ? S(rule.GetProperty("map"),state) : null;
+    }
+    public StylePhase? EffectivePhase(StylePhase? phase,bool startingNew) => startingNew && S(Manifest.Rules.GetProperty("start"),"kind")=="actions" ? Manifest.Phases.FirstOrDefault(p=>p.Id==S(Manifest.Rules.GetProperty("start"),"phase")) : phase;
+    public bool AtStart(StylePhase? phase) => S(Manifest.Rules.GetProperty("start"),"kind")=="actions" && phase?.Id==S(Manifest.Rules.GetProperty("start"),"phase");
     public StyleAction[] VisibleActions(StylePhase? phase,StyleGroup? group,bool running,bool jobOpen=false,bool startingNew=false)
     {
         var start=Manifest.Rules.GetProperty("start");var next=Manifest.Rules.GetProperty("next");string[] ids;

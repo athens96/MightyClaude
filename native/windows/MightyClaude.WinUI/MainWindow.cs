@@ -90,6 +90,7 @@ public sealed partial class MainWindow : Window
         var sideHost = new Grid { RowSpacing = 10 }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
         var navigation = new StackPanel { Spacing = 6 }; navigation.Children.Add(layout);
+        navigation.Children.Add(BuildCompanionControls());
         settingsButton = Button("", OpenSettings); navigation.Children.Add(settingsButton); ApplyChromeText(); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
         workspaces.SelectionChanged += async (_, _) => { if (!rendering && workspaces.SelectedItem is ListViewItem { Tag: string id }) await SelectWorkspace(id); };
@@ -145,7 +146,7 @@ public sealed partial class MainWindow : Window
     {
         await Act(async () => { var picker = new FolderPicker(); picker.FileTypeFilter.Add("*"); WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this)); if (await picker.PickSingleFolderAsync() is { } folder) { await service.AddWorkspaceAsync(folder.Path); HideDashboard(); Render(); } });
     }
-    private async Task RemoveWorkspace() { await Act(async () => { if (service.Snapshot.ActiveWorkspaceId is { } id) { await service.RemoveWorkspaceAsync(id); Render(); } }); }
+    private Task RemoveWorkspace() => service.Snapshot.ActiveWorkspaceId is { } id ? ConfirmRemoveWorkspace(id) : Task.CompletedTask;
     private async Task AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
     {
         await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); HideDashboard(); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, service.Snapshot.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
@@ -281,6 +282,7 @@ public sealed partial class MainWindow : Window
             ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(input, ScrollBarVisibility.Disabled);
             attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(5); attach.CornerRadius = new CornerRadius(16); attach.Content = new SymbolIcon(Symbol.Attach); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
+            InitializeAttachmentMenu();
             var controls = new FrameworkElement[] { attach, provider, model, effort, permission, fast, more };
             for (var index = 0; index < controls.Length; index++) { selectors.ColumnDefinitions.Add(new() { Width = index == 2 ? new(1, GridUnitType.Star) : GridLength.Auto }); Grid.SetColumn(controls[index], index); controls[index].VerticalAlignment = VerticalAlignment.Center; selectors.Children.Add(controls[index]); }
             model.HorizontalAlignment = HorizontalAlignment.Stretch; model.HorizontalContentAlignment = HorizontalAlignment.Left; model.MaxWidth = double.PositiveInfinity; model.MinWidth = 0;
@@ -295,6 +297,7 @@ public sealed partial class MainWindow : Window
             Container = new Border { Child = grid, BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray), CornerRadius = new CornerRadius(10) };
             InitializeQueuedComposer(composer, bottom);
             InitializeLoginRecoveryCard(composer);
+            InitializeAgentWebPrompts(composer);
             InitializeTerminal(grid, composerScroll, copy);
             Container.SizeChanged += (_, args) => composerScroll.MaxHeight = Math.Max(150, args.NewSize.Height - 144);
             fast.Click += async (_, _) => { if (!updating) await ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode }); };
@@ -388,12 +391,13 @@ public sealed partial class MainWindow : Window
             canSend = !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; send.FontSize = busy ? 13 : 20;
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
-            context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; context.Content = pane.SessionUsage?.ContextPercent is { } percent ? $"{percent:0}%" : "—";
+            context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();
             ToolTipService.SetToolTip(context, pane.SessionUsage?.ContextPercent is null ? Locale.Get("composer.context.unavailable") : Locale.Get("composer.context.tooltip"));
             foreach (var control in selectors.Children.OfType<Control>()) control.IsEnabled = !busy;
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
+            RefreshStyleComposer();
         }
         private Task PickAttachments() => LoadAttachments(async () =>
         {
@@ -437,7 +441,7 @@ public sealed partial class MainWindow : Window
         {
             var content = new StackPanel { Spacing = 10, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", FontSize = 11 });
             if (file.MediaType.StartsWith("image/", StringComparison.Ordinal)) content.Children.Add(new Image { Source = await AttachmentInput.PreviewAsync(file), MaxHeight = 420, Stretch = Stretch.Uniform });
-            else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
+            else if (file.MediaType == "text/plain") { var text = System.Text.Encoding.UTF8.GetString(AttachmentSupport.Decode(file)); content.Children.Add(new TextBox { AcceptsReturn = true, Text = text[..Math.Min(text.Length, 20000)], IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 350 }); }
             else content.Children.Add(new TextBlock { Text = Locale.Get("composer.attachment.sentAsFile"), TextWrapping = TextWrapping.Wrap });
             await new ContentDialog { Title = file.Name, Content = content, CloseButtonText = Locale.Get("settings.closeButton"), XamlRoot = owner.root.XamlRoot }.ShowAsync();
         });
@@ -475,6 +479,8 @@ public sealed partial class MainWindow : Window
             var providers = new MenuFlyout(); foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.BetaLabel(value, ProviderCatalog.Name(value)), () => owner.Act(async () => { if (Session.Status == "running" || Session.Provider == value) return; await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); }), pane.Provider == value)); provider.Flyout = providers;
             var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, ModelLabel.Selection(pane, catalog) + " ⌄", Locale.Get("composer.label.model")); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
             var models = new MenuFlyout(); foreach (var row in ModelLabel.PickerOptions(pane, catalog)) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
+            models.Items.Insert(0, new MenuFlyoutSeparator());
+            models.Items.Insert(0, Item(Locale.Get("composer.model.refresh"), RefreshPaneModels));
             if (pane.Provider != "gemini") { models.Items.Add(new MenuFlyoutSeparator()); models.Items.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); } model.Flyout = models;
             var registeredModels2 = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot);
             var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels2); var knownEffort = pane.Settings.Effort == "default" || levels.Contains(pane.Settings.Effort);
@@ -525,7 +531,7 @@ public sealed partial class MainWindow : Window
             if (pane.Kind == "claude")
             {
                 if (menu.Items.Count > 0) menu.Items.Add(new MenuFlyoutSeparator());
-                menu.Items.Add(Item(Locale.Get("composer.newConversation"), () => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); })));
+                menu.Items.Add(Item(Locale.Get("composer.newConversation"), () => owner.Act(ResetConversation)));
             }
             if (menu.Items.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = Locale.Get("composer.more.empty"), IsEnabled = false });
             return menu;

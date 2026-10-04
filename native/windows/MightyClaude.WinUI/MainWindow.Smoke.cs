@@ -49,6 +49,7 @@ public sealed partial class MainWindow
             var pane = views[sessions[0].Id];
             result["composerAndTranscript"] = await pane.RunComposerSmoke();
             result["styles"] = await pane.RunStylesSmoke();
+            result["smallParity"] = await RunSmallParitySmoke(workspace);
             result["companion"] = await RunCompanionSmoke();
             result["screenCapture"] = await WindowsScreenCapture.SmokeAsync();
             result["screenTransport"] = await WindowsScreenTransportSmoke.RunAsync(root, directory);
@@ -80,6 +81,7 @@ public sealed partial class MainWindow
             result[PluginMarketplaceSmokeOutcome.ResultKey] = await RunPluginMarketplaceSmoke();
             var mightyLeakStrings = new List<string>();
             result["mightyGraph"] = await RunMightyGraphSmoke(pane, workspace, mightyLeakStrings);
+            result["mightyTimeline"] = await pane.RunTimelineSmoke();
             var browserLeakStrings = new List<string>();
             result["browserPane"] = await RunBrowserPaneSmoke(workspace, browserLeakStrings);
             var filesLeakStrings = new List<string>();

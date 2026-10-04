@@ -218,7 +218,7 @@ public static class MightyGraphBlockModel
         _ => Locale.Get("graph.state.running"),
     };
 
-    /// <summary>The main request block's title: `요청 N · Claude` (style prefixes are out of scope).</summary>
+    /// <summary>The app-owned request title tail: `요청 N · Claude`; guided views may prepend an approved style title.</summary>
     public static string RequestTitle(int ordinal, string providerLabel) =>
         Locale.Get("graph.block.requestTitle", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(), ["provider"] = providerLabel });
 

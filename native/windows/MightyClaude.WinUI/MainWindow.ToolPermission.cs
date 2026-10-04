@@ -105,6 +105,7 @@ public sealed partial class MainWindow
         private void RenderToolPermissions(bool preserveQuestionnaire = false)
         {
             var pending = toolPermissions.Where(p => p.State == "pending").ToList();
+            RenderGuidedStyle();
             if (pending.Count == 0) { HideQuestionnaire(); toolPermissionHost.Visibility = Visibility.Collapsed; return; }
             var current = pending[0];
             if (TryRenderQuestionnaire(current, pending.Count, preserveQuestionnaire)) return;

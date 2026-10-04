@@ -144,6 +144,7 @@ public sealed partial class MainWindow
             };
             graphViewport.IsTabStop = true;
             Grid.SetRow(graphViewport, 1); graphHost.Children.Add(graphViewport);
+            BuildMightyTimeline();
             Grid.SetRow(graphHost, 1); grid.Children.Add(graphHost);
 
             // A finished request records a graph run on this session; redraw the
@@ -166,10 +167,13 @@ public sealed partial class MainWindow
         private Grid BuildGraphToolbar()
         {
             var bar = new Grid { ColumnSpacing = 6, Padding = new Thickness(2, 0, 2, 6) };
+            bar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            bar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             AutomationProperties.SetAutomationId(graphTotal, "mighty-tokens-" + id);
-            bar.Children.Add(graphTotal);
+            var summary = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            summary.Children.Add(graphStyleHeader); summary.Children.Add(graphTotal); bar.Children.Add(summary);
             var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
             zoomOutButton = ZoomPill(Locale.Get(MightyGraphViewModel.LocaleKeyZoomOut), "mighty-zoom-out-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomOut(graphZoom)));
             zoomResetButton = ZoomPill(MightyGraphViewModel.ZoomLabel(graphZoom), "mighty-zoom-reset-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomDefault));
@@ -177,7 +181,20 @@ public sealed partial class MainWindow
             AutomationProperties.SetName(zoomResetButton, Locale.Get(MightyGraphViewModel.LocaleKeyZoomReset));
             zoomInButton = ZoomPill(Locale.Get(MightyGraphViewModel.LocaleKeyZoomIn), "mighty-zoom-in-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomIn(graphZoom)));
             zoom.Children.Add(zoomOutButton); zoom.Children.Add(zoomResetButton); zoom.Children.Add(zoomInButton);
-            Grid.SetColumn(zoom, 1); bar.Children.Add(zoom);
+            graphZoomControls = zoom;
+            var controls = new PillWrapPanel();
+            controls.Children.Add(BuildGraphPresentationSwitch()); controls.Children.Add(zoom);
+            Grid.SetColumn(controls, 1); bar.Children.Add(controls);
+            void FitToolbar(double width)
+            {
+                var narrow = width < 540;
+                Grid.SetColumnSpan(summary, narrow ? 2 : 1);
+                Grid.SetRow(controls, narrow ? 1 : 0); Grid.SetColumn(controls, narrow ? 0 : 1); Grid.SetColumnSpan(controls, narrow ? 2 : 1);
+                controls.MaxWidth = Math.Max(1, width - 4); controls.Margin = new Thickness(0, narrow ? 4 : 0, 0, 0);
+            }
+            bar.SizeChanged += (_, args) => FitToolbar(args.NewSize.Width);
+            FitToolbar(Container.ActualWidth > 0 ? Container.ActualWidth : 500);
+            graphToolbar = bar;
             return bar;
         }
 
@@ -221,7 +238,12 @@ public sealed partial class MainWindow
             ((TextBlock)modeMightyButton.Content).FontWeight = mighty ? FontWeights.SemiBold : FontWeights.Normal;
             graphHost.Visibility = mighty ? Visibility.Visible : Visibility.Collapsed;
             output.View.Visibility = mighty ? Visibility.Collapsed : Visibility.Visible;
-            if (mighty) DrawGraph(pane);
+            var timeline = mighty && MightyTimeline.Mode(pane) == "timeline";
+            RefreshGraphPresentationSwitch(timeline);
+            if (graphViewport is not null) graphViewport.Visibility = timeline ? Visibility.Collapsed : Visibility.Visible;
+            if (timelineScroll is not null) timelineScroll.Visibility = timeline ? Visibility.Visible : Visibility.Collapsed;
+            if (mighty && timeline) DrawMightyTimeline(pane);
+            else if (mighty) DrawGraph(pane);
             // Hidden, the diagram watches nothing: a result that finishes meanwhile is not revealed.
             else { graphReveal = new(); graphRunProgress = null; graphRevealPendingId = null; }
         }
@@ -263,6 +285,12 @@ public sealed partial class MainWindow
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
             // `요청 N · Claude`: the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
+            for (var i = 0; i < runs.Count; i++)
+            {
+                var nodeId = MightyGraphLayout.NodeID(runs[i], "request");
+                var at = blocks.FindIndex(block => block.Id == nodeId);
+                if (at >= 0) blocks[at] = blocks[at] with { Title = GraphRequestTitle(runs[i], i + 1) };
+            }
 
             foreach (var transcript in graphTranscripts.Values)
                 if (transcript.View.Parent is Panel parent) parent.Children.Remove(transcript.View);
@@ -453,7 +481,14 @@ public sealed partial class MainWindow
             // A request block's title ends with its agent's name; its mark goes before it.
             var title = ProviderMarkView.Labelled(block.Title, MightyGraphBlockModel.TitleProvider(block, Session.Provider), 12, FontWeights.SemiBold);
             graphTitles[block.Id] = title;
-            header.Children.Add(title);
+            if (block.Kind == "request")
+            {
+                var look = RequestStyleLook(block.Request);
+                var labelled = new Grid { ColumnSpacing = 5 }; labelled.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); labelled.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+                labelled.Children.Add(new TextBlock { Text = look.Icon, FontSize = 11, Foreground = new SolidColorBrush(StyleColor(look.Tint)), VerticalAlignment = VerticalAlignment.Center });
+                Grid.SetColumn(title, 1); labelled.Children.Add(title); header.Children.Add(labelled);
+            }
+            else header.Children.Add(title);
 
             var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
             if (graphSelection == block.Id)

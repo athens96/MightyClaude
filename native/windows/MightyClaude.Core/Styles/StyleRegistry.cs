@@ -28,7 +28,7 @@ public sealed class StyleTrustStore(string directory)
         if(!File.Exists(FilePath))return [];
         if(!Private(DirectoryPath,true)||!Private(FilePath,false))throw new IOException(Locale.Get("settings.styles.lockBanner"));
         var bytes=StyleFiles.Read(DirectoryPath,"approvals.json",4*1024*1024)??throw new IOException(Locale.Get("settings.styles.lockBanner"));
-        try{var store=JsonSerializer.Deserialize<Store>(bytes,Wire.Json);if(store is null||store.Version!=1||store.Records.Count>256||store.Records.Any(r=>r.State is not("approved" or "revoked")||r.Source is not("user" or "workspace")||r.Hash.Length!=64))throw new JsonException();return store.Records;}
+        try{var store=JsonSerializer.Deserialize<Store>(bytes,Wire.Json);if(store is null||store.Version!=1||store.Records is null||store.Records.Count>256||store.Records.Any(r=>r is null||r.State is not("approved" or "revoked")||r.Source is not("user" or "workspace")||r.Hash is not {Length:64}))throw new JsonException();return store.Records;}
         catch(JsonException){throw new IOException(Locale.Get("settings.styles.lockBanner"));}
     }
     public string State(RegisteredStyle style)
@@ -92,18 +92,21 @@ public sealed class StyleRegistry
 {
     public IReadOnlyList<RegisteredStyle> Styles {get;}
     public IReadOnlyList<StyleRejection> Rejections {get;}
-    private StyleRegistry(List<RegisteredStyle> styles,List<StyleRejection> rejections){Styles=styles;Rejections=rejections;}
+    public bool TrustLocked {get;}
+    private StyleRegistry(List<RegisteredStyle> styles,List<StyleRejection> rejections,bool locked){Styles=styles;Rejections=rejections;TrustLocked=locked;}
     public RegisteredStyle? Runnable(string? id,string? hash)=>Styles.FirstOrDefault(s=>s.Id==id&&s.Runnable&&(s.Source=="bundled"||s.Hash==hash));
     public static StyleRegistry Load(string profile,string workspace)
     {
         var styles=new List<RegisteredStyle>();var errors=new List<StyleRejection>();var trust=new StyleTrustStore(System.IO.Path.Combine(profile,"style-trust"));
+        var locked=false;
+        try{trust.Load();}catch(Exception e)when(e is IOException or UnauthorizedAccessException){locked=true;errors.Add(new(System.IO.Path.Combine(trust.DirectoryPath,"approvals.json"),"E_TRUST_LOCKED",e.Message));}
         void Add(byte[] bytes,string source,string path,string? root)
         {
             try
             {
                 var manifest=StyleManifestDecoder.Decode(bytes,source);if(styles.Any(s=>s.Id==manifest.Id))throw new StyleManifestException("E_ID_COLLISION",manifest.Id);
                 var style=new RegisteredStyle(manifest,source,path,root,Convert.ToHexStringLower(SHA256.HashData(bytes)),source=="bundled"?"preApproved":"pending",bytes);
-                style=style with{Approval=trust.State(style)};styles.Add(style);
+                style=style with{Approval=locked?(source=="bundled"?"preApproved":"pending"):trust.State(style)};styles.Add(style);
             }
             catch(StyleManifestException e){errors.Add(new(path,e.Code,e.Message));}
             catch(IOException e){errors.Add(new(path,"E_TRUST_LOCKED",e.Message));}
@@ -119,7 +122,7 @@ public sealed class StyleRegistry
             {var rel=System.IO.Path.GetRelativePath(root,path);if(StyleFiles.Read(root,rel,StyleManifestDecoder.MaximumBytes+1) is {} bytes)Add(bytes,source,WorkspaceFiles.RealPath(path)!,source=="workspace"?WorkspaceFiles.RealPath(workspace):null);}}
             catch(Exception e)when(e is IOException or UnauthorizedAccessException){errors.Add(new(folder,"E_READ",StyleText.Safe(e.Message)));}
         }
-        Scan(profile,"styles","user");Scan(workspace,".claude/mighty-styles","workspace");return new(styles,errors);
+        Scan(profile,"styles","user");Scan(workspace,".claude/mighty-styles","workspace");return new(styles,errors,locked);
     }
     /// Re-read the exact location immediately before an approval or invocation.
     public static bool Unchanged(RegisteredStyle style)

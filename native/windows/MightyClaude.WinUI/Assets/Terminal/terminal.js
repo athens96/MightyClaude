@@ -6,6 +6,8 @@ terminal.open(document.getElementById('terminal'));
 const send = message => window.chrome.webview.postMessage(message);
 terminal.onData(text => send({type:'input',text}));
 terminal.onResize(size => send({type:'resize',columns:size.cols,rows:size.rows}));
+terminal.onTitleChange(title => send({type:'title',title:title.slice(0,200)}));
+terminal.parser.registerOscHandler(7,url => { if(url.length<=8192) send({type:'directory',url}); return true; });
 terminal.attachCustomKeyEventHandler(event => {
   if (!event.ctrlKey || event.altKey || event.type !== 'keydown' || event.isComposing) return true;
   // Physical codes also work while the Korean keyboard layout is selected.
@@ -21,6 +23,7 @@ window.chrome.webview.addEventListener('message',event => {
   if(msg.type==='output') terminal.write(msg.text);
   if(msg.type==='paste') terminal.paste(msg.text);
   if(msg.type==='focus') terminal.focus();
+  if(msg.type==='reset') { terminal.reset(); fit.fit(); }
   if(msg.type==='theme') {
     terminal.options.theme = msg.light ? {background:'#f5f6f9',foreground:'#17191d'} : {background:'#181a1f',foreground:'#e2e5eb'};
     document.body.style.background=terminal.options.theme.background;
