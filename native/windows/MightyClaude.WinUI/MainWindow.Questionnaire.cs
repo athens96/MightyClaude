@@ -44,10 +44,11 @@ public sealed partial class MainWindow
             var step = draft.Step; var question = questionnaire.Questions[step];
             var body = new StackPanel { Spacing = 10 };
             var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            header.Children.Add(new TextBlock { Text = "?", FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
-            header.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-            header.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.progress", new Dictionary<string, string> { ["current"] = (step + 1).ToString(), ["total"] = questionnaire.Questions.Count.ToString() }), FontSize = 11, Opacity = .7 });
-            questionnaireWaiting = new TextBlock { FontSize = 11 }; UpdateQuestionnaireWaiting(count); header.Children.Add(questionnaireWaiting);
+            var ink = owner.brushes.Brush(DesignToken.Ink); var ink2 = owner.brushes.Brush(DesignToken.Ink2);
+            header.Children.Add(new TextBlock { Text = "?", FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = owner.brushes.Brush(DesignToken.WaitText) });
+            header.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.title"), FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink });
+            header.Children.Add(new TextBlock { Text = Locale.Get("phone.questionnaire.progress", new Dictionary<string, string> { ["current"] = (step + 1).ToString(), ["total"] = questionnaire.Questions.Count.ToString() }), FontSize = 11, Foreground = ink2 });
+            questionnaireWaiting = new TextBlock { FontSize = 11, Foreground = ink2 }; UpdateQuestionnaireWaiting(count); header.Children.Add(questionnaireWaiting);
             body.Children.Add(header);
             var dots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
             for (var index = 0; index < questionnaire.Questions.Count; index++)
@@ -55,14 +56,14 @@ public sealed partial class MainWindow
                 var target = index;
                 var dot = Button((index + 1).ToString(), () => { draft.Step = target; RenderToolPermissions(); return Task.CompletedTask; });
                 dot.IsEnabled = !draft.Sending && (index <= step || Enumerable.Range(0, index).All(draft.Answered)); dot.MinWidth = 24; dot.MinHeight = 24; dot.Padding = new(4, 1, 4, 1);
-                if (index == step) dot.Background = new SolidColorBrush(Colors.Goldenrod);
+                if (index == step) owner.PaintPlainButton(dot, owner.brushes.Brush(DesignToken.Wait), owner.brushes.Brush(DesignToken.Wait), ink: owner.brushes.Brush(DesignToken.OnWait));
                 AutomationProperties.SetName(dot, Locale.Get("phone.questionnaire.jump", new Dictionary<string, string> { ["index"] = (index + 1).ToString() }));
                 dots.Children.Add(dot);
             }
             if (questionnaire.Questions.Count > 1) body.Children.Add(dots);
             var section = new StackPanel { Spacing = 8, IsHitTestVisible = !draft.Sending };
-            section.Children.Add(new TextBlock { Text = question.Header + " · " + Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap });
-            section.Children.Add(new TextBlock { Text = question.Question, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            section.Children.Add(new TextBlock { Text = question.Header + " · " + Locale.Get(question.MultiSelect ? "phone.questionnaire.multiple" : "phone.questionnaire.single"), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap });
+            section.Children.Add(new TextBlock { Text = question.Question, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ink, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
             var picks = draft.Picks.GetValueOrDefault(step) ?? []; draft.Picks[step] = picks;
             var choices = new PillWrapPanel();
             for (var index = 0; index < question.Options.Count; index++)
@@ -95,10 +96,10 @@ public sealed partial class MainWindow
                 section.Children.Add(text);
             }
             body.Children.Add(new ScrollViewer { Content = section, MaxHeight = 300, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-            if (draft.Error is { } error) body.Children.Add(new TextBlock { Text = error, Foreground = new SolidColorBrush(Colors.OrangeRed), FontSize = 11, TextWrapping = TextWrapping.Wrap });
+            if (draft.Error is { } error) body.Children.Add(new TextBlock { Text = error, Foreground = owner.brushes.Brush(DesignToken.ErrText), FontSize = 11, TextWrapping = TextWrapping.Wrap });
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = !draft.Sending };
-            actions.Children.Add(Button(Locale.Get("phone.questionnaire.cancel"), () => { OnPermissionDeny(); return Task.CompletedTask; }));
-            if (step > 0) actions.Children.Add(Button(Locale.Get("phone.questionnaire.back"), () => { draft.Step--; RenderToolPermissions(); return Task.CompletedTask; }));
+            var cancel = Button(Locale.Get("phone.questionnaire.cancel"), () => { OnPermissionDeny(); return Task.CompletedTask; }); PaintCardButton(cancel, prominent: false); actions.Children.Add(cancel);
+            if (step > 0) { var back = Button(Locale.Get("phone.questionnaire.back"), () => { draft.Step--; RenderToolPermissions(); return Task.CompletedTask; }); PaintCardButton(back, prominent: false); actions.Children.Add(back); }
             var last = step + 1 == questionnaire.Questions.Count;
             next = Button(Locale.Get(last ? "phone.questionnaire.submit" : "phone.questionnaire.next"), () =>
             {
@@ -113,11 +114,11 @@ public sealed partial class MainWindow
                 catch (Exception ex) { draft.Sending = false; draft.Error = ex.Message; RenderToolPermissions(); }
                 return Task.CompletedTask;
             });
-            next.IsEnabled = !draft.Sending && (last ? ValidAnswers() : draft.Answered(step));
+            next.IsEnabled = !draft.Sending && (last ? ValidAnswers() : draft.Answered(step)); PaintCardButton(next, prominent: true);
             AutomationProperties.SetAutomationId(next, last ? "questionnaire-submit" : "questionnaire-next"); actions.Children.Add(next); body.Children.Add(actions);
             if (questionnaireCard is not null) toolPermissionHost.Children.Remove(questionnaireCard);
             if (toolPermissionHost.Children.Count > 0) toolPermissionHost.Children[0].Visibility = Visibility.Collapsed;
-            questionnaireCard = new Border { Child = body, Padding = new(12), CornerRadius = new(12), BorderThickness = new(1), BorderBrush = new SolidColorBrush(Colors.Goldenrod), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 255, 180, 50)) };
+            questionnaireCard = WaitCard(body);
             AutomationProperties.SetAutomationId(questionnaireCard, "questionnaire-" + current.Id);
             toolPermissionHost.Children.Add(questionnaireCard); toolPermissionHost.Visibility = Visibility.Visible;
             return true;

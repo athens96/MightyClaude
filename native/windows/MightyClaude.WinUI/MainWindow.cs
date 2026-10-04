@@ -228,18 +228,30 @@ public sealed partial class MainWindow : Window
         private static string InputShortcuts => Locale.Get("composer.inputShortcuts");
         private readonly MainWindow owner;
         private readonly string id;
-        private readonly TextBlock label = new() { FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+        /// <summary>The pane header's state word: 11.5 semibold in its tone's ink (M/SessionPaneView.swift:220).</summary>
+        private readonly TextBlock label = new() { FontSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock detail = new() { FontSize = 10, Opacity = .6, TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock inputHint = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock permissionHint = new() { FontSize = 11, Opacity = .75, TextWrapping = TextWrapping.Wrap };
         private readonly AgentTranscript output = new();
-        private readonly TextBlock elapsed = new() { FontSize = 11, Opacity = .65, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>The pane header's figures: 11 mono in <c>ink2</c>, the first part of the line to give way (M/PaneChrome.swift:61-70).</summary>
+        private readonly TextBlock elapsed = new() { FontSize = DesignMetrics.Type.Mono, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         // Auto height uses the native text layout, including soft wraps and IME
         // composition. Start with one line and scroll internally at the cap.
-        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 30, MaxHeight = 140, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(4, 5, 4, 5) };
+        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 30, MaxHeight = 140, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Padding = new Thickness(4, 5, 4, 5), FontSize = DesignMetrics.Type.Body };
         private readonly Button provider = Pill(100), model = Pill(180), effort = Pill(125), permission = Pill(135), more = Pill(40);
-        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = new() { Content = "ϟ Fast", MinWidth = 0, Padding = new Thickness(10, 5, 10, 5), CornerRadius = new CornerRadius(16), FontSize = 11, MinHeight = 32, Height = 32 };
+        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = new() { Content = "ϟ Fast", MinWidth = 0, Padding = new Thickness(10, 5, 10, 5), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, MinHeight = 32, Height = 32, BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
         private readonly Button send, attach, context;
+        /// <summary>The send / stop button's coloured shape, drawn under the button (PaintSend, MainWindow.Composer.cs).</summary>
+        private readonly Border sendDisc = new() { Width = 32, Height = 32, IsHitTestVisible = false };
+        private readonly Grid sendHost = new() { Width = 32, Height = 32, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>The composer card (M/SessionPaneView.swift:654-656).</summary>
+        private readonly Border composerCard;
+        /// <summary>The shape under the composer card that casts its shadow (CardShadow).</summary>
+        private readonly Microsoft.UI.Xaml.Shapes.Rectangle composerShadow;
+        private bool composerFocused, composerDropTargeted;
+        /// <summary>The primary button stops the run (it shows the stop square) rather than sending or queueing.</summary>
+        private bool sendIsStop;
         private readonly Grid selectors = new() { ColumnSpacing = 3, Height = 32, VerticalAlignment = VerticalAlignment.Center };
         private readonly PillWrapPanel attachmentChips = new();
         private readonly List<RunAttachment> pendingAttachments = [];
@@ -256,10 +268,11 @@ public sealed partial class MainWindow : Window
                 return owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             }
         }
-        private static Button Pill(double maxWidth) => new() { MinWidth = 0, MaxWidth = maxWidth, MinHeight = 32, Height = 32, Padding = new Thickness(7, 0, 7, 0), CornerRadius = new CornerRadius(16), FontSize = 11, Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
+        /// <summary>A ComposerPill (M/ComposerControls.swift:4-33): 32 high, capsule, padding h8, 11pt; painted by <see cref="PaintPill"/>.</summary>
+        private static Button Pill(double maxWidth) => new() { MinWidth = 0, MaxWidth = maxWidth, MinHeight = 32, Height = 32, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
         private static void Label(Button button, string text, string name)
         {
-            button.Content = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11 }; AutomationProperties.SetName(button, name + ": " + text);
+            button.Content = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; AutomationProperties.SetName(button, name + ": " + text);
         }
         internal PaneView(MainWindow owner, string id)
         {
@@ -268,26 +281,37 @@ public sealed partial class MainWindow : Window
             InitSlashPalette(); InitPermissionBar(); InitializeStyles();
             var grid = new Grid { Padding = new Thickness(12), RowSpacing = 8 };
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
-            var header = new Grid { ColumnSpacing = 8 }; header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(headerMark.View); state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
-            InitializeStatusLineToggle(state);
-            var copy = Button(Locale.Get("pane.copyButton"), () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
-            InitializeResponsiveHeader(header, state, copy);
+            // The 34pt header line runs edge to edge over the pane card (MainWindow.PaneHeader.cs).
+            var header = BuildPaneHeader(); grid.Children.Add(header);
+            InitializeStatusLineToggle(paneHeaderControls);
+            // Copy lives in the header's … menu, as on the Mac (decision Q4).
+            var copy = AddPaneMenu();
+            InitializeResponsiveHeader(header);
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
             ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(input, ScrollBarVisibility.Disabled);
-            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(5); attach.CornerRadius = new CornerRadius(16); attach.Content = new SymbolIcon(Symbol.Attach); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
+            StyleComposerInput();
+            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(5); attach.CornerRadius = new CornerRadius(16); attach.BorderThickness = new Thickness(DesignMetrics.Stroke.Line); attach.Content = new SymbolIcon(Symbol.Attach); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
+            foreach (var pill in new[] { attach, provider, model, effort, permission, more }) PaintPill(pill, false);
+            PaintFastPill();
             InitializeAttachmentMenu();
             var controls = new FrameworkElement[] { attach, provider, model, effort, permission, fast, more };
             for (var index = 0; index < controls.Length; index++) { selectors.ColumnDefinitions.Add(new() { Width = index == 2 ? new(1, GridUnitType.Star) : GridLength.Auto }); Grid.SetColumn(controls[index], index); controls[index].VerticalAlignment = VerticalAlignment.Center; selectors.Children.Add(controls[index]); }
             model.HorizontalAlignment = HorizontalAlignment.Stretch; model.HorizontalContentAlignment = HorizontalAlignment.Left; model.MaxWidth = double.PositiveInfinity; model.MinWidth = 0;
             selectors.SizeChanged += (_, _) => ArrangeComposer();
             var bottom = new Grid { ColumnSpacing = 5, Height = 32 }; bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.Children.Add(selectors);
-            context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; context.Background = new SolidColorBrush(Colors.Transparent); AutomationProperties.SetName(context, Locale.Get("composer.context.name")); Grid.SetColumn(context, 1); bottom.Children.Add(context);
-            send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 20; send.Background = new SolidColorBrush(Colors.CornflowerBlue); send.Foreground = new SolidColorBrush(Colors.Black); AutomationProperties.SetName(send, Locale.Get("composer.send.name")); Grid.SetColumn(send, 2); bottom.Children.Add(send);
-            var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(styleHost); composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
-            var card = new Border { Child = composer, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(12, 135, 135, 135)), Padding = new Thickness(10, 2, 10, 10) };
-            var composerRegion = new StackPanel(); composerRegion.Children.Add(nextActionsHost); composerRegion.Children.Add(card);
+            context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; owner.PaintPlainButton(context, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2)); AutomationProperties.SetName(context, Locale.Get("composer.context.name")); Grid.SetColumn(context, 1); bottom.Children.Add(context);
+            send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 16; send.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; AutomationProperties.SetName(send, Locale.Get("composer.send.name"));
+            // The button draws no fill of its own in any state; the shape under it carries run, track or err (PaintSend).
+            owner.PaintPlainButton(send, owner.brushes.Transparent, owner.brushes.Transparent, ink: owner.brushes.Brush(DesignToken.OnStatus), disabledInk: owner.brushes.Brush(DesignToken.Ink2));
+            sendHost.Children.Add(sendDisc); sendHost.Children.Add(send); Grid.SetColumn(sendHost, 2); bottom.Children.Add(sendHost);
+            var composer = new StackPanel { Spacing = 9 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(styleHost); composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
+            var card = composerCard = new Border { Child = composer, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), Background = owner.brushes.Brush(DesignToken.Card) };
+            PaintComposerRing();
+            // The card's shadow is cast by a shape under it; two points under the card keep the
+            // shadow inside the scroll view, which clips its content (decision Q5).
+            var cardHost = new Grid { Margin = new Thickness(0, 0, 0, 2) }; cardHost.Children.Add(composerShadow = CardShadow.Caster(DesignMetrics.Radius.Composer, CardShadow.Composer, owner.brushes.Brush(DesignToken.Card))); cardHost.Children.Add(card);
+            var composerRegion = new StackPanel(); composerRegion.Children.Add(nextActionsHost); composerRegion.Children.Add(cardHost);
             var composerScroll = new ScrollViewer { Content = composerRegion, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
             Grid.SetRow(composerScroll, 2); grid.Children.Add(composerScroll);
             Container = new Border { Child = grid, Background = owner.brushes.Brush(DesignToken.Card), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), BorderBrush = owner.brushes.Brush(DesignToken.Line), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
@@ -330,10 +354,23 @@ public sealed partial class MainWindow : Window
             };
             card.AllowDrop = true;
             card.DragOver += (_, args) => { if (!AttachmentInput.ContainsFiles(args.DataView)) return; args.AcceptedOperation = attachmentsLoading || Session.Kind == "shell" ? DataPackageOperation.None : DataPackageOperation.Copy; args.Handled = true; if (Session.Kind == "shell") owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); };
-            card.Drop += async (_, args) => { if (!AttachmentInput.ContainsFiles(args.DataView)) return; var deferral = args.GetDeferral(); args.Handled = true; try { if (Session.Kind == "shell") owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); else await LoadAttachments(() => AttachmentInput.ReadDataAsync(args.DataView)); } finally { deferral.Complete(); } };
+            // The drop ring follows files over any part of the card, the editor included (which handles
+            // the event itself), and goes only when the pointer has left the card's bounds.
+            card.AddHandler(UIElement.DragOverEvent, new DragEventHandler((_, args) =>
+            {
+                if (composerDropTargeted || Session.Kind == "shell" || !AttachmentInput.ContainsFiles(args.DataView)) return;
+                composerDropTargeted = true; PaintComposerRing();
+            }), true);
+            card.DragLeave += (_, args) =>
+            {
+                var at = args.GetPosition(card);
+                if (at.X > 0 && at.Y > 0 && at.X < card.ActualWidth && at.Y < card.ActualHeight) return;
+                composerDropTargeted = false; PaintComposerRing();
+            };
+            card.Drop += async (_, args) => { composerDropTargeted = false; PaintComposerRing(); if (!AttachmentInput.ContainsFiles(args.DataView)) return; var deferral = args.GetDeferral(); args.Handled = true; try { if (Session.Kind == "shell") owner.error.Text = Locale.Get("wire.startRun.attachmentAiOnly"); else await LoadAttachments(() => AttachmentInput.ReadDataAsync(args.DataView)); } finally { deferral.Complete(); } };
             AutomationProperties.SetName(input, Locale.Get("composer.input.name"));  AutomationProperties.SetLiveSetting(inputHint, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-            input.GotFocus += (_, _) => card.BorderBrush = new SolidColorBrush(Colors.CornflowerBlue);
-            input.LostFocus += (_, _) => { composingInput = false; card.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)); };
+            input.GotFocus += (_, _) => { composerFocused = true; PaintComposerRing(); };
+            input.LostFocus += (_, _) => { composingInput = false; composerFocused = false; PaintComposerRing(); };
         }
         /// <summary>
         /// The pane card's border: <c>line</c>, or accent × 0.58 on the active pane (M/SessionPaneView.swift:164).
@@ -393,7 +430,7 @@ public sealed partial class MainWindow : Window
             permissionHint.Visibility = pane.Kind == "claude" && permissionHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             input.PlaceholderText = busy ? Locale.Get("composer.placeholder.busy") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
-            send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; send.FontSize = busy ? 13 : 20;
+            send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; sendIsStop = busy; send.FontSize = busy ? 12 : 16;
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();
             ToolTipService.SetToolTip(context, pane.SessionUsage?.ContextPercent is null ? Locale.Get("composer.context.unavailable") : Locale.Get("composer.context.tooltip"));
@@ -404,6 +441,7 @@ public sealed partial class MainWindow : Window
             if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = false;
             RefreshStyleComposer();
             RefreshNextActions(pane, busy);
+            PaintSend();
         }
         private Task PickAttachments() => LoadAttachments(async () =>
         {
@@ -439,7 +477,7 @@ public sealed partial class MainWindow : Window
                     var thumbnail = new Image { Width = 28, Height = 28, Stretch = Stretch.Uniform }; var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 }; content.Children.Add(thumbnail); content.Children.Add(new TextBlock { Text = file.Name, MaxWidth = 145, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11, VerticalAlignment = VerticalAlignment.Center }); preview.Content = content; _ = LoadThumbnail(file, thumbnail);
                 }
                 var remove = Button("×", () => { pendingAttachments.RemoveAll(a => a.Id == file.Id); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask; }); remove.MinWidth = 0; remove.Width = 25; remove.Padding = new Thickness(3); remove.Background = new SolidColorBrush(Colors.Transparent); remove.BorderThickness = new Thickness(0); AutomationProperties.SetName(remove, Locale.Get("composer.attachment.remove", new Dictionary<string, string> { ["name"] = file.Name })); Grid.SetColumn(remove, 1); row.Children.Add(remove);
-                attachmentChips.Children.Add(new Border { Child = row, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(20, 135, 135, 135)), MaxWidth = 240 });
+                attachmentChips.Children.Add(new Border { Child = row, CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.Brush(DesignToken.CardRaised), BorderBrush = owner.brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), MaxWidth = 240 });
             }
         }
         private static async Task LoadThumbnail(RunAttachment file, Image image) { try { image.Source = await AttachmentInput.PreviewAsync(file, 48); } catch (Exception) { image.Visibility = Visibility.Collapsed; } }
@@ -495,7 +533,7 @@ public sealed partial class MainWindow : Window
             effort.Visibility = caps.Effort || pane.Settings.Effort != "default" ? Visibility.Visible : Visibility.Collapsed;
             Label(permission, PermissionLabel(pane.Provider, pane.Settings.PermissionMode) + " ⌄", Locale.Get("composer.label.permission")); ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode)); var permissions = new MenuFlyout();
             foreach (var mode in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, mode), () => ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode is ("acceptEdits" or "onRequest") && s.NetworkAccess }), pane.Settings.PermissionMode == mode, PermissionHelp(pane.Provider, mode)));
-            permission.Flyout = permissions;
+            permission.Flyout = permissions; PaintPill(permission, pane.Settings.PermissionMode == "fullAccess");
             fast.IsChecked = pane.Settings.FastMode; fast.Visibility = pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode) ? Visibility.Visible : Visibility.Collapsed;
             Label(more, "···", Locale.Get("composer.more")); more.Flyout = MoreMenu(pane, caps);
             provider.Visibility = model.Visibility = permission.Visibility = more.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
@@ -570,7 +608,7 @@ public sealed partial class MainWindow : Window
             var pane = Session; if (pane.Status == "running") return; var caps = Capabilities; var content = new StackPanel { Spacing = 10 };
             var turns = new TextBox { Header = Locale.Get("composer.limits.maxTurns"), Text = pane.Settings.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "" }; var budget = new TextBox { Header = Locale.Get("composer.limits.maxBudget"), Text = pane.Settings.MaxBudgetUsd?.ToString(CultureInfo.InvariantCulture) ?? "" };
             if (caps.MaxTurns) content.Children.Add(turns); if (caps.MaxBudgetUsd) content.Children.Add(budget);
-            var validation = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Colors.OrangeRed) }; content.Children.Add(validation);
+            var validation = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = owner.brushes.Brush(DesignToken.ErrText) }; content.Children.Add(validation);
             var dialog = new ContentDialog { Title = Locale.Get("settings.run.limitsTitle"), XamlRoot = owner.root.XamlRoot, Content = content, PrimaryButtonText = Locale.Get("settings.run.applyButton"), CloseButtonText = Locale.Get("settings.run.cancelButton") };
             dialog.PrimaryButtonClick += async (sender, args) =>
             {

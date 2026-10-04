@@ -1,10 +1,8 @@
 using MightyClaude.Core;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Windows.UI;
 
 namespace MightyClaude.WinUI;
 
@@ -26,7 +24,7 @@ public sealed partial class MainWindow
         private const double SlashRowHeight = 40, SlashVisibleRows = 8;
         private readonly StackPanel slashRows = new();
         private ScrollViewer slashScroll = null!;
-        private readonly TextBlock slashCount = new() { FontSize = 10, Opacity = .5, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock slashCount = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
         private Border slashPaletteHost = null!;
         private SlashPaletteState paletteState = SlashPaletteState.Closed;
         private string? slashDismissedFor;
@@ -39,7 +37,9 @@ public sealed partial class MainWindow
                 Content = slashRows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled,
             };
-            static TextBlock Hint(string text) => new() { Text = text, FontSize = 10, Opacity = .6, VerticalAlignment = VerticalAlignment.Center };
+            // The palette is a card with a line border, r10; the hints ink2, the count ink3 (macOS SlashCommandPalette.swift:34-43).
+            var ink2 = owner.brushes.Brush(DesignToken.Ink2); slashCount.Foreground = owner.brushes.Brush(DesignToken.Ink3);
+            TextBlock Hint(string text) => new() { Text = text, FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             var footer = new Grid { ColumnSpacing = 10, Padding = new Thickness(12, 5, 12, 5) };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
@@ -52,13 +52,13 @@ public sealed partial class MainWindow
             Grid.SetColumn(slashCount, 2); footer.Children.Add(slashCount);
             var body = new StackPanel();
             body.Children.Add(slashScroll);
-            body.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(40, 135, 135, 135)) });
+            body.Children.Add(new Border { Height = DesignMetrics.Stroke.Line, Background = owner.brushes.Brush(DesignToken.Line) });
             body.Children.Add(footer);
             var host = new Border
             {
-                Child = body, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(75, 135, 135, 135)),
-                Background = new SolidColorBrush(Color.FromArgb(240, 32, 32, 32)),
+                Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
+                BorderBrush = owner.brushes.Brush(DesignToken.Line),
+                Background = owner.brushes.Brush(DesignToken.Card),
                 Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 6),
             };
             AutomationProperties.SetAutomationId(host, "slash-palette-" + id);
@@ -116,7 +116,7 @@ public sealed partial class MainWindow
         {
             if (!paletteState.IsOpen) { slashPaletteHost.Visibility = Visibility.Collapsed; slashRows.Children.Clear(); return; }
             slashRows.Children.Clear();
-            var accent = new SolidColorBrush(Colors.CornflowerBlue);
+            var accent = owner.brushes.Brush(DesignToken.Accent);
             for (var index = 0; index < paletteState.Commands.Length; index++)
             {
                 var command = paletteState.Commands[index];
@@ -155,7 +155,11 @@ public sealed partial class MainWindow
                 ToolTipService.SetToolTip(glyph, command.Action is not null ? SlashCommandStrings.PaletteActionTooltip : SlashCommandStrings.PaletteArgumentTooltip);
                 Grid.SetColumn(glyph, 2); grid.Children.Add(glyph);
             }
-            var row = new Border { Child = grid, Background = highlighted ? accent : new SolidColorBrush(Colors.Transparent), CornerRadius = new CornerRadius(6) };
+            // The highlighted row is accent behind onAccent words; the others ink and ink2 (macOS SlashCommandPalette.swift:50-69).
+            var ink = owner.brushes.Brush(highlighted ? DesignToken.OnAccent : DesignToken.Ink); var quiet = owner.brushes.Brush(highlighted ? DesignToken.OnAccent : DesignToken.Ink2);
+            foreach (var words in new[] { invocation }.Concat(text.Children.OfType<TextBlock>().Take(1))) words.Foreground = ink;
+            foreach (var words in text.Children.OfType<TextBlock>().Skip(1).Concat(grid.Children.OfType<TextBlock>().Where(t => Grid.GetColumn(t) == 2))) words.Foreground = quiet;
+            var row = new Border { Child = grid, Background = highlighted ? accent : owner.brushes.Transparent, CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
             AutomationProperties.SetAutomationId(row, "slash-command-" + command.Invocation);
             AutomationProperties.SetName(row, "/" + command.Invocation + " " + SlashPalette.Description(command) + " " + command.Source);
             row.PointerEntered += (_, _) => HighlightSlashRow(index);

@@ -209,6 +209,11 @@ public sealed partial class MainWindow
                 Checkpoint(SidebarDesignKey, "running");
                 await RequireSidebarDesignInTheme();
                 var sidebarBrushes = new[] { sidebarSearchBox.Background, dashboardEntryIcon!.Background, sidebarFooter!.BorderBrush, layout.Background };
+                // Design stage 4, the tab strip, the pane header and the composer: the same check in both
+                // themes on the same reused pane, whose chrome brushes the toggle recolours in place.
+                Checkpoint(PaneChromeKey, "running");
+                await pane.RequirePaneChromeInTheme();
+                var chromeBrushes = pane.PaneChromeBrushes();
                 root.UpdateLayout(); await Task.Delay(120);
                 Checkpoint("lightThemeScreenshot", "running");
                 result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
@@ -232,6 +237,13 @@ public sealed partial class MainWindow
                 await RequireSidebarDesignInTheme();
                 result[SidebarDesignKey] = true;
                 Checkpoint(SidebarDesignKey, "passed");
+                Checkpoint(PaneChromeKey, "running");
+                var chromeAfter = pane.PaneChromeBrushes();
+                Require(chromeAfter.Length == chromeBrushes.Length && chromeAfter.Zip(chromeBrushes).All(pair => pair.First is not null && ReferenceEquals(pair.First, pair.Second)),
+                    $"{PaneChromeKey} (dark): the toggle replaced a pane chrome brush instead of recolouring it in place: {string.Join(", ", chromeAfter.Select(Describe))}");
+                await pane.RequirePaneChromeInTheme();
+                result[PaneChromeKey] = true;
+                Checkpoint(PaneChromeKey, "passed");
                 result["opaqueBackgroundInBothThemes"] = true;
             }
             finally { root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }

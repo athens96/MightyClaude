@@ -16,6 +16,8 @@ public sealed partial class MainWindow
 
     private sealed partial class PaneView
     {
+        /// <summary>The web-open card's accent tint (M/WebOpenChoicePanel.swift:43).</summary>
+        private const double WebOpenTint = 0.055;
         private readonly StackPanel agentWebPromptHost = new() { Spacing = 5, Visibility = Visibility.Collapsed };
         private readonly ScrollViewer agentWebPromptScroll = new() { MaxHeight = 320, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Visibility = Visibility.Collapsed };
         private readonly Dictionary<string, FrameworkElement> agentWebPromptCards = [];
@@ -42,10 +44,10 @@ public sealed partial class MainWindow
                 content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.dialogMessage"), FontSize = 12, TextWrapping = TextWrapping.Wrap });
                 var url = new TextBlock { Text = request.Url.AbsoluteUri, FontFamily = new FontFamily(DesignMetrics.Font.Mono), FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxLines = 3, TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true };
                 AutomationProperties.SetAutomationId(url, "web-open-url"); ToolTipService.SetToolTip(url, request.Url.AbsoluteUri);
-                content.Children.Add(new Border { Child = url, Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(6), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(12, 135, 135, 135)) });
+                content.Children.Add(new Border { Child = url, Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = owner.brushes.Subtle });
                 var remember = new CheckBox { Content = Locale.Get("agentTerminal.urlOpen.rememberToggle"), FontSize = 11 };
                 AutomationProperties.SetAutomationId(remember, "web-open-remember"); content.Children.Add(remember);
-                content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.fallbackHint", new Dictionary<string, string> { ["seconds"] = "30" }), FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+                content.Children.Add(new TextBlock { Text = Locale.Get("agentTerminal.urlOpen.fallbackHint", new Dictionary<string, string> { ["seconds"] = "30" }), FontSize = 10, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
                 var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
                 Button Choice(string destination, string label, string automationId)
                 {
@@ -55,7 +57,8 @@ public sealed partial class MainWindow
                 actions.Children.Add(Choice("external", Locale.Get("agentTerminal.urlOpen.externalButton"), "web-open-external"));
                 var inApp = Choice("inApp", Locale.Get("agentTerminal.urlOpen.inAppButton"), "web-open-in-app");
                 inApp.Style = (Style)Application.Current.Resources["AccentButtonStyle"]; actions.Children.Add(inApp); content.Children.Add(actions);
-                var card = new Border { Child = content, Padding = new Thickness(12), CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(14, 100, 149, 237)), BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(50, 135, 135, 135)) };
+                // The accent tint with a line above it (M/WebOpenChoicePanel.swift:41-44).
+                var card = new Border { Child = content, Padding = new Thickness(12), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.Brush(DesignToken.Accent, WebOpenTint), BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = owner.brushes.Brush(DesignToken.Line) };
                 AutomationProperties.SetAutomationId(card, "web-open-request-" + request.Id);
                 agentWebPromptCards[request.Id] = card; agentWebPromptHost.Children.Add(card);
             }

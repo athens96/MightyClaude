@@ -37,8 +37,9 @@ public sealed partial class MainWindow
         private bool statusLineRestartPending;
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton statusLineToggle = new()
         {
-            Width = 28, Height = 28, MinWidth = 0, MinHeight = 0,
-            Padding = new Thickness(2), CornerRadius = new CornerRadius(4),
+            // A 22×24 header button, like the Mac's (M/SessionPaneView.swift:261, 271, 298).
+            Width = 22, Height = 24, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(3), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment),
         };
 
         internal StatusLineRefresher? Refresher => _refresher;
