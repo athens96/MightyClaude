@@ -477,6 +477,20 @@ import Testing
         #expect(transport.mostOpen > 1 && transport.mostOpen <= OuroborosDashboardClient.boardConcurrency)
     }
 
+    /// The real loopback transport with every wait stretched: the test below is
+    /// about what it reads, and a loaded CI runner can hold the fake dashboard's
+    /// answer past the product's seconds. The waits themselves have their own
+    /// tests (the first-event deadline, a cancelled read).
+    private struct PatientLoopbackTransport: OuroborosDashboardTransport {
+        let base = LoopbackDashboardTransport()
+        func get(_ url: URL, timeout: TimeInterval) async -> (status: Int, body: Data)? {
+            await base.get(url, timeout: max(timeout, 60))
+        }
+        func readEvents(_ url: URL, firstEvent: TimeInterval, quiet: TimeInterval, deadline: TimeInterval, maximumBytes: Int) async -> Data? {
+            await base.readEvents(url, firstEvent: max(firstEvent, 60), quiet: max(quiet, 60), deadline: max(deadline, 61), maximumBytes: maximumBytes)
+        }
+    }
+
     @Test func theLoopbackTransportReadsJSONAndAClosedEventStreamFromAFakeDashboard() async throws {
         let frame = #"{"meta":{},"columns":{"executing":[{"id":"ac_1","title":"Doing"}]}}"#
         let server = HTTPServer(address: "127.0.0.1", port: 0) { request in
@@ -488,7 +502,7 @@ import Testing
         }
         do {
             let port = try await server.start()
-            let client = OuroborosDashboardClient(transport: LoopbackDashboardTransport(), home: try temporaryHome(), launcher: { _ in false })
+            let client = OuroborosDashboardClient(transport: PatientLoopbackTransport(), home: try temporaryHome(), launcher: { _ in false })
             let endpoint = OuroborosDashboardEndpoint(host: "127.0.0.1", port: Int(port))
             #expect(await client.summaries(endpoint).summaries?["exec_1"]?.status == .running)
             #expect(await client.board(endpoint, executionID: "exec_1")?.items.map(\.title) == ["Doing"])

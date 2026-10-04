@@ -938,7 +938,7 @@ struct ScreenShareEngineTests {
         else { Issue.record("start refused"); return }
         await fixture.signals.clear()
 
-        let timing = await fixture.service.killSwitch()
+        let timing = await asUser { await fixture.service.killSwitch() }
         await fixture.engine.hostStopped([
             ScreenShareStoppedSession(sessionId: first.sessionId, deviceId: Self.phone, reason: .killSwitch),
             ScreenShareStoppedSession(sessionId: second.sessionId, deviceId: Self.viewer, reason: .killSwitch),
@@ -1477,7 +1477,17 @@ extension ScreenShareEngineTests {
         return ScreenShareVideoFrame(pixelBuffer: buffer, layer: layer, timestampNanos: 1)
     }
 
-    func waitUntil(timeout: TimeInterval = 5, _ condition: @Sendable () async -> Bool) async -> Bool {
+    /// Runs a kill trigger as the app does: from the user's own action (the
+    /// menu bar, Settings, a rekey) at user-initiated priority. Timed from a
+    /// default-priority test task, the measurement would include that task's
+    /// own wait for a thread on a busy runner, not the kill's.
+    func asUser<T: Sendable>(_ trigger: @escaping @Sendable () async -> T) async -> T {
+        await Task(priority: .userInitiated) { await trigger() }.value
+    }
+
+    /// The bound only ends a test that broke: a loaded CI runner can keep
+    /// every cooperative thread busy for seconds.
+    func waitUntil(timeout: TimeInterval = 60, _ condition: @Sendable () async -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if await condition() { return true }

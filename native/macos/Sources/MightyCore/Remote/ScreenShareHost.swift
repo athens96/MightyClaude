@@ -273,18 +273,21 @@ public actor ScreenShareHost {
 
     /// Runs every step concurrently and returns whether the deadline cut them
     /// off. The steps run detached so a step that never returns cannot keep
-    /// this call — or the actor — suspended beyond the deadline.
+    /// this call — or the actor — suspended beyond the deadline. Steps and
+    /// deadline run at high priority: a kill is the user's own (or a safety
+    /// rule's) and must not queue behind default-priority work such as agent
+    /// output being parsed, or neither the stop nor the cut-off lands in time.
     private func runWithinDeadline(_ ops: [CaptureControl]) async -> Bool {
         guard !ops.isEmpty else { return false }
         let gate = ScreenShareDeadlineGate()
-        let work = Task.detached {
+        let work = Task.detached(priority: .high) {
             await withTaskGroup(of: Void.self) { group in
                 for op in ops { group.addTask { await op() } }
             }
             gate.finish(timedOut: false)
         }
         let deadline = killDeadline
-        let timer = Task.detached {
+        let timer = Task.detached(priority: .high) {
             try? await Task.sleep(nanoseconds: UInt64(max(0, deadline) * 1_000_000_000))
             gate.finish(timedOut: true)
         }

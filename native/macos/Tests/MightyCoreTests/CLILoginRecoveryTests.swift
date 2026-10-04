@@ -239,11 +239,20 @@ final class CLIBackgroundLoginTests {
     }
 
     @Test func signedOutAtStartSucceedsOnceStatusTurnsWithoutKillingTheCommand() async throws {
-        let fake = try script("printf 'Opening browser...\\r\\nIf it did not open, visit: https://auth.example.com/login?state=1\\r\\n'\n/bin/sleep 0.3\n: > \"$ROOT/signed-in\"\n/bin/sleep 30\n")
+        // The fake signs in only once the wait has taken its starting reading
+        // (signed out): a head start in seconds could be overtaken on a busy
+        // runner, and the wait would then rightly treat the user as signed in
+        // already and hold out for the command's own exit.
+        let fake = try script("printf 'Opening browser...\\r\\nIf it did not open, visit: https://auth.example.com/login?state=1\\r\\n'\nwhile [ ! -e \"$ROOT/go\" ]; do /bin/sleep 0.05; done\n: > \"$ROOT/signed-in\"\n/bin/sleep 30\n")
         let seen = LockedBox<CLILoginOutput?>(nil)
         let login = CLIBackgroundLogin(command: fake.command, environment: environment, directory: fake.root) { seen.set($0) }
         try await login.start()
-        let outcome = await wait(for: login, fake.root, interval: 0.1)
+        let go = fake.root.appendingPathComponent("go")
+        let outcome = await wait(for: login, fake.root, interval: 0.1, status: {
+            let value = self.signedIn(fake.root)
+            FileManager.default.createFile(atPath: go.path, contents: nil)
+            return value
+        })
         guard case .loggedIn(let status) = outcome else { Issue.record("unexpected \(outcome)"); login.cancel(); return }
         #expect(status.loggedIn == true)
         #expect(login.isRunning)
