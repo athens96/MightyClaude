@@ -361,8 +361,15 @@ public sealed partial class MainWindow
                 $"{key} ({theme}): {what} must have radius {DesignMetrics.Radius.Row} and padding l8 r9 t6 b7; got {row.CornerRadius}, {row.Padding}");
         RequireClear(inactiveRow.Background, "a pane row at rest", key);
         RequireClear(inactiveRow.BorderBrush, "a pane row's border at rest", key);
-        RequireSubtle(await StateBackground(inactiveRow, "PointerOver", brushes.Subtle, key), "a pane row under the pointer", key);
-        var selectedHover = await StateBackground(activeRow, "PointerOver", brushes.Brush(DesignToken.Card), key);
+        // A status change re-renders the sidebar with new row buttons, so each hover check reads the
+        // row shown at that moment rather than the one looked up above.
+        async Task<Button> ShownRow(string id)
+        {
+            await WaitUI(() => sidebarSessionButtons.TryGetValue(id, out var row) && row.IsLoaded, () => $"{key} ({theme}): the sidebar row for {id} never loaded");
+            return sidebarSessionButtons[id];
+        }
+        RequireSubtle(await StateBackground(await ShownRow(inactive.Id), "PointerOver", brushes.Subtle, key), "a pane row under the pointer", key);
+        var selectedHover = await StateBackground(await ShownRow(activeId), "PointerOver", brushes.Brush(DesignToken.Card), key);
         RequireBrush(activeRow, _ => selectedHover, DesignToken.Card, "the selected pane row under the pointer", key: key);
         foreach (var session in rows.Where(s => sidebarTitles.ContainsKey(s.Id)))
         {
