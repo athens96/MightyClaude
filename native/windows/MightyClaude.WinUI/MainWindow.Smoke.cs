@@ -745,6 +745,26 @@ public sealed partial class MainWindow
         Require(reading.Blocks >= 3, "mighty 스모크: 블록이 3개 미만입니다: " + reading.Blocks);
         Require(reading.Edges >= 2, "mighty 스모크: 엣지가 2개 미만입니다: " + reading.Edges);
         Require(reading.Kinds.Contains("request") && reading.Kinds.Contains("result"), "mighty 스모크: 요청·결과 블록이 없습니다.");
+        await WaitUI(() => pane.GraphNativeViewsForSmoke().Values.All(view => view.Card is FrameworkElement { IsLoaded: true }
+            && (view.Document is null || view.Document is FrameworkElement { IsLoaded: true })));
+        var nativeViews = pane.GraphNativeViewsForSmoke();
+        Require(nativeViews.Values.Any(view => view.Document is not null), "Graph lifetime smoke needs a real native document.");
+        Require(nativeViews.Values.Where(view => view.Document is not null).All(view => view.Parent is not null), "Loaded native graph documents must have an actual parent.");
+        void RequireRetainedNativeViews()
+        {
+            var current = pane.GraphNativeViewsForSmoke();
+            Require(nativeViews.All(pair => current.TryGetValue(pair.Key, out var next) && ReferenceEquals(pair.Value.Card, next.Card)
+                && ReferenceEquals(pair.Value.Document, next.Document) && ReferenceEquals(pair.Value.Parent, next.Parent)),
+                "Graph redraw must retain each card, native document and document parent.");
+        }
+        pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
+        RequireRetainedNativeViews();
+        var savedAnswer = last.FinalOutput;
+        last.FinalOutput += "\nNative document retention fixture."; MightyGraphSupport.RefreshResult(last);
+        await pane.SetGraphRunsForSmoke(runs); root.UpdateLayout(); await Task.Delay(30);
+        RequireRetainedNativeViews();
+        last.FinalOutput = savedAnswer; MightyGraphSupport.RefreshResult(last);
+        await pane.SetGraphRunsForSmoke(runs);
 
         // Right-side cards (macOS a65a65b): every request block's header carries the pane's
         // agent mark before `· Claude`; sub-agent, result and draft headers carry none.
@@ -770,6 +790,7 @@ public sealed partial class MainWindow
 
         options.TraceStartup("smoke:mightyGraph:result-fit");
         var resultFit = await RunResultFitSmoke(pane);
+        RequireRetainedNativeViews();
         options.TraceStartup("smoke:mightyGraph:result-reveal");
         var resultReveal = await RunResultRevealSmoke(pane);
 
@@ -815,6 +836,7 @@ public sealed partial class MainWindow
             ["modeRestored"] = modeRestored,
             ["resultFit"] = resultFit,
             ["resultReveal"] = resultReveal,
+            ["retainedNativeDocuments"] = true,
             ["requestMarks"] = requestMarks,
             ["outlines"] = outlines,
         };

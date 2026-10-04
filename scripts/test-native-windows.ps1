@@ -190,6 +190,7 @@ try {
     foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "historyAffordance", "narrowToolbar")) {
         if ($result.mightyTimeline.$key -ne $true) { throw "Mighty timeline smoke failed: mightyTimeline.$key" }
     }
+    if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
     $mg = $result.mightyGraph
     if ($null -eq $mg) {
         $msg = "mighty 그래프 스모크가 실행되지 않았습니다: mightyGraph 키가 없습니다"
