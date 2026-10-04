@@ -49,6 +49,15 @@ public sealed partial class MainWindow
         // Each card's header title as drawn, so the smoke can read which carry an agent mark.
         private readonly Dictionary<string, FrameworkElement> graphTitles = [];
         private bool graphDragging, graphDrawing, graphRefreshQueued;
+        internal bool GraphDiagnosticsForSmoke;
+        private int graphSmokeTraceCount;
+        private void TraceGraphSmoke(string step)
+        {
+            // Fixture-only geometry/lifecycle events; never record transcript,
+            // path, provider output, credentials or environment contents.
+            if (owner.options.SmokeTest && GraphDiagnosticsForSmoke && graphSmokeTraceCount++ < 160)
+                owner.options.TraceStartup("smoke:mightyGraph:event:" + step);
+        }
         private Windows.Foundation.Point graphDragOrigin;
         private double graphDragPanX, graphDragPanY;
         private string? graphResultFilesRunId, graphResultFilesLastRunId, graphAimedRunId, graphAimedResultId;
@@ -124,6 +133,7 @@ public sealed partial class MainWindow
             // paints over the composer or the neighbouring pane.
             graphViewport.SizeChanged += (_, args) =>
             {
+                TraceGraphSmoke($"viewport-size:{args.NewSize.Width:F2}x{args.NewSize.Height:F2}");
                 graphViewport.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, args.NewSize.Width, args.NewSize.Height) };
                 QueueGraphRefresh();
             };
@@ -159,8 +169,12 @@ public sealed partial class MainWindow
             if (value.SessionId != id) return;
             Container.DispatcherQueue.TryEnqueue(() =>
             {
-                if (!owner.views.ContainsKey(id)) { owner.service.RunEventReceived -= OnGraphRunEvent; return; }
-                if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
+                if (!QueuePaneAlive || owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } current)
+                {
+                    owner.service.RunEventReceived -= OnGraphRunEvent;
+                    return;
+                }
+                if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(current);
             });
         }
 
@@ -187,6 +201,7 @@ public sealed partial class MainWindow
             Grid.SetColumn(controls, 1); bar.Children.Add(controls);
             void FitToolbar(double width)
             {
+                TraceGraphSmoke($"toolbar-fit:{width:F2}");
                 var narrow = width < 540;
                 Grid.SetColumnSpan(summary, narrow ? 2 : 1);
                 Grid.SetRow(controls, narrow ? 1 : 0); Grid.SetColumn(controls, narrow ? 0 : 1); Grid.SetColumnSpan(controls, narrow ? 2 : 1);
@@ -252,11 +267,12 @@ public sealed partial class MainWindow
         /// edge list, every string and the indicator choice all come from Core.
         private void DrawGraph(RunSession pane)
         {
+            TraceGraphSmoke($"draw-enter:reentrant={graphDrawing}:cards={graphCards.Count}");
             // Drawing resizes the canvas, which can raise SizeChanged again.
             if (graphDrawing) return;
             if (graphTranscripts.Values.Any(transcript => transcript.IsSelecting)) { graphDeferredDraw = true; return; }
             graphDrawing = true;
-            try { DrawGraphCore(pane); } finally { graphDrawing = false; }
+            try { DrawGraphCore(pane); } finally { graphDrawing = false; TraceGraphSmoke("draw-exit"); }
         }
 
         private void QueueGraphRefresh()
@@ -266,6 +282,7 @@ public sealed partial class MainWindow
             if (!Container.DispatcherQueue.TryEnqueue(() =>
             {
                 graphRefreshQueued = false;
+                TraceGraphSmoke("queued-refresh");
                 if (QueuePaneAlive && graphHost?.Visibility == Visibility.Visible &&
                     owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } current)
                     RefreshMightyView(current);
@@ -295,6 +312,7 @@ public sealed partial class MainWindow
             var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, viewport,
                 graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight, pane.GraphBlockSizes);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
+            TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
             // `요청 N · Claude`: the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
@@ -307,8 +325,10 @@ public sealed partial class MainWindow
 
             foreach (var transcript in graphTranscripts.Values)
                 if (transcript.View.Parent is Panel parent) parent.Children.Remove(transcript.View);
+            TraceGraphSmoke("transcripts-detached");
             foreach (var stale in graphTranscripts.Keys.Where(key => !blocks.Any(block => block.Id == key)).ToArray()) graphTranscripts.Remove(stale);
             graphCanvas.Children.Clear(); graphBodies.Clear(); graphCards.Clear(); graphOutlines.Clear(); graphBlockKinds.Clear(); graphTitles.Clear(); graphFitResultButton = null;
+            TraceGraphSmoke("canvas-cleared");
             graphCanvas.Width = Math.Max(1, layout.Size.W); graphCanvas.Height = Math.Max(1, layout.Size.H);
             var frames = new Dictionary<string, GraphRect>();
             foreach (var block in blocks)
@@ -380,15 +400,18 @@ public sealed partial class MainWindow
         private void RevealAfterTimeout(string nodeId) =>
             _ = Task.Delay(300).ContinueWith(_ => Container.DispatcherQueue.TryEnqueue(() =>
             {
+                if (!QueuePaneAlive || graphHost?.Visibility != Visibility.Visible ||
+                    owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is not { } current) return;
                 if (graphReveal.MeasureTimedOut(nodeId) is not { } place) return;
                 graphRevealPendingId = place;
-                if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
+                RefreshMightyView(current);
             }), TaskScheduler.Default);
 
         /// The newest result card's content measured a new height: the card fits
         /// it, and a card held above the composer is placed again at that height.
         private void ResultMeasured(string nodeId, double height)
         {
+            TraceGraphSmoke($"result-measured:{height:F2}:previous={graphResultHeights.GetValueOrDefault(nodeId, -1):F2}");
             if (graphResizing || graphLiveResultSize is not null || !double.IsFinite(height)) return;
             if (graphResultHeights.TryGetValue(nodeId, out var known) && Math.Abs(known - height) <= 0.5) return;
             graphResultHeights.Clear(); graphResultHeights[nodeId] = height;
@@ -464,11 +487,13 @@ public sealed partial class MainWindow
                 var measureQueued = false;
                 void Measured(object sender, SizeChangedEventArgs args)
                 {
+                    TraceGraphSmoke($"result-size-event:header={header.ActualHeight:F2}:content={content.ActualHeight:F2}:queued={measureQueued}");
                     if (measureQueued) return;
                     measureQueued = true;
                     if (!Container.DispatcherQueue.TryEnqueue(() =>
                     {
                         measureQueued = false;
+                        TraceGraphSmoke($"result-measure-callback:loaded={card.IsLoaded}:current={ReferenceEquals(graphCards.GetValueOrDefault(block.Id), card)}");
                         // Reused transcripts detach from the previous card during
                         // redraw. Those old SizeChanged events must not overwrite
                         // the current result's height or start another layout pass.
@@ -487,6 +512,11 @@ public sealed partial class MainWindow
                 if (!graphTranscripts.TryGetValue(block.Id, out var transcript))
                 {
                     transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
+                    if (owner.options.SmokeTest)
+                    {
+                        transcript.View.Loaded += (_, _) => TraceGraphSmoke("transcript-loaded");
+                        transcript.View.Unloaded += (_, _) => TraceGraphSmoke("transcript-unloaded");
+                    }
                     transcript.SelectionEnded = () => { if (graphDeferredDraw) { graphDeferredDraw = false; Container.DispatcherQueue.TryEnqueue(() => { if (QueuePaneAlive) RefreshMightyView(Session); }); } };
                     graphTranscripts[block.Id] = transcript;
                 }
