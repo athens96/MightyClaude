@@ -78,11 +78,17 @@ public sealed record DesignPalette(
     };
 
     /// <summary>The fill for a tone.</summary>
-    public DesignColor Fill(DesignTone tone) => tone switch
+    public DesignColor Fill(DesignTone tone) => this[FillToken(tone)];
+
+    /// <summary>The token <see cref="Fill"/> reads for a tone (the Mac's <c>heroFill</c>), so a brush registry can share one brush per tone fill.</summary>
+    public static DesignToken FillToken(DesignTone tone) => tone switch
     {
-        DesignTone.Run => Run, DesignTone.Wait => Wait, DesignTone.Done => Done,
-        DesignTone.Err => Err, DesignTone.Stop => Stop, _ => Idle,
+        DesignTone.Run => DesignToken.Run, DesignTone.Wait => DesignToken.Wait, DesignTone.Done => DesignToken.Done,
+        DesignTone.Err => DesignToken.Err, DesignTone.Stop => DesignToken.Stop, _ => DesignToken.Idle,
     };
+
+    /// <summary>The ink drawn on a tone's fill (the Mac's <c>heroInk</c>): the amber takes its own dark ink, every other fill white.</summary>
+    public static DesignToken FillInkToken(DesignTone tone) => tone == DesignTone.Wait ? DesignToken.OnWait : DesignToken.OnStatus;
 
     /// <summary>The text-safe ink for a tone: words and icons on page, card or raised strip.</summary>
     public DesignColor Text(DesignTone tone) => this[TextToken(tone)];
@@ -95,10 +101,13 @@ public sealed record DesignPalette(
     };
 
     /// <summary>The soft tint behind a tone's ink.</summary>
-    public DesignColor Soft(DesignTone tone) => tone switch
+    public DesignColor Soft(DesignTone tone) => this[SoftToken(tone)];
+
+    /// <summary>The token <see cref="Soft"/> reads for a tone, so a brush registry can share one brush per tone tint.</summary>
+    public static DesignToken SoftToken(DesignTone tone) => tone switch
     {
-        DesignTone.Run => RunSoft, DesignTone.Wait => WaitSoft, DesignTone.Done => DoneSoft,
-        DesignTone.Err => ErrSoft, _ => StopSoft,
+        DesignTone.Run => DesignToken.RunSoft, DesignTone.Wait => DesignToken.WaitSoft, DesignTone.Done => DesignToken.DoneSoft,
+        DesignTone.Err => DesignToken.ErrSoft, _ => DesignToken.StopSoft,
     };
 
     /// <summary>A small mark (dot, node) for a tone: the fill where it holds 3:1, the ink for amber, the quiet ink for idle.</summary>

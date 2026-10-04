@@ -188,6 +188,7 @@ public sealed partial class MainWindow
             result["workspaceModesSelectionSplitDraftPreserved"] = true;
             var originalTheme = service.Snapshot.Theme;
             var accentProbe = AddAccentProbe();
+            Func<Task>? restoreMightyDesign = null;
             try
             {
                 // 디자인 토큰 1단계: 두 테마 모두 창 배경이 공유 page 브러시이고 픽스처의 hex이며,
@@ -214,6 +215,13 @@ public sealed partial class MainWindow
                 Checkpoint(PaneChromeKey, "running");
                 await pane.RequirePaneChromeInTheme();
                 var chromeBrushes = pane.PaneChromeBrushes();
+                // Design stage 5, the Mighty diagram, the timeline and the result card: the light pass draws
+                // the fixture and leaves the timeline on screen; the dark pass right after the toggle reads the
+                // same views again, recoloured in place, before the fixture is put away.
+                Checkpoint(MightyDesignKey, "running");
+                restoreMightyDesign = pane.MightyDesignRestore();
+                await pane.BeginMightyDesignSmoke();
+                var mightyViews = await pane.RequireMightyDesignInTheme(null);
                 root.UpdateLayout(); await Task.Delay(120);
                 Checkpoint("lightThemeScreenshot", "running");
                 result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
@@ -225,6 +233,11 @@ public sealed partial class MainWindow
                 Require(ReferenceEquals(pane, views[sessions[0].Id]), "designTokens: the theme toggle rebuilt the pane instead of reusing it");
                 result["designTokens"] = true;
                 Checkpoint("designTokens", "passed");
+                Checkpoint(MightyDesignKey, "running");
+                await pane.RequireMightyDesignInTheme(mightyViews);
+                var restoreMighty = restoreMightyDesign; restoreMightyDesign = null; await restoreMighty();
+                result[MightyDesignKey] = true;
+                Checkpoint(MightyDesignKey, "passed");
                 Checkpoint(AppShellKey, "running");
                 Require(views.ContainsValue(inactivePane) && ReferenceEquals(pane.Container.BorderBrush, activeBorder) && ReferenceEquals(inactivePane.Container.BorderBrush, inactiveBorder),
                     $"{AppShellKey} (dark): the toggle replaced a pane or its border brush instead of recolouring it in place; active {Describe(pane.Container.BorderBrush)}, inactive {Describe(inactivePane.Container.BorderBrush)}");
@@ -246,7 +259,11 @@ public sealed partial class MainWindow
                 Checkpoint(PaneChromeKey, "passed");
                 result["opaqueBackgroundInBothThemes"] = true;
             }
-            finally { root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render(); }
+            finally
+            {
+                if (restoreMightyDesign is not null) await restoreMightyDesign();
+                root.Children.Remove(accentProbe); await service.UpdateAsync(s => s with { Theme = originalTheme }); Render();
+            }
             await ApplyLayoutPreset("columns"); root.UpdateLayout(); await Task.Delay(120);
             var leakStrings = new List<string>();
             CollectVisibleStrings(root, leakStrings);
@@ -1420,7 +1437,7 @@ public sealed partial class MainWindow
             owner.smokeStart = async request => { calls++; submitted = request; await Change(p => p with { Status = "running" }); await gate.Task; await Change(p => p with { Status = "completed" }); };
             input.Text = "전송할 요청"; await WaitUI(() => Session.Draft == input.Text); RefreshComposerState();
             var sending = Send(); await WaitUI(() => calls == 1 && Session.Status == "running");
-            Require((string?)send.Content == "■" && send.IsEnabled && !canSend, "실행 중 단일 버튼이 중지로 바뀌지 않았습니다.");
+            Require(sendGlyph.Text == "■" && send.IsEnabled && !canSend, "실행 중 단일 버튼이 중지로 바뀌지 않았습니다.");
             await Send(); Require(calls == 1, "중복 입력이 같은 요청을 다시 시작했습니다.");
             input.Text = "다음 요청 초안"; pendingAttachments.Add(newFile); RefreshAttachments();
             gate.SetResult(); await sending;

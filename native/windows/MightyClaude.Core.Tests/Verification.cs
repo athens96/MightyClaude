@@ -598,6 +598,10 @@ internal static class Verification
         await Test("mighty running outline: 9/7 dashes fit the card outline", ActivityOutlineVerification.DashesAreNineSevenAndFitTheOutline);
         await Test("mighty running outline: one period per 1.6 s, still under reduced motion", ActivityOutlineVerification.OnePeriodPassesEveryOnePointSixSecondsAndStaysStillUnderReducedMotion);
         await Test("mighty running outline: diagram blocks carry their outline", ActivityOutlineVerification.DiagramBlocksCarryTheirOutline);
+        await Test("mighty running outline: colours are tokens and the dash counts in stroke widths", ActivityOutlineVerification.OutlinesReadTokensAndDashInStrokeUnits);
+        await Test("mighty activity mark: four capsules in a wave", ActivityOutlineVerification.ActivityMarkIsFourCapsulesInAWave);
+        await Test("mighty dot grid: 18pt × zoom from the camera offset", ActivityOutlineVerification.DotGridFollowsTheZoomAndTheOffset);
+        await Test("mighty blocks: each carries the tone of its pill, strip and incoming edge", ActivityOutlineVerification.BlocksCarryTheirToneForThePillStripAndEdge);
         await Test("mighty view model exposes the WinUI surface", MightyViewModelVerification.ExposesWinUiSurface);
         await Test("mighty canvas lays out a nested delegation run", MightyViewModelVerification.LaysOutNestedDelegationRun);
         await Test("locale Korean file loads from shared locales path", LocalizationVerification.KoreanLocaleLoadsFromSharedFile);

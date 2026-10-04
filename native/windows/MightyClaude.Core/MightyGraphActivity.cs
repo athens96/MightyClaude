@@ -75,10 +75,39 @@ public static class MightyGraphActivity
     public static IReadOnlyList<double> DashForCard(double width, double height) =>
         DashFitting(Perimeter(Math.Max(0, width - LineWidth), Math.Max(0, height - LineWidth), CornerRadius - 1));
 
+    /// <summary>The outline's token: run blue, or wait amber while the block waits (the same in both modes).</summary>
+    public static DesignToken StrokeToken(string outline) => outline == Waiting ? DesignToken.Wait : DesignToken.Run;
+
+    /// <summary>The token of the soft halo outside a running block's border; waiting has none.</summary>
+    public static DesignToken? HaloToken(string outline) => outline is Marching or Solid ? DesignToken.RunSoft : null;
+
     /// <summary>The outline's colour (the design tokens' run blue and wait amber, the same in both modes).</summary>
-    public static string StrokeHex(string outline) => (outline == Waiting ? DesignTokens.Light.Wait : DesignTokens.Light.Run).Hex;
+    public static string StrokeHex(string outline) => DesignTokens.Light[StrokeToken(outline)].Hex;
 
     /// <summary>The soft run halo outside a running block's border, per mode; waiting has none.</summary>
     public static string? HaloHex(string outline, bool dark) =>
-        outline is Marching or Solid ? DesignTokens.Palette(dark).RunSoft.Hex : null;
+        HaloToken(outline) is { } halo ? DesignTokens.Palette(dark)[halo].Hex : null;
+
+    // The running block's activity mark beside its state (macOS MightyGraphActivityIndicator):
+    // four run-blue capsules, 3 wide and 2 apart in an 18×14 box, rising and falling in a wave
+    // once per 1.6 s; with animations off a still bolt stands in their place.
+
+    /// <summary>How many capsules the activity mark has.</summary>
+    public const int Bars = 4;
+
+    /// <summary>A capsule's width and the gap between two.</summary>
+    public const double BarWidth = 3, BarGap = 2;
+
+    /// <summary>The box the capsules stand in.</summary>
+    public const double BarBoxWidth = 18, BarBoxHeight = 14;
+
+    /// <summary>The tallest a capsule gets; each is drawn this tall and scaled down to its <see cref="BarHeight"/>.</summary>
+    public const double BarTallest = 12;
+
+    /// <summary>The capsules redraw at most this often (the Mac's <c>TimelineView(.animation(minimumInterval: 1/24))</c>).</summary>
+    public const double BarFramesPerSecond = 24;
+
+    /// <summary>A capsule's height at a phase of the cycle: 4 to 12, each a fifth of a cycle behind the one before.</summary>
+    public static double BarHeight(int index, double phase) =>
+        4 + 8 * (Math.Sin((phase + index / 5.0) * 2 * Math.PI) + 1) / 2;
 }

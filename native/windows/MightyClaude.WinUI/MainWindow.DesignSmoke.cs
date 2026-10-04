@@ -204,13 +204,14 @@ public sealed partial class MainWindow
     /// after the button entered the state (so the frame's ThemeResource is resolved against the
     /// button's own resources) and before it returns to "Normal". Reading the frame, not the
     /// animated property, keeps the check independent of when the storyboard ticks. The button's
-    /// own resource for the state must be <paramref name="expectedResource"/>.
+    /// own resource for the state (written once into <c>button.Resources</c>) must be
+    /// <paramref name="expectedResource"/>.
     /// </summary>
     private static async Task<Brush?> StateBackground(Button button, string state, Brush expectedResource, string key)
     {
         var id = AutomationProperties.GetAutomationId(button);
         var resourceKey = "ButtonBackground" + state;
-        var resource = ThemeResource(button, resourceKey);
+        var resource = OwnResource(button, resourceKey);
         Require(ReferenceEquals(resource, expectedResource),
             $"{key}: the button {id} must carry the shared {Describe(expectedResource)} brush as {resourceKey}; got {Describe(resource as Brush)}");
         await WaitUI(() => button.IsLoaded);
@@ -681,48 +682,74 @@ public sealed partial class MainWindow
             finally { previousFocus?.Focus(FocusState.Programmatic); composerFocused = input.FocusState != FocusState.Unfocused; PaintComposerRing(); }
             RequireShared(input.Resources["TextControlBackgroundFocused"] as Brush, b.Transparent, "the editor's focused fill", key);
 
-            // The pills: card with a 1pt line at rest; accentSoft with accent x 0.35 while on.
+            // The pills: card with a 1pt line at rest; accentSoft with accent x 0.35 while on. The look is
+            // drawn on each pill's face; the button itself draws nothing at rest and only the subtle wash
+            // (under the opaque face) under the pointer, from resources written once.
             foreach (var (pill, what) in new[] { (model, "the model pill"), (attach, "the attach pill") })
             {
-                o.RequireBrush(pill, e => ((Control)e).Background, DesignToken.Card, what, key: key);
-                o.RequireBrush(pill, e => ((Control)e).BorderBrush, DesignToken.Line, what + "'s border", key: key);
-                Require(pill.CornerRadius == new CornerRadius(16) && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Line) && pill.Height == DesignMetrics.Layout.Toolbar,
-                    $"{key} ({theme}): {what} must be a {DesignMetrics.Layout.Toolbar}-tall capsule with a Stroke.Line border; got {pill.Height}, {pill.CornerRadius}, {pill.BorderThickness}");
+                var face = (Border)pill.Content;
+                o.RequireBrush(face, e => ((Border)e).Background, DesignToken.Card, what, key: key);
+                o.RequireBrush(face, e => ((Border)e).BorderBrush, DesignToken.Line, what + "'s border", key: key);
+                Require(face.CornerRadius == new CornerRadius(16) && face.BorderThickness == new Thickness(DesignMetrics.Stroke.Line) && pill.Height == DesignMetrics.Layout.Toolbar
+                    && pill.Padding == new Thickness(0) && pill.BorderThickness == new Thickness(0) && Math.Abs(face.ActualHeight - pill.Height) < .5,
+                    $"{key} ({theme}): {what} must be a {DesignMetrics.Layout.Toolbar}-tall capsule face with a Stroke.Line border filling a plain button; got {pill.Height}, face {face.ActualHeight} r{face.CornerRadius} {face.BorderThickness}, button padding {pill.Padding} border {pill.BorderThickness}");
+                o.RequireClear(pill.Background, what + "'s button at rest", key);
+                o.RequireSubtle(await StateBackground(pill, "PointerOver", b.Subtle, key), what + "'s button under the pointer", key);
             }
-            o.RequireBrush(model, e => ((Control)e).Foreground, DesignToken.Ink, "the model pill's words", key: key);
-            RequireFont((TextBlock)model.Content, DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.Medium, $"({theme}) the model pill's words", key);
+            o.RequireBrush(PillText(model), e => ((TextBlock)e).Foreground, DesignToken.Ink, "the model pill's words", key: key);
+            RequireFont(PillText(model), DesignMetrics.Type.Pill, Microsoft.UI.Text.FontWeights.Medium, $"({theme}) the model pill's words", key);
             var fullAccess = pane.Settings.PermissionMode == "fullAccess";
             try
             {
                 PaintPill(permission, true);
-                o.RequireBrush(permission, e => ((Control)e).Background, DesignToken.AccentSoft, "an active pill", key: key);
-                o.RequireBrush(permission, e => ((Control)e).BorderBrush, DesignToken.Accent, "an active pill's border (pillActiveBorder)", DesignMetrics.Opacity.PillActiveBorder, key);
-                o.RequireBrush(permission, e => ((Control)e).Foreground, DesignToken.Accent, "an active pill's words", key: key);
+                var face = (Border)permission.Content;
+                o.RequireBrush(face, e => ((Border)e).Background, DesignToken.AccentSoft, "an active pill", key: key);
+                o.RequireBrush(face, e => ((Border)e).BorderBrush, DesignToken.Accent, "an active pill's border (pillActiveBorder)", DesignMetrics.Opacity.PillActiveBorder, key);
+                o.RequireBrush(PillText(permission), e => ((TextBlock)e).Foreground, DesignToken.Accent, "an active pill's words", key: key);
+                Require(ReferenceEquals(OwnResource(permission, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(permission, "ButtonBackgroundPointerOver"), b.Subtle),
+                    $"{key} ({theme}): an active pill's button must keep the resources written once (transparent, subtle under the pointer); got {Describe(OwnResource(permission, "ButtonBackground") as Brush)} / {Describe(OwnResource(permission, "ButtonBackgroundPointerOver") as Brush)}");
             }
             finally { PaintPill(permission, fullAccess); }
-            Require(ReferenceEquals(ThemeResource(fast, "ToggleButtonBackgroundChecked"), b.Brush(DesignToken.AccentSoft)) && ReferenceEquals(ThemeResource(fast, "ToggleButtonBorderBrushChecked"), b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder))
-                && ReferenceEquals(ThemeResource(fast, "ToggleButtonBackground"), b.Brush(DesignToken.Card)),
-                $"{key} ({theme}): the Fast pill must be card at rest and accentSoft with accent x {DesignMetrics.Opacity.PillActiveBorder} when on");
+            var fastChecked = fast.IsChecked; var fastFace = (Border)fast.Content;
+            try
+            {
+                foreach (var on in new[] { false, true })
+                {
+                    fast.IsChecked = on;
+                    var state = on ? "on" : "off";
+                    // The face follows the Checked / Unchecked events.
+                    await WaitUI(() => ReferenceEquals(fastFace.Background, b.Brush(on ? DesignToken.AccentSoft : DesignToken.Card)), $"{key} ({theme}): the Fast pill's face did not follow its check ({state})");
+                    o.RequireBrush(fastFace, e => ((Border)e).Background, on ? DesignToken.AccentSoft : DesignToken.Card, $"the Fast pill {state}", key: key);
+                    if (on) o.RequireBrush(fastFace, e => ((Border)e).BorderBrush, DesignToken.Accent, "the Fast pill's border on (pillActiveBorder)", DesignMetrics.Opacity.PillActiveBorder, key);
+                    else o.RequireBrush(fastFace, e => ((Border)e).BorderBrush, DesignToken.Line, "the Fast pill's border off", key: key);
+                    o.RequireBrush(PillText(fast), e => ((TextBlock)e).Foreground, !fast.IsEnabled ? DesignToken.Ink3 : on ? DesignToken.Accent : DesignToken.Ink, $"the Fast pill's words {state}", key: key);
+                }
+                Require(ReferenceEquals(OwnResource(fast, "ToggleButtonBackgroundChecked"), b.Transparent) && ReferenceEquals(OwnResource(fast, "ToggleButtonBackground"), b.Transparent)
+                    && ReferenceEquals(OwnResource(fast, "ToggleButtonBackgroundPointerOver"), b.Subtle) && ReferenceEquals(OwnResource(fast, "ToggleButtonBackgroundCheckedPointerOver"), b.Subtle),
+                    $"{key} ({theme}): the Fast toggle's own resources must stay transparent with the subtle wash under the pointer, checked or not");
+            }
+            finally { fast.IsChecked = fastChecked; }
 
             // Send and stop: the run circle with a draft, the track circle without, the err square while stopping.
             // The shared pane still holds an attachment from the composer check, which alone makes it
             // sendable: set the attachments aside and put them back afterwards.
-            Require(ReferenceEquals(ThemeResource(send, "ButtonForeground"), b.Brush(DesignToken.OnStatus)) && ReferenceEquals(ThemeResource(send, "ButtonForegroundDisabled"), b.Brush(DesignToken.Ink2)),
-                $"{key} ({theme}): the send arrow must be onStatus, ink2 while disabled; got {Describe(ThemeResource(send, "ButtonForeground") as Brush)} / {Describe(ThemeResource(send, "ButtonForegroundDisabled") as Brush)}");
+            Require(ReferenceEquals(send.Content, sendGlyph) && ReferenceEquals(OwnResource(send, "ButtonBackground"), b.Transparent) && ReferenceEquals(OwnResource(send, "ButtonBackgroundDisabled"), b.Transparent),
+                $"{key} ({theme}): the send button must draw nothing of its own and show its symbol as content; got {send.Content?.GetType().Name}, {Describe(OwnResource(send, "ButtonBackground") as Brush)}");
             var previousDraft = input.Text; var attachments = pendingAttachments.ToArray();
             try
             {
                 pendingAttachments.Clear(); RefreshAttachments();
                 input.Text = "paneChromeDesign"; await WaitUI(() => send.IsEnabled && Session.Draft == input.Text);
                 o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Run, "the send circle with a draft", key: key);
+                o.RequireBrush(sendGlyph, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the send arrow", key: key);
                 Require(sendDisc.Width == 32 && sendDisc.Height == 32 && sendDisc.CornerRadius == new CornerRadius(16), $"{key} ({theme}): the send shape must be a 32 circle; got {sendDisc.Width}x{sendDisc.Height} r{sendDisc.CornerRadius}");
                 input.Text = ""; await WaitUI(() => !send.IsEnabled && Session.Draft == "");
                 o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Track, "the send circle with nothing to send", key: key);
+                o.RequireBrush(sendGlyph, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the disabled send arrow", key: key);
                 sendIsStop = true; PaintSend();
                 o.RequireBrush(sendDisc, e => ((Border)e).Background, DesignToken.Err, "the stop square", key: key);
                 Require(sendDisc.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row), $"{key} ({theme}): the stop square must have radius {DesignMetrics.Radius.Row}; got {sendDisc.CornerRadius}");
-                Require(ReferenceEquals(ThemeResource(send, "ButtonForegroundDisabled"), b.Brush(DesignToken.OnStatus)),
-                    $"{key} ({theme}): the stop symbol must stay onStatus while the run is stopping; got {Describe(ThemeResource(send, "ButtonForegroundDisabled") as Brush)}");
+                o.RequireBrush(sendGlyph, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the stop symbol while the run is stopping (send disabled)", key: key);
             }
             finally
             {

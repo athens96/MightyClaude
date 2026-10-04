@@ -277,7 +277,7 @@ public sealed partial class MainWindow
         var button = SafeButton(title, action);
         button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         button.Padding = new Thickness(8, 7, 8, 7); button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Search);
-        PlainSidebarButton(button, brushes.Transparent, brushes.Subtle);
+        // Unpainted: every caller paints it once with its own look (PlainSidebarButton writes each resource once).
         return button;
     }
 
@@ -285,8 +285,8 @@ public sealed partial class MainWindow
     /// A sidebar button drawn the Mac's <c>.plain</c> way: <paramref name="normal"/> at rest,
     /// <paramref name="hover"/> under the pointer and while pressed, and no stock fill or border in
     /// any state; its own foreground, when set, in every enabled state (<see cref="PaintPlainButton"/>:
-    /// lightweight styling in the button's theme dictionaries). All the brushes are the window's shared
-    /// ones, so a theme toggle recolours them in place.
+    /// lightweight styling in the button's own resources, written once, before it enters the tree).
+    /// All the brushes are the window's shared ones, so a theme toggle recolours them in place.
     /// </summary>
     private void PlainSidebarButton(Button button, SolidColorBrush normal, SolidColorBrush hover, SolidColorBrush? border = null, double? radius = null)
     {

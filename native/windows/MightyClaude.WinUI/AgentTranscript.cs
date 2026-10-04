@@ -60,6 +60,8 @@ internal sealed partial class AgentTranscript
         Update(session, light);
     }
     internal void Redraw() { if (last is { } value) Update(value.Session, value.Light); }
+    /// <summary>Redraws the last session in the other theme; nothing when it already shows this one.</summary>
+    internal void Retheme(bool light) { if (last is { } value && value.Light != light) Update(value.Session, light); }
     internal void Update(RunSession session, bool light)
     {
         last = (session, light);
