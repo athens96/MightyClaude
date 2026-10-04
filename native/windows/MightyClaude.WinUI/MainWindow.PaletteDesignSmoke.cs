@@ -191,11 +191,33 @@ public sealed partial class MainWindow
         if (before is not null) Require(ReferenceEquals(view, before), $"{key} ({theme}): the toggle replaced {what} instead of rendering it again in place");
         view.Document.GetText(TextGetOptions.None, out var text);
         Require(text.Trim().Length > at, $"{key} ({theme}): {what} is empty ({text.Length} characters)");
-        var color = view.Document.GetRange(at, at + 1).CharacterFormat.ForegroundColor;
-        var actual = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+        // The character is read back as RTF, and its colour is the colour-table entry its \cf index
+        // names: what the document holds, rather than CharacterFormat.ForegroundColor, which the
+        // runner reports as black for a colour that is plainly set.
+        view.Document.GetRange(at, at + 1).GetText(TextGetOptions.FormatRtf, out var rtf);
+        var actual = RtfCharacterInk(rtf);
         var expected = tokens.Select(token => $"{token} {FixtureHex(theme, token)}").ToList();
         Require(tokens.Any(token => FixtureHex(theme, token) == actual),
-            $"{key} ({theme}): {what} must be drawn in {string.Join(" or ", expected)} (the RTF colour table follows the theme); got {actual}");
+            $"{key} ({theme}): {what} must be drawn in {string.Join(" or ", expected)} (the RTF colour table follows the theme); got {actual} from {(rtf.Length > 400 ? rtf[..400] + "…" : rtf)}");
+    }
+
+    /// <summary>
+    /// The colour of the one character an RTF range holds: the <c>\cfN</c> it is drawn with, looked up in
+    /// the range's own colour table (entry 0 is the automatic colour, written "auto").
+    /// </summary>
+    private static string RtfCharacterInk(string rtf)
+    {
+        var table = System.Text.RegularExpressions.Regex.Match(rtf, @"\{\\colortbl(?<body>[^}]*)\}");
+        if (!table.Success) return "no colour table";
+        var entries = table.Groups["body"].Value.Split(';');
+        var after = rtf[(table.Index + table.Length)..];
+        var index = System.Text.RegularExpressions.Regex.Matches(after, @"\\cf(\d+)").Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)).LastOrDefault();
+        if (index <= 0) return "auto";
+        if (index >= entries.Length) return $"cf{index} past the {entries.Length - 1} table entries";
+        var rgb = System.Text.RegularExpressions.Regex.Match(entries[index], @"\\red(\d+)\s*\\green(\d+)\s*\\blue(\d+)");
+        if (!rgb.Success) return $"cf{index} '{entries[index].Trim()}'";
+        static string Hex(System.Text.RegularExpressions.Group g) => int.Parse(g.Value, System.Globalization.CultureInfo.InvariantCulture).ToString("X2", System.Globalization.CultureInfo.InvariantCulture);
+        return "#" + Hex(rgb.Groups[1]) + Hex(rgb.Groups[2]) + Hex(rgb.Groups[3]);
     }
 
     /// <summary>The welcome (27pt semibold <c>ink</c> line) and the no-panes invitation (20pt semibold <c>ink</c>), built as the layout builds them.</summary>
