@@ -76,9 +76,9 @@ public static class MightyGraphActivity
         DashFitting(Perimeter(Math.Max(0, width - LineWidth), Math.Max(0, height - LineWidth), CornerRadius - 1));
 
     /// <summary>The outline's colour (the design tokens' run blue and wait amber, the same in both modes).</summary>
-    public static string StrokeHex(string outline) => outline == Waiting ? "#FFA81F" : "#2A5FEE";
+    public static string StrokeHex(string outline) => (outline == Waiting ? DesignTokens.Light.Wait : DesignTokens.Light.Run).Hex;
 
     /// <summary>The soft run halo outside a running block's border, per mode; waiting has none.</summary>
     public static string? HaloHex(string outline, bool dark) =>
-        outline is Marching or Solid ? (dark ? "#1A2750" : "#E6EDFF") : null;
+        outline is Marching or Solid ? DesignTokens.Palette(dark).RunSoft.Hex : null;
 }

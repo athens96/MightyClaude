@@ -136,7 +136,7 @@ public sealed partial class MainWindow
             referencePanel.Width = referenceWidth; referencePanel.Height = referenceHeight;
             referencePanel.HorizontalAlignment = referenceOnLeft ? HorizontalAlignment.Left : HorizontalAlignment.Right;
             if (referenceGrip is not null) { Grid.SetColumn(referenceGrip, referenceOnLeft ? 1 : 0); referenceGrip.HorizontalAlignment = referenceOnLeft ? HorizontalAlignment.Right : HorizontalAlignment.Left; }
-            referencePanel.Background = WindowBackground(owner.service.Snapshot.Theme == "light");
+            referencePanel.Background = owner.WindowBackground();
             if (referenceFlip is not null) { var text = Locale.Get(referenceOnLeft ? "reference.flipRight" : "reference.flipLeft"); AutomationProperties.SetName(referenceFlip, text); ToolTipService.SetToolTip(referenceFlip, text); }
         }
 

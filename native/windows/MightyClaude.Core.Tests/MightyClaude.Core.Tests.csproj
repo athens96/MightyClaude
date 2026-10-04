@@ -9,6 +9,7 @@
     <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyClaude.Core.Tests.GraphVectors.json" />
     <EmbeddedResource Include="../../contracts/fixtures/model-labels.json" LogicalName="MightyClaude.Core.Tests.ModelLabels.json" />
     <EmbeddedResource Include="../../contracts/fixtures/next-actions.json" LogicalName="MightyClaude.Core.Tests.NextActions.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyClaude.Core.Tests.DesignTokens.json" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyClaude.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />

@@ -1,0 +1,397 @@
+{
+  "version": 1,
+  "source": "native/macos/Sources/MightyCore/DesignTokens.swift",
+  "about": "Concept D design tokens shared by macOS (DesignTokenParityTests) and Windows (Core.Tests DesignTokenVerification). Changing a colour means editing DesignTokens.swift, MightyClaude.Core/DesignTokens.cs and this file; both suites fail otherwise. Spec: artifacts/design-system/index.html sections 2-5.",
+  "light": {
+    "page": "#ECEEF3",
+    "card": "#FFFFFF",
+    "cardRaised": "#F5F7FB",
+    "sidebar": "#E2E6ED",
+    "line": "#DEE2EA",
+    "track": "#DDE1E9",
+    "ink": "#0E1320",
+    "ink2": "#5A6377",
+    "ink3": "#616A7C",
+    "accent": "#2459E6",
+    "accentSoft": "#E6EDFF",
+    "onAccent": "#FFFFFF",
+    "sidebarInk2": "#4F5869",
+    "sidebarAccent": "#1F4FD1",
+    "run": "#2A5FEE",
+    "runSoft": "#E6EDFF",
+    "wait": "#FFA81F",
+    "waitSoft": "#FFF3DE",
+    "onWait": "#2B1B00",
+    "waitText": "#8A5300",
+    "done": "#08804A",
+    "doneSoft": "#E2F6EA",
+    "doneText": "#06703F",
+    "err": "#D42F22",
+    "errSoft": "#FDE6E4",
+    "errText": "#B42318",
+    "stop": "#667085",
+    "stopSoft": "#EEF0F4",
+    "stopText": "#4F5869",
+    "idle": "#0E1320",
+    "onStatus": "#FFFFFF",
+    "agent": "#8A5CF6",
+    "agentText": "#6D3FD9",
+    "task": "#0EA5B7",
+    "taskText": "#0A7480",
+    "onTask": "#0E1320",
+    "steerText": "#A33D8F",
+    "compactText": "#4B5BB8",
+    "questionText": "#8A5300",
+    "codeSurface": "#0E1320",
+    "codeText": "#D8DEEA"
+  },
+  "dark": {
+    "page": "#0B0F19",
+    "card": "#151B29",
+    "cardRaised": "#1D2435",
+    "sidebar": "#0F1420",
+    "line": "#283043",
+    "track": "#1D2435",
+    "ink": "#EEF1F7",
+    "ink2": "#A9B1C2",
+    "ink3": "#8E97AA",
+    "accent": "#7FA3FF",
+    "accentSoft": "#1A2750",
+    "onAccent": "#0B0F19",
+    "sidebarInk2": "#A9B1C2",
+    "sidebarAccent": "#7FA3FF",
+    "run": "#2A5FEE",
+    "runSoft": "#1A2750",
+    "wait": "#FFA81F",
+    "waitSoft": "#3A2A0D",
+    "onWait": "#2B1B00",
+    "waitText": "#FFC45C",
+    "done": "#08804A",
+    "doneSoft": "#0F2E22",
+    "doneText": "#5BD49A",
+    "err": "#D42F22",
+    "errSoft": "#3A1A18",
+    "errText": "#FF8A80",
+    "stop": "#667085",
+    "stopSoft": "#222939",
+    "stopText": "#A9B1C2",
+    "idle": "#2A3347",
+    "onStatus": "#FFFFFF",
+    "agent": "#8A5CF6",
+    "agentText": "#B9A0FF",
+    "task": "#0EA5B7",
+    "taskText": "#5ED3E0",
+    "onTask": "#0E1320",
+    "steerText": "#E58FD0",
+    "compactText": "#9AA6F5",
+    "questionText": "#FFC45C",
+    "codeSurface": "#05070D",
+    "codeText": "#D8DEEA"
+  },
+  "derived": {
+    "light": {
+      "isDark": false,
+      "segmentTrack": "#DDE1E9",
+      "segmentOn": "#FFFFFF",
+      "tones": {
+        "run": {
+          "fill": "#2A5FEE",
+          "text": "#2459E6",
+          "soft": "#E6EDFF",
+          "mark": "#2A5FEE",
+          "glyph": "#2A5FEE"
+        },
+        "wait": {
+          "fill": "#FFA81F",
+          "text": "#8A5300",
+          "soft": "#FFF3DE",
+          "mark": "#8A5300",
+          "glyph": "#FFA81F"
+        },
+        "done": {
+          "fill": "#08804A",
+          "text": "#06703F",
+          "soft": "#E2F6EA",
+          "mark": "#08804A",
+          "glyph": "#08804A"
+        },
+        "err": {
+          "fill": "#D42F22",
+          "text": "#B42318",
+          "soft": "#FDE6E4",
+          "mark": "#D42F22",
+          "glyph": "#D42F22"
+        },
+        "stop": {
+          "fill": "#667085",
+          "text": "#4F5869",
+          "soft": "#EEF0F4",
+          "mark": "#667085",
+          "glyph": "#667085"
+        },
+        "idle": {
+          "fill": "#0E1320",
+          "text": "#5A6377",
+          "soft": "#EEF0F4",
+          "mark": "#616A7C",
+          "glyph": "#4F5869"
+        }
+      },
+      "disc": {
+        "wait": {
+          "fill": "#FFA81F",
+          "ink": "#2B1B00"
+        },
+        "err": {
+          "fill": "#D42F22",
+          "ink": "#FFFFFF"
+        }
+      }
+    },
+    "dark": {
+      "isDark": true,
+      "segmentTrack": "#0B0F19",
+      "segmentOn": "#2A3347",
+      "tones": {
+        "run": {
+          "fill": "#2A5FEE",
+          "text": "#7FA3FF",
+          "soft": "#1A2750",
+          "mark": "#2A5FEE",
+          "glyph": "#7FA3FF"
+        },
+        "wait": {
+          "fill": "#FFA81F",
+          "text": "#FFC45C",
+          "soft": "#3A2A0D",
+          "mark": "#FFC45C",
+          "glyph": "#FFA81F"
+        },
+        "done": {
+          "fill": "#08804A",
+          "text": "#5BD49A",
+          "soft": "#0F2E22",
+          "mark": "#08804A",
+          "glyph": "#5BD49A"
+        },
+        "err": {
+          "fill": "#D42F22",
+          "text": "#FF8A80",
+          "soft": "#3A1A18",
+          "mark": "#D42F22",
+          "glyph": "#D42F22"
+        },
+        "stop": {
+          "fill": "#667085",
+          "text": "#A9B1C2",
+          "soft": "#222939",
+          "mark": "#667085",
+          "glyph": "#A9B1C2"
+        },
+        "idle": {
+          "fill": "#2A3347",
+          "text": "#A9B1C2",
+          "soft": "#222939",
+          "mark": "#8E97AA",
+          "glyph": "#A9B1C2"
+        }
+      },
+      "disc": {
+        "wait": {
+          "fill": "#FFA81F",
+          "ink": "#2B1B00"
+        },
+        "err": {
+          "fill": "#D42F22",
+          "ink": "#FFFFFF"
+        }
+      }
+    }
+  },
+  "windowsOnly": {
+    "subtle": {
+      "source": "native/macos/Sources/MightyClaude/Palette.swift:30 (Color.primary.opacity(0.035))",
+      "light": {
+        "color": "#000000",
+        "opacity": 0.035
+      },
+      "dark": {
+        "color": "#FFFFFF",
+        "opacity": 0.035
+      }
+    },
+    "provider": {
+      "source": "native/macos/Sources/MightyCore/ProviderMark.swift:14-20",
+      "claude": [
+        "#D97757"
+      ],
+      "codex": [
+        "#10A37F"
+      ],
+      "gemini": [
+        "#4285F4",
+        "#9B72CB",
+        "#D96570"
+      ]
+    },
+    "syntax": {
+      "source": "native/macos/Sources/MightyClaude/FilePaneView.swift:447-450 (AppKit system colours; comments are ink2)",
+      "light": {
+        "keyword": "#FF2D55",
+        "string": "#FF9500",
+        "number": "#AF52DE"
+      },
+      "dark": {
+        "keyword": "#FF375F",
+        "string": "#FF9F0A",
+        "number": "#BF5AF2"
+      }
+    }
+  },
+  "opacities": [
+    {
+      "name": "sidebarWorkspaceSelected",
+      "token": "sidebarAccent",
+      "opacity": 0.1,
+      "source": "M/WorkspaceView.swift:191"
+    },
+    {
+      "name": "sidebarRowSelectedBorder",
+      "token": "black",
+      "opacity": 0.07,
+      "stroke": 0.5,
+      "source": "M/WorkspaceView.swift:525-526"
+    },
+    {
+      "name": "paneActiveBorder",
+      "token": "accent",
+      "opacity": 0.58,
+      "stroke": 1,
+      "source": "M/SessionPaneView.swift:164"
+    },
+    {
+      "name": "tabActiveRule",
+      "token": "accent",
+      "opacity": 0.55,
+      "stroke": 1,
+      "source": "M/PaneDockView.swift:213"
+    },
+    {
+      "name": "composerFocus",
+      "token": "accent",
+      "opacity": 0.8,
+      "stroke": 1.5,
+      "source": "M/SessionPaneView.swift:655"
+    },
+    {
+      "name": "pillActiveBorder",
+      "token": "accent",
+      "opacity": 0.35,
+      "stroke": 1,
+      "source": "M/ComposerControls.swift:25-26"
+    },
+    {
+      "name": "inputPreview",
+      "token": "tint",
+      "opacity": 0.055,
+      "source": "M/MightyGraphView.swift:554, 820"
+    },
+    {
+      "name": "edge",
+      "token": "ink2",
+      "opacity": 0.45,
+      "stroke": 1.5,
+      "source": "M/MightyGraphView.swift:376-378"
+    },
+    {
+      "name": "draft",
+      "token": "accent",
+      "opacity": 0.6,
+      "stroke": 1.5,
+      "source": "M/MightyGraphView.swift:404-420"
+    },
+    {
+      "name": "fileSelection",
+      "token": "accent",
+      "opacity": 0.18,
+      "source": "M/FilePaneView.swift:119-120"
+    }
+  ],
+  "metrics": {
+    "note": "Windows-checked only: these live in Mac SwiftUI views, not MightyCore (plan risk R6, follow-up F2).",
+    "radius": {
+      "fileRow": 5,
+      "segment": 6,
+      "search": 7,
+      "row": 8,
+      "cardButton": 9,
+      "entry": 10,
+      "pane": 11,
+      "block": 12,
+      "timelineRow": 14,
+      "composer": 16,
+      "tile": 18
+    },
+    "stroke": {
+      "hairline": 0.5,
+      "line": 1,
+      "focus": 1.5,
+      "active": 2,
+      "rail": 3
+    },
+    "type": {
+      "tile": 34,
+      "dashTitle": 29,
+      "welcome": 27,
+      "header": 17,
+      "timeline": 16,
+      "dashRow": 14,
+      "title": 13,
+      "body": 13,
+      "sideRow": 12.5,
+      "block": 12,
+      "row": 12,
+      "state": 11.5,
+      "pill": 11,
+      "mono": 11,
+      "small": 10,
+      "badge": 9
+    },
+    "font": {
+      "mono": "Cascadia Mono, Consolas",
+      "body": "Segoe UI Variable Text, Segoe UI",
+      "heading": "Segoe UI Variable Display, Segoe UI"
+    },
+    "layout": {
+      "sidebarMin": 210,
+      "sidebarDefault": 252,
+      "sidebarMax": 360,
+      "dockInset": 16,
+      "paneHeader": 34,
+      "tabStrip": 38,
+      "blockHead": 38,
+      "previewHead": 40,
+      "toolbar": 32
+    },
+    "dash": {
+      "running": {
+        "pattern": [
+          9,
+          7
+        ],
+        "width": 2,
+        "inStrokeUnits": [
+          4.5,
+          3.5
+        ]
+      },
+      "draft": {
+        "pattern": [
+          5,
+          4
+        ],
+        "width": 1.5
+      }
+    }
+  }
+}

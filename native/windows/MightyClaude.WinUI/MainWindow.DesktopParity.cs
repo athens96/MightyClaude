@@ -22,7 +22,7 @@ public sealed partial class MainWindow
 
     private void ShowLaunchSplash()
     {
-        launchSplash = new Grid { Background = WindowBackground(false) };
+        launchSplash = new Grid { Background = WindowBackground() };
         var stack = new StackPanel { Spacing = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var icon = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 104, Height = 104 };
         AutomationProperties.SetAccessibilityView(icon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);

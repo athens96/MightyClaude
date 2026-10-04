@@ -55,7 +55,7 @@ public sealed partial class MainWindow
             navigation.SelectedItem = navigation.Items.OfType<ListViewItem>().FirstOrDefault(item => ((SettingsCategory)item.Tag).Id == settingsCategory) ?? navigation.Items[0];
             // A separate settings window leaves the main XamlRoot available
             // for account/reset confirmations (WinUI forbids nested dialogs).
-            var frame = new Grid { Padding = new(20), RowSpacing = 16, RequestedTheme = root.RequestedTheme, Background = WindowBackground(service.Snapshot.Theme == "light") };
+            var frame = new Grid { Padding = new(20), RowSpacing = 16, RequestedTheme = root.RequestedTheme, Background = WindowBackground() };
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
             frame.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
