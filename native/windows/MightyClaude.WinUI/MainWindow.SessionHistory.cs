@@ -116,6 +116,12 @@ public sealed partial class MainWindow
         {
             graphHistoryLoad?.Cancel(); graphHistoryLoad = null;
             graphHistory.Reset();
+            // This hook runs only when the pane is removed from the snapshot.
+            // Waiting for another event with that closed ID would retain all
+            // cached native documents through the service's event delegate.
+            owner.service.RunEventReceived -= OnGraphRunEvent;
+            CancelResultReveal();
+            foreach (var outline in graphOutlineViews.Values) outline.Stop?.Invoke();
         }
 
         /// The top of the diagram: loads the previous requests from the session

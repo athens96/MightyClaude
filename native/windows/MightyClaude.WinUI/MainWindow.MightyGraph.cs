@@ -44,6 +44,19 @@ public sealed partial class MainWindow
         private readonly Dictionary<string, AgentTranscript> graphTranscripts = [];
         private bool graphDeferredDraw;
         private readonly Dictionary<string, Border> graphCards = [];
+        private sealed class GraphCardView
+        {
+            internal required Border Card;
+            internal Grid? Body, Header;
+            internal StackPanel? Content;
+            internal TextBlock? Request;
+            internal AgentTranscript? Transcript;
+            internal Button? FitButton;
+            internal string Fingerprint = "";
+            internal bool MeasureQueued;
+        }
+        private readonly Dictionary<string, GraphCardView> graphCardViews = [];
+        private readonly Dictionary<string, (string Fingerprint, Rectangle? Halo, Rectangle Line, Action? Stop)> graphOutlineViews = [];
         private readonly Dictionary<string, (string Kind, Rectangle Line)> graphOutlines = [];
         private readonly Dictionary<string, string> graphBlockKinds = [];
         // Each card's header title as drawn, so the smoke can read which carry an agent mark.
@@ -323,12 +336,16 @@ public sealed partial class MainWindow
                 if (at >= 0) blocks[at] = blocks[at] with { Title = GraphRequestTitle(runs[i], i + 1) };
             }
 
-            foreach (var transcript in graphTranscripts.Values)
-                if (transcript.View.Parent is Panel parent) parent.Children.Remove(transcript.View);
-            TraceGraphSmoke("transcripts-detached");
-            foreach (var stale in graphTranscripts.Keys.Where(key => !blocks.Any(block => block.Id == key)).ToArray()) graphTranscripts.Remove(stale);
-            graphCanvas.Children.Clear(); graphBodies.Clear(); graphCards.Clear(); graphOutlines.Clear(); graphBlockKinds.Clear(); graphTitles.Clear(); graphFitResultButton = null;
-            TraceGraphSmoke("canvas-cleared");
+            var live = blocks.Select(block => block.Id).ToHashSet();
+            foreach (var stale in graphCards.Keys.Where(key => !live.Contains(key)).ToArray())
+            {
+                graphCards.Remove(stale); graphCardViews.Remove(stale); graphBodies.Remove(stale); graphTranscripts.Remove(stale);
+                graphOutlines.Remove(stale);
+                if (graphOutlineViews.Remove(stale, out var oldOutline)) oldOutline.Stop?.Invoke();
+                graphBlockKinds.Remove(stale); graphTitles.Remove(stale);
+            }
+            graphFitResultButton = null;
+            var desired = new List<UIElement>();
             graphCanvas.Width = Math.Max(1, layout.Size.W); graphCanvas.Height = Math.Max(1, layout.Size.H);
             var frames = new Dictionary<string, GraphRect>();
             foreach (var block in blocks)
@@ -343,7 +360,7 @@ public sealed partial class MainWindow
             foreach (var edge in layout.Edges)
             {
                 if (!frames.TryGetValue(edge.Source, out var from) || !frames.TryGetValue(edge.Target, out var to)) continue;
-                graphCanvas.Children.Add(new Line
+                desired.Add(new Line
                 {
                     X1 = from.X + from.W / 2, Y1 = from.Y + from.H, X2 = to.X + to.W / 2, Y2 = to.Y,
                     Stroke = new SolidColorBrush(Windows.UI.Color.FromArgb(150, 100, 149, 237)), StrokeThickness = 1.5, IsHitTestVisible = false,
@@ -354,16 +371,30 @@ public sealed partial class MainWindow
                 var card = BuildGraphCard(block, files, pane);
                 Canvas.SetLeft(card, frames[block.Id].X); Canvas.SetTop(card, frames[block.Id].Y);
                 card.Width = frames[block.Id].W; card.Height = frames[block.Id].H;
-                graphCards[block.Id] = card; graphBlockKinds[block.Id] = block.Kind; graphCanvas.Children.Add(card);
-                AddActivityOutline(block, frames[block.Id]);
+                graphCards[block.Id] = card; graphBlockKinds[block.Id] = block.Kind; desired.Add(card);
+                AddActivityOutline(block, frames[block.Id], desired);
                 if (LoadedFromRecord(block.Id, older)) ToolTipService.SetToolTip(card, Locale.Get("graph.history.tag"));
             }
             if (layout.Nodes.FirstOrDefault(n => n.Kind == "history") is { } history)
             {
                 var card = BuildHistoryCard(pane, retained, older.Count, history.Frame);
                 Canvas.SetLeft(card, history.Frame.X - layout.OriginX); Canvas.SetTop(card, history.Frame.Y - layout.OriginY);
-                graphCanvas.Children.Add(card);
+                desired.Add(card);
             }
+            // Keep every retained native document attached to its original
+            // content panel, including between the first Measure and Loaded.
+            // Geometry changes reorder z-layers, never remove/re-add cards.
+            var wanted = desired.ToHashSet();
+            for (var i = graphCanvas.Children.Count - 1; i >= 0; i--)
+                if (!wanted.Contains(graphCanvas.Children[i])) graphCanvas.Children.RemoveAt(i);
+            var attached = graphCanvas.Children.ToHashSet();
+            for (var i = 0; i < desired.Count; i++)
+            {
+                Canvas.SetZIndex(desired[i], i);
+                if (!attached.Contains(desired[i])) graphCanvas.Children.Add(desired[i]);
+            }
+            TraceGraphSmoke($"canvas-reconciled:retained={attached.Count}:desired={desired.Count}");
+            if (graphLatestResultId is { } latestId && graphCardViews.TryGetValue(latestId, out var latestView)) QueueGraphCardMeasure(latestId, latestView);
             // The total counts the retained requests; loaded ones are named apart.
             graphTotal.Text = MightyGraphBlockModel.ToolbarSummary(retained)
                 + (older.Count > 0 ? " · " + Locale.Get("graph.history.headerLoaded", new Dictionary<string, string> { ["count"] = older.Count.ToString() }) : "");
@@ -455,81 +486,105 @@ public sealed partial class MainWindow
 
         private Border BuildGraphCard(MightyGraphBlock block, IReadOnlyList<ResultFiles.ResultFile> files, RunSession pane)
         {
-            var card = new Border
+            if (!graphCardViews.TryGetValue(block.Id, out var view))
             {
-                CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(80, 135, 135, 135)),
-                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 135, 135, 135)),
-                Padding = new Thickness(12), Tag = block.Id,
-            };
-            AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
-            AutomationProperties.SetName(card, block.Title);
-            card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
-
-            if (block.Kind == "resultFiles") { card.Child = BuildResultFilesPanel(block, files); return card; }
-            var resizable = block.Kind == "result" && block.Id == graphLatestResultId;
-
-            var body = new Grid { RowSpacing = 6 };
-            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                var card = new Border
+                {
+                    CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(80, 135, 135, 135)),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 135, 135, 135)),
+                    Padding = new Thickness(12), Tag = block.Id,
+                };
+                view = new GraphCardView { Card = card }; graphCardViews[block.Id] = view;
+                AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
+                card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
+                if (block.Kind != "resultFiles")
+                {
+                    view.Body = new Grid { RowSpacing = 6 };
+                    view.Body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    view.Body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    view.Content = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Top };
+                    view.Request = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = .85, Visibility = Visibility.Collapsed };
+                    view.Content.Children.Add(view.Request);
+                    var captured = view;
+                    view.Content.SizeChanged += (_, _) => QueueGraphCardMeasure(block.Id, captured);
+                    card.Loaded += (_, _) => QueueGraphCardMeasure(block.Id, captured);
+                    var scroll = new ScrollViewer { Content = view.Content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Enabled };
+                    graphBodies[block.Id] = scroll; Grid.SetRow(scroll, 1); view.Body.Children.Add(scroll);
+                    if (block.Kind is "request" or "result" or "agent" or "draft") view.Body.Children.Add(BuildResultResizeGrip(block.Id));
+                    card.Child = view.Body;
+                }
+            }
+            // Frame is deliberately excluded. Resizing or camera movement must
+            // never tear down a RichEditBox while native text services load it.
+            var look = block.Kind == "request" ? RequestStyleLook(block.Request) : (Icon: "", Tint: "");
+            var fingerprint = JsonSerializer.Serialize(new
+            {
+                block.Kind, block.Title, block.Request, block.Entries, block.State, block.Indicator,
+                block.Capsule, block.CapsuleHelp, block.ResultFilesRunId,
+                Files = block.Kind is "result" or "resultFiles" ? files : [],
+                FilesOpen = graphResultFilesRunId, Selected = graphSelection == block.Id,
+                Latest = graphLatestResultId == block.Id, SavedResult = pane.GraphResultSize is not null,
+                CustomSize = pane.GraphBlockSizes?.ContainsKey(block.Id) == true, Expanded = graphExpanded.Contains(block.Id),
+                StyleIcon = look.Icon, StyleTint = look.Tint,
+                Light = !owner.DarkTheme, Language = Locale.LanguagePreference,
+            }, Wire.Json);
+            if (view.Fingerprint == fingerprint)
+            {
+                if (block.Id == graphLatestResultId) graphFitResultButton = view.FitButton;
+                return view.Card;
+            }
+            view.Fingerprint = fingerprint;
+            AutomationProperties.SetName(view.Card, block.Title);
+            if (block.Kind == "resultFiles") { view.Card.Child = BuildResultFilesPanel(block, files); return view.Card; }
             var header = BuildGraphCardHeader(block, files);
-            body.Children.Add(header);
-
-            // Top-aligned: a stretched child of the scrolling body is arranged at least as tall
-            // as the body, so it would report the card's own height and never its content's.
-            var content = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Top };
-            // The body scrolls, so the content takes its natural height: with the
-            // header and the card's chrome that is the newest result's content height
-            // (macOS AgentTranscriptView.onContentHeight). Neither depends on the card's
-            // height, so fitting the card to it changes nothing measured here.
-            if (resizable)
+            if (view.Header is not null) view.Body!.Children.Remove(view.Header);
+            view.Header = header; view.Body!.Children.Insert(0, header);
+            view.FitButton = block.Id == graphLatestResultId && pane.GraphResultSize is not null ? graphFitResultButton : null;
+            var currentView = view;
+            header.SizeChanged += (_, _) => QueueGraphCardMeasure(block.Id, currentView);
+            view.Request!.Text = block.Request;
+            view.Request.Visibility = block.Request.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            if (block.Entries.Count > 0 && view.Transcript is null)
             {
-                var measureQueued = false;
-                void Measured(object sender, SizeChangedEventArgs args)
+                var transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
+                if (owner.options.SmokeTest)
                 {
-                    TraceGraphSmoke($"result-size-event:header={header.ActualHeight:F2}:content={content.ActualHeight:F2}:queued={measureQueued}");
-                    if (measureQueued) return;
-                    measureQueued = true;
-                    if (!Container.DispatcherQueue.TryEnqueue(() =>
-                    {
-                        measureQueued = false;
-                        TraceGraphSmoke($"result-measure-callback:loaded={card.IsLoaded}:current={ReferenceEquals(graphCards.GetValueOrDefault(block.Id), card)}");
-                        // Reused transcripts detach from the previous card during
-                        // redraw. Those old SizeChanged events must not overwrite
-                        // the current result's height or start another layout pass.
-                        if (!QueuePaneAlive || !card.IsLoaded || graphViewport?.Visibility != Visibility.Visible ||
-                            !ReferenceEquals(graphCards.GetValueOrDefault(block.Id), card) ||
-                            header.ActualHeight <= 0 || content.Children.Count > 0 && content.ActualHeight <= 0) return;
-                        ResultMeasured(block.Id, GraphCardChrome + header.ActualHeight + content.ActualHeight);
-                    })) measureQueued = false;
+                    transcript.View.Loaded += (_, _) => TraceGraphSmoke("transcript-loaded");
+                    transcript.View.Unloaded += (_, _) => TraceGraphSmoke("transcript-unloaded");
                 }
-                content.SizeChanged += Measured; header.SizeChanged += Measured;
-            }
-            if (block.Request.Length > 0)
-                content.Children.Add(new TextBlock { Text = block.Request, FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = .85 });
-            if (block.Entries.Count > 0)
-            {
-                if (!graphTranscripts.TryGetValue(block.Id, out var transcript))
+                transcript.SelectionEnded = () =>
                 {
-                    transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
-                    if (owner.options.SmokeTest)
-                    {
-                        transcript.View.Loaded += (_, _) => TraceGraphSmoke("transcript-loaded");
-                        transcript.View.Unloaded += (_, _) => TraceGraphSmoke("transcript-unloaded");
-                    }
-                    transcript.SelectionEnded = () => { if (graphDeferredDraw) { graphDeferredDraw = false; Container.DispatcherQueue.TryEnqueue(() => { if (QueuePaneAlive) RefreshMightyView(Session); }); } };
-                    graphTranscripts[block.Id] = transcript;
-                }
+                    if (!graphDeferredDraw) return;
+                    graphDeferredDraw = false;
+                    QueueGraphRefresh();
+                };
                 transcript.View.MinHeight = 0;
-                transcript.Update(pane with { Logs = [.. block.Entries], Kind = "claude" }, owner.service.Snapshot.Theme == "light", owner.pictures, Workspace.Path);
-                content.Children.Add(transcript.View);
+                view.Transcript = transcript; graphTranscripts[block.Id] = transcript;
+                view.Content!.Children.Add(transcript.View);
             }
-            var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Enabled };
-            graphBodies[block.Id] = scroll;
-            Grid.SetRow(scroll, 1); body.Children.Add(scroll);
-            if (block.Kind is "request" or "result" or "agent" or "draft") body.Children.Add(BuildResultResizeGrip(block.Id));
-            card.Child = body;
-            return card;
+            if (view.Transcript is { } existing)
+            {
+                existing.View.Visibility = block.Entries.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                existing.Update(pane with { Logs = [.. block.Entries], Kind = "claude" }, !owner.DarkTheme, owner.pictures, Workspace.Path);
+            }
+            return view.Card;
+        }
+
+        private void QueueGraphCardMeasure(string nodeId, GraphCardView view)
+        {
+            if (nodeId != graphLatestResultId || view.Content is null || view.Header is null || view.MeasureQueued) return;
+            TraceGraphSmoke($"result-measure-queued:header={view.Header.ActualHeight:F2}:content={view.Content.ActualHeight:F2}");
+            view.MeasureQueued = true;
+            if (!Container.DispatcherQueue.TryEnqueue(() =>
+            {
+                view.MeasureQueued = false;
+                TraceGraphSmoke($"result-measure-callback:loaded={view.Card.IsLoaded}:latest={nodeId == graphLatestResultId}");
+                if (!QueuePaneAlive || nodeId != graphLatestResultId || !view.Card.IsLoaded || graphViewport?.Visibility != Visibility.Visible ||
+                    !ReferenceEquals(graphCards.GetValueOrDefault(nodeId), view.Card) || view.Header.ActualHeight <= 0 ||
+                    view.Content.Children.Any(child => child.Visibility == Visibility.Visible) && view.Content.ActualHeight <= 0) return;
+                ResultMeasured(nodeId, GraphCardChrome + view.Header.ActualHeight + view.Content.ActualHeight);
+            })) view.MeasureQueued = false;
         }
 
         private Grid BuildGraphCardHeader(MightyGraphBlock block, IReadOnlyList<ResultFiles.ResultFile> files)
@@ -612,22 +667,36 @@ public sealed partial class MainWindow
         /// off; a waiting block keeps a still amber line. Only the line's dash offset is
         /// animated: the card, its transcript and the layout never see the clock.
         /// </summary>
-        private void AddActivityOutline(MightyGraphBlock block, GraphRect frame)
+        private void AddActivityOutline(MightyGraphBlock block, GraphRect frame, List<UIElement> desired)
         {
             var outline = block.Outline;
+            var fingerprint = $"{outline}|{frame.W:R}|{frame.H:R}|{owner.DarkTheme}";
+            if (graphOutlineViews.TryGetValue(block.Id, out var old) && old.Fingerprint == fingerprint)
+            {
+                if (old.Halo is { } haloView)
+                {
+                    Canvas.SetLeft(haloView, frame.X - 2 * MightyGraphActivity.LineWidth); Canvas.SetTop(haloView, frame.Y - 2 * MightyGraphActivity.LineWidth);
+                    desired.Insert(Math.Max(0, desired.Count - 1), haloView);
+                }
+                Canvas.SetLeft(old.Line, frame.X); Canvas.SetTop(old.Line, frame.Y); desired.Add(old.Line);
+                return;
+            }
+            if (graphOutlineViews.Remove(block.Id, out var removed)) removed.Stop?.Invoke();
+            graphOutlines.Remove(block.Id);
             if (outline == MightyGraphActivity.None) return;
+            Rectangle? glow = null; Action? stop = null;
             if (MightyGraphActivity.HaloHex(outline, owner.DarkTheme) is { } halo)
             {
                 // Rectangle strokes sit inside their bounds: the halo is the 4pt band outside the card.
                 var band = 2 * MightyGraphActivity.LineWidth;
-                var glow = new Rectangle
+                glow = new Rectangle
                 {
                     Width = frame.W + 2 * band, Height = frame.H + 2 * band,
                     RadiusX = MightyGraphActivity.CornerRadius + band, RadiusY = MightyGraphActivity.CornerRadius + band,
                     Stroke = OutlineBrush(halo), StrokeThickness = band, IsHitTestVisible = false,
                 };
                 Canvas.SetLeft(glow, frame.X - band); Canvas.SetTop(glow, frame.Y - band);
-                graphCanvas.Children.Insert(Math.Max(0, graphCanvas.Children.Count - 1), glow);
+                desired.Insert(Math.Max(0, desired.Count - 1), glow);
             }
             var line = new Rectangle
             {
@@ -657,10 +726,12 @@ public sealed partial class MainWindow
                 Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(march, "StrokeDashOffset");
                 var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard(); story.Children.Add(march);
                 line.Loaded += (_, _) => story.Begin(); line.Unloaded += (_, _) => story.Stop();
+                stop = story.Stop;
             }
             Canvas.SetLeft(line, frame.X); Canvas.SetTop(line, frame.Y);
-            graphCanvas.Children.Add(line);
+            desired.Add(line);
             graphOutlines[block.Id] = (outline, line);
+            graphOutlineViews[block.Id] = (fingerprint, glow, line, stop);
         }
 
         private static SolidColorBrush OutlineBrush(string hex)
@@ -913,6 +984,8 @@ public sealed partial class MainWindow
         internal (double X, double Y) GraphPan => (graphPan.X, graphPan.Y);
         internal string? GraphResultFilesRunId => graphResultFilesRunId;
         internal RunSession SessionForSmoke => Session;
+        internal Dictionary<string, (object Card, object? Document, object? Parent)> GraphNativeViewsForSmoke() =>
+            graphCardViews.ToDictionary(pair => pair.Key, pair => ((object)pair.Value.Card, (object?)pair.Value.Transcript?.View, (object?)pair.Value.Transcript?.View.Parent));
 
         /// The result box smoke: the viewport pinned to a size (NaN lets the pane
         /// decide again), the saved size set or cleared, and what was drawn.
