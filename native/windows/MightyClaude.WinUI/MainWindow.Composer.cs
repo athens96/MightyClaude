@@ -76,7 +76,7 @@ public sealed partial class MainWindow
                 values.Add(("ToggleButtonForeground" + state, b.Brush(state == "Disabled" ? DesignToken.Ink3 : DesignToken.Ink)));
                 values.Add(("ToggleButtonForegroundChecked" + state, b.Brush(state == "Disabled" ? DesignToken.Ink3 : DesignToken.Accent)));
             }
-            SetThemeResources(fast, values);
+            owner.SetThemeResources(fast, values);
             fast.Background = off; fast.BorderBrush = b.Brush(DesignToken.Line); fast.Foreground = b.Brush(DesignToken.Ink);
         }
 

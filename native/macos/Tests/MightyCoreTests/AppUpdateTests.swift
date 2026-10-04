@@ -173,21 +173,38 @@ import Testing
         let installed = try makeFakeApp(at: root.appendingPathComponent("Apps (it's here)", isDirectory: true), version: "0.1.0")
         let package = root.appendingPathComponent("updates/0.2.0/MightyClaude-macos.zip")
         try Data("zip".utf8).write(to: package)
-        let script = AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 4242, relaunch: false)
-        #expect(script.hasPrefix("#!/bin/sh") && script.contains("PATH=/usr/bin:/bin") && script.contains("PID=4242") && script.contains("kill -0 \"$PID\""))
+        // The helper waits up to five minutes for this pid to go away, so it must be one that is
+        // certainly gone: a fixed number can belong to a live process of the same user on a busy
+        // runner. A child that has exited and been reaped frees its pid, and macOS hands pids out
+        // in rising order, so it is not reused before the helper looks.
+        let gone = Process()
+        gone.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try gone.run(); gone.waitUntilExit()
+        let pid = gone.processIdentifier
+        #expect(kill(pid, 0) == -1 && errno == ESRCH)
+        let script = AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: pid, relaunch: false)
+        #expect(script.hasPrefix("#!/bin/sh") && script.contains("PATH=/usr/bin:/bin") && script.contains("PID=\(pid)\n") && script.contains("kill -0 \"$PID\""))
         #expect(script.contains("MightyClaude.app.bak") && script.contains("lsregister") && script.contains("\nsleep 2\n"))
         #expect(script.contains("DESTINATION='" + root.path + "/Apps (it'\\''s here)/MightyClaude.app'"))
         #expect(!script.contains("open -n") && AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 1).contains("open -n \"$DESTINATION\""))
-        // Run the real helper: pid 4242 belongs to nobody, so it proceeds at once.
+        // Run the real helper: the pid is gone, so it proceeds at once. Its own last word is the
+        // completion signal: "설치 완료" once the swap is done, or one of its failure lines.
+        // The swap (a fixed two-second pause, two ditto copies, two lsregister calls) takes a few
+        // seconds here but far longer on a loaded three-core CI runner, so the bound is generous;
+        // a pass returns as soon as the line appears.
         let service = AppUpdateService(directory: root.appendingPathComponent("updates"), allowsFileURLs: true)
         try await service.launchInstaller(script: script, near: package)
         let log = root.appendingPathComponent("updates/0.2.0/install.log")
-        var finished = false
-        for _ in 0..<300 {
-            if let text = try? String(contentsOf: log, encoding: .utf8), text.contains("설치 완료") { finished = true; break }
+        let failures = ["건너뜁니다", "설치할 앱이 없습니다", "복사하지 못했습니다", "백업하지 못했습니다", "되돌립니다"]
+        var finished = false, failed = false, text = ""
+        let deadline = ContinuousClock.now + .seconds(240)
+        while ContinuousClock.now < deadline {
+            text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+            if text.contains("설치 완료") { finished = true; break }
+            if failures.contains(where: text.contains) { failed = true; break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        #expect(finished)
+        #expect(finished, "the install helper \(failed ? "failed" : "did not finish within 240 s"); install.log: \(text)")
         let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: installed.appendingPathComponent("Contents/Info.plist")), format: nil) as? [String: Any]
         #expect(plist?["CFBundleShortVersionString"] as? String == "0.2.0")
         #expect(!FileManager.default.fileExists(atPath: staged.path)) // staged folder removed

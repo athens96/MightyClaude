@@ -35,24 +35,46 @@ public sealed partial class MainWindow
     /// status-line toggle does). A template reads its states' ThemeResources when it is applied and
     /// again on a theme change, so when a value changes on an element whose template is already
     /// applied, its theme is flipped and set back to make the states read the new brushes.
+    /// <para>
+    /// A changed theme is never edited in place: it is rebuilt as a fresh dictionary (the keys not
+    /// being written carried over) and swapped in whole. WinUI's indexer replaces a key by removing
+    /// its value <em>object</em>, and the core removes that object's first entry in the dictionary;
+    /// the shared brushes sit under several keys (ButtonForeground and ButtonForegroundDisabled are
+    /// both onStatus on the stop button), so it dropped another key's entry, the key being written
+    /// stayed, and the add threw E_DO_RESOURCE_KEYCONFLICT (0x800F0902). Each theme dictionary is a
+    /// distinct instance, so swapping one in ThemeDictionaries removes the right entry.
+    /// </para>
+    /// A write that still fails throws with its context in the smoke run and is traced otherwise,
+    /// leaving the element's previous look, so it can neither pass a smoke run nor crash the app.
     /// </summary>
-    internal static void SetThemeResources(FrameworkElement element, IReadOnlyList<(string Key, object Value)> values)
+    internal void SetThemeResources(FrameworkElement element, IReadOnlyList<(string Key, object Value)> values)
     {
-        var themes = element.Resources.ThemeDictionaries; var changed = false;
-        if (!themes.ContainsKey("HighContrast")) themes["HighContrast"] = new ResourceDictionary();
-        foreach (var name in new[] { "Light", "Dark" })
+        try
         {
-            if (!themes.TryGetValue(name, out var found) || found is not ResourceDictionary theme) themes[name] = theme = new ResourceDictionary();
-            foreach (var (key, value) in values)
+            var themes = element.Resources.ThemeDictionaries; var changed = false;
+            if (!themes.ContainsKey("HighContrast")) themes["HighContrast"] = new ResourceDictionary();
+            foreach (var name in new[] { "Light", "Dark" })
             {
-                if (theme.TryGetValue(key, out var old) && ReferenceEquals(old, value)) continue;
-                theme[key] = value; changed = true;
+                var current = themes.TryGetValue(name, out var found) ? found as ResourceDictionary : null;
+                if (current is not null && values.All(v => current.TryGetValue(v.Key, out var old) && ReferenceEquals(old, v.Value))) continue;
+                var merged = new Dictionary<object, object>();
+                if (current is not null) foreach (var pair in current) merged[pair.Key] = pair.Value;
+                foreach (var (key, value) in values) merged[key] = value;
+                var fresh = new ResourceDictionary();
+                foreach (var pair in merged) fresh.Add(pair.Key, pair.Value);
+                themes[name] = fresh; changed = true;
             }
+            if (!changed || VisualTreeHelper.GetChildrenCount(element) == 0) return;
+            var requested = element.RequestedTheme;
+            element.RequestedTheme = element.ActualTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+            element.RequestedTheme = requested;
         }
-        if (!changed || VisualTreeHelper.GetChildrenCount(element) == 0) return;
-        var requested = element.RequestedTheme;
-        element.RequestedTheme = element.ActualTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
-        element.RequestedTheme = requested;
+        catch (Exception error)
+        {
+            var context = $"Theme resources of {element.GetType().Name} '{AutomationProperties.GetAutomationId(element)}' ({string.Join(", ", values.Select(v => v.Key))}) could not be written: {error.Message}";
+            if (options.SmokeTest) throw new InvalidOperationException(context, error);
+            System.Diagnostics.Trace.TraceError(context);
+        }
     }
 
     /// <summary>A lightweight-styling value as the element's current theme dictionary holds it (null when absent).</summary>
