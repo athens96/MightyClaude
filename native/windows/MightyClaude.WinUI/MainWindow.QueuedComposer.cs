@@ -58,7 +58,7 @@ public sealed partial class MainWindow
             return true;
         }
 
-        private Task ComposerPrimaryAction() => (Session.Status == "running" || starting) && !HasComposerContent ? StopActiveRun() : Send();
+        private Task ComposerPrimaryAction() => starting || queueStarting || Session.Status == "running" && !HasComposerContent ? StopActiveRun() : Send();
 
         private Task StopActiveRun() => owner.Act(async () =>
         {
@@ -72,7 +72,10 @@ public sealed partial class MainWindow
 
         private void RefreshQueuedComposer(bool busy)
         {
-            var queueable = busy && Session.Kind == "claude" && HasComposerContent;
+            // Until start is acknowledged, the still-visible draft belongs to
+            // that submission. Keep its stop action instead of presenting it
+            // as a new queue item (which would also disable the primary button).
+            var queueable = busy && !starting && !queueStarting && Session.Kind == "claude" && HasComposerContent;
             if (queueStopButton is not null) { queueStopButton.Visibility = queueable ? Visibility.Visible : Visibility.Collapsed; queueStopButton.IsEnabled = !stopping; }
             if (queueable)
             {
