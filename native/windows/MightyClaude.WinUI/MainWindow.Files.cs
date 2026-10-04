@@ -476,12 +476,8 @@ public sealed partial class MainWindow
             var light = owner.service.Snapshot.Theme == "light";
             if (markdownShown is not { } markdown || markdown.Light == light || !ReferenceEquals(previewContent?.Child, markdown.View)) return;
             var rtf = TranscriptRtf.RenderMarkdown(markdown.Source, light);
-            // Setting the text scrolls to the top; the reader's place is kept.
-            var offset = AgentTranscript.Descendant<ScrollViewer>(markdown.View)?.VerticalOffset ?? 0;
-            try { markdown.View.IsReadOnly = false; markdown.View.Document.SetText(TextSetOptions.FormatRtf, rtf); }
-            finally { markdown.View.IsReadOnly = true; }
+            SetMarkdownRtf(markdown.View, rtf);
             markdownShown = (markdown.View, markdown.Source, light);
-            if (offset > 0) markdown.View.DispatcherQueue.TryEnqueue(() => AgentTranscript.Descendant<ScrollViewer>(markdown.View)?.ChangeView(null, offset, null, true));
         }
 
         private void ShowPreviewFailed()
@@ -700,9 +696,23 @@ public sealed partial class MainWindow
             AutomationProperties.SetAutomationId(view, "files-markdown-preview");
             ScrollViewer.SetVerticalScrollBarVisibility(view, ScrollBarVisibility.Auto);
             AutomationProperties.SetName(view, Locale.Get("files.markdown.rendered"));
+            SetMarkdownRtf(view, rtf);
+            // A RichEditBox paints its theme foreground over the whole document when the theme changes or it
+            // is shown again, wiping the RTF's colours; the RTF it shows is set again once it has done so.
+            void Repaint() => view.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (view.Tag is string current) SetMarkdownRtf(view, current); });
+            view.ActualThemeChanged += (_, _) => Repaint();
+            view.Loaded += (_, _) => Repaint();
+            return view;
+        }
+
+        /// <summary>Shows <paramref name="rtf"/> in a read-only Markdown view and remembers it for a repaint, keeping the reader's place.</summary>
+        private static void SetMarkdownRtf(RichEditBox view, string rtf)
+        {
+            var offset = AgentTranscript.Descendant<ScrollViewer>(view)?.VerticalOffset ?? 0;
             try { view.IsReadOnly = false; view.Document.SetText(TextSetOptions.FormatRtf, rtf); }
             finally { view.IsReadOnly = true; }
-            return view;
+            view.Tag = rtf;
+            if (offset > 0) view.DispatcherQueue.TryEnqueue(() => AgentTranscript.Descendant<ScrollViewer>(view)?.ChangeView(null, offset, null, true));
         }
 
         /// <summary>

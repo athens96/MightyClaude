@@ -65,6 +65,9 @@ public sealed partial class MainWindow
                     && terminal.SlimHeaderForSmoke?.Header is { IsLoaded: true } && empty.EmptyOutputForSmoke is { Visibility: Visibility.Visible, IsLoaded: true },
                     () => $"{key} ({theme}): the Mighty diagram, the Markdown preview, the terminal header or the empty agent pane never showed");
                 root.UpdateLayout();
+                // Both documents are drawn again once their boxes have painted over them for the theme.
+                await WaitUI(() => ConversationInkAt(standard) is var (at, tokens) && RtfInkIs(standard.Transcript.View, at, tokens) && RtfInkIs(files.FilesMarkdownForSmoke!, 0, [DesignToken.Ink]),
+                    () => $"{key} ({theme}): the conversation or the Markdown preview was not drawn again in this theme's colours; conversation {InkAt(standard.Transcript.View, ConversationInkAt(standard).At)}, Markdown {InkAt(files.FilesMarkdownForSmoke!, 0)}");
                 var parts = RequireTerminalHeaderInTheme(terminal, light);
                 RequireConversationInTheme(standard, empty);
                 RequireRtfInk(files.FilesMarkdownForSmoke!, 0, [DesignToken.Ink], "the Markdown preview's heading (files pane)", light?.Markdown);
@@ -162,10 +165,8 @@ public sealed partial class MainWindow
         foreach (var state in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
             RequirePaletteShared(OwnResource(view, state) as Brush, raised, $"the conversation's {state}");
         // The fixture's conversation opens with the request heading (accent); any other first line is in one of the RTF's inks.
-        view.Document.GetText(TextGetOptions.None, out var conversation);
-        var requestAt = conversation.IndexOf(Locale.Get("transcript.requestHeading"), StringComparison.Ordinal);
-        if (requestAt >= 0) RequireRtfInk(view, requestAt, [DesignToken.Accent], "the Default conversation's request heading", null);
-        else RequireRtfInk(view, 0, [DesignToken.Ink, DesignToken.Ink2, DesignToken.Accent, DesignToken.ErrText], "the Default conversation's first line", null);
+        var (inkAt, inks) = ConversationInkAt(standard);
+        RequireRtfInk(view, inkAt, inks, inks.Length == 1 ? "the Default conversation's request heading" : "the Default conversation's first line", null);
         Require(standard.EmptyOutputForSmoke is { Visibility: Visibility.Collapsed }, $"{key} ({theme}): the empty state shows over a pane that has a conversation");
         var state0 = empty.EmptyOutputForSmoke!;
         var heading = state0.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault()
@@ -185,6 +186,29 @@ public sealed partial class MainWindow
     /// current theme: the document was rendered from this theme's colour table. Each of these inks differs
     /// between the themes, so a document left in the other theme fails.
     /// </summary>
+    /// <summary>Where the Default conversation's ink is read: the request heading (accent), or else its first character in one of the RTF's inks.</summary>
+    private static (int At, DesignToken[] Tokens) ConversationInkAt(PaneView standard)
+    {
+        standard.Transcript.View.Document.GetText(TextGetOptions.None, out var conversation);
+        var requestAt = conversation.IndexOf(Locale.Get("transcript.requestHeading"), StringComparison.Ordinal);
+        return requestAt >= 0 ? (requestAt, [DesignToken.Accent]) : (0, [DesignToken.Ink, DesignToken.Ink2, DesignToken.Accent, DesignToken.ErrText]);
+    }
+
+    private static string InkAt(RichEditBox view, int at)
+    {
+        view.Document.GetText(TextGetOptions.None, out var text);
+        if (text.Trim().Length <= at) return "empty";
+        view.Document.GetRange(at, at + 1).GetText(TextGetOptions.FormatRtf, out var rtf);
+        return RtfCharacterInk(rtf);
+    }
+
+    /// <summary>Whether the character at <paramref name="at"/> is drawn in one of <paramref name="tokens"/> in the current theme.</summary>
+    private bool RtfInkIs(RichEditBox view, int at, DesignToken[] tokens)
+    {
+        var actual = InkAt(view, at);
+        return tokens.Any(token => FixtureHex(SmokeTheme, token) == actual);
+    }
+
     private void RequireRtfInk(RichEditBox view, int at, DesignToken[] tokens, string what, RichEditBox? before)
     {
         const string key = PaletteDesignKey; var theme = SmokeTheme;
