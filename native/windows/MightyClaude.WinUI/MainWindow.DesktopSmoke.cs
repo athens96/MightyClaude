@@ -31,6 +31,14 @@ public sealed partial class MainWindow
                 var dashboardView = dashboard!.Content;
                 RefreshRunningIndicators();
                 Require(ReferenceEquals(dashboardView, dashboard.Content), "clock ticks must preserve dashboard controls");
+                // On the second theme pass the ScrollViewer retains its old
+                // ActualWidth while its newly assigned content is unrealized.
+                // Wait for the actual provider controls, not that outer size.
+                root.UpdateLayout();
+                await WaitUI(() => original.Sessions.Where(s => s.Kind == "claude").All(agent =>
+                    VisualChildren(dashboard).OfType<FrameworkElement>().Any(v => v.IsLoaded && v.ActualWidth > 0 && v.ActualHeight > 0
+                        && AutomationProperties.GetAutomationId(v) == "dashboard-provider-" + agent.Id
+                        && ProviderMarkView.LabelledProvider(v) == agent.Provider)), "Dashboard provider marks must be loaded and arranged for " + theme);
                 var drawn = VisualChildren(dashboard).OfType<FrameworkElement>().ToArray();
                 foreach (var agent in original.Sessions.Where(s => s.Kind == "claude"))
                     Require(drawn.Any(v => AutomationProperties.GetAutomationId(v) == "dashboard-provider-" + agent.Id && ProviderMarkView.LabelledProvider(v) == agent.Provider), "Dashboard agent rows must carry their provider marks.");
@@ -87,6 +95,7 @@ public sealed partial class MainWindow
     private async Task CheckDashboardActions(RunSession first, Workspace other)
     {
         await SelectLayoutSession(first.Id); showsDashboard = true; RenderDashboard(); root.UpdateLayout();
+        await WaitUI(() => VisualChildren(dashboard!).OfType<Button>().Any(button => button.IsLoaded && button.ActualWidth > 0 && AutomationProperties.GetAutomationId(button) == "dashboard-open-files-" + other.Id));
         var files = VisualChildren(dashboard!).OfType<Button>().Single(button => AutomationProperties.GetAutomationId(button) == "dashboard-open-files-" + other.Id);
         ((IInvokeProvider)new ButtonAutomationPeer(files).GetPattern(PatternInterface.Invoke)).Invoke();
         await WaitUI(() => !showsDashboard && service.Snapshot.Sessions.Any(pane => pane.Kind == FilePaneKind.Kind && pane.WorkspaceId == other.Id) && service.Snapshot.ActiveWorkspaceId == other.Id);
