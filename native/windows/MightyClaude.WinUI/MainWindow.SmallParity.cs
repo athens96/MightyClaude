@@ -14,13 +14,13 @@ public sealed partial class MainWindow
         dialogOpen = true;
         try
         {
-            var dialog = new ContentDialog
+            var dialog = StyledDialog(new ContentDialog
             {
                 Title = Locale.Get("workspace.remove.title"),
                 Content = new TextBlock { Text = Locale.Get("workspace.remove.body", new Dictionary<string, string> { ["name"] = workspace.Name }), TextWrapping = TextWrapping.Wrap },
                 PrimaryButtonText = Locale.Get("workspace.menu.remove"), CloseButtonText = Locale.Get("settings.run.cancelButton"),
                 DefaultButton = ContentDialogButton.Close, XamlRoot = root.XamlRoot,
-            };
+            });
             if (await dialog.ShowAsync() != ContentDialogResult.Primary || closing) return;
             // Keep the ID the user approved even if a remote selection changed.
             if (service.Snapshot.Workspaces.Any(w => w.Id == id)) { await service.RemoveWorkspaceAsync(id); Render(); }

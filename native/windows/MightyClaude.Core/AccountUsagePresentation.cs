@@ -6,6 +6,11 @@ namespace MightyClaude.Core;
 /// One chip in the bottom status bar. `Warning` marks a window at 90% or more.
 public sealed record AccountUsageChip(string Provider, string Text, bool Warning);
 public sealed record AccountUsageWindowRow(string Label, string Used, double Fraction, string? Reset, bool Warning);
+/// One bar of the dashboard's usage card (M/DashboardView.swift:163-219): a leading window's
+/// label, its percent worded as the status bar chips word it, the fill and whether it is at 90% or more.
+public sealed record AccountUsageBar(string Label, string Percent, double Fraction, bool Warning);
+/// A provider's leading bars on the dashboard's usage card: the session window, then the weekly one.
+public sealed record AccountUsageBars(string Provider, IReadOnlyList<AccountUsageBar> Bars);
 /// One provider card in the popover.
 public sealed record AccountUsageCard(string Provider, string Title, string? Account,
     IReadOnlyList<AccountUsageWindowRow> Windows, string? Detail, string? CheckedAt, string? Note);
@@ -97,7 +102,7 @@ public sealed class AccountUsageStatus : IAsyncDisposable
             {
                 if (snapshots.TryGetValue(provider, out var held) && AccountUsageSupport.Date(held.FetchedAt) is { } older
                     && AccountUsageSupport.Date(session.FetchedAt) is { } fresh && older >= fresh) continue;
-                // A session's rate_limit_event carries no 리셋권 data, so the
+                // A session's rate_limit_event carries no reset-entitlement data, so the
                 // rows the service read stay exactly as they were.
                 var reported = session with { Resets = held?.Resets ?? [] };
                 if (snapshots.TryGetValue(provider, out var previous) && previous == reported) continue;
@@ -149,6 +154,18 @@ public sealed class AccountUsageStatus : IAsyncDisposable
                 snapshots.Remove("claude");
     }
 
+    /// <summary>
+    /// The dashboard usage card's rows: each provider with read windows, and its <see cref="Leading"/>
+    /// windows (the same two the chips show, never the spend limit). A provider with none gets no row.
+    /// </summary>
+    public IReadOnlyList<AccountUsageBars> LeadingBars() =>
+        LeadingBars(Providers.Select(provider => (provider, Snapshot(provider)?.Windows ?? (IReadOnlyList<AccountUsageWindow>)[])));
+
+    public static IReadOnlyList<AccountUsageBars> LeadingBars(IEnumerable<(string Provider, IReadOnlyList<AccountUsageWindow> Windows)> providers) =>
+        providers.Select(p => new AccountUsageBars(p.Provider, Leading(p.Windows).Select(w => new AccountUsageBar(
+                AccountUsageSupport.WindowLabel(w.Kind), AccountUsageSupport.Percent(w.UsedPercent) + "%", Math.Clamp(w.UsedPercent / 100, 0, 1), w.UsedPercent >= 90)).ToList()))
+            .Where(row => row.Bars.Count > 0).ToList();
+
     /// The two windows worth a chip: the session window, then the weekly one.
     public static IReadOnlyList<AccountUsageWindow> Leading(IReadOnlyList<AccountUsageWindow> windows) =>
         windows.Where(w => w.Kind != "spend_limit").OrderBy(w => Rank(w.Kind)).Take(2).ToList();
@@ -173,7 +190,7 @@ public sealed class AccountUsageStatus : IAsyncDisposable
         return new AccountUsageChip(provider, Refreshing ? AccountUsageStrings.ChipChecking : AccountUsageStrings.ChipEmpty, false);
     }).ToList();
 
-    /// The read-only 리셋권 rows for the Claude card. Hidden entirely while the
+    /// The read-only reset-entitlement rows for the Claude card. Hidden entirely while the
     /// direct-lookup switch is off; the link beside them is live in every state.
     public IReadOnlyList<AccountResetRow> ResetRows() =>
         ClaudeResetEntitlements.Rows(Snapshot("claude"), DirectClaudeLookupEnabled);

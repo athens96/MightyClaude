@@ -19,7 +19,14 @@ internal static class ProviderMarkView
     /// <summary>The sidebar size: macOS draws the mark at 11 pt beside the 11 pt name.</summary>
     internal const double RowSize = 11;
 
-    internal static ShapePath Create(string provider, double size = RowSize)
+    /// <summary>
+    /// The mark as a menu item's icon (the Mac's add-pane menu draws it at 12, M/WorkspaceView.swift:426),
+    /// in the provider's brand fill from the window's shared provider brushes.
+    /// </summary>
+    internal static PathIcon MenuIcon(string provider, DesignBrushes brushes, double size = 12) =>
+        new() { Data = Geometry(provider, size), Foreground = brushes.Provider(provider), Width = size, Height = size };
+
+    private static PathGeometry Geometry(string provider, double size)
     {
         var scale = size / ProviderMark.Box;
         Point At(double x, double y) => new(x * scale, y * scale);
@@ -33,6 +40,12 @@ internal static class ProviderMarkView
                     : new LineSegment { Point = At(segment.X, segment.Y) });
             geometry.Figures.Add(figure);
         }
+        return geometry;
+    }
+
+    internal static ShapePath Create(string provider, double size = RowSize)
+    {
+        var geometry = Geometry(provider, size);
         var colors = ProviderMark.Colors(provider);
         Brush fill;
         if (colors.Count == 1) fill = new SolidColorBrush(Color(colors[0]));
@@ -49,7 +62,7 @@ internal static class ProviderMarkView
     }
 
     /// <summary>
-    /// <paramref name="text"/> with the mark before its trailing provider name, <c>요청 3 · [mark] Claude</c>
+    /// <paramref name="text"/> with the mark before its trailing provider name, <c>Request 3 · [mark] Claude</c>
     /// (macOS <c>ProviderBadgeIcon.labelled</c>), for the cards in the main area. The mark is sized
     /// to the line (<see cref="ProviderMark.InlineSize"/>). Text that does not end with the name,
     /// or a provider with no mark, stays one plain text. The whole line reads as
@@ -91,7 +104,7 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, string> sidebarMarks = [];
 
     /// <summary>
-    /// The muted line under an agent row's title: <c>[mark] Claude · 4일 전</c> (macOS WorkspaceView
+    /// The muted line under an agent row's title: <c>[mark] Claude · 4 days ago</c> (macOS WorkspaceView
     /// <c>paneMeta</c> leads with the provider part), 11pt with tabular digits, in <c>ink2</c> on the
     /// selected row and <c>sidebarInk2</c> on the others. Null for a shell, a browser or the files pane.
     /// </summary>
@@ -109,7 +122,7 @@ public sealed partial class MainWindow
         return line;
     }
 
-    /// <summary>The meta line's part after the provider name: <c>· 4일 전</c>, or nothing when there is no detail.</summary>
+    /// <summary>The meta line's part after the provider name: <c>· 4 days ago</c>, or nothing when there is no detail.</summary>
     private string SidebarMeta(RunSession session) =>
         WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow) is { Length: > 0 } detail ? "· " + detail : "";
 

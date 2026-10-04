@@ -92,8 +92,10 @@ public sealed partial class MainWindow
         private TextBox? filesFilter;
         private ListView? filesList;
         private StackPanel? filesNotes, previewBanners, previewTools;
-        private TextBlock? previewTitle, previewEncoding;
+        private TextBlock? previewTitle, previewPath, previewEncoding;
+        private FontIcon? previewIcon;
         private Border? previewContent;
+        private Grid? previewHeader, filesFilterRow;
         private int previewRequest, filterEdits;
         private CancellationTokenSource? previewCancel;
         private FilesPrepared? shown;
@@ -118,6 +120,8 @@ public sealed partial class MainWindow
         internal FrameworkElement? FilesHost => filesHost;
         internal FilePreviewData? FilesShown => shown?.Data;
         internal int FilesTreeItemCount => filesList?.Items.Count ?? 0;
+        /// <summary>The parts the design smoke reads: the filter row, the tree, the preview head and its content.</summary>
+        internal (Grid? Filter, ListView? Tree, Grid? Head, Border? Content) FilesDesignParts => (filesFilterRow, filesList, previewHeader, previewContent);
         /// <summary>The bitmap size the image preview last decoded, for the GUI smoke.</summary>
         internal (long Width, long Height)? FilesPreviewPixels { get; private set; }
 
@@ -142,7 +146,7 @@ public sealed partial class MainWindow
 
             var tree = BuildFilesTree();
             filesHost.Children.Add(tree);
-            var divider = new Border { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(60, 135, 135, 135)) };
+            var divider = new Border { Background = owner.brushes.Brush(DesignToken.Line) };
             Grid.SetColumn(divider, 1); filesHost.Children.Add(divider);
             var preview = BuildFilesPreview();
             Grid.SetColumn(preview, 2); filesHost.Children.Add(preview);
@@ -152,16 +156,29 @@ public sealed partial class MainWindow
             _ = StartFiles();
         }
 
+        /// <summary>
+        /// The tree column (M/FilePaneView.swift:31-81): the filter row on the subtle wash (a 10pt filter
+        /// symbol, the 11pt field, the 11pt refresh), a <c>line</c> under it, then the rows.
+        /// </summary>
         private Grid BuildFilesTree()
         {
-            var panel = new Grid { RowSpacing = 6, Padding = new Thickness(0, 0, 8, 0) };
+            var b = owner.brushes;
+            var panel = new Grid();
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var bar = new Grid { ColumnSpacing = 4 };
+            var bar = filesFilterRow = new Grid { ColumnSpacing = 6, Padding = new Thickness(10, 7, 10, 7), Background = b.Subtle, BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line) };
+            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            filesFilter = new TextBox { PlaceholderText = Locale.Get("files.tree.filter"), Text = Tree.Filter };
+            bar.Children.Add(new FontIcon { Glyph = "\uE71C", FontSize = 10, Foreground = b.Brush(DesignToken.Ink3), VerticalAlignment = VerticalAlignment.Center });
+            filesFilter = new TextBox { PlaceholderText = Locale.Get("files.tree.filter"), Text = Tree.Filter, FontSize = DesignMetrics.Type.Pill, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, VerticalAlignment = VerticalAlignment.Center };
+            var field = new List<(string Key, object Value)>();
+            foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled", "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused", "TextControlBorderBrushDisabled" }) field.Add((key, b.Transparent));
+            foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" }) field.Add((key, b.Brush(DesignToken.Ink)));
+            foreach (var key in new[] { "TextControlPlaceholderForeground", "TextControlPlaceholderForegroundPointerOver", "TextControlPlaceholderForegroundFocused" }) field.Add((key, b.Brush(DesignToken.Ink3)));
+            field.Add(("TextControlBorderThemeThicknessFocused", new Thickness(0)));
+            owner.SetResourcesOnce(filesFilter, field);
             AutomationProperties.SetName(filesFilter, Locale.Get("files.tree.filter")); AutomationProperties.SetAutomationId(filesFilter, "files-filter");
             // Typing redraws the list once it pauses for about 100 ms, not on every key.
             filesFilter.TextChanged += async (_, _) =>
@@ -172,15 +189,18 @@ public sealed partial class MainWindow
                 if (edit != filterEdits || !FilesAlive || filesFilter is null) return;
                 Tree.Filter = filesFilter.Text; RenderTree();
             };
-            bar.Children.Add(filesFilter);
-            var refresh = new Button { Content = new FontIcon { Glyph = "", FontSize = 13 }, MinWidth = 0, Padding = new Thickness(8, 5, 8, 5) };
+            Grid.SetColumn(filesFilter, 1); bar.Children.Add(filesFilter);
+            var refresh = new Button { Content = new FontIcon { Glyph = "\uE72C", FontSize = DesignMetrics.Type.Pill }, MinWidth = 0, MinHeight = 0, Padding = new Thickness(4, 2, 4, 2), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center };
+            owner.PaintPlainButton(refresh, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
             AutomationProperties.SetName(refresh, Locale.Get("files.tree.refresh")); ToolTipService.SetToolTip(refresh, Locale.Get("files.tree.refresh"));
+            AutomationProperties.SetAutomationId(refresh, "files-refresh");
             refresh.Click += async (_, _) => await RefreshFiles();
-            Grid.SetColumn(refresh, 1); bar.Children.Add(refresh);
+            Grid.SetColumn(refresh, 2); bar.Children.Add(refresh);
             panel.Children.Add(bar);
 
-            filesList = new ListView { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = false };
+            filesList = new ListView { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = false, Padding = new Thickness(0, 4, 0, 4) };
             AutomationProperties.SetAutomationId(filesList, "files-tree");
+            PaintFilesRows(filesList);
             filesList.SelectionChanged += async (_, _) =>
             {
                 if (renderingTree || filesList.SelectedItem is not ListViewItem { Tag: string path } || !filesRows.TryGetValue(path, out var row)) return;
@@ -216,25 +236,39 @@ public sealed partial class MainWindow
             return panel;
         }
 
+        /// <summary>
+        /// The preview column (M/FilePaneView.swift:144-178): the 40-high head on the subtle wash, padding h12,
+        /// with the file's symbol in <c>accent</c>, its name 12 semibold over its path 10 mono <c>ink2</c>, the
+        /// encoding and the tools; a <c>line</c> under it; the banners; then the content.
+        /// </summary>
         private Grid BuildFilesPreview()
         {
-            var panel = new Grid { RowSpacing = 6, Padding = new Thickness(10, 0, 0, 0) };
+            var b = owner.brushes;
+            var panel = new Grid();
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var header = new Grid { ColumnSpacing = 8, MinHeight = 32 };
+            var header = previewHeader = new Grid { ColumnSpacing = 8, Height = DesignMetrics.Layout.PreviewHead, Padding = new Thickness(12, 0, 12, 0), Background = b.Subtle, BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            previewTitle = new TextBlock { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-            header.Children.Add(previewTitle);
-            previewEncoding = new TextBlock { FontSize = 11, Opacity = .6, VerticalAlignment = VerticalAlignment.Center };
+            previewIcon = new FontIcon { Glyph = "\ue8a5", FontSize = 12, Foreground = b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center };
+            header.Children.Add(previewIcon);
+            var names = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+            previewTitle = new TextBlock { FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis };
+            previewPath = new TextBlock { FontSize = DesignMetrics.Type.Small, FontFamily = MonoFont, Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis };
+            names.Children.Add(previewTitle); names.Children.Add(previewPath);
+            Grid.SetColumn(names, 1); header.Children.Add(names);
+            previewEncoding = new TextBlock { FontSize = DesignMetrics.Type.Small, Foreground = b.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
             ToolTipService.SetToolTip(previewEncoding, Locale.Get("files.preview.encoding"));
-            Grid.SetColumn(previewEncoding, 1); header.Children.Add(previewEncoding);
+            AutomationProperties.SetAutomationId(previewEncoding, "files-encoding");
+            Grid.SetColumn(previewEncoding, 2); header.Children.Add(previewEncoding);
             previewTools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(previewTools, 2); header.Children.Add(previewTools);
+            Grid.SetColumn(previewTools, 3); header.Children.Add(previewTools);
+            AutomationProperties.SetAutomationId(header, "files-preview-head");
             panel.Children.Add(header);
-            previewBanners = new StackPanel { Spacing = 4 };
+            previewBanners = new StackPanel();
             Grid.SetRow(previewBanners, 1); panel.Children.Add(previewBanners);
             previewContent = new Border();
             AutomationProperties.SetAutomationId(previewContent, "files-preview");
@@ -345,17 +379,45 @@ public sealed partial class MainWindow
             finally { renderingTree = false; }
         }
 
-        private void Note(string text) => filesNotes?.Children.Add(new TextBlock { Text = text, FontSize = 11, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+        private void Note(string text) => filesNotes?.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 6, 12, 6) });
 
+        /// <summary>
+        /// The tree's rows the Mac way (M/FilePaneView.swift:116-120): the chosen row on <c>accent</c> × 0.18
+        /// (in every pointer state, words staying <c>ink</c>), the subtle wash under the pointer, and no
+        /// stock selection bar. Written once into the list's own resources, before it is shown.
+        /// </summary>
+        private void PaintFilesRows(ListView list)
+        {
+            var b = owner.brushes; var selected = b.Brush(DesignToken.Accent, DesignMetrics.Opacity.FileSelection); var ink = b.Brush(DesignToken.Ink);
+            var values = new List<(string Key, object Value)>();
+            foreach (var state in new[] { "", "PointerOver", "Pressed" })
+            {
+                values.Add(("ListViewItemBackgroundSelected" + state, selected));
+                values.Add(("ListViewItemForegroundSelected" + state, ink));
+                values.Add(("ListViewItemForeground" + state, ink));
+                values.Add(("ListViewItemSelectionIndicator" + state + "Brush", b.Transparent));
+            }
+            values.Add(("ListViewItemBackgroundPointerOver", b.Subtle)); values.Add(("ListViewItemBackgroundPressed", b.Subtle));
+            owner.SetResourcesOnce(list, values);
+        }
+
+        /// <summary>
+        /// One tree row (M/FilePaneView.swift:96-124): the 8pt chevron in a 10-wide column, the 11pt symbol
+        /// in a 14-wide one (folders <c>accent</c>, files <c>ink2</c>), the 11pt name, indented 8 + depth × 14,
+        /// v4, radius 5; build output and dependencies at 0.55.
+        /// </summary>
         private ListViewItem TreeItem(FilePaneTree.Row row, bool light)
         {
-            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(row.Depth * 14, 0, 0, 0) };
-            line.Children.Add(new TextBlock { Text = row.Entry.IsDirectory && !Tree.IsFiltering ? row.IsExpanded ? "▾" : "▸" : "", Width = 10, Opacity = .6, VerticalAlignment = VerticalAlignment.Center });
-            line.Children.Add(new FontIcon { Glyph = row.Entry.IsDirectory ? "" : "", FontSize = 13, Opacity = .75 });
-            var name = new TextBlock { Text = Tree.IsFiltering ? row.Entry.RelativePath : row.Entry.Name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Opacity = row.Entry.IsNoise ? .5 : 1 };
+            var b = owner.brushes;
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(FilesRowIndent + row.Depth * FilesDepthIndent, 0, 0, 0), Opacity = row.Entry.IsNoise ? FilesNoiseOpacity : 1 };
+            var chevron = new FontIcon { Glyph = row.IsExpanded ? "\uE70D" : "\uE76C", FontSize = 8, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink2), Width = 10, VerticalAlignment = VerticalAlignment.Center, Visibility = row.Entry.IsDirectory && !Tree.IsFiltering ? Visibility.Visible : Visibility.Collapsed };
+            line.Children.Add(row.Entry.IsDirectory && !Tree.IsFiltering ? chevron : new Border { Width = 10 });
+            line.Children.Add(new FontIcon { Glyph = row.Entry.IsDirectory ? "\ue8b7" : "\ue8a5", FontSize = 11, Width = 14, Foreground = b.Brush(row.Entry.IsDirectory ? DesignToken.Accent : DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center });
+            var name = new TextBlock { Text = Tree.IsFiltering ? row.Entry.RelativePath : row.Entry.Name, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             line.Children.Add(name);
-            if (row.Entry.IsSymlink) line.Children.Add(new TextBlock { Text = "↗", FontSize = 10, Opacity = .55, VerticalAlignment = VerticalAlignment.Center });
-            var item = new ListViewItem { Content = line, Tag = row.Entry.RelativePath, MinHeight = 26, Padding = new Thickness(6, 0, 6, 0) };
+            if (row.Entry.IsSymlink) line.Children.Add(new FontIcon { Glyph = "\uE72A", FontSize = 8, Foreground = b.Brush(DesignToken.Ink3), VerticalAlignment = VerticalAlignment.Center });
+            var item = new ListViewItem { Content = line, Tag = row.Entry.RelativePath, MinHeight = 22, Padding = new Thickness(0, 4, 8, 4), Margin = new Thickness(4, 0, 4, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow) };
+            AutomationProperties.SetAutomationId(item, "files-row-" + row.Entry.RelativePath);
             AutomationProperties.SetName(item, row.Entry.Name);
             ToolTipService.SetToolTip(item, row.Entry.RelativePath);
             if (row.Entry.IsDirectory)
@@ -363,11 +425,14 @@ public sealed partial class MainWindow
             return item;
         }
 
-        private static ListViewItem CaptionItem(string text, int depth) => new()
+        private ListViewItem CaptionItem(string text, int depth) => new()
         {
-            Content = new TextBlock { Text = text, FontSize = 11, Opacity = .6, Margin = new Thickness(depth * 14 + 15, 0, 0, 0), TextWrapping = TextWrapping.Wrap },
-            IsHitTestVisible = false, IsTabStop = false, MinHeight = 22,
+            Content = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink3), Margin = new Thickness(FilesRowIndent + depth * FilesDepthIndent + 29, 0, 0, 0), TextWrapping = TextWrapping.Wrap },
+            IsHitTestVisible = false, IsTabStop = false, MinHeight = 18, Padding = new Thickness(0, 3, 0, 3),
         };
+
+        /// <summary>The tree's indents and the faded rows' opacity (M/FilePaneView.swift:116-117).</summary>
+        internal const double FilesRowIndent = 8, FilesDepthIndent = 14, FilesNoiseOpacity = 0.55;
 
         /// <summary>
         /// Reads the file about 100 ms after it is chosen, off the UI thread. A newer choice
@@ -382,7 +447,7 @@ public sealed partial class MainWindow
             Tree.PreviewPath = path;
             if (debounce) { try { await Task.Delay(100, cancel.Token); } catch (OperationCanceledException) { return; } }
             if (request != previewRequest || !FilesAlive) return;
-            SetPreviewHeader(path.Split('/')[^1], null);
+            SetPreviewHeader(path.Split('/')[^1], null, path);
             previewBanners?.Children.Clear(); previewTools?.Children.Clear();
             if (previewContent is not null) previewContent.Child = new ProgressRing { IsActive = true, Width = 28, Height = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             var workspaceRoot = filesRoot;
@@ -402,7 +467,7 @@ public sealed partial class MainWindow
         private void ShowPreviewFailed()
         {
             previewBanners?.Children.Clear(); previewTools?.Children.Clear();
-            if (previewContent is not null) previewContent.Child = Centered(Locale.Get("files.preview.failed"));
+            if (previewContent is not null) previewContent.Child = Notice("\uE7BA", Locale.Get("files.preview.failed"));
         }
 
         private static FilesPrepared Prepare(string root, string path, bool light, CancellationToken cancellation)
@@ -432,9 +497,13 @@ public sealed partial class MainWindow
             return new(data, tokens, numbers, longest > SourceLines.WrapThreshold, capped, units, markdown, renderCapped);
         }
 
-        private void SetPreviewHeader(string title, TextEncodingKind? encoding)
+        /// <summary>The head names the file (and shows only while one is chosen, as on the Mac).</summary>
+        private void SetPreviewHeader(string title, TextEncodingKind? encoding, string? relativePath = null)
         {
             if (previewTitle is not null) previewTitle.Text = title;
+            if (previewPath is not null) { previewPath.Text = relativePath ?? ""; ToolTipService.SetToolTip(previewPath, relativePath); }
+            if (previewIcon is not null) previewIcon.Glyph = FileGlyph(title);
+            if (previewHeader is not null) previewHeader.Visibility = title.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
             if (previewEncoding is null) return;
             previewEncoding.Text = encoding is { } kind ? TextEncodings.DisplayName(kind) : "";
             AutomationProperties.SetName(previewEncoding, encoding is { } named ? Locale.Get("files.preview.encoding") + " " + TextEncodings.DisplayName(named) : "");
@@ -443,24 +512,50 @@ public sealed partial class MainWindow
         private void ShowPlaceholder()
         {
             SetPreviewHeader("", null);
-            if (previewContent is not null) previewContent.Child = Centered(Locale.Get("files.preview.placeholder"));
+            if (previewContent is not null) previewContent.Child = Notice("\uE8A0", Locale.Get("files.preview.placeholder"));
         }
 
-        private static TextBlock Centered(string text) => new() { Text = text, Opacity = .6, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24) };
-
-        private void Banner(string text) => previewBanners?.Children.Add(new Border
+        /// <summary>The file's symbol (M/FilePaneView.swift:131-141): Markdown, image, plain text, source or any other file.</summary>
+        private static string FileGlyph(string name) => FilePreviewClassifier.FileExtension(name) switch
         {
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(40, 230, 170, 60)), CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 4, 8, 4),
-            Child = new TextBlock { Text = text, FontSize = 11, TextWrapping = TextWrapping.Wrap },
-        });
+            "md" or "markdown" => "\uE8A5",
+            "png" or "jpg" or "jpeg" or "gif" or "bmp" or "webp" or "svg" or "heic" or "tiff" or "ico" or "pdf" => "\uEB9F",
+            "txt" or "" => "\uE8A5",
+            _ => "\uE943",
+        };
+
+        /// <summary>
+        /// The empty and the failed preview (M/FilePaneView.swift:298-306): a 24pt light symbol over 12pt
+        /// <c>ink2</c> words, centred, padding 20.
+        /// </summary>
+        private FrameworkElement Notice(string glyph, string text)
+        {
+            var notice = new StackPanel { Spacing = 6, Padding = new Thickness(20), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            notice.Children.Add(new FontIcon { Glyph = glyph, FontSize = 24, FontWeight = FontWeights.Light, Foreground = owner.brushes.Brush(DesignToken.Ink2) });
+            notice.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
+            AutomationProperties.SetAutomationId(notice, "files-notice");
+            return notice;
+        }
+
+        /// <summary>A centred 12pt <c>ink2</c> sentence, for the reference preview's states.</summary>
+        private TextBlock Centered(string text) => new() { Text = text, FontSize = DesignMetrics.Type.Block, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24) };
+
+        /// <summary>A note over the preview (M/FilePaneView.swift:286-296): an info symbol and 10pt <c>ink2</c> words on <c>waitSoft</c>, padding h12 v6.</summary>
+        private void Banner(string text)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            row.Children.Add(new FontIcon { Glyph = "\uE946", FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
+            row.Children.Add(new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap });
+            previewBanners?.Children.Add(new Border { Background = owner.brushes.Brush(DesignToken.WaitSoft), Padding = new Thickness(12, 6, 12, 6), Child = row });
+        }
 
         private async Task DrawPreview(FilesPrepared prepared, int request)
         {
             var data = prepared.Data;
             previewBanners?.Children.Clear(); previewTools?.Children.Clear();
-            SetPreviewHeader(data.Name, data.Encoding);
+            SetPreviewHeader(data.Name, data.Encoding, data.RelativePath);
             if (previewContent is null) return;
-            if (data.Failure is { } failure) { previewContent.Child = Centered(failure); return; }
+            if (data.Failure is { } failure) { previewContent.Child = Notice("\uE7BA", failure); return; }
             switch (data.Kind.Tag)
             {
                 case FilePreviewKindTag.Source:
@@ -491,27 +586,38 @@ public sealed partial class MainWindow
             if (prepared.Wraps) Banner(Locale.Get("files.preview.wrapped", new Dictionary<string, string> { ["count"] = SourceLines.WrapThreshold.ToString("N0", CultureInfo.CurrentCulture) }));
         }
 
-        /// <summary>The Preview | Source switch of a Markdown file.</summary>
+        /// <summary>
+        /// The Preview | Source switch of a Markdown file, the Mac's segmented picker: a <c>segmentTrack</c>
+        /// at radius 8, padding 2, the chosen side a <c>segmentOn</c> chip at radius 6. The switch is
+        /// rebuilt with each preview, so the chosen side is drawn on its chip as it is built.
+        /// </summary>
         private void MarkdownToggle(FilesPrepared prepared)
         {
-            ToggleButton Choice(string key, bool source)
+            var b = owner.brushes;
+            var track = new StackPanel { Orientation = Orientation.Horizontal, Padding = new Thickness(2), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = b.SegmentTrack, VerticalAlignment = VerticalAlignment.Center };
+            AutomationProperties.SetAutomationId(track, "files-markdown-mode");
+            Button Choice(string key, bool source)
             {
-                var button = new ToggleButton { Content = Locale.Get(key), IsChecked = showMarkdownSource == source, Padding = new Thickness(10, 3, 10, 3), MinWidth = 0, FontSize = 12 };
+                var chosen = showMarkdownSource == source;
+                var chip = new Border { Padding = new Thickness(9, 2, 9, 2), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Background = chosen ? b.SegmentOn : b.Transparent, Child = new TextBlock { Text = Locale.Get(key), FontSize = DesignMetrics.Type.Pill, FontWeight = chosen ? FontWeights.SemiBold : FontWeights.Normal, Foreground = b.Brush(chosen ? DesignToken.Ink : DesignToken.Ink2) } };
+                var button = new Button { Content = chip, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0) };
+                owner.PaintPlainButton(button, b.Transparent, b.Transparent);
+                AutomationProperties.SetName(button, Locale.Get(key));
                 button.Click += async (_, _) => { showMarkdownSource = source; await DrawPreview(prepared, previewRequest); };
                 return button;
             }
-            previewTools?.Children.Add(Choice("files.markdown.rendered", false));
-            previewTools?.Children.Add(Choice("files.markdown.source", true));
+            track.Children.Add(Choice("files.markdown.rendered", false));
+            track.Children.Add(Choice("files.markdown.source", true));
+            previewTools?.Children.Add(track);
         }
 
         /// <summary>Monospaced text with line numbers and the highlighter's colours, selectable for copying.</summary>
         private FrameworkElement SourceView(FilesPrepared prepared)
         {
             var text = prepared.Data.Text ?? "";
-            var light = owner.service.Snapshot.Theme == "light";
             var body = new RichTextBlock
             {
-                FontFamily = MonoFont, FontSize = 12, LineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                FontFamily = MonoFont, FontSize = 12, LineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, Foreground = owner.brushes.Brush(DesignToken.Ink),
                 IsTextSelectionEnabled = true, TextWrapping = prepared.Wraps ? TextWrapping.Wrap : TextWrapping.NoWrap,
             };
             var paragraph = new Paragraph();
@@ -519,7 +625,7 @@ public sealed partial class MainWindow
             foreach (var token in prepared.Tokens)
             {
                 if (token.Location > position) paragraph.Inlines.Add(new Run { Text = text[position..token.Location] });
-                paragraph.Inlines.Add(new Run { Text = text.Substring(token.Location, token.Length), Foreground = TokenBrush(token.Kind, light) });
+                paragraph.Inlines.Add(new Run { Text = text.Substring(token.Location, token.Length), Foreground = TokenBrush(token.Kind) });
                 position = token.Location + token.Length;
             }
             if (position < text.Length) paragraph.Inlines.Add(new Run { Text = text[position..] });
@@ -533,8 +639,8 @@ public sealed partial class MainWindow
             {
                 var numbers = new TextBlock
                 {
-                    FontFamily = MonoFont, FontSize = 12, LineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
-                    Opacity = .45, TextAlignment = TextAlignment.Right, Text = prepared.LineNumbers,
+                    FontFamily = MonoFont, FontSize = DesignMetrics.Type.Small, LineHeight = FilesLineHeight, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                    Foreground = owner.brushes.Brush(DesignToken.Ink3), TextAlignment = TextAlignment.Right, Text = prepared.LineNumbers,
                 };
                 AutomationProperties.SetAccessibilityView(numbers, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
                 grid.Children.Add(numbers);
@@ -542,25 +648,29 @@ public sealed partial class MainWindow
             Grid.SetColumn(body, 1); grid.Children.Add(body);
             return new ScrollViewer
             {
-                Content = grid, Padding = new Thickness(4, 2, 4, 8),
+                Content = grid, Padding = new Thickness(6, 8, 6, 8),
                 HorizontalScrollBarVisibility = prepared.Wraps ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto,
                 HorizontalScrollMode = prepared.Wraps ? ScrollMode.Disabled : ScrollMode.Auto,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             };
         }
 
-        private static SolidColorBrush TokenBrush(SourceTokenKind kind, bool light) => new(kind switch
+        /// <summary>
+        /// A source span's colour (M/FilePaneView.swift:447-450): keywords pink, strings orange, numbers purple
+        /// (the fixture's <c>windowsOnly.syntax</c>), comments <c>ink2</c>; shared brushes the theme recolours.
+        /// </summary>
+        private SolidColorBrush TokenBrush(SourceTokenKind kind) => owner.brushes.Syntax(kind switch
         {
-            SourceTokenKind.Keyword => light ? Windows.UI.Color.FromArgb(255, 155, 35, 147) : Windows.UI.Color.FromArgb(255, 252, 95, 163),
-            SourceTokenKind.String => light ? Windows.UI.Color.FromArgb(255, 196, 26, 22) : Windows.UI.Color.FromArgb(255, 252, 106, 93),
-            SourceTokenKind.Comment => light ? Windows.UI.Color.FromArgb(255, 93, 108, 121) : Windows.UI.Color.FromArgb(255, 127, 140, 152),
-            _ => light ? Windows.UI.Color.FromArgb(255, 28, 0, 207) : Windows.UI.Color.FromArgb(255, 208, 191, 105),
-        });
+            SourceTokenKind.Keyword => "keyword",
+            SourceTokenKind.String => "string",
+            SourceTokenKind.Comment => "comment",
+            _ => "number",
+        })!;
 
         /// <summary>Rendered with the transcript's Markdown renderer: no images, no local links.</summary>
         private static FrameworkElement MarkdownView(string rtf)
         {
-            var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(8) };
+            var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(18) };
             ScrollViewer.SetVerticalScrollBarVisibility(view, ScrollBarVisibility.Auto);
             AutomationProperties.SetName(view, Locale.Get("files.markdown.rendered"));
             try { view.IsReadOnly = false; view.Document.SetText(TextSetOptions.FormatRtf, rtf); }
@@ -646,7 +756,8 @@ public sealed partial class MainWindow
 
         private void PixelsLabel(long width, long height)
         {
-            var label = new TextBlock { Text = Locale.Get("files.image.pixels", new Dictionary<string, string> { ["width"] = width.ToString(CultureInfo.InvariantCulture), ["height"] = height.ToString(CultureInfo.InvariantCulture) }), FontSize = 11, Opacity = .65, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+            var label = new TextBlock { Text = Locale.Get("files.image.pixels", new Dictionary<string, string> { ["width"] = width.ToString(CultureInfo.InvariantCulture), ["height"] = height.ToString(CultureInfo.InvariantCulture) }), FontSize = DesignMetrics.Type.Small, Foreground = owner.brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+            Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(label, FontNumeralAlignment.Tabular);
             previewTools?.Children.Insert(0, label);
         }
 
@@ -687,7 +798,8 @@ public sealed partial class MainWindow
             double Current() => zoom ?? (image.ActualWidth > 0 ? image.ActualWidth / pointsWide : 1);
             Button Tool(string glyph, string key, Func<Task> action, bool enabled = true)
             {
-                var button = new Button { Content = new FontIcon { Glyph = glyph, FontSize = 12 }, MinWidth = 0, Padding = new Thickness(7, 4, 7, 4), IsEnabled = enabled };
+                var button = new Button { Content = new FontIcon { Glyph = glyph, FontSize = 12 }, MinWidth = 0, MinHeight = 0, Padding = new Thickness(5, 3, 5, 3), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), IsEnabled = enabled };
+                owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2), disabledInk: owner.brushes.Brush(DesignToken.Ink3));
                 AutomationProperties.SetName(button, Locale.Get(key)); ToolTipService.SetToolTip(button, Locale.Get(key));
                 button.Click += async (_, _) => await owner.Act(action);
                 return button;
@@ -705,12 +817,24 @@ public sealed partial class MainWindow
         {
             var card = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(24) };
             AutomationProperties.SetAutomationId(card, "files-unsupported");
-            card.Children.Add(new FontIcon { Glyph = "", FontSize = 30, Opacity = .6 });
-            card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.unsupported"), FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center });
-            card.Children.Add(new TextBlock { Text = data.Name, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, MaxLines = 2 });
-            card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.size") + "  " + FormatBytes(data.Size), FontSize = 11, Opacity = .7, HorizontalAlignment = HorizontalAlignment.Center });
-            if (data.Modified is { } modified) card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.modified") + "  " + modified.ToLocalTime().ToString("g", CultureInfo.CurrentCulture), FontSize = 11, Opacity = .7, HorizontalAlignment = HorizontalAlignment.Center });
-            if (reason is not null) card.Children.Add(new TextBlock { Text = reason, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+            var b = owner.brushes;
+            card.Children.Add(new FontIcon { Glyph = "\ue9ce", FontSize = 30, FontWeight = FontWeights.Light, Foreground = b.Brush(DesignToken.Ink2) });
+            card.Children.Add(new TextBlock { Text = Locale.Get("files.preview.unsupported"), FontSize = DesignMetrics.Type.Title, FontWeight = FontWeights.SemiBold, Foreground = b.Brush(DesignToken.Ink), HorizontalAlignment = HorizontalAlignment.Center });
+            card.Children.Add(new TextBlock { Text = data.Name, FontSize = DesignMetrics.Type.Block, Foreground = b.Brush(DesignToken.Ink), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxLines = 2 });
+            // Size and modified time as a two-column grid of an ink2 label and its ink value (M/FilePaneView.swift:262-273).
+            var facts = new Grid { ColumnSpacing = 10, RowSpacing = 3, HorizontalAlignment = HorizontalAlignment.Center };
+            facts.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); facts.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            void Fact(string label, string value)
+            {
+                facts.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var row = facts.RowDefinitions.Count - 1;
+                var name = new TextBlock { Text = label, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2) }; Grid.SetRow(name, row); facts.Children.Add(name);
+                var text = new TextBlock { Text = value, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink) }; Grid.SetRow(text, row); Grid.SetColumn(text, 1); facts.Children.Add(text);
+            }
+            Fact(Locale.Get("files.preview.size"), FormatBytes(data.Size));
+            if (data.Modified is { } modified) Fact(Locale.Get("files.preview.modified"), modified.ToLocalTime().ToString("g", CultureInfo.CurrentCulture));
+            card.Children.Add(facts);
+            if (reason is not null) card.Children.Add(new TextBlock { Text = reason, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             var reveal = new Button { Content = Locale.Get("menu.showInExplorer"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
             AutomationProperties.SetAutomationId(reveal, "files-show-in-explorer");
             reveal.Click += (_, _) => RevealInExplorer(data.RelativePath);

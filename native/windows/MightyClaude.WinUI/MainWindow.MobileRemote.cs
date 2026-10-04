@@ -99,7 +99,7 @@ public sealed partial class MainWindow
         {
             if (mobileHost is null || options.SmokeTest || id is not null && !mobileHost.Devices.Any(device => device.Id == id)) return;
             var host = mobileHost;
-            var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close };
+            var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
             if (closing || !ReferenceEquals(host, mobileHost) || id is not null && !host.Devices.Any(device => device.Id == id)) return;
             if (screenHub is not null) await screenHub.ResetAsync("rekey-pairing"); await host.RotateKeyAsync(id); mobileRouter?.ResetUploads(); showsKey = false; await Refresh();
@@ -119,7 +119,7 @@ public sealed partial class MainWindow
             {
                 var row = new StackPanel { Spacing = 4 }; row.Children.Add(new TextBlock { Text = device.Name + (device.Legacy ? " · Legacy" : ""), TextWrapping = TextWrapping.Wrap });
                 row.Children.Add(new TextBlock { Text = Locale.Get("settings.mobileRemote.seenTemplate", new Dictionary<string, string> { ["first"] = device.FirstSeen, ["last"] = device.LastSeen }), FontSize = 11, Opacity = .65 });
-                row.Children.Add(SafeButton(Locale.Get("settings.mobileRemote.revokeRowButton"), () => Revoke(device.Id))); devices.Children.Add(row);
+                row.Children.Add(SafeButton(Locale.Get("settings.mobileRemote.revokeRowButton"), () => Revoke(device.Id))); devices.Children.Add(Toned(row));
             }
         }
         void Updated(MobileRelayStatus _) => DispatcherQueue.TryEnqueue(async () => { if (!closing && panel.IsLoaded) await Act(Refresh); });

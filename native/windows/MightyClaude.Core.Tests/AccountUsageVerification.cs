@@ -181,6 +181,25 @@ internal static class AccountUsageVerification
     /// Out of the box nothing is looked up directly: Claude shows what the CLI
     /// reported during a run, Codex is asked through its own CLI and Gemini
     /// shows the macOS sentence.
+    /// The dashboard usage card reads the chips' leading windows: session first, then weekly, the
+    /// spend limit never, percents worded as the chips word them; a provider with only a spend limit
+    /// (or nothing read) gets no row.
+    internal static Task DashboardUsageBarsAreTheLeadingWindows()
+    {
+        IReadOnlyList<AccountUsageWindow> claude = [new("spend_limit", 50), new("seven_day", 95), new("daily", 3), new("five_hour", 12.5)];
+        IReadOnlyList<AccountUsageWindow> codex = [new("spend_limit", 80)];
+        var rows = AccountUsageStatus.LeadingBars([("claude", claude), ("codex", codex), ("gemini", [])]);
+        Check(rows.Count == 1 && rows[0].Provider == "claude", "only a provider with a session or weekly window gets a usage row");
+        var bars = rows[0].Bars;
+        Check(bars.Count == 2 && bars[0].Label == AccountUsageSupport.WindowLabel("five_hour") && bars[1].Label == AccountUsageSupport.WindowLabel("seven_day"),
+            "the bars are the session window then the weekly one");
+        Check(bars[0].Percent == AccountUsageSupport.Percent(12.5) + "%" && bars[1].Percent == "95%", "the percents are worded as the chips word them");
+        Check(Math.Abs(bars[0].Fraction - 0.125) < 1e-9 && !bars[0].Warning && bars[1].Warning, "the fill follows the percent and a window at 90% or more warns");
+        var chipWindows = AccountUsageStatus.Leading(claude);
+        Check(chipWindows.Select(w => AccountUsageSupport.WindowLabel(w.Kind)).SequenceEqual(bars.Select(b => b.Label)), "the dashboard bars are exactly the chips' leading windows");
+        return Task.CompletedTask;
+    }
+
     internal static async Task DirectLookupIsOffByDefault()
     {
         Check(new AppSnapshot().ClaudeDirectUsageLookupEnabled == false, "the saved switch is off by default");

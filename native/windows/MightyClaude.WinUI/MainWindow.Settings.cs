@@ -50,23 +50,7 @@ public sealed partial class MainWindow
 
     private Task OpenSettings() => Act(ShowCategorizedSettingsAsync);
 
-    private static StackPanel BuildSectionContainer(string title, StackPanel body)
-    {
-        var wrapper = new StackPanel { Spacing = 8, Padding = new(0, 0, 0, 20) };
-        var heading = new TextBlock
-        {
-            Text = title,
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Opacity = .85,
-        };
-        AutomationProperties.SetAutomationId(heading, "settings-section-" + title);
-        wrapper.Children.Add(heading);
-        wrapper.Children.Add(body);
-        return wrapper;
-    }
-
-    // 화면 — theme, language picker, and completion-notification controls.
+    // Display — theme, language picker, and completion-notification controls.
     private StackPanel BuildDisplaySection()
     {
         var panel = new StackPanel { Spacing = 8 };
@@ -133,7 +117,7 @@ public sealed partial class MainWindow
         return panel;
     }
 
-    // CLI 업데이트 — delegates to the parameterised builder so smoke can inject fixture results.
+    // CLI updates — delegates to the parameterised builder so smoke can inject fixture results.
     private StackPanel BuildCliUpdateSectionFromState() => BuildCliUpdateSection(lastCliUpdateResults);
 
     // Called by both OpenSettings (via BuildCliUpdateSectionFromState) and the smoke check.
@@ -166,7 +150,7 @@ public sealed partial class MainWindow
         var updateProgress = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap };
         AutomationProperties.SetAutomationId(updateProgress, "cli-update-progress"); panel.Children.Add(updateProgress);
 
-        // 업데이트 하기 button — reflects coordinator state live.
+        // The update-now button — reflects coordinator state live.
         var updateButton = new Button
         {
             Content = AnyCliUpdateRunning ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton,
@@ -198,7 +182,7 @@ public sealed partial class MainWindow
                     TextWrapping = TextWrapping.Wrap,
                 });
             AutomationProperties.SetAutomationId(row, ResultRowAutomationId(result));
-            resultsPanel.Children.Add(row);
+            resultsPanel.Children.Add(Toned(row));
         }
         foreach (var result in results) AddResultRow(result);
         panel.Children.Add(resultsPanel);
@@ -221,7 +205,7 @@ public sealed partial class MainWindow
                 var status = CliUpdateStrings.StatusLabel(result.Status == "succeeded" ? "updated" : result.Status);
                 row.Children.Add(new TextBlock { Text = Locale.Get("settings.cliUpdate.pluginRowTemplate", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(providerName), ["status"] = status }), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
                 row.Children.Add(new TextBlock { Text = result.Detail, FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = .7 });
-                AutomationProperties.SetAutomationId(row, "plugin-update-result-" + providerName); pluginResults.Children.Add(row);
+                AutomationProperties.SetAutomationId(row, "plugin-update-result-" + providerName); pluginResults.Children.Add(Toned(row));
             }
             if (automaticUpdateRunning) { resultsPanel.Children.Clear(); foreach (var result in lastCliUpdateResults) AddResultRow(result); }
         }
@@ -249,7 +233,7 @@ public sealed partial class MainWindow
     private static string ResultRowAutomationId(CliUpdateResult result) =>
         ResultRowIdPrefix + result.Provider + "-" + result.Status;
 
-    // 구성 요소 — CLI rows (claude/codex/gemini) then the toolkit sub-section.
+    // Components — CLI rows (claude/codex/gemini) then the toolkit sub-section.
     // Layout mirrors ComponentsSettingsSection + ToolkitSettingsSection on macOS.
     // No Korean literal is typed here — all copy comes from the locale catalogue.
 
@@ -336,7 +320,7 @@ public sealed partial class MainWindow
             {
                 Text = Locale.Get("settings.toolkit.errorBanner"),
                 FontSize = 12,
-                Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange),
+                Foreground = brushes.Brush(DesignToken.WaitText),
                 TextWrapping = TextWrapping.Wrap,
             });
 
@@ -420,7 +404,7 @@ public sealed partial class MainWindow
                 }
                 rowPanel.Children.Add(actionsPanel);
             }
-            panel.Children.Add(rowPanel);
+            panel.Children.Add(Toned(rowPanel));
         }
     }
 
@@ -490,7 +474,7 @@ public sealed partial class MainWindow
                 });
                 row.Children.Add(removeBtn);
             }
-            panel.Children.Add(row);
+            panel.Children.Add(Toned(row));
         }
     }
 
@@ -506,12 +490,12 @@ public sealed partial class MainWindow
                 ToolkitRunItem.Verdict.Failed => Locale.Get("settings.toolkit.verdictFailed"),
                 _ => Locale.Get("settings.toolkit.verdictSkipped"),
             };
-            panel.Children.Add(new TextBlock
+            panel.Children.Add(Toned(new TextBlock
             {
                 Text = item.EntryId + " — " + label,
                 FontSize = 11,
                 Opacity = .8,
-            });
+            }));
         }
     }
 
@@ -546,14 +530,14 @@ public sealed partial class MainWindow
                     Opacity = .85,
                 });
 
-        var confirm = new ContentDialog
+        var confirm = StyledDialog(new ContentDialog
         {
             Title = Locale.Get("settings.toolkit.confirmTitle"),
             Content = new ScrollViewer { Content = argsList, MaxHeight = 240 },
             PrimaryButtonText = Locale.Get("settings.toolkit.confirmInstall"),
             CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
             XamlRoot = SettingsXamlRoot,
-        };
+        });
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
         toolkitRunning = true;
@@ -593,13 +577,13 @@ public sealed partial class MainWindow
         var parsed = ToolkitFileReader.Parse(json);
         if (parsed.Entries.Count == 0)
         {
-            await new ContentDialog
+            await StyledDialog(new ContentDialog
             {
                 Title = "toolkit",
                 Content = new TextBlock { Text = Locale.Get("settings.toolkit.errorEntryFileTemplate").Replace("{name}", file.Name), TextWrapping = TextWrapping.Wrap },
                 CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
                 XamlRoot = SettingsXamlRoot,
-            }.ShowAsync();
+            }).ShowAsync();
             return;
         }
         foreach (var entry in parsed.Entries)
@@ -652,7 +636,7 @@ public sealed partial class MainWindow
         }
     }
 
-    // 이 PC의 CLI — provider list and refresh button; behaviour unchanged.
+    // The CLIs on this PC — provider list and refresh button; behaviour unchanged.
     private StackPanel BuildProvidersSection()
     {
         var panel = new StackPanel { Spacing = 8 };
@@ -672,7 +656,7 @@ public sealed partial class MainWindow
         return panel;
     }
 
-    // CLI 계정 — who each CLI is signed in as, and the sign-in / change / sign-out
+    // CLI accounts — who each CLI is signed in as, and the sign-in / change / sign-out
     // buttons. Every decision (what the row says, whether sign-out may be offered,
     // which command a button runs, how the terminal is started) comes from Core;
     // this method only renders state and forwards the click. No Korean literal is
@@ -709,8 +693,8 @@ public sealed partial class MainWindow
                 FontSize = 12,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             });
-            // Not installed shows 미설치; otherwise the summary, which already reads
-            // "account · plan · method", 로그인되지 않음, or the unknown sentence.
+            // Not installed shows the not-installed word; otherwise the summary, which already reads
+            // "account · plan · method", the signed-out word, or the unknown sentence.
             row.Children.Add(new TextBlock
             {
                 Text = status.Installed ? status.Summary : CliAccountStrings.StatusNotInstalled,
@@ -756,7 +740,7 @@ public sealed partial class MainWindow
                     row.Children.Add(settingsButtons);
                 }
             }
-            panel.Children.Add(row);
+            panel.Children.Add(Toned(row));
         }
         return panel;
     }
@@ -779,7 +763,7 @@ public sealed partial class MainWindow
     {
         RequireIdleAccount(provider);
         var label = CliUpdateService.ProviderLabel(provider);
-        var dialog = new ContentDialog
+        var dialog = StyledDialog(new ContentDialog
         {
             Title = CliAccountStrings.ConfirmLogoutTitleTemplate.Replace("{provider}", label),
             Content = new TextBlock
@@ -790,7 +774,7 @@ public sealed partial class MainWindow
             PrimaryButtonText = CliAccountStrings.ButtonLogout,
             CloseButtonText = CliAccountStrings.ButtonCancel,
             XamlRoot = SettingsXamlRoot,
-        };
+        });
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         RequireIdleAccount(provider);
         accountChanges.TryAdd(provider, 0);
@@ -833,7 +817,7 @@ public sealed partial class MainWindow
     private async Task ResetClaudeBedrock()
     {
         RequireIdleAccount("claude");
-        var dialog = new ContentDialog { Title = Locale.Get("settings.cliAccounts.resetBedrockButton"), Content = new TextBlock { Text = Locale.Get("settings.cliAccounts.resetBedrockConfirm"), TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = Locale.Get("settings.cliAccounts.resetBedrockButton"), CloseButtonText = CliAccountStrings.ButtonCancel, XamlRoot = SettingsXamlRoot };
+        var dialog = StyledDialog(new ContentDialog { Title = Locale.Get("settings.cliAccounts.resetBedrockButton"), Content = new TextBlock { Text = Locale.Get("settings.cliAccounts.resetBedrockConfirm"), TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = Locale.Get("settings.cliAccounts.resetBedrockButton"), CloseButtonText = CliAccountStrings.ButtonCancel, XamlRoot = SettingsXamlRoot });
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         RequireIdleAccount("claude");
         var environment = await CliEnvironment.RefreshAsync(true);
@@ -843,7 +827,7 @@ public sealed partial class MainWindow
         await ResetClaudeModels();
     }
 
-    // 앱 정보 — usage notes; behaviour unchanged.
+    // About — usage notes; behaviour unchanged.
     private StackPanel BuildAppInfoSection()
     {
         var panel = new StackPanel { Spacing = 6 };

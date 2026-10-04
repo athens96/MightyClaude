@@ -20,6 +20,10 @@ internal static class CardShadow
     internal const double Composer = 0.05;
     /// <summary>The chosen chip of the Default | Mighty switch (M/SessionPaneView.swift:317).</summary>
     internal const double SegmentChip = 0.12;
+    /// <summary>The dashboard's tiles, usage card and workspace groups (M/DashboardView.swift:144, 216, 251).</summary>
+    internal const double DashboardCard = 0.05;
+    /// <summary>The selected work-status entry in the sidebar (doc §4 shadows).</summary>
+    internal const double SelectedEntry = 0.06;
     private const float Blur = 1, Drop = 1;
 
     /// <summary>

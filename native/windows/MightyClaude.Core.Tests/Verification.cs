@@ -622,6 +622,7 @@ internal static class Verification
         await Test("account usage secret never reaches a snapshot, a log line or an error", AccountUsageVerification.Secret);
         await Test("account usage refuses another host or a redirect", AccountUsageVerification.RefusesAnotherHostOrARedirect);
         await Test("account usage direct claude lookup is off by default", AccountUsageVerification.DirectLookupIsOffByDefault);
+        await Test("account usage dashboard bars are the chips' leading windows", AccountUsageVerification.DashboardUsageBarsAreTheLeadingWindows);
         await Test("account usage claude reads quota and profile from the credentials file", AccountUsageVerification.ClaudeReadsQuotaAndProfileFromTheCredentialsFile);
         await Test("account usage failure keeps the last known value and backs off", AccountUsageVerification.FailureKeepsTheLastKnownValueAndBacksOff);
         await Test("account usage codex is asked through its own app-server", AccountUsageVerification.CodexIsAskedThroughItsOwnAppServer);

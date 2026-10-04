@@ -47,6 +47,8 @@ public sealed partial class MainWindow
         void Expanded() { foreach(var item in collapsible)item.Visibility = disclosure.IsChecked == true ? Visibility.Visible : Visibility.Collapsed; }
         disclosure.Checked += (_,_) => Expanded(); disclosure.Unchecked += (_,_) => Expanded();
         var warning = new TextBlock { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold, Visibility = Visibility.Collapsed }; body.Children.Add(warning);
+        // Styled once the body is complete, so every part of it takes the sheet's inks.
+        StyledDialog(dialog);
         dialog.PrimaryButtonClick += async (_,args) =>
         {
             var deferral = args.GetDeferral();

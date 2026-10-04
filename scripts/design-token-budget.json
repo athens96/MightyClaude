@@ -10,19 +10,8 @@
   },
   "files": {
     "native/windows/MightyClaude.WinUI/CompanionOverlay.cs": 12,
-    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": 2,
     "native/windows/MightyClaude.WinUI/MainWindow.Browser.cs": 1,
-    "native/windows/MightyClaude.WinUI/MainWindow.Dashboard.cs": 1,
-    "native/windows/MightyClaude.WinUI/MainWindow.Files.cs": 10,
-    "native/windows/MightyClaude.WinUI/MainWindow.Navigation.cs": 1,
-    "native/windows/MightyClaude.WinUI/MainWindow.PhaseModels.cs": 1,
-    "native/windows/MightyClaude.WinUI/MainWindow.Plugins.cs": 3,
-    "native/windows/MightyClaude.WinUI/MainWindow.ReferencePreview.cs": 2,
-    "native/windows/MightyClaude.WinUI/MainWindow.ScreenShare.cs": 1,
-    "native/windows/MightyClaude.WinUI/MainWindow.SessionInfo.cs": 2,
-    "native/windows/MightyClaude.WinUI/MainWindow.Settings.cs": 1,
     "native/windows/MightyClaude.WinUI/MainWindow.StatusLine.cs": 13,
-    "native/windows/MightyClaude.WinUI/MainWindow.Styles.cs": 9,
     "native/windows/MightyClaude.WinUI/NativeSvgRaster.cs": 1
   }
 }

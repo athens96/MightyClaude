@@ -25,7 +25,9 @@ public sealed partial class MainWindow
         mobileRouter.ExtraCapabilities = mobileHost.ExtraCapabilities; mobileRouter.ScreenRoute = screenHub.RouteAsync;
         screenHub.Changed += ScreenChanged; screenPlatform.KillRequested += () => _ = screenHub.KillAllAsync();
         var stop = Button(Locale.Get("windows.screenShare.stopShortcut"), () => screenHub?.KillAllAsync() ?? Task.CompletedTask);
-        screenBanner = new Border { Child = stop, Background = new SolidColorBrush(Microsoft.UI.Colors.DarkRed), CornerRadius = new(8), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, Margin = new(12) };
+        // The stop control while a phone shares this screen: on the err fill, radius 8 (the stop button's look).
+        stop.BorderThickness = new(0); PaintPlainButton(stop, brushes.Brush(DesignToken.Err), brushes.Brush(DesignToken.Err), ink: brushes.Brush(DesignToken.OnStatus));
+        screenBanner = new Border { Child = stop, Background = brushes.Brush(DesignToken.Err), CornerRadius = new(DesignMetrics.Radius.Row), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, Margin = new(12) };
         Grid.SetColumnSpan(screenBanner, 2); Grid.SetRowSpan(screenBanner, 3); Canvas.SetZIndex(screenBanner, 100); root.Children.Add(screenBanner);
     }
     private void ScreenChanged() => DispatcherQueue.TryEnqueue(() => { if (screenBanner is not null) screenBanner.Visibility = screenHub?.Sessions.Count > 0 ? Visibility.Visible : Visibility.Collapsed; mobileRouter?.Changed(); });
@@ -39,7 +41,7 @@ public sealed partial class MainWindow
             {
                 if (closing || token.IsCancellationRequested || mobileHost?.Devices.FirstOrDefault(d => d.Id == device) is not { } phone || dialogOpen) { completion.TrySetResult(false); return; }
                 dialogOpen = true; ownsDialog = true;
-                var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("windows.screenShare.confirmKeyTitle"), Content = phone.Name + "\n\n" + fingerprint + "\n\n" + Locale.Get("windows.screenShare.confirmKeyMessage"), PrimaryButtonText = Locale.Get("windows.screenShare.approveKey"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close };
+                var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("windows.screenShare.confirmKeyTitle"), Content = phone.Name + "\n\n" + fingerprint + "\n\n" + Locale.Get("windows.screenShare.confirmKeyMessage"), PrimaryButtonText = Locale.Get("windows.screenShare.approveKey"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
                 (settingsWindow ?? this).Activate(); using var cancel = token.Register(() => DispatcherQueue.TryEnqueue(() => dialog.Hide()));
                 var choice = await dialog.ShowAsync(); completion.TrySetResult(!token.IsCancellationRequested && choice == ContentDialogResult.Primary);
             }
@@ -63,7 +65,7 @@ public sealed partial class MainWindow
             if (screenHub is null || picker.SelectedItem is not ComboBoxItem { Tag: string grant }) return;
             if (toggle.IsOn && grant == "control" && previous != "control")
             {
-                var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.controlTitle"), Content = Locale.Get("windows.screenShare.controlConfirm"), PrimaryButtonText = Locale.Get("settings.screenShare.controlConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close };
+                var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.controlTitle"), Content = Locale.Get("windows.screenShare.controlConfirm"), PrimaryButtonText = Locale.Get("settings.screenShare.controlConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
                 if (await dialog.ShowAsync() != ContentDialogResult.Primary) { Refresh(); return; }
             }
             await screenHub.SetGrantAsync(device, toggle.IsOn, grant); Refresh();
@@ -88,7 +90,7 @@ public sealed partial class MainWindow
                     row.Children.Add(SafeButton(Locale.Get("settings.screenShare.removeKeyButton"), async () =>
                     {
                         if (screenHub is not { } hub || closing) return;
-                        var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.removeKeyTitle"), Content = Locale.Get("settings.screenShare.removeKeyBody", new Dictionary<string, string> { ["device"] = device.Name }), PrimaryButtonText = Locale.Get("settings.screenShare.removeKeyConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close };
+                        var dialog = StyledDialog(new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.removeKeyTitle"), Content = Locale.Get("settings.screenShare.removeKeyBody", new Dictionary<string, string> { ["device"] = device.Name }), PrimaryButtonText = Locale.Get("settings.screenShare.removeKeyConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close });
                         if (await dialog.ShowAsync() != ContentDialogResult.Primary || closing || !ReferenceEquals(hub, screenHub) || mobileHost?.Devices.Any(phone => phone.Id == device.Id) != true || hub.Grants.FirstOrDefault(current => current.DeviceId == device.Id)?.ControlKeyPublic != key) return;
                         await hub.RemoveControlKeyAsync(device.Id); if (panel.IsLoaded) Refresh();
                     }));

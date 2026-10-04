@@ -172,7 +172,7 @@ public sealed partial class MainWindow
         await service.UpdateAsync(snapshot => snapshot with { PhaseModels = edit.Config }); RefreshPhaseModelsSection();
     }
     private void RefreshPhaseModelsSection() { if (phaseModelsPanel is { } panel) FillPhaseModelsSection(panel, service.Snapshot.PhaseModels ?? new(), phaseModelTools); }
-    private static TextBlock PhaseModelErrorText(string error) => new() { Text = error, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.OrangeRed) };
+    private TextBlock PhaseModelErrorText(string error) => new() { Text = error, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = brushes.Brush(DesignToken.ErrText) };
     internal static IEnumerable<FrameworkElement> PhaseModelElements(FrameworkElement element)
     {
         yield return element;
