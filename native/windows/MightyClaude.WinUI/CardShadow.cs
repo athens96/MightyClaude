@@ -33,7 +33,7 @@ internal static class CardShadow
     {
         var caster = new Rectangle { RadiusX = radius, RadiusY = radius, Fill = fill, IsHitTestVisible = false };
         AutomationProperties.SetAccessibilityView(caster, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        SpriteVisual? sprite = null; DropShadow? shadow = null; CompositionBrush? mask = null;
+        SpriteVisual? sprite = null; DropShadow? shadow = null;
         void Fit() { if (sprite is not null) sprite.Size = new Vector2((float)caster.ActualWidth, (float)caster.ActualHeight); }
         caster.Loaded += (_, _) =>
         {
@@ -42,7 +42,9 @@ internal static class CardShadow
             shadow = compositor.CreateDropShadow();
             shadow.Color = DesignBrushes.ShadowColor; shadow.Opacity = (float)opacity; shadow.BlurRadius = Blur; shadow.Offset = new Vector3(0, Drop, 0);
             // The mask is the shape's alpha; it follows the shape, a chip first shown later included.
-            shadow.Mask = mask = caster.GetAlphaMask();
+            // The shape owns and caches it (the same brush on every call), so it is never disposed here:
+            // disposing it made the next Loaded hand back a closed brush and throw.
+            shadow.Mask = caster.GetAlphaMask();
             sprite = compositor.CreateSpriteVisual(); sprite.Shadow = shadow; Fit();
             ElementCompositionPreview.SetElementChildVisual(caster, sprite);
         };
@@ -51,8 +53,9 @@ internal static class CardShadow
         {
             if (sprite is null) return;
             ElementCompositionPreview.SetElementChildVisual(caster, null);
-            sprite.Dispose(); shadow?.Dispose(); mask?.Dispose();
-            sprite = null; shadow = null; mask = null;
+            if (shadow is not null) shadow.Mask = null;
+            sprite.Dispose(); shadow?.Dispose();
+            sprite = null; shadow = null;
         };
         return caster;
     }
