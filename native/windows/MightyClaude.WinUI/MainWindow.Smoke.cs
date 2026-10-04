@@ -27,6 +27,17 @@ public sealed partial class MainWindow
         var result = new Dictionary<string, object?> { ["passed"] = false, ["aiRequestSent"] = false, ["clipboardUsed"] = false, ["physicalIMEAndPointerTested"] = false };
         var directory = options.ProfileDirectory ?? throw new InvalidOperationException("스모크 프로필이 없습니다.");
         var passed = false;
+        async Task<T> Step<T>(string name, Func<Task<T>> action)
+        {
+            result["phase"] = name; result["stepState"] = "running";
+            options.TraceStartup("smoke:" + name + ":running");
+            File.WriteAllText(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            var value = await action();
+            result[name] = value; result["stepState"] = "passed";
+            options.TraceStartup("smoke:" + name + ":passed");
+            File.WriteAllText(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            return value;
+        }
         try
         {
             var project = Path.Combine(directory, "Fixture project"); Directory.CreateDirectory(project);
@@ -47,47 +58,47 @@ public sealed partial class MainWindow
             await ApplyLayoutPreset("tabs");
             await WaitUI(() => root.XamlRoot is not null && root.ActualWidth > 0 && views.TryGetValue(sessions[0].Id, out var p) && p.Container.ActualWidth > 0);
             var pane = views[sessions[0].Id];
-            result["composerAndTranscript"] = await pane.RunComposerSmoke();
-            result["styles"] = await pane.RunStylesSmoke();
-            result["smallParity"] = await RunSmallParitySmoke(workspace);
-            result["companion"] = await RunCompanionSmoke();
-            result["screenCapture"] = await WindowsScreenCapture.SmokeAsync();
-            result["screenTransport"] = await WindowsScreenTransportSmoke.RunAsync(root, directory);
+            result["composerAndTranscript"] = await Step("composerAndTranscript", () => pane.RunComposerSmoke());
+            result["styles"] = await Step("styles", () => pane.RunStylesSmoke());
+            result["smallParity"] = await Step("smallParity", () => RunSmallParitySmoke(workspace));
+            result["companion"] = await Step("companion", () => RunCompanionSmoke());
+            result["screenCapture"] = await Step("screenCapture", () => WindowsScreenCapture.SmokeAsync());
+            result["screenTransport"] = await Step("screenTransport", () => WindowsScreenTransportSmoke.RunAsync(root, directory));
             Require(ScreenShareTapMarkerOverlay.SmokeNoFocus(), "Screen tap marker must preserve focus and pass through input.");
             result["screenTapMarkerNoFocus"] = true;
-            result["nativeTerminal"] = await RunTerminalSmoke();
-            result["desktopSurfaces"] = await RunDesktopSurfaceSmoke();
-            result["slashCommandPalette"] = await pane.RunSlashCommandPaletteSmoke();
-            result["statusLine"] = await pane.RunStatusLineSmoke();
+            result["nativeTerminal"] = await Step("nativeTerminal", () => RunTerminalSmoke());
+            result["desktopSurfaces"] = await Step("desktopSurfaces", () => RunDesktopSurfaceSmoke());
+            result["slashCommandPalette"] = await Step("slashCommandPalette", () => pane.RunSlashCommandPaletteSmoke());
+            result["statusLine"] = await Step("statusLine", () => pane.RunStatusLineSmoke());
             result["modelLabel"] = pane.RunModelLabelSmoke();
-            result["toolPermission"] = await pane.RunToolPermissionSmoke();
-            result["transcriptActions"] = await pane.Transcript.RunActionsSmoke();
-            result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
-            result[SettingsSectionsSmokeOutcome.ResultKey] = await RunSettingsSectionsSmoke();
+            result["toolPermission"] = await Step("toolPermission", () => pane.RunToolPermissionSmoke());
+            result["transcriptActions"] = await Step("transcriptActions", () => pane.Transcript.RunActionsSmoke());
+            result[CompletionNotificationSmokeOutcome.ResultKey] = await Step(CompletionNotificationSmokeOutcome.ResultKey, () => RunCompletionNotificationSmoke());
+            result[SettingsSectionsSmokeOutcome.ResultKey] = await Step(SettingsSectionsSmokeOutcome.ResultKey, () => RunSettingsSectionsSmoke());
             result["phaseModelsSection"] = RunPhaseModelsSectionSmoke();
             var componentsLeakStrings = new List<string>();
             result["componentsSection"] = RunComponentsSectionSmoke(result, componentsLeakStrings);
-            result[AccountUsageSmokeOutcome.ResultKey] = await RunAccountUsageSmoke();
-            result["usageReset"] = await RunUsageResetSmoke();
-            result[AppUpdateSmokeOutcome.ResultKey] = await RunAppUpdateSectionSmoke();
-            result["liveWiring"] = await RunLiveWiringSmoke();
-            result["rename"] = await RunRenameSmoke();
-            result["statusGlyph"] = await RunStatusGlyphSmoke();
+            result[AccountUsageSmokeOutcome.ResultKey] = await Step(AccountUsageSmokeOutcome.ResultKey, () => RunAccountUsageSmoke());
+            result["usageReset"] = await Step("usageReset", () => RunUsageResetSmoke());
+            result[AppUpdateSmokeOutcome.ResultKey] = await Step(AppUpdateSmokeOutcome.ResultKey, () => RunAppUpdateSectionSmoke());
+            result["liveWiring"] = await Step("liveWiring", () => RunLiveWiringSmoke());
+            result["rename"] = await Step("rename", () => RunRenameSmoke());
+            result["statusGlyph"] = await Step("statusGlyph", () => RunStatusGlyphSmoke());
             result["agentMark"] = RunAgentMarkSmoke();
-            result["agentImages"] = await RunAgentImagesSmoke(workspace);
+            result["agentImages"] = await Step("agentImages", () => RunAgentImagesSmoke(workspace));
             result["betaBadge"] = RunBetaBadgeSmoke();
-            result[ClaudePluginSmokeOutcome.ResultKey] = await RunClaudePluginSmoke();
-            result[CodexPluginSmokeOutcome.ResultKey] = await RunCodexPluginSmoke();
-            result[PluginMarketplaceSmokeOutcome.ResultKey] = await RunPluginMarketplaceSmoke();
+            result[ClaudePluginSmokeOutcome.ResultKey] = await Step(ClaudePluginSmokeOutcome.ResultKey, () => RunClaudePluginSmoke());
+            result[CodexPluginSmokeOutcome.ResultKey] = await Step(CodexPluginSmokeOutcome.ResultKey, () => RunCodexPluginSmoke());
+            result[PluginMarketplaceSmokeOutcome.ResultKey] = await Step(PluginMarketplaceSmokeOutcome.ResultKey, () => RunPluginMarketplaceSmoke());
             var mightyLeakStrings = new List<string>();
-            result["mightyGraph"] = await RunMightyGraphSmoke(pane, workspace, mightyLeakStrings);
-            result["mightyTimeline"] = await pane.RunTimelineSmoke();
+            result["mightyGraph"] = await Step("mightyGraph", () => RunMightyGraphSmoke(pane, workspace, mightyLeakStrings));
+            result["mightyTimeline"] = await Step("mightyTimeline", () => pane.RunTimelineSmoke());
             var browserLeakStrings = new List<string>();
-            result["browserPane"] = await RunBrowserPaneSmoke(workspace, browserLeakStrings);
+            result["browserPane"] = await Step("browserPane", () => RunBrowserPaneSmoke(workspace, browserLeakStrings));
             var filesLeakStrings = new List<string>();
-            result["filesPane"] = await RunFilesPaneSmoke(workspace, filesLeakStrings);
-            result["sessionHistory"] = await RunSessionHistorySmoke(workspace, other);
-            result["addPaneMenu"] = await RunAddPaneMenuSmoke(workspace, other);
+            result["filesPane"] = await Step("filesPane", () => RunFilesPaneSmoke(workspace, filesLeakStrings));
+            result["sessionHistory"] = await Step("sessionHistory", () => RunSessionHistorySmoke(workspace, other));
+            result["addPaneMenu"] = await Step("addPaneMenu", () => RunAddPaneMenuSmoke(workspace, other));
             await ApplyLayoutPreset("focus"); await SelectWorkspace(other.Id);
             Require(LayoutMode(service.Snapshot, workspace.Id) == "focus" && LayoutMode(service.Snapshot, other.Id) != "focus", "집중 모드가 다른 워크스페이스에 영향을 주었습니다.");
             await SelectWorkspace(workspace.Id); Require(service.Snapshot.ActiveSessionId == sessions[0].Id, "워크스페이스의 마지막 탭 선택이 복원되지 않았습니다.");
@@ -116,7 +127,7 @@ public sealed partial class MainWindow
                 Require(root.RequestedTheme == ElementTheme.Light && root.Background is SolidColorBrush { Color.A: 255 }, "밝은 테마의 창 배경이 불투명하지 않습니다.");
                 var lightColor = ((SolidColorBrush)root.Background).Color;
                 root.UpdateLayout(); await Task.Delay(120);
-                result["lightThemeScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window-light.png"));
+                result["lightThemeScreenshot"] = await Step("lightThemeScreenshot", () => CaptureSmoke(Path.Combine(directory, "smoke-window-light.png")));
                 await service.UpdateAsync(s => s with { Theme = "dark" }); Render();
                 Require(root.RequestedTheme == ElementTheme.Dark && root.Background is SolidColorBrush { Color.A: 255 } dark && dark.Color.R < lightColor.R, "어두운 테마의 창 배경이 투명하거나 밝은 테마와 구분되지 않습니다.");
                 result["opaqueBackgroundInBothThemes"] = true;
@@ -143,7 +154,7 @@ public sealed partial class MainWindow
             result["localeKeyLeakScanned"] = leakStrings.Count;
             result["localeKeyLeaks"] = keyLeaks;
             Require(keyLeaks.Count == 0, "로케일 키가 화면에 그대로 노출됩니다: " + string.Join(", ", keyLeaks));
-            result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png"));
+            result["screenshot"] = await Step("screenshot", () => CaptureSmoke(Path.Combine(directory, "smoke-window.png")));
             result["passed"] = true; passed = true;
         }
         catch (Exception ex)
@@ -660,9 +671,13 @@ public sealed partial class MainWindow
 
         var draftBefore = pane.SessionForSmoke.Draft;
         pane.EnsureMightyView();
+        options.TraceStartup("smoke:mightyGraph:fixture");
         await pane.SetGraphRunsForSmoke(runs);
+        options.TraceStartup("smoke:mightyGraph:mode-enter");
         await pane.SetAgentViewMode("mighty");
+        options.TraceStartup("smoke:mightyGraph:layout-enter");
         root.UpdateLayout(); await Task.Delay(60);
+        options.TraceStartup("smoke:mightyGraph:layout-ready");
         Require(pane.SessionForSmoke.AgentViewMode == "mighty", "마이티 모드가 저장되지 않았습니다.");
         Require(pane.SessionForSmoke.Draft == draftBefore, "모드 전환이 입력창 초안을 지웠습니다.");
 
@@ -682,6 +697,7 @@ public sealed partial class MainWindow
         var requestMarks = new Dictionary<string, object?> { ["provider"] = paneProvider, ["requestHeaders"] = requestTitles.Count, ["otherHeadersWithoutMark"] = titleMarks.Count - requestTitles.Count };
 
         // Zoom: 50% at the bottom, 100% on reset, 150% at the top, disabled at the ends.
+        options.TraceStartup("smoke:mightyGraph:zoom");
         pane.SetGraphZoom(MightyGraphViewModel.ZoomMin);
         Require(MightyGraphViewModel.ZoomOutDisabled(pane.GraphZoom), "최소 배율에서 축소 단추가 잠기지 않았습니다.");
         var minimum = (int)Math.Round(pane.GraphZoom * 100);
@@ -692,7 +708,9 @@ public sealed partial class MainWindow
         var maximum = (int)Math.Round(pane.GraphZoom * 100);
         pane.SetGraphZoom(MightyGraphViewModel.ZoomDefault);
 
+        options.TraceStartup("smoke:mightyGraph:result-fit");
         var resultFit = await RunResultFitSmoke(pane);
+        options.TraceStartup("smoke:mightyGraph:result-reveal");
         var resultReveal = await RunResultRevealSmoke(pane);
 
         // Selection routes the wheel into the block; the empty background clears it.
@@ -713,6 +731,7 @@ public sealed partial class MainWindow
         PaneView.AnimationsEnabledOverride = null;
         pane.RefreshMightyView(pane.SessionForSmoke); root.UpdateLayout(); await Task.Delay(30);
 
+        options.TraceStartup("smoke:mightyGraph:outlines");
         var outlines = await RunActivityOutlineSmoke(pane);
 
         // The canvas text joins the locale-key leak scan.
