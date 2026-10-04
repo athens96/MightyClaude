@@ -18,7 +18,7 @@ public sealed partial class MainWindow
             var pane = Session;
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             RefreshMenus(pane, catalog);
-            var shown = (model.Content as TextBlock)?.Text;
+            var shown = PillText(model).Text;
             var selection = ModelLabel.Selection(pane, catalog);
             Require(shown == selection + " ⌄", $"the model button reads '{shown}', not '{selection} ⌄'");
             var rows = (model.Flyout as MenuFlyout)?.Items.OfType<MenuFlyoutItem>().Select(item => item.Text.Replace("✓  ", "")).ToList() ?? [];

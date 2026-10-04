@@ -56,42 +56,58 @@ public sealed partial class MainWindow
         /// <summary>
         /// A ComposerPill's look (M/ComposerControls.swift:21-26): <c>card</c> with a 1pt <c>line</c> and
         /// <c>ink</c>, or, while its setting is on, <c>accentSoft</c> with accent × 0.35 and <c>accent</c>;
-        /// no change under the pointer, <c>ink3</c> while disabled.
+        /// no change under the pointer, <c>ink3</c> while disabled. It is drawn on the pill's face, so it
+        /// may change at any time; the button's own resources are written once (<see cref="InitializePills"/>).
         /// </summary>
-        private void PaintPill(Button pill, bool active)
+        private void PaintPill(ContentControl pill, bool active)
         {
-            var fill = owner.brushes.Brush(active ? DesignToken.AccentSoft : DesignToken.Card);
-            var edge = active ? owner.brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder) : owner.brushes.Brush(DesignToken.Line);
-            owner.PaintPlainButton(pill, fill, fill, edge, owner.brushes.Brush(active ? DesignToken.Accent : DesignToken.Ink), owner.brushes.Brush(DesignToken.Ink3));
+            var b = owner.brushes; var face = (Border)pill.Content;
+            if (active) activePills.Add(pill); else activePills.Remove(pill);
+            face.Background = b.Brush(active ? DesignToken.AccentSoft : DesignToken.Card);
+            face.BorderBrush = active ? b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder) : b.Brush(DesignToken.Line);
+            var ink = b.Brush(!pill.IsEnabled ? DesignToken.Ink3 : active ? DesignToken.Accent : DesignToken.Ink);
+            if (face.Child is TextBlock words) words.Foreground = ink;
+            else if (face.Child is IconElement icon) icon.Foreground = ink;
         }
 
-        /// <summary>The Fast pill: a toggle whose checked states are the active pill's look (M/SessionPaneView.swift:408).</summary>
-        private void PaintFastPill()
+        /// <summary>
+        /// Gives every pill its fixed resources once, before it enters the tree: no fill or edge of the
+        /// button's own in any state and the subtle wash under the pointer (hidden by the opaque face,
+        /// so the pill does not change there, as on the Mac). Their faces follow their state:
+        /// enablement for all, the setting for the permission pill, the check for Fast (M/SessionPaneView.swift:408).
+        /// </summary>
+        private void InitializePills()
         {
-            var b = owner.brushes; var off = b.Brush(DesignToken.Card); var on = b.Brush(DesignToken.AccentSoft); var values = new List<(string, object)>();
-            foreach (var state in new[] { "", "PointerOver", "Pressed", "Disabled" })
+            var b = owner.brushes;
+            foreach (var pill in new[] { attach, provider, model, effort, permission, more })
             {
-                values.Add(("ToggleButtonBackground" + state, off)); values.Add(("ToggleButtonBackgroundChecked" + state, on));
-                values.Add(("ToggleButtonBorderBrush" + state, b.Brush(DesignToken.Line))); values.Add(("ToggleButtonBorderBrushChecked" + state, b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PillActiveBorder)));
-                values.Add(("ToggleButtonForeground" + state, b.Brush(state == "Disabled" ? DesignToken.Ink3 : DesignToken.Ink)));
-                values.Add(("ToggleButtonForegroundChecked" + state, b.Brush(state == "Disabled" ? DesignToken.Ink3 : DesignToken.Accent)));
+                owner.PaintPlainButton(pill, b.Transparent, b.Subtle);
+                pill.IsEnabledChanged += (_, _) => PaintPill(pill, activePills.Contains(pill));
+                PaintPill(pill, false);
             }
-            owner.SetThemeResources(fast, values);
-            fast.Background = off; fast.BorderBrush = b.Brush(DesignToken.Line); fast.Foreground = b.Brush(DesignToken.Ink);
+            var values = new List<(string, object)>();
+            foreach (var state in new[] { "", "Disabled", "Checked", "CheckedDisabled" }) { values.Add(("ToggleButtonBackground" + state, b.Transparent)); values.Add(("ToggleButtonBorderBrush" + state, b.Transparent)); }
+            foreach (var state in new[] { "PointerOver", "Pressed", "CheckedPointerOver", "CheckedPressed" }) { values.Add(("ToggleButtonBackground" + state, b.Subtle)); values.Add(("ToggleButtonBorderBrush" + state, b.Transparent)); }
+            owner.SetResourcesOnce(fast, values);
+            fast.Background = b.Transparent; fast.BorderBrush = b.Transparent;
+            void PaintFast() => PaintPill(fast, fast.IsChecked == true);
+            fast.Checked += (_, _) => PaintFast(); fast.Unchecked += (_, _) => PaintFast(); fast.IsEnabledChanged += (_, _) => PaintFast();
+            PaintFast();
         }
 
         /// <summary>
         /// The shape under the send button (M/SessionPaneView.swift:737-760): the 32pt circle in
         /// <c>run</c> while there is something to send and <c>track</c> while not; the 32pt <c>err</c>
         /// square (r8) while it stops the run. The symbol is <c>onStatus</c>; a disabled send arrow is
-        /// <c>ink2</c>, while the stop square keeps <c>onStatus</c> as it stops.
+        /// <c>ink2</c>, while the stop square keeps <c>onStatus</c> as it stops. Both live on the shape
+        /// and the symbol, never in the button's resources.
         /// </summary>
         private void PaintSend()
         {
             var b = owner.brushes;
             sendDisc.CornerRadius = new CornerRadius(sendIsStop ? DesignMetrics.Radius.Row : 16);
             sendDisc.Background = b.Brush(sendIsStop ? DesignToken.Err : send.IsEnabled ? DesignToken.Run : DesignToken.Track);
-            owner.PaintPlainButton(send, b.Transparent, b.Transparent, ink: b.Brush(DesignToken.OnStatus), disabledInk: b.Brush(sendIsStop ? DesignToken.OnStatus : DesignToken.Ink2));
+            sendGlyph.Foreground = b.Brush(sendIsStop || send.IsEnabled ? DesignToken.OnStatus : DesignToken.Ink2);
         }
 
         /// <summary>

@@ -47,7 +47,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly CliUpdateService cliUpdateService;
     internal readonly CliUpdateCoordinator coordinator;
-    // Reads who each CLI is signed in as when the CLI 계정 section opens and
+    // Reads who each CLI is signed in as when the CLI accounts section opens and
     // after a sign-in terminal closes; the section's buttons call it.
     internal readonly CliAccountsCoordinator accountsCoordinator = new(new CliRunner());
     internal Func<string, CancellationToken, Task<CliUpdateResult>>? smokeCliUpdater;
@@ -240,10 +240,14 @@ public sealed partial class MainWindow : Window
         // composition. Start with one line and scroll internally at the cap.
         private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 30, MaxHeight = 140, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Padding = new Thickness(4, 5, 4, 5), FontSize = DesignMetrics.Type.Body };
         private readonly Button provider = Pill(100), model = Pill(180), effort = Pill(125), permission = Pill(135), more = Pill(40);
-        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = new() { Content = "ϟ Fast", MinWidth = 0, Padding = new Thickness(10, 5, 10, 5), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, MinHeight = 32, Height = 32, BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
+        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = new() { Content = PillFace(PillWords("ϟ Fast"), new Thickness(10, 5, 10, 5)), MinWidth = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, MinHeight = 32, Height = 32, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
         private readonly Button send, attach, context;
         /// <summary>The send / stop button's coloured shape, drawn under the button (PaintSend, MainWindow.Composer.cs).</summary>
         private readonly Border sendDisc = new() { Width = 32, Height = 32, IsHitTestVisible = false };
+        /// <summary>The send button's symbol (↑, ■ or +), inked by <see cref="PaintSend"/> in every state.</summary>
+        private readonly TextBlock sendGlyph = new() { Text = "↑", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>The pills last painted active (<see cref="PaintPill"/>), so a change of enablement keeps their look.</summary>
+        private readonly HashSet<ContentControl> activePills = [];
         private readonly Grid sendHost = new() { Width = 32, Height = 32, VerticalAlignment = VerticalAlignment.Center };
         /// <summary>The composer card (M/SessionPaneView.swift:654-656).</summary>
         private readonly Border composerCard;
@@ -268,11 +272,19 @@ public sealed partial class MainWindow : Window
                 return owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             }
         }
-        /// <summary>A ComposerPill (M/ComposerControls.swift:4-33): 32 high, capsule, padding h8, 11pt; painted by <see cref="PaintPill"/>.</summary>
-        private static Button Pill(double maxWidth) => new() { MinWidth = 0, MaxWidth = maxWidth, MinHeight = 32, Height = 32, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
+        /// <summary>
+        /// A ComposerPill (M/ComposerControls.swift:4-33): 32 high, capsule, padding h8, 11pt; painted by <see cref="PaintPill"/>.
+        /// The button itself draws nothing; its face (<see cref="PillFace"/>) carries the fill, the edge and the words.
+        /// </summary>
+        private static Button Pill(double maxWidth) => new() { MinWidth = 0, MaxWidth = maxWidth, MinHeight = 32, Height = 32, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, Content = PillFace(PillWords(""), new Thickness(8, 0, 8, 0)) };
+        /// <summary>A pill's face: the capsule with its Stroke.Line edge, filling the button.</summary>
+        private static Border PillFace(FrameworkElement content, Thickness padding) => new() { Child = content, Padding = padding, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
+        private static TextBlock PillWords(string text) => new() { Text = text, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>The words on a pill's face.</summary>
+        private static TextBlock PillText(ContentControl pill) => (TextBlock)((Border)pill.Content).Child;
         private static void Label(Button button, string text, string name)
         {
-            button.Content = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium }; AutomationProperties.SetName(button, name + ": " + text);
+            PillText(button).Text = text; AutomationProperties.SetName(button, name + ": " + text);
         }
         internal PaneView(MainWindow owner, string id)
         {
@@ -291,19 +303,20 @@ public sealed partial class MainWindow : Window
             ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(input, ScrollBarVisibility.Disabled);
             StyleComposerInput();
-            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(5); attach.CornerRadius = new CornerRadius(16); attach.BorderThickness = new Thickness(DesignMetrics.Stroke.Line); attach.Content = new SymbolIcon(Symbol.Attach); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
-            foreach (var pill in new[] { attach, provider, model, effort, permission, more }) PaintPill(pill, false);
-            PaintFastPill();
+            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(0); attach.CornerRadius = new CornerRadius(16); attach.BorderThickness = new Thickness(0); attach.HorizontalContentAlignment = HorizontalAlignment.Stretch; attach.VerticalContentAlignment = VerticalAlignment.Stretch; attach.Content = PillFace(new SymbolIcon(Symbol.Attach) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }, new Thickness(5)); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
+            InitializePills();
             InitializeAttachmentMenu();
             var controls = new FrameworkElement[] { attach, provider, model, effort, permission, fast, more };
             for (var index = 0; index < controls.Length; index++) { selectors.ColumnDefinitions.Add(new() { Width = index == 2 ? new(1, GridUnitType.Star) : GridLength.Auto }); Grid.SetColumn(controls[index], index); controls[index].VerticalAlignment = VerticalAlignment.Center; selectors.Children.Add(controls[index]); }
-            model.HorizontalAlignment = HorizontalAlignment.Stretch; model.HorizontalContentAlignment = HorizontalAlignment.Left; model.MaxWidth = double.PositiveInfinity; model.MinWidth = 0;
+            model.HorizontalAlignment = HorizontalAlignment.Stretch; PillText(model).HorizontalAlignment = HorizontalAlignment.Left; model.MaxWidth = double.PositiveInfinity; model.MinWidth = 0;
             selectors.SizeChanged += (_, _) => ArrangeComposer();
             var bottom = new Grid { ColumnSpacing = 5, Height = 32 }; bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.Children.Add(selectors);
             context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; owner.PaintPlainButton(context, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2)); AutomationProperties.SetName(context, Locale.Get("composer.context.name")); Grid.SetColumn(context, 1); bottom.Children.Add(context);
-            send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 16; send.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; AutomationProperties.SetName(send, Locale.Get("composer.send.name"));
-            // The button draws no fill of its own in any state; the shape under it carries run, track or err (PaintSend).
-            owner.PaintPlainButton(send, owner.brushes.Transparent, owner.brushes.Transparent, ink: owner.brushes.Brush(DesignToken.OnStatus), disabledInk: owner.brushes.Brush(DesignToken.Ink2));
+            send = Button("↑", PrimaryAction); send.Content = sendGlyph; send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 16; send.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; AutomationProperties.SetName(send, Locale.Get("composer.send.name"));
+            // The button draws no fill of its own in any state; the shape under it carries run, track or err
+            // and the symbol carries its own ink in every state (PaintSend), so its resources never change.
+            owner.PaintPlainButton(send, owner.brushes.Transparent, owner.brushes.Transparent);
+            send.IsEnabledChanged += (_, _) => PaintSend();
             sendHost.Children.Add(sendDisc); sendHost.Children.Add(send); Grid.SetColumn(sendHost, 2); bottom.Children.Add(sendHost);
             var composer = new StackPanel { Spacing = 9 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(styleHost); composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
             var card = composerCard = new Border { Child = composer, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), Background = owner.brushes.Brush(DesignToken.Card) };
@@ -430,7 +443,7 @@ public sealed partial class MainWindow : Window
             permissionHint.Visibility = pane.Kind == "claude" && permissionHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             input.PlaceholderText = busy ? Locale.Get("composer.placeholder.busy") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
-            send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; sendIsStop = busy; send.FontSize = busy ? 12 : 16;
+            send.IsEnabled = busy ? !stopping : canSend; sendGlyph.Text = busy ? "■" : "↑"; sendIsStop = busy; send.FontSize = busy ? 12 : 16;
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();
             ToolTipService.SetToolTip(context, pane.SessionUsage?.ContextPercent is null ? Locale.Get("composer.context.unavailable") : Locale.Get("composer.context.tooltip"));
@@ -584,7 +597,7 @@ public sealed partial class MainWindow : Window
         {
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
             if (FilePaneKind.IsFilePane(Session.Kind)) { EnsureFilesView(); return; }
-            RefreshTerminalTheme(); FitReferencePreview();
+            RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); FitReferencePreview();
             var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var state = owner.service.Snapshot; RefreshHeaderStatus(pane, state.Theme != "light"); output.Update(pane, state.Theme == "light", owner.pictures, state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path); RefreshElapsed(pane);
             // Do not rewrite or recreate the editor during output/metadata refreshes.

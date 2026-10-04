@@ -43,7 +43,7 @@ public static class MightyGraphViewModel
     // ── pane eligibility ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// True when the pane header should show the 기본 / 마이티 mode switch.
+    /// True when the pane header should show the Default / Mighty mode switch.
     /// Matches macOS: kind == "claude" and provider is in Providers.
     /// </summary>
     public static bool ShowsModeSwitch(RunSession session) =>
@@ -186,8 +186,9 @@ public static class MightyGraphViewModel
 /// <summary>
 /// One canvas block as the Mighty view draws it: the layout node plus the copy,
 /// state, request and output text, the usage capsule and its tooltip, the
-/// running/waiting indicator choice and the card's activity outline
-/// (<see cref="MightyGraphActivity"/>). WinUI renders these and decides nothing.
+/// running/waiting indicator choice, the card's activity outline
+/// (<see cref="MightyGraphActivity"/>) and the status its colours follow (empty for the
+/// draft and the files panel). WinUI renders these and decides nothing.
 /// </summary>
 public sealed record MightyGraphBlock(
     string Id,
@@ -201,7 +202,8 @@ public sealed record MightyGraphBlock(
     string CapsuleHelp,
     string Indicator,
     string? ResultFilesRunId,
-    string Outline = MightyGraphActivity.None);
+    string Outline = MightyGraphActivity.None,
+    string Status = "");
 
 public static class MightyGraphBlockModel
 {
@@ -218,18 +220,26 @@ public static class MightyGraphBlockModel
         _ => Locale.Get("graph.state.running"),
     };
 
-    /// <summary>The app-owned request title tail: `요청 N · Claude`; guided views may prepend an approved style title.</summary>
+    /// <summary>The app-owned request title tail (`graph.block.requestTitle`, "Request N · Claude"); guided views may prepend an approved style title.</summary>
     public static string RequestTitle(int ordinal, string providerLabel) =>
         Locale.Get("graph.block.requestTitle", new Dictionary<string, string> { ["ordinal"] = ordinal.ToString(), ["provider"] = providerLabel });
 
     /// <summary>
     /// The provider whose mark goes before the name a block's title ends with, or null: only a
-    /// request block's title (<c>요청 N · Claude</c>) names its agent (macOS MightyGraphView
+    /// request block's title (<c>Request N · Claude</c>) names its agent (macOS MightyGraphView
     /// <c>transcriptCard(titleProvider:)</c>). Sub-agent, result, draft and file blocks carry none,
     /// and neither does a provider the app has no mark for.
     /// </summary>
     public static string? TitleProvider(MightyGraphBlock block, string paneProvider) =>
         block.Kind == "request" && ProviderMark.SplitTrailingLabel(block.Title, paneProvider) is not null ? ProviderMark.MarkedProvider(paneProvider) : null;
+
+    /// <summary>
+    /// The tone a block's status pill, result strip and incoming edge take (macOS
+    /// <c>DesignTone(blockStatus:)</c>): anything unfinished that is not waiting runs. A block with
+    /// no status (the draft, the files panel) is idle.
+    /// </summary>
+    public static DesignTone Tone(MightyGraphBlock block) =>
+        block.Status.Length == 0 ? DesignTone.Idle : StatusGlyph.Tone(MightyTimeline.Status(block.Status));
 
     /// <summary>The result block's title, by how the run ended.</summary>
     public static string ResultTitle(string runStatus) => runStatus switch
@@ -285,7 +295,7 @@ public static class MightyGraphBlockModel
                         ModelUsageFormat.BlockCapsule(run.Usage, run.ResponseRecords ?? [], run.NodeModelLabel, catalog, versioned: true),
                         Help(run.Usage, run.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
                         MightyGraphViewModel.BlockIndicator(run.Status, animationsEnabled), null,
-                        MightyGraphActivity.Outline(run.Status, animationsEnabled)));
+                        MightyGraphActivity.Outline(run.Status, animationsEnabled), run.Status));
                     break;
                 case "agent" when run is not null && run.Agents.FirstOrDefault(a => a.Id == agentId) is { } agent:
                     blocks.Add(new(node.Id, MightyGraphSupport.BlockKind(agent), node.Frame, MightyGraphSupport.BlockTitle(agent),
@@ -294,14 +304,14 @@ public static class MightyGraphBlockModel
                         ModelUsageFormat.BlockCapsule(agent.Usage, agent.ResponseRecords ?? [], null, catalog, versioned: true),
                         Help(agent.Usage, agent.ResponseRecords ?? [], Locale.Get("graph.block.blockUsageLabel"), catalog),
                         MightyGraphViewModel.BlockIndicator(agent.Status, animationsEnabled), null,
-                        MightyGraphActivity.Outline(agent.Status, animationsEnabled)));
+                        MightyGraphActivity.Outline(agent.Status, animationsEnabled), agent.Status));
                     break;
                 case "result" when run is not null:
                     blocks.Add(new(node.Id, "result", node.Frame, ResultTitle(run.Status),
                         StateLabel(ResultState(run.Status)), "", run.ResultEntries.Where(e => e.Kind != "user").ToList(),
                         ModelUsageFormat.BlockCapsule(run.TotalUsage, [], null, catalog, versioned: true),
                         Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),
-                        "none", run.Status == "completed" ? run.Id : null));
+                        "none", run.Status == "completed" ? run.Id : null, Status: ResultState(run.Status)));
                     break;
                 case "resultFiles" when run is not null:
                     blocks.Add(new(node.Id, "resultFiles", node.Frame, Locale.Get("graph.resultFiles.title"),

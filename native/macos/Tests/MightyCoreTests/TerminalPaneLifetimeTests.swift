@@ -190,8 +190,17 @@ struct TerminalPaneLifetimeTests {
         let read = await io.handle(AgentIORequest(tool: "read_latest_output", handle: handle), binding: second)
         #expect(read.status == "running")
         #expect((started.output ?? "") + (read.output ?? "") == "started\nwhile closed\nwhile closed\n")
+        // Stop sends SIGINT at once but answers with what the pane knows by its own real-time
+        // deadline, and the pane hears of the exit from a background reaper (waitpid on a
+        // global queue, then the pane's io queue) that a loaded runner can hold past it. The
+        // real signal is the pane reporting the end, so wait for that with a generous bound,
+        // then read the outcome the way an agent would.
+        let began = Date()
         let stopped = await io.handle(AgentIORequest(tool: "stop", handle: handle), binding: second)
-        #expect(stopped.status == "done" && stopped.signal == SIGINT)
+        let ended = await waitFor(seconds: 60) { !pane.isRunning(handle: handle) }
+        let outcome = stopped.status == "done" ? stopped : await io.handle(AgentIORequest(tool: "read_latest_output", handle: handle), binding: second)
+        #expect(ended && outcome.status == "done" && outcome.signal == SIGINT,
+                "stop answered \(stopped.status ?? "nil") (signal \(stopped.signal.map { "\($0)" } ?? "nil")); after \(String(format: "%.1f", Date().timeIntervalSince(began))) s the pane reports running \(pane.isRunning(handle: handle)), signal \(pane.terminationSignal(handle: handle).map { "\($0)" } ?? "nil"), exit code \(pane.exitCode(handle: handle).map { "\($0)" } ?? "nil"); the outcome read \(outcome.status ?? "nil") (signal \(outcome.signal.map { "\($0)" } ?? "nil"))")
         #expect(made.panes.count == 1)
     }
 

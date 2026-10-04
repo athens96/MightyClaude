@@ -15,72 +15,62 @@ public sealed partial class MainWindow
     /// <paramref name="border"/> (none when null) in every state, the <paramref name="ink"/> (the
     /// template's when null) in every enabled state and <paramref name="disabledInk"/> (the template's
     /// when null) while disabled. The brushes are the window's shared ones, so a theme toggle recolours
-    /// them in place; they go into the button's Light and Dark theme dictionaries (<see cref="SetThemeResources"/>).
+    /// them in place. Call it once, when the button is built and before it enters the tree; a look
+    /// that changes at runtime is drawn on the button's content (<see cref="SetResourcesOnce"/>).
     /// </summary>
     internal void PaintPlainButton(Button button, Brush normal, Brush hover, Brush? border = null, Brush? ink = null, Brush? disabledInk = null)
     {
         var edge = border ?? brushes.Transparent;
-        button.Background = normal; button.BorderBrush = edge;
-        if (ink is not null) button.Foreground = ink;
         var values = new List<(string, object)> { ("ButtonBackground", normal), ("ButtonBackgroundPointerOver", hover), ("ButtonBackgroundPressed", hover), ("ButtonBackgroundDisabled", normal) };
         foreach (var state in new[] { "", "PointerOver", "Pressed", "Disabled" }) values.Add(("ButtonBorderBrush" + state, edge));
         if (ink is not null) foreach (var state in new[] { "", "PointerOver", "Pressed" }) values.Add(("ButtonForeground" + state, ink));
         if (disabledInk is not null) values.Add(("ButtonForegroundDisabled", disabledInk));
-        SetThemeResources(button, values);
+        if (!SetResourcesOnce(button, values)) return;
+        button.Background = normal; button.BorderBrush = edge;
+        if (ink is not null) button.Foreground = ink;
     }
+
+    /// <summary>The lightweight-styling values this window wrote into each element's own resources.</summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrameworkElement, Dictionary<string, object>> writtenResources = new();
 
     /// <summary>
-    /// Writes lightweight-styling values into the element's own "Light" and "Dark" theme dictionaries,
-    /// with an empty "HighContrast" one so the system's contrast resources still resolve there (as the
-    /// status-line toggle does). A template reads its states' ThemeResources when it is applied and
-    /// again on a theme change, so when a value changes on an element whose template is already
-    /// applied, its theme is flipped and set back to make the states read the new brushes.
+    /// Writes lightweight-styling values straight into the element's own <c>Resources</c> with the
+    /// indexer, each key once, as stage 3's sidebar buttons did. A template reads its states'
+    /// resources when it is applied, so this belongs where the element is built, before it enters
+    /// the tree. Returns whether the element now holds exactly these values.
     /// <para>
-    /// A changed theme is never edited in place: it is rebuilt as a fresh dictionary (the keys not
-    /// being written carried over) and swapped in whole. WinUI's indexer replaces a key by removing
-    /// its value <em>object</em>, and the core removes that object's first entry in the dictionary;
-    /// the shared brushes sit under several keys (ButtonForeground and ButtonForegroundDisabled are
-    /// both onStatus on the stop button), so it dropped another key's entry, the key being written
-    /// stayed, and the add threw E_DO_RESOURCE_KEYCONFLICT (0x800F0902). Each theme dictionary is a
-    /// distinct instance, so swapping one in ThemeDictionaries removes the right entry.
+    /// A key is never rewritten. WinUI's indexer replaces a key by removing its value <em>object</em>'s
+    /// first entry, so with a shared brush under several keys it removed the wrong entry and the add
+    /// threw E_DO_RESOURCE_KEYCONFLICT (0x800F0902); and the projection's <c>Add</c> and
+    /// <c>ContainsKey</c> ask a lookup that also answers from the global theme resources. So the
+    /// keys written are tracked here, not asked of the dictionary: writing the same brushes again
+    /// is a no-op, and changing a written key is a programming error (a look that changes at
+    /// runtime goes on the content) that throws with its context in a smoke run and is otherwise
+    /// traced and ignored, leaving the element as it was.
     /// </para>
-    /// A write that still fails throws with its context in the smoke run and is traced otherwise,
-    /// leaving the element's previous look, so it can neither pass a smoke run nor crash the app.
     /// </summary>
-    internal void SetThemeResources(FrameworkElement element, IReadOnlyList<(string Key, object Value)> values)
+    internal bool SetResourcesOnce(FrameworkElement element, IReadOnlyList<(string Key, object Value)> values)
     {
-        try
+        var written = writtenResources.GetOrCreateValue(element);
+        var changed = values.Where(v => written.TryGetValue(v.Key, out var old) && !ReferenceEquals(old, v.Value)).Select(v => v.Key).Distinct().ToList();
+        if (changed.Count > 0)
         {
-            var themes = element.Resources.ThemeDictionaries; var changed = false;
-            if (!themes.ContainsKey("HighContrast")) themes["HighContrast"] = new ResourceDictionary();
-            foreach (var name in new[] { "Light", "Dark" })
-            {
-                var current = themes.TryGetValue(name, out var found) ? found as ResourceDictionary : null;
-                if (current is not null && values.All(v => current.TryGetValue(v.Key, out var old) && ReferenceEquals(old, v.Value))) continue;
-                var merged = new Dictionary<object, object>();
-                if (current is not null) foreach (var pair in current) merged[pair.Key] = pair.Value;
-                foreach (var (key, value) in values) merged[key] = value;
-                var fresh = new ResourceDictionary();
-                foreach (var pair in merged) fresh.Add(pair.Key, pair.Value);
-                themes[name] = fresh; changed = true;
-            }
-            if (!changed || VisualTreeHelper.GetChildrenCount(element) == 0) return;
-            var requested = element.RequestedTheme;
-            element.RequestedTheme = element.ActualTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
-            element.RequestedTheme = requested;
-        }
-        catch (Exception error)
-        {
-            var context = $"Theme resources of {element.GetType().Name} '{AutomationProperties.GetAutomationId(element)}' ({string.Join(", ", values.Select(v => v.Key))}) could not be written: {error.Message}";
-            if (options.SmokeTest) throw new InvalidOperationException(context, error);
+            var context = $"Resources of {element.GetType().Name} '{AutomationProperties.GetAutomationId(element)}' are written once and may not change ({string.Join(", ", changed)}); a look that changes must be drawn on the content";
+            if (options.SmokeTest) throw new InvalidOperationException(context);
             System.Diagnostics.Trace.TraceError(context);
+            return false;
         }
+        foreach (var (key, value) in values)
+        {
+            if (written.ContainsKey(key)) continue;
+            element.Resources[key] = value; written[key] = value;
+        }
+        return true;
     }
 
-    /// <summary>A lightweight-styling value as the element's current theme dictionary holds it (null when absent).</summary>
-    internal static object? ThemeResource(FrameworkElement element, string key) =>
-        element.Resources.ThemeDictionaries.TryGetValue(element.ActualTheme == ElementTheme.Light ? "Light" : "Dark", out var found)
-        && found is ResourceDictionary theme && theme.TryGetValue(key, out var value) ? value : null;
+    /// <summary>A lightweight-styling value in the element's own resources (null when absent).</summary>
+    internal static object? OwnResource(FrameworkElement element, string key) =>
+        element.Resources.TryGetValue(key, out var value) ? value : null;
 
     private sealed partial class PaneView
     {

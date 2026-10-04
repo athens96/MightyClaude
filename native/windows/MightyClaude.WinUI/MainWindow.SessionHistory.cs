@@ -121,25 +121,35 @@ public sealed partial class MainWindow
             owner.service.RunEventReceived -= OnGraphRunEvent;
             CancelResultReveal();
             foreach (var outline in graphOutlineViews.Values) outline.Stop?.Invoke();
+            graphDotGrid?.Close(); graphDotGrid = null;
+            graphActivityTimer?.Stop(); graphActivitySets.Clear();
+            timelineHeads.Clear(); timelineRows.Clear(); timelineResults.Clear();
         }
 
-        /// The top of the diagram: loads the previous requests from the session
-        /// record, shows that it is doing so, or that the record begins here.
+        /// <summary>
+        /// The top of the diagram: loads the previous requests from the session record, shows that it
+        /// is doing so, or that the record begins here. A capsule on <c>card</c> with a 1pt <c>line</c>
+        /// edge in [4, 3] pt dashes, its words 11pt <c>ink2</c> and the load link <c>accent</c>
+        /// (M/MightyGraphView.swift:594-632).
+        /// </summary>
         private FrameworkElement BuildHistoryCard(RunSession pane, IReadOnlyList<MightyGraphRun> retained, int loaded, GraphRect frame)
         {
+            var b = owner.brushes;
             var state = graphHistory.Connects(retained.FirstOrDefault()?.Id, pane.ResumeId) ? graphHistory : new SessionHistoryState();
             var text = state.BlockText(loaded);
-            var label = new TextBlock { Text = text, FontSize = 11, Opacity = .8, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            var label = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             var card = new Grid { Width = frame.W, Height = frame.H };
+            var dashes = new DoubleCollection();
+            foreach (var length in DesignMetrics.Dash.InStrokeUnits([4, 3], DesignMetrics.Stroke.Line)) dashes.Add(length);
             card.Children.Add(new Rectangle
             {
-                RadiusX = frame.H / 2, RadiusY = frame.H / 2, StrokeThickness = 1, StrokeDashArray = [4, 3],
-                Stroke = new SolidColorBrush(Windows.UI.Color.FromArgb(120, 135, 135, 135)),
-                Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 135, 135, 135)),
+                RadiusX = frame.H / 2, RadiusY = frame.H / 2, StrokeThickness = DesignMetrics.Stroke.Line, StrokeDashArray = dashes,
+                Stroke = b.Brush(DesignToken.Line), Fill = b.Brush(DesignToken.Card),
             });
             if (state.BlockActs)
             {
                 var button = new HyperlinkButton { Content = label, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(8, 2, 8, 2) };
+                label.Foreground = b.Brush(DesignToken.Accent);
                 AutomationProperties.SetAutomationId(button, (state.Phase == SessionHistoryState.Phases.Failed ? "mighty-history-retry-" : "mighty-history-load-") + id);
                 AutomationProperties.SetName(button, text);
                 button.Click += (_, _) => LoadOlderGraphHistory();

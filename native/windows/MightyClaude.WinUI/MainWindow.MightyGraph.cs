@@ -1,6 +1,5 @@
 using System.Text.Json;
 using MightyClaude.Core;
-using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -9,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
 using Line = Microsoft.UI.Xaml.Shapes.Line;
+using Ellipse = Microsoft.UI.Xaml.Shapes.Ellipse;
 using Rectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
 
 namespace MightyClaude.WinUI;
@@ -37,9 +37,18 @@ public sealed partial class MainWindow
         private readonly Canvas graphCanvas = new() { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         private readonly TranslateTransform graphPan = new();
         private readonly ScaleTransform graphScale = new() { ScaleX = 1, ScaleY = 1 };
-        private readonly TextBlock graphTotal = new() { FontSize = 10, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock graphTotal = new() { FontSize = DesignMetrics.Type.Small, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         private Button? zoomOutButton, zoomResetButton, zoomInButton;
         private Border? graphViewport;
+        /// <summary>The Win2D dots under the canvas, following its pan and zoom (M/MightyGraphView.swift:995-1015).</summary>
+        private MightyDotGrid? graphDotGrid;
+        /// <summary>The draft card's dashed accent edge, kept across redraws (M/MightyGraphView.swift:416).</summary>
+        private Rectangle? graphDraftOutline;
+        /// <summary>The edges as last drawn, each with the block it runs into, for the design smoke.</summary>
+        private readonly List<(string Target, Line Line, Microsoft.UI.Xaml.Shapes.Polyline Head)> graphEdgeLines = [];
+        /// <summary>The running blocks' activity capsules (their vertical scales), by block, and the one pane timer that waves them all.</summary>
+        private readonly Dictionary<string, ScaleTransform[]> graphActivitySets = [];
+        private DispatcherTimer? graphActivityTimer;
         private double graphZoom = MightyGraphViewModel.ZoomDefault;
         private string? graphSelection;
         private readonly Dictionary<string, ScrollViewer> graphBodies = [];
@@ -54,6 +63,10 @@ public sealed partial class MainWindow
             internal TextBlock? Request;
             internal AgentTranscript? Transcript;
             internal Button? FitButton;
+            /// <summary>The request's band under the header (tint × 0.055) and, rebuilt with the header, its parts the smoke reads.</summary>
+            internal Border? RequestBand;
+            internal Border? StatePill, Capsule;
+            internal Canvas? Activity;
             internal string Fingerprint = "";
             internal bool MeasureQueued;
         }
@@ -98,7 +111,6 @@ public sealed partial class MainWindow
         // The newest result card's natural height (chrome, header and answer),
         // measured as drawn; the layout fits the card to it under its cap.
         private readonly Dictionary<string, double> graphResultHeights = [];
-        private const double GraphCardChrome = 12 * 2 + 1 * 2 + 6;
 
         /// Windows animation setting; the smoke overrides it to prove the static
         /// indicator. Null means "ask the system".
@@ -150,13 +162,23 @@ public sealed partial class MainWindow
             graphHost.Children.Add(BuildGraphToolbar());
 
             graphCanvas.RenderTransform = new TransformGroup { Children = { graphScale, graphPan } };
-            graphViewport = new Border { Child = graphCanvas, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(10, 135, 135, 135)), CornerRadius = new CornerRadius(8) };
+            // The page surface edge to edge (no radius) with the dot grid under the blocks.
+            var dots = graphDotGrid = new MightyDotGrid(owner.brushes.Brush(DesignToken.Line));
+            var surface = new Grid(); surface.Children.Add(dots.View); surface.Children.Add(graphCanvas);
+            graphViewport = new Border { Child = surface, Background = owner.brushes.Brush(DesignToken.Page) };
+            // Every camera move (pan, zoom, a re-aim, older requests loaded above) moves the dots with it.
+            void FollowCamera() => dots.Follow(graphScale.ScaleX, graphPan.X, graphPan.Y);
+            graphPan.RegisterPropertyChangedCallback(TranslateTransform.XProperty, (_, _) => FollowCamera());
+            graphPan.RegisterPropertyChangedCallback(TranslateTransform.YProperty, (_, _) => FollowCamera());
+            graphScale.RegisterPropertyChangedCallback(ScaleTransform.ScaleXProperty, (_, _) => FollowCamera());
+            FollowCamera();
             // The canvas is larger than the pane; clip it so a panned block never
             // paints over the composer or the neighbouring pane.
             graphViewport.SizeChanged += (_, args) =>
             {
                 TraceGraphSmoke($"viewport-size:{args.NewSize.Width:F2}x{args.NewSize.Height:F2}");
                 graphViewport.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, args.NewSize.Width, args.NewSize.Height) };
+                dots.Fit(args.NewSize.Width, args.NewSize.Height);
                 QueueGraphRefresh();
             };
             AutomationProperties.SetAutomationId(graphViewport, "mighty-graph-" + id);
@@ -175,6 +197,9 @@ public sealed partial class MainWindow
                 args.Handled = true;
             };
             graphViewport.IsTabStop = true;
+            // A pane moved to a hidden tab stops waving its capsules, and starts again when it shows.
+            graphViewport.Loaded += (_, _) => UpdateActivityTimer();
+            graphViewport.Unloaded += (sender, _) => { if (!((FrameworkElement)sender).IsLoaded) graphActivityTimer?.Stop(); };
             Grid.SetRow(graphViewport, 1); graphHost.Children.Add(graphViewport);
             BuildMightyTimeline();
             Grid.SetRow(graphHost, 1); grid.Children.Add(graphHost);
@@ -200,22 +225,30 @@ public sealed partial class MainWindow
             });
         }
 
+        /// <summary>
+        /// The Mighty bar (M/MightyGraphView.swift:175-201): padding h12 v10 over a <c>line</c> rule; the
+        /// style title 12 bold <c>ink</c> over the 10pt <c>ink2</c> summary; the Diagram | Timeline switch and
+        /// the zoom − / NN% (38 wide) / + in <c>ink2</c>. A narrow pane moves the controls under the summary.
+        /// </summary>
         private Grid BuildGraphToolbar()
         {
-            var bar = new Grid { ColumnSpacing = 6, Padding = new Thickness(2, 0, 2, 6) };
+            var b = owner.brushes;
+            var bar = new Grid { ColumnSpacing = 6, Padding = new Thickness(12, 10, 12, 10), BorderThickness = new Thickness(0, 0, 0, DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line) };
             bar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             bar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            graphStyleHeader.Foreground = b.Brush(DesignToken.Ink);
+            graphTotal.Foreground = b.Brush(DesignToken.Ink2);
             AutomationProperties.SetAutomationId(graphTotal, "mighty-tokens-" + id);
             var summary = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
             summary.Children.Add(graphStyleHeader); summary.Children.Add(graphTotal); bar.Children.Add(summary);
-            var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-            zoomOutButton = ZoomPill(Locale.Get(MightyGraphViewModel.LocaleKeyZoomOut), "mighty-zoom-out-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomOut(graphZoom)));
-            zoomResetButton = ZoomPill(MightyGraphViewModel.ZoomLabel(graphZoom), "mighty-zoom-reset-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomDefault));
-            ToolTipService.SetToolTip(zoomResetButton, Locale.Get(MightyGraphViewModel.LocaleKeyZoomReset));
-            AutomationProperties.SetName(zoomResetButton, Locale.Get(MightyGraphViewModel.LocaleKeyZoomReset));
-            zoomInButton = ZoomPill(Locale.Get(MightyGraphViewModel.LocaleKeyZoomIn), "mighty-zoom-in-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomIn(graphZoom)));
+            var zoom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            // Segoe Fluent Icons ZoomOut / ZoomIn for the Mac's minus / plus magnifying glasses.
+            zoomOutButton = ZoomButton(new FontIcon { Glyph = "\uE71F", FontSize = 12 }, Locale.Get(MightyGraphViewModel.LocaleKeyZoomOut), "mighty-zoom-out-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomOut(graphZoom)));
+            zoomResetButton = ZoomButton(new TextBlock { Text = MightyGraphViewModel.ZoomLabel(graphZoom), FontSize = DesignMetrics.Type.Pill, HorizontalAlignment = HorizontalAlignment.Center }, Locale.Get(MightyGraphViewModel.LocaleKeyZoomReset), "mighty-zoom-reset-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomDefault));
+            zoomResetButton.Width = 38; zoomResetButton.Padding = new Thickness(0);
+            zoomInButton = ZoomButton(new FontIcon { Glyph = "\uE8A3", FontSize = 12 }, Locale.Get(MightyGraphViewModel.LocaleKeyZoomIn), "mighty-zoom-in-" + id, () => SetGraphZoom(MightyGraphViewModel.ZoomIn(graphZoom)));
             zoom.Children.Add(zoomOutButton); zoom.Children.Add(zoomResetButton); zoom.Children.Add(zoomInButton);
             graphZoomControls = zoom;
             var controls = new PillWrapPanel();
@@ -227,7 +260,8 @@ public sealed partial class MainWindow
                 var narrow = width < 540;
                 Grid.SetColumnSpan(summary, narrow ? 2 : 1);
                 Grid.SetRow(controls, narrow ? 1 : 0); Grid.SetColumn(controls, narrow ? 0 : 1); Grid.SetColumnSpan(controls, narrow ? 2 : 1);
-                controls.MaxWidth = Math.Max(1, width - 4); controls.Margin = new Thickness(0, narrow ? 4 : 0, 0, 0);
+                // The bar's own padding is inside the width it reports.
+                controls.MaxWidth = Math.Max(1, width - bar.Padding.Left - bar.Padding.Right); controls.Margin = new Thickness(0, narrow ? 4 : 0, 0, 0);
             }
             bar.SizeChanged += (_, args) => FitToolbar(args.NewSize.Width);
             FitToolbar(Container.ActualWidth > 0 ? Container.ActualWidth : 500);
@@ -235,11 +269,13 @@ public sealed partial class MainWindow
             return bar;
         }
 
-        private static Button ZoomPill(string text, string automationId, Action act)
+        /// <summary>A zoom control: plain, 22 tall, <c>ink2</c> (<c>ink3</c> while disabled), the subtle wash under the pointer.</summary>
+        private Button ZoomButton(UIElement content, string name, string automationId, Action act)
         {
-            var button = new Button { Content = new TextBlock { Text = text, FontSize = 11 }, MinWidth = 0, MinHeight = 0, Height = 26, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(13), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
-            AutomationProperties.SetAutomationId(button, automationId); AutomationProperties.SetName(button, text);
-            ToolTipService.SetToolTip(button, text);
+            var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+            owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2), disabledInk: owner.brushes.Brush(DesignToken.Ink3));
+            AutomationProperties.SetAutomationId(button, automationId); AutomationProperties.SetName(button, name);
+            ToolTipService.SetToolTip(button, name);
             button.Click += (_, _) => act();
             return button;
         }
@@ -302,16 +338,20 @@ public sealed partial class MainWindow
             if (graphHost is null || modeDefaultButton is null || modeMightyButton is null) return;
             var mighty = pane.AgentViewMode == "mighty";
             PaintModeOption(modeDefaultButton, modeDefaultChip!, !mighty); PaintModeOption(modeMightyButton, modeMightyChip!, mighty);
+            // A diagram shown again draws its dots once: a theme or camera change while it was hidden left them stale.
+            var diagramWasHidden = graphHost.Visibility != Visibility.Visible || graphViewport?.Visibility != Visibility.Visible;
             graphHost.Visibility = mighty ? Visibility.Visible : Visibility.Collapsed;
             output.View.Visibility = mighty ? Visibility.Collapsed : Visibility.Visible;
             var timeline = mighty && MightyTimeline.Mode(pane) == "timeline";
             RefreshGraphPresentationSwitch(timeline);
             if (graphViewport is not null) graphViewport.Visibility = timeline ? Visibility.Collapsed : Visibility.Visible;
+            if (mighty && !timeline && diagramWasHidden) graphDotGrid?.Redraw();
             if (timelineScroll is not null) timelineScroll.Visibility = timeline ? Visibility.Visible : Visibility.Collapsed;
             if (mighty && timeline) DrawMightyTimeline(pane);
             else if (mighty) DrawGraph(pane);
             // Hidden, the diagram watches nothing: a result that finishes meanwhile is not revealed.
             else { graphReveal = new(); graphRunProgress = null; graphRevealPendingId = null; }
+            UpdateActivityTimer();
         }
 
         /// Rebuilds the canvas from the pane's recorded graph runs. The block and
@@ -365,7 +405,7 @@ public sealed partial class MainWindow
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
-            // `요청 N · Claude`: the short name, as macOS ProviderOptions.label, so its mark can go before it.
+            // "Request N · Claude": the short name, as macOS ProviderOptions.label, so its mark can go before it.
             var blocks = MightyGraphBlockModel.Blocks(layout, runs, pane.Draft, ProviderMark.Label(pane.Provider), AnimationsEnabled, catalog);
             for (var i = 0; i < runs.Count; i++)
             {
@@ -380,7 +420,7 @@ public sealed partial class MainWindow
                 graphCards.Remove(stale); graphCardViews.Remove(stale); graphBodies.Remove(stale); graphTranscripts.Remove(stale);
                 graphOutlines.Remove(stale);
                 if (graphOutlineViews.Remove(stale, out var oldOutline)) oldOutline.Stop?.Invoke();
-                graphBlockKinds.Remove(stale); graphTitles.Remove(stale);
+                graphBlockKinds.Remove(stale); graphTitles.Remove(stale); graphActivitySets.Remove(stale);
             }
             graphFitResultButton = null;
             var desired = new List<UIElement>();
@@ -395,14 +435,31 @@ public sealed partial class MainWindow
             // much so nothing already on screen moves.
             if (graphOriginY is { } previousOrigin && previousOrigin != layout.OriginY) graphPan.Y += (layout.OriginY - previousOrigin) * graphZoom;
             graphOriginY = layout.OriginY;
+            // Edges (M/MightyGraphView.swift:372-397): ink2 × 0.45 at 1.5pt, run blue at 2pt into a running
+            // block, each ending in an arrowhead (±4, −6) drawn as a polyline so the edge count stays one line each.
+            var running = blocks.Where(block => MightyGraphBlockModel.Tone(block) == DesignTone.Run).Select(block => block.Id).ToHashSet();
+            graphEdgeLines.Clear();
             foreach (var edge in layout.Edges)
             {
                 if (!frames.TryGetValue(edge.Source, out var from) || !frames.TryGetValue(edge.Target, out var to)) continue;
-                desired.Add(new Line
+                var intoRunning = running.Contains(edge.Target);
+                var stroke = intoRunning ? owner.brushes.Brush(DesignToken.Run) : owner.brushes.Brush(DesignToken.Ink2, DesignMetrics.Opacity.Edge);
+                var width = intoRunning ? DesignMetrics.Stroke.Active : DesignMetrics.Stroke.Focus;
+                var (startX, startY, endX, endY) = (from.X + from.W / 2, from.Y + from.H, to.X + to.W / 2, to.Y);
+                // The head's two barbs sit 6 back along the edge and 4 to either side of it (the Mac's ±4, −6 on a downward edge).
+                var length = Math.Max(1e-9, Math.Sqrt((endX - startX) * (endX - startX) + (endY - startY) * (endY - startY)));
+                var (alongX, alongY) = ((endX - startX) / length, (endY - startY) / length);
+                var line = new Line
                 {
-                    X1 = from.X + from.W / 2, Y1 = from.Y + from.H, X2 = to.X + to.W / 2, Y2 = to.Y,
-                    Stroke = new SolidColorBrush(Windows.UI.Color.FromArgb(150, 100, 149, 237)), StrokeThickness = 1.5, IsHitTestVisible = false,
-                });
+                    X1 = startX, Y1 = startY, X2 = endX, Y2 = endY,
+                    Stroke = stroke, StrokeThickness = width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false,
+                };
+                var head = new Microsoft.UI.Xaml.Shapes.Polyline
+                {
+                    Points = new PointCollection { new(endX - 6 * alongX + 4 * alongY, endY - 6 * alongY - 4 * alongX), new(endX, endY), new(endX - 6 * alongX - 4 * alongY, endY - 6 * alongY + 4 * alongX) },
+                    Stroke = stroke, StrokeThickness = width, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round, IsHitTestVisible = false,
+                };
+                desired.Add(line); desired.Add(head); graphEdgeLines.Add((edge.Target, line, head));
             }
             foreach (var block in blocks)
             {
@@ -411,6 +468,7 @@ public sealed partial class MainWindow
                 card.Width = frames[block.Id].W; card.Height = frames[block.Id].H;
                 graphCards[block.Id] = card; graphBlockKinds[block.Id] = block.Kind; desired.Add(card);
                 AddActivityOutline(block, frames[block.Id], desired);
+                if (block.Kind == "draft") desired.Add(DraftOutline(frames[block.Id]));
                 if (LoadedFromRecord(block.Id, older)) ToolTipService.SetToolTip(card, Locale.Get("graph.history.tag"));
             }
             if (layout.Nodes.FirstOrDefault(n => n.Kind == "history") is { } history)
@@ -441,6 +499,7 @@ public sealed partial class MainWindow
             ApplyGraphSelectionStyle();
             ReaimGraphCamera(runs, layout, frames, viewport, ObserveResultReveal(pane, retained, viewport));
             AutoLoadGraphHistory(pane, retained);
+            UpdateActivityTimer();
         }
 
         /// One observation for the reveal rule: the pane's own runs (not those
@@ -522,28 +581,45 @@ public sealed partial class MainWindow
             graphPan.X = camera.X; graphPan.Y = camera.Y;
         }
 
+        /// <summary>A block's inner inset: 12, the draft 16 (M/MightyGraphView.swift:404-420, 487-554).</summary>
+        private static double BlockInset(string kind) => kind == "draft" ? 16 : 12;
+
+        /// <summary>
+        /// One block on the D card (M/MightyGraphActivityView.swift:142-146): <c>card</c>, a 1pt <c>line</c>
+        /// edge, radius 12, nothing inset, so the header strip and the request band run edge to edge.
+        /// Under the 38pt header: the request on its tint × 0.055 band, then the transcript inset 12.
+        /// The files panel keeps a 12pt padding of its own.
+        /// </summary>
         private Border BuildGraphCard(MightyGraphBlock block, IReadOnlyList<ResultFiles.ResultFile> files, RunSession pane)
         {
+            var b = owner.brushes;
+            var inset = BlockInset(block.Kind);
             if (!graphCardViews.TryGetValue(block.Id, out var view))
             {
                 var card = new Border
                 {
-                    CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1),
-                    BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(80, 135, 135, 135)),
-                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 135, 135, 135)),
-                    Padding = new Thickness(12), Tag = block.Id,
+                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Block), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
+                    BorderBrush = b.Brush(DesignToken.Line), Background = b.Brush(DesignToken.Card),
+                    Padding = new Thickness(block.Kind == "resultFiles" ? 12 : 0), Tag = block.Id,
                 };
                 view = new GraphCardView { Card = card }; graphCardViews[block.Id] = view;
                 AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
                 card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
                 if (block.Kind != "resultFiles")
                 {
-                    view.Body = new Grid { RowSpacing = 6 };
+                    view.Body = new Grid();
                     view.Body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                     view.Body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                    view.Content = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Top };
-                    view.Request = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = .85, Visibility = Visibility.Collapsed };
-                    view.Content.Children.Add(view.Request);
+                    view.Content = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+                    view.Request = new TextBlock { FontSize = DesignMetrics.Type.Pill, TextWrapping = TextWrapping.Wrap, Foreground = b.Brush(DesignToken.Ink) };
+                    // The draft shows its text plainly; every other block's request sits on its tinted band over a line.
+                    view.RequestBand = new Border
+                    {
+                        Child = view.Request, Visibility = Visibility.Collapsed,
+                        Padding = block.Kind == "draft" ? new Thickness(inset, 0, inset, inset) : new Thickness(inset, 8, inset, 8),
+                        BorderThickness = new Thickness(0, 0, 0, block.Kind == "draft" ? 0 : DesignMetrics.Stroke.Line), BorderBrush = b.Brush(DesignToken.Line),
+                    };
+                    view.Content.Children.Add(view.RequestBand);
                     var captured = view;
                     view.Content.SizeChanged += (_, _) => QueueGraphCardMeasure(block.Id, captured);
                     card.Loaded += (_, _) => QueueGraphCardMeasure(block.Id, captured);
@@ -558,14 +634,15 @@ public sealed partial class MainWindow
             var look = block.Kind == "request" ? RequestStyleLook(block.Request) : (Icon: "", Tint: "");
             var fingerprint = JsonSerializer.Serialize(new
             {
-                block.Kind, block.Title, block.Request, block.Entries, block.State, block.Indicator,
+                block.Kind, block.Title, block.Request, block.Entries, block.State, block.Status, block.Indicator,
                 block.Capsule, block.CapsuleHelp, block.ResultFilesRunId,
                 Files = block.Kind is "result" or "resultFiles" ? files : [],
                 FilesOpen = graphResultFilesRunId, Selected = graphSelection == block.Id,
                 Latest = graphLatestResultId == block.Id, SavedResult = pane.GraphResultSize is not null,
                 CustomSize = pane.GraphBlockSizes?.ContainsKey(block.Id) == true, Expanded = graphExpanded.Contains(block.Id),
-                StyleIcon = look.Icon, StyleTint = look.Tint,
-                Light = !owner.DarkTheme, Language = Locale.LanguagePreference,
+                // No theme: every colour is a shared brush recoloured in place, and the transcript takes a
+                // theme change through RethemeMightyTranscripts, so a toggle rebuilds nothing.
+                StyleIcon = look.Icon, StyleTint = look.Tint, Language = Locale.LanguagePreference,
             }, Wire.Json);
             if (view.Fingerprint == fingerprint)
             {
@@ -575,14 +652,15 @@ public sealed partial class MainWindow
             view.Fingerprint = fingerprint;
             AutomationProperties.SetName(view.Card, block.Title);
             if (block.Kind == "resultFiles") { view.Card.Child = BuildResultFilesPanel(block, files); return view.Card; }
-            var header = BuildGraphCardHeader(block, files);
+            var header = BuildGraphCardHeader(block, files, view);
             if (view.Header is not null) view.Body!.Children.Remove(view.Header);
             view.Header = header; view.Body!.Children.Insert(0, header);
             view.FitButton = block.Id == graphLatestResultId && pane.GraphResultSize is not null ? graphFitResultButton : null;
             var currentView = view;
             header.SizeChanged += (_, _) => QueueGraphCardMeasure(block.Id, currentView);
             view.Request!.Text = block.Request;
-            view.Request.Visibility = block.Request.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            view.RequestBand!.Visibility = block.Request.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            if (block.Kind != "draft") view.RequestBand.Background = b.Brush(BlockTint(block, look.Tint), DesignMetrics.Opacity.InputPreview);
             if (block.Entries.Count > 0 && view.Transcript is null)
             {
                 var transcript = new AgentTranscript { OpenReference = OpenReferencePreview, OpenImage = OpenTranscriptImage };
@@ -598,6 +676,7 @@ public sealed partial class MainWindow
                     QueueGraphRefresh();
                 };
                 transcript.View.MinHeight = 0;
+                transcript.View.Margin = new Thickness(inset, 8, inset, inset);
                 view.Transcript = transcript; graphTranscripts[block.Id] = transcript;
                 view.Content!.Children.Add(transcript.View);
             }
@@ -608,6 +687,35 @@ public sealed partial class MainWindow
             }
             return view.Card;
         }
+
+        /// <summary>
+        /// A theme change reaches the Mighty transcripts (diagram cards and timeline rows) in place; the
+        /// cards, rows and their brushes stay as they are. Called from <see cref="Refresh"/>.
+        /// </summary>
+        internal void RethemeMightyTranscripts(bool light)
+        {
+            foreach (var transcript in graphTranscripts.Values.Concat(timelineTranscripts.Values)) transcript.Retheme(light);
+        }
+
+        /// <summary>
+        /// The ink a block's icon and request band take (macOS <c>Palette.tint</c> and
+        /// <c>agentPresentation</c>): a request its style's tint, a sub-agent its kind's ink.
+        /// </summary>
+        private static DesignToken BlockTint(MightyGraphBlock block, string requestTint) => block.Kind switch
+        {
+            "request" => TintToken(requestTint),
+            "task" => DesignToken.TaskText, "steer" => DesignToken.SteerText, "compact" => DesignToken.CompactText,
+            "question" => DesignToken.QuestionText, "agent" => DesignToken.AgentText,
+            _ => DesignToken.Accent,
+        };
+
+        /// <summary>A style tint's token (M/GuidedActionChip.swift:8-20); "secondary" is the quiet ink.</summary>
+        private static DesignToken TintToken(string? tint) => tint switch
+        {
+            "purple" => DesignToken.AgentText, "teal" => DesignToken.TaskText, "indigo" => DesignToken.QuestionText,
+            "mint" => DesignToken.CompactText, "orange" => DesignToken.SteerText, "green" => DesignToken.DoneText,
+            "red" => DesignToken.ErrText, "secondary" => DesignToken.Ink2, _ => DesignToken.Accent,
+        };
 
         private void QueueGraphCardMeasure(string nodeId, GraphCardView view)
         {
@@ -621,50 +729,90 @@ public sealed partial class MainWindow
                 if (!QueuePaneAlive || nodeId != graphLatestResultId || !view.Card.IsLoaded || graphViewport?.Visibility != Visibility.Visible ||
                     !ReferenceEquals(graphCards.GetValueOrDefault(nodeId), view.Card) || view.Header.ActualHeight <= 0 ||
                     view.Content.Children.Any(child => child.Visibility == Visibility.Visible) && view.Content.ActualHeight <= 0) return;
-                ResultMeasured(nodeId, GraphCardChrome + view.Header.ActualHeight + view.Content.ActualHeight);
+                // The card insets nothing and its rows have no spacing: only its own edge (1pt, 2pt when selected) is added.
+                ResultMeasured(nodeId, view.Card.BorderThickness.Top + view.Card.BorderThickness.Bottom + view.Header.ActualHeight + view.Content.ActualHeight);
             })) view.MeasureQueued = false;
         }
 
-        private Grid BuildGraphCardHeader(MightyGraphBlock block, IReadOnlyList<ResultFiles.ResultFile> files)
+        /// <summary>
+        /// A block's 38pt header (M/MightyGraphView.swift:483-546): padding h12, spacing 7, over a 1pt
+        /// <c>line</c>. The title is 12 bold <c>ink</c> after the request's style icon in its tint; on the
+        /// right, the selected block's scroll hint, the activity mark, the status pill (the draft's plain
+        /// state word), the usage capsule on <c>cardRaised</c>, the fit and files buttons and the size
+        /// controls in <c>ink2</c>. The result's header is the outcome strip instead: <c>heroFill</c> of its
+        /// tone with every word in <c>heroInk</c> and no pill (Core gives a result no usage capsule).
+        /// </summary>
+        private Grid BuildGraphCardHeader(MightyGraphBlock block, IReadOnlyList<ResultFiles.ResultFile> files, GraphCardView view)
         {
-            var header = new Grid { ColumnSpacing = 6 };
+            var b = owner.brushes;
+            var strip = block.Kind == "result";
+            var plain = block.Kind == "draft";
+            var tone = MightyGraphBlockModel.Tone(block);
+            var ink = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink);
+            var quiet = strip ? b.FillInk(tone) : b.Brush(DesignToken.Ink2);
+            var inset = BlockInset(block.Kind);
+            var divider = !strip && !plain;
+            var header = new Grid
+            {
+                ColumnSpacing = 7, Padding = new Thickness(inset, 0, inset, 0),
+                Height = DesignMetrics.Layout.BlockHead + (divider ? DesignMetrics.Stroke.Line : 0),
+                BorderThickness = new Thickness(0, 0, 0, divider ? DesignMetrics.Stroke.Line : 0), BorderBrush = b.Brush(DesignToken.Line),
+            };
+            if (strip)
+            {
+                // The strip fills the card's top inside its 1pt edge, so its corners follow the card's.
+                var corner = DesignMetrics.Radius.Block - DesignMetrics.Stroke.Line;
+                header.Background = b.Fill(tone); header.CornerRadius = new CornerRadius(corner, corner, 0, 0);
+            }
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             // A request block's title ends with its agent's name; its mark goes before it.
-            var title = ProviderMarkView.Labelled(block.Title, MightyGraphBlockModel.TitleProvider(block, Session.Provider), 12, FontWeights.SemiBold);
+            var title = ProviderMarkView.Labelled(block.Title, MightyGraphBlockModel.TitleProvider(block, Session.Provider), DesignMetrics.Type.Block, plain ? FontWeights.SemiBold : FontWeights.Bold);
+            PaintWords(title, ink);
             graphTitles[block.Id] = title;
-            if (block.Kind == "request")
+            var look = block.Kind == "request" ? RequestStyleLook(block.Request) : (Icon: "", Tint: "");
+            FrameworkElement? glyph = block.Kind switch
             {
-                var look = RequestStyleLook(block.Request);
-                var labelled = new Grid { ColumnSpacing = 5 }; labelled.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); labelled.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-                labelled.Children.Add(new TextBlock { Text = look.Icon, FontSize = 11, Foreground = new SolidColorBrush(StyleColor(look.Tint)), VerticalAlignment = VerticalAlignment.Center });
+                "request" => new TextBlock { Text = look.Icon, FontSize = 11, Foreground = b.Brush(BlockTint(block, look.Tint)), VerticalAlignment = VerticalAlignment.Center },
+                // Segoe Fluent Icons CheckMark / Warning / Stop for the Mac's checkmark.seal / exclamationmark.triangle / stop.circle.
+                "result" => new FontIcon { Glyph = tone == DesignTone.Err ? "\uE7BA" : tone == DesignTone.Stop ? "\uE71A" : "\uE73E", FontSize = 11, Foreground = ink, VerticalAlignment = VerticalAlignment.Center },
+                // Segoe Fluent Icons Edit for the draft's square.and.pencil (M/MightyGraphView.swift:407).
+                "draft" => new FontIcon { Glyph = "\uE70F", FontSize = 11, Foreground = ink, VerticalAlignment = VerticalAlignment.Center },
+                _ => null,
+            };
+            if (glyph is not null)
+            {
+                var labelled = new Grid { ColumnSpacing = 7 }; labelled.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); labelled.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+                labelled.Children.Add(glyph);
                 Grid.SetColumn(title, 1); labelled.Children.Add(title); header.Children.Add(labelled);
             }
             else header.Children.Add(title);
 
             var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
             if (graphSelection == block.Id)
-                right.Children.Add(new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyBlockScrolling), FontSize = 10, Opacity = .8 });
-            if (BuildIndicator(block.Indicator) is { } indicator) right.Children.Add(indicator);
-            if (block.State.Length > 0) right.Children.Add(new TextBlock { Text = block.State, FontSize = 10, Opacity = .65, VerticalAlignment = VerticalAlignment.Center });
+                right.Children.Add(new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyBlockScrolling), FontSize = DesignMetrics.Type.Badge, FontWeight = FontWeights.Medium, Foreground = strip ? ink : b.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Center });
+            view.Activity = null; view.StatePill = null; view.Capsule = null; graphActivitySets.Remove(block.Id);
+            if (!strip && BuildIndicator(block.Indicator, view, block.Id) is { } indicator) right.Children.Add(indicator);
+            if (plain && block.State.Length > 0) right.Children.Add(new TextBlock { Text = block.State, FontSize = DesignMetrics.Type.Pill, Foreground = quiet, VerticalAlignment = VerticalAlignment.Center });
+            else if (!strip && block.State.Length > 0) right.Children.Add(view.StatePill = StatusPill(block.State, tone, 18));
             if (block.Capsule is { } capsule)
             {
                 var pill = new Border
                 {
-                    CornerRadius = new CornerRadius(9), Padding = new Thickness(6, 1, 6, 1),
-                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 135, 135, 135)),
-                    Child = new TextBlock { Text = capsule, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .8 },
+                    CornerRadius = new CornerRadius(9), Padding = new Thickness(6, 2, 6, 2), VerticalAlignment = VerticalAlignment.Center,
+                    Background = b.Brush(DesignToken.CardRaised),
+                    Child = new TextBlock { Text = capsule, FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = quiet },
                 };
                 AutomationProperties.SetAutomationId(pill, "mighty-tokens-" + block.Id);
                 AutomationProperties.SetName(pill, block.CapsuleHelp);
                 ToolTipService.SetToolTip(pill, block.CapsuleHelp);
-                right.Children.Add(pill);
+                right.Children.Add(view.Capsule = pill);
             }
             // A saved size is in force: offer the way back to the window fit.
             if (block.Kind == "result" && block.Id == graphLatestResultId && Session.GraphResultSize is not null)
             {
                 var label = Locale.Get(MightyGraphViewModel.LocaleKeyResultFitToWindow);
-                var fit = new Button { Content = new TextBlock { Text = label, FontSize = 10 }, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
+                var fit = HeaderButton(new TextBlock { Text = label, FontSize = DesignMetrics.Type.Small, FontWeight = strip ? FontWeights.Bold : FontWeights.Normal }, strip ? ink : b.Brush(DesignToken.Accent));
                 AutomationProperties.SetAutomationId(fit, "mighty-fit-result-" + block.Id);
                 AutomationProperties.SetName(fit, label);
                 ToolTipService.SetToolTip(fit, label);
@@ -675,40 +823,153 @@ public sealed partial class MainWindow
             {
                 var open = graphResultFilesRunId == runId;
                 var text = Locale.Get(open ? MightyGraphViewModel.LocaleKeyResultFilesClose : MightyGraphViewModel.LocaleKeyResultFilesOpen);
-                var toggle = new Button { Content = new TextBlock { Text = "▤ " + files.Count, FontSize = 10 }, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
+                var toggle = HeaderButton(new TextBlock { Text = "▤ " + files.Count, FontSize = DesignMetrics.Type.Small }, strip ? ink : b.Brush(open ? DesignToken.Accent : DesignToken.Ink2));
                 AutomationProperties.SetAutomationId(toggle, "mighty-result-files-toggle-" + block.Id);
                 AutomationProperties.SetName(toggle, Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesCount, new Dictionary<string, string> { ["count"] = files.Count.ToString() }));
                 ToolTipService.SetToolTip(toggle, text);
                 toggle.Click += (_, _) => ToggleResultFiles(runId);
                 right.Children.Add(toggle);
             }
-            AddGraphBlockSizeControls(right, block);
+            AddGraphBlockSizeControls(right, block, quiet);
             Grid.SetColumn(right, 1); header.Children.Add(right);
             return header;
         }
 
-        /// A running block moves, a waiting block shows a static pause mark and a
-        /// finished block nothing. With Windows animations off the running block
-        /// gets a static indicator instead — Core makes the choice.
-        private static FrameworkElement? BuildIndicator(string indicator) => indicator switch
+        /// <summary>Every word of a title line (one text, or the head and name around an agent mark) in one ink.</summary>
+        private static void PaintWords(FrameworkElement line, Brush ink, FontFamily? family = null)
         {
-            "animating" => Animated(new Border { Width = 26, Height = 4, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Colors.CornflowerBlue), VerticalAlignment = VerticalAlignment.Center }),
-            "static" => new Border { Width = 26, Height = 4, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Colors.CornflowerBlue), VerticalAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.CornflowerBlue) },
-            "waiting" => new TextBlock { Text = "❙❙", FontSize = 9, Opacity = .7, VerticalAlignment = VerticalAlignment.Center },
-            _ => null,
+            IEnumerable<TextBlock> all = line switch { TextBlock single => [single], Panel panel => panel.Children.OfType<TextBlock>(), _ => [] };
+            foreach (var words in all)
+            {
+                words.Foreground = ink;
+                if (family is not null) words.FontFamily = family;
+            }
+        }
+
+        /// <summary>A plain header button (the Mac's <c>.plain</c>): no fill at rest, the subtle wash under the pointer, in <paramref name="ink"/>.</summary>
+        private Button HeaderButton(UIElement content, Brush ink)
+        {
+            var button = new Button { Content = content, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+            owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: ink);
+            return button;
+        }
+
+        /// <summary>
+        /// A status as a pill (M/MightyGraphActivityView.swift:125-138): 10 bold in the tone's
+        /// <c>text</c> ink on its <c>soft</c> tint, padding h7, <paramref name="height"/> tall
+        /// (18 on a block, 19 on a timeline row, 20 on a timeline header), a capsule.
+        /// </summary>
+        private Border StatusPill(string text, DesignTone tone, double height) => new()
+        {
+            Height = height, CornerRadius = new CornerRadius(height / 2), Padding = new Thickness(7, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center,
+            Background = owner.brushes.Soft(tone),
+            Child = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Small, FontWeight = FontWeights.Bold, Foreground = owner.brushes.Text(tone), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis },
         };
 
         /// <summary>
+        /// The running block's activity mark (M/MightyGraphActivityView.swift:46-77), in an 18×14 box:
+        /// four <c>run</c> capsules in a wave while it runs; a still <c>run</c> bolt with Windows
+        /// animations off; the <c>waitText</c> pause while it waits; nothing once it finished.
+        /// Core makes the choice.
+        /// </summary>
+        private FrameworkElement? BuildIndicator(string indicator, GraphCardView view, string blockId)
+        {
+            FrameworkElement? mark = indicator switch
+            {
+                "animating" => view.Activity = ActivityBars(blockId),
+                // Segoe Fluent Icons LightningBolt for the Mac's bolt.fill.
+                "static" => new FontIcon { Glyph = "\uE945", FontSize = 10, Foreground = owner.brushes.Brush(DesignToken.Run) },
+                "waiting" => CircledPause(),
+                _ => null,
+            };
+            if (mark is null) return null;
+            mark.Width = MightyGraphActivity.BarBoxWidth; mark.Height = MightyGraphActivity.BarBoxHeight;
+            mark.VerticalAlignment = VerticalAlignment.Center; mark.IsHitTestVisible = false;
+            // The status pill beside it carries the state.
+            AutomationProperties.SetAccessibilityView(mark, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            return mark;
+        }
+
+        /// <summary>
+        /// The Mac's pause.circle (Segoe Fluent Icons has no circled pause): a 1pt <c>waitText</c> ring 12
+        /// across round the Pause glyph, centred in the 18×14 box.
+        /// </summary>
+        private Grid CircledPause()
+        {
+            var ink = owner.brushes.Brush(DesignToken.WaitText);
+            var mark = new Grid();
+            mark.Children.Add(new Ellipse { Width = 12, Height = 12, Stroke = ink, StrokeThickness = DesignMetrics.Stroke.Line, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            mark.Children.Add(new FontIcon { Glyph = "\uE769", FontSize = 6, Foreground = ink, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            return mark;
+        }
+
+        /// <summary>
+        /// The four capsules (Core <see cref="MightyGraphActivity.BarHeight"/>): 3 wide, 2 apart, each drawn
+        /// <see cref="MightyGraphActivity.BarTallest"/> tall, centred in the box and scaled down about its
+        /// middle. The pane's one timer (<see cref="UpdateActivityTimer"/>) moves only the scales, so a tick
+        /// costs no layout, and the card around them never sees the clock.
+        /// </summary>
+        private Canvas ActivityBars(string blockId)
+        {
+            var box = new Canvas();
+            var scales = new ScaleTransform[MightyGraphActivity.Bars];
+            for (var i = 0; i < scales.Length; i++)
+            {
+                scales[i] = new ScaleTransform();
+                var bar = new Border
+                {
+                    Width = MightyGraphActivity.BarWidth, Height = MightyGraphActivity.BarTallest, CornerRadius = new CornerRadius(MightyGraphActivity.BarWidth / 2),
+                    Background = owner.brushes.Brush(DesignToken.Run), RenderTransformOrigin = new Windows.Foundation.Point(.5, .5), RenderTransform = scales[i],
+                };
+                Canvas.SetLeft(bar, i * (MightyGraphActivity.BarWidth + MightyGraphActivity.BarGap));
+                Canvas.SetTop(bar, (MightyGraphActivity.BarBoxHeight - MightyGraphActivity.BarTallest) / 2);
+                box.Children.Add(bar);
+            }
+            WaveActivity(scales, ActivityPhase());
+            graphActivitySets[blockId] = scales;
+            return box;
+        }
+
+        /// <summary>The wave's phase now, from the system clock, so every running block waves in step.</summary>
+        private static double ActivityPhase() => MightyGraphActivity.Phase(TimeSpan.FromMilliseconds(Environment.TickCount64), true);
+
+        private static void WaveActivity(ScaleTransform[] scales, double phase)
+        {
+            for (var i = 0; i < scales.Length; i++) scales[i].ScaleY = MightyGraphActivity.BarHeight(i, phase) / MightyGraphActivity.BarTallest;
+        }
+
+        /// <summary>
+        /// Runs the pane's one 24 fps capsule timer only while the diagram shows (its host and viewport
+        /// visible and loaded) and at least one running block has capsules; stops it otherwise.
+        /// </summary>
+        private void UpdateActivityTimer()
+        {
+            var wave = graphActivitySets.Count > 0 && graphHost?.Visibility == Visibility.Visible && graphViewport is { Visibility: Visibility.Visible, IsLoaded: true };
+            if (!wave) { graphActivityTimer?.Stop(); return; }
+            if (graphActivityTimer is null)
+            {
+                graphActivityTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1 / MightyGraphActivity.BarFramesPerSecond) };
+                graphActivityTimer.Tick += (_, _) =>
+                {
+                    var phase = ActivityPhase();
+                    foreach (var scales in graphActivitySets.Values) WaveActivity(scales, phase);
+                };
+            }
+            if (!graphActivityTimer.IsEnabled) graphActivityTimer.Start();
+        }
+
+        /// <summary>
         /// The edge of a block in motion, drawn over its card (macOS MightyGraphActivityOutline):
-        /// a running block's 2pt run-blue line of 9/7 dashes walks one period per 1.6 s
-        /// round the card over the soft run halo, still and solid with Windows animations
-        /// off; a waiting block keeps a still amber line. Only the line's dash offset is
-        /// animated: the card, its transcript and the layout never see the clock.
+        /// a running block's 2pt <c>run</c> line of 9/7 dashes walks one period per 1.6 s round the
+        /// card, 1pt inside it at radius 11, over the 4pt <c>runSoft</c> halo outside it; still and
+        /// solid with Windows animations off; a waiting block keeps a still 2pt <c>wait</c> line. The
+        /// brushes are the window's shared ones, so a theme change recolours the same lines. Only the
+        /// line's dash offset is animated: the card, its transcript and the layout never see the clock.
         /// </summary>
         private void AddActivityOutline(MightyGraphBlock block, GraphRect frame, List<UIElement> desired)
         {
             var outline = block.Outline;
-            var fingerprint = $"{outline}|{frame.W:R}|{frame.H:R}|{owner.DarkTheme}";
+            var fingerprint = $"{outline}|{frame.W:R}|{frame.H:R}";
             if (graphOutlineViews.TryGetValue(block.Id, out var old) && old.Fingerprint == fingerprint)
             {
                 if (old.Halo is { } haloView)
@@ -723,7 +984,7 @@ public sealed partial class MainWindow
             graphOutlines.Remove(block.Id);
             if (outline == MightyGraphActivity.None) return;
             Rectangle? glow = null; Action? stop = null;
-            if (MightyGraphActivity.HaloHex(outline, owner.DarkTheme) is { } halo)
+            if (MightyGraphActivity.HaloToken(outline) is { } halo)
             {
                 // Rectangle strokes sit inside their bounds: the halo is the 4pt band outside the card.
                 var band = 2 * MightyGraphActivity.LineWidth;
@@ -731,7 +992,7 @@ public sealed partial class MainWindow
                 {
                     Width = frame.W + 2 * band, Height = frame.H + 2 * band,
                     RadiusX = MightyGraphActivity.CornerRadius + band, RadiusY = MightyGraphActivity.CornerRadius + band,
-                    Stroke = OutlineBrush(halo), StrokeThickness = band, IsHitTestVisible = false,
+                    Stroke = owner.brushes.Brush(halo), StrokeThickness = band, IsHitTestVisible = false,
                 };
                 Canvas.SetLeft(glow, frame.X - band); Canvas.SetTop(glow, frame.Y - band);
                 desired.Insert(Math.Max(0, desired.Count - 1), glow);
@@ -740,7 +1001,7 @@ public sealed partial class MainWindow
             {
                 Width = frame.W, Height = frame.H,
                 RadiusX = MightyGraphActivity.CornerRadius - 1, RadiusY = MightyGraphActivity.CornerRadius - 1,
-                Stroke = OutlineBrush(MightyGraphActivity.StrokeHex(outline)), StrokeThickness = MightyGraphActivity.LineWidth,
+                Stroke = owner.brushes.Brush(MightyGraphActivity.StrokeToken(outline)), StrokeThickness = MightyGraphActivity.LineWidth,
                 StrokeDashCap = PenLineCap.Flat, IsHitTestVisible = false,
             };
             AutomationProperties.SetAutomationId(line, "mighty-outline-" + block.Id);
@@ -750,12 +1011,12 @@ public sealed partial class MainWindow
                 // XAML dash lengths and offsets count in stroke widths.
                 var dash = MightyGraphActivity.DashForCard(frame.W, frame.H);
                 var dashes = new DoubleCollection();
-                foreach (var length in dash) dashes.Add(length / MightyGraphActivity.LineWidth);
+                foreach (var length in DesignMetrics.Dash.InStrokeUnits(dash, MightyGraphActivity.LineWidth)) dashes.Add(length);
                 line.StrokeDashArray = dashes;
+                var offsets = DesignMetrics.Dash.InStrokeUnits([MightyGraphActivity.DashOffset(0, dash), MightyGraphActivity.DashOffset(1, dash)], MightyGraphActivity.LineWidth);
                 var march = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
                 {
-                    From = MightyGraphActivity.DashOffset(0, dash) / MightyGraphActivity.LineWidth,
-                    To = MightyGraphActivity.DashOffset(1, dash) / MightyGraphActivity.LineWidth,
+                    From = offsets[0], To = offsets[1],
                     Duration = new Duration(MightyGraphActivity.Period),
                     RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
                     EnableDependentAnimation = true,
@@ -772,21 +1033,27 @@ public sealed partial class MainWindow
             graphOutlineViews[block.Id] = (fingerprint, glow, line, stop);
         }
 
-        private static SolidColorBrush OutlineBrush(string hex)
+        /// <summary>
+        /// The draft's dashed edge (M/MightyGraphView.swift:416): <c>accent</c> × 0.6 at 1.5pt in
+        /// [5, 4] pt dashes, which WinUI counts in stroke widths. One line, moved with the draft.
+        /// </summary>
+        private Rectangle DraftOutline(GraphRect frame)
         {
-            var rgb = Convert.ToInt32(hex[1..], 16);
-            return new SolidColorBrush(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
-        }
-
-        private static Border Animated(Border bar)
-        {
-            var move = new TranslateTransform(); bar.RenderTransform = move;
-            var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation { From = -8, To = 8, Duration = new Duration(TimeSpan.FromSeconds(.8)), AutoReverse = true, RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever };
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, move);
-            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "X");
-            var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard(); story.Children.Add(animation);
-            bar.Loaded += (_, _) => story.Begin(); bar.Unloaded += (_, _) => story.Stop();
-            return bar;
+            if (graphDraftOutline is null)
+            {
+                var dashes = new DoubleCollection();
+                foreach (var length in DesignMetrics.Dash.InStrokeUnits(DesignMetrics.Dash.Draft, DesignMetrics.Dash.DraftWidth)) dashes.Add(length);
+                graphDraftOutline = new Rectangle
+                {
+                    RadiusX = DesignMetrics.Radius.Block - DesignMetrics.Dash.DraftWidth / 2, RadiusY = DesignMetrics.Radius.Block - DesignMetrics.Dash.DraftWidth / 2,
+                    Stroke = owner.brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.Draft), StrokeThickness = DesignMetrics.Dash.DraftWidth,
+                    StrokeDashArray = dashes, StrokeDashCap = PenLineCap.Flat, IsHitTestVisible = false,
+                };
+                AutomationProperties.SetAccessibilityView(graphDraftOutline, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            }
+            graphDraftOutline.Width = frame.W; graphDraftOutline.Height = frame.H;
+            Canvas.SetLeft(graphDraftOutline, frame.X); Canvas.SetTop(graphDraftOutline, frame.Y);
+            return graphDraftOutline;
         }
 
         // ── result files panel ────────────────────────────────────────────────
@@ -798,8 +1065,8 @@ public sealed partial class MainWindow
             var head = new Grid { ColumnSpacing = 6 };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            head.Children.Add(new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesTitle) + " " + files.Count, FontSize = 12, FontWeight = FontWeights.SemiBold });
-            var close = new Button { Content = new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesClose), FontSize = 10 }, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
+            head.Children.Add(new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesTitle) + " " + files.Count, FontSize = DesignMetrics.Type.Block, FontWeight = FontWeights.SemiBold, Foreground = owner.brushes.Brush(DesignToken.Ink) });
+            var close = HeaderButton(new TextBlock { Text = Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesClose), FontSize = DesignMetrics.Type.Small }, owner.brushes.Brush(DesignToken.Ink2));
             AutomationProperties.SetAutomationId(close, "mighty-result-files-close-" + block.Id);
             AutomationProperties.SetName(close, Locale.Get(MightyGraphViewModel.LocaleKeyResultFilesClose));
             close.Click += (_, _) => CloseResultFiles();
@@ -808,7 +1075,8 @@ public sealed partial class MainWindow
             var list = new StackPanel { Spacing = 2 };
             foreach (var file in files.Take(ResultFiles.MaximumResultFiles))
             {
-                var row = new Button { Content = new TextBlock { Text = file.Path + (file.Line is { } line ? ":" + line : ""), FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, MinHeight = 0, Height = 24, Padding = new Thickness(6, 0, 6, 0), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
+                var row = HeaderButton(new TextBlock { Text = file.Path + (file.Line is { } line ? ":" + line : ""), FontSize = DesignMetrics.Type.Pill, TextTrimming = TextTrimming.CharacterEllipsis }, owner.brushes.Brush(DesignToken.Ink));
+                row.HorizontalAlignment = HorizontalAlignment.Stretch; row.HorizontalContentAlignment = HorizontalAlignment.Left; row.Height = 24;
                 AutomationProperties.SetName(row, file.Path);
                 row.Click += async (_, _) => await OpenReferencePreview(file.Path, file.Line);
                 list.Children.Add(row);
@@ -838,9 +1106,10 @@ public sealed partial class MainWindow
         {
             var grip = new Border
             {
-                Width = 16, Height = 16, Margin = new Thickness(0, 0, -10, -10), Background = new SolidColorBrush(Colors.Transparent),
+                // In the card's corner, 2pt inside its edge (the card insets nothing, so the grip does).
+                Width = 16, Height = 16, Margin = new Thickness(0, 0, 2, 2), Background = owner.brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
-                Child = new TextBlock { Text = "◢", FontSize = 10, Opacity = .45, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false },
+                Child = new TextBlock { Text = "◢", FontSize = 10, Foreground = owner.brushes.Brush(DesignToken.Ink3), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false },
             };
             Grid.SetRowSpan(grip, 2);
             AutomationProperties.SetAutomationId(grip, "mighty-resize-result-" + nodeId);
@@ -1001,13 +1270,15 @@ public sealed partial class MainWindow
 
         internal void ClearGraphSelection() => SelectGraphBlock(null);
 
+        /// <summary>The selected block's edge is 2pt <c>accent</c>; the others keep 1pt <c>line</c>, the draft only its dashes.</summary>
         private void ApplyGraphSelectionStyle()
         {
             foreach (var (nodeId, card) in graphCards)
             {
                 var selected = nodeId == graphSelection;
-                card.BorderThickness = new Thickness(selected ? 2 : 1);
-                card.BorderBrush = new SolidColorBrush(selected ? Colors.CornflowerBlue : Windows.UI.Color.FromArgb(80, 135, 135, 135));
+                var draft = graphBlockKinds.GetValueOrDefault(nodeId) == "draft";
+                card.BorderThickness = new Thickness(selected ? DesignMetrics.Stroke.Active : draft ? 0 : DesignMetrics.Stroke.Line);
+                card.BorderBrush = owner.brushes.Brush(selected ? DesignToken.Accent : DesignToken.Line);
             }
         }
 

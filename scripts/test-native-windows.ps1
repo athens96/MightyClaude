@@ -136,6 +136,14 @@ try {
         $msg = "paneChromeDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: paneChromeDesign=$($result.paneChromeDesign)"
         Write-SmokeAnnotation $msg; throw $msg
     }
+    # Design stage 5, the Mighty diagram, timeline and result card: page surface and Win2D dot grid, Mighty bar,
+    # block cards and headers, status pills, usage capsules, four activity capsules, running / waiting / draft
+    # outlines in stroke units, edges, the result strip, and the timeline list, headers (heading font), rows,
+    # nodes and result card, in both themes on the same views (MainWindow.MightyDesignSmoke.cs).
+    if ($result.mightyDesign -ne $true) {
+        $msg = "mightyDesign 스모크가 실행되지 않았거나 통과하지 못했습니다: mightyDesign=$($result.mightyDesign)"
+        Write-SmokeAnnotation $msg; throw $msg
+    }
     if ($result.componentsSection -ne $true) {
         $msg = "구성 요소 칸 스모크가 실행되지 않았거나 통과하지 못했습니다: componentsSection=$($result.componentsSection)"
         Write-SmokeAnnotation $msg; throw $msg

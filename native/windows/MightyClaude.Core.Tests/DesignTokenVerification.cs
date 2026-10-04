@@ -64,6 +64,10 @@ internal static class DesignTokenVerification
             {
                 var row = derived.GetProperty("tones").GetProperty(Camel(tone.ToString()));
                 Equal(palette.Fill(tone).Hex, row.GetProperty("fill").GetString()!, $"{theme}.fill({tone})");
+                // The tokens a brush registry shares read the same colours.
+                Equal(palette[DesignPalette.FillToken(tone)].Hex, row.GetProperty("fill").GetString()!, $"{theme}: palette[FillToken({tone})]");
+                Equal(palette[DesignPalette.SoftToken(tone)].Hex, row.GetProperty("soft").GetString()!, $"{theme}: palette[SoftToken({tone})]");
+                Equal(palette[DesignPalette.FillInkToken(tone)].Hex, palette.DiscInk(tone == DesignTone.Wait ? DesignTone.Wait : DesignTone.Err).Hex, $"{theme}: the ink on the {tone} fill (heroInk)");
                 Equal(palette.Text(tone).Hex, row.GetProperty("text").GetString()!, $"{theme}.text({tone})");
                 Equal(palette.Soft(tone).Hex, row.GetProperty("soft").GetString()!, $"{theme}.soft({tone})");
                 Equal(palette.Mark(tone).Hex, row.GetProperty("mark").GetString()!, $"{theme}.mark({tone})");

@@ -56,6 +56,15 @@ internal sealed class DesignBrushes
     /// <summary>The text-safe ink of a tone (<see cref="DesignPalette.Text"/>): run → accent, wait → waitText, done → doneText, err → errText, stop → stopText, idle → ink2.</summary>
     internal SolidColorBrush Text(DesignTone tone) => Brush(DesignPalette.TextToken(tone));
 
+    /// <summary>A tone's solid fill (the Mac's <c>heroFill</c>): run, wait, done, err, stop or idle.</summary>
+    internal SolidColorBrush Fill(DesignTone tone) => Brush(DesignPalette.FillToken(tone));
+
+    /// <summary>The ink on a tone's fill (the Mac's <c>heroInk</c>): onWait on the amber, onStatus on every other fill.</summary>
+    internal SolidColorBrush FillInk(DesignTone tone) => Brush(DesignPalette.FillInkToken(tone));
+
+    /// <summary>A tone's soft tint, behind its <see cref="Text"/> ink in a status pill.</summary>
+    internal SolidColorBrush Soft(DesignTone tone) => Brush(DesignPalette.SoftToken(tone));
+
     /// <summary>The colour of the Mac's card shadows: black in both themes, at the opacity the caller gives (M/SessionPaneView.swift:654).</summary>
     internal static Windows.UI.Color ShadowColor => ToColor(new DesignColor(0x000000));
 

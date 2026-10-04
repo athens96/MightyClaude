@@ -96,7 +96,8 @@ public static class DesignMetrics
         public const string Body = "Segoe UI Variable Text, Segoe UI";
         /// <summary>
         /// Avenir Next Bold → Segoe UI Variable Display, drawn with <c>FontWeights.Bold</c> (decision Q1, 2026-10-04):
-        /// the dashboard title, its number tiles and workspace names (M/DashboardView.swift:18-25).
+        /// the dashboard title, its number tiles and workspace names (M/DashboardView.swift:18-25), and the
+        /// timeline's request headers (M/MightyGraphView.swift:731).
         /// </summary>
         public const string Heading = "Segoe UI Variable Display, Segoe UI";
     }
