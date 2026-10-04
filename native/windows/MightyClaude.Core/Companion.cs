@@ -13,8 +13,8 @@ public sealed record CompanionPreferences(bool Enabled = true, bool ShowsTask = 
         try
         {
             var bytes = StyleFiles.Read(profile, "companion-settings.json", 65_536); var value = bytes is null ? new() : JsonSerializer.Deserialize<CompanionPreferences>(bytes, Wire.Json) ?? new CompanionPreferences();
-            return value with { BubbleWidth = value.BubbleWidth is { } w && double.IsFinite(w) ? Math.Clamp(w, 300, 560) : null,
-                BubbleHeight = value.BubbleHeight is { } h && double.IsFinite(h) ? Math.Clamp(h, 220, 500) : null };
+            return value with { BubbleWidth = value.BubbleWidth is { } w && double.IsFinite(w) ? CompanionBubbleLayout.Width(w) : null,
+                BubbleHeight = CompanionBubbleLayout.Height(value.BubbleHeight) };
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or ArgumentException) { return new(); }
     }

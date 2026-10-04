@@ -76,7 +76,7 @@ try {
         if ($result.smallParity.$key -ne $true) { throw "Windows pane parity smoke failed: smallParity.$key" }
     }
     $companion = $result.companion
-    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating')) {
+    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating', 'contentDrivenHeightAndEdgeResize', 'keyboardAccessibleAgentStatus')) {
         if ($companion.$key -ne $true) { throw "Windows companion smoke failed: companion.$key" }
     }
     foreach ($key in @('syntheticGpuCropEncoded', 'displayBoundsEnumerated')) {
@@ -89,7 +89,7 @@ try {
     foreach ($key in @('trustedRendererLoaded', 'conptyUtf8RoundTrip', 'resizeBridge', 'externalNavigationBlocked', 'processClosed', 'restartPreservesRenderer', 'footerMetadata')) {
         if ($result.nativeTerminal.$key -ne $true) { throw "Windows native terminal smoke failed: nativeTerminal.$key" }
     }
-    foreach ($key in @('dashboardRetainsPane', 'clockPreservesDashboardControls', 'allSettingsCategories', 'bothThemes')) {
+    foreach ($key in @('dashboardRetainsPane', 'clockPreservesDashboardControls', 'dashboardWorkspaceActions', 'dashboardProviderMarks', 'settingsLoadedBeforeCapture', 'allSettingsCategories', 'bothThemes')) {
         if ($result.desktopSurfaces.$key -ne $true) { throw "Windows desktop design smoke failed: desktopSurfaces.$key" }
     }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'

@@ -47,10 +47,10 @@ public sealed partial class MainWindow
         var sessions = service.Snapshot.Sessions.Where(s => s.Kind == "claude").ToArray();
         var busy = sessions.Count(s => CompanionStatus(s) is "running" or "waiting" or "starting" or "queued");
         companionToggleControl.Content = companionPreferences.Enabled ? "🐾" : "♧";
-        AutomationProperties.SetName(companionToggleControl, Locale.Get("companion.settings.enabled"));
+        AutomationProperties.SetName(companionToggleControl, Locale.Get(companionPreferences.Enabled ? "menu.hidePet" : "companion.settings.enabled"));
         ToolTipService.SetToolTip(companionToggleControl, Locale.Get(companionPreferences.Enabled ? "menu.hidePet" : "companion.settings.enabled"));
         companionStatusControl.Content = "◉ " + busy;
-        AutomationProperties.SetName(companionStatusControl, Locale.Get("companion.status.title"));
+        AutomationProperties.SetName(companionStatusControl, Locale.Get("companion.status.title") + " · " + Locale.Get("companion.status.busyCount", new Dictionary<string,string> { ["count"] = busy.ToString() }));
         ToolTipService.SetToolTip(companionStatusControl, Locale.Get("companion.status.title"));
         if (!companionStatusVisible || companionStatusRows is null || companionStatusCount is null) return;
         companionStatusCount.Text = Locale.Get("companion.status.busyCount", new Dictionary<string,string> { ["count"] = busy.ToString() });
@@ -72,9 +72,9 @@ public sealed partial class MainWindow
             }
             row.Heading.Text = session.Title + " · " + StateLabel(CompanionStatus(session));
             row.Detail.Text = string.Join(" · ", new[] { service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == session.WorkspaceId)?.Name, ProviderCatalog.Name(session.Provider), session.RunTiming?.Label() }.Where(s => !string.IsNullOrEmpty(s)));
-            row.Prompt.Text = session.Logs.LastOrDefault(l => l.Kind == "user")?.Text ?? "";
-            row.Activity.Text = session.CurrentActivity?.Summary ?? StateLabel(CompanionStatus(session));
-            AutomationProperties.SetName(row.Button, row.Heading.Text + ", " + row.Detail.Text);
+            row.Prompt.Text = Wire.Clean(session.Logs.LastOrDefault(l => l.Kind == "user")?.Text ?? "", 400);
+            row.Activity.Text = Wire.Clean(session.CurrentActivity?.Summary ?? StateLabel(CompanionStatus(session)), 400);
+            AutomationProperties.SetName(row.Button, string.Join(". ", new[] { row.Heading.Text, row.Detail.Text, row.Prompt.Text, row.Activity.Text }.Where(text => text.Length > 0)));
         }
         if (sessions.Length == 0)
         {

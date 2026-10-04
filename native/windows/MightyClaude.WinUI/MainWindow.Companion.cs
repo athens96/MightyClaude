@@ -136,7 +136,7 @@ public sealed partial class MainWindow
             "running" => Locale.Get("companion.status.running"), "waiting" => Locale.Get("companion.status.waiting"),
             "completed" => Locale.Get("companion.status.completed"), "error" => Locale.Get("companion.status.error"),
             "stopped" => Locale.Get("companion.status.stopped"), _ => Locale.Get("companion.status.idle") });
-        if (companionPreferences.ShowsTask && current?.Logs.LastOrDefault(l => l.Kind == "user") is { } prompt) body = Wire.Clean(prompt.Text, 400) + "\n\n" + body;
+        var promptText = companionPreferences.ShowsTask && current?.Logs.LastOrDefault(l => l.Kind == "user") is { } prompt ? Wire.Clean(prompt.Text, 400) : null;
         var page = active.Length > 1 && CompanionCarousel.Position(companionShown, active) is { } pos ? pos + " / " + active.Length : null;
         var buttons = new List<CompanionOverlayButton>();
         companionCardKey = permission is null ? companionShown ?? "idle" : PermissionKey(permission) + "|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(permission.ToolName + permission.InputJson)));
@@ -165,7 +165,7 @@ public sealed partial class MainWindow
         }
         if (companionPermissions.Values.Any(p => p.RunId != current?.Id && active.Contains(p.RunId))) buttons.Add(new("pending", Locale.Get("companion.button.pending")));
         if (current is not null) buttons.Add(new("open", Locale.Get("companion.button.open")));
-        companionOverlay.SetCard(new(companionCardKey, title, subtitle, body, page, buttons, snapshot.Theme == "light"), companionBubble);
+        companionOverlay.SetCard(new(companionCardKey, title, subtitle, body, page, buttons, snapshot.Theme == "light", permission is null ? promptText : null, permission is not null), companionBubble);
     }
     private CompanionQuestionDraft CompanionDraft(ToolPermissionRequest request)
     {
@@ -268,7 +268,7 @@ public sealed partial class MainWindow
     {
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(new TextBlock { Text = Locale.Get("companion.settings.description"), TextWrapping = TextWrapping.Wrap });
-        var preview = new Image { Width = 58, Height = 64, HorizontalAlignment = HorizontalAlignment.Left }; panel.Children.Add(preview);
+        var preview = new Image { Width = 58, Height = 64, HorizontalAlignment = HorizontalAlignment.Left }; Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(preview, "settings-companion-preview"); panel.Children.Add(preview);
         int previewGeneration = 0;
         async Task RefreshPreview()
         {
@@ -287,7 +287,7 @@ public sealed partial class MainWindow
         motion.Toggled += (_, _) => { companionPreferences = companionPreferences with { ReducedMotion = motion.IsOn }; SaveCompanionPreferences(); }; panel.Children.Add(motion);
         var alerts = new ToggleSwitch { Header = Locale.Get("companion.settings.notifications"), IsOn = service.Snapshot.CompletionNotificationsEnabled };
         alerts.Toggled += async (_, _) => { companionPreferences = companionPreferences with { Notifications = alerts.IsOn }; SaveCompanionPreferences(); await service.UpdateAsync(s => s with { CompletionNotificationsEnabled = alerts.IsOn }); }; panel.Children.Add(alerts);
-        var picker = new ComboBox { Header = Locale.Get("companion.settings.pet"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var picker = new ComboBox { Header = Locale.Get("companion.settings.pet"), HorizontalAlignment = HorizontalAlignment.Stretch }; Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(picker, "settings-companion-pet");
         void Populate() { picker.Items.Clear(); foreach (var pet in companionPets) picker.Items.Add(new ComboBoxItem { Content = pet.Name + (pet.Id.StartsWith("codex:", StringComparison.Ordinal) ? " · Codex" : ""), Tag = pet.Id }); picker.SelectedItem = picker.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == (companionLoadedPet ?? companionPreferences.SelectedPet)); }
         Populate(); picker.SelectionChanged += async (_, _) => { if (picker.SelectedItem is not ComboBoxItem { Tag: string id } || id == companionPreferences.SelectedPet) return; companionPreferences = companionPreferences with { SelectedPet = id }; SaveCompanionPreferences(); await ReloadCompanionPets(); await RefreshPreview(); }; panel.Children.Add(picker);
         var message = new TextBlock { Text = companionError ?? "", TextWrapping = TextWrapping.Wrap }; panel.Children.Add(message);
@@ -307,6 +307,14 @@ public sealed partial class MainWindow
         companionLoadGeneration++;
         companionTimer?.Stop(); companionTimer = null; companionQuestionWindow?.Close(); companionOverlay?.Dispose(); companionOverlay = null; companionPermissions.Clear(); companionQuestions.Clear();
     }
+    private async Task PrepareCompanionSettingsSmoke()
+    {
+        if (!options.SmokeTest) throw new InvalidOperationException("Companion fixtures require an isolated smoke profile.");
+        companionPets = await Task.Run(() => CompanionPet.Catalog(Path.Combine(AppContext.BaseDirectory, "Assets", "pets"), StateDirectory, Path.Combine(StateDirectory, "smoke-no-codex")));
+        Require(companionPets.Count > 0, "The packaged companion catalog is empty.");
+        companionPreferences = companionPreferences with { SelectedPet = companionPets[0].Id };
+        companionLoadedPet = companionPets[0].Id;
+    }
     private async Task<Dictionary<string, object?>> RunCompanionSmoke()
     {
         var pet = CompanionPet.Load(Path.Combine(AppContext.BaseDirectory, "Assets", "pets", "mighty-raccoon"), "mighty-raccoon");
@@ -322,7 +330,34 @@ public sealed partial class MainWindow
         Require(CompanionOverlay.ForegroundWindow == foreground, "Companion click stole foreground focus.");
         overlay.SmokeContextMenu(); overlay.Draw(0, 0);
         Require(overlay.SmokeClick("menu-close") && CompanionOverlay.ForegroundWindow == foreground, "Companion context actions stole focus or could not close.");
+        var compact = overlay.SmokeLayout;
+        overlay.SetCard(new("smoke-layout", "Mighty Claude", "Claude", string.Join(" ", Enumerable.Repeat("Current work", 30)), null, [], Request: string.Join(" ", Enumerable.Repeat("Requested task", 30))), true);
+        var automatic = overlay.SmokeLayout;
+        Require(automatic.AutomaticHeight && automatic.Height != compact.Height && automatic.Height < 480, "Companion default height did not follow measured content.");
+        Require(overlay.SmokeResizeHit(1, automatic.Height / 2) == CompanionResizeEdges.Left && overlay.SmokeResizeHit(automatic.Width / 2, 1) == CompanionResizeEdges.Top, "Companion top/side resize strips are missing.");
+        overlay.SmokeResize(CompanionResizeEdges.Left, -60, 0); var wider = overlay.SmokeLayout;
+        Require(wider.Width == automatic.Width + 60 && wider.Right == automatic.Right && wider.AutomaticHeight, "Side resize moved its opposite edge or disabled automatic height.");
+        overlay.SmokeResize(CompanionResizeEdges.Top, 0, -40); var taller = overlay.SmokeLayout;
+        Require(taller.Height == wider.Height + 40 && taller.Bottom == wider.Bottom && !taller.AutomaticHeight, "Top resize moved the pet instead of pinning the bottom.");
+        overlay.SmokeResize(CompanionResizeEdges.Right, 40, 0, cancel: true); Require(overlay.SmokeLayout == taller, "Cancelled resize changed saved geometry.");
+        overlay.SmokeResetSize(); Require(overlay.SmokeLayout.AutomaticHeight && overlay.SmokeLayout.Width == CompanionBubbleLayout.DefaultWidth, "Double-click reset must restore automatic sizing.");
+        Require(CompanionOverlay.ForegroundWindow == foreground, "Companion resize acquired foreground focus.");
+        Require(companionStatusControl is not null && companionStatusFlyout is not null, "Companion keyboard status controls are missing.");
+        companionStatusFlyout!.ShowAt(companionStatusControl!);
+        try
+        {
+            await WaitUI(() => companionStatusVisible && companionStatusItems.Count > 0);
+            var statusItem = companionStatusItems.First(); var button = statusItem.Value.Button;
+            await WaitUI(() => button.IsLoaded && button.ActualWidth > 0);
+            Require(button.IsTabStop && button.Focus(FocusState.Keyboard), "Companion status rows are not keyboard focusable.");
+            var peer = new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(button);
+            Require(peer.GetName().Contains(statusItem.Value.Activity.Text, StringComparison.Ordinal), "Accessible agent status omits its current work.");
+            ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+            await WaitUI(() => service.Snapshot.ActiveSessionId == statusItem.Key && !companionStatusVisible);
+        }
+        finally { companionStatusFlyout.Hide(); }
         return new() { ["bundledAtlasDecoded"] = pixels.Length == pet.Width * pet.Height * 4, ["allAnimationRowsRendered"] = true,
-            ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["selectedPetPreview"] = true, ["contextMenuNonActivating"] = true, ["physicalInputTested"] = false };
+            ["nonActivatingWindow"] = true, ["pointerActionBoundToCard"] = true, ["selectedPetPreview"] = true, ["contextMenuNonActivating"] = true,
+            ["contentDrivenHeightAndEdgeResize"] = true, ["keyboardAccessibleAgentStatus"] = true, ["physicalInputTested"] = false };
     }
 }

@@ -351,6 +351,7 @@ public sealed class CliAccountsCoordinator
 
     public async Task RefreshAsync(IReadOnlyList<string> providers, CancellationToken cancellation = default)
     {
+        if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
         var tasks = providers.Select(p => RefreshOneAsync(p, cancellation)).ToArray();
         await Task.WhenAll(tasks);
     }
@@ -362,6 +363,7 @@ public sealed class CliAccountsCoordinator
 
     public async Task<CliAccountStatus> StatusAsync(string provider, CancellationToken cancellation = default)
     {
+        if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(false, cancellation);
         if (provider == "gemini")
         {
             if (FindBinary("gemini") is null)
@@ -411,6 +413,7 @@ public sealed class CliAccountsCoordinator
     /// separate argument list, so no command line is built from text.
     public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default)
     {
+        if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
         var plan = CliAccountTerminal.LaunchPlan(loginArgv, !loginArgv.Contains("/setup-bedrock") && FindBinary("wt") is not null);
         var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
         foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
@@ -423,6 +426,7 @@ public sealed class CliAccountsCoordinator
 
     public async Task<CliAccountStatus> LogoutAsync(string provider, CancellationToken cancellation = default)
     {
+        if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
         if (provider == "gemini")
         {
             try { CliAccountSupport.GeminiLogout(home); }

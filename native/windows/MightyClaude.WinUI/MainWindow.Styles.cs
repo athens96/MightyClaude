@@ -14,6 +14,7 @@ public sealed partial class MainWindow
     private StackPanel BuildStylesSection()
     {
         var panel = new StackPanel { Spacing = 8 }; var rows = new StackPanel { Spacing = 10 };
+        AutomationProperties.SetAutomationId(rows, "settings-style-rows");
         panel.Children.Add(new TextBlock { Text = Locale.Get("settings.styles.description"), TextWrapping = TextWrapping.Wrap });
         Button register = null!;
         register = Button(Locale.Get("settings.styles.registerButton"), async () => await Act(async () =>
@@ -57,6 +58,7 @@ public sealed partial class MainWindow
             foreach (var style in registry.Styles)
             {
                 var row = new StackPanel { Spacing = 5 };
+                AutomationProperties.SetAutomationId(row, "settings-style-" + style.Id);
                 row.Children.Add(new TextBlock { Text = StylePresentation.Name(style) + " · " + StylePresentation.State(style.Approval), FontWeight = FontWeights.SemiBold });
                 row.Children.Add(new TextBlock { Text = style.Manifest.Summary, TextWrapping = TextWrapping.Wrap });
                 row.Children.Add(new TextBlock { Text = style.Id + " · " + Locale.Get("settings.styles.hashDetailTemplate", new Dictionary<string,string>{{"hash",style.Hash[..12]}}) + " · " + Locale.Get("settings.styles.actionCountTemplate", new Dictionary<string,string>{{"count",style.Manifest.Actions.Length.ToString()}}) + " · " + Locale.Get("settings.styles.autoAllowCountTemplate", new Dictionary<string,string>{{"count",StyleManifest.Items(style.Manifest.Root,"autoAllow").Length.ToString()}}), FontSize = 11, TextWrapping = TextWrapping.Wrap });

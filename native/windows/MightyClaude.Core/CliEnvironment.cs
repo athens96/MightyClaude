@@ -1,11 +1,12 @@
 namespace MightyClaude.Core;
 
 /// Refreshes Windows' persisted CLI environment at launch time. A GUI process
-/// can predate a changed user-level Bedrock token or PATH. No shell profile is
-/// executed and no values are logged or stored in the app snapshot.
+/// can predate a changed user-level Bedrock token or PATH. Async CLI entrypoints
+/// also refresh the normal terminal's trusted profiles. Values stay in memory.
 public static class CliEnvironment
 {
     private static readonly object sync = new();
+    private static readonly WindowsShellEnvironment shell = new();
     private static readonly HashSet<string> previouslyPersisted = new(StringComparer.OrdinalIgnoreCase);
     private static bool Relevant(string key) => key.Equals("PATH", StringComparison.OrdinalIgnoreCase) || key.StartsWith("AWS_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("ANTHROPIC_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("CLAUDE_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("CODEX_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("OPENAI_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("GEMINI_", StringComparison.OrdinalIgnoreCase) || key.StartsWith("GOOGLE_", StringComparison.OrdinalIgnoreCase);
     private static Dictionary<string, string> Read(EnvironmentVariableTarget target)
@@ -15,6 +16,17 @@ public static class CliEnvironment
         return result;
     }
     public static Dictionary<string, string> Current()
+    {
+        var baseline = Baseline();
+        return OperatingSystem.IsWindows() ? shell.Current(baseline) : baseline;
+    }
+    public static async Task<Dictionary<string, string>> RefreshAsync(bool force = false, CancellationToken cancellation = default)
+    {
+        var baseline = Baseline();
+        if (!OperatingSystem.IsWindows()) return baseline;
+        return (await shell.ResolveAsync(baseline, force, cancellation).ConfigureAwait(false)).Values;
+    }
+    private static Dictionary<string, string> Baseline()
     {
         var process = Read(EnvironmentVariableTarget.Process);
         if (!OperatingSystem.IsWindows()) return process;

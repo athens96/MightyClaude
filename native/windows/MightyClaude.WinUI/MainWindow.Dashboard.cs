@@ -39,19 +39,20 @@ public sealed partial class MainWindow
         };
     }
     private WorkDashboard.Attention DashboardAttention(string id) => views.TryGetValue(id, out var pane) ? pane.DashboardAttention : new();
-    private void HideDashboard() { showsDashboard = false; dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; }
+    private void HideDashboard() { showsDashboard = false; StopDashboardGit(); dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; }
     private void RenderDashboard()
     {
         if (dashboard is null || closing || !showsDashboard) return;
         panes.Visibility = Visibility.Collapsed; dashboard.Visibility = Visibility.Visible;
         var state = service.Snapshot;
+        RefreshDashboardGit();
         var accountChips = usage?.Chips() ?? [];
         foreach (var session in state.Sessions)
             if (dashboardClocks.TryGetValue(session.Id, out var clockLabel))
                 clockLabel.Text = session.RunTiming is { IsValid: true } timing ? timing.Label() : "";
         var key = System.Text.Json.JsonSerializer.Serialize(new { Locale.LanguagePreference, state.ActiveSessionId, state.Theme, state.Workspaces, Account = accountChips, Sessions = state.Sessions.Select(s => new { s.Id, s.Status, s.Title, s.Model, s.Kind, s.Provider, s.CurrentActivity, Log = s.Logs.LastOrDefault(), s.SessionUsage, Attention = DashboardAttention(s.Id) }) }, Wire.Json);
         if (key == dashboardFingerprint) return; dashboardFingerprint = key;
-        dashboardClocks.Clear();
+        dashboardClocks.Clear(); dashboardGitLabels.Clear();
         var content = new StackPanel { Spacing = 20, Padding = new(24, 10, 24, 24) };
         content.Children.Add(new TextBlock { Text = Locale.Get("phone.dashboard.title"), FontSize = 29, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
         content.Children.Add(new TextBlock { Text = Locale.Get("dashboard.subtitle", new Dictionary<string, string> { ["workspaces"] = state.Workspaces.Count.ToString(), ["panes"] = state.Sessions.Count.ToString() }), FontSize = 12, Opacity = .7 });
@@ -79,13 +80,15 @@ public sealed partial class MainWindow
         foreach (var workspace in state.Workspaces)
         {
             var group = new StackPanel { Spacing = 8 };
-            var heading = Button(workspace.Name, async () => { HideDashboard(); await SelectWorkspace(workspace.Id); }); heading.FontSize = 17; heading.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; group.Children.Add(heading);
-            foreach (var card in WorkDashboard.Ordered(state.Sessions.Where(s => s.WorkspaceId == workspace.Id && WorkDashboard.IsCounted(s.Kind)).Select(s => WorkDashboard.MakeCard(s, DashboardAttention(s.Id)))))
+            group.Children.Add(DashboardWorkspaceHeader(workspace));
+            var cards = WorkDashboard.Ordered(state.Sessions.Where(s => s.WorkspaceId == workspace.Id && WorkDashboard.IsCounted(s.Kind)).Select(s => WorkDashboard.MakeCard(s, DashboardAttention(s.Id))));
+            if (cards.Count == 0) group.Children.Add(new TextBlock { Text = Locale.Get("phone.workspaces.noSessions"), FontSize = 12, Opacity = .7 });
+            foreach (var card in cards)
             {
                 var row = new Grid { ColumnSpacing = 12 }; row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
                 var mark = new StatusMark(); mark.Update(card.DisplayStatus, card.Session.Kind, card.Attention.Total, state.Theme != "light"); row.Children.Add(mark.View);
                 var description = new StackPanel { Spacing = 4 }; description.Children.Add(new TextBlock { Text = card.Session.Title, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-                if (card.Session.Kind == "claude") description.Children.Add(new TextBlock { Text = ProviderCatalog.Name(card.Session.Provider) + (card.Model is { } model ? " · " + ModelLabel.Text(model) : ""), FontSize = 11, Opacity = .7 });
+                if (card.Session.Kind == "claude") description.Children.Add(DashboardProviderLine(card));
                 if (card.LastActivity is { } last) description.Children.Add(new TextBlock { Text = last, FontSize = 11, Opacity = .7, TextTrimming = TextTrimming.CharacterEllipsis });
                 Grid.SetColumn(description, 1); row.Children.Add(description);
                 var detail = new StackPanel { Spacing = 5, VerticalAlignment = VerticalAlignment.Center }; detail.Children.Add(new TextBlock { Text = StateLabel(card.DisplayStatus), FontSize = 11 });
