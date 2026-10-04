@@ -208,4 +208,25 @@ public static class DesignTokens
         "comment" => palette.Ink2,
         _ => null,
     };
+
+    /// <summary>
+    /// The status line's terminal colours for the standard ANSI indexes 1–6 (red, green, yellow,
+    /// blue, magenta, cyan, and their bright twins 9–14), chosen to stay legible on both themes
+    /// (M/StatusLineView.swift:68-79, <c>Color(red:green:blue:)</c> rounded to bytes). Data, not
+    /// chrome: the same in both themes and held to the fixture's <c>windowsOnly.ansi</c>. Null for
+    /// 0, 7, 8 and 15, which the Mac draws in the primary or secondary ink.
+    /// </summary>
+    public static DesignColor? AnsiStandard(int index) => (index % 8) switch
+    {
+        1 => new(0xDB4C4C),
+        2 => new(0x4CA866),
+        3 => new(0xCC9E33),
+        4 => new(0x5C8CE6),
+        5 => new(0xB273D9),
+        6 => new(0x40A6B2),
+        _ => null,
+    };
+
+    /// <summary>The opacity a dim (SGR 2) status-line segment keeps its colour at: 150 of 255.</summary>
+    public const double AnsiDimOpacity = 150.0 / 255;
 }

@@ -94,6 +94,15 @@ internal sealed class DesignBrushes
         return providers[id] = gradient;
     }
 
+    /// <summary>Every shared brush handed out so far (token, subtle, segment, syntax, provider, hairline, transparent), for the palette walk of the GUI smoke.</summary>
+    internal IEnumerable<Brush> HandedOut()
+    {
+        foreach (var brush in brushes.Values) yield return brush;
+        foreach (var brush in syntax.Values) yield return brush;
+        foreach (var brush in providers.Values) yield return brush;
+        foreach (var brush in new SolidColorBrush?[] { subtle, segmentTrack, segmentOn, RowSelectedBorder, Transparent }) if (brush is not null) yield return brush;
+    }
+
     /// <summary>Recolours every brush handed out so far to a palette, keeping each instance.</summary>
     internal void Apply(DesignPalette palette)
     {

@@ -80,6 +80,7 @@ macOS 코드베이스에서 발견한 모든 기능 영역과 Windows 구현 현
 
 | 기능 | macOS 근거 | Windows 연결 | 검증 구분 |
 |---|---|---|---|
+| 디자인 시스템 적용 (concept D 팔레트·도형·글꼴, 7단계) | `MightyCore/DesignTokens.swift`(41색 × 2테마), `MightyClaude/` 각 화면(`WorkspaceView`·`PaneDockView`·`SessionPaneView`·`PaneChrome`·`MightyGraphView`·`DashboardView`·`FilePaneView`·`SettingsViews`), `artifacts/design-system/index.html` | Core `DesignTokens.cs`·`DesignMetrics.cs`(공유 픽스처 `native/contracts/fixtures/design-tokens.json`, 상태 줄 ANSI 색은 `windowsOnly.ansi`), WinUI `DesignBrushes.cs`(창마다 하나, 테마 토글은 같은 브러시를 제자리에서 다시 칠함)와 기본 컨트롤 테마 리소스. 1단계 토큰·래칫, 2단계 앱 셸·제목 표시줄 색, 3단계 사이드바, 4단계 탭·창 머리·입력창, 5단계 Mighty 다이어그램·타임라인·결과, 6단계 작업 현황·파일 창·설정·시트·팝오버, 7단계 터미널 창의 얇은 잉크 머리(`idle` 바탕·`onStatus` 글자·상태 캡슐), 기본 대화의 `cardRaised` 바탕과 토큰 색 RTF(테마를 바꾸면 다시 그림, 파일 창 Markdown 포함), 제목 22/18/15/13, 환영·빈 워크스페이스·빈 에이전트 창, 컴패니언 말풍선 토큰 색, 글자색 리터럴 0(`scripts/design-token-budget.json`). 제목 글꼴은 Segoe UI Variable Display(결정 Q1), 시스템 제목 표시줄 유지(Q2) | Core.Tests `design tokens …`(픽스처·대비·점선·ANSI), Mac `DesignTokenParityTests`; GUI 스모크 `designTokens`·`appShellDesign`·`sidebarDesign`·`paneChromeDesign`·`mightyDesign`·`panelsDesign`·`paletteDesign`(두 테마에서 주 창·작업 현황·설정 창의 모든 브러시를 팔레트와 대조). 7단계는 CI 대기, 화면은 기기 미확인 |
 | 시작 스플래시 | `LaunchSplashView.swift` | `MainWindow.DesktopParity.cs`의 로고/진행 표시, 초기 상태 로드 후 제거 | 코드 구현; 실제 첫 실행 시간·오류 시 해제는 Windows 기기 확인 |
 | 마이티 다이어그램/타임라인 전환 | `MightyCore/MightyTimeline.swift`·`MightyGraphView.swift` timeline/group/detail/result·`MightyGraphTimelineView.swift` | `MightyTimeline.cs`·`MainWindow.MightyTimeline.cs`: 동일 요청/하위 블록 순서와 노드 ID, 최신 요청 기본 펼침, 개별 블록 기록/상태/실측 시간/모델 사용량, 결과 더 보기, 결과 파일 메뉴에서 공통 참조 뷰어, 상단 이전 기록 읽기, 스타일/제공자 마크. `RunSession.graphViewMode`에 선택 저장, 미지 값은 diagram. 기존 다이어그램 확대·크기·초안과 독립 | MightyTimelineVerification 3개와 Windows `mightyTimeline` UIA 스모크 추가. 네이티브 실행/스크린샷 결과는 해당 CI 이후 확인; 물리 입력기·배율별 실기 검증 대기 |
 | 실행 중 입력 큐·중지·조향 | `QueuedInputsView.swift`와 실행 중 입력 처리 | `QueuedInputBuffer.cs`·`MainWindow.QueuedComposer.cs`, Claude stdin 조향과 실패 시 FIFO 큐, 오류 시 보류/직접 다음 실행, 중지 시 대기열 비움 | QueuedComposerVerification; 한글 Enter·Ctrl+Enter·모바일 동시 입력은 기기 확인 |
@@ -115,5 +116,12 @@ Windows x64 실제 기기에서 사용자가 확인할 항목. 확인하면 해�
 - pending — 실행 중 점선 테두리: Mighty 다이어그램의 실행 중 블록에 9/7 점선이 1.6초 주기로 천천히 돌고, 대기 블록은 멈춘 주황 선이며, 애니메이션을 끄면 멈춘다.
 - pending — 오른쪽 카드 에이전트 마크: 작업 현황 행·다이어그램 요청 머리·타임라인 요청 머리에서 에이전트 이름 앞에 Claude·Codex·Gemini 마크가 보인다.
 - pending — 결과 표시(입력창 위): 새 Mighty 결과가 한 번만 스크롤되어 결과 박스가 입력창 바로 위에 놓이고, 보이는 창 안에서 내용 높이로 맞춰지며 저장한 크기를 넘지 않는다.
+
+- pending — 디자인 시스템(라이트·다크): `artifacts/design-system/screens/`와 나란히 놓고 사이드바·창 카드·입력창·Mighty 다이어그램·작업 현황·파일 창·설정 창의 색과 둥근 모서리가 맞으며, 테마를 바꾸면 열린 팝오버·설정 창·대화상자·컴패니언 말풍선까지 한 번에 바뀌고 회색이 남지 않는다.
+- pending — 글꼴: Windows 11에서 Segoe UI Variable(제목은 Display), Windows 10에서 Segoe UI로 보이고, 한글은 맑은 고딕으로 12.5/11.5pt 줄 높이가 어긋나지 않으며, Cascadia Mono가 없는 기기에서 Consolas로 대체된다.
+- pending — 터미널 창 머리: 셸 창 위에 어두운 잉크 막대(제목·`셸 · 로컬 터미널`·상태 캡슐·… 메뉴)가 보이고 흰 글자가 두 테마에서 읽힌다.
+- pending — 대화 기록: 기본 대화가 옅은 회색(`cardRaised`) 위에 있고, 제목·링크·코드 블록 색이 테마를 바꾸면 바로 바뀐다(파일 창 Markdown 미리보기 포함).
+- pending — 빈 화면: 워크스페이스가 없을 때 환영 화면(27pt 제목·폴더 열기 단추·단축키), 창이 없을 때 창 추가 안내, 새 에이전트 창에서 마크와 `… 작업을 시작하세요` 안내가 보이고 첫 요청 뒤 사라진다.
+- pending — 그림자·배율·고대비: 입력창·타일·세그먼트 그림자가 보이고, 150%/200% 배율에서 0.5pt 선과 점 격자가 보이며, 고대비 모드에서 읽을 수 없는 글자가 없다.
 
 이미지 엔진 근거: Microsoft의 [WIC 기본 코덱 목록](https://learn.microsoft.com/windows/win32/wic/-wic-about-windows-imaging-codec)은 TIFF 디코딩을 포함한다. [Win2D SVG API 문서](https://microsoft.github.io/Win2D/WinUI3/html/M_Microsoft_Graphics_Canvas_Svg_CanvasSvgDocument_LoadFromXml.htm)는 SVG 1.1의 일부만 지원하며 미지원 요소를 무시할 수 있다고 명시한다. 따라서 SVG의 브라우저와 동일한 픽셀 결과는 보장하지 않는다. 새 `NativeImageParityVerification`은 TIFF 크기/오프셋·안전한 SVG 입력을, Windows `agentImages` 스모크의 `exifOrientation`·`svgRaster`·`tiffRaster`는 실제 WIC/Win2D 경로를 검사한다.

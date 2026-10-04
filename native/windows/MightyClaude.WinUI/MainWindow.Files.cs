@@ -111,7 +111,10 @@ public sealed partial class MainWindow
         /// line-number column and the rendered Markdown. HighlightUnits is how far colouring
         /// reaches when it stops early (the highlighter's cap, or a run cap on Windows).
         /// </summary>
-        private sealed record FilesPrepared(FilePreviewData Data, List<SourceToken> Tokens, string LineNumbers, bool Wraps, bool HighlightCapped, int HighlightUnits, string? MarkdownRtf, bool RenderCapped = false);
+        private sealed record FilesPrepared(FilePreviewData Data, List<SourceToken> Tokens, string LineNumbers, bool Wraps, bool HighlightCapped, int HighlightUnits, string? MarkdownRtf, bool RenderCapped = false, string? MarkdownSource = null, bool MarkdownLight = false);
+
+        /// <summary>The rendered Markdown preview on screen, its source and the theme its RTF carries (null when none shows).</summary>
+        private (RichEditBox View, string Source, bool Light)? markdownShown;
 
         private FilePaneTree Tree => filesTree ??= owner.FilePaneTreeFor(Session.WorkspaceId);
         /// <summary>This view is still the one shown for its pane.</summary>
@@ -464,6 +467,23 @@ public sealed partial class MainWindow
             catch (Exception) { if (request == previewRequest && FilesAlive) ShowPreviewFailed(); }
         }
 
+        /// <summary>
+        /// Redraws the Markdown preview on screen in the current theme. Its RTF bakes the theme's
+        /// token colours in (TranscriptRtf), so a toggle renders it again, in place, keeping the view.
+        /// </summary>
+        internal void RethemeFilesMarkdown()
+        {
+            var light = owner.service.Snapshot.Theme == "light";
+            if (markdownShown is not { } markdown || markdown.Light == light || !ReferenceEquals(previewContent?.Child, markdown.View)) return;
+            var rtf = TranscriptRtf.RenderMarkdown(markdown.Source, light);
+            // Setting the text scrolls to the top; the reader's place is kept.
+            var offset = AgentTranscript.Descendant<ScrollViewer>(markdown.View)?.VerticalOffset ?? 0;
+            try { markdown.View.IsReadOnly = false; markdown.View.Document.SetText(TextSetOptions.FormatRtf, rtf); }
+            finally { markdown.View.IsReadOnly = true; }
+            markdownShown = (markdown.View, markdown.Source, light);
+            if (offset > 0) markdown.View.DispatcherQueue.TryEnqueue(() => AgentTranscript.Descendant<ScrollViewer>(markdown.View)?.ChangeView(null, offset, null, true));
+        }
+
         private void ShowPreviewFailed()
         {
             previewBanners?.Children.Clear(); previewTools?.Children.Clear();
@@ -494,7 +514,7 @@ public sealed partial class MainWindow
             }
             cancellation.ThrowIfCancellationRequested();
             var numbers = string.Join('\n', Enumerable.Range(1, starts.Count));
-            return new(data, tokens, numbers, longest > SourceLines.WrapThreshold, capped, units, markdown, renderCapped);
+            return new(data, tokens, numbers, longest > SourceLines.WrapThreshold, capped, units, markdown, renderCapped, markdown is null ? null : full, light);
         }
 
         /// <summary>The head names the file (and shows only while one is chosen, as on the Mac).</summary>
@@ -565,7 +585,13 @@ public sealed partial class MainWindow
                 case FilePreviewKindTag.Markdown:
                     if (!data.MarkdownRenderable) Banner(Locale.Get("files.markdown.tooLarge"));
                     else MarkdownToggle(prepared);
-                    if (prepared.MarkdownRtf is { } rtf && !showMarkdownSource) previewContent.Child = MarkdownView(rtf);
+                    if (prepared.MarkdownRtf is { } rtf && !showMarkdownSource)
+                    {
+                        var view = MarkdownView(rtf); previewContent.Child = view;
+                        markdownShown = (view, prepared.MarkdownSource!, prepared.MarkdownLight);
+                        // Prepared before a theme toggle (or shown again from the source switch): draw it in the theme now showing.
+                        RethemeFilesMarkdown();
+                    }
                     else { SourceBanners(prepared); previewContent.Child = SourceView(prepared); }
                     break;
                 case FilePreviewKindTag.Image:
@@ -668,9 +694,10 @@ public sealed partial class MainWindow
         })!;
 
         /// <summary>Rendered with the transcript's Markdown renderer: no images, no local links.</summary>
-        private static FrameworkElement MarkdownView(string rtf)
+        private static RichEditBox MarkdownView(string rtf)
         {
             var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), Padding = new Thickness(18) };
+            AutomationProperties.SetAutomationId(view, "files-markdown-preview");
             ScrollViewer.SetVerticalScrollBarVisibility(view, ScrollBarVisibility.Auto);
             AutomationProperties.SetName(view, Locale.Get("files.markdown.rendered"));
             try { view.IsReadOnly = false; view.Document.SetText(TextSetOptions.FormatRtf, rtf); }

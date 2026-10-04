@@ -246,6 +246,18 @@
         "string": "#FF9F0A",
         "number": "#BF5AF2"
       }
+    },
+    "ansi": {
+      "source": "native/macos/Sources/MightyClaude/StatusLineView.swift:68-79 (status-line terminal colours, the same in both themes; 0, 7, 8 and 15 take the ink)",
+      "standard": {
+        "1": "#DB4C4C",
+        "2": "#4CA866",
+        "3": "#CC9E33",
+        "4": "#5C8CE6",
+        "5": "#B273D9",
+        "6": "#40A6B2"
+      },
+      "dimOpacity": 0.5882352941176471
     }
   },
   "opacities": [

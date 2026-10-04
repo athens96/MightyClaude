@@ -223,13 +223,14 @@ public sealed partial class MainWindow
         /// <summary>
         /// Redraws the header's mark, title and word for the pane's status and its pending requests,
         /// from the session and theme the caller already read (no snapshot copy per call). The word
-        /// takes its tone's ink, <c>text(tone)</c> (M/SessionPaneView.swift:219-221).
+        /// takes its tone's ink, <c>text(tone)</c> (M/SessionPaneView.swift:219-221); on a terminal's slim bar it
+        /// is the bar's <c>onStatus</c> ink inside its capsule (M/PaneChrome.swift:111).
         /// </summary>
         internal void RefreshHeaderStatus(RunSession pane, bool dark)
         {
             var pending = PendingRequests; var shown = StatusGlyph.DisplayStatus(pane.Status, pending);
             headerMark.Update(pane.Status, pane.Kind, pending, dark);
-            label.Text = StateLabel(shown); label.Foreground = owner.brushes.Text(StatusGlyph.Tone(shown));
+            label.Text = StateLabel(shown); label.Foreground = slimHeader ? owner.brushes.Brush(DesignToken.OnStatus) : owner.brushes.Text(StatusGlyph.Tone(shown));
             if (headerTitle.Text != pane.Title) { headerTitle.Text = pane.Title; ToolTipService.SetToolTip(headerTitle, PaneTitle.Help(pane)); }
         }
     }

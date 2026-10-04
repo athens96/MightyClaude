@@ -11,7 +11,7 @@ using Microsoft.Web.WebView2.Core;
 namespace MightyClaude.WinUI;
 
 /// <summary>
-/// The manual browser tab of docs/browser-pane.md on WebView2: a 새 브라우저 탭 entry
+/// The manual browser tab of docs/browser-pane.md on WebView2: a "new browser tab" entry
 /// opens a pane with an address field, back, forward and reload. Every rule comes from
 /// MightyClaude.Core — BrowserAddress, BrowserHistory, BrowserProfile and
 /// BrowserEngineService — and this file only draws them and drives the control.
@@ -19,7 +19,7 @@ namespace MightyClaude.WinUI;
 /// No remote debugging port and no CDP flag is ever set; new windows, downloads and
 /// script dialogs are refused. The runtime is never bundled: when the Evergreen runtime
 /// is missing the pane offers the Microsoft per-user bootstrapper and downloads nothing
-/// until the user clicks 설치.
+/// until the user clicks Install.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -462,7 +462,7 @@ public sealed partial class MainWindow
                         ? Locale.Get("browser.runtime.installSuccess")
                         : outcome.Error ?? Locale.Get("browser.runtime.installFailed"),
                     TextWrapping = TextWrapping.Wrap,
-                    Foreground = outcome.Success ? null : new SolidColorBrush(Colors.OrangeRed),
+                    Foreground = outcome.Success ? null : owner.brushes.Brush(DesignToken.ErrText),
                 });
                 if (!outcome.Success) install.IsEnabled = true;
             }

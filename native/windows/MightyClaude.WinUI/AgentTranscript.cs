@@ -85,7 +85,7 @@ internal sealed partial class AgentTranscript
         selection.SetRange(Position(start), Position(end));
         View.DispatcherQueue.TryEnqueue(() => { var viewer = Descendant<ScrollViewer>(View); viewer?.ChangeView(null, follows && start == end ? viewer.ScrollableHeight : offset, null, true); });
     }
-    private static T? Descendant<T>(DependencyObject value) where T : DependencyObject
+    internal static T? Descendant<T>(DependencyObject value) where T : DependencyObject
     {
         if (value is T found) return found;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(value); i++) if (Descendant<T>(VisualTreeHelper.GetChild(value, i)) is { } child) return child;
@@ -115,8 +115,8 @@ internal static class TranscriptRtf
     internal static string Render(RunSession session, bool light, AgentPictures? pictures, string? root, IReadOnlySet<string>? expanded = null, Dictionary<string, TranscriptAction>? actions = null)
     {
         var context = new PictureContext(pictures, root, expanded, actions);
-        var body = new StringBuilder(@"{\rtf1\ansi\deff0\uc1{\fonttbl{\f0 Segoe UI;}{\f1 Cascadia Mono;}}{\colortbl;");
-        body.Append(light ? @"\red32\green34\blue39;\red95\green100\blue112;\red37\green99\blue200;\red172\green54\blue45;\red238\green241\blue246;}" : @"\red231\green233\blue238;\red164\green172\blue187;\red128\green177\blue255;\red255\green147\blue132;\red37\green41\blue49;}");
+        var body = new StringBuilder(@"{\rtf1\ansi\deff0\uc1{\fonttbl{\f0 Segoe UI;}{\f1 Cascadia Mono;}}");
+        ColorTable(body, light);
         body.Append(@"\viewkind4\f0\fs26\cf1 ");
         foreach (var entry in session.Logs)
         {
@@ -161,13 +161,38 @@ internal static class TranscriptRtf
     /// <summary>One Markdown document (the files pane preview) with the transcript's renderer and colours.</summary>
     internal static string RenderMarkdown(string text, bool light)
     {
-        var body = new StringBuilder(@"{\rtf1\ansi\deff0\uc1{\fonttbl{\f0 Segoe UI;}{\f1 Cascadia Mono;}}{\colortbl;");
-        body.Append(light ? @"\red32\green34\blue39;\red95\green100\blue112;\red37\green99\blue200;\red172\green54\blue45;\red238\green241\blue246;}" : @"\red231\green233\blue238;\red164\green172\blue187;\red128\green177\blue255;\red255\green147\blue132;\red37\green41\blue49;}");
+        var body = new StringBuilder(@"{\rtf1\ansi\deff0\uc1{\fonttbl{\f0 Segoe UI;}{\f1 Cascadia Mono;}}");
+        ColorTable(body, light);
         body.Append(@"\viewkind4\f0\fs26\cf1 ");
         try { Markdown(body, text); }
         catch (RegexMatchTimeoutException) { body.Append(@"\pard\sa90\f0\fs26\cf1 ").Append(Escape(text)).Append(@"\par "); }
         return body.Append('}').ToString();
     }
+    /// <summary>
+    /// The document's colour table from the design palette of the theme it is drawn in: 1 <c>ink</c>,
+    /// 2 <c>ink2</c>, 3 <c>accent</c> (links, the request heading), 4 <c>errText</c>, and 5 the code wash,
+    /// <c>page</c> (M/AgentMarkdownView.swift:193-194,258: code on the canvas tint). An RTF document
+    /// cannot point at the window's shared brushes, so a theme toggle draws it again: the Default
+    /// transcript re-renders from PaneView.Refresh, Mighty transcripts through <see cref="AgentTranscript.Retheme"/>,
+    /// the files pane through RethemeFilesMarkdown.
+    /// </summary>
+    private static void ColorTable(StringBuilder body, bool light)
+    {
+        var palette = DesignTokens.Palette(!light);
+        body.Append(@"{\colortbl;");
+        foreach (var color in new[] { palette.Ink, palette.Ink2, palette.Accent, palette.ErrText, palette.Page })
+            body.Append(@"\red").Append(color.R.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .Append(@"\green").Append(color.G.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .Append(@"\blue").Append(color.B.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(';');
+        body.Append('}');
+    }
+
+    /// <summary>
+    /// A Markdown heading's size in half-points: 22, 18, 15 and 13pt for levels 1, 2, 3 and below
+    /// (M/AgentMarkdownView.swift:157), over the 13pt body (<c>\fs26</c>).
+    /// </summary>
+    internal static int HeadingHalfPoints(int level) => level switch { 1 => 44, 2 => 36, 3 => 30, _ => 26 };
+
     /// <summary>A thumbnail, or the macOS placeholder while it loads or once it is gone. An svg is not drawn here.</summary>
     private static void Picture(StringBuilder body, AgentPictures.Picture picture, PictureContext? context = null, TranscriptAction? action = null)
     {
@@ -194,7 +219,7 @@ internal static class TranscriptRtf
             if (code) { fenced.Append(original).Append('\n'); continue; }
             if (Regex.IsMatch(trim, @"^\|?\s*:?-{3,}.*\|", RegexOptions.None, TimeSpan.FromMilliseconds(100))) continue;
             var heading = Regex.Match(trim, @"^(#{1,6})\s+(.+)$", RegexOptions.None, TimeSpan.FromMilliseconds(100));
-            if (heading.Success) { body.Append(@"\pard\sb180\sa100\b\cf1\fs").Append(heading.Groups[1].Length <= 2 ? 34 : 28).Append(' '); WriteInline(body, heading.Groups[2].Value, context); body.Append(@"\b0\par "); Flush(body, context); continue; }
+            if (heading.Success) { body.Append(@"\pard\sb180\sa100\b\cf1\fs").Append(HeadingHalfPoints(heading.Groups[1].Length)).Append(' '); WriteInline(body, heading.Groups[2].Value, context); body.Append(@"\b0\par "); Flush(body, context); continue; }
             if (trim.StartsWith('>')) { body.Append(@"\pard\li240\sa75\cf2\fs26 "); WriteInline(body, "│ " + trim[1..].TrimStart(), context); }
             else if (Regex.IsMatch(trim, @"^(?:[-*+] |\d+[.)] )", RegexOptions.None, TimeSpan.FromMilliseconds(100))) { body.Append(@"\pard\li240\fi-180\sa60\cf1\fs26 "); WriteInline(body, Regex.Replace(trim, @"^[-*+] ", "• ", RegexOptions.None, TimeSpan.FromMilliseconds(100)), context); }
             else if (trim.Contains('|') && trim.Count(c => c == '|') >= 2) { body.Append(@"\pard\sa70\f1\fs23\cf1 "); WriteInline(body, trim.Trim('|').Replace("|", "  │  ", StringComparison.Ordinal), context); }
