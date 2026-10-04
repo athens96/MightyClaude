@@ -18,6 +18,14 @@ private final class Instant: @unchecked Sendable {
     var value: Date? { lock.lock(); defer { lock.unlock() }; return stored }
 }
 
+/// Sessions seen, added from whichever thread got there.
+private final class Sessions: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = Set<String>()
+    func insert(_ id: String) { lock.lock(); stored.insert(id); lock.unlock() }
+    var values: Set<String> { lock.lock(); defer { lock.unlock() }; return stored }
+}
+
 /// Runs a blocking call on another thread and reports when it returned.
 private final class Blocking: @unchecked Sendable {
     private let lock = NSLock()
@@ -246,19 +254,50 @@ struct RunnerBackpressureTests {
 
     /// Quit signals every run first and stops them together: four flooding
     /// runs with a slow consumer end well inside the app's quit deadline.
+    ///
+    /// The consumer is shaped as the app's (`AppStore.runner`): on the
+    /// runner's actor an event only goes into a `RunEventBatcher`, and a serial
+    /// queue standing in for the main thread applies it, here a millisecond per
+    /// line. A consumer that slept inside `onEvent` instead would park the
+    /// actor's cooperative thread for every line, so quit would wait for the
+    /// lines already queued on the actor at the host's sleep cost (about
+    /// 1.7 ms a line on a loaded Mac, 3 s for this quit; 11 s on a 3-core CI
+    /// runner), timing the fixture rather than the runner. The runs still
+    /// flood faster than the runner parses, so each run's output budget stays
+    /// full and its reader waits, as with a slow consumer.
     @Test func shutdownEndsFourFloodingRunsWithinTheQuitDeadline() async throws {
         let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
         let service = ProviderService(binaryOverrides: ["gemini": try floodingGemini(in: directory)])
+        // What the runner emitted, except the flood lines, which only mark
+        // their pane: thousands a second, too many to keep.
         let events = BackpressureRecorder()
+        let flooded = Sessions()
+        let applied = BackpressureRecorder()
+        let batcher = RunEventBatcher(batchLimit: 32)
+        let mainThread = DispatchQueue(label: "slow-consumer")
+        let finished = Instant()
+        @Sendable func apply() {
+            let (batch, more) = batcher.take()
+            for event in batch {
+                applied.append(event)
+                // Once the test is over the rest is let go of at once.
+                if event.entry?.kind == "assistant", finished.value == nil { usleep(1_000) }
+            }
+            if more { mainThread.async { apply() } }
+        }
         let liveRuns = LiveRunRegistry()
-        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, liveRuns: liveRuns, onEvent: { events.append($0); if $0.entry?.kind == "assistant" { usleep(1_000) } })
+        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, liveRuns: liveRuns, onEvent: { event in
+            if event.entry?.text == "flood" { flooded.insert(event.sessionId) } else { events.append(event) }
+            if batcher.push(event) { mainThread.async { apply() } }
+        })
+        defer { finished.mark() }
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
         let panes = (0..<4).map { "pane-\($0)" }
         do {
             for pane in panes {
                 try await runner.start(request: StartRunRequest(sessionId: pane, workspaceId: workspace.id, input: "go", provider: "gemini"), workspace: workspace)
             }
-            try await wait { Set(events.values().filter { $0.entry?.text == "flood" }.map(\.sessionId)) == Set(panes) }
+            try await wait { flooded.values == Set(panes) && applied.values().contains { $0.entry?.text == "flood" } }
             // As the app quits (`AppStore.shutdown`): every run is signalled
             // first, off the runner's actor, then the runner shuts down from
             // quit's own task, which the app starts from the main thread.
@@ -269,6 +308,9 @@ struct RunnerBackpressureTests {
             print("shutdown of 4 flooding runs took \(elapsed) s")
             #expect(elapsed < LiveRunRegistry.quitDeadline)
             for pane in panes { #expect(events.values().last(where: { $0.sessionId == pane && $0.type == "status" })?.status == "stopped") }
+            // The consumer was slow: it is still far behind, and quit did not
+            // wait for it.
+            #expect(!applied.values().contains { $0.type == "status" && $0.status == "stopped" })
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
         await service.shutdown()
     }
