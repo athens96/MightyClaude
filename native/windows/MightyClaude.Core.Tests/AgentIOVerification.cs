@@ -82,7 +82,8 @@ internal static class AgentIOVerification
             for (var i = 0; result.Status == "running" && i < 100; i++) { await Task.Delay(50); result = first.Read(result.Handle); }
             Check(result.Status == "done", "visible ConPTY command completes");
             Check(result.ExitCode == 7, "visible ConPTY preserves exit code: " + result.ExitCode);
-            Check(first.Replay.Contains("mighty-한글-marker", StringComparison.Ordinal), "visible ConPTY captures Unicode output even when the host stdout is redirected");
+            var replay = new TerminalTextCleaner().Clean(first.Replay);
+            Check(replay.Contains("mighty-한글-marker", StringComparison.Ordinal), "visible ConPTY captures Unicode output even when the host stdout is redirected: " + JsonSerializer.Serialize(replay));
             Reject(() => other.Read(result.Handle));
             var running = await first.Run("Start-Sleep -Seconds 300", CancellationToken.None);
             Check(running.Status == "running", "long commands return a pollable handle");

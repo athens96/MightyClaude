@@ -30,7 +30,7 @@ public sealed partial class MainWindow
             await service.UpdateAsync(_ => saved); Render();
         }
     }
-    private async Task RunTerminalCommandAsync(string command, string title)
+    private async Task RunTerminalCommandAsync(string command, string title, bool autoRun = true)
     {
         var paneId = Wire.Id();
         await AddPane("shell", shape: pane => pane with { Id = paneId, Title = title });
@@ -40,7 +40,7 @@ public sealed partial class MainWindow
             if (!views.TryGetValue(paneId, out var pane)) throw new InvalidOperationException(Locale.Get("terminal.failed"));
             if (pane.CurrentTerminal is { } process)
             {
-                if (!process.TryWrite(command + "\r")) throw new InvalidOperationException(Locale.Get("terminal.inputBusy"));
+                if (!process.TryWrite(command + (autoRun ? "\r" : ""))) throw new InvalidOperationException(Locale.Get("terminal.inputBusy"));
                 return;
             }
             if (pane.TerminalClosed) break;
@@ -130,7 +130,7 @@ public sealed partial class MainWindow
                         }
                         var workspacePath = Workspace.Path;
                         terminalProcessStart = Task.Run(() => PseudoTerminal.Start(workspacePath, ReceiveTerminalOutput, columns, rows,
-                            arguments: owner.options.SmokeTest && Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell).Equals("powershell", StringComparison.OrdinalIgnoreCase) ? ["-NoLogo", "-NoProfile"] : null));
+                            arguments: PseudoTerminal.ShellArguments(PseudoTerminal.DefaultShell, noProfile: owner.options.SmokeTest)));
                         terminal = await terminalProcessStart;
                         if (terminalClosed) { await terminal.DisposeAsync(); return; }
                         terminalNotice!.Visibility = Visibility.Collapsed;

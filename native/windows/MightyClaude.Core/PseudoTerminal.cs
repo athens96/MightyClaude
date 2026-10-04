@@ -49,6 +49,17 @@ public sealed class PseudoTerminal : IAsyncDisposable
     public static string DefaultShell => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe") is var powershell && File.Exists(powershell)
         ? powershell : Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
 
+    // ConPTY's wire is UTF-8, but Windows PowerShell 5.1 otherwise uses the
+    // machine's legacy console code page for Console.Out and native pipelines.
+    // Set only this shell's console; never change the user's profile or system.
+    private const string PowerShellUtf8 = "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false);[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding;";
+    public static string[] ShellArguments(string shell, string? command = null, bool noProfile = false)
+    {
+        if (Path.GetFileNameWithoutExtension(shell).Equals("powershell", StringComparison.OrdinalIgnoreCase))
+            return ["-NoLogo", .. noProfile ? new[] { "-NoProfile" } : [], .. command is null ? new[] { "-NoExit" } : [], "-Command", PowerShellUtf8 + command];
+        return command is null ? ["/d", "/k", "chcp 65001 >nul"] : ["/d", "/s", "/c", "chcp 65001 >nul & " + command];
+    }
+
     public static PseudoTerminal Start(string directory, Action<string> receive, int columns = 100, int rows = 30, string? executable = null, IReadOnlyList<string>? arguments = null, IReadOnlyDictionary<string, string>? environment = null)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("ConPTY requires Windows.");
@@ -56,7 +67,7 @@ public sealed class PseudoTerminal : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(receive);
         executable ??= DefaultShell;
         if (!Path.IsPathFullyQualified(executable) || !File.Exists(executable)) throw new FileNotFoundException("Terminal shell was not found.", executable);
-        arguments ??= Path.GetFileNameWithoutExtension(executable).Equals("powershell", StringComparison.OrdinalIgnoreCase) ? ["-NoLogo"] : ["/d"];
+        arguments ??= ShellArguments(executable);
         nint inRead = 0, inWrite = 0, outRead = 0, outWrite = 0, pc = 0, attrs = 0, job = 0, environmentBlock = 0;
         var attrsInitialized = false;
         Stream? ownedInput = null, ownedOutput = null;
