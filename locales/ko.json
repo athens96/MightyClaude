@@ -1437,5 +1437,6 @@
   "companion.status.title": "에이전트 상태",
   "companion.status.busyCount": "{count}개 작업 중",
   "companion.status.empty": "에이전트를 추가하면 현재 작업이 여기에 표시됩니다.",
-  "companion.button.pending": "다른 에이전트의 승인 요청 보기"
+  "companion.button.pending": "다른 에이전트의 승인 요청 보기",
+  "windows.settings.browserDescription": "브라우저 창에 Microsoft Edge WebView2를 사용합니다. 설정을 바꾼 뒤 앱을 다시 시작하세요."
 }

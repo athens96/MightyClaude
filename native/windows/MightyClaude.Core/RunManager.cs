@@ -144,6 +144,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         {
             var workspace = await resolveWorkspace(request.WorkspaceId); token.ThrowIfCancellationRequested();
             parser.ImageRoot = workspace.Path;
+            await providers.RefreshEnvironmentAsync(true, token);
             var environment = ProviderCatalog.QuietEnvironment();
             codexHome = request.Provider == "codex" ? CliAccountSupport.CodexHome(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), environment) : null;
             if (tracker is not null) graphTask = PublishGraphs();

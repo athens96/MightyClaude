@@ -102,5 +102,5 @@ public sealed partial class MainWindow
         finally { if (ReferenceEquals(gitCancellation, cancellation)) gitReading = false; }
     }
 
-    private void StopWorkspaceGit() { gitClock.Stop(); gitCancellation?.Cancel(); }
+    private void StopWorkspaceGit() { gitClock.Stop(); gitCancellation?.Cancel(); StopDashboardGit(); }
 }

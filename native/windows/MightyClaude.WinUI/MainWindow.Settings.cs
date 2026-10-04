@@ -114,7 +114,7 @@ public sealed partial class MainWindow
             IsOn = service.Snapshot.BrowserEngineEnabled,
         };
         AutomationProperties.SetName(browserToggle, Locale.Get("settings.display.browserToggle"));
-        panel.Children.Add(new TextBlock { Text = Locale.Get("settings.display.browserDescription"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = .65 });
+        panel.Children.Add(new TextBlock { Text = Locale.Get("windows.settings.browserDescription"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = .65 });
         browserToggle.Toggled += async (_, _) =>
             await Act(async () => await service.UpdateAsync(s => s with { BrowserEngineEnabled = browserToggle.IsOn }));
         panel.Children.Add(browserToggle);

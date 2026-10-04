@@ -48,7 +48,7 @@ public sealed partial class MainWindow
         private readonly Dictionary<string, string> graphBlockKinds = [];
         // Each card's header title as drawn, so the smoke can read which carry an agent mark.
         private readonly Dictionary<string, FrameworkElement> graphTitles = [];
-        private bool graphDragging, graphDrawing;
+        private bool graphDragging, graphDrawing, graphRefreshQueued;
         private Windows.Foundation.Point graphDragOrigin;
         private double graphDragPanX, graphDragPanY;
         private string? graphResultFilesRunId, graphResultFilesLastRunId, graphAimedRunId, graphAimedResultId;
@@ -125,7 +125,7 @@ public sealed partial class MainWindow
             graphViewport.SizeChanged += (_, args) =>
             {
                 graphViewport.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, args.NewSize.Width, args.NewSize.Height) };
-                if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session);
+                QueueGraphRefresh();
             };
             AutomationProperties.SetAutomationId(graphViewport, "mighty-graph-" + id);
             AutomationProperties.SetName(graphViewport, Locale.Get(MightyGraphViewModel.LocaleKeyMighty));
@@ -259,6 +259,19 @@ public sealed partial class MainWindow
             try { DrawGraphCore(pane); } finally { graphDrawing = false; }
         }
 
+        private void QueueGraphRefresh()
+        {
+            if (graphRefreshQueued || !QueuePaneAlive) return;
+            graphRefreshQueued = true;
+            if (!Container.DispatcherQueue.TryEnqueue(() =>
+            {
+                graphRefreshQueued = false;
+                if (QueuePaneAlive && graphHost?.Visibility == Visibility.Visible &&
+                    owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } current)
+                    RefreshMightyView(current);
+            })) graphRefreshQueued = false;
+        }
+
         private void DrawGraphCore(RunSession pane)
         {
             // Older requests loaded from the session record sit above the retained
@@ -380,7 +393,7 @@ public sealed partial class MainWindow
             if (graphResultHeights.TryGetValue(nodeId, out var known) && Math.Abs(known - height) <= 0.5) return;
             graphResultHeights.Clear(); graphResultHeights[nodeId] = height;
             if (graphReveal.ContentMeasured(nodeId) is { } place) graphRevealPendingId = place;
-            Container.DispatcherQueue.TryEnqueue(() => { if (graphHost?.Visibility == Visibility.Visible) RefreshMightyView(Session); });
+            QueueGraphRefresh();
         }
 
         /// The user's own scroll, drag or zoom, or any other re-aim: the result
@@ -448,7 +461,23 @@ public sealed partial class MainWindow
             // height, so fitting the card to it changes nothing measured here.
             if (resizable)
             {
-                void Measured(object sender, SizeChangedEventArgs args) => ResultMeasured(block.Id, GraphCardChrome + header.ActualHeight + content.ActualHeight);
+                var measureQueued = false;
+                void Measured(object sender, SizeChangedEventArgs args)
+                {
+                    if (measureQueued) return;
+                    measureQueued = true;
+                    if (!Container.DispatcherQueue.TryEnqueue(() =>
+                    {
+                        measureQueued = false;
+                        // Reused transcripts detach from the previous card during
+                        // redraw. Those old SizeChanged events must not overwrite
+                        // the current result's height or start another layout pass.
+                        if (!QueuePaneAlive || !card.IsLoaded || graphViewport?.Visibility != Visibility.Visible ||
+                            !ReferenceEquals(graphCards.GetValueOrDefault(block.Id), card) ||
+                            header.ActualHeight <= 0 || content.Children.Count > 0 && content.ActualHeight <= 0) return;
+                        ResultMeasured(block.Id, GraphCardChrome + header.ActualHeight + content.ActualHeight);
+                    })) measureQueued = false;
+                }
                 content.SizeChanged += Measured; header.SizeChanged += Measured;
             }
             if (block.Request.Length > 0)

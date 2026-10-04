@@ -6,7 +6,7 @@ namespace MightyClaude.WinUI;
 
 internal sealed record CompanionOverlayButton(string Id, string Label);
 internal sealed record CompanionOverlayCard(string Key, string Title, string Subtitle, string Body, string? Page,
-    IReadOnlyList<CompanionOverlayButton> Buttons, bool Light = false);
+    IReadOnlyList<CompanionOverlayButton> Buttons, bool Light = false, string? Request = null, bool Approval = false);
 
 /// A layered HWND instead of a focusable XAML window. WS_EX_NOACTIVATE plus
 /// MA_NOACTIVATE keep IME ownership with the user's current application even
@@ -32,9 +32,11 @@ internal sealed class CompanionOverlay : IDisposable
     private Point dragStart, startOrigin;
     private string? pressedAction, pressedKey;
     private int width, bubbleHeight, height, startWidth, startHeight;
+    private double? fixedBubbleHeight, startFixedHeight;
+    private CompanionResizeEdges resizeEdges;
     internal event Action<string, string>? Action;
     internal event Action<int, int>? Moved;
-    internal event Action<int, int>? Resized;
+    internal event Action<double?, double?>? Resized;
     internal nint Handle => window;
     internal bool NonActivating => (GetWindowLongPtr(window, -20).ToInt64() & 0x08000000) != 0;
     internal bool SmokeClick(string id)
@@ -45,11 +47,23 @@ internal sealed class CompanionOverlay : IDisposable
     }
     internal static nint ForegroundWindow => GetForegroundWindow();
     internal void SmokeContextMenu() => SendMessage(window, 0x0205, 0, 0);
+    internal (int Width, int Height, int Right, int Bottom, bool AutomaticHeight) SmokeLayout =>
+        (width, bubbleHeight, left + pixelWidth, top + pixelHeight, fixedBubbleHeight is null || card?.Approval == true);
+    internal CompanionResizeEdges SmokeResizeHit(int x, int y) => ResizeAt(new Point { X = (int)(x * scale), Y = (int)(y * scale) });
+    internal void SmokeResize(CompanionResizeEdges edges, int dx, int dy, bool cancel = false)
+    {
+        startWidth = width; startHeight = bubbleHeight; startFixedHeight = fixedBubbleHeight; startOrigin = new() { X = left, Y = top };
+        mouseDown = true; dragged = false; swipeDirection = 0; resizeEdges = edges; pressedAction = "resize"; pressedKey = card?.Key;
+        ResizeFromPointer((int)(dx * scale), (int)(dy * scale));
+        if (cancel) CancelResize(); else SendMessage(window, 0x0202, 0, 0);
+    }
+    internal void SmokeResetSize() => ResetSize();
 
     internal CompanionOverlay(CompanionPreferences preferences)
     {
-        width = (int)Math.Clamp(preferences.BubbleWidth is { } w && double.IsFinite(w) ? w : 360, 300, 560);
-        bubbleHeight = (int)Math.Clamp(preferences.BubbleHeight is { } h && double.IsFinite(h) ? h : 280, 220, 500); height = bubbleHeight + 152;
+        width = (int)CompanionBubbleLayout.Width(preferences.BubbleWidth);
+        fixedBubbleHeight = CompanionBubbleLayout.Height(preferences.BubbleHeight);
+        bubbleHeight = (int)(fixedBubbleHeight ?? 180); height = bubbleHeight + 152;
         procedure = WndProc;
         var cls = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Style = 8, Procedure = Marshal.GetFunctionPointerForDelegate(procedure), Instance = instance, ClassName = className, Cursor = LoadCursor(0, 32512) };
         if (RegisterClassEx(ref cls) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -69,10 +83,12 @@ internal sealed class CompanionOverlay : IDisposable
     internal void SetCard(CompanionOverlayCard? value, bool visible)
     {
         var shown = visible && value is not null;
+        if (mouseDown && resizeEdges != CompanionResizeEdges.None && (!shown || card?.Key != value?.Key)) CancelResize();
         if (card?.Key != value?.Key) contextMenu = false;
         if (showBubble != shown || card?.Key != value?.Key || card?.Title != value?.Title || card?.Subtitle != value?.Subtitle
-            || card?.Body != value?.Body || card?.Page != value?.Page || card?.Light != value?.Light || !(card?.Buttons ?? []).SequenceEqual(value?.Buttons ?? [])) cardDirty = true;
+            || card?.Body != value?.Body || card?.Request != value?.Request || card?.Approval != value?.Approval || card?.Page != value?.Page || card?.Light != value?.Light || !(card?.Buttons ?? []).SequenceEqual(value?.Buttons ?? [])) cardDirty = true;
         card = value; showBubble = shown;
+        if (cardDirty && !mouseDown) FitContent();
     }
     internal void Show(bool visible) { if (window != 0) ShowWindow(window, visible ? 8 : 0); }
     private void Allocate()
@@ -92,13 +108,13 @@ internal sealed class CompanionOverlay : IDisposable
         else Buffer.BlockCopy(bubblePixels, 0, pixels, 0, pixels.Length);
         if (cardDirty && (showBubble || contextMenu) && card is { } sourceCard)
         {
-            var current = contextMenu ? sourceCard with { Title = Locale.Get("companion.settings.enabled"), Subtitle = "", Body = "", Page = null, Buttons = [new("hide", Locale.Get("menu.hidePet")), new("open", Locale.Get("menu.openAgent")), new("menu-close", Locale.Get("settings.closeButton"))] } : sourceCard;
+            var current = DisplayCard(sourceCard);
             Rounded(0, 0, width, bubbleHeight, 18, current.Light ? (byte)247 : (byte)30, current.Light ? (byte)248 : (byte)33, current.Light ? (byte)251 : (byte)40);
             Marshal.Copy(pixels, 0, bits, pixels.Length);
             Text(current.Title, 16, 12, width - 32, 26, 15, true, current.Light ? 0x00302219u : 0x00f2efed);
             Text(current.Subtitle, 16, 41, width - 32, 23, 11, false, current.Light ? 0x006d6259u : 0x00b9b3ae);
             var buttonsHeight = current.Buttons.Count * 29;
-            Text(current.Body, 16, 70, width - 32, Math.Max(30, bubbleHeight - 88 - buttonsHeight - (current.Page is null ? 0 : 27)), 12, false, current.Light ? 0x00302219u : 0x00f2efed);
+            DrawBody(current, Math.Max(0, bubbleHeight - 88 - buttonsHeight - (current.Page is null ? 0 : 27)));
             int y = bubbleHeight - 10 - buttonsHeight;
             if (current.Page is not null)
             {
@@ -110,7 +126,7 @@ internal sealed class CompanionOverlay : IDisposable
             {
                 Text(button.Label, 20, y, width - 40, 27, 12, false, current.Light ? 0x00a65a16u : 0x00ffca92); hitButtons.Add((new(12, y, width - 12, y + 27), button.Id)); y += 29;
             }
-            Text("◢", width - 20, bubbleHeight - 20, 16, 16, 10, false, 0x008f8880);
+            if (!current.Approval && !contextMenu) Text("◢", width - 20, bubbleHeight - 20, 16, 16, 10, false, 0x008f8880);
             Marshal.Copy(bits, pixels, 0, pixels.Length);
             // GDI text writes RGB with alpha zero. Restore alpha only inside the
             // rounded card, leaving the transparent exterior click-through.
@@ -152,6 +168,94 @@ internal sealed class CompanionOverlay : IDisposable
         try { SetBkMode(dc, 1); SetTextColor(dc, color); var rect = new Rect((int)(x * scale), (int)(y * scale), (int)((x + w) * scale), (int)((y + h) * scale)); DrawText(dc, value, value.Length, ref rect, 0x0010 | 0x0800 | 0x8000); }
         finally { SelectObject(dc, old); DeleteObject(font); }
     }
+    private CompanionOverlayCard DisplayCard(CompanionOverlayCard value) => contextMenu
+        ? value with { Title = Locale.Get("companion.settings.enabled"), Subtitle = "", Body = "", Request = null, Page = null, Buttons = [new("hide", Locale.Get("menu.hidePet")), new("open", Locale.Get("menu.openAgent")), new("menu-close", Locale.Get("settings.closeButton"))] }
+        : value;
+    private int MeasureText(string text, int logicalWidth, int fontSize = 12)
+    {
+        if (text.Length == 0) return 0;
+        var font = CreateFont(-(int)(fontSize * scale), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 4, 0, "Segoe UI"); var old = SelectObject(dc, font);
+        try
+        {
+            var rect = new Rect(0, 0, (int)(Math.Max(1, logicalWidth) * scale), 0);
+            DrawText(dc, text, text.Length, ref rect, 0x0400 | 0x0010 | 0x0800); // CALCRECT, WORDBREAK, NOPREFIX
+            return (int)Math.Ceiling((rect.Bottom - rect.Top) / scale);
+        }
+        finally { SelectObject(dc, old); DeleteObject(font); }
+    }
+    private int BodyHeight(CompanionOverlayCard current)
+    {
+        var automatic = fixedBubbleHeight is null || current.Approval || contextMenu;
+        var line = Math.Max(12, MeasureText("Ag", width - 32));
+        var work = MeasureText(current.Body, width - 32);
+        if (automatic) work = Math.Min(work, line * (current.Approval ? 3 : 2));
+        if (current.Request is not { Length: > 0 } request) return work;
+        var prompt = MeasureText(request, width - 32);
+        if (automatic) prompt = Math.Min(prompt, line * 2);
+        return prompt + work + 12;
+    }
+    private int ResolvedHeight()
+    {
+        if (card is null) return (int)(fixedBubbleHeight ?? 180);
+        var current = DisplayCard(card);
+        var controls = 88 + current.Buttons.Count * 29 + (current.Page is null ? 0 : 27);
+        var measured = controls + BodyHeight(current);
+        var wanted = fixedBubbleHeight is {} fixedHeight && !current.Approval && !contextMenu ? fixedHeight : measured;
+        return (int)Math.Clamp(Math.Max(controls, wanted), CompanionBubbleLayout.MinimumHeight, CompanionBubbleLayout.MaximumHeight);
+    }
+    private void FitContent()
+    {
+        if (dc == 0 || card is null) return;
+        var next = ResolvedHeight(); if (next == bubbleHeight) return;
+        top += pixelHeight - (int)Math.Ceiling((next + 152) * scale); bubbleHeight = next; height = bubbleHeight + 152;
+        Allocate(); ClampPosition();
+    }
+    private void DrawBody(CompanionOverlayCard current, int available)
+    {
+        if (available <= 0) return;
+        var ink = current.Light ? 0x00302219u : 0x00f2efed;
+        if (current.Request is not { Length: > 0 } request) { Text(current.Body, 16, 70, width - 32, available, 12, false, ink); return; }
+        var naturalRequest = MeasureText(request, width - 32); var naturalWork = MeasureText(current.Body, width - 32);
+        var automatic = fixedBubbleHeight is null;
+        var line = Math.Max(12, MeasureText("Ag", width - 32));
+        if (automatic) { naturalRequest = Math.Min(naturalRequest, line * 2); naturalWork = Math.Min(naturalWork, line * 2); }
+        var budget = Math.Max(0, available - 12);
+        var requestHeight = Math.Min(naturalRequest, naturalRequest + naturalWork > budget ? budget / 2 : budget);
+        var workHeight = Math.Max(0, budget - requestHeight);
+        if (requestHeight > 0) Text(request, 16, 70, width - 32, requestHeight, 12, false, ink);
+        if (workHeight > 0) Text(current.Body, 16, 82 + requestHeight, width - 32, workHeight, 12, false, ink);
+    }
+    private CompanionResizeEdges ResizeAt(Point point) => (showBubble || contextMenu) && !contextMenu
+        ? CompanionBubbleLayout.Hit(point.X / scale, point.Y / scale, width, bubbleHeight, card?.Approval != true)
+        : CompanionResizeEdges.None;
+    private void ResizeFromPointer(int dx, int dy)
+    {
+        var next = CompanionBubbleLayout.Resize(startWidth, startHeight, dx, dy, scale, resizeEdges);
+        var nextWidth = (int)next.Width; var nextHeight = (int)next.Height;
+        if (card?.Approval == true) nextWidth = Math.Max((int)CompanionBubbleLayout.DefaultWidth, nextWidth);
+        var oldWidth = width; width = nextWidth;
+        if (!CompanionBubbleLayout.Vertical(resizeEdges)) nextHeight = ResolvedHeight();
+        if (oldWidth == width && bubbleHeight == nextHeight) return;
+        if (CompanionBubbleLayout.Vertical(resizeEdges)) fixedBubbleHeight = nextHeight;
+        dragged = true; bubbleHeight = nextHeight; height = bubbleHeight + 152;
+        left = startOrigin.X + (resizeEdges.HasFlag(CompanionResizeEdges.Left) ? (int)Math.Ceiling(startWidth * scale) - (int)Math.Ceiling(width * scale) : 0);
+        top = startOrigin.Y + (!resizeEdges.HasFlag(CompanionResizeEdges.Bottom) ? (int)Math.Ceiling((startHeight + 152) * scale) - (int)Math.Ceiling(height * scale) : 0);
+        Allocate(); ClampPosition();
+    }
+    private void ResetSize()
+    {
+        width = (int)CompanionBubbleLayout.DefaultWidth; fixedBubbleHeight = null;
+        left += (int)Math.Round((pixelWidth - Math.Ceiling(width * scale)) / 2);
+        var next = ResolvedHeight(); top += pixelHeight - (int)Math.Ceiling((next + 152) * scale); bubbleHeight = next; height = bubbleHeight + 152;
+        Allocate(); ClampPosition(); Resized?.Invoke(null, null); Moved?.Invoke(left, top);
+    }
+    private void CancelResize()
+    {
+        if (resizeEdges == CompanionResizeEdges.None) return;
+        width = startWidth; bubbleHeight = startHeight; fixedBubbleHeight = startFixedHeight; height = bubbleHeight + 152; left = startOrigin.X; top = startOrigin.Y;
+        mouseDown = false; dragged = false; resizeEdges = CompanionResizeEdges.None; pressedAction = null;
+        Allocate(); ClampPosition(); ReleaseCapture();
+    }
     private nint WndProc(nint hwnd, uint message, nuint wParam, nint lParam)
     {
         // Do not allow any managed exception to cross the native callback.
@@ -160,34 +264,50 @@ internal sealed class CompanionOverlay : IDisposable
             switch (message)
             {
                 case 0x0021: return 3; // WM_MOUSEACTIVATE / MA_NOACTIVATE
+                case 0x0020:
+                    if ((lParam.ToInt64() & 65535) != 1) break;
+                    GetCursorPos(out var cursorPoint); cursorPoint.X -= left; cursorPoint.Y -= top;
+                    var cursorEdges = ResizeAt(cursorPoint);
+                    var cursor = cursorEdges switch
+                    {
+                        CompanionResizeEdges.Left or CompanionResizeEdges.Right => 32644,
+                        CompanionResizeEdges.Top or CompanionResizeEdges.Bottom => 32645,
+                        CompanionResizeEdges.Left | CompanionResizeEdges.Top or CompanionResizeEdges.Right | CompanionResizeEdges.Bottom => 32642,
+                        CompanionResizeEdges.Right | CompanionResizeEdges.Top or CompanionResizeEdges.Left | CompanionResizeEdges.Bottom => 32643,
+                        _ => 32512
+                    };
+                    SetCursor(LoadCursor(0, cursor)); return 1;
                 case 0x0201:
                     GetCursorPos(out dragStart); startOrigin = new() { X = left, Y = top }; mouseDown = true; dragged = false; swipeDirection = 0;
-                    startWidth = width; startHeight = bubbleHeight;
+                    startWidth = width; startHeight = bubbleHeight; startFixedHeight = fixedBubbleHeight;
                     var p = new Point { X = (short)(lParam.ToInt64() & 65535), Y = (short)((lParam.ToInt64() >> 16) & 65535) };
-                    pressedAction = Hit(p); pressedKey = card?.Key ?? ""; SetCapture(hwnd); return 0;
+                    resizeEdges = ResizeAt(p); pressedAction = Hit(p); pressedKey = card?.Key ?? ""; SetCapture(hwnd); return 0;
                 case 0x0200 when mouseDown:
                     GetCursorPos(out var move); var dx = move.X - dragStart.X; var dy = move.Y - dragStart.Y;
                     if (pressedAction == "toggle" && (dragged || Math.Abs(dx) + Math.Abs(dy) > 5))
                     { dragged = true; walkingRow = dx < 0 ? 1 : 2; left = startOrigin.X + dx; top = startOrigin.Y + dy; SetWindowPos(hwnd, -1, left, top, 0, 0, 0x0001 | 0x0010); }
                     else if (pressedAction == "open" && !contextMenu && card?.Page is not null && Math.Abs(dx) / scale > 36 && Math.Abs(dx) > Math.Abs(dy))
                     { dragged = true; swipeDirection = dx < 0 ? 1 : -1; }
-                    else if (pressedAction == "resize")
-                    {
-                        var nextWidth = Math.Clamp(startWidth + (int)(dx / scale), 300, 560); var nextHeight = Math.Clamp(startHeight + (int)(dy / scale), 220, 500);
-                        if (nextWidth != width || nextHeight != bubbleHeight) { dragged = true; width = nextWidth; bubbleHeight = nextHeight; height = bubbleHeight + 152; Allocate(); }
-                    }
+                    else if (pressedAction == "resize") ResizeFromPointer(dx, dy);
                     return 0;
                 case 0x0202 when mouseDown:
-                    var completedAction = pressedAction; var completedKey = pressedKey; mouseDown = false; ReleaseCapture();
+                    var completedAction = pressedAction; var completedKey = pressedKey; mouseDown = false; resizeEdges = CompanionResizeEdges.None; ReleaseCapture();
                     if (dragged && swipeDirection != 0) { if (completedKey == card?.Key) Action?.Invoke(completedKey!, swipeDirection > 0 ? "next" : "previous"); }
-                    else if (dragged) { ClampPosition(); Moved?.Invoke(left, top); if (completedAction == "resize") Resized?.Invoke(width, bubbleHeight); }
-                    else { var release = new Point { X = (short)(lParam.ToInt64() & 65535), Y = (short)((lParam.ToInt64() >> 16) & 65535) }; if (completedAction is { } action && action == Hit(release) && completedKey == (card?.Key ?? "")) { contextMenu = false; cardDirty = true; if (action != "menu-close") Action?.Invoke(completedKey!, action); } }
+                    else if (dragged)
+                    {
+                        if (completedAction == "resize" && width == startWidth && bubbleHeight == startHeight) { fixedBubbleHeight = startFixedHeight; FitContent(); }
+                        else { ClampPosition(); Moved?.Invoke(left, top); if (completedAction == "resize") Resized?.Invoke(width, fixedBubbleHeight); }
+                    }
+                    else { var release = new Point { X = (short)(lParam.ToInt64() & 65535), Y = (short)((lParam.ToInt64() >> 16) & 65535) }; if (completedAction is { } action && action == Hit(release) && completedKey == (card?.Key ?? "")) { contextMenu = false; cardDirty = true; FitContent(); if (action is not ("menu-close" or "resize")) Action?.Invoke(completedKey!, action); } }
                     pressedAction = null; return 0;
-                case 0x0203: // A double click on the resize grip restores its default size.
+                case 0x0203: // Double click any resize strip to restore automatic sizing.
                     var doubleClick = new Point { X = (short)lParam.ToInt64(), Y = (short)(lParam.ToInt64() >> 16) };
-                    if (Hit(doubleClick) == "resize") { width = 360; bubbleHeight = 280; height = bubbleHeight + 152; Allocate(); ClampPosition(); Resized?.Invoke(width, bubbleHeight); } return 0;
-                case 0x0205: contextMenu = !contextMenu; cardDirty = true; return 0;
-                case 0x0215: mouseDown = false; pressedAction = null; return 0; // capture lost
+                    if (Hit(doubleClick) == "resize") ResetSize(); return 0;
+                case 0x0205: contextMenu = !contextMenu; cardDirty = true; FitContent(); return 0;
+                case 0x001f: // cancel mode, such as an interrupted drag
+                case 0x0215:
+                    if (mouseDown && resizeEdges != CompanionResizeEdges.None) CancelResize();
+                    mouseDown = false; pressedAction = null; return 0;
                 case 0x020e:
                     var wheelX = (short)lParam.ToInt64() - left; var wheelY = (short)(lParam.ToInt64() >> 16) - top;
                     if (!showBubble || contextMenu || card?.Page is null || wheelX < 0 || wheelX >= pixelWidth || wheelY < 0 || wheelY >= bubbleHeight * scale) return 0;
@@ -195,6 +315,7 @@ internal sealed class CompanionOverlay : IDisposable
                     if (Math.Abs(wheelDelta) >= 120) { Action?.Invoke(card.Key, wheelDelta > 0 ? "next" : "previous"); wheelDelta = 0; } return 0;
                 case 0x007e: ClampPosition(); return 0; // monitor configuration changed
                 case 0x02e0:
+                    if (mouseDown && resizeEdges != CompanionResizeEdges.None) CancelResize();
                     scale = Math.Clamp((wParam & 65535) / 96.0, 1, 4); Allocate(); ClampPosition(); return 0;
             }
         }
@@ -205,7 +326,7 @@ internal sealed class CompanionOverlay : IDisposable
     {
         double x = p.X / scale, y = p.Y / scale;
         if (x < 0 || y < 0 || x >= width || y >= height) return "";
-        if ((showBubble || contextMenu) && y < bubbleHeight) { if (x > width - 20 && y > bubbleHeight - 20) return "resize"; foreach (var (bounds, id) in hitButtons) if (x >= bounds.Left && x < bounds.Right && y >= bounds.Top && y < bounds.Bottom) return id; return "open"; }
+        if ((showBubble || contextMenu) && y < bubbleHeight) { if (ResizeAt(p) != CompanionResizeEdges.None) return "resize"; foreach (var (bounds, id) in hitButtons) if (x >= bounds.Left && x < bounds.Right && y >= bounds.Top && y < bounds.Bottom) return id; return "open"; }
         return "toggle";
     }
     private static Rect WorkArea(Point point)
@@ -242,6 +363,7 @@ internal sealed class CompanionOverlay : IDisposable
     [DllImport("user32.dll")] private static extern bool DestroyWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint hwnd, int command);
     [DllImport("user32.dll")] private static extern nint LoadCursor(nint instance, int id);
+    [DllImport("user32.dll")] private static extern nint SetCursor(nint cursor);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);

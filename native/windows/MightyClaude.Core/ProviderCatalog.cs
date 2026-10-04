@@ -67,17 +67,22 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
 
     public async Task<CliCommand?> FindAsync(string provider, CancellationToken token = default)
     {
-        lock (commands) if (commands.TryGetValue(provider, out var saved)) return saved;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, closing.Token);
+        await RefreshEnvironmentAsync(false, linked.Token);
+        lock (commands) if (commands.TryGetValue(provider, out var saved)) return saved;
         var result = finder is null ? await DiscoverAsync(provider, linked.Token) : await finder(provider, linked.Token);
         lock (commands) commands[provider] = result;
         return result;
     }
+    // Injected finders used by isolated tests do not inspect the user's profiles.
+    public Task<Dictionary<string, string>> RefreshEnvironmentAsync(bool force = false, CancellationToken token = default) =>
+        finder is null ? CliEnvironment.RefreshAsync(force, token) : Task.FromResult(CliEnvironment.Current());
     public async Task<RuntimeInfo> GetRuntimeAsync(bool force = false, string? workingDirectory = null)
     {
         await gate.WaitAsync(closing.Token);
         try
         {
+            await RefreshEnvironmentAsync(force, closing.Token);
             var directory = workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (!force && cachedDirectory == directory && cached is not null && DateTimeOffset.UtcNow - refreshed < TimeSpan.FromMinutes(1)) return cached;
             if (force) lock (commands) commands.Clear();

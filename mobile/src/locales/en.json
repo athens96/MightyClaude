@@ -1437,5 +1437,6 @@
   "companion.status.title": "Agent status",
   "companion.status.busyCount": "{count} tasks in progress",
   "companion.status.empty": "Add an agent to see its current work here.",
-  "companion.button.pending": "View pending request"
+  "companion.button.pending": "View pending request",
+  "windows.settings.browserDescription": "Uses Microsoft Edge WebView2 for browser panes. Restart the app after changing this setting."
 }

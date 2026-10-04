@@ -138,6 +138,12 @@ internal static class Verification
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);
         await Test("Mobile remote EncryptedRelayRoundTrip", MobileRemoteVerification.EncryptedRelayRoundTrip);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
+        await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);
+        await Test("CLI environment profile frame rejects ambiguity and redacts diagnostics", CliEnvironmentVerification.StrictFramingAndSecrets);
+        await Test("CLI environment refresh rotates tokens and preserves explicit unsets", CliEnvironmentVerification.RefreshRotationAndUnset);
+        await Test("CLI environment timeout cancellation and forced freshness", CliEnvironmentVerification.CancellationTimeoutAndFreshness);
+        if (OperatingSystem.IsWindows()) await Test("CLI environment real PowerShell capture wire", CliEnvironmentVerification.WindowsCaptureWire);
+        else { skipped++; Console.WriteLine("SKIP CLI environment real PowerShell capture wire (requires Windows)"); }
         await Test("Companion catalog boundaries", CompanionVerification.CatalogBoundaries);
         await Test("Agent IO BindingSecretsAndArgumentBoundaries", AgentIOVerification.BindingSecretsAndArgumentBoundaries);
         await Test("Screen sharing policy and typed wire boundaries", ScreenShareVerification.PolicyAndWireBoundaries);
