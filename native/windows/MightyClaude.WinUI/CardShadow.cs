@@ -51,7 +51,9 @@ internal static class CardShadow
         caster.SizeChanged += (_, _) => Fit();
         caster.Unloaded += (_, _) =>
         {
-            if (sprite is null) return;
+            // Moving the caster (a pane taken to another tab group) can raise the new Loaded before
+            // the old Unloaded; a caster that is loaded again keeps the shadow it already has.
+            if (sprite is null || caster.IsLoaded) return;
             ElementCompositionPreview.SetElementChildVisual(caster, null);
             if (shadow is not null) shadow.Mask = null;
             sprite.Dispose(); shadow?.Dispose();
