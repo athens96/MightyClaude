@@ -730,12 +730,13 @@ public sealed partial class MainWindow
 
         var draftBefore = pane.SessionForSmoke.Draft;
         pane.EnsureMightyView();
+        pane.GraphDiagnosticsForSmoke = true;
         options.TraceStartup("smoke:mightyGraph:fixture");
         await pane.SetGraphRunsForSmoke(runs);
         options.TraceStartup("smoke:mightyGraph:mode-enter");
         await pane.SetAgentViewMode("mighty");
         options.TraceStartup("smoke:mightyGraph:layout-enter");
-        root.UpdateLayout(); await Task.Delay(60);
+        root.UpdateLayout(); options.TraceStartup("smoke:mightyGraph:update-layout-returned"); await Task.Delay(60);
         options.TraceStartup("smoke:mightyGraph:layout-ready");
         Require(pane.SessionForSmoke.AgentViewMode == "mighty", "마이티 모드가 저장되지 않았습니다.");
         Require(pane.SessionForSmoke.Draft == draftBefore, "모드 전환이 입력창 초안을 지웠습니다.");
@@ -802,6 +803,7 @@ public sealed partial class MainWindow
         root.UpdateLayout(); await Task.Delay(30);
         var modeRestored = pane.SessionForSmoke.AgentViewMode == "default" && pane.SessionForSmoke.Draft == draftBefore;
         Require(modeRestored, "기본으로 되돌린 뒤 모드나 초안이 어긋났습니다.");
+        pane.GraphDiagnosticsForSmoke = false;
 
         return new Dictionary<string, object?>
         {

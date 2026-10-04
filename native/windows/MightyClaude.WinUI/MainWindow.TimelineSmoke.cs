@@ -45,9 +45,10 @@ public sealed partial class MainWindow
                 await WaitUI(() => timelineFull.Contains(resultId));
                 Require(double.IsPositiveInfinity(timelineTranscripts[resultId].View.MaxHeight), "show-all removes preview height cap");
                 var files = FindButton("mighty-timeline-result-files-" + resultId);
+                await WaitUI(() => files.IsLoaded && files.ActualWidth > 0 && files.ActualHeight > 0);
                 files.Flyout!.ShowAt(files);
-                await Task.Delay(80);
                 var item = ((MenuFlyout)files.Flyout).Items.OfType<MenuFlyoutItem>().Single();
+                await WaitUI(() => item.IsLoaded && item.ActualWidth > 0 && item.ActualHeight > 0);
                 var itemPeer = new MenuFlyoutItemAutomationPeer(item);
                 ((IInvokeProvider)itemPeer.GetPattern(PatternInterface.Invoke)).Invoke();
                 await WaitUI(() => referenceTarget?.RelativePath == "docs/mighty-note.md" && referenceBody?.Child is not ProgressRing);
