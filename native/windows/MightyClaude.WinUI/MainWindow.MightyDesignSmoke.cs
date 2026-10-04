@@ -130,7 +130,7 @@ public sealed partial class MainWindow
                 $"{key} ({theme}): the dot grid must cover exactly the viewport ({viewport.ActualWidth:F1}x{viewport.ActualHeight:F1}); got {dots.View.ActualWidth:F1}x{dots.View.ActualHeight:F1}");
             // It fills the surface with its one step x step tile in the theme's line colour, moved by the camera offset.
             var lineHex = "#FF" + FixtureHex(theme, DesignToken.Line)[1..];
-            string Drawn() => $"filled {dots.LastDraw.Filled}, tile step {dots.LastDraw.Step}, {Hex(dots.LastDraw.Color)}, offset ({dots.LastDraw.OffsetX:F1}, {dots.LastDraw.OffsetY:F1}) on {dots.LastDraw.Width:F1}x{dots.LastDraw.Height:F1}, {dots.TileBuilds} tiles built";
+            string Drawn() => $"filled {dots.LastDraw.Filled}, tile step {dots.LastDraw.Step}, {Hex(dots.LastDraw.Color)}, offset ({dots.LastDraw.OffsetX:F1}, {dots.LastDraw.OffsetY:F1}) on {dots.LastDraw.Width:F1}x{dots.LastDraw.Height:F1}, {dots.TileBuilds} tiles built, {dots.Replacements} surfaces replaced";
             await WaitUI(() => dots.LastDraw.Filled && Math.Abs(dots.LastDraw.Step - dots.Step) < 1e-9 && Hex(dots.LastDraw.Color) == lineHex
                     && dots.LastDraw.OffsetX == graphPan.X && dots.LastDraw.OffsetY == graphPan.Y && Math.Abs(dots.LastDraw.Width - viewport.ActualWidth) < .5 && Math.Abs(dots.LastDraw.Height - viewport.ActualHeight) < .5,
                 () => $"{key} ({theme}): the dot grid must fill the viewport with a {dots.Step} tile in token Line {lineHex} at the camera offset ({graphPan.X:F1}, {graphPan.Y:F1}); its last draw: {Drawn()}");

@@ -5,6 +5,7 @@ using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
 namespace MightyClaude.WinUI;
@@ -18,6 +19,9 @@ namespace MightyClaude.WinUI;
 /// viewport's size and draws only when the camera moves, the viewport resizes or the shared
 /// <c>line</c> brush is recoloured by a theme change (each coalesced by Win2D into one frame);
 /// nothing animates it. The step, radius and offset rules are Core's <see cref="MightyGraphDotGrid"/>.
+/// The Win2D control sits in a host grid: when a moved pane raises the new Loaded before the old
+/// Unloaded, Win2D takes the late Unloaded as final and never draws again, so a control unloaded
+/// while it is still loaded is replaced by a fresh one in the same host.
 /// </summary>
 internal sealed class MightyDotGrid
 {
@@ -28,26 +32,22 @@ internal sealed class MightyDotGrid
     private CanvasRenderTarget? tile;
     private CanvasImageBrush? fill;
     private (double Step, double Radius, Windows.UI.Color Color) tileKey;
+    private CanvasControl canvas;
 
-    /// <summary>The Win2D surface, laid behind the diagram canvas; it takes no input and is hidden from UI automation.</summary>
-    internal CanvasControl View { get; }
+    /// <summary>The surface's host, laid behind the diagram canvas; it takes no input and is hidden from UI automation.</summary>
+    internal Grid View { get; }
 
     /// <param name="ink">The window's shared <c>line</c> brush; its colour is read at every draw, never set here.</param>
     internal MightyDotGrid(SolidColorBrush ink)
     {
         this.ink = ink;
-        View = new CanvasControl
-        {
-            ClearColor = Microsoft.UI.Colors.Transparent, IsHitTestVisible = false,
-            HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
-        };
+        View = new Grid { IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         AutomationProperties.SetAccessibilityView(View, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        View.Draw += OnDraw;
-        // A new or lost device: the tile lived on the old one, so it is drawn again on this one.
-        View.CreateResources += (sender, _) => { DropTile(); BuildTile(sender); };
+        canvas = NewCanvas();
+        View.Children.Add(canvas);
         // A theme change recolours the shared brush in place: draw again in the new colour. The
         // callback lives only while the control is loaded, so a closed pane is not kept by the brush.
-        View.Loaded += (_, _) => { if (!closed && inkCallback < 0) inkCallback = ink.RegisterPropertyChangedCallback(SolidColorBrush.ColorProperty, (_, _) => { if (!closed) View.Invalidate(); }); };
+        View.Loaded += (_, _) => { if (!closed && inkCallback < 0) inkCallback = ink.RegisterPropertyChangedCallback(SolidColorBrush.ColorProperty, (_, _) => { if (!closed) canvas.Invalidate(); }); };
         View.Unloaded += (sender, _) =>
         {
             if (((FrameworkElement)sender).IsLoaded || inkCallback < 0) return;
@@ -55,18 +55,45 @@ internal sealed class MightyDotGrid
         };
     }
 
+    private CanvasControl NewCanvas()
+    {
+        var control = new CanvasControl { ClearColor = Microsoft.UI.Colors.Transparent, IsHitTestVisible = false };
+        AutomationProperties.SetAccessibilityView(control, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        control.Draw += OnDraw;
+        // A new or lost device: the tile lived on the old one, so it is drawn again on this one.
+        control.CreateResources += (sender, _) => { DropTile(); BuildTile(sender); };
+        control.Unloaded += (sender, _) =>
+        {
+            if (closed || !ReferenceEquals(sender, canvas) || !((FrameworkElement)sender).IsLoaded) return;
+            // Still loaded after its Unloaded: the order was reversed and Win2D has stopped drawing.
+            View.DispatcherQueue.TryEnqueue(() =>
+            {
+                if (closed || !ReferenceEquals(sender, canvas)) return;
+                var stale = canvas;
+                stale.Draw -= OnDraw;
+                DropTile();
+                View.Children.Remove(stale);
+                stale.RemoveFromVisualTree();
+                canvas = NewCanvas();
+                View.Children.Add(canvas);
+                Replacements++;
+            });
+        };
+        return control;
+    }
+
     /// <summary>Follows the camera: the dots sit at the pan offset + n · step, the step 18pt × zoom.</summary>
     internal void Follow(double zoom, double x, double y)
     {
         if (closed || zoom == this.zoom && x == offsetX && y == offsetY) return;
         this.zoom = zoom; offsetX = x; offsetY = y;
-        View.Invalidate();
+        canvas.Invalidate();
     }
 
     /// <summary>Draws again: the diagram was hidden (the timeline showed) while the theme or camera changed.</summary>
     internal void Redraw()
     {
-        if (!closed) View.Invalidate();
+        if (!closed) canvas.Invalidate();
     }
 
     /// <summary>Takes the viewport's size, so the surface never covers more than what shows.</summary>
@@ -81,9 +108,9 @@ internal sealed class MightyDotGrid
     {
         if (closed) return;
         closed = true;
-        View.Draw -= OnDraw;
+        canvas.Draw -= OnDraw;
         DropTile();
-        View.RemoveFromVisualTree();
+        canvas.RemoveFromVisualTree();
     }
 
     // ── smoke accessors ───────────────────────────────────────────────────
@@ -94,6 +121,8 @@ internal sealed class MightyDotGrid
     internal bool Shown => MightyGraphDotGrid.Shown(zoom);
     /// <summary>How many times a tile was drawn: only a zoom or colour change (or a new device) adds one.</summary>
     internal int TileBuilds { get; private set; }
+    /// <summary>How many times a Win2D control that stopped drawing after a reversed Unloaded was replaced.</summary>
+    internal int Replacements { get; private set; }
     /// <summary>What the last draw put down: whether it filled the surface, the tile's step and colour, the offset it was moved by, the surface size.</summary>
     internal (bool Filled, double Step, Windows.UI.Color Color, double OffsetX, double OffsetY, double Width, double Height) LastDraw { get; private set; }
 
