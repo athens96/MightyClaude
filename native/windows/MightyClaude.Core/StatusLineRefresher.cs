@@ -27,6 +27,10 @@ public sealed class StatusLineRefresher
     private readonly Func<StatusLineConfig, StatusLineContext, CancellationToken, Task<StatusLineResult>> _runner;
     private readonly IStatusLineClock _clock;
     private readonly object _gate = new();
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// Completes after Close and after the current command has released its child process.
+    public Task WhenStopped => _stopped.Task;
 
     // All fields below are protected by _gate.
     private StatusLineConfig? _config;
@@ -123,12 +127,13 @@ public sealed class StatusLineRefresher
     /// </summary>
     public void Close()
     {
-        lock (_gate) { _closed = true; _generation++; }
+        lock (_gate) { if (_closed) return; _closed = true; _generation++; if (!_running) _stopped.TrySetResult(); }
+        _shutdown.Cancel();
     }
 
     private async Task DebounceAsync(StatusLineContext context, TimeSpan delay)
     {
-        await _clock.DelayAsync(delay);
+        try { await _clock.DelayAsync(delay, _shutdown.Token); } catch (OperationCanceledException) { return; }
         StatusLineContext ctx;
         lock (_gate)
         {
@@ -144,6 +149,7 @@ public sealed class StatusLineRefresher
     {
         try
         {
+            _shutdown.Token.ThrowIfCancellationRequested();
             var discovery = _discover();
             AppSnapshot snapshot;
             lock (_gate) snapshot = _getSnapshot();
@@ -157,7 +163,8 @@ public sealed class StatusLineRefresher
                     OutputStyle = config.OutputStyle ?? discovery.User?.OutputStyle,
                     ThinkingEnabled = config.ThinkingEnabled ?? discovery.User?.ThinkingEnabled,
                 };
-                result = await _runner(config, ctx, CancellationToken.None);
+                _shutdown.Token.ThrowIfCancellationRequested();
+                result = await _runner(config, ctx, _shutdown.Token);
             }
             Complete(generation, config, untrusted, result, context);
         }
@@ -170,7 +177,8 @@ public sealed class StatusLineRefresher
         StatusLineContext? pendingCtx;
         lock (_gate)
         {
-            if (generation != _generation || _closed) return;
+            if (_closed) { _running = false; _stopped.TrySetResult(); return; }
+            if (generation != _generation) return;
             _config = config;
             _untrusted = untrusted;
             _result = result;

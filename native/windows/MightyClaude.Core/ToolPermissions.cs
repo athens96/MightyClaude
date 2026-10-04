@@ -16,7 +16,7 @@ public sealed record ToolPermissionRequest(
 /// Claude Code's supported SDK stdio control protocol. Only can_use_tool asks
 /// reach this surface: the CLI evaluates configured denies and modes before asking.
 /// No settings updates, persistent rules or mode changes are ever returned.
-/// All methods run on the owning run context (or synchronously in tests).
+/// A shared lock serializes parser events, UI responses and stream writes.
 public sealed class ClaudePermissionChannel
 {
     public const int MaximumInputBytes = 65_536;
@@ -28,8 +28,9 @@ public sealed class ClaudePermissionChannel
     public string InitializationId { get; } = Wire.Id();
     public bool Initialized { get; private set; }
     public bool Failed { get; private set; }
-    public IReadOnlyList<ToolPermissionRequest> Waiting => pendingOrder.Select(id => pending[id].Display).ToList();
+    public IReadOnlyList<ToolPermissionRequest> Waiting { get { lock (sync) return pendingOrder.Select(id => pending[id].Display).ToList(); } }
 
+    private readonly object sync = new();
     private readonly string prompt;
     private readonly Action<string> write;
     private readonly Action<ToolPermissionRequest> emit;
@@ -59,45 +60,51 @@ public sealed class ClaudePermissionChannel
 
     public void InitializationTimedOut()
     {
-        if (closed || Initialized) return;
-        FailClosed(ToolPermissionStrings.InitializeTimedOut);
+        lock (sync)
+        {
+            if (closed || Initialized) return;
+            FailClosed(ToolPermissionStrings.InitializeTimedOut);
+        }
     }
 
     public void Receive(string data)
     {
-        if (closed) return;
-        JsonElement envelope;
-        try { using var doc = JsonDocument.Parse(data); envelope = doc.RootElement.Clone(); }
-        catch { return; }
-        if (envelope.ValueKind != JsonValueKind.Object) return;
-        var type = envelope.Text("type");
-        if (type is null) return;
-
-        if (type == "control_response" &&
-            envelope.TryGetProperty("response", out var outerResp) &&
-            outerResp.ValueKind == JsonValueKind.Object &&
-            outerResp.Text("request_id") == InitializationId)
+        lock (sync)
         {
-            if (Initialized) return;
-            if (outerResp.Text("subtype") != "success") { FailClosed(ToolPermissionStrings.InitializeFailed); return; }
-            Initialized = true;
-            if (outerResp.TryGetProperty("pending_permission_requests", out var replay) &&
-                replay.ValueKind == JsonValueKind.Array)
+            if (closed) return;
+            JsonElement envelope;
+            try { using var doc = JsonDocument.Parse(data); envelope = doc.RootElement.Clone(); }
+            catch { return; }
+            if (envelope.ValueKind != JsonValueKind.Object) return;
+            var type = envelope.Text("type");
+            if (type is null) return;
+
+            if (type == "control_response" &&
+                envelope.TryGetProperty("response", out var outerResp) &&
+                outerResp.ValueKind == JsonValueKind.Object &&
+                outerResp.Text("request_id") == InitializationId)
             {
-                foreach (var item in replay.EnumerateArray())
+                if (Initialized) return;
+                if (outerResp.Text("subtype") != "success") { FailClosed(ToolPermissionStrings.InitializeFailed); return; }
+                Initialized = true;
+                if (outerResp.TryGetProperty("pending_permission_requests", out var replay) &&
+                    replay.ValueKind == JsonValueKind.Array)
                 {
-                    ReceiveRequest(item.Clone());
-                    if (closed) break;
+                    foreach (var item in replay.EnumerateArray())
+                    {
+                        ReceiveRequest(item.Clone());
+                        if (closed) break;
+                    }
                 }
+                if (!closed) write(prompt);
+                return;
             }
-            if (!closed) write(prompt);
-            return;
+
+            if (type == "control_cancel_request" && envelope.Text("request_id") is string cancelId)
+            { Settle(cancelId, "cancelled", "stopped"); return; }
+
+            if (type == "control_request") ReceiveRequest(envelope);
         }
-
-        if (type == "control_cancel_request" && envelope.Text("request_id") is string cancelId)
-        { Settle(cancelId, "cancelled", "stopped"); return; }
-
-        if (type == "control_request") ReceiveRequest(envelope);
     }
 
     private void ReceiveRequest(JsonElement envelope)
@@ -136,8 +143,7 @@ public sealed class ClaudePermissionChannel
         var detailText = string.Join("\n", details);
         var originalPath = req.Text("blocked_path");
         var completeMetadata = Encoding.UTF8.GetByteCount(detailText) <= 8192 && Encoding.UTF8.GetByteCount(originalPath ?? "") <= 8192;
-        // AskUserQuestion questionnaires are out of scope on Windows (stage 3).
-        const bool canAnswerQuestions = false;
+        var canAnswerQuestions = completeMetadata && toolName == "AskUserQuestion" && UserQuestionnaire.Parse(displayJson) is not null;
 
         var reason = ActivitySupport.Clean(detailText, 8192);
         if (interaction && !canAnswerQuestions) reason += (reason.Length == 0 ? "" : "\n\n") + ToolPermissionStrings.NeedsSeparateInputScreen;
@@ -160,23 +166,56 @@ public sealed class ClaudePermissionChannel
 
     public void Respond(string requestId, bool allow)
     {
-        if (closed || !pending.TryGetValue(requestId, out var request))
-            throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
-        if (allow && !request.Display.CanAllow)
-            throw new InvalidOperationException(ToolPermissionStrings.CannotAllow);
-        pending.Remove(requestId);
-        pendingOrder.Remove(requestId);
-        if (allow) SendSuccess(requestId, new { behavior = "allow", updatedInput = request.Input, toolUseID = request.Display.ToolUseId });
-        else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in Mighty Claude.");
-        var display = request.Display with { State = allow ? "allowed" : "denied" };
-        activity(display, allow ? "running" : "error"); emit(display);
+        lock (sync)
+        {
+            if (closed || !pending.TryGetValue(requestId, out var request))
+                throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+            if (allow && !request.Display.CanAllow)
+                throw new InvalidOperationException(ToolPermissionStrings.CannotAllow);
+            if (allow) SendSuccess(requestId, new { behavior = "allow", updatedInput = request.Input, toolUseID = request.Display.ToolUseId });
+            else Deny(requestId, request.Display.ToolUseId, "The user denied this tool request in Mighty Claude.");
+            pending.Remove(requestId); pendingOrder.Remove(requestId);
+            var display = request.Display with { State = allow ? "allowed" : "denied" };
+            activity(display, allow ? "running" : "error"); emit(display);
+        }
+    }
+
+    /// <summary>A follow-up joins only an initialized, still-open Claude stream.</summary>
+    public bool TrySteer(string text)
+    {
+        lock (sync)
+        {
+            if (closed || !Initialized || string.IsNullOrWhiteSpace(text) || text.Length > 100_000 || text.Contains('\0')) return false;
+            try { write(ProviderInput.PromptFrame(text)); return true; }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { return false; }
+        }
     }
 
     public void CancelAll()
     {
-        if (closed) return;
-        closed = true;
-        foreach (var id in pendingOrder.ToArray()) Settle(id, "cancelled", "stopped");
+        lock (sync)
+        {
+            if (closed) return;
+            closed = true;
+            foreach (var id in pendingOrder.ToArray()) Settle(id, "cancelled", "stopped");
+        }
+    }
+
+    public void AnswerQuestions(string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
+    {
+        lock (sync)
+        {
+            if (closed || !pending.TryGetValue(requestId, out var request)) throw new InvalidOperationException(ToolPermissionStrings.AlreadySettled);
+            if (!request.Display.CanAnswerQuestions || UserQuestionnaire.Parse(request.Display.InputJson) is not { } questionnaire)
+                throw new InvalidOperationException(ToolPermissionStrings.CannotAllow);
+            // Validation precedes settlement: an invalid draft leaves this exact request answerable.
+            var validated = questionnaire.ValidateAnswers(answers);
+            var input = request.Input.EnumerateObject().Where(p => p.Name is not ("answers" or "response")).ToDictionary(p => p.Name, p => (object)p.Value.Clone(), StringComparer.Ordinal);
+            input["answers"] = validated;
+            SendSuccess(requestId, new { behavior = "allow", updatedInput = input, toolUseID = request.Display.ToolUseId });
+            pending.Remove(requestId); pendingOrder.Remove(requestId);
+            var display = request.Display with { State = "answered" }; activity(display, "running"); emit(display);
+        }
     }
 
     private void Settle(string id, string state, string activityState)
@@ -198,8 +237,15 @@ public sealed class ClaudePermissionChannel
 
     private void Send(object obj)
     {
-        try { write(JsonSerializer.Serialize(obj, Wire.Json) + "\n"); }
-        catch { }
+        lock (sync)
+        {
+            try { write(JsonSerializer.Serialize(obj, Wire.Json) + "\n"); }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
+            {
+                FailClosed(Locale.Get("questionnaire.error.delivery"));
+                throw new InvalidOperationException(Locale.Get("questionnaire.error.delivery"), ex);
+            }
+        }
     }
 
     // Use relaxed encoder so U+202E and other non-ASCII chars stay raw for the

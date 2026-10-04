@@ -5,7 +5,13 @@
        repository root: the checks read the same bytes the macOS suite asserts
        against, so the two platforms cannot drift apart. -->
   <ItemGroup>
+    <EmbeddedResource Include="../../contracts/relay-vectors.json" LogicalName="MightyClaude.Core.Tests.RelayVectors.json" />
     <EmbeddedResource Include="../../contracts/graph-vectors.json" LogicalName="MightyClaude.Core.Tests.GraphVectors.json" />
     <EmbeddedResource Include="../../contracts/fixtures/model-labels.json" LogicalName="MightyClaude.Core.Tests.ModelLabels.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyClaude.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../styles/gstack.json" LogicalName="MightyClaude.Core.Tests.Styles.gstack.json" />
+    <EmbeddedResource Include="../../../styles/oh-my-claudecode.json" LogicalName="MightyClaude.Core.Tests.Styles.oh-my-claudecode.json" />
   </ItemGroup>
 </Project>

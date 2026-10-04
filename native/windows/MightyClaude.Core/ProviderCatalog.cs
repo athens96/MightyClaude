@@ -13,6 +13,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     private readonly SemaphoreSlim gate = new(1);
     private readonly Dictionary<string, CliCommand?> commands = [];
     private RuntimeInfo? cached;
+    private string? cachedDirectory;
     private DateTimeOffset refreshed;
     private Task? shutdown;
     public static string Name(string provider) => provider == "claude" ? "Claude Code" : provider == "codex" ? "Codex CLI" : "Gemini CLI";
@@ -24,13 +25,13 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     // A sidebar row or tab carries the capsule after its title only for a beta agent's pane
     // (macOS paneRow / PaneDockView: kind "claude" and isBeta); shells, browsers and files never do.
     public static bool ShowsBetaBadge(RunSession session) => session.Kind == "claude" && IsBeta(session.Provider);
-    public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "codex" ? ["manual", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
-    public static ProviderCapabilities Capabilities(string provider, string? version = null) => new(provider != "gemini", PermissionModes(provider, provider == "claude" && SupportsMods(version)), provider == "claude", provider == "claude", true, provider == "codex", provider == "codex", provider == "codex", true);
+    public static string[] PermissionModes(string provider, bool includeAuto = true) => provider == "codex" ? ["manual", "onRequest", "acceptEdits", "fullAccess"] : provider == "claude" && includeAuto ? ["plan", "manual", "acceptEdits", "auto", "fullAccess"] : ["manual", "plan", "acceptEdits", "fullAccess"];
+    public static ProviderCapabilities Capabilities(string provider, string? version = null) => new(provider != "gemini", PermissionModes(provider, provider == "claude" && SupportsMods(version)).Where(mode => mode != "onRequest" || SupportsCodexApprovals(version)).ToArray(), provider == "claude", provider == "claude", true, provider == "codex", provider == "codex", provider == "codex", true);
     public static RunSettings NormalizeSettings(string provider, RunSettings? value)
     {
         var v = value ?? new(); var caps = Capabilities(provider);
         var permission = PermissionModes(provider).Contains(v.PermissionMode) ? v.PermissionMode : "manual";
-        return new(caps.Effort && Wire.Efforts.Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission == "acceptEdits" && v.NetworkAccess);
+        return new(caps.Effort && Wire.Efforts.Contains(v.Effort) ? v.Effort : "default", permission, caps.MaxTurns && v.MaxTurns is >= 1 and <= 1000 ? v.MaxTurns : null, caps.MaxBudgetUsd && v.MaxBudgetUsd is > 0 and <= 10000 ? v.MaxBudgetUsd : null, caps.FastMode && v.FastMode, caps.WebSearch && v.WebSearch is "disabled" or "cached" or "live" ? v.WebSearch : "default", caps.NetworkAccess && permission is ("acceptEdits" or "onRequest") && v.NetworkAccess);
     }
     public static ModelCatalog Fallback(string provider)
     {
@@ -62,6 +63,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     }
     public static bool SupportsMods(string? version) => Regex.Match(version ?? "", @"(?<!\d)(\d+)\.(\d+)\.(\d+)(?![\d-])") is { Success: true } m && Version.Parse($"{m.Groups[1]}.{m.Groups[2]}.{m.Groups[3]}") >= new Version(2, 1, 271);
 
+    public static bool SupportsCodexApprovals(string? version) => Regex.Match(version ?? "", @"(?<!\d)(\d+)\.(\d+)\.(\d+)(?![\d-])") is { Success: true } m && Version.Parse($"{m.Groups[1]}.{m.Groups[2]}.{m.Groups[3]}") >= new Version(0, 153, 4);
+
     public async Task<CliCommand?> FindAsync(string provider, CancellationToken token = default)
     {
         lock (commands) if (commands.TryGetValue(provider, out var saved)) return saved;
@@ -70,29 +73,30 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         lock (commands) commands[provider] = result;
         return result;
     }
-    public async Task<RuntimeInfo> GetRuntimeAsync(bool force = false)
+    public async Task<RuntimeInfo> GetRuntimeAsync(bool force = false, string? workingDirectory = null)
     {
         await gate.WaitAsync(closing.Token);
         try
         {
-            if (!force && cached is not null && DateTimeOffset.UtcNow - refreshed < TimeSpan.FromMinutes(1)) return cached;
+            var directory = workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!force && cachedDirectory == directory && cached is not null && DateTimeOffset.UtcNow - refreshed < TimeSpan.FromMinutes(1)) return cached;
             if (force) lock (commands) commands.Clear();
             var providers = new List<ProviderRuntime>();
             foreach (var id in Wire.Providers)
             {
                 var command = await FindAsync(id, closing.Token);
-                var catalog = command is not null && id != "gemini" ? await ReadModelsAsync(id, command, closing.Token) : Fallback(id);
+                var catalog = command is not null && id != "gemini" ? await ReadModelsAsync(id, command, closing.Token, directory) : Fallback(id);
                 providers.Add(new(id, Name(id), command is not null && (id != "claude" || SupportsMods(command.Version)), command?.Version, command is null ? Locale.Get("provider.notInstalled") : id == "claude" && !SupportsMods(command.Version) ? Locale.Get("provider.unsupportedVersion") : Locale.Get("provider.available"), catalog, Capabilities(id, command?.Version)));
             }
             var claude = providers[0];
             cached = new(OperatingSystem.IsWindows() ? "win32" : OperatingSystem.IsMacOS() ? "darwin" : "linux", "0.1.0", claude.Version is not null, claude.Version, claude.ModelCatalog, providers, new(claude.Available ? "available" : claude.Version is null ? "unavailable" : "unsupported", "2.1.271", claude.Detail));
-            refreshed = DateTimeOffset.UtcNow; return cached;
+            cachedDirectory = directory; refreshed = DateTimeOffset.UtcNow; return cached;
         }
         finally { gate.Release(); }
     }
     private static async Task<CliCommand?> DiscoverAsync(string provider, CancellationToken token)
     {
-        var directories = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator).Concat([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
+        var directories = (CliEnvironment.Current().GetValueOrDefault("PATH") ?? "").Split(Path.PathSeparator).Concat([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray();
         var candidates = directories.Select(path => new CliCommand(Path.Combine(path, provider + (OperatingSystem.IsWindows() ? ".exe" : "")), [])).ToList();
         if (OperatingSystem.IsWindows() && provider != "claude")
         {
@@ -119,7 +123,12 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         return null;
     }
-    public static Dictionary<string, string> QuietEnvironment() => new() { ["DISABLE_AUTOUPDATER"] = "1", ["DISABLE_TELEMETRY"] = "1", ["DISABLE_ERROR_REPORTING"] = "1", ["NO_UPDATE_NOTIFIER"] = "1" };
+    public static Dictionary<string, string> QuietEnvironment()
+    {
+        var environment = CliEnvironment.Current();
+        foreach (var key in new[] { "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "NO_UPDATE_NOTIFIER" }) environment[key] = "1";
+        return environment;
+    }
     public static async Task<string> ReadBoundedAsync(StreamReader reader, int limit, CancellationToken token)
     {
         var result = new System.Text.StringBuilder(); var buffer = new char[4096]; int count;
@@ -127,7 +136,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         return result.ToString();
     }
     public static async Task DrainAsync(StreamReader reader, CancellationToken token) { var buffer = new char[4096]; while (await reader.ReadAsync(buffer.AsMemory(), token) > 0) { } }
-    public static async Task<ModelCatalog> ReadModelsAsync(string provider, CliCommand command, CancellationToken cancellation = default)
+    public static async Task<ModelCatalog> ReadModelsAsync(string provider, CliCommand command, CancellationToken cancellation = default, string? workingDirectory = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(7));
         var token = timeout.Token;
@@ -136,7 +145,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         if (provider == "claude") { env["CLAUDE_CODE_SAFE_MODE"] = "1"; env["CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL"] = "1"; env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"; env["CLAUDE_CODE_SKIP_PROMPT_HISTORY"] = "1"; }
         try
         {
-            await using var child = ChildProcess.Start(ChildProcess.StartInfo(command.Binary, command.Prefix.Concat(args), Path.GetTempPath(), env));
+            await using var child = ChildProcess.Start(ChildProcess.StartInfo(command.Binary, command.Prefix.Concat(args), workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), env));
             var drain = DrainAsync(child.Error, token); _ = drain.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
             var requestId = Wire.Id(); var expected = 1; var pages = 0; var models = Fallback(provider).Models.Take(1).ToList();
             await child.Input.WriteLineAsync(provider == "codex" ? JsonSerializer.Serialize(new { id = expected, method = "initialize", @params = new { clientInfo = new { name = "mighty_claude", title = "Mighty Claude", version = "0.1.0" } } }, Wire.Json) : JsonSerializer.Serialize(new { type = "control_request", request_id = requestId, request = new { subtype = "initialize" } }, Wire.Json));
@@ -210,6 +219,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         if (request.Provider == "claude")
         {
             args.AddRange(["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", "none", "--permission-mode", settings.PermissionMode == "fullAccess" ? "bypassPermissions" : settings.PermissionMode, "--plugin-dir", pluginDirectory]);
+            if (request.StyleAutoAllow is { Count: > 0 } styleTools)
+                args.AddRange(["--allowedTools", string.Join(",", styleTools)]);
             // Build a single --settings env JSON merging effort + phase model aliases.
             var env = new Dictionary<string, string?>();
             if (settings.Effort != "default") { args.AddRange(["--effort", settings.Effort]); env["CLAUDE_CODE_EFFORT_LEVEL"] = settings.Effort; }
@@ -229,12 +240,10 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         }
         else if (request.Provider == "codex")
         {
-            var sandbox = settings.PermissionMode == "fullAccess" ? "danger-full-access" : settings.PermissionMode == "acceptEdits" ? "workspace-write" : "read-only";
-            args.AddRange(["-c", "approval_policy=\"never\"", "-c", $"sandbox_mode=\"{sandbox}\"", "-c", $"sandbox_workspace_write.network_access={(settings.NetworkAccess ? "true" : "false")}", "-c", $"features.fast_mode={(settings.FastMode ? "true" : "false")}", "-c", $"service_tier=\"{(settings.FastMode ? "fast" : "default")}\""]);
+            var approvals = settings.PermissionMode == "onRequest";
+            var sandbox = settings.PermissionMode == "fullAccess" ? "danger-full-access" : settings.PermissionMode is ("acceptEdits" or "onRequest") ? "workspace-write" : "read-only";
+            args.AddRange(["-c", $"approval_policy=\"{(approvals ? "on-request" : "never")}\"", "-c", $"sandbox_mode=\"{sandbox}\"", "-c", $"sandbox_workspace_write.network_access={(settings.NetworkAccess ? "true" : "false")}", "-c", $"features.fast_mode={(settings.FastMode ? "true" : "false")}", "-c", $"service_tier=\"{(settings.FastMode ? "fast" : "default")}\""]);
             if (settings.WebSearch != "default") args.AddRange(["-c", $"web_search=\"{settings.WebSearch}\""]);
-            args.Add("exec");
-            if (request.ResumeId is not null) args.AddRange(["resume", request.ResumeId]);
-            args.AddRange(["--json", "--skip-git-repo-check"]);
             if (settings.Effort != "default") args.AddRange(["-c", $"model_reasoning_effort=\"{settings.Effort}\""]);
             if (phaseModels is not null)
             {
@@ -242,11 +251,23 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
                 if (phaseModels.CodexSubagentDefault != "default") args.AddRange(["-c", $"agents.default_subagent_model=\"{phaseModels.CodexSubagentDefault}\""]);
                 if (phaseModels.CodexPlanModeReasoningEffort != "default") args.AddRange(["-c", $"plan_mode_reasoning_effort=\"{phaseModels.CodexPlanModeReasoningEffort}\""]);
             }
+            if (approvals)
+            {
+                args.AddRange(["-c", "approvals_reviewer=\"user\""]);
+                if (request.Model != "default") args.AddRange(["-c", $"model=\"{request.Model}\""]);
+                args.AddRange(["app-server", "--listen", "stdio://"]);
+            }
+            else
+            {
+                args.Add("exec");
+                if (request.ResumeId is not null) args.AddRange(["resume", request.ResumeId]);
+                args.AddRange(["--json", "--skip-git-repo-check"]);
+            }
         }
         else args.AddRange(["--output-format", "stream-json", "--approval-mode", settings.PermissionMode == "fullAccess" ? "yolo" : settings.PermissionMode == "acceptEdits" ? "auto_edit" : settings.PermissionMode == "plan" ? "plan" : "default"]);
-        if (request.Model != "default") args.AddRange(["--model", request.Model]);
+        if (request.Model != "default" && !(request.Provider == "codex" && settings.PermissionMode == "onRequest")) args.AddRange(["--model", request.Model]);
         if (request.Provider != "codex" && request.ResumeId is not null) args.AddRange(["--resume", request.ResumeId]);
-        if (request.Provider == "codex") args.Add("-");
+        if (request.Provider == "codex" && settings.PermissionMode != "onRequest") args.Add("-");
         return args;
     }
     public ValueTask DisposeAsync() { lock (commands) return new(shutdown ??= ShutdownAsync()); }

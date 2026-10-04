@@ -143,3 +143,19 @@ The Mac screen-share (BETA) clipboard is compressed with zstd, the same format t
 The Claude, Codex (OpenAI) and Gemini marks drawn in the app come from outline data in `native/macos/Sources/MightyCore/ProviderMark.swift`. The Claude and Gemini outlines follow Simple Icons (https://simpleicons.org, CC0 1.0); the OpenAI outline is the company's published mark. All three are trademarks of their owners (Anthropic, OpenAI, Google) and are used only to identify which company's CLI a pane runs; MightyClaude is not affiliated with or endorsed by them.
 
 The phone app draws the same outlines: the data is copied into `mobile/src/lib/provider-marks.ts` and rendered with `react-native-svg`, under the same terms.
+
+
+## Windows mobile remote cryptography and pairing — MIT
+
+Windows 모바일 리모트는 Bouncy Castle의 X25519·ChaCha20-Poly1305와 QRCoder의 PNG QR 렌더러를 사용합니다. 두 라이선스 전문은 Windows 배포물의 `ThirdPartyLicenses`에 포함됩니다.
+
+The Windows mobile remote uses Bouncy Castle for X25519 and ChaCha20-Poly1305, and QRCoder for the pairing QR image. Both license texts accompany the Windows distribution in `ThirdPartyLicenses`.
+
+- BouncyCastle.Cryptography 2.7.0 — https://github.com/bcgit/bc-csharp — Copyright (c) 2000–2026 The Legion of the Bouncy Castle Inc.; MIT, `native/licenses/BouncyCastle-LICENSE`.
+- QRCoder 1.8.0 — https://github.com/Shane32/QRCoder — Copyright (c) 2013–2025 Raffael Herrmann; Copyright (c) 2024–2025 Shane Krueger; MIT, `native/licenses/QRCoder-LICENSE`.
+
+### Windows screen sharing
+
+- ZstdSharp.Port 0.8.8 — Oleg Stepanischev, MIT; `native/licenses/ZstdSharp-LICENSE`. Its zstd port retains the upstream zstd notice (`native/licenses/zstd-LICENSE`).
+- Microsoft.Graphics.Win2D 1.4.0 — Microsoft Corporation; Win2D source MIT notice and NuGet binary redistribution terms are identified in `native/licenses/Win2D-LICENSE`.
+- WebRTC runs in the separately installed Microsoft Edge WebView2 Runtime; this application does not bundle a second WebRTC binary.

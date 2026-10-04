@@ -572,7 +572,7 @@ public sealed partial class MainWindow
         /// Bitmaps decode through WIC: fitted from a decode at most 4,096 pixels on its long
         /// side, at 1:1 or zoom from a full decode made only when asked for and only under
         /// 100 MP; nothing over 250 MP decodes at all. svg (already checked for outside
-        /// references) draws through SvgImageSource, pdf shows its first page.
+        /// references) uses the shared bounded SVG rasterizer; PDF shows its first page.
         /// </summary>
         private async Task<FrameworkElement> ImageView(FilePreviewData data, int request)
         {
@@ -585,10 +585,9 @@ public sealed partial class MainWindow
             {
                 if (extension == "svg")
                 {
-                    // Sized like a pdf page: an svg that claims a size past MaximumVectorPoints is not drawn.
-                    if (FilePreviewClassifier.SvgSize(bytes) is { } size && !FilePreviewClassifier.IsDrawable(size.Width, size.Height)) return UnsupportedCard(data, null);
-                    var svg = new SvgImageSource();
-                    if (await svg.SetSourceAsync(await Buffer(bytes)) != SvgImageSourceLoadStatus.Success) return UnsupportedCard(data, Locale.Get("files.preview.failed"));
+                    var raster = await NativeSvgRaster.Render(bytes, FilePreviewClassifier.MaximumFitPixels);
+                    if (request != previewRequest) return stale;
+                    var svg = new BitmapImage(); using var rendered = await Buffer(raster.Png); await svg.SetSourceAsync(rendered);
                     return FittedImage(new Image { Source = svg, Stretch = Stretch.Uniform });
                 }
                 if (extension == "pdf")

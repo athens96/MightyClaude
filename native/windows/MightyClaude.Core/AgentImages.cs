@@ -34,7 +34,7 @@ public sealed record AgentImagePrepared(string Hash, string MediaType, int Width
 /// <summary>
 /// The macOS AgentImageSupport rules: caps, media types, base64, the payload walk and the
 /// entry text. Windows reads a bitmap's size from its header instead of ImageIO, and keeps
-/// the formats WIC decodes out of the box (png, jpeg, gif, webp, bmp) plus svg.
+/// the formats WIC decodes out of the box (png, jpeg, gif, webp, bmp, tiff) plus svg.
 /// </summary>
 public static class AgentImageSupport
 {
@@ -109,7 +109,7 @@ public static class AgentImageSupport
 
     /// <summary>
     /// The type and size a bitmap's header declares. Null type: not a picture this reads;
-    /// "": a picture format Windows does not decode without an extra codec (tiff, heic).
+    /// "": a picture format Windows does not decode without an extra codec (heic).
     /// </summary>
     internal static (string? Type, long Width, long Height) BitmapHeader(ReadOnlySpan<byte> d)
     {
@@ -156,7 +156,30 @@ public static class AgentImageSupport
             }
             return (null, 0, 0);
         }
-        if (d.Length >= 4 && (d[..4].SequenceEqual(new byte[] { 0x49, 0x49, 0x2A, 0x00 }) || d[..4].SequenceEqual(new byte[] { 0x4D, 0x4D, 0x00, 0x2A }))) return ("", 0, 0);
+        if (d.Length >= 4 && (d[..4].SequenceEqual(new byte[] { 0x49, 0x49, 0x2A, 0x00 }) || d[..4].SequenceEqual(new byte[] { 0x4D, 0x4D, 0x00, 0x2A })))
+        {
+            // TIFF 6.0: read only the first image directory and its scalar size
+            // tags. Offsets/counts are checked before any span slice or decode.
+            if (d.Length < 8) return (null, 0, 0);
+            var little = d[0] == 0x49;
+            static ushort U16(ReadOnlySpan<byte> bytes, bool le) => le ? BinaryPrimitives.ReadUInt16LittleEndian(bytes) : BinaryPrimitives.ReadUInt16BigEndian(bytes);
+            static uint U32(ReadOnlySpan<byte> bytes, bool le) => le ? BinaryPrimitives.ReadUInt32LittleEndian(bytes) : BinaryPrimitives.ReadUInt32BigEndian(bytes);
+            var offset = U32(d.Slice(4, 4), little);
+            if (offset < 8 || offset > d.Length - 2L) return (null, 0, 0);
+            var count = U16(d.Slice((int)offset, 2), little);
+            if (count > 4096 || offset + 2L + count * 12L > d.Length) return (null, 0, 0);
+            long width = 0, height = 0;
+            for (var i = 0; i < count; i++)
+            {
+                var entry = d.Slice((int)offset + 2 + i * 12, 12);
+                var tag = U16(entry, little); if (tag is not (256 or 257)) continue;
+                var type = U16(entry.Slice(2, 2), little);
+                if (U32(entry.Slice(4, 4), little) != 1 || type is not (3 or 4)) return (null, 0, 0);
+                var value = type == 3 ? U16(entry.Slice(8, 2), little) : U32(entry.Slice(8, 4), little);
+                if (tag == 256) width = value; else height = value;
+            }
+            return ("image/tiff", width, height);
+        }
         if (d.Length >= 12 && d.Slice(4, 4).SequenceEqual("ftyp"u8) && (d.Slice(8, 4).SequenceEqual("heic"u8) || d.Slice(8, 4).SequenceEqual("heix"u8) || d.Slice(8, 4).SequenceEqual("mif1"u8) || d.Slice(8, 4).SequenceEqual("msf1"u8))) return ("", 0, 0);
         return (null, 0, 0);
     }

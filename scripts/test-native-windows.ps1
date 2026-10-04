@@ -58,6 +58,37 @@ try {
         Write-SmokeAnnotation "ExitCode=$($process.ExitCode)`nerror: $($result.error)`ntype: $($result.exceptionType)`npassed before it: $reached`n$trace"
         throw "GUI 검증 실패: ExitCode=$($process.ExitCode), 결과: $resultPath"
     }
+    foreach ($key in @('exifOrientation', 'svgRaster', 'tiffRaster')) {
+        if ($result.agentImages.$key -ne $true) { throw "Windows native image smoke failed: agentImages.$key" }
+    }
+    $transcriptActions = $result.transcriptActions
+    foreach ($key in @('exactCodeCopy', 'nativeToolToggle', 'unknownActionRefused')) {
+        if ($transcriptActions.$key -ne $true) { throw "Windows transcript action smoke failed: transcriptActions.$key" }
+    }
+    $styles = $result.styles
+    if ($null -eq $styles -or [int]$styles.bundledCount -ne 3 -or [int]$styles.guidedActions -lt 1) {
+        throw 'Windows style smoke did not load the bundled registry and guided actions.'
+    }
+    foreach ($key in @('picker', 'fullApprovalContents', 'localRunPermissionSnapshot')) {
+        if ($styles.$key -ne $true) { throw "Windows style smoke failed: styles.$key" }
+    }
+    $companion = $result.companion
+    foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard')) {
+        if ($companion.$key -ne $true) { throw "Windows companion smoke failed: companion.$key" }
+    }
+    foreach ($key in @('syntheticGpuCropEncoded', 'displayBoundsEnumerated')) {
+        if ($result.screenCapture.$key -ne $true) { throw "Windows screen capture smoke failed: screenCapture.$key" }
+    }
+    if ($result.screenTapMarkerNoFocus -ne $true) { throw 'Windows screen tap marker stole focus or intercepted input.' }
+    foreach ($key in @('packagedWebViewBridge', 'h264Negotiated', 'screenAndOverviewTracksDecoded', 'perPeerResolutionLimit', 'unicodeControlRoundTrip', 'hostDataRoundTrip', 'haltClosedChannel')) {
+        if ($result.screenTransport.$key -ne $true) { throw "Windows screen transport smoke failed: screenTransport.$key" }
+    }
+    foreach ($key in @('trustedRendererLoaded', 'conptyUtf8RoundTrip', 'resizeBridge', 'externalNavigationBlocked', 'processClosed')) {
+        if ($result.nativeTerminal.$key -ne $true) { throw "Windows native terminal smoke failed: nativeTerminal.$key" }
+    }
+    foreach ($key in @('dashboardRetainsPane', 'clockPreservesDashboardControls', 'allSettingsCategories', 'bothThemes')) {
+        if ($result.desktopSurfaces.$key -ne $true) { throw "Windows desktop design smoke failed: desktopSurfaces.$key" }
+    }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
     $scanned = $result.localeKeyLeakScanned

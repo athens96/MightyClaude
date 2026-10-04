@@ -409,7 +409,7 @@ public static class StatusLineSupport
     }
 
     // Run the status line command. timeout is in seconds (default 8).
-    public static async Task<StatusLineResult> RunAsync(StatusLineConfig config, StatusLineContext ctx, double timeout = 8)
+    public static async Task<StatusLineResult> RunAsync(StatusLineConfig config, StatusLineContext ctx, double timeout = 8, CancellationToken cancellation = default)
     {
         var payload = BuildPayload(ctx);
         var env = new Dictionary<string, string> { ["CLAUDE_CODE_STATUSLINE_HOST"] = "mightyclaude" };
@@ -419,24 +419,28 @@ public static class StatusLineSupport
         var cwd = ctx.Cwd is { Length: > 0 } folder && Directory.Exists(folder) ? folder : Environment.CurrentDirectory;
 
         ChildProcess? process = null;
+        Task<string>? outputTask = null, errorTask = null;
         try
         {
+            cancellation.ThrowIfCancellationRequested();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeout));
             var info = ChildProcess.StartInfo(binary, args, cwd, env);
             process = ChildProcess.Start(info);
-            await process.Input.WriteAsync(payload);
-            await process.Input.FlushAsync();
-            process.Input.Close();
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeout));
+            using var stop = cts.Token.Register(process.Kill);
+            outputTask = ReadCappedAsync(process.Output, MaximumOutputBytes);
+            errorTask = ReadCappedAsync(process.Error, 0); // drain, never retain private stderr
             int exitCode;
             bool timedOut = false;
             string output;
 
             try
             {
-                // Read output with a byte cap
-                var outputTask = ReadCappedAsync(process.Output, MaximumOutputBytes);
+                await process.Input.WriteAsync(payload.AsMemory(), cts.Token);
+                await process.Input.FlushAsync(cts.Token);
+                process.Input.Close();
                 await process.Completion.WaitAsync(cts.Token);
+                cancellation.ThrowIfCancellationRequested();
                 exitCode = process.Completion.Result;
                 // Give a short drain window for background children that hold stdout
                 await Task.WhenAny(outputTask, Task.Delay(500));
@@ -444,11 +448,12 @@ public static class StatusLineSupport
             }
             catch (OperationCanceledException)
             {
+                cancellation.ThrowIfCancellationRequested();
                 timedOut = true;
                 exitCode = -1;
                 process.Kill();
                 output = "";
-                try { await Task.WhenAny(ReadCappedAsync(process.Output, MaximumOutputBytes), Task.Delay(200)); } catch { }
+                try { await Task.WhenAny(outputTask, Task.Delay(200)); } catch { }
             }
 
             string? errorText = null;
@@ -459,11 +464,16 @@ public static class StatusLineSupport
             var lines = ParseLines(output);
             return new StatusLineResult(lines, errorText, exitCode, timedOut);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellation.IsCancellationRequested)
         {
             return new StatusLineResult([], StatusLineStrings.ErrorStartTemplate.Replace("{reason}", ex.Message), -1, false);
         }
-        finally { if (process is not null) await process.DisposeAsync(); }
+        finally
+        {
+            if (process is not null) await process.DisposeAsync();
+            if (outputTask is not null) await outputTask;
+            if (errorTask is not null) await errorTask;
+        }
     }
 
     private static async Task<string> ReadCappedAsync(System.IO.TextReader reader, int maxBytes)
@@ -476,10 +486,17 @@ public static class StatusLineSupport
             int read;
             try { read = await reader.ReadAsync(buf, 0, buf.Length); } catch { break; }
             if (read == 0) break;
-            var chunk = new string(buf, 0, read);
-            totalBytes += Encoding.UTF8.GetByteCount(chunk);
-            if (totalBytes > maxBytes) { sb.Append(chunk[..Math.Max(0, chunk.Length - (totalBytes - maxBytes) / 2)]); break; }
-            sb.Append(chunk);
+            if (totalBytes >= maxBytes) continue;
+            var chunk = new string(buf, 0, read); var available = maxBytes - totalBytes;
+            var count = chunk.Length;
+            if (Encoding.UTF8.GetByteCount(chunk) > available)
+            {
+                int low = 0, high = count;
+                while (low < high) { var middle = (low + high + 1) / 2; if (Encoding.UTF8.GetByteCount(chunk.AsSpan(0, middle)) <= available) low = middle; else high = middle - 1; }
+                count = low; if (count > 0 && char.IsHighSurrogate(chunk[count - 1])) count--;
+            }
+            sb.Append(chunk.AsSpan(0, count)); totalBytes += Encoding.UTF8.GetByteCount(chunk.AsSpan(0, count));
+            if (count < chunk.Length) totalBytes = maxBytes;
         }
         return sb.ToString();
     }

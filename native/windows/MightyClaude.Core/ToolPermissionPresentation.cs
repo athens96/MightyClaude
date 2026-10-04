@@ -32,7 +32,8 @@ public sealed class ToolPermissionPresentation
 
         return toolName switch
         {
-            "Bash" => BashPresentation(input),
+            "Bash" or "command_execution" => BashPresentation(input),
+            "file_change" => new(ToolPermissionStrings.TitleEdit, null, GenericFields(input)),
             "Read" => new(ToolPermissionStrings.TitleRead, null, ReadFields(input)),
             "Edit" or "MultiEdit" => new(ToolPermissionStrings.TitleEdit, null, EditFields(input)),
             "Write" => new(ToolPermissionStrings.TitleWrite, null, WriteFields(input)),

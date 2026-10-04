@@ -176,7 +176,8 @@ public sealed class MightyGraphLayout
         GraphBlockSize? sharedResultSize = null,
         int retainedStart = 0,
         bool history = false,
-        double? resultContentHeight = null)
+        double? resultContentHeight = null,
+        IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null)
     {
         var latestResultID = LatestResultID(runs);
         var filesPanelOpenForLatest = FilesPanelOpen(runs, resultFilesRunID);
@@ -199,6 +200,7 @@ public sealed class MightyGraphLayout
                 if (resultMaximum is { } maximum) return ResultSize(ResultCap(maximum, resultLimit), resultContentHeight);
                 if (hasSharedResultSize) return (defaultW, defaultH);
             }
+            if (blockSizes?.GetValueOrDefault(id)?.Normalized is { } custom) return (custom.Width, custom.Height);
             return (defaultW, defaultH);
         }
 
@@ -304,11 +306,12 @@ public sealed class MightyGraphLayout
         if (hasPending)
         {
             var pendingID = MightyGraphCamera.PendingNodeID;
+            var pendingSize = Size(pendingID, MightyGraphCamera.RequestWidth, expanded.Contains(pendingID) ? 280 : 140);
             trees.Add(new Tree
             {
-                Nodes = [new Node(pendingID, "draft", new(0, 0, MightyGraphCamera.RequestWidth, 140))],
-                Width = MightyGraphCamera.RequestWidth,
-                Height = 140,
+                Nodes = [new Node(pendingID, "draft", new(0, 0, pendingSize.W, pendingSize.H))],
+                Width = pendingSize.W,
+                Height = pendingSize.H,
                 Top = pendingID,
                 Leaves = [pendingID]
             });

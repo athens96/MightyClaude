@@ -26,6 +26,7 @@ public sealed partial class MainWindow
         private TextBlock permCannotAllowBlock = null!;
         private Button permDenyButton = null!;
         private Button permAllowButton = null!;
+        private TextBlock permInputBlock = null!;
 
         // Builds the card once; RenderToolPermissions updates its text later.
         private void InitPermissionBar()
@@ -72,6 +73,9 @@ public sealed partial class MainWindow
             var body = new StackPanel { Spacing = 4 };
             body.Children.Add(titleRow); body.Children.Add(permPathBlock);
             body.Children.Add(permReasonBlock); body.Children.Add(permCannotAllowBlock);
+            permInputBlock = new TextBlock { FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"), FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+            AutomationProperties.SetAutomationId(permInputBlock, "permission-input-" + id);
+            body.Children.Add(new ScrollViewer { Content = permInputBlock, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
             body.Children.Add(noteBlock); body.Children.Add(buttons);
 
             var card = new Border
@@ -90,7 +94,7 @@ public sealed partial class MainWindow
             var idx = toolPermissions.FindIndex(p => p.Id == value.Id);
             if (value.State == "pending") { if (idx < 0) toolPermissions.Add(value); else toolPermissions[idx] = value; }
             else { if (idx >= 0) toolPermissions.RemoveAt(idx); }
-            RenderToolPermissions();
+            RenderToolPermissions(preserveQuestionnaire: true);
         }
 
         internal void ClearToolPermissions()
@@ -98,12 +102,14 @@ public sealed partial class MainWindow
             toolPermissions.Clear(); RenderToolPermissions();
         }
 
-        private void RenderToolPermissions()
+        private void RenderToolPermissions(bool preserveQuestionnaire = false)
         {
             var pending = toolPermissions.Where(p => p.State == "pending").ToList();
-            if (pending.Count == 0) { toolPermissionHost.Visibility = Visibility.Collapsed; return; }
+            if (pending.Count == 0) { HideQuestionnaire(); toolPermissionHost.Visibility = Visibility.Collapsed; return; }
             var current = pending[0];
+            if (TryRenderQuestionnaire(current, pending.Count, preserveQuestionnaire)) return;
             var pres = ToolPermissionPresentation.Make(current.ToolName, current.InputJson);
+            permInputBlock.Text = current.InputJson;
             permTitleBlock.Text = ToolPermissionStrings.BarTitleTemplate.Replace("{title}", pres.Title);
             if (pending.Count > 1)
             {
@@ -127,7 +133,7 @@ public sealed partial class MainWindow
             var current = toolPermissions.FirstOrDefault(p => p.State == "pending");
             if (current is null) return;
             if (owner.smokePermissionResponses is { } dict) { dict[current.Id] = true; ReceiveToolPermission(current with { State = "allowed" }); return; }
-            try { owner.service.RespondToToolPermission(id, current.Id, true); } catch { }
+            try { owner.service.RespondToToolPermission(id, current.Id, true); } catch (Exception ex) { owner.error.Text = ex.Message; }
         }
 
         private void OnPermissionDeny()
@@ -135,7 +141,7 @@ public sealed partial class MainWindow
             var current = toolPermissions.FirstOrDefault(p => p.State == "pending");
             if (current is null) return;
             if (owner.smokePermissionResponses is { } dict) { dict[current.Id] = false; ReceiveToolPermission(current with { State = "denied" }); return; }
-            try { owner.service.RespondToToolPermission(id, current.Id, false); } catch { }
+            try { owner.service.RespondToToolPermission(id, current.Id, false); } catch (Exception ex) { owner.error.Text = ex.Message; }
         }
 
         internal async Task<Dictionary<string, object?>> RunToolPermissionSmoke()
@@ -148,32 +154,32 @@ public sealed partial class MainWindow
                 owner.smokePermissionResponses = [];
 
                 var req1 = new ToolPermissionRequest("smoke-perm-1", "smoke-run", "smoke-tuid-1", "Read",
-                    "{\"file_path\":\"/tmp/test.txt\"}", "파일 읽기", BlockedPath: "/tmp/test.txt");
+                    "{\"file_path\":\"/tmp/test.txt\"}", "Read file", BlockedPath: "/tmp/test.txt");
                 var req2 = new ToolPermissionRequest("smoke-perm-2", "smoke-run", "smoke-tuid-2", "Bash",
-                    "{\"command\":\"ls /tmp\"}", "명령 실행");
+                    "{\"command\":\"ls /tmp\"}", "Run command");
 
                 ReceiveToolPermission(req1); ReceiveToolPermission(req2);
                 await WaitUI(() => toolPermissionHost.Visibility == Visibility.Visible);
 
                 var pres1 = ToolPermissionPresentation.Make(req1.ToolName, req1.InputJson);
                 var expectedTitle = ToolPermissionStrings.BarTitleTemplate.Replace("{title}", pres1.Title);
-                Require(permTitleBlock.Text == expectedTitle, "권한 바의 제목이 올바르지 않습니다: " + permTitleBlock.Text);
+                Require(permTitleBlock.Text == expectedTitle, "Unexpected permission bar title: " + permTitleBlock.Text);
                 Require(permPathBlock.Visibility == Visibility.Visible && permPathBlock.Text.Contains("/tmp/test.txt"),
-                    "접근 경로가 표시되지 않았습니다.");
+                    "Blocked path was not displayed.");
                 Require(permCountBlock.Visibility == Visibility.Visible && permCountBlock.Text.Contains("2"),
-                    "대기 수가 표시되지 않았습니다.");
+                    "Pending count was not displayed.");
                 checks["barShownWithTitlePathCount"] = true;
 
                 OnPermissionAllow();
                 Require(owner.smokePermissionResponses.TryGetValue("smoke-perm-1", out var r1) && r1,
-                    "이번만 허용 응답이 기록되지 않았습니다.");
+                    "One-time permission was not recorded.");
                 checks["allowRecorded"] = true;
 
                 Require(toolPermissions.Any(p => p.Id == "smoke-perm-2" && p.State == "pending"),
-                    "두 번째 요청이 표시되지 않았습니다.");
+                    "Second request was not displayed.");
                 OnPermissionDeny();
                 Require(owner.smokePermissionResponses.TryGetValue("smoke-perm-2", out var r2) && !r2,
-                    "거부 응답이 기록되지 않았습니다.");
+                    "Deny response was not recorded.");
                 checks["denyRecorded"] = true;
 
                 await WaitUI(() => toolPermissionHost.Visibility == Visibility.Collapsed);

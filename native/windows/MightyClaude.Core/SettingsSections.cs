@@ -50,14 +50,14 @@ public static class SettingsSections
     [
         new(Display, DisplayTitle),
         new(PhaseModels, PhaseModelsTitle),
-        new(Styles, null),
+        new(Styles, Locale.Get("settings.styles.sectionTitle")),
         new(Components, ComponentSection.SectionTitle),
-        new(MobileRemote, null),
+        new(MobileRemote, Locale.Get("settings.mobileRemote.sectionTitle")),
         new(CliUpdate, CliUpdateStrings.SectionTitle),
-        new(Companion, null),
+        new(Companion, Locale.Get("settings.nav.companion")),
         new(Providers, ProvidersTitle),
         new(CliAccounts, CliAccountStrings.SectionTitle),
-        new(ClaudeMods, null),
+        new(ClaudeMods, "Claude Mods"),
         new(AppUpdate, AppUpdateStrings.SectionTitle),
         new(AppInfo, AppInfoTitle),
     ];

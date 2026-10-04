@@ -29,7 +29,7 @@ public static class FilePaneKind
     /// </summary>
     public static AppSnapshot Stored(AppSnapshot snapshot)
     {
-        var files = snapshot.Sessions.Where(s => IsFilePane(s.Kind)).Select(s => s.Id).ToHashSet();
+        var files = snapshot.Sessions.Where(s => IsFilePane(s.Kind) || AgentIOPaneKind.IsAgentIO(s.Kind)).Select(s => s.Id).ToHashSet();
         if (files.Count == 0) return snapshot;
         var sessions = snapshot.Sessions.Where(s => !files.Contains(s.Id)).ToList();
         Dictionary<string, PaneLayoutNode>? layouts = null;

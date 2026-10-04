@@ -18,5 +18,6 @@ if (args is ["--group-child", var groupPid])
     await Task.Delay(60000);
     return;
 }
+if (args.Contains("--codex-approval-fixture")) { await CodexApprovalVerification.FakeCliAsync(args); return; }
 if (args.Length >= 3 && args[0] == "--fake-cli") { await Verification.FakeCliAsync(args[1], args[2], args.Skip(3).ToArray()); return; }
 await Verification.RunAsync();

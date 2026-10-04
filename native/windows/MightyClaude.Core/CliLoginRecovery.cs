@@ -1,0 +1,181 @@
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace MightyClaude.Core;
+
+/// Only failed provider events qualify; ordinary assistant text is never a login signal.
+public static class CliAuthFailure
+{
+    public static bool IsAuthenticationFailure(string text) => Claude(text) || Codex(text);
+    private static string Bounded(string text) => text[..Math.Min(text.Length, 16_384)].ToLowerInvariant();
+    private static bool ExternalDenial(string text) => text.Contains("bedrock") || text.Contains("service control policy") || text.Contains("explicit deny");
+    public static bool Claude(string text)
+    {
+        var value = Bounded(text);
+        return !ExternalDenial(value) && (new[] { "please run /login", "oauth token has expired", "oauth token revoked", "invalid api key" }.Any(value.Contains)
+            || value.Contains("401") && value.Contains("authentication_error"));
+    }
+    public static bool Codex(string text)
+    {
+        var value = Bounded(text);
+        return !ExternalDenial(value) && !value.TrimStart().StartsWith("reconnecting", StringComparison.Ordinal)
+            && (value.Contains("401") && value.Contains("unauthorized") || new[] { "not logged in", "please log in", "please login", "log in again", "sign in again", "refresh token" }.Any(value.Contains));
+    }
+    public static bool Claude(JsonElement value)
+    {
+        var type = value.Text("type");
+        if (type == "assistant" && value.Text("error") is { Length: > 0 } error)
+        {
+            var texts = value.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object && message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array
+                ? content.EnumerateArray().Where(block => block.Text("type") == "text").Select(block => block.Text("text") ?? "").ToArray() : [];
+            return !texts.Any(text => ExternalDenial(Bounded(text))) && (error == "authentication_failed" || texts.Any(Claude));
+        }
+        if (type != "result" || !(value.TryGetProperty("is_error", out var failed) && failed.ValueKind == JsonValueKind.True || value.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true)) return false;
+        var errors = value.TryGetProperty("errors", out var items) && items.ValueKind == JsonValueKind.Array
+            ? items.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!).ToList() : [];
+        if (value.Text("result") is { } result) errors.Add(result);
+        return !errors.Any(text => ExternalDenial(Bounded(text))) && errors.Any(Claude);
+    }
+    public static bool SignInCanFix(CliAccountStatus status) => status.Provider is "claude" or "codex" && status.Installed && status.AccessVerified != false
+        && !(status.Provider == "codex" && (status.Method == CliAccountSupport.CodexApiKeyMethod || status.Method == "API key"));
+}
+
+public sealed record CliLoginOutput(Uri? Url = null, bool AsksForCode = false);
+
+/// The bounded output exists in memory only. It never enters run logs or snapshots.
+public sealed class CliLoginOutputParser
+{
+    private readonly StringBuilder raw = new();
+    private int bytes;
+    public CliLoginOutput Current { get; private set; } = new();
+    public const int MaximumBytes = 65_536;
+    private static readonly string[] AuthHosts = ["claude.ai", "claude.com", "console.anthropic.com", "auth.openai.com", "chatgpt.com"];
+    private static readonly Regex Links = new("https://[^\\s\"'<>`\\x00-\\x1F\\x7F]+", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    private static readonly Regex Hyperlinks = new("\u001b\\]8;[^;\u0007\u001b]*;([^\u0007\u001b]*)(?:\u0007|\u001b\\\\)", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    private static readonly Regex Escapes = new("\u001b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u0007\u001b]*(?:\u0007|\u001b\\\\)|[@-Z\\\\-_])", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    public void Append(string value)
+    {
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (bytes + rune.Utf8SequenceLength > MaximumBytes) break;
+            raw.Append(rune.ToString()); bytes += rune.Utf8SequenceLength;
+        }
+        Parse(false);
+    }
+    public void Finish() => Parse(true);
+    public void Clear() { raw.Clear(); bytes = 0; Current = new(); }
+    public static bool IsAuthUrl(Uri? url) => url is not null && AuthHosts.Any(host => url.Host.Equals(host, StringComparison.OrdinalIgnoreCase) || url.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase));
+    private void Parse(bool final)
+    {
+        var text = Escapes.Replace(Hyperlinks.Replace(raw.ToString(), " $1 "), "").Replace('\r', '\n');
+        var url = Current.Url;
+        if (!IsAuthUrl(url))
+        {
+            Uri? first = null;
+            foreach (Match match in Links.Matches(text))
+            {
+                if (!final && match.Index + match.Length == text.Length) continue;
+                var link = match.Value.TrimEnd('.', ',', ';', ':', '!', '?', ')', ']', '}', '>');
+                if (Encoding.UTF8.GetByteCount(link) > 8192 || !Uri.TryCreate(link, UriKind.Absolute, out var candidate) || candidate.Scheme != "https" || candidate.Host.Length == 0 || candidate.UserInfo.Length > 0) continue;
+                first ??= candidate;
+                if (IsAuthUrl(candidate)) { first = candidate; break; }
+            }
+            url = first ?? url;
+        }
+        var asks = Current.AsksForCode || text.Split('\n').Any(line => line.Contains("paste", StringComparison.OrdinalIgnoreCase) && line.Contains("code", StringComparison.OrdinalIgnoreCase));
+        Current = new(url, asks);
+    }
+}
+
+public sealed record CliLoginRetry(StartRunRequest Request, long Generation);
+
+/// A new submission invalidates both its old retry and any pending status check.
+public sealed class CliLoginRetryBook
+{
+    private long serial;
+    private readonly Dictionary<string, long> generations = [];
+    private readonly Dictionary<string, CliLoginRetry> inflight = [];
+    private readonly Dictionary<string, CliLoginRetry> retries = [];
+    public IReadOnlyDictionary<string, CliLoginRetry> Requests => retries;
+    public long Sent(StartRunRequest request)
+    {
+        var generation = ++serial; generations[request.SessionId] = generation;
+        retries.Remove(request.SessionId); inflight.Remove(request.SessionId);
+        if (request.Kind == "claude" && request.Provider is "claude" or "codex")
+            inflight[request.SessionId] = new(request with { Attachments = request.Attachments?.ToArray() }, generation);
+        return generation;
+    }
+    public CliLoginRetry? Settled(string session) => inflight.Remove(session, out var retry) ? retry : null;
+    public bool IsCurrent(CliLoginRetry retry) => generations.GetValueOrDefault(retry.Request.SessionId) == retry.Generation;
+    public bool Remember(CliLoginRetry retry)
+    {
+        if (!IsCurrent(retry)) return false;
+        retries[retry.Request.SessionId] = retry; return true;
+    }
+    public CliLoginRetry? Take(string session) => retries.Remove(session, out var retry) && IsCurrent(retry) ? retry : null;
+    public void Drop(string session) { retries.Remove(session); inflight.Remove(session); generations.Remove(session); }
+    public void Clear() { retries.Clear(); inflight.Clear(); generations.Clear(); }
+}
+
+public enum CliLoginOutcome { LoggedIn, Exited, TimedOut }
+public sealed record CliLoginWaitResult(CliLoginOutcome Outcome, CliAccountStatus Status);
+public static class CliLoginWait
+{
+    public static async Task<CliLoginWaitResult> RunAsync(Func<bool> running, Func<int?> exitCode,
+        Func<CancellationToken, Task<CliAccountStatus>> status, CancellationToken cancellation = default,
+        TimeSpan? interval = null, TimeSpan? limit = null, TimeSpan? tick = null)
+    {
+        var watch = Stopwatch.StartNew(); var wasSignedOut = (await status(cancellation)).LoggedIn == false; var lastCheck = watch.Elapsed;
+        var polling = interval ?? TimeSpan.FromSeconds(3); var timeout = limit ?? TimeSpan.FromMinutes(10);
+        while (true)
+        {
+            await Task.Delay(tick ?? TimeSpan.FromMilliseconds(250), cancellation);
+            var active = running(); var expired = watch.Elapsed >= timeout;
+            if (!wasSignedOut && active && !expired) continue;
+            if (wasSignedOut && active && !expired && watch.Elapsed - lastCheck < polling) continue;
+            lastCheck = watch.Elapsed; var value = await status(cancellation); cancellation.ThrowIfCancellationRequested();
+            var signedIn = value.LoggedIn == true && CliAuthFailure.SignInCanFix(value);
+            if (signedIn && (wasSignedOut || !active && exitCode() == 0)) return new(CliLoginOutcome.LoggedIn, value);
+            if (!active) return new(CliLoginOutcome.Exited, value);
+            if (expired) return new(CliLoginOutcome.TimedOut, value);
+        }
+    }
+}
+
+/// Hidden ConPTY preserves the CLI's browser/code login flow without persisting its output.
+public sealed class CliBackgroundLogin : IAsyncDisposable
+{
+    private readonly object gate = new();
+    private readonly CliLoginOutputParser parser = new();
+    private readonly PseudoTerminal terminal;
+    public event Action<CliLoginOutput>? Changed;
+    public CliLoginOutput Output { get { lock (gate) return parser.Current; } }
+    public bool IsRunning => !terminal.Completion.IsCompleted;
+    public int? ExitCode => terminal.Completion.IsCompletedSuccessfully ? terminal.Completion.Result : null;
+    public Task<int> Completion => terminal.Completion;
+    public CliBackgroundLogin(CliCommand command, IReadOnlyList<string> arguments, string directory)
+    {
+        terminal = PseudoTerminal.Start(directory, Receive, columns: 1000, executable: command.Binary, arguments: [.. command.Prefix, .. arguments], environment: CliEnvironment.Current());
+    }
+    private void Receive(string text)
+    {
+        CliLoginOutput before, after;
+        lock (gate) { before = parser.Current; parser.Append(text); after = parser.Current; }
+        if (before != after) Changed?.Invoke(after);
+    }
+    public void FinishOutput()
+    {
+        CliLoginOutput value;
+        lock (gate) { parser.Finish(); value = parser.Current; }
+        Changed?.Invoke(value);
+    }
+    public bool SendCode(string code)
+    {
+        var clean = code.Trim();
+        if (clean.Length == 0 || Encoding.UTF8.GetByteCount(clean) > 4096 || clean.Any(char.IsControl)) return false;
+        return terminal.TryWrite(clean + "\r");
+    }
+    public async ValueTask DisposeAsync() { await terminal.DisposeAsync(); lock (gate) parser.Clear(); }
+}

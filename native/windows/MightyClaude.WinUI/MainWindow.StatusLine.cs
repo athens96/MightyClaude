@@ -8,6 +8,23 @@ namespace MightyClaude.WinUI;
 
 public sealed partial class MainWindow
 {
+    private readonly HashSet<Task> statusLineClosures = [];
+    private void CloseStatusLine(PaneView pane)
+    {
+        var task = pane.CloseStatusLine(); statusLineClosures.Add(task);
+        _ = task.ContinueWith(_ => DispatcherQueue.TryEnqueue(() => statusLineClosures.Remove(task)), TaskScheduler.Default);
+    }
+    private async Task ShutdownStatusLines()
+    {
+        foreach (var pane in views.Values) CloseStatusLine(pane);
+        await Task.WhenAll(statusLineClosures.ToArray()); statusLineClosures.Clear();
+    }
+    private async Task SetStatusLineEnabled(bool enabled)
+    {
+        await service.UpdateAsync(snapshot => snapshot with { StatusLineEnabled = enabled });
+        foreach (var pane in views.Values) pane.RequestStatusLineRefresh(force: enabled);
+    }
+
     private sealed partial class PaneView
     {
         // Claude's statusLine under the composer (macOS StatusLineView.swift).
@@ -16,31 +33,80 @@ public sealed partial class MainWindow
         private readonly StackPanel statusLineHost = new() { Spacing = 2, Visibility = Visibility.Collapsed };
         private StatusLineConfig? statusLineUntrusted;
         private StatusLineRefresher? _refresher;
+        private Task statusLineStopping = Task.CompletedTask;
+        private bool statusLineRestartPending;
+        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton statusLineToggle = new()
+        {
+            Content = "≡", Width = 28, Height = 28, MinWidth = 0, MinHeight = 0,
+            Padding = new Thickness(2), CornerRadius = new CornerRadius(14),
+        };
 
         internal StatusLineRefresher? Refresher => _refresher;
+        internal Task CloseStatusLine()
+        {
+            if (_refresher is { } previous) { previous.Close(); statusLineStopping = Task.WhenAll(statusLineStopping, previous.WhenStopped); _refresher = null; }
+            return statusLineStopping;
+        }
 
         internal void InitRefresher()
         {
+            if (_refresher is not null || !StatusLineEligible || !statusLineStopping.IsCompleted) return;
             var workspaceId = Session.WorkspaceId;
             var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            _refresher = new StatusLineRefresher(
+            var refresher = new StatusLineRefresher(
                 () => owner.smokeStatusLineDiscovery?.Invoke()
                     ?? StatusLineSupport.Discover(Workspace.Path, homeDir),
                 () => owner.service.Snapshot,
                 workspaceId,
                 (cfg, ctx, ct) => owner.smokeStatusLineRunner?.Invoke(cfg, ctx, ct)
-                    ?? StatusLineSupport.RunAsync(cfg, ctx));
-            _refresher.StateChanged += () => owner.DispatcherQueue.TryEnqueue(() =>
+                    ?? StatusLineSupport.RunAsync(cfg, ctx, cancellation: ct));
+            _refresher = refresher;
+            refresher.StateChanged += () => owner.DispatcherQueue.TryEnqueue(() =>
             {
                 if (!owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
-                var r = _refresher;
-                if (r is null) return;
-                RenderStatusLine(r.Config, r.Untrusted, r.Result, r.Config?.Padding ?? 0);
+                if (!ReferenceEquals(_refresher, refresher) || !StatusLineEligible) return;
+                RenderStatusLine(refresher.Config, refresher.Untrusted, refresher.Result, refresher.Config?.Padding ?? 0);
             });
         }
 
         internal void RequestStatusLineRefresh(bool force = false)
-            => _refresher?.RequestRefresh(BuildStatusLineContext(), force);
+        {
+            statusLineToggle.IsChecked = owner.service.Snapshot.StatusLineEnabled;
+            statusLineToggle.Visibility = Session.Kind == "claude" && Session.Provider == "claude" ? Visibility.Visible : Visibility.Collapsed;
+            if (!StatusLineEligible)
+            {
+                if (_refresher is { } previous) { previous.Close(); statusLineStopping = Task.WhenAll(statusLineStopping, previous.WhenStopped); _refresher = null; }
+                RenderStatusLine(null, null, null);
+                return;
+            }
+            if (!statusLineStopping.IsCompleted)
+            {
+                if (!statusLineRestartPending) { statusLineRestartPending = true; _ = RestartStatusLineAfterStop(); }
+                return;
+            }
+            InitRefresher();
+            _refresher?.RequestRefresh(BuildStatusLineContext(), force);
+        }
+
+        private async Task RestartStatusLineAfterStop()
+        {
+            await statusLineStopping;
+            owner.DispatcherQueue.TryEnqueue(() =>
+            {
+                statusLineRestartPending = false;
+                if (!owner.closing && owner.service.Snapshot.Sessions.Any(s => s.Id == id) && StatusLineEligible) RequestStatusLineRefresh(force: true);
+            });
+        }
+
+        private bool StatusLineEligible => owner.service.Snapshot.StatusLineEnabled && Session.Kind == "claude" && Session.Provider == "claude";
+
+        private void InitializeStatusLineToggle(StackPanel header)
+        {
+            AutomationProperties.SetName(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
+            ToolTipService.SetToolTip(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
+            statusLineToggle.Click += async (_, _) => await owner.Act(() => owner.SetStatusLineEnabled(statusLineToggle.IsChecked == true));
+            header.Children.Add(statusLineToggle);
+        }
 
         private StatusLineContext BuildStatusLineContext()
         {

@@ -34,51 +34,21 @@ public sealed partial class MainWindow
     private Func<StackPanel> BuilderFor(string slotId) => slotId switch
     {
         SettingsSections.Display => BuildDisplaySection,
+        SettingsSections.Styles => BuildStylesSection,
+        SettingsSections.MobileRemote => BuildMobileRemoteSection,
+        SettingsSections.Companion => BuildCompanionSection,
         SettingsSections.PhaseModels => BuildPhaseModelsSection,
         SettingsSections.Components => BuildComponentsSection,
         SettingsSections.CliUpdate => BuildCliUpdateSectionFromState,
         SettingsSections.Providers => BuildProvidersSection,
         SettingsSections.CliAccounts => BuildCliAccountsSectionFromState,
+        SettingsSections.ClaudeMods => BuildClaudeModsSection,
         SettingsSections.AppUpdate => BuildAppUpdateSectionFromState,
         SettingsSections.AppInfo => BuildAppInfoSection,
         _ => throw new InvalidOperationException("no Settings builder registered for slot " + slotId),
     };
 
-    private Task OpenSettings() => Act(async () =>
-    {
-        var content = new StackPanel { Spacing = 0, MinWidth = 420, MaxWidth = 540 };
-        foreach (var section in GetSettingsSections())
-            content.Children.Add(BuildSectionContainer(section.Title, section.Build()));
-
-        // The CLI account statuses are read when the section opens, and its rows
-        // are replaced as soon as the answers arrive — Settings never waits on a
-        // CLI. The smoke run injects fixtures instead and starts no CLI at all.
-        if (!options.SmokeTest)
-        {
-            var accountsSlot = content.Children.OfType<StackPanel>().FirstOrDefault(wrapper =>
-                wrapper.Children.OfType<TextBlock>().FirstOrDefault()?.Text == CliAccountStrings.SectionTitle);
-            if (accountsSlot is not null)
-                _ = RefreshCliAccounts().ContinueWith(_ => DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (accountsSlot.Children.Count > 1)
-                        accountsSlot.Children[1] = BuildCliAccountsSectionFromState();
-                }), TaskScheduler.Default);
-        }
-
-        var scroll = new ScrollViewer
-        {
-            Content = content,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            MaxHeight = 520,
-        };
-        await new ContentDialog
-        {
-            Title = Locale.Get("settings.settingsWindowTitle"),
-            Content = scroll,
-            CloseButtonText = Locale.Get("settings.closeButton"),
-            XamlRoot = root.XamlRoot,
-        }.ShowAsync();
-    });
+    private Task OpenSettings() => Act(ShowCategorizedSettingsAsync);
 
     private static StackPanel BuildSectionContainer(string title, StackPanel body)
     {
@@ -127,6 +97,15 @@ public sealed partial class MainWindow
         panel.Children.Add(language);
 
         panel.Children.Add(BuildNotificationSettingsSection());
+        var statusLineToggle = new ToggleSwitch
+        {
+            Header = Locale.Get("settings.display.statusLineToggle"),
+            IsOn = service.Snapshot.StatusLineEnabled,
+        };
+        AutomationProperties.SetAutomationId(statusLineToggle, "settings-status-line");
+        statusLineToggle.Toggled += async (_, _) => await Act(() => SetStatusLineEnabled(statusLineToggle.IsOn));
+        panel.Children.Add(statusLineToggle);
+        panel.Children.Add(new TextBlock { Text = Locale.Get("settings.display.statusLineDescription"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = .65 });
 
         // Browser engine toggle — opt-in, off by default; restart required to apply.
         var browserToggle = new ToggleSwitch
@@ -139,7 +118,18 @@ public sealed partial class MainWindow
         browserToggle.Toggled += async (_, _) =>
             await Act(async () => await service.UpdateAsync(s => s with { BrowserEngineEnabled = browserToggle.IsOn }));
         panel.Children.Add(browserToggle);
+        panel.Children.Add(BuildAgentWebOpenSetting());
 
+        return panel;
+    }
+
+    private StackPanel BuildClaudeModsSection()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        var mods = runtime?.Mods;
+        panel.Children.Add(new TextBlock { Text = mods?.Detail ?? Locale.Get("window.status.checkingRuntime"), TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        if (mods is not null)
+            panel.Children.Add(new TextBlock { Text = Locale.Get("settings.claudeMods.compatLabel") + "  " + mods.MinimumVersion, FontSize = 12, IsTextSelectionEnabled = true });
         return panel;
     }
 
@@ -745,7 +735,7 @@ public sealed partial class MainWindow
             Content = new ScrollViewer { Content = argsList, MaxHeight = 240 },
             PrimaryButtonText = Locale.Get("settings.toolkit.confirmInstall"),
             CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
-            XamlRoot = root.XamlRoot,
+            XamlRoot = SettingsXamlRoot,
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
 
@@ -779,7 +769,7 @@ public sealed partial class MainWindow
     {
         var picker = new FileOpenPicker();
         picker.FileTypeFilter.Add(".json");
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(settingsWindow ?? this));
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
         var json = await Windows.Storage.FileIO.ReadTextAsync(file);
@@ -791,7 +781,7 @@ public sealed partial class MainWindow
                 Title = "toolkit",
                 Content = new TextBlock { Text = Locale.Get("settings.toolkit.errorEntryFileTemplate").Replace("{name}", file.Name), TextWrapping = TextWrapping.Wrap },
                 CloseButtonText = Locale.Get("settings.toolkit.cancelButton"),
-                XamlRoot = root.XamlRoot,
+                XamlRoot = SettingsXamlRoot,
             }.ShowAsync();
             return;
         }
@@ -807,7 +797,7 @@ public sealed partial class MainWindow
         var picker = new FileSavePicker();
         picker.FileTypeChoices.Add("JSON", [".json"]);
         picker.SuggestedFileName = "toolkit";
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(settingsWindow ?? this));
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
         var export = store.Export();
@@ -820,7 +810,7 @@ public sealed partial class MainWindow
     {
         var picker = new FileOpenPicker();
         picker.FileTypeFilter.Add(".json");
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(settingsWindow ?? this));
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
         var json = await Windows.Storage.FileIO.ReadTextAsync(file);
@@ -912,6 +902,8 @@ public sealed partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
             });
 
+            if (status.Detail.Length > 0)
+                row.Children.Add(new TextBlock { Text = status.Detail, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap });
             if (status.Installed)
             {
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -938,6 +930,14 @@ public sealed partial class MainWindow
                         () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
                 }
                 if (buttons.Children.Count > 0) row.Children.Add(buttons);
+                if (status.Provider == "claude")
+                {
+                    var settingsButtons = new StackPanel { Spacing = 6 };
+                    settingsButtons.Children.Add(SafeButton(Locale.Get("settings.cliAccounts.bedrockButton"), () => StartCliSignIn("claude", CliLoginOption.Bedrock)));
+                    settingsButtons.Children.Add(SafeButton(Locale.Get("settings.cliAccounts.resetModelsButton"), ResetClaudeModels));
+                    settingsButtons.Children.Add(SafeButton(Locale.Get("settings.cliAccounts.resetBedrockButton"), ResetClaudeBedrock));
+                    row.Children.Add(settingsButtons);
+                }
             }
             panel.Children.Add(row);
         }
@@ -949,15 +949,18 @@ public sealed partial class MainWindow
     // login command. The terminal rule lives in Core (CliAccountTerminal).
     private async Task StartCliSignIn(string provider, CliLoginOption option)
     {
+        RequireIdleAccount(provider);
         if (CliAccountSupport.LoginArguments(provider, option) is not { } argv) return;
-        await accountsCoordinator.StartSignInAsync(argv);
-        await RefreshCliAccounts();
+        accountChanges.TryAdd(provider, 0);
+        try { await accountsCoordinator.StartSignInAsync(argv); await RefreshCliAccounts(); }
+        finally { accountChanges.TryRemove(provider, out _); }
     }
 
     // The macOS confirmation: the stored sign-in of that CLI is removed, and this
     // also applies to the CLI used directly in a terminal.
     private async Task ConfirmCliSignOut(string provider)
     {
+        RequireIdleAccount(provider);
         var label = CliUpdateService.ProviderLabel(provider);
         var dialog = new ContentDialog
         {
@@ -969,14 +972,56 @@ public sealed partial class MainWindow
             },
             PrimaryButtonText = CliAccountStrings.ButtonLogout,
             CloseButtonText = CliAccountStrings.ButtonCancel,
-            XamlRoot = root.XamlRoot,
+            XamlRoot = SettingsXamlRoot,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-        await accountsCoordinator.LogoutAsync(provider);
+        RequireIdleAccount(provider);
+        accountChanges.TryAdd(provider, 0);
+        try { await accountsCoordinator.LogoutAsync(provider); await RefreshCliAccounts(); }
+        finally { accountChanges.TryRemove(provider, out _); }
     }
 
     // Read the statuses when the section opens and after a sign-in terminal closes.
-    internal Task RefreshCliAccounts() => accountsCoordinator.RefreshAsync(CliAccountProviders);
+    internal async Task RefreshCliAccounts()
+    {
+        await accountsCoordinator.RefreshAsync(CliAccountProviders);
+        if (await ReloadProviderModels()) RefreshEnvironment();
+    }
+
+    private int modelRefreshRevision;
+    private async Task<bool> ReloadProviderModels()
+    {
+        var state = service.Snapshot;
+        var workspaceId = state.ActiveWorkspaceId;
+        var path = state.Workspaces.FirstOrDefault(w => w.Id == workspaceId)?.Path;
+        var revision = ++modelRefreshRevision;
+        var next = await service.Providers.GetRuntimeAsync(true, path);
+        if (closing || revision != modelRefreshRevision || service.Snapshot.ActiveWorkspaceId != workspaceId) return false;
+        runtime = next;
+        return true;
+    }
+
+    private void RequireIdleAccount(string provider)
+    {
+        if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
+        if (coordinator.IsUpdating) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
+        if (service.HasActiveProvider(provider)) throw new InvalidOperationException(Locale.Get("settings.cliAccounts.waitForRuns"));
+    }
+    private async Task ResetClaudeModels()
+    {
+        RequireIdleAccount("claude");
+        await service.UpdateAsync(snapshot => snapshot with { Sessions = snapshot.Sessions.Select(pane => pane.Kind == "claude" && pane.Provider == "claude" ? pane with { Model = "default", Settings = pane.Settings with { Effort = "default" } } : pane).ToList() });
+        await RefreshCliAccounts(); Render();
+    }
+    private async Task ResetClaudeBedrock()
+    {
+        RequireIdleAccount("claude");
+        var dialog = new ContentDialog { Title = Locale.Get("settings.cliAccounts.resetBedrockButton"), Content = new TextBlock { Text = Locale.Get("settings.cliAccounts.resetBedrockConfirm"), TextWrapping = TextWrapping.Wrap }, PrimaryButtonText = Locale.Get("settings.cliAccounts.resetBedrockButton"), CloseButtonText = CliAccountStrings.ButtonCancel, XamlRoot = SettingsXamlRoot };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        RequireIdleAccount("claude");
+        BedrockSettings.ResetUserSettings(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), CliEnvironment.Current());
+        await ResetClaudeModels();
+    }
 
     // 앱 정보 — usage notes; behaviour unchanged.
     private StackPanel BuildAppInfoSection()

@@ -15,6 +15,7 @@ public sealed class DesktopService : IAsyncDisposable
     /// <summary>Pictures agents showed, under the app data folder (macOS <c>image-cache</c>); transcripts hold only references.</summary>
     public AgentImageCache Images { get; }
     public event Action<RunEvent>? RunEventReceived;
+    public event Action<StartRunRequest>? RequestStarting;
     /// <summary>
     /// A Claude tool-permission request waiting in — or settled by — the local
     /// run pane. It is deliberately not a <see cref="RunEvent"/>: an ephemeral
@@ -29,8 +30,21 @@ public sealed class DesktopService : IAsyncDisposable
         local = new(ResolveLocal, Providers, pluginDirectory, Receive, value => ToolPermissionChanged?.Invoke(value), Images);
     }
     /// <summary>이번만 허용 / 거부 — the only way a request is ever answered, one request at a time.</summary>
+    public bool HasActiveProvider(string provider)
+    {
+        lock (sync) return snapshot.Sessions.Any(s => s.Kind == "claude" && s.Provider == provider && (s.Status == "running" || routes.ContainsKey(s.Id)));
+    }
     public void RespondToToolPermission(string sessionId, string requestId, bool allow)
         => local.RespondToToolPermission(sessionId, requestId, allow);
+    public void ConfigureAgentIO(Func<StartRunRequest, Workspace, AgentIOBinding?>? factory) => local.AgentIOBindingFactory = factory;
+    public bool IsSessionRunning(string id) => local.IsRunning(id);
+    public async Task<bool> TrySteerAsync(string sessionId, string text)
+    {
+        if (!await local.TrySteerAsync(sessionId, text)) return false;
+        Receive(RunEvent.Log(sessionId, "user", text, "claude")); return true;
+    }
+    public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
+        => local.AnswerQuestionnaire(sessionId, requestId, answers);
     public async Task InitializeAsync() { var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded; }
     private Task<Workspace> ResolveLocal(string id)
     {
@@ -100,9 +114,10 @@ public sealed class DesktopService : IAsyncDisposable
             var history = request.Input + (request.Attachments is { Count: > 0 } ? "\n\n" + AttachmentSupport.Summary(request.Attachments) : "");
             snapshot = snapshot.Apply(RunEvent.State(request.SessionId, "running")).Apply(RunEvent.Log(request.SessionId, "user", history, request.Kind == "claude" ? request.Provider : null)); _ = QueueSave();
         }
-        RunEventReceived?.Invoke(RunEvent.State(request.SessionId, "running"));
         try
         {
+            RequestStarting?.Invoke(request);
+            RunEventReceived?.Invoke(RunEvent.State(request.SessionId, "running"));
             Task started;
             lock (sync)
             {

@@ -59,7 +59,7 @@ internal sealed class CodexCollaborationItem
 /// Observes public CLI/Mods events for one run and emits node snapshots. It
 /// never reads another session's transcript or guesses child prompts.
 /// Port of macOS ExecutionGraphTracker.
-public sealed class ExecutionGraphTracker
+public sealed partial class ExecutionGraphTracker
 {
     private readonly record struct Owner(bool IsAgent, string Id)
     {
@@ -72,6 +72,9 @@ public sealed class ExecutionGraphTracker
         public List<AgentActivity> Activities = [];
     }
     private static readonly Regex TaskLaunch = new(@"background with ID: (?<task>[A-Za-z0-9_-]+)");
+    private readonly object sync = new();
+    public string RunID => runID;
+    public string? CodexRootThread { get { lock (sync) return codexRootThread; } }
     private readonly string runID;
     private readonly string mainID;
     /// "claude" observes stream-json plus Mods; "codex" observes exec JSONL.
@@ -118,7 +121,8 @@ public sealed class ExecutionGraphTracker
     /// A message the user sent while the turn ran. Claude reads it from stdin
     /// between tool calls; the block under main shows it until the next
     /// root-level answer, which is taken as the reply.
-    public void Steer(string id, string text)
+    public void Steer(string id, string text) { lock (sync) SteerLocked(id, text); }
+    private void SteerLocked(string id, string text)
     {
         if (finished || Provider != "claude" || nodes.Count >= ExecutionGraphSupport.MaximumNodes) return;
         var nodeID = ExecutionGraphSupport.Identifier(runID, "steer:" + id);
@@ -248,7 +252,8 @@ public sealed class ExecutionGraphTracker
 
     /// Observe hierarchy before the stream parser creates the corresponding tool
     /// activity, so child tool rows take the same route as child Markdown.
-    public void Consume(JsonElement value)
+    public void Consume(JsonElement value) { lock (sync) ConsumeLocked(value); }
+    private void ConsumeLocked(JsonElement value)
     {
         if (finished || value.ValueKind != JsonValueKind.Object) return;
         if (Provider == "codex") { ConsumeCodex(value); return; }
@@ -555,7 +560,8 @@ public sealed class ExecutionGraphTracker
         }
     }
 
-    public void ReceiveMod(ModMetadata value)
+    public void ReceiveMod(ModMetadata value) { lock (sync) ReceiveModLocked(value); }
+    private void ReceiveModLocked(ModMetadata value)
     {
         if (finished) return;
         if (Key(value.ToolUseId) is { } tool)
@@ -601,7 +607,8 @@ public sealed class ExecutionGraphTracker
 
     /// Return true for a known child owner, including an agent whose spawn
     /// envelope is still in flight. Such rows must never leak into main logs.
-    public bool Activity(AgentActivity value, string? toolID = null)
+    public bool Activity(AgentActivity value, string? toolID = null) { lock (sync) return ActivityLocked(value, toolID); }
+    private bool ActivityLocked(AgentActivity value, string? toolID)
     {
         if (finished) return false;
         var owner = toolID is not null && toolOwners.TryGetValue(toolID, out var byTool) ? byTool
@@ -644,7 +651,8 @@ public sealed class ExecutionGraphTracker
     }
     private void AppendActivity(AgentActivity value, string id) => Append(Entry(value.Id, "system", value.Summary, value), id);
 
-    public void Finish(string state)
+    public void Finish(string state) { lock (sync) FinishLocked(state); }
+    private void FinishLocked(string state)
     {
         if (finished || !ExecutionGraphSupport.Terminal(state)) return;
         // A dropped spawn may leave only an actual agent ID. Preserve those
@@ -685,12 +693,13 @@ public sealed class ExecutionGraphTracker
 
     /// <summary>
     /// The request's own graph as one MightyGraphRun, from the latest snapshot of
-    /// every node. Only meaningful once Finish() settled the unfinished blocks.
+    /// every node. Live snapshots are opt-in; Finish() settles unfinished blocks.
     /// Mirrors the projection macOS RunSession.recordGraph builds node by node.
     /// </summary>
-    public MightyGraphRun? BuildRun()
+    public MightyGraphRun? BuildRun(bool includeRunning = false) { lock (sync) return BuildRunLocked(includeRunning); }
+    private MightyGraphRun? BuildRunLocked(bool includeRunning)
     {
-        if (!finished || !nodes.TryGetValue(mainID, out var main)) return null;
+        if (!finished && !includeRunning || !nodes.TryGetValue(mainID, out var main)) return null;
         var run = new MightyGraphRun
         {
             Id = runID,

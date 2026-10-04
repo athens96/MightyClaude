@@ -266,7 +266,7 @@
 - [ ] (not checked on device) The wheel pans up and down, a horizontal wheel or Shift+wheel pans left and right, and dragging the empty background pans too
 - [ ] (not checked on device) "Zoom out / 100% / Zoom in" goes from 50% to 150% in 10% steps, the end buttons turn off at the limits, and the percent button returns to 100%
 - [ ] (not checked on device) Clicking a block shows "Block scroll" and the wheel scrolls only that block; clicking the background or Esc clears it
-- [ ] (not checked on device) The "Files in result" panel opens with its count, a file opens in its default app, and "Close file list" keeps it closed until the next result
+- [ ] (not checked on device) The "Files in result" panel opens with its count, a file opens in the same inline preview as its transcript link, and "Close file list" keeps it closed until the next result
 - [ ] (not checked on device) No raw keys anywhere on the canvas; switching back to "Default" keeps the run and the draft
 
 ### 컴포넌트 (설치 대시보드) (`docs/toolkit.md`, 시드 `seed_windows_b2_s3_components_toolkit`)
@@ -427,3 +427,52 @@
 ---
 
 *macOS 기준: macOS 동작이 참조 구현이다. Cmd → Ctrl 단축키 대응 외에 동작이 다른 경우 이슈로 기록한다.*
+
+## 2026-10-04 전체 기능 이식 후 Windows 실기 확인
+
+아래 항목은 코드 구현이나 macOS의 Core 테스트 통과만으로 체크하지 않는다. `scripts/test-native-windows.ps1`의 임시 프로필에 생성되는 `smoke-result.json`, `smoke-window.png`, `smoke-window-light.png`, `smoke-files.png`와 해당 기기의 실행 기록을 함께 보관한다. 실행하지 않은 항목은 계속 빈 체크 상태로 둔다.
+
+### 시작·설정·전체 디자인
+
+- [ ] 첫 실행 때 Mighty Claude 로고와 진행 표시가 보이고, 상태 로드 완료 또는 오류 이후 스플래시가 사라진다.
+- [ ] 다크/라이트 테마에서 사이드바·작업 현황·입력창·설정 창·참조 뷰어의 글자와 버튼이 읽힌다.
+- [ ] 설정 카테고리 선택을 바꾼 뒤 재실행하면 같은 카테고리로 열리고, 파일 선택/계정/확인 대화상자가 설정 창 앞에 표시된다.
+- [ ] 100%/150%/200% 배율에서 사이드바 크기 조절과 작업 현황의 긴 한글 제목·모델·사용량 줄이 잘리지 않는다.
+- [ ] Ctrl+K 검색, Ctrl+T 터미널, Ctrl+, 설정, 기존 Ctrl+O/N/E 단축키가 입력 중/대화상자 중에도 의도대로 작동한다.
+
+### 한글 입력·클립보드·실행 중 큐
+
+- [ ] 한글 입력 → 브라우저 앱으로 전환 → 마이티 클러드 복귀를 20회 반복해 모든 입력창에서 포커스와 조합이 유지된다.
+- [ ] 한글 조합 중 Enter는 조합만 완료하고, 조합이 끝난 상태의 Enter 한 번으로 전송된다. Shift+Enter는 줄바꿈이다.
+- [ ] 입력창을 클릭한 직후, 창 이동 직후, 모델/설정 메뉴를 닫은 직후 모두 타이핑이 가능하다.
+- [ ] 한글/영문 양쪽에서 Ctrl+C/V와 우클릭 복사/붙여넣기가 입력창·대화 기록·코드 블록·터미널에서 작동한다.
+- [ ] 실행 중 입력은 순서대로 대기열에 들어가고, Claude Ctrl+Enter 조향 성공 시 중복 실행되지 않는다. 조향 불가 시 큐에 보존된다.
+- [ ] 실행 오류는 다음 대기 요청을 자동 실행하지 않고, 다음 실행 버튼으로 재개할 수 있다. 중지는 대기열을 비운다.
+- [ ] 스타일 승인 대화상자나 재로그인 재시도가 진행 중일 때 중지를 누르면 이후 동의/응답으로 새 실행이 시작되지 않는다.
+
+### 결과·그래프·참조·그림
+
+- [ ] 결과 파일 목록과 결과 본문의 같은 파일 링크는 같은 인라인 뷰어를 연다. 파일 목록은 경로 기준으로 중복되지 않는다.
+- [ ] 참조 뷰어 좌우 이동·크기 조절·초기화·Esc 닫기·Explorer·기본 앱 열기가 작동하며 마지막 줄이 조절 손잡이에 가리지 않는다.
+- [ ] 로컬 HTML의 차트와 스크립트가 표시되고, 외부 링크/다운로드/새 창이 앱의 브릿지에 접근하지 않는다.
+- [ ] 요청·결과·하위 에이전트·입력 블록의 크기를 조절/펼치기/초기화한 뒤 재실행하면 저장한 크기가 복원된다.
+- [ ] 그래프에서 텍스트를 선택하는 중에 새 출력이 와도 선택이 사라지지 않는다. 코드 복사에는 UI 제목이나 버튼 글자가 섞이지 않는다.
+- [ ] 도구 세부 내용을 접고 펼칠 수 있고, 새 출력이 와도 접기 상태가 유지된다.
+- [ ] EXIF 방향이 있는 세로 JPEG가 가로로 돌아가지 않는다. SVG와 TIFF가 대화 기록·파일·모바일 미리보기에 표시된다. 이미지 열기·확대/축소·맞춤·복사·원본 형식 저장을 확인한다.
+- [ ] 실제 Codex가 하위 에이전트와 그 자식 에이전트를 만들면 실행 중부터 중첩 관계가 갱신되며, 다른 창의 세션 내용이 섞이지 않는다.
+- [ ] Codex 하위 에이전트에 후속 요청을 보내면 이전 답은 한 번만 남고 새 실행 상태와 사용량이 갱신된다.
+
+### 질문·로그인·터미널
+
+- [ ] Claude 질문 카드에서 단일/복수 선택·직접 입력·뒤로/다음·답변 전송을 수행한다. 다른 권한 요청 도착 시 입력 중인 칸의 포커스가 유지된다.
+- [ ] 질문 답변 시 CLI가 종료되면 답변 완료로 잘못 표시하지 않고 실패를 알린다.
+- [ ] 최종 인증 오류에서만 로그인 카드가 나타나며, Bedrock/API 키 설정에는 브라우저 재로그인을 잘못 제안하지 않는다.
+- [ ] 로그인 링크/코드 입력/취소/터미널 대안과 로그인 후 원래 첨부 포함 재시도를 실제 CLI로 확인한다. 사용자가 새 요청을 보냈다면 오래된 요청을 재실행하지 않는다.
+- [ ] ConPTY 터미널에서 연속 명령·작업 디렉터리 유지·한글·붙여넣기·리사이즈·선택 복사가 작동한다. 창 닫기 뒤 자식 프로세스가 남지 않는다.
+- [ ] Codex Ask for approval에서 GitLab 명령의 승인/거절이 실제 실행과 연결되고, 일반 터미널 인증이 Windows CLI에서도 읽힌다.
+
+### 모바일·컴패니언
+
+- [ ] QR 페어링과 암호화 릴레이를 통해 실제 휴대폰에서 창 선택·입력·큐·권한·질문·파일 뷰어를 사용한다.
+- [ ] 화면 공유 승인/중지, 화면 크기 변경, 프레임 재전송, 한글 원격 입력과 클립보드를 실제 Windows 캡처 대상으로 확인한다.
+- [ ] 컴패니언의 상태·말풍선·권한 응답·끌기·다중 모니터/DPI 배치·사용자 atlas 선택이 Mac의 의도한 동작과 대응한다.
