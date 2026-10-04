@@ -43,8 +43,13 @@ public sealed partial class MainWindow
             var add = (Button)Control("phaseModels-addButton-claude");
             frame.UpdateLayout(); await WaitUI(() => add.IsLoaded && add.ActualWidth > 0);
             ((IInvokeProvider)new ButtonAutomationPeer(add).GetPattern(PatternInterface.Invoke)).Invoke();
-            await WaitUI(() => service.Snapshot.ModelDefaults?.Claude.RegisteredModels.Any(e => e.Name == "registered-phase-fixture") == true
-                && VisualChildren(frame).OfType<FrameworkElement>().Any(e => AutomationProperties.GetAutomationId(e) == "phaseModels-registered-claude-registered-phase-fixture"));
+            await WaitUI(() =>
+            {
+                var refusal = VisualChildren(frame).OfType<TextBlock>().FirstOrDefault(e => AutomationProperties.GetAutomationId(e) == "phaseModels-error-claude")?.Text;
+                Require(string.IsNullOrEmpty(refusal), "Native phase model registration was rejected: " + refusal);
+                return service.Snapshot.ModelDefaults?.Claude.RegisteredModels.Any(e => e.Name == "registered-phase-fixture") == true
+                    && VisualChildren(frame).OfType<FrameworkElement>().Any(e => AutomationProperties.GetAutomationId(e) == "phaseModels-registered-claude-registered-phase-fixture");
+            }, "Add must persist the model and render its registered row");
             var registered = service.Snapshot.ModelDefaults!.Claude.RegisteredModels.Single();
             Require(registered.SupportsEffort && registered.SupportedEffortLevels!.SequenceEqual(["max"]) && service.Snapshot.ModelDefaults.Codex.RegisteredModels.Count == 0, "Registration must preserve provider and capabilities.");
             var registrationRow = Control("phaseModels-registered-claude-registered-phase-fixture");

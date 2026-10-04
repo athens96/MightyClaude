@@ -830,8 +830,8 @@ public sealed partial class MainWindow
         CollectVisibleStrings(pane.GraphCanvas, leakStrings);
         leakStrings.Add(pane.GraphTotalText);
         leakStrings.AddRange(pane.GraphHeaderTextsForSmoke());
-        await SettleDesktopCapture(pane.Container);
-        await CaptureElement(pane.Container, Path.Combine(options.ProfileDirectory!, "smoke-mighty-graph.png"));
+        await SettleDesktopCapture(root);
+        await CaptureSmoke(Path.Combine(options.ProfileDirectory!, "smoke-mighty-graph.png"));
 
         await pane.SetAgentViewMode("default");
         root.UpdateLayout(); await Task.Delay(30);
