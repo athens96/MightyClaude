@@ -28,6 +28,11 @@ internal sealed partial class AgentTranscript
     {
         AutomationProperties.SetName(View, Locale.Get("transcript.accessibility"));
         InitializeTranscriptActions();
+        // A RichEditBox paints its theme foreground over the whole document when the theme changes or it
+        // is shown again, wiping the RTF's colours; the last session is drawn again once it has done so.
+        void Repaint() { if (last is not null) View.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { rendered = ""; Redraw(); }); }
+        View.ActualThemeChanged += (_, _) => Repaint();
+        View.Loaded += (_, _) => Repaint();
         ScrollViewer.SetVerticalScrollBarVisibility(View, ScrollBarVisibility.Auto);
         View.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, e) => { if (e.GetCurrentPoint(View).Properties.IsLeftButtonPressed) selecting = true; }), true);
         void Finish(object sender, PointerRoutedEventArgs args) { selecting = false; if (deferred is { } value) { deferred = null; Update(value.Session, value.Light); } SelectionEnded?.Invoke(); }
