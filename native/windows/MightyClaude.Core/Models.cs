@@ -206,6 +206,9 @@ public sealed record PhaseModelsSnapshot
     [JsonPropertyName("codexReviewModel")] public string CodexReviewModel { get; init; } = "default";
     [JsonPropertyName("codexSubagentDefault")] public string CodexSubagentDefault { get; init; } = "default";
     [JsonPropertyName("codexPlanModeReasoningEffort")] public string CodexPlanModeReasoningEffort { get; init; } = "default";
+    public string? ClaudeMainEffort { get; init; }
+    public string? CodexMainEffort { get; init; }
+    public string? CodexSubagentEffort { get; init; }
 }
 
 public sealed record AppSnapshot
@@ -215,6 +218,9 @@ public sealed record AppSnapshot
     public List<RunSession> Sessions { get; init; } = [];
     public string? ActiveWorkspaceId { get; init; }
     public string? ActiveSessionId { get; init; }
+    // Null migrates old snapshots by opening the active workspace; [] means all closed.
+    [JsonConverter(typeof(WorkspaceDisclosureConverter))]
+    public List<string>? ExpandedWorkspaceIds { get; init; }
     public string Layout { get; init; } = "grid";
     public Dictionary<string, PaneLayoutNode>? PaneLayouts { get; init; }
     public Dictionary<string, string>? PaneLayoutModes { get; init; }
@@ -226,6 +232,7 @@ public sealed record AppSnapshot
     public bool CompletionNotificationsEnabled { get; init; } = true;
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? AutoUpdateCLIs { get; init; }
+    public bool? AutoUpdatePlugins { get; init; }
     // Additive with a default, so Version stays 1: StateStore resets every
     // field when Version is not 1. Off out of the box — nothing is looked up
     // directly until the user switches it on in the usage popover.
@@ -259,6 +266,8 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     // Local style selection is the only source of these grants. Never accepted
     // from remote JSON, persisted to history, or inferred from a style id alone.
     [JsonIgnore] public IReadOnlyList<string>? StyleAutoAllow { get; init; }
+    // Captured from local application settings at acceptance, never supplied by remote JSON.
+    [JsonIgnore] public PhaseModelsSnapshot? PhaseModels { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];

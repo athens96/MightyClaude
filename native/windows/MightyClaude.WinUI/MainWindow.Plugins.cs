@@ -157,11 +157,12 @@ public sealed partial class MainWindow
         // synchronously), redraws to show progress, awaits, redraws the result.
         async Task<ClaudePluginOperationResult> OperateAsync(Func<Task<ClaudePluginOperationResult>> op)
         {
+            if (PluginMutationBlockReason(provider, workspace) is { } block)
+            { operationResult.Text = block; operationResult.Visibility = Visibility.Visible; return new(ClaudePluginStatus.Skipped, block); }
             var task = op();
-            RenderPlugins();
-            var result = await task;
-            if (!closing) RenderPlugins();
-            return result;
+            NotifyAutomaticUpdates(); RenderPlugins();
+            try { var result = await task; if (!closing) RenderPlugins(); return result; }
+            finally { if (!closing) { NotifyAutomaticUpdates(); TrackLoginTask(ResendLoginRequestsAfterUpdate()); } }
         }
 
         void RenderPlugins()
@@ -244,7 +245,8 @@ public sealed partial class MainWindow
             try
             {
                 var smokeRead = provider == ClaudePluginBrowser.CodexProvider ? smokeCodexPluginRead : smokePluginRead;
-                snapshot = smokeRead is { } fixture
+                snapshot = AnyCliUpdateRunning ? new ClaudePluginSnapshot { Status = ClaudePluginStatus.Busy, Detail = Locale.Get("loginRecovery.updating") }
+                    : smokeRead is { } fixture
                     ? await fixture(workspace)
                     // The read never runs on the UI thread; the window only comes back to redraw.
                     : await Task.Run(() => reader.SnapshotAsync(workspace));

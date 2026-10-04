@@ -22,7 +22,7 @@ namespace MightyClaude.Core;
 // A missing CLI, a CLI without the JSON plugin commands, a timeout and
 // malformed or oversized output each become a status with its macOS sentence,
 // never an exception the screen has to catch.
-public sealed class CodexPluginReader : IPluginReader
+public sealed partial class CodexPluginReader : IPluginReader
 {
     /// macOS CodexPluginService: readTimeout 20s, probes at min(4, read).
     public static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);

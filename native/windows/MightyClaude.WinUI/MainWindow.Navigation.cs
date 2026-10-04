@@ -61,6 +61,8 @@ public sealed partial class MainWindow
         foreach (var session in state.Sessions)
         {
             var pending = PendingRequests(session.Id);
+            if (sidebarSessionButtons.TryGetValue(session.Id, out var sidebarButton))
+                AutomationProperties.SetName(sidebarButton, session.Title + (ProviderCatalog.ShowsBetaBadge(session) ? ", " + Locale.Get("badge.betaAccessibility") : "") + ", " + StateLabel(StatusGlyph.DisplayStatus(session.Status, pending)));
             if (sidebarDetails.TryGetValue(session.Id, out var meta)) meta.Text = WorkDashboard.SidebarDetail(WorkDashboard.MakeCard(session, DashboardAttention(session.Id)), DateTimeOffset.UtcNow);
             foreach (var values in new[] { sessionIndicators, tabIndicators })
             {
@@ -74,12 +76,14 @@ public sealed partial class MainWindow
     }
     private Task SelectWorkspace(string id) => Act(async () =>
     {
+        if (!service.Snapshot.Workspaces.Any(workspace => workspace.Id == id)) return;
         HideDashboard();
         await service.UpdateAsync(s =>
         {
+            if (!s.Workspaces.Any(workspace => workspace.Id == id)) return s;
             var preferred = s.PaneLayoutActiveSessionIds?.GetValueOrDefault(id);
             var selected = s.Sessions.FirstOrDefault(p => p.WorkspaceId == id && p.Id == preferred)?.Id ?? PaneLayout.Groups(EffectiveLayout(s, id)).Select(g => g.SelectedSessionId).FirstOrDefault();
-            return s with { ActiveWorkspaceId = id, ActiveSessionId = selected };
+            return WorkspaceDisclosure.Open(s, id) with { ActiveWorkspaceId = id, ActiveSessionId = selected };
         });
         Render();
         await RefreshRuntime();

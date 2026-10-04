@@ -19,6 +19,8 @@ public sealed partial class MainWindow
     private Task StartFromComposer(StartRunRequest request)
     {
         if (loginBusy.ContainsKey(request.Provider) || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
+        if (automaticUpdateRunning && automaticallyUpdatingProvider == request.Provider) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
+        if (ManualMutationBlockReason(new RunSession { Kind = request.Kind, Provider = request.Provider }) is { } block) throw new InvalidOperationException(block);
         return options.SmokeTest ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("스모크 모드에서는 실제 CLI를 실행하지 않습니다.") : service.StartAsync(request);
     }
 
@@ -59,9 +61,15 @@ public sealed partial class MainWindow
             Checkpoint("styles", "running");
             result["styles"] = await pane.RunStylesSmoke();
             Checkpoint("styles", "passed");
+            Checkpoint("nextActions", "running");
+            result["nextActions"] = await pane.RunNextActionsSmoke();
+            Checkpoint("nextActions", "passed");
             Checkpoint("smallParity", "running");
             result["smallParity"] = await RunSmallParitySmoke(workspace);
             Checkpoint("smallParity", "passed");
+            Checkpoint("automaticUpdates", "running");
+            result["automaticUpdates"] = await RunAutomaticUpdatesSmoke(workspace);
+            Checkpoint("automaticUpdates", "passed");
             Checkpoint("companion", "running");
             result["companion"] = await RunCompanionSmoke();
             Checkpoint("companion", "passed");
@@ -76,6 +84,9 @@ public sealed partial class MainWindow
             Checkpoint("nativeTerminal", "running");
             result["nativeTerminal"] = await RunTerminalSmoke();
             Checkpoint("nativeTerminal", "passed");
+            Checkpoint("workspaceSidebar", "running");
+            result["workspaceSidebar"] = await RunSidebarSmoke();
+            Checkpoint("workspaceSidebar", "passed");
             Checkpoint("desktopSurfaces", "running");
             result["desktopSurfaces"] = await RunDesktopSurfaceSmoke();
             Checkpoint("desktopSurfaces", "passed");
@@ -271,18 +282,18 @@ public sealed partial class MainWindow
     // 매인 손잡이들이 다른 실행 줄은 혼합으로 보여야 한다.
     private bool RunPhaseModelsSectionSmoke()
     {
-        var panel = BuildPhaseModelsSection(new PhaseModelsSnapshot { ClaudeMain = "fixture-main" }, PhaseModelSection.SmokeFixtureTools);
-        var phaseRows = panel.Children.OfType<ComboBox>()
-            .Where(box => AutomationProperties.GetAutomationId(box).StartsWith(PhaseRowIdPrefix, StringComparison.Ordinal))
-            .ToList();
-        Require(phaseRows.Count >= 4, "페이즈별 모델 칸에 페이즈 줄 넷이 없습니다: " + phaseRows.Count);
-        foreach (var phase in PhaseModelSection.Phases)
-            Require(phaseRows.Any(box => AutomationProperties.GetAutomationId(box) == PhaseRowIdPrefix + phase), "페이즈 줄이 없습니다: " + phase);
-        var headings = panel.Children.OfType<TextBlock>().Select(text => text.Text).ToList();
-        foreach (var tool in new[] { PhaseModelSection.ClaudeTool, PhaseModelSection.CodexTool, PhaseModelSection.OmcTool, PhaseModelSection.OuroborosTool })
-            Require(headings.Contains(PhaseModelSection.ToolLabel(tool)), "도구 묶음이 없습니다: " + tool);
-        var execution = phaseRows.Single(box => AutomationProperties.GetAutomationId(box) == PhaseRowIdPrefix + Phase.Execution);
-        Require(execution.SelectedItem is ComboBoxItem { Tag: string tag } && tag == PhaseModelSection.MixedSentinel, "값이 다른 실행 줄이 혼합으로 보이지 않습니다.");
+        var panel = BuildPhaseModelsSection(new PhaseModelsSnapshot { ClaudeMain = "fixture-main", CodexSubagentEffort = "xhigh" }, PhaseModelSection.SmokeFixtureTools);
+        var elements = PhaseModelElements(panel).ToList();
+        ComboBox Picker(string id) => elements.OfType<ComboBox>().Single(box => AutomationProperties.GetAutomationId(box) == id);
+        Require(elements.Count(e => AutomationProperties.GetAutomationId(e).StartsWith("phaseModels-provider-", StringComparison.Ordinal)) == 2, "Separate Claude and Codex settings are present.");
+        Require(Picker("phaseModels-model-claude-execution").SelectedItem is ComboBoxItem { Tag: PhaseModelSection.MixedSentinel }, "Distinct Claude main/alias values show mixed.");
+        Require(Picker("phaseModels-effort-codex-subagents").SelectedItem is ComboBoxItem { Tag: "xhigh" }, "Saved Codex subagent effort remains visible.");
+        Require(!elements.Any(e => AutomationProperties.GetAutomationId(e) == "phaseModels-model-codex-execution" || AutomationProperties.GetAutomationId(e) == "phaseModels-model-codex-planning"), "Codex main model belongs to the pane.");
+        foreach (var provider in new[] { "claude", "codex" })
+        {
+            Require(elements.OfType<TextBox>().Any(e => AutomationProperties.GetAutomationId(e) == "phaseModels-add-" + provider), "Provider model registration is available.");
+            Require(elements.OfType<CheckBox>().Count(e => AutomationProperties.GetAutomationId(e).StartsWith("phaseModels-addLevel-" + provider + "-", StringComparison.Ordinal)) == Wire.Efforts.Length, "Every supported reasoning level can be registered.");
+        }
         return true;
     }
 
@@ -458,7 +469,7 @@ public sealed partial class MainWindow
             // Verify the new name appears in the snapshot, tab indicator and sidebar
             await WaitUI(() => service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).Title == "변경된 이름");
             Require(tabIndicators.ContainsKey(fixtureSession.Id), "이름 저장 후 탭 지시자가 없습니다.");
-            var sidebarTitleFound = sessionLinks.Children.OfType<Button>()
+            var sidebarTitleFound = sidebarSessionButtons.Values
                 .Select(b => b.Content).OfType<Grid>()
                 .Where(g => g.Children.Count > 1)
                 .Select(g => g.Children[1]).OfType<TextBlock>()
@@ -482,7 +493,7 @@ public sealed partial class MainWindow
             var latest = PaneTitle.Tooltip(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id)) ?? "";
             Require(latest.Length > 0, "스모크 창에 제목이 될 요청이 없습니다.");
             await WaitUI(() => service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id) is { TitleMode: PaneTitle.Automatic } p && p.Title == PaneTitle.Shortened(latest));
-            var sidebarTitle = sessionLinks.Children.OfType<Button>().Select(b => b.Content).OfType<Grid>()
+            var sidebarTitle = sidebarSessionButtons.Values.Select(b => b.Content).OfType<Grid>()
                 .Where(g => g.Children.Count > 1).Select(g => g.Children[1]).OfType<TextBlock>()
                 .FirstOrDefault(t => t.Text == PaneTitle.Shortened(latest));
             Require(sidebarTitle is not null && ToolTipService.GetToolTip(sidebarTitle) as string == latest, "자동 제목의 사이드바 도움말이 최근 요청과 다릅니다.");
@@ -819,6 +830,8 @@ public sealed partial class MainWindow
         CollectVisibleStrings(pane.GraphCanvas, leakStrings);
         leakStrings.Add(pane.GraphTotalText);
         leakStrings.AddRange(pane.GraphHeaderTextsForSmoke());
+        await SettleDesktopCapture(pane.Container);
+        await CaptureElement(pane.Container, Path.Combine(options.ProfileDirectory!, "smoke-mighty-graph.png"));
 
         await pane.SetAgentViewMode("default");
         root.UpdateLayout(); await Task.Delay(30);
@@ -1203,12 +1216,12 @@ public sealed partial class MainWindow
         checks["openProjectText"] = last!.Text;
 
         RenderSidebar();
-        Require(workspaces.Items.Count > 0 && addFolderButton.Visibility == Visibility.Collapsed, "워크스페이스가 보이는데 사이드바 폴더 열기 단추가 보입니다.");
+        Require(workspaces.Children.Count > 0 && addFolderButton.Visibility == Visibility.Collapsed, "워크스페이스가 보이는데 사이드바 폴더 열기 단추가 보입니다.");
         var previous = search.Text;
         try
         {
             search.Text = "no-such-folder-" + Wire.Id(); RenderSidebar();
-            Require(workspaces.Items.Count == 0 && addFolderButton.Visibility == Visibility.Visible, "검색 결과가 없는데 사이드바 폴더 열기 단추가 숨어 있습니다.");
+            Require(workspaces.Children.Count == 0 && addFolderButton.Visibility == Visibility.Visible, "검색 결과가 없는데 사이드바 폴더 열기 단추가 숨어 있습니다.");
         }
         finally { search.Text = previous; RenderSidebar(); }
         Require(addFolderButton.Visibility == Visibility.Collapsed, "검색을 지운 뒤에도 폴더 열기 단추가 남았습니다.");

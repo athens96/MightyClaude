@@ -221,6 +221,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
     public static List<string> Arguments(StartRunRequest value, string pluginDirectory, PhaseModelsSnapshot? phaseModels = null)
     {
         var request = value.Validate(); var settings = request.Settings!; var args = new List<string>();
+        phaseModels = PhaseModelPreferences.Normalize(phaseModels ?? request.PhaseModels);
         if (request.Provider == "claude")
         {
             args.AddRange(["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", "none", "--permission-mode", settings.PermissionMode == "fullAccess" ? "bypassPermissions" : settings.PermissionMode, "--plugin-dir", pluginDirectory]);
@@ -238,8 +239,8 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             }
             if (env.Count > 0) args.AddRange(["--settings", JsonSerializer.Serialize(new { env }, Wire.Json)]);
             // When the session model is default and claudeMain is set, override with --model.
-            if (request.Model == "default" && phaseModels?.ClaudeMain is { } claudeMain && claudeMain != "default")
-                args.AddRange(["--model", claudeMain]);
+            if (request.Model == "default" && (phaseModels?.ClaudeMain is { } claudeMain && claudeMain != "default" || request.ResumeId is not null))
+                args.AddRange(["--model", phaseModels?.ClaudeMain ?? "default"]);
             if (settings.MaxTurns is int turns) args.AddRange(["--max-turns", turns.ToString(CultureInfo.InvariantCulture)]);
             if (settings.MaxBudgetUsd is double budget) args.AddRange(["--max-budget-usd", budget.ToString(CultureInfo.InvariantCulture)]);
         }
@@ -254,6 +255,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
             {
                 if (phaseModels.CodexReviewModel != "default") args.AddRange(["-c", $"review_model=\"{phaseModels.CodexReviewModel}\""]);
                 if (phaseModels.CodexSubagentDefault != "default") args.AddRange(["-c", $"agents.default_subagent_model=\"{phaseModels.CodexSubagentDefault}\""]);
+                if (phaseModels.CodexSubagentEffort is { } subagentEffort) args.AddRange(["-c", $"agents.default_subagent_reasoning_effort=\"{subagentEffort}\""]);
                 if (phaseModels.CodexPlanModeReasoningEffort != "default") args.AddRange(["-c", $"plan_mode_reasoning_effort=\"{phaseModels.CodexPlanModeReasoningEffort}\""]);
             }
             if (approvals)

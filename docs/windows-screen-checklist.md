@@ -164,19 +164,19 @@
 
 **Windows 기기 확인 항목 (한국어)**
 
-- [ ] (기기 미확인) 설정에 "페이즈별 모델" 칸이 "화면" 다음, "CLI 업데이트" 앞에 보인다
-- [ ] (기기 미확인) 계획·실행·검토·서브에이전트 네 줄이 Claude·Codex 자세히 줄 위에 있고, 날 키(`settings.phaseModels.…`)가 하나도 보이지 않는다
-- [ ] (기기 미확인) omc가 설치되어 있으면 omc 묶음에 에이전트 이름과 "(기본: opus)" 같은 설치본 기본 모델이 보이고, 설치되어 있지 않으면 묶음이 없다
-- [ ] (기기 미확인) `%USERPROFILE%\.ouroboros\config.yaml`이 있으면 Ouroboros 묶음에 `*_model` 키가 보이고, 없으면 묶음이 없다
-- [ ] (기기 미확인) 계획 = Opus를 고르면 `%USERPROFILE%\.config\claude-omc\config.jsonc`의 planner·architect·critic과 `config.yaml`의 `clarification.default_model`이 바뀌고, 다른 에이전트는 config.jsonc에 새로 생기지 않는다
+- [ ] (새 네이티브 검사 대기) 설정의 모델 카테고리에 "페이즈별 모델" 칸이 보이며, Claude와 Codex 마크·Codex 베타 표시가 구분된다.
+- [ ] (새 네이티브 검사 대기) Claude와 Codex가 각각 별도 묶음이며, Claude 계획·실행·서브에이전트와 Codex 계획·실행·검토·서브에이전트의 지원 모델/추론 강도 손잡이만 표시된다. Codex 주 모델은 창 모델을 따른다.
+- [ ] (새 네이티브 검사 대기) 별칭 최신/고정 버전 선택, 제공자별 등록 모델 추가·삭제·추론 강도 선택을 실제 설정 창에서 조작하고 격리 `workspace-state.json` 저장을 확인한다 (`desktopSurfaces.phaseModelsControlsPersist`).
+- [ ] (새 네이티브 검사 대기) `smoke-settings-models-dark.png`·`smoke-settings-models-light.png`에서 설명·선택기·등록 폼의 잘림과 제공자 마크를 확인한다.
+- [ ] (기기 미확인) omc/Ouroboros가 설치된 상태에서 Claude 계획 = Opus를 고르면 `%USERPROFILE%\.config\claude-omc\config.jsonc`의 planner·architect·critic과 `config.yaml`의 `clarification.default_model`이 바뀌고, 다른 에이전트는 config.jsonc에 새로 생기지 않는다
 - [ ] (기기 미확인) 쓴 뒤에도 `config.yaml`의 `orchestrator.cli_path`가 그대로이고, 옆에 `config.mighty-backup-…` 백업이 생긴다
-- [ ] (기기 미확인) 매인 값이 서로 다른 줄은 "혼합"으로 보인다
+- [ ] (새 네이티브 검사 대기) Claude main과 Sonnet 별칭이 다른 실행 줄은 "혼합"으로 보이며 Codex 값은 섞이지 않는다.
 - [ ] (기기 미확인) `config.jsonc`를 일부러 깨뜨리면 붉은 오류 문장("설정 파일을 읽을 수 없어 아무것도 쓰지 않았습니다: …")이 보이고 파일은 그대로다
 
 **Windows 기기 확인 항목 (English)**
 
-- [ ] (not checked on device) With English selected, the section reads "Phase Models" with Planning / Execution / Review / Subagents rows and no raw keys
-- [ ] (not checked on device) omc agent rows show the install default as "(default: opus)"; tool headings read omc and Ouroboros
+- [ ] (new native check pending) With English selected, "Phase Models" contains separate Claude and Codex blocks, supported model/effort selectors, latest aliases, fixed versions, and model registration controls without raw keys.
+- [ ] (not checked on device) A provider-specific phase model change updates matching installed omc/Ouroboros keys without changing the other provider’s models.
 - [ ] (not checked on device) A broken `config.jsonc` shows the English file error sentence and the file stays unchanged
 
 ---

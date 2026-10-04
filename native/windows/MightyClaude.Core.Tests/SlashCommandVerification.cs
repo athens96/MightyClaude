@@ -69,9 +69,18 @@ internal static class SlashCommandVerification
             "Gemini builtins must match macOS order exactly");
         Check(!gemini.Any(c => c.Action == SlashCommandAction.OpenPlugins), "Gemini must not have plugin browser");
         Check(SlashCommandCatalog.Builtins("shell").Length == 0, "shell provider should have no builtins");
-        var help = SlashCommandCatalog.HelpText("claude");
-        Check(help.StartsWith("앱 명령 · Claude 실행 창\n/plugin · ") && help.Contains("\n/clear · ") && help.Contains("CLI에 전달"),
-            "Claude help text must match macOS prefix and content");
+        var language = Locale.LanguagePreference;
+        try
+        {
+            Locale.LanguagePreference = "ko";
+            var help = SlashCommandCatalog.HelpText("claude");
+            Check(help.StartsWith("앱 명령 · Claude 실행 창\n/plugin · ") && help.Contains("\n/clear · ") && help.Contains("CLI에 전달"),
+                "Korean help text must retain the macOS prefix and content");
+            Locale.LanguagePreference = "en";
+            Check(SlashCommandCatalog.HelpText("claude").StartsWith("App commands · Claude pane\n/plugin · Open the plugin marketplace"),
+                "English help must use the shared catalogue instead of hardcoded Korean descriptions");
+        }
+        finally { Locale.LanguagePreference = language; }
         // Prefix-first order in mixed list
         var planReview = new SlashCommand("plan-review", "", "x", SlashCommandOrigin.User);
         var mixed = SlashCommandCatalog.Filter([.. claude, planReview], "pl");

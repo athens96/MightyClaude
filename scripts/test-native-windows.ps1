@@ -75,6 +75,12 @@ try {
     foreach ($key in @('liveSessionPopover', 'contextRingAndIdentifiers', 'attachmentMenu', 'imageExternalVerifiedSnapshot', 'agentUrlCardsNonmodalAndBounded', 'conversationResetPreservesDraftAndHistory')) {
         if ($result.smallParity.$key -ne $true) { throw "Windows pane parity smoke failed: smallParity.$key" }
     }
+    foreach ($key in @('sharedActionsRendered', 'nativeDraftPreserved', 'neverAutoSends', 'runningAndStaleRepliesHidden')) {
+        if ($result.nextActions.$key -ne $true) { throw "Windows next-action smoke failed: nextActions.$key" }
+    }
+    foreach ($key in @('defaultAndPersistedPreference', 'sameProviderLocalAndMobileHeld', 'releasedQueuePreservesOrder', 'stopCancelsHeldRequests', 'manualUpdateRefusesWithoutConsumingDrafts', 'manualPluginMutationBlocksBothProviders')) {
+        if ($result.automaticUpdates.$key -ne $true) { throw "Windows automatic-update smoke failed: automaticUpdates.$key" }
+    }
     $companion = $result.companion
     foreach ($key in @('bundledAtlasDecoded', 'allAnimationRowsRendered', 'nonActivatingWindow', 'pointerActionBoundToCard', 'selectedPetPreview', 'contextMenuNonActivating', 'contentDrivenHeightAndEdgeResize', 'keyboardAccessibleAgentStatus', 'renderedOverlaySnapshots')) {
         if ($companion.$key -ne $true) { throw "Windows companion smoke failed: companion.$key" }
@@ -89,9 +95,13 @@ try {
     foreach ($key in @('trustedRendererLoaded', 'conptyUtf8RoundTrip', 'resizeBridge', 'externalNavigationBlocked', 'processClosed', 'restartPreservesRenderer', 'footerMetadata')) {
         if ($result.nativeTerminal.$key -ne $true) { throw "Windows native terminal smoke failed: nativeTerminal.$key" }
     }
-    foreach ($key in @('dashboardRetainsPane', 'clockPreservesDashboardControls', 'dashboardWorkspaceActions', 'dashboardProviderMarks', 'settingsLoadedBeforeCapture', 'allSettingsCategories', 'bothThemes')) {
+    foreach ($key in @('nativeSidebarChrome', 'phaseModelsControlsPersist', 'dashboardRetainsPane', 'clockPreservesDashboardControls', 'dashboardWorkspaceActions', 'dashboardProviderMarks', 'settingsLoadedBeforeCapture', 'allSettingsCategories', 'bothThemes')) {
         if ($result.desktopSurfaces.$key -ne $true) { throw "Windows desktop design smoke failed: desktopSurfaces.$key" }
     }
+    foreach ($key in @('independentDisclosure', 'selectionReopensOnlyTarget', 'inactiveWorkspacePaneSelection', 'workspaceBoundAddMenu', 'collapsedStatePersists', 'draftAndPaneIdentity', 'keyboardAccessible', 'quickTheme')) {
+        if ($result.workspaceSidebar.$key -ne $true) { throw "Windows workspace sidebar smoke failed: workspaceSidebar.$key" }
+    }
+    if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }
     $scanned = $result.localeKeyLeakScanned
@@ -190,7 +200,6 @@ try {
     foreach ($key in @("modePersists", "groupAndRowExpansion", "sameTranscriptActions", "resultFilesOpenSharedPreview", "unchangedRefreshKeepsControls", "diagramAndDraftPreserved", "historyAffordance", "narrowToolbar")) {
         if ($result.mightyTimeline.$key -ne $true) { throw "Mighty timeline smoke failed: mightyTimeline.$key" }
     }
-    if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
     $mg = $result.mightyGraph
     if ($null -eq $mg) {
         $msg = "mighty 그래프 스모크가 실행되지 않았습니다: mightyGraph 키가 없습니다"

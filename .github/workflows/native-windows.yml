@@ -50,5 +50,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MightyClaude-windows-${{ matrix.architecture }}-smoke
-          path: ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/
+          # WebView2 can still retire cache files after a failed app exits.
+          # Publish the durable evidence only, not its mutable browser profile.
+          path: |
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/smoke*.png
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/smoke-result.json
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/*.log
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/native-crash-events*.json
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/native-crash-events-error.txt
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/native-process.json
+            ${{ runner.temp }}/mighty-windows-smoke-${{ matrix.architecture }}/published-files.json
           if-no-files-found: warn

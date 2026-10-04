@@ -252,6 +252,7 @@ public sealed class ScreenShareHub : IAsyncDisposable
     }
     public async Task DeviceDisconnected(string device)
     { string[] ids; lock (sync) ids = sessions.Values.Where(s => s.Value.DeviceId == device).Select(s => s.Value.SessionId).ToArray(); foreach (var id in ids) await Stop(id, "peer-left", false); }
+    public Task StopSessionAsync(string sessionId) => Stop(sessionId, "user-stop", false);
     public async Task KillAllAsync(string reason = "kill-switch")
     {
         Session[] stopped; lock (sync) { stopped = sessions.Values.ToArray(); sessions.Clear(); foreach (var session in stopped) session.Cancel.Cancel(); }

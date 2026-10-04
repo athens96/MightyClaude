@@ -133,221 +133,6 @@ public sealed partial class MainWindow
         return panel;
     }
 
-    // 페이즈별 모델 — 페이즈 묶음 줄 넷 위에 Claude·Codex·omc·Ouroboros의 자세히 줄.
-    //
-    // 무엇을 그릴지, 한 줄이 어떤 손잡이를 건드리는지, 어떤 묶음이 아예 빠지는지는
-    // 전부 Core의 PhaseModelSection이 정한다. 여기서는 그 줄을 그리고 고른 값을
-    // 되돌려 줄 뿐이다 — macOS 화면과 같은 열쇠말, 같은 규칙.
-    //
-    // Claude·Codex 값은 저장 상태(AppSnapshot.PhaseModels)에, omc·Ouroboros 값은
-    // 각자의 설정 파일에 들어간다. 파일을 읽거나 쓸 수 없으면 붉은 글로 알리고
-    // 파일은 건드리지 않는다.
-    internal PhaseModelTools phaseModelTools = new(null, null);
-
-    // 지금 열린 설정 화면의 페이즈별 모델 칸. 값을 고른 뒤 이 칸만 다시 채운다.
-    private StackPanel? phaseModelsPanel;
-
-    private StackPanel BuildPhaseModelsSection()
-    {
-        // 스모크는 실제 사용자 파일을 건드리지 않는다 — 붙박이 값으로 네 묶음을 다 그린다.
-        phaseModelTools = options.SmokeTest ? PhaseModelSection.SmokeFixtureTools : PhaseModelSection.LoadTools();
-        phaseModelsPanel = BuildPhaseModelsSection(service.Snapshot.PhaseModels ?? new(), phaseModelTools);
-        return phaseModelsPanel;
-    }
-
-    // 검사와 스모크가 부르는 자리: 도구 상태를 넘겨 실제 화면을 그대로 짓는다.
-    internal StackPanel BuildPhaseModelsSection(PhaseModelsSnapshot config, PhaseModelTools tools)
-    {
-        var panel = new StackPanel { Spacing = 8 };
-        FillPhaseModelsSection(panel, config, tools);
-        return panel;
-    }
-
-    private void FillPhaseModelsSection(StackPanel panel, PhaseModelsSnapshot config, PhaseModelTools tools)
-    {
-        panel.Children.Clear();
-        panel.Children.Add(new TextBlock
-        {
-            Text = PhaseModelSection.Description,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
-            Opacity = .8,
-        });
-
-        // 페이즈 줄은 Claude·Codex 손잡이를 함께 건드리므로 두 실행기의 이름을 모두 보여 준다.
-        IReadOnlyList<string> summaryValues =
-        [
-            .. PhaseModelValues(PhaseModelSection.ClaudeTool)
-                .Concat(PhaseModelValues(PhaseModelSection.CodexTool))
-                .Distinct(StringComparer.Ordinal),
-        ];
-        foreach (var row in PhaseModelSection.SummaryRows(config, tools))
-        {
-            var phase = row.Phase;
-            panel.Children.Add(PhaseModelPicker(
-                row.Label,
-                summaryValues,
-                row.Value,
-                row.Mixed,
-                PhaseRowIdPrefix + phase,
-                value => ApplyPhaseModelRow(phase, value),
-                PhaseModelLabel));
-        }
-
-        foreach (var block in PhaseModelSection.ToolBlocks(config, tools))
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = block.Label,
-                FontSize = 12,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Opacity = .85,
-            });
-            foreach (var knob in block.Knobs)
-            {
-                var id = knob.KnobId;
-                panel.Children.Add(PhaseModelPicker(
-                    knob.Label,
-                    knob.IsEffort ? EffortValues : PhaseModelValues(block.Tool),
-                    knob.Value,
-                    false,
-                    KnobRowIdPrefix + id,
-                    value => ApplyPhaseModelKnob(id, value),
-                    knob.IsEffort ? null : (Func<string, string>)PhaseModelLabel));
-            }
-        }
-
-        if (tools.Error is { } error)
-            panel.Children.Add(PhaseModelErrorText(error));
-    }
-
-    internal const string PhaseRowIdPrefix = "phase-models-row-";
-    internal const string KnobRowIdPrefix = "phase-models-knob-";
-    private static readonly string[] EffortValues = ["default", "low", "medium", "high"];
-
-    private static TextBlock PhaseModelErrorText(string error)
-    {
-        var text = new TextBlock
-        {
-            Text = error,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
-            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.OrangeRed),
-        };
-        AutomationProperties.SetAutomationId(text, "phase-models-error");
-        return text;
-    }
-
-    // 고를 수 있는 이름: 그 실행기의 모델 목록에 등록한 이름을 더한 것.
-    private IReadOnlyList<string> PhaseModelValues(string tool)
-    {
-        var provider = tool == PhaseModelSection.CodexTool ? "codex" : "claude";
-        var catalog = runtime?.Providers?.FirstOrDefault(item => item.Id == provider)?.ModelCatalog
-            ?? ProviderCatalog.Fallback(provider);
-        var defaults = service.Snapshot.ModelDefaults;
-        var registered = provider == "codex" ? defaults?.Codex.RegisteredModels : defaults?.Claude.RegisteredModels;
-        return [.. catalog.Models.Select(model => model.Value)
-            .Concat(registered?.Select(entry => entry.Name) ?? [])
-            .Distinct(StringComparer.Ordinal)];
-    }
-
-    // A model name as the composer's picker shows it (macOS PhaseModelSettingsView uses
-    // ModelLabel): the catalogue row's label when a runner lists it, else the id read alone.
-    // Only the shown text changes; the value written to the files stays the same.
-    private string PhaseModelLabel(string value)
-    {
-        foreach (var provider in new[] { "claude", "codex" })
-        {
-            var catalog = runtime?.Providers?.FirstOrDefault(item => item.Id == provider)?.ModelCatalog ?? ProviderCatalog.Fallback(provider);
-            if (catalog.Models.FirstOrDefault(model => model.Value == value) is { } option) return ModelLabel.Option(option);
-        }
-        return ModelLabel.Text(value);
-    }
-
-    private static ComboBox PhaseModelPicker(
-        string label,
-        IReadOnlyList<string> values,
-        string current,
-        bool mixed,
-        string automationId,
-        Func<string, Task> onPick,
-        Func<string, string>? display = null)
-    {
-        var box = new ComboBox { Header = label, HorizontalAlignment = HorizontalAlignment.Stretch };
-        AutomationProperties.SetAutomationId(box, automationId);
-        box.Items.Add(new ComboBoxItem { Content = PhaseModelSection.DefaultOption, Tag = "default" });
-        if (mixed)
-            box.Items.Add(new ComboBoxItem { Content = PhaseModelSection.MixedLabel, Tag = PhaseModelSection.MixedSentinel });
-        foreach (var value in values)
-            if (value != "default")
-                box.Items.Add(new ComboBoxItem { Content = display?.Invoke(value) ?? value, Tag = value });
-        // 목록에 없는 이름이 이미 들어 있으면 그 이름도 보여 준다 — 고른 값을 잃지 않는다.
-        if (!mixed && current != "default" && !values.Contains(current))
-            box.Items.Add(new ComboBoxItem { Content = display?.Invoke(current) ?? current, Tag = current });
-
-        var wanted = mixed ? PhaseModelSection.MixedSentinel : current;
-        box.SelectedIndex = Math.Max(0, box.Items
-            .OfType<ComboBoxItem>()
-            .ToList()
-            .FindIndex(item => (string)item.Tag == wanted));
-
-        box.SelectionChanged += async (_, _) =>
-        {
-            if (box.SelectedItem is ComboBoxItem item && (string)item.Tag is var tag &&
-                tag != PhaseModelSection.MixedSentinel)
-                await onPick(tag);
-        };
-        return box;
-    }
-
-    // 페이즈 줄 하나를 네 도구에 모두 적용하고, 바깥 두 도구는 파일에 쓴다.
-    internal Task ApplyPhaseModelRow(Phase phase, string value) => Act(async () =>
-    {
-        var edit = PhaseModelSection.ApplyPhaseRow(phase, value, service.Snapshot.PhaseModels ?? new(), phaseModelTools);
-        await SavePhaseModelEdit(edit);
-    });
-
-    // 자세히 줄 하나만 바꾼다.
-    internal Task ApplyPhaseModelKnob(string knobId, string value) => Act(async () =>
-    {
-        var edit = PhaseModelSection.ApplyKnob(knobId, value, service.Snapshot.PhaseModels ?? new(), phaseModelTools);
-        await SavePhaseModelEdit(edit);
-    });
-
-    // Claude·Codex 값은 저장 상태에, 바뀐 omc·Ouroboros 값만 각자의 파일에 쓴다.
-    // 스모크에서는 파일을 쓰지 않는다. 쓴 뒤 칸을 다시 채워 혼합 표시와 오류 글을 맞춘다.
-    private async Task SavePhaseModelEdit(PhaseModelEdit edit)
-    {
-        phaseModelTools = options.SmokeTest
-            ? phaseModelTools with { OmcAgents = edit.OmcAgents, OuroborosKeys = edit.OuroborosKeys }
-            : PhaseModelSection.SaveTools(phaseModelTools, edit);
-        await service.UpdateAsync(snapshot => snapshot with { PhaseModels = edit.Config });
-        if (phaseModelsPanel is { } panel)
-        {
-            var config = edit.Config;
-            var tools = phaseModelTools;
-            DispatcherQueue.TryEnqueue(() => FillPhaseModelsSection(panel, config, tools));
-        }
-    }
-
-    // 스모크의 로케일 열쇠말 검사가 읽는 글: 머리글, 제목, 그리고 펼치지 않은
-    // 목록 항목까지. ComboBox의 머리글과 항목은 화면 나무에 바로 보이지 않는다.
-    internal static List<string> PhaseModelSectionTexts(StackPanel panel)
-    {
-        var texts = new List<string>();
-        foreach (var child in panel.Children)
-        {
-            if (child is TextBlock text && !string.IsNullOrEmpty(text.Text)) texts.Add(text.Text);
-            if (child is ComboBox box)
-            {
-                if (box.Header is string header && header.Length > 0) texts.Add(header);
-                foreach (var item in box.Items.OfType<ComboBoxItem>())
-                    if (item.Content is string content && content.Length > 0) texts.Add(content);
-            }
-        }
-        return texts;
-    }
-
     // CLI 업데이트 — delegates to the parameterised builder so smoke can inject fixture results.
     private StackPanel BuildCliUpdateSectionFromState() => BuildCliUpdateSection(lastCliUpdateResults);
 
@@ -373,15 +158,22 @@ public sealed partial class MainWindow
             Opacity = .7,
             TextWrapping = TextWrapping.Wrap,
         });
+        var pluginsToggle = new ToggleSwitch { Header = Locale.Get("settings.cliUpdate.autoUpdatePluginsToggle"), IsOn = service.Snapshot.AutoUpdatePlugins != false, OffContent = "", OnContent = "" };
+        AutomationProperties.SetAutomationId(pluginsToggle, "plugin-auto-update");
+        pluginsToggle.Toggled += async (_, _) => await service.UpdateAsync(s => s with { AutoUpdatePlugins = pluginsToggle.IsOn });
+        panel.Children.Add(pluginsToggle);
+        panel.Children.Add(new TextBlock { Text = Locale.Get("settings.cliUpdate.autoUpdatePluginsDescription"), FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap });
+        var updateProgress = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap };
+        AutomationProperties.SetAutomationId(updateProgress, "cli-update-progress"); panel.Children.Add(updateProgress);
 
         // 업데이트 하기 button — reflects coordinator state live.
         var updateButton = new Button
         {
-            Content = coordinator.ButtonLabel,
-            IsEnabled = coordinator.CanStart,
+            Content = AnyCliUpdateRunning ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton,
+            IsEnabled = !AnyCliUpdateRunning && !pluginOperations.IsRunning,
         };
         AutomationProperties.SetAutomationId(updateButton, "cli-update-start");
-        updateButton.Click += (_, _) => coordinator.Start();
+        updateButton.Click += (_, _) => { if (!AnyCliUpdateRunning && !pluginOperations.IsRunning) coordinator.Start(); };
         panel.Children.Add(updateButton);
 
         // Dynamic results area: rebuilt on each StateChanged while the section is visible.
@@ -410,11 +202,34 @@ public sealed partial class MainWindow
         }
         foreach (var result in results) AddResultRow(result);
         panel.Children.Add(resultsPanel);
-
-        coordinator.StateChanged += () => DispatcherQueue.TryEnqueue(() =>
+        var pluginResults = new StackPanel { Spacing = 6 }; panel.Children.Add(pluginResults);
+        void RefreshBackgroundUpdates()
         {
-            updateButton.Content = coordinator.ButtonLabel;
-            updateButton.IsEnabled = coordinator.CanStart;
+            updateButton.Content = AnyCliUpdateRunning ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton;
+            updateButton.IsEnabled = !AnyCliUpdateRunning && !pluginOperations.IsRunning;
+            updateProgress.Text = automaticallyUpdatingProvider is { } provider
+                ? Locale.Get(automaticallyUpdatingPlugins ? "settings.cliUpdate.progressPluginsTemplate" : "settings.cliUpdate.progressProviderTemplate", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) })
+                : AnyCliUpdateRunning ? CliUpdateStrings.ProgressInspecting
+                : (automaticUpdateFinishedAt is { } autoFinished && (coordinator.FinishedAt is not { } manualFinished || autoFinished > manualFinished) ? autoFinished : coordinator.FinishedAt) is { } finished
+                    ? Locale.Get("settings.cliUpdate.lastRunTemplate", new Dictionary<string, string> { ["time"] = finished.ToLocalTime().ToString("t") }) : "";
+            updateProgress.Visibility = updateProgress.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            pluginResults.Children.Clear();
+            foreach (var providerName in Wire.Providers)
+            {
+                if (!pluginUpdateResults.TryGetValue(providerName, out var result)) continue;
+                var row = new StackPanel { Spacing = 2 };
+                var status = CliUpdateStrings.StatusLabel(result.Status == "succeeded" ? "updated" : result.Status);
+                row.Children.Add(new TextBlock { Text = Locale.Get("settings.cliUpdate.pluginRowTemplate", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(providerName), ["status"] = status }), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+                row.Children.Add(new TextBlock { Text = result.Detail, FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = .7 });
+                AutomationProperties.SetAutomationId(row, "plugin-update-result-" + providerName); pluginResults.Children.Add(row);
+            }
+            if (automaticUpdateRunning) { resultsPanel.Children.Clear(); foreach (var result in lastCliUpdateResults) AddResultRow(result); }
+        }
+        RefreshBackgroundUpdates();
+        void CoordinatorChanged() => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (closing || !panel.IsLoaded) return;
+            RefreshBackgroundUpdates();
             var live = coordinator.Results;
             if (live.Count > 0)
             {
@@ -422,6 +237,8 @@ public sealed partial class MainWindow
                 foreach (var r in live) AddResultRow(r);
             }
         });
+        panel.Loaded += (_, _) => { AutomaticUpdatesChanged += RefreshBackgroundUpdates; coordinator.StateChanged += CoordinatorChanged; RefreshBackgroundUpdates(); };
+        panel.Unloaded += (_, _) => { AutomaticUpdatesChanged -= RefreshBackgroundUpdates; coordinator.StateChanged -= CoordinatorChanged; };
 
         return panel;
     }
@@ -1004,7 +821,7 @@ public sealed partial class MainWindow
     private void RequireIdleAccount(string provider)
     {
         if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
-        if (coordinator.IsUpdating) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
+        if (AnyCliUpdateRunning) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
         if (service.HasActiveProvider(provider)) throw new InvalidOperationException(Locale.Get("settings.cliAccounts.waitForRuns"));
     }
     private async Task ResetClaudeModels()

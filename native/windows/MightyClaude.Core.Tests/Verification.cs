@@ -137,8 +137,10 @@ internal static class Verification
         await Test("Mobile remote UploadOwnershipAndClaims", MobileRemoteVerification.UploadOwnershipAndClaims);
         await Test("Mobile remote DesktopRouteContract", MobileRemoteVerification.DesktopRouteContract);
         await Test("Mobile remote EncryptedRelayRoundTrip", MobileRemoteVerification.EncryptedRelayRoundTrip);
+        await Test("Mobile relay shutdown rejects reconnect and rotation", MobileRemoteVerification.DisposedHostCannotRestart);
         await Test("Companion animation and carousel", CompanionVerification.AnimationAndCarousel);
         await Test("Companion bubble resize edges and DPI anchors", CompanionLayoutVerification.EdgesAndAnchors);
+        await Test("Workspace disclosure migration, independent selection and disk persistence", WorkspaceDisclosureVerification.MigrationSelectionAndPersistence);
         await Test("CLI environment profile frame rejects ambiguity and redacts diagnostics", CliEnvironmentVerification.StrictFramingAndSecrets);
         await Test("CLI environment refresh rotates tokens and preserves explicit unsets", CliEnvironmentVerification.RefreshRotationAndUnset);
         await Test("CLI environment timeout cancellation and forced freshness", CliEnvironmentVerification.CancellationTimeoutAndFreshness);
@@ -373,6 +375,8 @@ internal static class Verification
         await Test("slash argument query", SlashCommandVerification.ArgumentQuery);
         await Test("slash builtins per provider", SlashCommandVerification.BuiltinsPerProvider);
         await Test("slash filter", SlashCommandVerification.Filter);
+        await Test("next actions match every shared Mac and phone vector", NextActionsVerification.SharedContract);
+        await Test("next actions invalidate old replies and preserve drafts", NextActionsVerification.LatestReplyAndDraftSafety);
         await Test("slash frontmatter", SlashCommandVerification.Frontmatter);
         await Test("slash discovery from temp home and workspace", SlashCommandVerification.Discovery);
         await Test("slash 400 cap", SlashCommandVerification.CapAt400);
@@ -462,6 +466,9 @@ internal static class Verification
         await Test("cli update coordinator reports a failed provider and still updates the rest", CliUpdateVerification.CoordinatorReportsAFailedProviderAndStillUpdatesTheRest);
         await Test("cli update coordinator keeps the last run's results and finish time", CliUpdateVerification.CoordinatorKeepsTheLastRunResultsAndFinishTime);
         await Test("cli update strings match macOS", StringsVerification.CliUpdateStringsMatchMacOS);
+        await Test("plugin auto update preference and idle scheduling match macOS", PluginAutoUpdateVerification.DefaultPreferenceAndScheduling);
+        await Test("plugin auto update respects Claude scope approval and budget", PluginAutoUpdateVerification.ClaudeScopeApprovalAndBudget);
+        await Test("plugin auto update shares mutation exclusion and upgrades Codex Git marketplaces", PluginAutoUpdateVerification.CodexMarketplacesAndGlobalExclusion);
         await Test("settings preferences missing key keeps default off and version stays 1", SettingsPreferencesVerification.MissingKeyKeepsDefaultOff);
         await Test("settings preferences explicit on and off persist across state store reloads", SettingsPreferencesVerification.ExplicitOnAndOffPersistAcrossReloads);
         await Test("settings preferences only JSON booleans enable the setting and malformed values keep sessions", SettingsPreferencesVerification.OnlyJsonBooleansEnableSettingAndMalformedValuesKeepSessions);
@@ -475,6 +482,9 @@ internal static class Verification
         await Test("phase models snapshot shares macOS field names", PhaseModelVerification.SnapshotSharesMacOSFieldNames);
         await Test("phase models section registered in the macOS order", PhaseModelVerification.SectionRegisteredInMacOrder);
         await Test("phase models section rows follow installed tools", PhaseModelVerification.SectionRowsFollowInstalledTools);
+        await Test("phase models provider rows and version pins", PhaseModelPreferencesVerification.ProviderRowsAndVersionPins);
+        await Test("phase models effort and arguments reach every launch path", PhaseModelPreferencesVerification.EffortAndArgumentsReachAllLaunchPaths);
+        await Test("phase models persistence and local start snapshot", PhaseModelPreferencesVerification.PersistenceAndLocalStartSnapshot);
         await Test("settings sections appear in the macOS order with their titles", SettingsSectionsVerification.SectionsAppearInMacOrderWithTheirTitles);
         await Test("settings sections leave out features that are not on Windows yet", SettingsSectionsVerification.SectionsLeaveOutFeaturesNotOnWindowsYet);
         await Test("settings sections registering a section does not touch the others", SettingsSectionsVerification.RegisteringASectionDoesNotTouchTheOthers);
@@ -595,6 +605,7 @@ internal static class Verification
         await Test("cli account coordinator reads statuses and calls logout", CliAccountVerification.CoordinatorReadsStatusesAndCallsLogout);
         await Test("cli account smoke shows fixture statuses and confirmation flow works", CliAccountVerification.SmokeShowsFixtureStatusesAndConfirmationFlowWorks);
         await Test("account usage strings match macOS", StringsVerification.AccountUsageStringsMatchMacOS);
+        await Test("notification and usage copy follows saved language", LocalizedStatusVerification.LanguageChangesReachNotificationsAndUsage);
         await Test("account usage secret never reaches a snapshot, a log line or an error", AccountUsageVerification.Secret);
         await Test("account usage refuses another host or a redirect", AccountUsageVerification.RefusesAnotherHostOrARedirect);
         await Test("account usage direct claude lookup is off by default", AccountUsageVerification.DirectLookupIsOffByDefault);

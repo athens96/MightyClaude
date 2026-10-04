@@ -145,9 +145,9 @@ public sealed partial class MainWindow
         {
             // Read the rows through their panels' own children: FrameworkElement.Parent is not set on
             // rows just built in code (the same reason MainWindow.Layout.cs owns paneHosts explicitly).
-            var sidebarRowMarks = RowMarks(sessionLinks);
+            var sidebarRowMarks = RowMarks(workspaces);
             Require(sessionIndicators.Count > 0 && sessionIndicators.Values.All(v => sidebarRowMarks.Contains(v.Mark.View)), "sidebar rows have no status glyph");
-            Require(sessionLinks.Children.OfType<Button>().All(b => b.Content is Grid row && !row.Children.OfType<ProgressRing>().Any() && row.Children[0] is Canvas), "a sidebar row still has the spinning ring");
+            Require(sidebarSessionButtons.Values.All(b => b.Content is Grid row && !row.Children.OfType<ProgressRing>().Any() && row.Children[0] is Canvas), "a sidebar row still has the spinning ring");
             var tabRowMarks = RowMarks(panes);
             Require(tabIndicators.Count > 0 && tabIndicators.Values.All(v => tabRowMarks.Contains(v.Mark.View)), "tabs have no status glyph");
             checks["sidebarAndTabsDrawGlyphs"] = true;

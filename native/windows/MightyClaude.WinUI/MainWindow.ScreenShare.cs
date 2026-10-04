@@ -85,9 +85,22 @@ public sealed partial class MainWindow
                 if (grant.ControlKeyPublic is { } key)
                 {
                     row.Children.Add(new TextBlock { Text = Locale.Get("settings.screenShare.keyFingerprint", new Dictionary<string, string> { ["fingerprint"] = ScreenSharePolicy.Fingerprint(Convert.FromBase64String(key)) }), IsTextSelectionEnabled = true });
-                    row.Children.Add(Button(Locale.Get("settings.screenShare.removeKeyButton"), () => Act(async () => { if (screenHub is not null) await screenHub.RemoveControlKeyAsync(device.Id); Refresh(); })));
+                    row.Children.Add(SafeButton(Locale.Get("settings.screenShare.removeKeyButton"), async () =>
+                    {
+                        if (screenHub is not { } hub || closing) return;
+                        var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get("settings.screenShare.removeKeyTitle"), Content = Locale.Get("settings.screenShare.removeKeyBody", new Dictionary<string, string> { ["device"] = device.Name }), PrimaryButtonText = Locale.Get("settings.screenShare.removeKeyConfirm"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close };
+                        if (await dialog.ShowAsync() != ContentDialogResult.Primary || closing || !ReferenceEquals(hub, screenHub) || mobileHost?.Devices.Any(phone => phone.Id == device.Id) != true || hub.Grants.FirstOrDefault(current => current.DeviceId == device.Id)?.ControlKeyPublic != key) return;
+                        await hub.RemoveControlKeyAsync(device.Id); if (panel.IsLoaded) Refresh();
+                    }));
                 }
-                foreach (var session in screenHub?.Sessions.Where(s => s.DeviceId == device.Id) ?? []) row.Children.Add(new TextBlock { Text = (session.Mode == "control" ? Locale.Get("settings.screenShare.grantControl") : Locale.Get("settings.screenShare.grantView")) + " · " + session.StartedAt.ToLocalTime().ToString("HH:mm") });
+                foreach (var session in screenHub?.Sessions.Where(s => s.DeviceId == device.Id) ?? [])
+                {
+                    var live = new Grid { ColumnSpacing = 8 }; live.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); live.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                    live.Children.Add(new TextBlock { Text = Locale.Get(session.Mode == "control" ? "settings.screenShare.sessionControl" : "settings.screenShare.sessionView", new Dictionary<string, string> { ["time"] = session.StartedAt.ToLocalTime().ToString("HH:mm") }), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+                    var stop = SafeButton(Locale.Get("settings.screenShare.stopButton"), async () => { if (screenHub is not null) await screenHub.StopSessionAsync(session.SessionId); if (panel.IsLoaded) Refresh(); });
+                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(stop, "settings-screen-share-stop-" + session.SessionId);
+                    Grid.SetColumn(stop, 1); live.Children.Add(stop); row.Children.Add(live);
+                }
                 rows.Children.Add(row);
             }
             if (rows.Children.Count == 0) rows.Children.Add(new TextBlock { Text = Locale.Get("settings.screenShare.noPhones"), Opacity = .6 });

@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
         : Windows.UI.Color.FromArgb(255, 24, 26, 31));
     private readonly StackPanel sidebar = new() { Spacing = 10 };
     private readonly Grid panes = new() { ColumnSpacing = 12, RowSpacing = 12 };
-    private readonly ListView workspaces = new() { SelectionMode = ListViewSelectionMode.Single };
+    private readonly StackPanel workspaces = new() { Spacing = 4 };
     private readonly TextBox search = new() { Margin = new Thickness(0, 4, 0, 4) };
     private readonly TextBlock sessionsHeader = new() { FontSize = 11, Opacity = .6, Margin = new Thickness(0, 8, 0, 0) };
     // The whole Windows app is a beta: the badge beside the sidebar brand.
@@ -57,20 +57,17 @@ public sealed partial class MainWindow : Window
         service = new(options.ProfileDirectory ?? Path.Combine(appData, "MightyClaudeNative"), options.ProfileDirectory is null ? legacy : null, Path.Combine(AppContext.BaseDirectory, "claude-mods"));
         pictures = new(service.Images, DispatcherQueue);
         cliUpdateService = new(new CliRunner());
-        coordinator = new((provider, token) =>
-        {
-            if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || service.HasActiveProvider(provider))
-                return Task.FromResult(new CliUpdateResult(provider, "busy", Detail: CliUpdateStrings.DetailBusy));
-            var fn = smokeCliUpdater;
-            return fn is not null ? fn(provider, token) : cliUpdateService.UpdateAsync(provider, token);
-        });
+        coordinator = new(UpdateManualProvider);
         coordinator.StateChanged += () => DispatcherQueue.TryEnqueue(() =>
         {
-            if (!coordinator.IsUpdating && coordinator.Results.Count > 0)
-                lastCliUpdateResults = coordinator.Results;
+            if (!coordinator.IsUpdating)
+            {
+                if (coordinator.Results.Count > 0) lastCliUpdateResults = coordinator.Results;
+                if (!closing) TrackLoginTask(ManualUpdateFinished());
+            }
         });
         InitializeLoginRecovery();
-        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
+        service.RunEventReceived += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; RecordProviderActivity(value); ReceiveLoginSignal(value); if (views.TryGetValue(value.SessionId, out var pane)) { pane.Refresh(); pane.ReceiveQueueRunEvent(value); if (value.Type == "status" && value.Status is "stopped" or "completed" or "error") pane.ClearToolPermissions(); } RefreshRunningIndicators(); HandleRunEventForNotification(value); });
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.
@@ -78,22 +75,15 @@ public sealed partial class MainWindow : Window
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = Locale.Get("window.error.saveFailed", new Dictionary<string, string> { ["reason"] = ex.Message }));
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(252) }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var brandImage = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 28, Height = 28 };
-        AutomationProperties.SetAccessibilityView(brandImage, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        brand.Children.Add(brandImage); brand.Children.Add(new TextBlock { Text = "Mighty Claude", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        brand.Children.Add(new Border { Child = brandBeta, CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(110, 135, 135, 135)), Padding = new Thickness(6, 0, 6, 1), VerticalAlignment = VerticalAlignment.Center }); sidebar.Children.Add(brand);
         foreach (var name in new[] { "grid", "columns", "focus", "tabs", "custom" }) layout.Items.Add(new ComboBoxItem { Tag = name });
         layout.SelectionChanged += async (_, _) => { if (!rendering && layout.SelectedItem is ComboBoxItem item) await ApplyLayoutPreset((string)item.Tag); };
-        addFolderButton = Button("", PickFolder); sidebar.Children.Add(search); sidebar.Children.Add(addFolderButton); sidebar.Children.Add(workspaces);
-        sidebar.Children.Add(sessionsHeader); sidebar.Children.Add(sessionLinks);
+        addFolderButton = Button("", PickFolder); sidebar.Children.Add(search); sidebar.Children.Add(sessionsHeader); sidebar.Children.Add(workspaces); sidebar.Children.Add(addFolderButton);
         var sideHost = new Grid { RowSpacing = 10 }; sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
         var navigation = new StackPanel { Spacing = 6 }; navigation.Children.Add(layout);
         navigation.Children.Add(BuildCompanionControls());
-        settingsButton = Button("", OpenSettings); navigation.Children.Add(settingsButton); ApplyChromeText(); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
+        settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); ApplyChromeText(); Grid.SetRow(navigation, 1); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
-        workspaces.SelectionChanged += async (_, _) => { if (!rendering && workspaces.SelectedItem is ListViewItem { Tag: string id }) await SelectWorkspace(id); };
         Grid.SetRow(sideHost, 1); root.Children.Add(sideHost); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
         var footer = new StackPanel { Spacing = 3 }; footer.Children.Add(error);
         // The bottom status bar: the account usage chips, then the status text.
@@ -101,7 +91,7 @@ public sealed partial class MainWindow : Window
         statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         statusRow.Children.Add(BuildAccountUsage()); Grid.SetColumn(status, 1); statusRow.Children.Add(status);
         footer.Children.Add(statusRow); Grid.SetRow(footer, 2); Grid.SetColumnSpan(footer, 2); root.Children.Add(footer); Content = root;
-        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
+        AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         InitFilePane(); InitAddPaneShortcuts();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
@@ -111,7 +101,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); HideLaunchSplash(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); coordinator.BeginAutomaticIfNeeded(service.Snapshot); BeginAutomaticAppUpdateCheck(); }); return; }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); HideLaunchSplash(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); }); return; }
         try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); HideLaunchSplash(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
@@ -128,8 +118,10 @@ public sealed partial class MainWindow : Window
         foreach (var item in layout.Items.OfType<ComboBoxItem>())
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
         addFolderButton.Content = Locale.Get("sidebar.addProjectFolder"); AutomationProperties.SetName(addFolderButton, (string)addFolderButton.Content);
-        sessionsHeader.Text = Locale.Get("sidebar.sessionsHeader");
-        settingsButton.Content = Locale.Get("settings.settingsWindowTitle"); AutomationProperties.SetName(settingsButton, (string)settingsButton.Content);
+        sessionsHeader.Text = Locale.Get("phone.workspaces.title");
+        RefreshSidebarThemeButton();
+        AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
+        ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));
     }
     private async Task Act(Func<Task> action)
     {
@@ -160,25 +152,7 @@ public sealed partial class MainWindow : Window
     private ProviderRuntime? Runtime(string provider) => runtime?.Providers.FirstOrDefault(p => p.Id == provider);
     private void RenderSidebar()
     {
-        var previous = rendering; rendering = true;
-        var state = service.Snapshot; workspaces.Items.Clear(); workspaceStatusCounts.Clear();
-        // As on macOS, the open-folder button shows only while the list is empty (no workspace
-        // yet, or none matching the search); otherwise 창 추가 → 프로젝트 폴더 열기… or Ctrl+O.
-        var listed = AddPaneMenu.Filtered(state.Workspaces, search.Text);
-        addFolderButton.Visibility = listed.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var workspace in listed)
-        {
-            var label = new StackPanel { Spacing = 3 }; label.Children.Add(new TextBlock { Text = workspace.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }); label.Children.Add(new TextBlock { Text = Locale.Get("workspace.location.thisComputer"), FontSize = 11, Opacity = .65 });
-            if (WorkspaceGitBadge(workspace) is { } badge) label.Children.Add(badge);
-            label.Children.Add(WorkspaceStatusCounts(workspace));
-            var item = new ListViewItem { Content = label, Tag = workspace.Id, ContextFlyout = WorkspaceMenu(workspace.Id) }; ToolTipService.SetToolTip(item, workspace.Path); workspaces.Items.Add(item); if (workspace.Id == state.ActiveWorkspaceId) workspaces.SelectedItem = item;
-        }
-        sessionLinks.Children.Clear(); sessionIndicators.Clear(); sidebarDetails.Clear(); sidebarMarks.Clear(); sidebarBetas.Clear();
-        foreach (var session in state.Sessions.Where(s => s.WorkspaceId == state.ActiveWorkspaceId))
-        {
-            var button = Button(session.Title, () => SelectLayoutSession(session.Id)); button.HorizontalAlignment = HorizontalAlignment.Stretch; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.Content = SessionIndicator(session); button.ContextFlyout = SessionMenu(session.Id); sessionLinks.Children.Add(button);
-        }
-        rendering = previous;
+        RenderWorkspaceSidebar();
     }
     private void Render()
     {
@@ -278,6 +252,7 @@ public sealed partial class MainWindow : Window
             var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; state.Children.Add(headerMark.View); state.Children.Add(label); state.Children.Add(elapsed); header.Children.Add(state);
             InitializeStatusLineToggle(state);
             var copy = Button(Locale.Get("pane.copyButton"), () => { Copy(output.Text); return Task.CompletedTask; }); copy.Height = 28; copy.MinHeight = 0; copy.Padding = new(8, 0, 8, 0); Grid.SetColumn(copy, 2); header.Children.Add(copy); grid.Children.Add(header);
+            InitializeResponsiveHeader(header, state, copy);
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
             ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(input, ScrollBarVisibility.Disabled);
@@ -292,7 +267,8 @@ public sealed partial class MainWindow : Window
             send = Button("↑", PrimaryAction); send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 20; send.Background = new SolidColorBrush(Colors.CornflowerBlue); send.Foreground = new SolidColorBrush(Colors.Black); AutomationProperties.SetName(send, Locale.Get("composer.send.name")); Grid.SetColumn(send, 2); bottom.Children.Add(send);
             var composer = new StackPanel { Spacing = 7 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(styleHost); composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
             var card = new Border { Child = composer, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 135, 135, 135)), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(12, 135, 135, 135)), Padding = new Thickness(10, 2, 10, 10) };
-            var composerScroll = new ScrollViewer { Content = card, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
+            var composerRegion = new StackPanel(); composerRegion.Children.Add(nextActionsHost); composerRegion.Children.Add(card);
+            var composerScroll = new ScrollViewer { Content = composerRegion, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
             Grid.SetRow(composerScroll, 2); grid.Children.Add(composerScroll);
             Container = new Border { Child = grid, BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Colors.Gray), CornerRadius = new CornerRadius(10) };
             InitializeQueuedComposer(composer, bottom);
@@ -344,6 +320,7 @@ public sealed partial class MainWindow : Window
         private static bool SubmitKeyAllowed(bool composing, bool shift, bool otherModifier) => !composing && !shift && !otherModifier;
         private Task Send(bool steering = false) => owner.Act(async () =>
         {
+            if (owner.ManualMutationBlockReason(Session) is not null) { RefreshComposerState(); return; }
             if (await DeferBusyComposer(steering)) return;
             RefreshComposerState(); if (!canSend || starting || composingInput) return;
             starting = true; var submissionVersion = ++composerSubmissionVersion; RefreshComposerState();
@@ -372,23 +349,24 @@ public sealed partial class MainWindow : Window
         private Task PrimaryAction() => ComposerPrimaryAction();
         private void RefreshComposerState()
         {
-            var pane = Session; var busy = pane.Status == "running" || starting || queueStarting; var runtime = owner.Runtime(pane.Provider); var workspace = Workspace;
+            var pane = Session; var busy = pane.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(pane); var runtime = owner.Runtime(pane.Provider); var workspace = Workspace;
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var registeredModels = RegisteredModelsFor(pane.Provider, workspace, owner.service.Snapshot);
             var unsupportedEffort = pane.Kind == "claude" && pane.Settings.Effort != "default" && !ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels).Contains(pane.Settings.Effort);
             string? unsupportedSettings = null;
             if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = Locale.Get("composer.hint.autoModeUnverified");
             if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = Locale.Get("composer.hint.attachmentsUnsupported");
-            var reason = busy ? ""
+            var mutationBlock = owner.ManualMutationBlockReason(pane);
+            var reason = mutationBlock ?? (busy ? ""
                 : attachmentsLoading ? Locale.Get("composer.hint.attachmentsLoading")
                 : pane.Kind == "claude" && runtime?.Available != true ? Locale.Get("composer.hint.draftStillAllowed", new Dictionary<string, string> { ["reason"] = runtime?.Detail ?? Locale.Get("composer.hint.refreshRuntime") })
                 : unsupportedEffort ? Locale.Get("composer.hint.effortUnverified", new Dictionary<string, string> { ["effort"] = pane.Settings.Effort })
-                : unsupportedSettings ?? "";
+                : unsupportedSettings ?? "");
             inputHint.Text = reason; inputHint.Visibility = reason.Length == 0 ? Visibility.Collapsed : Visibility.Visible; AutomationProperties.SetHelpText(input, reason.Length == 0 ? InputShortcuts : reason + " " + InputShortcuts);
             permissionHint.Text = pane.Settings.PermissionMode == "fullAccess" ? Locale.Get("composer.hint.fullAccess") : "";
             permissionHint.Visibility = pane.Kind == "claude" && permissionHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             input.PlaceholderText = busy ? Locale.Get("composer.placeholder.busy") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
-            canSend = !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
+            canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
             send.IsEnabled = busy ? !stopping : canSend; send.Content = busy ? "■" : "↑"; send.FontSize = busy ? 13 : 20;
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();
@@ -397,7 +375,9 @@ public sealed partial class MainWindow : Window
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
+            if (mutationBlock is not null && (!busy || HasComposerContent)) send.IsEnabled = false;
             RefreshStyleComposer();
+            RefreshNextActions(pane, busy);
         }
         private Task PickAttachments() => LoadAttachments(async () =>
         {

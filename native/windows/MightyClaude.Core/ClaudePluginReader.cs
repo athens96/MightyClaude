@@ -12,7 +12,7 @@ namespace MightyClaude.Core;
 // A missing CLI, a CLI too old for the subcommand, a timeout and malformed or
 // oversized output each become a status with its macOS sentence, never an
 // exception the screen has to catch.
-public sealed class ClaudePluginReader : IPluginReader
+public sealed partial class ClaudePluginReader : IPluginReader
 {
     /// macOS ClaudePluginService: readTimeout 20s, version probe min(4, read).
     public static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);

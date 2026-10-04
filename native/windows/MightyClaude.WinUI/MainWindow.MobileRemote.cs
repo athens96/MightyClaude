@@ -58,11 +58,34 @@ public sealed partial class MainWindow
         var legacy = new ToggleSwitch { Header = Locale.Get("settings.mobileRemote.legacyAppsToggle"), IsOn = service.Snapshot.MobileRemote.AllowLegacyPhones };
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap }; var identity = new StackPanel { Spacing = 8 }; var devices = new StackPanel { Spacing = 6 };
         var qr = new Image { Width = 240, Height = 240, HorizontalAlignment = HorizontalAlignment.Left }; AutomationProperties.SetName(qr, Locale.Get("settings.mobileRemote.qrAccessibility"));
+        Button reconnect = null!;
+        var showsKey = false;
+        var hostId = new TextBox { Header = Locale.Get("settings.mobileRemote.hostIdLabel"), IsReadOnly = true };
+        var pairingKey = new TextBox { Header = Locale.Get("settings.mobileRemote.keyLabel"), IsReadOnly = true };
+        AutomationProperties.SetAutomationId(hostId, "settings-mobile-host-id"); AutomationProperties.SetAutomationId(pairingKey, "settings-mobile-pairing-key");
+        Button? showKey = null;
+        void RefreshPairingText()
+        {
+            hostId.Text = mobileHost?.PairingServerId ?? "";
+            pairingKey.Text = showsKey ? mobileHost?.PairingKeyForDisplay ?? "" : new string('•', 16);
+            if (showKey is null) return;
+            var label = Locale.Get(showsKey ? "settings.mobileRemote.hideKeyButton" : "settings.mobileRemote.showKeyButton");
+            showKey.Content = label; AutomationProperties.SetName(showKey, label);
+        }
+        showKey = Button(Locale.Get("settings.mobileRemote.showKeyButton"), () => { showsKey = !showsKey; RefreshPairingText(); return Task.CompletedTask; });
+        AutomationProperties.SetAutomationId(showKey, "settings-mobile-show-key");
+        reconnect = SafeButton(Locale.Get("settings.mobileRemote.reconnectButton"), async () =>
+        {
+            if (options.SmokeTest || closing || mobileHost is null || !service.Snapshot.MobileRemote.Enabled) return;
+            await mobileHost.ReconnectAsync(); if (!closing && panel.IsLoaded) await Refresh();
+        });
+        AutomationProperties.SetAutomationId(reconnect, "settings-mobile-reconnect");
         panel.Children.Add(new TextBlock { Text = Locale.Get("windows.mobile.relayDescription"), TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(enabled); panel.Children.Add(relay); panel.Children.Add(legacy); panel.Children.Add(status);
+        panel.Children.Add(enabled); panel.Children.Add(relay); panel.Children.Add(legacy); panel.Children.Add(status); panel.Children.Add(reconnect);
         identity.Children.Add(new TextBlock { Text = Locale.Get("settings.mobileRemote.scanInstruction"), TextWrapping = TextWrapping.Wrap }); identity.Children.Add(qr);
+        identity.Children.Add(hostId); identity.Children.Add(pairingKey); identity.Children.Add(showKey);
         identity.Children.Add(Button(Locale.Get("settings.mobileRemote.copyLinkButton"), () => { if (mobileHost is not null && service.Snapshot.MobileRemote.Enabled) { var package = new DataPackage(); package.SetText(mobileHost.PairingUrl); Clipboard.SetContent(package); } return Task.CompletedTask; }));
-        identity.Children.Add(Button(Locale.Get("settings.mobileRemote.regenerateKeyButton"), () => Revoke(null)));
+        identity.Children.Add(SafeButton(Locale.Get("settings.mobileRemote.regenerateKeyButton"), () => Revoke(null)));
         identity.Children.Add(new TextBlock { Text = Locale.Get("windows.mobile.rotationDescription"), TextWrapping = TextWrapping.Wrap });
         identity.Children.Add(new TextBlock { Text = Locale.Get("settings.mobileRemote.connectedDevicesTitle") }); identity.Children.Add(devices); panel.Children.Add(identity);
         var apply = Button(Locale.Get("settings.mobileRemote.applyButton"), () => Act(async () =>
@@ -74,14 +97,19 @@ public sealed partial class MainWindow
         })); panel.Children.Insert(4, apply);
         async Task Revoke(string? id)
         {
-            if (mobileHost is null || options.SmokeTest) return;
+            if (mobileHost is null || options.SmokeTest || id is not null && !mobileHost.Devices.Any(device => device.Id == id)) return;
+            var host = mobileHost;
             var dialog = new ContentDialog { XamlRoot = SettingsXamlRoot, Title = Locale.Get(id is null ? "settings.mobileRemote.regenerateKeyButton" : "settings.mobileRemote.revokeDialogTitle"), Content = Locale.Get("windows.mobile.rotationConfirm"), PrimaryButtonText = Locale.Get("settings.mobileRemote.revokeConfirmButton"), CloseButtonText = Locale.Get("settings.mobileRemote.cancelButton"), DefaultButton = ContentDialogButton.Close };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            if (screenHub is not null) await screenHub.ResetAsync("rekey-pairing"); await mobileHost.RotateKeyAsync(); mobileRouter?.ResetUploads(); await Refresh();
+            if (closing || !ReferenceEquals(host, mobileHost) || id is not null && !host.Devices.Any(device => device.Id == id)) return;
+            if (screenHub is not null) await screenHub.ResetAsync("rekey-pairing"); await host.RotateKeyAsync(id); mobileRouter?.ResetUploads(); showsKey = false; await Refresh();
         }
         async Task Refresh()
         {
             identity.Visibility = service.Snapshot.MobileRemote.Enabled && mobileHost is not null ? Visibility.Visible : Visibility.Collapsed;
+            reconnect.Visibility = service.Snapshot.MobileRemote.Enabled ? Visibility.Visible : Visibility.Collapsed; reconnect.IsEnabled = mobileHost is not null && !options.SmokeTest;
+            if (identity.Visibility != Visibility.Visible) showsKey = false;
+            RefreshPairingText();
             var connected = mobileHost?.Status; status.Text = !service.Snapshot.MobileRemote.Enabled ? Locale.Get("settings.mobileRemote.statusOff") : connected?.Connected != true ? Locale.Get("settings.mobileRemote.statusConnecting") : Locale.Get("settings.mobileRemote.statusConnectedTemplate", new Dictionary<string, string> { ["count"] = connected.Connections.ToString() });
             if (identity.Visibility != Visibility.Visible) { qr.Source = null; return; }
             var link = mobileHost!.PairingUrl; var png = PngByteQRCodeHelper.GetQRCode(link, QRCodeGenerator.ECCLevel.M, 6);
@@ -91,12 +119,12 @@ public sealed partial class MainWindow
             {
                 var row = new StackPanel { Spacing = 4 }; row.Children.Add(new TextBlock { Text = device.Name + (device.Legacy ? " · Legacy" : ""), TextWrapping = TextWrapping.Wrap });
                 row.Children.Add(new TextBlock { Text = Locale.Get("settings.mobileRemote.seenTemplate", new Dictionary<string, string> { ["first"] = device.FirstSeen, ["last"] = device.LastSeen }), FontSize = 11, Opacity = .65 });
-                row.Children.Add(Button(Locale.Get("settings.mobileRemote.revokeRowButton"), () => Revoke(device.Id))); devices.Children.Add(row);
+                row.Children.Add(SafeButton(Locale.Get("settings.mobileRemote.revokeRowButton"), () => Revoke(device.Id))); devices.Children.Add(row);
             }
         }
         void Updated(MobileRelayStatus _) => DispatcherQueue.TryEnqueue(async () => { if (!closing && panel.IsLoaded) await Act(Refresh); });
-        panel.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = false; identity.Visibility = Visibility.Collapsed; return; } await Act(async () => { await InitializeMobileRemote(); mobileHost!.StatusChanged += Updated; await Refresh(); }); };
-        panel.Unloaded += (_, _) => { if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; };
+        panel.Loaded += async (_, _) => { if (options.SmokeTest) { enabled.IsEnabled = relay.IsEnabled = legacy.IsEnabled = apply.IsEnabled = reconnect.IsEnabled = false; identity.Visibility = Visibility.Collapsed; RefreshPairingText(); return; } await Act(async () => { await InitializeMobileRemote(); if (closing || !panel.IsLoaded || mobileHost is null) return; mobileHost.StatusChanged += Updated; await Refresh(); }); };
+        panel.Unloaded += (_, _) => { if (mobileHost is not null) mobileHost.StatusChanged -= Updated; qr.Source = null; showsKey = false; pairingKey.Text = ""; hostId.Text = ""; };
         panel.Children.Add(BuildScreenShareSection());
         return panel;
     }
@@ -150,11 +178,12 @@ public sealed partial class MainWindow
         internal int MobileQueuedCount => queuedInputs.Items.Count;
         internal RunSession MobileSession => Session;
         internal void MobileQueueRemove(string itemId) { if (!queuedInputs.Remove(itemId)) throw new MobileRequestException(404, "Queued request not found."); RenderQueuedInputs(); RefreshComposerState(); }
-        private bool MobileBusy => starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id);
+        private bool MobileBusy => starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session);
         internal void MobileCancelQueue() { composerSubmissionVersion++; queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs(); RefreshComposerState(); }
         internal async Task<string> MobileSubmit(string text, string? mode, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
         {
             token.ThrowIfCancellationRequested(); var pane = Session;
+            if (owner.ManualMutationBlockReason(pane) is { } block) throw new MobileRequestException(409, block);
             var request = new StartRunRequest(id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             if (MobileBusy)
             {

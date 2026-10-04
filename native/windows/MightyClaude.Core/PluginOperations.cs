@@ -49,6 +49,27 @@ public sealed class PluginOperations
     /// True while an operation this object started is still running.
     public bool IsRunning => Volatile.Read(ref running) != 0;
 
+    public async Task<PluginAutoUpdateResult> UpdateInstalledAsync(string provider, Workspace home, TimeSpan budget, CancellationToken cancellation = default,
+        Func<string, IPluginReader>? readerFactory = null)
+    {
+        if (Interlocked.CompareExchange(ref running, 1, 0) != 0) return PluginAutoUpdateResult.Busy;
+        IPluginReader? reader = null;
+        try
+        {
+            if (provider is not ("claude" or "codex")) return PluginAutoUpdateResult.Failure;
+            var environment = UsesInstalledCli ? await CliEnvironment.RefreshAsync(false, cancellation) : null;
+            reader = readerFactory?.Invoke(provider) ?? (provider == "claude" ? new ClaudePluginReader(Runner, environment) : new CodexPluginReader(Runner, environment));
+            return reader switch
+            {
+                ClaudePluginReader claude => await claude.UpdateInstalledAsync(home, budget, cancellation),
+                CodexPluginReader codex => await codex.UpgradeMarketplacesAsync(home, cancellation),
+                _ => PluginAutoUpdateResult.Failure
+            };
+        }
+        catch (OperationCanceledException) { return PluginAutoUpdateResult.Cancelled; }
+        finally { reader?.Shutdown(); Volatile.Write(ref running, 0); }
+    }
+
     /// The install button's call: the browser assembles the arguments from the
     /// values the list just returned, runs them through the reader and reads
     /// the result back; this object only decides that it may start at all.

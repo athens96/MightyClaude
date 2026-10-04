@@ -210,7 +210,9 @@ last assistant entry of a finished turn (no user entry after it, pane not
 running) carries one, both clients draw its options as buttons: the Mac under
 the transcript or graph, the phone under that reply in the log view and docked
 above the composer in the Mighty blocks view. A tap fills the composer and never
-sends. Parsers: `MightyCore/NextActions.swift` and `mobile/src/lib/next-actions.ts`.
+sends. Parsers: `MightyCore/NextActions.swift`, `MightyClaude.Core/NextActions.cs`
+and `mobile/src/lib/next-actions.ts`. Windows uses native buttons above its
+composer and preserves the existing TextBox, draft and undo history.
 
 - Both parsers work on Unicode scalars (the phone's code points) and match
   literally, with no normalization or canonical equivalence: a decomposed (NFD)
@@ -244,7 +246,8 @@ sends. Parsers: `MightyCore/NextActions.swift` and `mobile/src/lib/next-actions.
 `fixtures/next-actions.json` is `[{line, options: [{label, fill}]}]` with real
 breadcrumbs plus made-up edge cases (NFD `또는`, trailing NEL/BOM, a combining
 mark after ` or `, CRLF, U+3000, a blank code span); `NextActionsTests` (Swift)
-and `next-actions.test.ts` (jest) both read it and must agree with every case.
+`NextActionsVerification` (Windows Core) and `next-actions.test.ts` (jest) all
+read it and must agree with every case.
 
 ## Model labels (`fixtures/model-labels.json`)
 
