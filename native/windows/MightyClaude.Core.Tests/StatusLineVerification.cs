@@ -543,7 +543,8 @@ internal static class StatusLineVerification
         {
             Console.WriteLine("SKIP"); return;
         }
-        string command = OperatingSystem.IsWindows() ? "ping -n 10 127.0.0.1 > nul" : "sleep 5";
+        // No "> nul": the command runs in Git Bash where there is one, and there that writes a file named nul into the folder the tests run from.
+        string command = OperatingSystem.IsWindows() ? "ping -n 10 127.0.0.1" : "sleep 5";
         var cfg = new StatusLineConfig(command, 0, "사용자 설정", false);
         var ctx = new StatusLineContext("sid2", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, false, null, null, (bool?)false, null);
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -830,8 +831,17 @@ internal static class StatusLineVerification
         Check(withGit.Binary == gitBash && withGit.Arguments.SequenceEqual(new[] { "-c", "~/.claude/statusline.sh" }), "Git Bash가 있으면 Git Bash로 실행해야 합니다.");
         var withoutGit = StatusLineSupport.Shell("node status.mjs", windows: true, exists: _ => false, environment: env);
         Check(withoutGit.Binary == "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" && withoutGit.Arguments.SequenceEqual(new[] { "-NoProfile", "-NonInteractive", "-Command", "node status.mjs" }), "Git Bash가 없으면 PowerShell로 실행해야 합니다.");
-        var named = StatusLineSupport.Shell("x", windows: true, exists: path => path == "D:\\tools\\bash.exe", environment: name => name == "CLAUDE_CODE_GIT_BASH_PATH" ? "D:\\tools\\bash.exe" : env(name));
+        var named = StatusLineSupport.Shell("x", windows: true, exists: path => path == "D:\\tools\\bash.exe" || path == gitBash, environment: name => name == "CLAUDE_CODE_GIT_BASH_PATH" ? "D:\\tools\\bash.exe" : env(name));
         Check(named.Binary == "D:\\tools\\bash.exe", "CLAUDE_CODE_GIT_BASH_PATH로 지정한 Git Bash를 먼저 써야 합니다.");
+        // As in the CLI the variable counts only when it names bash or sh. git-bash.exe, the launcher that opens a terminal window, is passed over and never run.
+        Func<string, Func<string, bool>, string> shellFor = (variable, exists) => StatusLineSupport.Shell("x", windows: true, exists: exists, environment: name => name == "CLAUDE_CODE_GIT_BASH_PATH" ? variable : env(name)).Binary;
+        var launcher = "D:\\Git\\git-bash.exe";
+        Check(shellFor(launcher, path => path == launcher || path == gitBash) == gitBash, "a window launcher in the variable is passed over for the installed Git Bash");
+        Check(shellFor(launcher, path => path == launcher || path.StartsWith("D:\\Git\\", StringComparison.Ordinal)).EndsWith("powershell.exe", StringComparison.Ordinal), "the window launcher never runs the command, and no file beside it is guessed");
+        foreach (var other in new[] { "D:\\Git\\git-cmd.exe", "D:/Git/GIT-BASH.EXE", "D:\\tools\\bash.exe ", "D:\\Git\\usr\\bin\\mintty.exe", "git-bash.exe" })
+            Check(shellFor(other, path => path == other).EndsWith("powershell.exe", StringComparison.Ordinal), "only bash or sh is taken from the variable: " + other);
+        foreach (var shell in new[] { "D:\\tools\\sh.exe", "D:/tools/BASH.EXE", "D:\\msys\\usr\\bin\\bash" })
+            Check(shellFor(shell, path => path == shell) == shell, "bash and sh are taken from the variable however the name is spelled: " + shell);
         var posix = StatusLineSupport.Shell("x", windows: false);
         Check(posix.Binary == "/bin/sh" && posix.Arguments.SequenceEqual(new[] { "-c", "x" }), "Windows가 아니면 /bin/sh로 실행해야 합니다.");
         return Task.CompletedTask;
