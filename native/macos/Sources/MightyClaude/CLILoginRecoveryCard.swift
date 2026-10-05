@@ -1,9 +1,10 @@
 import SwiftUI
 import MightyCore
 
-/// Shown in a pane whose last run lost its CLI sign-in. Nothing opens until
-/// the button is pressed; then the CLI signs in in the background and the
-/// failed request goes out again on its own.
+/// Shown in a pane whose last run lost its CLI sign-in. With automatic sign-in
+/// on (Settings → CLI accounts) the sign-in has already started; otherwise
+/// nothing opens until the button is pressed. Then the CLI signs in in the
+/// background and the failed request goes out again on its own.
 struct CLILoginRecoveryCard: View {
     @EnvironmentObject private var store: AppStore
     let provider: String
@@ -28,8 +29,10 @@ struct CLILoginRecoveryCard: View {
                         Text(message).foregroundStyle(Palette.waitText).fixedSize(horizontal: false, vertical: true)
                     }
                 case .starting?:
+                    automaticNote
                     progress(L("loginRecovery.starting"))
                 case .waiting?:
+                    automaticNote
                     progress(L("loginRecovery.waiting"))
                     if let url = state?.url {
                         Link(L("loginRecovery.openLink"), destination: url).help(url.absoluteString)
@@ -52,6 +55,7 @@ struct CLILoginRecoveryCard: View {
             switch state?.phase {
             case .starting?, .waiting?:
                 Button(L("loginRecovery.cancel")) { store.cancelBackgroundLogin(provider) }.controlSize(.small)
+                Button(L("loginRecovery.terminalButton")) { store.startTerminalLoginFallback(provider) }.controlSize(.small)
             case .failed?:
                 Button(L("loginRecovery.loginButton")) { store.startBackgroundLogin(provider) }.controlSize(.small)
                 Button(L("loginRecovery.terminalButton")) { store.startTerminalLoginFallback(provider) }.controlSize(.small)
@@ -74,6 +78,12 @@ struct CLILoginRecoveryCard: View {
         Button(L("loginRecovery.resendButton")) { store.resendLoginRequestNow(sessionID) }.controlSize(.small)
             .help(L("loginRecovery.resendHelp"))
             .disabled(store.loginRetries.requests[sessionID] == nil)
+    }
+
+    @ViewBuilder private var automaticNote: some View {
+        if state?.automatic == true {
+            Text(L("loginRecovery.autoStarted")).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func progress(_ text: String) -> some View {

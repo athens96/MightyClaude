@@ -168,6 +168,7 @@ internal static class Verification
         await Test("Login recovery bounded partial URLs and pasted-code prompts", CliLoginRecoveryVerification.OutputHandlesPartialUrlsAndCodePrompts);
         await Test("Login recovery latest request generation and one-shot retry", CliLoginRecoveryVerification.RetryGenerationPreservesAttachmentsAndDropsStaleWork);
         await Test("Login recovery requires fresh successful sign-in", CliLoginRecoveryVerification.WaitRequiresFreshSuccessWhenAlreadySignedIn);
+        await Test("Login recovery automatic start once per provider with cooldown", CliLoginRecoveryVerification.AutomaticStartOncePerProviderWithCooldown);
         await Test("Agent IO TerminalCleanerAndEphemeralOwnership", AgentIOVerification.TerminalCleanerAndEphemeralOwnership);
         if (OperatingSystem.IsWindows()) await Test("Agent IO real ConPTY process ownership", AgentIOVerification.RealWindowsInteractiveProcess);
         else { skipped++; Console.WriteLine("SKIP Agent IO real ConPTY process (requires Windows)"); }

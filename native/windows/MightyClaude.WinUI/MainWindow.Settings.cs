@@ -723,6 +723,13 @@ public sealed partial class MainWindow
             rows.Children.Clear(); holds.Clear();
             foreach (var status in shown) SettingsRow(rows, AccountRow(status));
             SettingsRow(rows, SettingsText(CliAccountStrings.SectionDescription, 11, DesignToken.Ink2));
+            // M/CLIAccountsSettingsView.swift: the automatic sign-in switch over its explanation, on unless saved off.
+            var autoLoginLabel = Locale.Get("settings.cliAccounts.autoLoginToggle");
+            var autoLoginToggle = SettingsSwitch(autoLoginLabel, service.Snapshot.AutoLoginCLIs != false, "cli-auto-login");
+            void AutoLoginToggled() => _ = Act(async () => await service.UpdateAsync(s => s with { AutoLoginCLIs = autoLoginToggle.IsChecked == true }));
+            autoLoginToggle.Checked += (_, _) => AutoLoginToggled(); autoLoginToggle.Unchecked += (_, _) => AutoLoginToggled();
+            SettingsRow(rows, SettingsLabeled(SettingsText(autoLoginLabel), autoLoginToggle));
+            SettingsRow(rows, SettingsText(Locale.Get("settings.cliAccounts.autoLoginDescription"), 11, DesignToken.Ink2));
         }
         // The rows again from what the coordinator now knows.
         void Refill()
@@ -884,7 +891,12 @@ public sealed partial class MainWindow
         RequireIdleAccount(provider);
         if (CliAccountSupport.LoginArguments(provider, option) is not { } argv) return;
         accountChanges.TryAdd(provider, 0);
-        try { await accountsCoordinator.StartSignInAsync(argv); await RefreshCliAccounts(); }
+        try
+        {
+            await accountsCoordinator.StartSignInAsync(argv); await RefreshCliAccounts();
+            // A confirmed sign-in from the terminal ends the automatic-start cooldown the way a background one does.
+            if (accountsCoordinator.Statuses.TryGetValue(provider, out var status) && status.LoggedIn == true && CliAuthFailure.SignInCanFix(status)) autoLogin.Succeeded(provider, DateTimeOffset.UtcNow);
+        }
         finally { accountChanges.TryRemove(provider, out _); }
     }
 

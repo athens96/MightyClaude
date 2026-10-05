@@ -149,7 +149,12 @@ null or malformed values leave this opt-in disabled. Mac snapshots may also incl
 background plugin updates on (user-scope Claude plugins without accepting a changed
 marketplace command, and Codex Git marketplaces) while CLI updates are on. Both
 preferences are local to the Mac app profile, and an update applies from the next
-request.
+request. Mac and Windows snapshots may also include `autoLoginCLIs`, an optional
+Boolean; anything but explicit `false` keeps the automatic sign-in on: a run that
+lost its Claude or Codex sign-in starts one background sign-in per provider, and
+none again for two minutes after one failed, was cancelled or succeeded. A request
+that login recovery itself resent, or that started before the last sign-in, only
+shows the card.
 
 `RunSession.runTiming` is optional saved metadata. It contains ISO 8601 strings
 `startedAt`, `lastObservedAt`, optional `finishedAt`, and boolean `isApproximate`.

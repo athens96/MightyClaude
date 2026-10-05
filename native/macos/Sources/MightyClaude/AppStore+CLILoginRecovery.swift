@@ -9,6 +9,8 @@ struct BackgroundLoginState: Equatable {
     var phase: Phase
     var url: URL?
     var asksForCode = false
+    /// Started by the app on a lost sign-in, not by the card's button.
+    var automatic = false
 }
 
 /// The running sign-in behind a `BackgroundLoginState` with the same id.
@@ -20,9 +22,10 @@ final class BackgroundLoginJob {
 }
 
 /// A run that ends because the CLI lost its sign-in raises a card in its
-/// pane. One press signs in again in the background (the CLI opens the
-/// browser itself) and, once signed in, resends the failed request in every
-/// pane of that provider still waiting for it. Every request starts a new CLI
+/// pane and, with the Settings switch on (the default), starts the sign-in at
+/// once; otherwise one press does. It signs in again in the background (the CLI
+/// opens the browser itself) and, once signed in, resends the failed request in
+/// every pane of that provider still waiting for it. Every request starts a new CLI
 /// process that resumes the conversation, so the new sign-in applies at once.
 extension AppStore {
     /// Someone is changing this provider's sign-in right now: Settings, a
@@ -50,7 +53,7 @@ extension AppStore {
         providerLastActive[session.provider] = Date()
         dismissLoginRequired(id)
         if session.kind == "claude", ["claude", "codex"].contains(session.provider) {
-            inFlightRequests[id] = (CLILoginRetryRequest(sessionId: id, provider: session.provider, input: input, attachments: attachments), generation)
+            inFlightRequests[id] = (CLILoginRetryRequest(sessionId: id, provider: session.provider, input: input, attachments: attachments, sentAt: Date()), generation)
         } else { inFlightRequests.removeValue(forKey: id) }
     }
 
@@ -79,7 +82,19 @@ extension AppStore {
                   session.status != "running", !self.pendingRuns.contains(session.id) else { return }
             self.loginRequired[session.id] = request.provider
             self.loginRetries.remember(request)
+            self.startAutomaticLoginIfAllowed(request, status: status)
         }
+    }
+
+    /// The automatic start: one sign-in per provider, however many panes lost
+    /// it together, and none for a while after one ended. A request that was
+    /// itself resent, or sent before the last sign-in, only raises the card.
+    func startAutomaticLoginIfAllowed(_ request: CLILoginRetryRequest, status: CLIAccountStatus) {
+        let provider = request.provider
+        let active = backgroundLoginJobs[provider] != nil || accountBusyReason(provider) != nil
+        guard !ending, autoLoginGate.shouldStart(provider: provider, enabled: snapshot.autoLoginCLIs != false, status: status, loginActive: active,
+                                                 resent: request.resent, sentAt: request.sentAt) else { return }
+        startBackgroundLogin(provider, automatic: true)
     }
 
     func forgetLoginRecovery(_ id: String) {
@@ -98,7 +113,7 @@ extension AppStore {
         if !loginRequired.values.contains(provider) { cancelBackgroundLogin(provider) }
     }
 
-    func startBackgroundLogin(_ provider: String) {
+    func startBackgroundLogin(_ provider: String, automatic: Bool = false) {
         guard !ending, ["claude", "codex"].contains(provider), backgroundLoginJobs[provider] == nil,
               let command = CLIAccountSupport.loginCommand(provider: provider, option: .account) else { return }
         let id = UUID()
@@ -106,7 +121,7 @@ extension AppStore {
             backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .failed(reason)); return
         }
         cliAccountMessages[provider] = nil
-        backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting)
+        backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
         let service = cliAccountService
@@ -142,6 +157,8 @@ extension AppStore {
             guard self.backgroundLoginJobs[provider]?.id == id else { return }
             switch outcome {
             case .loggedIn(let status):
+                // Held before the job goes, so a run failing while the app catches up never starts another.
+                self.autoLoginGate.succeeded(provider: provider)
                 self.backgroundLoginJobs.removeValue(forKey: provider)
                 await self.loginRestored(provider, status: status)
             case .exited(let status):
@@ -158,6 +175,7 @@ extension AppStore {
     private func failBackgroundLogin(_ provider: String, id: UUID, message: String) {
         guard backgroundLoginJobs[provider]?.id == id else { return }
         backgroundLoginJobs.removeValue(forKey: provider)
+        autoLoginGate.stopped(provider: provider)
         backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .failed(message))
     }
 
@@ -167,7 +185,10 @@ extension AppStore {
     }
 
     func cancelBackgroundLogin(_ provider: String) {
-        if let job = backgroundLoginJobs.removeValue(forKey: provider) { job.task?.cancel(); job.login?.cancel() }
+        if let job = backgroundLoginJobs.removeValue(forKey: provider) {
+            job.task?.cancel(); job.login?.cancel()
+            autoLoginGate.stopped(provider: provider)
+        }
         backgroundLogins.removeValue(forKey: provider)
     }
 
@@ -185,6 +206,7 @@ extension AppStore {
     /// on that provider. A pane that sent anything since lost its retry then.
     func loginRestored(_ provider: String, status: CLIAccountStatus) async {
         cliAccounts[provider] = status
+        autoLoginGate.succeeded(provider: provider)
         backgroundLogins.removeValue(forKey: provider)
         for (id, value) in loginRequired where value == provider { loginCardNotes.removeValue(forKey: id) }
         loginRequired = loginRequired.filter { $0.value != provider }
@@ -220,6 +242,10 @@ extension AppStore {
         if waitsForBackgroundWork(session.provider) {
             loginRetries.remember(request); awaitingLoginResend.insert(session.id); return false
         }
+        // Never while a new sign-in runs: its success resends what waits.
+        if backgroundLoginJobs[request.provider] != nil {
+            loginRetries.remember(request); loginRequired[session.id] = request.provider; return false
+        }
         func keep(_ reason: String) {
             loginRetries.remember(request)
             loginRequired[session.id] = request.provider
@@ -233,6 +259,8 @@ extension AppStore {
             error = previous
             keep(reason); return false
         }
+        // Its own sign-in failure, if any, only raises the card again.
+        inFlightRequests[session.id]?.request.resent = true
         updateSession(session.id) { $0.logs.append(LogEntry(kind: "system", text: L("loginRecovery.resent"))) }
         return true
     }

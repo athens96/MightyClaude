@@ -42,6 +42,25 @@ public static class CliAuthFailure
         && !(status.Provider == "codex" && (status.Method == CliAccountSupport.CodexApiKeyMethod || status.Method == "API key"));
 }
 
+/// Whether a lost sign-in starts its provider's background sign-in by itself (M/CLILoginRecovery.swift
+/// CLIAutoLoginGate). One per provider: none while one already runs, and none for Cooldown after one
+/// failed, was cancelled or succeeded, so neither a refused sign-in nor a request failing again right
+/// after approval reopens the browser in a loop. A request login recovery itself resent, or one sent
+/// before the last sign-in, only raises the card. The card's button is never held by this.
+public sealed class CliAutoLoginGate
+{
+    public static readonly TimeSpan Cooldown = TimeSpan.FromMinutes(2);
+    private readonly Dictionary<string, DateTimeOffset> held = [], signedIn = [];
+    public bool ShouldStart(string provider, bool enabled, CliAccountStatus status, bool loginActive, DateTimeOffset now, bool resent = false, DateTimeOffset? sentAt = null) =>
+        enabled && !loginActive && !resent && provider is ("claude" or "codex") && status.Provider == provider && CliAuthFailure.SignInCanFix(status)
+        && !(sentAt is { } sent && signedIn.TryGetValue(provider, out var confirmed) && sent < confirmed)
+        && (!held.TryGetValue(provider, out var at) || now - at >= Cooldown);
+    /// <summary>A sign-in of the provider failed, timed out or was cancelled.</summary>
+    public void Stopped(string provider, DateTimeOffset now) => held[provider] = now;
+    /// <summary>Signed in again (in the background, a terminal or Settings): automatic starts wait out the cooldown.</summary>
+    public void Succeeded(string provider, DateTimeOffset now) { held[provider] = now; signedIn[provider] = now; }
+}
+
 public sealed record CliLoginOutput(Uri? Url = null, bool AsksForCode = false);
 
 /// The bounded output exists in memory only. It never enters run logs or snapshots.
@@ -89,7 +108,8 @@ public sealed class CliLoginOutputParser
     }
 }
 
-public sealed record CliLoginRetry(StartRunRequest Request, long Generation);
+/// <summary>Resent: login recovery itself sent the request again after a sign-in. SentAt: when its run started.</summary>
+public sealed record CliLoginRetry(StartRunRequest Request, long Generation, bool Resent = false, DateTimeOffset? SentAt = null);
 
 /// A new submission invalidates both its old retry and any pending status check.
 public sealed class CliLoginRetryBook
@@ -98,13 +118,18 @@ public sealed class CliLoginRetryBook
     private readonly Dictionary<string, long> generations = [];
     private readonly Dictionary<string, CliLoginRetry> inflight = [];
     private readonly Dictionary<string, CliLoginRetry> retries = [];
+    private readonly HashSet<string> resending = [];
     public IReadOnlyDictionary<string, CliLoginRetry> Requests => retries;
-    public long Sent(StartRunRequest request)
+    /// <summary>The next request of this pane is login recovery's own resend (it is reported back later through Sent).</summary>
+    public void ExpectResend(string session) => resending.Add(session);
+    public void CancelResend(string session) => resending.Remove(session);
+    public long Sent(StartRunRequest request, DateTimeOffset? now = null)
     {
         var generation = ++serial; generations[request.SessionId] = generation;
         retries.Remove(request.SessionId); inflight.Remove(request.SessionId);
+        var resent = resending.Remove(request.SessionId);
         if (request.Kind == "claude" && request.Provider is "claude" or "codex")
-            inflight[request.SessionId] = new(request with { Attachments = request.Attachments?.ToArray() }, generation);
+            inflight[request.SessionId] = new(request with { Attachments = request.Attachments?.ToArray() }, generation, resent, now ?? DateTimeOffset.UtcNow);
         return generation;
     }
     public CliLoginRetry? Settled(string session) => inflight.Remove(session, out var retry) ? retry : null;
@@ -115,8 +140,8 @@ public sealed class CliLoginRetryBook
         retries[retry.Request.SessionId] = retry; return true;
     }
     public CliLoginRetry? Take(string session) => retries.Remove(session, out var retry) && IsCurrent(retry) ? retry : null;
-    public void Drop(string session) { retries.Remove(session); inflight.Remove(session); generations.Remove(session); }
-    public void Clear() { retries.Clear(); inflight.Clear(); generations.Clear(); }
+    public void Drop(string session) { retries.Remove(session); inflight.Remove(session); generations.Remove(session); resending.Remove(session); }
+    public void Clear() { retries.Clear(); inflight.Clear(); generations.Clear(); resending.Clear(); }
 }
 
 public enum CliLoginOutcome { LoggedIn, Exited, TimedOut }

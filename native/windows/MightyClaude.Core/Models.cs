@@ -236,6 +236,10 @@ public sealed record AppSnapshot
     [JsonConverter(typeof(LenientNullableBoolConverter))]
     public bool? AutoUpdateCLIs { get; init; }
     public bool? AutoUpdatePlugins { get; init; }
+    // A run that lost its Claude/Codex sign-in starts the sign-in by itself. Null (older state) means on,
+    // the default, matching the Mac's autoLoginCLIs.
+    [JsonConverter(typeof(LenientNullableBoolConverter))]
+    public bool? AutoLoginCLIs { get; init; }
     // Additive with a default, so Version stays 1: StateStore resets every
     // field when Version is not 1. Off out of the box — nothing is looked up
     // directly until the user switches it on in the usage popover.

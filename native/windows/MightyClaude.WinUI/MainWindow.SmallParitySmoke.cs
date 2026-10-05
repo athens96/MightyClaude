@@ -14,12 +14,73 @@ public sealed partial class MainWindow
         {
             await SelectLayoutSession(id); Render();
             var pane = views[id]; await WaitUI(() => pane.Container.IsLoaded);
-            return await pane.SmokeSmallParityAsync();
+            var checks = await pane.SmokeSmallParityAsync();
+            checks["automaticLogin"] = await SmokeAutomaticLogin(pane, id, workspace);
+            return checks;
         }
         finally { await service.UpdateAsync(_ => saved); Render(); }
     }
+    // A lost sign-in starts one sign-in per provider by itself, with no CLI: the injected starter stands in for
+    // the sign-in process and the account status is a fixture, so this never asks a real CLI anything.
+    private async Task<string> SmokeAutomaticLogin(PaneView pane, string id, Workspace workspace)
+    {
+        var starts = 0; smokeLoginStarter = _ => { starts++; return Task.CompletedTask; };
+        var sends = new List<StartRunRequest>(); var previousStart = smokeStart;
+        var status = new CliAccountStatus { Provider = "claude", LoggedIn = true, Method = "claude.ai" };
+        try
+        {
+            Require(!service.HasActiveProvider("claude") && !AnyCliUpdateRunning && !loginJobs.ContainsKey("claude") && !loginBusy.ContainsKey("claude") && !accountChanges.ContainsKey("claude"),
+                $"automatic sign-in: the smoke needs Claude idle with no update or sign-in under way; got running={service.HasActiveProvider("claude")}, update={AnyCliUpdateRunning}, sign-in={loginJobs.ContainsKey("claude") || loginBusy.ContainsKey("claude")}, account change={accountChanges.ContainsKey("claude")}");
+            autoLogin = new();
+            loginRetries.Sent(new StartRunRequest(id, workspace.Id, "claude", "smoke", []));
+            Require(loginRetries.Settled(id) is { } settled && loginRetries.Remember(settled), "automatic sign-in: the fixture retry must be kept");
+            var retry = loginRetries.Requests[id];
+            await service.UpdateAsync(s => s with { AutoLoginCLIs = false });
+            StartAutomaticLoginIfAllowed(retry, status);
+            Require(starts == 0 && !loginJobs.ContainsKey("claude"), "automatic sign-in: with the switch off a lost sign-in must only show the card");
+            await service.UpdateAsync(s => s with { AutoLoginCLIs = null });
+            // A request login recovery resent only raises the card.
+            StartAutomaticLoginIfAllowed(retry with { Resent = true }, status);
+            Require(starts == 0, "automatic sign-in: a resent request's failure must not start a sign-in");
+            // Two panes losing the sign-in together.
+            StartAutomaticLoginIfAllowed(retry, status); StartAutomaticLoginIfAllowed(retry, status);
+            Require(starts == 1 && loginJobs.TryGetValue("claude", out var job) && job.Automatic,
+                $"automatic sign-in: one lost sign-in must start exactly one sign-in; got {starts} starts, job {loginJobs.ContainsKey("claude")}");
+            RefreshLoginCards();
+            Require(pane.SmokeLoginCardSays(Locale.Get("loginRecovery.autoStarted")) && pane.SmokeLoginCardSays(Locale.Get("loginRecovery.waiting")) && pane.SmokeLoginCardSays(Locale.Get("loginRecovery.cancel")),
+                "automatic sign-in: the card must say the sign-in started by itself, show its progress and keep Cancel");
+            CancelBackgroundLogin("claude"); RefreshLoginCards();
+            StartAutomaticLoginIfAllowed(retry, status);
+            Require(starts == 1 && !loginJobs.ContainsKey("claude") && pane.SmokeLoginCardSays(Locale.Get("loginRecovery.loginButton")),
+                $"automatic sign-in: a cancelled sign-in must not start again within the cooldown, and the card must offer its button; got {starts} starts");
+            // A send from a composer while an automatic sign-in runs cancels it and goes ahead.
+            autoLogin = new();
+            StartAutomaticLoginIfAllowed(retry, status);
+            Require(starts == 2 && loginJobs.ContainsKey("claude"), $"automatic sign-in: a fresh gate must start again; got {starts} starts");
+            smokeStart = request => { sends.Add(request); return Task.CompletedTask; };
+            await StartFromComposer(new StartRunRequest(id, workspace.Id, "claude", "smoke send", []));
+            StartAutomaticLoginIfAllowed(retry with { SentAt = DateTimeOffset.UtcNow }, status);
+            Require(sends.Count == 1 && !loginJobs.ContainsKey("claude") && starts == 2,
+                $"automatic sign-in: a composer send must cancel the automatic sign-in, go ahead and hold the next start; got {sends.Count} sends, sign-in {loginJobs.ContainsKey("claude")}, {starts} starts");
+            return "one start, switch and resend respected, cooldown after cancel and after a send";
+        }
+        finally { smokeLoginStarter = null; smokeStart = previousStart; CancelBackgroundLogin("claude"); autoLogin = new(); DismissLoginRecovery(id); }
+    }
     private sealed partial class PaneView
     {
+        /// <summary>Whether the pane's sign-in card shows these words, as a line or on a button.</summary>
+        internal bool SmokeLoginCardSays(string text)
+        {
+            static bool Has(UIElement element, string text) => element switch
+            {
+                TextBlock words => words.Text == text,
+                Button { Content: string title } => title == text,
+                Button { Content: UIElement content } => Has(content, text),
+                Panel panel => panel.Children.Any(child => Has(child, text)),
+                _ => false,
+            };
+            return loginRecoveryHost.Visibility == Visibility.Visible && Has(loginRecoveryHost, text);
+        }
         internal async Task<Dictionary<string, object?>> SmokeSmallParityAsync()
         {
             var checks = new Dictionary<string, object?>();

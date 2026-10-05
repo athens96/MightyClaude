@@ -21,6 +21,13 @@ struct CLIAccountsSettingsSection: View {
                 } message: { pending in
                     Text(L("settings.cliAccounts.confirmMessageTemplate", ["provider": ProviderOptions.label(pending.provider)]))
                 }
+            Toggle(L("settings.cliAccounts.autoLoginToggle"), isOn: Binding(
+                get: { store.snapshot.autoLoginCLIs != false },
+                set: { store.snapshot.autoLoginCLIs = $0 }
+            ))
+            .accessibilityIdentifier("cli-auto-login")
+            Text(L("settings.cliAccounts.autoLoginDescription"))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }
 
