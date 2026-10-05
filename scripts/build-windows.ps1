@@ -46,7 +46,10 @@ try {
         if ($keyBytes.Length -ne 32) { throw "MIGHTY_UPDATE_PUBLIC_KEY는 raw Ed25519 공개 키 32바이트여야 합니다 ($($keyBytes.Length)바이트)." }
     }
     if ($updateUrl -and -not $updateUrl.StartsWith('https://')) { throw 'MIGHTY_UPDATE_URL은 https 주소여야 합니다.' }
-    $updateProperties = @()
+    # The app's version is the repository's VERSION, as on the Mac (the csproj value is only a fallback).
+    $appVersion = (Get-Content (Join-Path $PSScriptRoot '..' 'VERSION') -Raw).Trim()
+    if ($appVersion -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION must be x.y.z; got '$appVersion'" }
+    $updateProperties = @("-p:Version=$appVersion")
     if ($updateKey) { $updateProperties += "-p:MightyUpdatePublicKey=$($updateKey.Trim())" }
     if ($updateUrl) { $updateProperties += "-p:MightyUpdateManifestUrl=$($updateUrl.Trim())" }
 
