@@ -79,7 +79,10 @@ public sealed partial class MainWindow
             await WaitUI(() => search.Focus(FocusState.Keyboard) && Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root.XamlRoot!) is DependencyObject inSidebar && IsInsideSidebar(inSidebar),
                 () => $"the sidebar search never took keyboard focus; focus is on {Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root.XamlRoot!)?.GetType().Name ?? "nothing"}");
             await ToggleSidebar();
-            var focusedAfter = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root.XamlRoot!);
+            root.UpdateLayout();
+            object? focusedAfter = null;
+            await WaitUI(() => (focusedAfter = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root.XamlRoot!)) is Button { ActualWidth: > 0 } shown && sidebarToggles.Contains(shown),
+                () => $"folding with focus in the search must move focus to the shown sidebar button; focus is on {(focusedAfter is FrameworkElement e ? e.GetType().Name + " '" + AutomationProperties.GetAutomationId(e) + "'" : focusedAfter?.GetType().Name ?? "nothing")}");
             Require(service.Snapshot.SidebarCollapsed && focusedAfter is Button { ActualWidth: > 0 } focusedToggle && sidebarToggles.Contains(focusedToggle),
                 $"folding with focus in the search must move focus to the shown sidebar button; got collapsed={service.Snapshot.SidebarCollapsed}, focus on {(focusedAfter is FrameworkElement f ? f.GetType().Name + " '" + AutomationProperties.GetAutomationId(f) + "'" : focusedAfter?.GetType().Name ?? "nothing")}");
             await ToggleSidebar();
