@@ -81,10 +81,38 @@ public sealed partial class MainWindow
         var focusInSidebar = collapsed && root.XamlRoot is { } xamlRoot && FocusManager.GetFocusedElement(xamlRoot) is DependencyObject focused && IsInsideSidebar(focused);
         // Focus moves before the fold: once the focused element collapses, WinUI hands focus to the
         // next control on its own (the status bar), after any move made here.
-        if (focusInSidebar && sidebarToggles.FirstOrDefault(b => b.ActualWidth > 0 && b.ActualHeight > 0 && !IsInsideSidebar(b)) is { } toggle) toggle.Focus(FocusState.Keyboard);
+        if (focusInSidebar) FocusShownSidebarToggle();
         var save = service.UpdateAsync(s => s with { SidebarCollapsed = collapsed });
         ApplySidebarCollapsed();
+        // WinUI settles focus after the layout pass; if it still moved off, put it back once that is done.
+        if (focusInSidebar) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (root.XamlRoot is { } settled && FocusManager.GetFocusedElement(settled) is Button focused && sidebarToggles.Contains(focused)) return;
+            FocusShownSidebarToggle();
+        });
         return save;
+    }
+
+    /// <summary>
+    /// Puts keyboard focus on a sidebar button that is really on screen: loaded, outside the sidebar,
+    /// and visible all the way up to the window (a button in a hidden header can keep its last size).
+    /// </summary>
+    private bool FocusShownSidebarToggle()
+    {
+        foreach (var toggle in sidebarToggles.Where(b => b.IsLoaded && !IsInsideSidebar(b) && IsShownToRoot(b)))
+            if (toggle.Focus(FocusState.Keyboard)) return true;
+        return false;
+    }
+
+    /// <summary>Whether the element and every ancestor up to the window's content are visible.</summary>
+    private bool IsShownToRoot(UIElement element)
+    {
+        for (DependencyObject? node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is UIElement { Visibility: not Visibility.Visible }) return false;
+            if (ReferenceEquals(node, root)) return true;
+        }
+        return false;
     }
 
     /// <summary>Whether the element stands in the sidebar's visual tree.</summary>
