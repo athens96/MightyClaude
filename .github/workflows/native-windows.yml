@@ -35,6 +35,11 @@ jobs:
         run: node scripts/check-design-tokens.js --check
       - name: Test core and publish self-contained WinUI folder and ZIP
         shell: pwsh
+        # The update address and the public half of the update signing key, as the Mac release
+        # build stamps them; the signing key itself never leaves the release machine.
+        env:
+          MIGHTY_UPDATE_URL: https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/latest.json
+          MIGHTY_UPDATE_PUBLIC_KEY: ZGxMTGfVVu2ocgC6ajyqDBl4JqPmyzlqK/xgGMDsa2c=
         run: ./scripts/build-windows.ps1 -Architecture ${{ matrix.architecture }} -Configuration Release
       - name: Launch native WinUI with an isolated profile and capture GUI evidence
         shell: pwsh
