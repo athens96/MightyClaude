@@ -61,6 +61,39 @@ public enum CLIAuthFailure {
     }
 }
 
+/// Whether a lost sign-in starts its provider's background sign-in by itself
+/// (the Settings switch "로그인이 끊기면 자동으로 다시 로그인"). One sign-in per
+/// provider: none while one already runs, and none for `cooldown` after one
+/// failed, was cancelled or succeeded, so neither a refused sign-in nor a
+/// request that fails again right after approval reopens the browser in a loop.
+/// A request login recovery itself resent, or one sent before the last
+/// sign-in, only raises the card. The card's button is never held by this.
+public struct CLIAutoLoginGate: Sendable, Equatable {
+    public static let cooldown: TimeInterval = 120
+    /// When each provider's last sign-in ended (failed, cancelled or succeeded).
+    public private(set) var heldAt: [String: Date] = [:]
+    /// When each provider was last confirmed signed in.
+    public private(set) var signedInAt: [String: Date] = [:]
+    public init() {}
+
+    /// `loginActive`: a background sign-in, a sign-in terminal or another
+    /// account change of the provider is under way, or it cannot change now.
+    /// `resent`: the failed request was itself resent after a sign-in.
+    /// `sentAt`: when the failed request started its run.
+    public func shouldStart(provider: String, enabled: Bool, status: CLIAccountStatus, loginActive: Bool,
+                            resent: Bool = false, sentAt: Date? = nil, now: Date = Date()) -> Bool {
+        guard enabled, !loginActive, !resent, ["claude", "codex"].contains(provider), status.provider == provider,
+              CLIAuthFailure.signInCanFix(status) else { return false }
+        if let sentAt, let signedIn = signedInAt[provider], sentAt < signedIn { return false }
+        guard let held = heldAt[provider] else { return true }
+        return now.timeIntervalSince(held) >= Self.cooldown
+    }
+    /// A sign-in of the provider failed, timed out or was cancelled.
+    public mutating func stopped(provider: String, at now: Date = Date()) { heldAt[provider] = now }
+    /// Signed in again (in the background, a terminal or Settings).
+    public mutating func succeeded(provider: String, at now: Date = Date()) { heldAt[provider] = now; signedInAt[provider] = now }
+}
+
 /// What a sign-in command printed so far, reduced to the two things the pane
 /// card shows: the first https link and whether it asks for a pasted code.
 public struct CLILoginOutput: Sendable, Equatable {
@@ -139,8 +172,12 @@ public struct CLILoginRetryRequest: Sendable, Equatable {
     public var provider: String
     public var input: String
     public var attachments: [RunAttachment]
-    public init(sessionId: String, provider: String, input: String, attachments: [RunAttachment] = []) {
-        self.sessionId = sessionId; self.provider = provider; self.input = input; self.attachments = attachments
+    /// Login recovery itself sent this request again after a sign-in.
+    public var resent: Bool
+    /// When the request started its run.
+    public var sentAt: Date?
+    public init(sessionId: String, provider: String, input: String, attachments: [RunAttachment] = [], resent: Bool = false, sentAt: Date? = nil) {
+        self.sessionId = sessionId; self.provider = provider; self.input = input; self.attachments = attachments; self.resent = resent; self.sentAt = sentAt
     }
 }
 

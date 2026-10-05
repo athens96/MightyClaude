@@ -20,7 +20,11 @@ extension AppStore {
                     self.cliAccountRefreshing.remove(provider)
                     guard !self.cliAccountBusy.contains(provider) else { return } // an action owns the row now
                     self.cliAccounts[provider] = status
-                    if status.loggedIn == true, status.accessVerified != false { self.endCLILogin(provider) }
+                    if status.loggedIn == true, status.accessVerified != false {
+                        // A sign-in terminal still pending is confirmed by this read.
+                        if self.cliLoginPending.contains(provider) { self.autoLoginGate.succeeded(provider: provider) }
+                        self.endCLILogin(provider)
+                    }
                 }
             }
         }
@@ -102,6 +106,7 @@ extension AppStore {
                     guard let self, self.cliLoginSessions[provider] == id else { return true }
                     self.cliAccounts[provider] = status
                     if status.loggedIn == true, status.accessVerified != false {
+                        self.autoLoginGate.succeeded(provider: provider)
                         self.invalidateLocalModels(provider: provider)
                         self.endCLILogin(provider)
                         // Panes whose run lost this sign-in get their request back.

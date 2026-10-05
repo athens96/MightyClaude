@@ -18,6 +18,42 @@ internal static class CliLoginRecoveryVerification
         Check(CliAuthFailure.SignInCanFix(new() { Provider = "claude", LoggedIn = true }) && CliAuthFailure.SignInCanFix(new() { Provider = "codex" }), "stale persisted credentials or unknown status do not rule out login recovery");
         return Task.CompletedTask;
     }
+    internal static Task AutomaticStartOncePerProviderWithCooldown()
+    {
+        var gate = new CliAutoLoginGate(); var now = DateTimeOffset.UnixEpoch.AddDays(10000);
+        var claude = new CliAccountStatus { Provider = "claude", LoggedIn = true, Method = "claude.ai" };
+        var codex = new CliAccountStatus { Provider = "codex" };
+        Check(gate.ShouldStart("claude", true, claude, false, now), "a lost sign-in starts one sign-in");
+        Check(!gate.ShouldStart("claude", true, claude, true, now), "panes failing while the provider's sign-in runs join it instead of starting another");
+        Check(!gate.ShouldStart("claude", false, claude, false, now), "the switch off leaves only the card");
+        Check(!gate.ShouldStart("gemini", true, new() { Provider = "gemini" }, false, now) && !gate.ShouldStart("codex", true, claude, false, now), "only Claude and Codex, decided on their own status");
+        Check(!gate.ShouldStart("claude", true, claude with { Method = "AWS Bedrock", AccessVerified = false }, false, now)
+            && !gate.ShouldStart("codex", true, codex with { Method = CliAccountSupport.CodexApiKeyMethod }, false, now)
+            && !gate.ShouldStart("claude", true, claude with { Installed = false }, false, now), "methods a browser sign-in cannot renew never start one");
+        gate.Stopped("claude", now);
+        Check(!gate.ShouldStart("claude", true, claude, false, now) && !gate.ShouldStart("claude", true, claude, false, now + CliAutoLoginGate.Cooldown - TimeSpan.FromSeconds(1)), "a failed or cancelled sign-in waits for the cooldown");
+        Check(gate.ShouldStart("codex", true, codex, false, now), "the cooldown is per provider");
+        Check(gate.ShouldStart("claude", true, claude, false, now + CliAutoLoginGate.Cooldown) && CliAutoLoginGate.Cooldown == TimeSpan.FromMinutes(2), "a new failure after two minutes starts again");
+        var approved = now + TimeSpan.FromMinutes(10); gate.Succeeded("claude", approved);
+        Check(!gate.ShouldStart("claude", true, claude, false, approved + TimeSpan.FromSeconds(5), sentAt: approved + TimeSpan.FromSeconds(1))
+            && !gate.ShouldStart("claude", true, claude, false, approved + CliAutoLoginGate.Cooldown - TimeSpan.FromSeconds(1)), "a success holds automatic starts for the cooldown, so a failure right after approval never reopens the browser");
+        Check(gate.ShouldStart("claude", true, claude, false, approved + CliAutoLoginGate.Cooldown, sentAt: approved + CliAutoLoginGate.Cooldown), "a new failure after the hold starts again");
+        Check(!gate.ShouldStart("claude", true, claude, false, approved + TimeSpan.FromHours(1), sentAt: approved - TimeSpan.FromSeconds(1)), "a run that started before the last sign-in only raises the card");
+        Check(!gate.ShouldStart("claude", true, claude, false, approved + TimeSpan.FromHours(1), resent: true, sentAt: approved + TimeSpan.FromHours(1)), "a request login recovery resent only raises the card");
+        var book = new CliLoginRetryBook(); var at = DateTimeOffset.UnixEpoch.AddDays(1);
+        book.ExpectResend("pane"); book.Sent(new StartRunRequest("pane", "workspace", "claude", "again", []), at);
+        Check(book.Settled("pane") is { Resent: true } resentRetry && resentRetry.SentAt == at, "login recovery's own resend is marked with its start time");
+        book.Sent(new StartRunRequest("pane", "workspace", "claude", "typed", []), at);
+        Check(book.Settled("pane") is { Resent: false }, "the mark is used once; the user's next send is not a resend");
+        book.ExpectResend("pane"); book.CancelResend("pane"); book.Sent(new StartRunRequest("pane", "workspace", "claude", "typed", []));
+        Check(book.Settled("pane") is { Resent: false }, "a resend that never started leaves no mark");
+        Check(new AppSnapshot().AutoLoginCLIs != false && JsonSerializer.Deserialize<AppSnapshot>("{}", Wire.Json)!.AutoLoginCLIs != false, "absent preference must default on");
+        foreach (var invalid in new[] { "\"false\"", "0", "1", "null", "[]" })
+            Check(JsonSerializer.Deserialize<AppSnapshot>("{\"autoLoginCLIs\":" + invalid + "}", Wire.Json)!.AutoLoginCLIs is null, "only a JSON boolean may switch automatic sign-in: " + invalid);
+        var saved = JsonSerializer.Serialize(StateStore.Normalize(new AppSnapshot { AutoLoginCLIs = false }, restoring: true), Wire.Json);
+        Check(saved.Contains("\"autoLoginCLIs\":false", StringComparison.Ordinal) && JsonSerializer.Deserialize<AppSnapshot>(saved, Wire.Json)!.AutoLoginCLIs == false, "an explicit off must survive normalization and a restart under the Mac's key; got " + saved);
+        return Task.CompletedTask;
+    }
     internal static Task OutputHandlesPartialUrlsAndCodePrompts()
     {
         var parser = new CliLoginOutputParser();

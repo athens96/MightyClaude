@@ -18,11 +18,19 @@ public sealed partial class MainWindow
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> accountChanges = new();
     private readonly HashSet<Task> loginTasks = [];
     private readonly HashSet<string> loginResendsAwaitingUpdate = [];
+    // When a lost sign-in may start its provider's sign-in by itself (Settings → CLI accounts switch).
+    private CliAutoLoginGate autoLogin = new();
+    // An automatic start held back only because another run of the provider was still going, per provider;
+    // it is tried again once the provider is idle (ResumeDeferredAutoLogin).
+    private readonly Dictionary<string, (CliLoginRetry Retry, CliAccountStatus Status)> deferredAutoLogins = [];
+    // The smoke never runs a CLI: when set, this stands in for the sign-in process (MainWindow.SmallParitySmoke.cs).
+    private Func<string, Task>? smokeLoginStarter;
     private sealed class LoginJob
     {
         internal readonly CancellationTokenSource Cancellation = new();
         internal CliBackgroundLogin? Process;
         internal string Phase = "starting";
+        internal bool Automatic;
         internal Task Task = Task.CompletedTask;
     }
 
@@ -41,6 +49,17 @@ public sealed partial class MainWindow
         var request = loginRetries.Settled(value.SessionId);
         if (value.Status == "error" && value.Reason == "authentication" && request is not null)
             TrackLoginTask(ConfirmLoginFailure(request));
+        if (service.Snapshot.Sessions.FirstOrDefault(p => p.Id == value.SessionId)?.Provider is { } provider && deferredAutoLogins.ContainsKey(provider))
+            TrackLoginTask(ResumeDeferredAutoLogin(provider));
+    }
+    /// <summary>A run of the provider ended: an automatic start held back for it is tried again once nothing of the provider runs.</summary>
+    private async Task ResumeDeferredAutoLogin(string provider)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (!closing && service.HasActiveProvider(provider) && DateTimeOffset.UtcNow < deadline) await Task.Delay(50);
+        if (closing || service.HasActiveProvider(provider) || !deferredAutoLogins.Remove(provider, out var deferred)) return;
+        // Only while that pane still waits with the same request.
+        if (loginRetries.Requests.GetValueOrDefault(deferred.Retry.Request.SessionId) == deferred.Retry) StartAutomaticLoginIfAllowed(deferred.Retry, deferred.Status);
     }
     private void TrackLoginTask(Task task)
     {
@@ -59,6 +78,7 @@ public sealed partial class MainWindow
             var pane = service.Snapshot.Sessions.FirstOrDefault(p => p.Id == retry.Request.SessionId);
             if (pane is null || pane.Provider != retry.Request.Provider || pane.Status == "running" || service.IsSessionRunning(pane.Id)) return;
             loginRetries.Remember(retry); RefreshLoginCards();
+            StartAutomaticLoginIfAllowed(retry, status);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { /* A status read cannot turn a failed run into a new failure. */ }
     }
@@ -83,17 +103,42 @@ public sealed partial class MainWindow
     }
     private void CancelBackgroundLogin(string provider)
     {
-        if (loginJobs.Remove(provider, out var job)) job.Cancellation.Cancel();
+        if (loginJobs.Remove(provider, out var job)) { job.Cancellation.Cancel(); autoLogin.Stopped(provider, DateTimeOffset.UtcNow); }
         loginFailures.Remove(provider);
     }
-    private Task StartBackgroundLogin(string provider)
+    /// <summary>
+    /// The automatic start (M/AppStore+CLILoginRecovery.swift startAutomaticLoginIfAllowed): one sign-in per
+    /// provider however many panes lost it together, and none for a while after one failed or was cancelled.
+    /// Anything that would refuse the sign-in now leaves the card as it was, with its button.
+    /// </summary>
+    private void StartAutomaticLoginIfAllowed(CliLoginRetry retry, CliAccountStatus status)
     {
-        if (options.SmokeTest || closing || loginJobs.ContainsKey(provider) || provider is not ("claude" or "codex")) return Task.CompletedTask;
+        var provider = retry.Request.Provider;
+        var changing = loginJobs.ContainsKey(provider) || loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || AnyCliUpdateRunning;
+        bool Allowed(bool active) => autoLogin.ShouldStart(provider, service.Snapshot.AutoLoginCLIs != false, status, active, DateTimeOffset.UtcNow, retry.Resent, retry.SentAt);
+        if (closing) return;
+        if (!changing && service.HasActiveProvider(provider)) { if (Allowed(false)) deferredAutoLogins[provider] = (retry, status); return; }
+        if (!Allowed(changing)) return;
+        deferredAutoLogins.Remove(provider);
+        _ = StartBackgroundLogin(provider, automatic: true);
+    }
+    /// <summary>The provider's automatic sign-in, running or still shutting down; a send cancels it (M sends never wait on one).</summary>
+    private LoginJob? AutomaticLoginOf(string provider) =>
+        loginJobs.GetValueOrDefault(provider) is { Automatic: true } job ? job : loginBusy.GetValueOrDefault(provider) is { Automatic: true } ending ? ending : null;
+    private Task StartBackgroundLogin(string provider, bool automatic = false)
+    {
+        if (closing || loginJobs.ContainsKey(provider) || provider is not ("claude" or "codex")) return Task.CompletedTask;
+        if (options.SmokeTest)
+        {
+            if (smokeLoginStarter is null) return Task.CompletedTask;
+            loginJobs[provider] = new LoginJob { Phase = "waiting", Automatic = automatic }; loginFailures.Remove(provider); RefreshLoginCards();
+            return smokeLoginStarter(provider);
+        }
         if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || AnyCliUpdateRunning || service.HasActiveProvider(provider))
         {
             loginFailures[provider] = Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
         }
-        var job = new LoginJob(); loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
+        var job = new LoginJob { Automatic = automatic }; loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
         job.Task = RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
         return Task.CompletedTask;
     }
@@ -121,7 +166,7 @@ public sealed partial class MainWindow
                 await job.Process.DisposeAsync();
                 cancellation.ThrowIfCancellationRequested();
                 if (loginJobs.GetValueOrDefault(provider) != job) return;
-                loginJobs.Remove(provider); loginFailures.Remove(provider);
+                autoLogin.Succeeded(provider, DateTimeOffset.UtcNow); loginJobs.Remove(provider); loginFailures.Remove(provider);
                 if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
                 await RefreshCliAccounts();
                 if (closing) return;
@@ -130,14 +175,14 @@ public sealed partial class MainWindow
             }
             else if (loginJobs.GetValueOrDefault(provider) == job)
             {
-                loginJobs.Remove(provider);
+                loginJobs.Remove(provider); autoLogin.Stopped(provider, DateTimeOffset.UtcNow);
                 loginFailures[provider] = Locale.Get(outcome.Outcome == CliLoginOutcome.TimedOut ? "loginRecovery.timedOut" : "loginRecovery.exited");
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (!closing && loginJobs.GetValueOrDefault(provider) == job) { loginJobs.Remove(provider); loginFailures[provider] = Locale.Get("loginRecovery.startFailed"); }
+            if (!closing && loginJobs.GetValueOrDefault(provider) == job) { loginJobs.Remove(provider); autoLogin.Stopped(provider, DateTimeOffset.UtcNow); loginFailures[provider] = Locale.Get("loginRecovery.startFailed"); }
         }
         finally
         {
@@ -193,7 +238,7 @@ public sealed partial class MainWindow
     private async Task ShutdownLoginRecovery()
     {
         foreach (var provider in loginJobs.Keys.ToArray()) CancelBackgroundLogin(provider);
-        await Task.WhenAll(loginTasks.ToArray()); loginTasks.Clear(); loginRetries.Clear(); loginNotes.Clear(); loginResendsAwaitingUpdate.Clear();
+        await Task.WhenAll(loginTasks.ToArray()); loginTasks.Clear(); loginRetries.Clear(); loginNotes.Clear(); loginResendsAwaitingUpdate.Clear(); deferredAutoLogins.Clear();
     }
     private sealed partial class PaneView
     {
@@ -207,7 +252,7 @@ public sealed partial class MainWindow
             var provider = retry.Request.Provider;
             var job = owner.loginJobs.GetValueOrDefault(provider); var progress = job?.Process?.Output;
             var failure = owner.loginFailures.GetValueOrDefault(provider); var note = owner.loginNotes.GetValueOrDefault(id);
-            var fingerprint = $"{owner.service.Snapshot.LanguagePreference}:{retry.Generation}:{job?.Phase}:{progress?.Url}:{progress?.AsksForCode}:{failure}:{note}";
+            var fingerprint = $"{owner.service.Snapshot.LanguagePreference}:{retry.Generation}:{job?.Phase}:{job?.Automatic}:{progress?.Url}:{progress?.AsksForCode}:{failure}:{note}";
             if (loginCardFingerprint == fingerprint) return;
             loginCardFingerprint = fingerprint; loginRecoveryHost.Children.Clear(); loginRecoveryHost.Visibility = Visibility.Visible;
             // The Mac's card (M/CLILoginRecoveryCard.swift:15-69), one 11pt row: the amber account mark; the title in medium
@@ -225,6 +270,7 @@ public sealed partial class MainWindow
             if (note is not null) words.Children.Add(Line(Locale.Get("loginRecovery.resendBlockedTemplate", new Dictionary<string, string> { ["reason"] = note }), wait));
             if (job is not null)
             {
+                if (job.Automatic) words.Children.Add(Line(Locale.Get("loginRecovery.autoStarted"), ink2));
                 var busy = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 busy.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 });
                 busy.Children.Add(Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : "loginRecovery.waiting"), ink2)); words.Children.Add(busy);
@@ -249,7 +295,12 @@ public sealed partial class MainWindow
             }
             Grid.SetColumn(words, 1); card.Children.Add(words);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(4, 0, 0, 0) };
-            if (job is not null) buttons.Children.Add(Small(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
+            if (job is not null)
+            {
+                // Sends of the provider wait while its sign-in runs, so resending is offered again once it ends.
+                buttons.Children.Add(Small(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
+                buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
+            }
             else
             {
                 buttons.Children.Add(Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider)));
@@ -274,7 +325,11 @@ public sealed partial class MainWindow
                 var request = await PrepareStyleRunRequest(new StartRunRequest(id, pane.WorkspaceId, pane.Kind, retry.Request.Input,
                     RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, retry.Request.Attachments));
                 if (!QueuePaneAlive || submission != composerSubmissionVersion || Session.Provider != retry.Request.Provider || !owner.loginRetries.IsCurrent(retry)) return false;
-                await owner.StartFromComposer(request); return true;
+                // Its own sign-in failure, if any, only raises the card again (never an automatic start).
+                owner.loginRetries.ExpectResend(id);
+                try { await owner.StartFromComposer(request); }
+                catch { owner.loginRetries.CancelResend(id); throw; }
+                return true;
             }
             finally { starting = false; if (QueuePaneAlive) Refresh(); }
         }

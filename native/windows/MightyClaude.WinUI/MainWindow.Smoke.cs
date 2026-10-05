@@ -16,8 +16,21 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     private Func<StartRunRequest, Task>? smokeStart;
-    private Task StartFromComposer(StartRunRequest request)
+    private Task StartFromComposer(StartRunRequest request) =>
+        AutomaticLoginOf(request.Provider) is { } login ? StartAfterAutomaticLogin(request, login.Task) : StartAdmitted(request);
+    /// <summary>
+    /// A send while the provider's automatic sign-in runs cancels it (holding the next automatic start for the
+    /// cooldown) and goes ahead once its process is gone. The checks and the start below stay one synchronous step.
+    /// </summary>
+    private async Task StartAfterAutomaticLogin(StartRunRequest request, Task login)
     {
+        CancelBackgroundLogin(request.Provider); RefreshLoginCards();
+        try { await login.WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { }
+        await StartAdmitted(request);
+    }
+    private Task StartAdmitted(StartRunRequest request)
+    {
+        if (loginJobs.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(request.Provider) }));
         if (loginBusy.ContainsKey(request.Provider) || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
         if (automaticUpdateRunning && automaticallyUpdatingProvider == request.Provider) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
         if (ManualMutationBlockReason(new RunSession { Kind = request.Kind, Provider = request.Provider }) is { } block) throw new InvalidOperationException(block);

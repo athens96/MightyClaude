@@ -117,6 +117,92 @@ struct CLIAuthFailureTests {
     }
 }
 
+struct CLIAutoLoginGateTests {
+    private let signedIn = CLIAccountStatus(provider: "claude", loggedIn: true, method: "Claude 구독")
+    private let start = Date(timeIntervalSince1970: 1_000_000)
+
+    @Test func startsOncePerProviderWhileASignInRuns() {
+        let gate = CLIAutoLoginGate()
+        // The first lost sign-in starts; every pane failing meanwhile finds it running.
+        #expect(gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, now: start))
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: true, now: start))
+        // Another provider is decided on its own.
+        #expect(gate.shouldStart(provider: "codex", enabled: true, status: CLIAccountStatus(provider: "codex"), loginActive: false, now: start))
+        // Gemini has no background sign-in, and a status of another provider never counts.
+        #expect(!gate.shouldStart(provider: "gemini", enabled: true, status: CLIAccountStatus(provider: "gemini"), loginActive: false, now: start))
+        #expect(!gate.shouldStart(provider: "codex", enabled: true, status: signedIn, loginActive: false, now: start))
+    }
+
+    @Test func aFailedOrCancelledSignInWaitsForTheCooldown() {
+        var gate = CLIAutoLoginGate()
+        gate.stopped(provider: "claude", at: start)
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, now: start))
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, now: start.addingTimeInterval(CLIAutoLoginGate.cooldown - 1)))
+        #expect(gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, now: start.addingTimeInterval(CLIAutoLoginGate.cooldown)))
+        #expect(CLIAutoLoginGate.cooldown == 120)
+        // The cooldown is per provider.
+        #expect(gate.shouldStart(provider: "codex", enabled: true, status: CLIAccountStatus(provider: "codex"), loginActive: false, now: start))
+    }
+
+    @Test func aSuccessHoldsAutomaticStartsAndStaleOrResentFailuresOnlyRaiseTheCard() {
+        var gate = CLIAutoLoginGate()
+        let approved = start
+        gate.succeeded(provider: "claude", at: approved)
+        // A request failing again right after approval never reopens the browser.
+        let soon = approved.addingTimeInterval(5)
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, sentAt: soon, now: soon))
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, sentAt: approved.addingTimeInterval(CLIAutoLoginGate.cooldown - 1), now: approved.addingTimeInterval(CLIAutoLoginGate.cooldown - 1)))
+        let later = approved.addingTimeInterval(CLIAutoLoginGate.cooldown)
+        #expect(gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, sentAt: later, now: later))
+        // A run that started before the last sign-in, however late it fails, only raises the card.
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, sentAt: approved.addingTimeInterval(-1), now: later.addingTimeInterval(600)))
+        // A request login recovery resent only raises the card, whenever it fails.
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: signedIn, loginActive: false, resent: true, sentAt: later, now: later.addingTimeInterval(600)))
+        // Other providers are unaffected.
+        #expect(gate.shouldStart(provider: "codex", enabled: true, status: CLIAccountStatus(provider: "codex"), loginActive: false, sentAt: soon, now: soon))
+        #expect(gate.signedInAt["claude"] == approved && gate.heldAt["claude"] == approved)
+    }
+
+    @Test func aRetryRemembersWhetherItWasResent() {
+        var book = CLILoginRetryBook()
+        let sent = Date(timeIntervalSince1970: 5)
+        book.remember(CLILoginRetryRequest(sessionId: "a", provider: "claude", input: "x", resent: true, sentAt: sent))
+        let taken = book.take(sessionId: "a")
+        #expect(taken?.resent == true && taken?.sentAt == sent)
+        #expect(CLILoginRetryRequest(sessionId: "b", provider: "codex", input: "y").resent == false)
+    }
+
+    @Test func theSettingAndTheMethodDecide() {
+        let gate = CLIAutoLoginGate()
+        #expect(!gate.shouldStart(provider: "claude", enabled: false, status: signedIn, loginActive: false, now: start))
+        // Methods a browser sign-in does not renew never start one.
+        let bedrock = CLIAccountSupport.parseClaudeStatus(Data(#"{"loggedIn":true,"authMethod":"third_party","apiProvider":"bedrock"}"#.utf8))
+        #expect(!CLIAuthFailure.signInCanFix(bedrock))
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: bedrock, loginActive: false, now: start))
+        let apiKey = CLIAccountSupport.parseCodexStatus(text: "Logged in using an API key - sk-***", authJSON: nil)
+        #expect(!gate.shouldStart(provider: "codex", enabled: true, status: apiKey, loginActive: false, now: start))
+        #expect(!gate.shouldStart(provider: "claude", enabled: true, status: CLIAccountStatus(provider: "claude", installed: false), loginActive: false, now: start))
+    }
+
+    @Test func theSwitchIsOnUnlessSavedOff() async throws {
+        // Older state has no field: nil, which the app reads as on.
+        let legacy = Data(#"{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}"#.utf8)
+        #expect(StateRepository.decodeSnapshot(legacy).autoLoginCLIs == nil)
+        #expect(AppSnapshot().autoLoginCLIs == nil)
+        var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
+        for invalid: Any in [0, "false", NSNull()] {
+            object["autoLoginCLIs"] = invalid
+            #expect(StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object)).autoLoginCLIs == nil)
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-auto-login-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for value in [false, true] {
+            try await StateRepository(directory: directory, legacyStateURL: nil).save(AppSnapshot(autoLoginCLIs: value))
+            #expect(try await StateRepository(directory: directory, legacyStateURL: nil).load().autoLoginCLIs == value)
+        }
+    }
+}
+
 struct CLILoginOutputTests {
     @Test func firstHttpsLinkIsFoundAfterEscapesAndOnlyOnceComplete() {
         var output = CLILoginOutput()
