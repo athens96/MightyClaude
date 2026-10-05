@@ -775,7 +775,10 @@ public actor ProcessRunner {
             if let permissions = run.codexPermissions { permissions.receive(data) }
             else if let parser = run.parser { parser.push(data) }
             else { emitLog(run, kind: "output", text: run.outputDecoder.push(data)) }
-        case .stderr(let data): emitLog(run, kind: "output", text: run.errorDecoder.push(data))
+        case .stderr(let data):
+            let text = run.errorDecoder.push(data)
+            run.parser?.receiveStderr(text)
+            emitLog(run, kind: "output", text: text)
         case .exit(let code): await finish(run, code: code)
         }
         watchCodexSessions(run)
@@ -822,7 +825,7 @@ public actor ProcessRunner {
             liveRuns.remove(run.request.sessionId, child: child)
         }
         run.codexPermissions?.flush()
-        run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); emitLog(run, kind: "output", text: run.errorDecoder.flush())
+        run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); let errorTail = run.errorDecoder.flush(); run.parser?.receiveStderr(errorTail); run.parser?.finishStderr(); emitLog(run, kind: "output", text: errorTail)
         // The run still ends by its exit code; only the stray writer's rest is lost.
         if run.child?.outputAbandoned == true, !run.stopping, !shuttingDown { emitLog(run, kind: "system", text: L("run.notice.outputAbandoned")) }
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()

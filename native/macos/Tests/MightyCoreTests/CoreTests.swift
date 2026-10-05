@@ -311,6 +311,29 @@ final class CoreTests {
         await runner.shutdown(); await service.shutdown()
     }
 
+    /// A fake Gemini CLI, never the real one: what 0.43 prints on stderr when its stored Google sign-in is stale.
+    @Test func testGeminiSignInLostOnStderrRaisesTheAuthReasonButTheSameTextAsAnAnswerDoesNot() async throws {
+        let message = "Error authenticating: FatalCancellationError: Authentication cancelled by user."
+        let lost = try script("if [ \"$1\" = \"--version\" ]; then printf '1.0.0\\n'; exit 0; fi\n/bin/cat > /dev/null\nprintf '%s\\n' '\(message)' >&2\nexit 1\n", name: "gemini")
+        let quoted = try script("""
+        if [ "$1" = "--version" ]; then printf '1.0.0\\n'; exit 0; fi
+        /bin/cat > /dev/null
+        printf '%s\\n' '{"type":"message","role":"assistant","content":"\(message)","delta":false}' '{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: Internal error encountered. (Status: INTERNAL)]"}}'
+        exit 1
+        """, name: "gemini")
+        let directory = try temporary()
+        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+        for (binary, expected) in [(lost, "auth"), (quoted, nil)] as [(URL, String?)] {
+            let events = EventRecorder(); let service = ProviderService(binaryOverrides: ["gemini": binary])
+            let runner = ProcessRunner(providerService: service, pluginDirectory: directory, onEvent: { events.append($0) })
+            try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "fix the bug", provider: "gemini"), workspace: workspace)
+            try await waitUntil { events.hasStatus("error", id: "pane") }
+            let last = events.values().last { $0.type == "status" && $0.sessionId == "pane" }
+            #expect(last?.status == "error" && last?.reason == expected, "\(binary.path): \(String(describing: last))")
+            await runner.shutdown(); await service.shutdown()
+        }
+    }
+
     @Test func testCancelPendingDiscoveryDoesNotLaunchLaterOrOverwriteReplacement() async throws {
         // The version probe holds until the test releases it, so the stop lands
         // while discovery is really pending and the replacement exists before the

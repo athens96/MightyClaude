@@ -4,7 +4,8 @@ import MightyCore
 /// Shown in a pane whose last run lost its CLI sign-in. With automatic sign-in
 /// on (Settings → CLI accounts) the sign-in has already started; otherwise
 /// nothing opens until the button is pressed. Then the CLI signs in in the
-/// background and the failed request goes out again on its own.
+/// background (Gemini: in a terminal pane beside this one) and the failed
+/// request goes out again on its own.
 struct CLILoginRecoveryCard: View {
     @EnvironmentObject private var store: AppStore
     let provider: String
@@ -12,6 +13,8 @@ struct CLILoginRecoveryCard: View {
     @ViewState private var code = ""
 
     private var state: BackgroundLoginState? { store.backgroundLogins[provider] }
+    /// Gemini signs in in a terminal pane already, so it has no second terminal button.
+    private var signsInInTerminal: Bool { provider == "gemini" }
 
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
@@ -33,7 +36,7 @@ struct CLILoginRecoveryCard: View {
                     progress(L("loginRecovery.starting"))
                 case .waiting?:
                     automaticNote
-                    progress(L("loginRecovery.waiting"))
+                    progress(state?.terminalSessionId != nil ? L("loginRecovery.geminiTerminal") : L("loginRecovery.waiting"))
                     if let url = state?.url {
                         Link(L("loginRecovery.openLink"), destination: url).help(url.absoluteString)
                             .accessibilityIdentifier("login-link-\(sessionID)")
@@ -55,13 +58,13 @@ struct CLILoginRecoveryCard: View {
             switch state?.phase {
             case .starting?, .waiting?:
                 Button(L("loginRecovery.cancel")) { store.cancelBackgroundLogin(provider) }.controlSize(.small)
-                Button(L("loginRecovery.terminalButton")) { store.startTerminalLoginFallback(provider) }.controlSize(.small)
+                if !signsInInTerminal { Button(L("loginRecovery.terminalButton")) { store.startTerminalLoginFallback(provider) }.controlSize(.small) }
             case .failed?:
-                Button(L("loginRecovery.loginButton")) { store.startBackgroundLogin(provider) }.controlSize(.small)
-                Button(L("loginRecovery.terminalButton")) { store.startTerminalLoginFallback(provider) }.controlSize(.small)
+                Button(L("loginRecovery.loginButton")) { store.startBackgroundLogin(provider, sessionId: sessionID) }.controlSize(.small)
+                if !signsInInTerminal { Button(L("loginRecovery.terminalButton")) { store.startTerminalLoginFallback(provider) }.controlSize(.small) }
                 resendButton
             case nil:
-                Button(L("loginRecovery.loginButton")) { store.startBackgroundLogin(provider) }.controlSize(.small)
+                Button(L("loginRecovery.loginButton")) { store.startBackgroundLogin(provider, sessionId: sessionID) }.controlSize(.small)
                     .disabled(store.cliLoginPending.contains(provider))
                 resendButton
             }
@@ -89,7 +92,7 @@ struct CLILoginRecoveryCard: View {
     private func progress(_ text: String) -> some View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.mini)
-            Text(text).foregroundStyle(.secondary)
+            Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 

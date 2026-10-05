@@ -146,6 +146,8 @@ final class AppStore: ObservableObject {
     @Published var loginRequired: [String: String] = [:]
     @Published var backgroundLogins: [String: BackgroundLoginState] = [:]
     var backgroundLoginJobs: [String: BackgroundLoginJob] = [:]
+    /// The terminal pane Gemini's last sign-in opened, used again while it is open.
+    var geminiLoginTerminal: String?
     var loginRetries = CLILoginRetryBook()
     /// When a lost sign-in may start its provider's sign-in by itself.
     var autoLoginGate = CLIAutoLoginGate()

@@ -43,6 +43,8 @@ public enum CliLoginOption { Account, Console, Bedrock }
 public static class CliAccountSupport
 {
     public static string CodexApiKeyMethod => Locale.Get("windows.cli.method.apiKey");
+    /// <summary>The method label of Gemini's Google sign-in, the only Gemini method a sign-in renews.</summary>
+    public static string GeminiGoogleMethod => Locale.Get("windows.cli.method.googleAccount");
     private const int FileSizeCap = 1_048_576;
     private const int ClaimsDataCap = 65_536;
 
@@ -159,7 +161,7 @@ public static class CliAccountSupport
         return selected switch
         {
             "oauth-personal" or null => hasOAuth
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.googleAccount"), Account = active }
+                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, Account = active }
                 : new CliAccountStatus { Provider = "gemini", LoggedIn = false },
             "gemini-api-key" => env.TryGetValue("GEMINI_API_KEY", out var key) && key.Length > 0
                 ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false }
@@ -407,20 +409,32 @@ public sealed class CliAccountsCoordinator
         return CliAccountSupport.ParseCodexStatus(text, authJson);
     }
 
+    /// <summary>When Gemini's credentials file was last written (CliGeminiLogin).</summary>
+    public DateTimeOffset? GeminiCredentialsStamp() => CliGeminiLogin.CredentialsStamp(home);
+
     /// Opens the external sign-in terminal on the CLI's own login command and
     /// returns when the user closes that window. The app never types or receives
     /// credentials; it only starts the command. The argv is handed over as a
     /// separate argument list, so no command line is built from text.
-    public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default)
+    /// `directory`: the folder the command starts in (Gemini's terminal sign-in
+    /// opens in the failed pane's workspace). `opened` runs once the window is
+    /// up, with true when the returned task ends with that window (the console
+    /// host; a Windows Terminal tab hands off and returns at once).
+    public async Task StartSignInAsync(IReadOnlyList<string> loginArgv, CancellationToken cancellation = default, string? directory = null, Action<bool>? opened = null)
     {
         if (fixedEnvironment is null) await CliEnvironment.RefreshAsync(true, cancellation);
-        var plan = CliAccountTerminal.LaunchPlan(loginArgv, !loginArgv.Contains("/setup-bedrock") && FindBinary("wt") is not null);
+        if (directory is not null && !Directory.Exists(directory)) directory = null;
+        // Gemini is an npm shim (gemini.cmd) that the console host cannot find by name.
+        var resolved = loginArgv is ["gemini", ..] ? FindBinary("gemini") : null;
+        var plan = CliAccountTerminal.LaunchPlan(loginArgv, !loginArgv.Contains("/setup-bedrock") && FindBinary("wt") is not null, directory, resolved);
         var info = new System.Diagnostics.ProcessStartInfo(plan.Executable) { UseShellExecute = false };
+        if (directory is not null) info.WorkingDirectory = directory;
         foreach (var value in plan.Arguments) info.ArgumentList.Add(value);
         foreach (var pair in environment) info.Environment[pair.Key] = pair.Value;
         if (loginArgv.Contains("/setup-bedrock")) info.Environment["CLAUDE_CODE_USE_BEDROCK"] = "1";
         using var process = System.Diagnostics.Process.Start(info);
         if (process is null) return;
+        opened?.Invoke(plan.Executable == "conhost.exe");
         await process.WaitForExitAsync(cancellation);
     }
 
@@ -545,13 +559,21 @@ public static class CliAccountTerminal
 {
     /// The executable to start and the argument list to give it, so that
     /// `loginArgv` runs inside a new external console window.
+    /// A Windows Terminal tab starts in its profile's folder unless told
+    /// otherwise, so `directory` is passed on as `-d` (not one with `;`, which
+    /// Windows Terminal reads as a command separator); conhost inherits the
+    /// working directory of the process that starts it. conhost only finds an
+    /// .exe by name, so `resolvedBinary` (the command's full path, when known)
+    /// replaces the name there, and a .cmd/.bat shim runs through `cmd /c`.
     public static (string Executable, IReadOnlyList<string> Arguments) LaunchPlan(
-        IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable)
+        IReadOnlyList<string> loginArgv, bool windowsTerminalAvailable, string? directory = null, string? resolvedBinary = null)
     {
         if (loginArgv.Count == 0 || loginArgv[0].Length == 0)
             throw new ArgumentException("a login command is required", nameof(loginArgv));
-        return windowsTerminalAvailable
-            ? ("wt.exe", ["new-tab", "--", .. loginArgv])
-            : ("conhost.exe", [.. loginArgv]);
+        if (windowsTerminalAvailable)
+            return ("wt.exe", directory is null || directory.Contains(';') ? ["new-tab", "--", .. loginArgv] : ["new-tab", "-d", directory, "--", .. loginArgv]);
+        if (resolvedBinary is null) return ("conhost.exe", [.. loginArgv]);
+        var shim = resolvedBinary.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedBinary.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+        return ("conhost.exe", shim ? ["cmd.exe", "/c", resolvedBinary, .. loginArgv.Skip(1)] : [resolvedBinary, .. loginArgv.Skip(1)]);
     }
 }

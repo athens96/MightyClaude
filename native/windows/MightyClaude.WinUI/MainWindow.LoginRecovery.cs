@@ -25,12 +25,23 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, (CliLoginRetry Retry, CliAccountStatus Status)> deferredAutoLogins = [];
     // The smoke never runs a CLI: when set, this stands in for the sign-in process (MainWindow.SmallParitySmoke.cs).
     private Func<string, Task>? smokeLoginStarter;
+    // The console window Gemini's last sign-in opened; while it is still open a new start waits on it instead of opening another.
+    private GeminiLoginWindow? geminiLoginWindow;
+    private sealed class GeminiLoginWindow
+    {
+        internal Task Exit = Task.CompletedTask;
+        // True once the console host opened it: its closing then ends Exit (a Windows Terminal tab hands off at once).
+        internal volatile bool ClosesWithWindow;
+        internal bool Open => ClosesWithWindow && !Exit.IsCompleted;
+    }
     private sealed class LoginJob
     {
         internal readonly CancellationTokenSource Cancellation = new();
         internal CliBackgroundLogin? Process;
         internal string Phase = "starting";
         internal bool Automatic;
+        // Gemini signs in in the external sign-in terminal rather than a hidden one.
+        internal bool Terminal;
         internal Task Task = Task.CompletedTask;
     }
 
@@ -120,26 +131,28 @@ public sealed partial class MainWindow
         if (!changing && service.HasActiveProvider(provider)) { if (Allowed(false)) deferredAutoLogins[provider] = (retry, status); return; }
         if (!Allowed(changing)) return;
         deferredAutoLogins.Remove(provider);
-        _ = StartBackgroundLogin(provider, automatic: true);
+        _ = StartBackgroundLogin(provider, automatic: true, session: retry.Request.SessionId);
     }
     /// <summary>The provider's automatic sign-in, running or still shutting down; a send cancels it (M sends never wait on one).</summary>
+    /// Gemini's terminal sign-in runs nothing in the background, so sends never wait on it (StartAdmitted).
     private LoginJob? AutomaticLoginOf(string provider) =>
-        loginJobs.GetValueOrDefault(provider) is { Automatic: true } job ? job : loginBusy.GetValueOrDefault(provider) is { Automatic: true } ending ? ending : null;
-    private Task StartBackgroundLogin(string provider, bool automatic = false)
+        loginJobs.GetValueOrDefault(provider) is { Automatic: true, Terminal: false } job ? job : loginBusy.GetValueOrDefault(provider) is { Automatic: true, Terminal: false } ending ? ending : null;
+    /// <summary>session: the pane whose run lost the sign-in; Gemini's terminal starts in its workspace.</summary>
+    private Task StartBackgroundLogin(string provider, bool automatic = false, string? session = null)
     {
-        if (closing || loginJobs.ContainsKey(provider) || provider is not ("claude" or "codex")) return Task.CompletedTask;
+        if (closing || loginJobs.ContainsKey(provider) || !CliAuthFailure.Providers.Contains(provider)) return Task.CompletedTask;
         if (options.SmokeTest)
         {
             if (smokeLoginStarter is null) return Task.CompletedTask;
-            loginJobs[provider] = new LoginJob { Phase = "waiting", Automatic = automatic }; loginFailures.Remove(provider); RefreshLoginCards();
+            loginJobs[provider] = new LoginJob { Phase = "waiting", Automatic = automatic, Terminal = provider == "gemini" }; loginFailures.Remove(provider); RefreshLoginCards();
             return smokeLoginStarter(provider);
         }
         if (loginBusy.ContainsKey(provider) || accountChanges.ContainsKey(provider) || AnyCliUpdateRunning || service.HasActiveProvider(provider))
         {
             loginFailures[provider] = Locale.Get(AnyCliUpdateRunning ? "loginRecovery.updating" : "loginRecovery.busy"); RefreshLoginCards(); return Task.CompletedTask;
         }
-        var job = new LoginJob { Automatic = automatic }; loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
-        job.Task = RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
+        var job = new LoginJob { Automatic = automatic, Terminal = provider == "gemini" }; loginJobs[provider] = job; loginBusy[provider] = job; loginFailures.Remove(provider);
+        job.Task = job.Terminal ? RunGeminiTerminalLogin(job, session) : RunBackgroundLogin(provider, job); TrackLoginTask(job.Task); RefreshLoginCards();
         return Task.CompletedTask;
     }
     private async Task RunBackgroundLogin(string provider, LoginJob job)
@@ -166,12 +179,7 @@ public sealed partial class MainWindow
                 await job.Process.DisposeAsync();
                 cancellation.ThrowIfCancellationRequested();
                 if (loginJobs.GetValueOrDefault(provider) != job) return;
-                autoLogin.Succeeded(provider, DateTimeOffset.UtcNow); loginJobs.Remove(provider); loginFailures.Remove(provider);
-                if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
-                await RefreshCliAccounts();
-                if (closing) return;
-                foreach (var id in loginRetries.Requests.Values.Where(value => value.Request.Provider == provider).Select(value => value.Request.SessionId).ToArray())
-                    await ResendLoginRequest(id);
+                await LoginSucceeded(provider, job);
             }
             else if (loginJobs.GetValueOrDefault(provider) == job)
             {
@@ -187,6 +195,71 @@ public sealed partial class MainWindow
         finally
         {
             if (job.Process is not null) await job.Process.DisposeAsync();
+            if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
+            if (loginJobs.GetValueOrDefault(provider) == job) loginJobs.Remove(provider);
+            job.Cancellation.Dispose();
+            if (!closing) RefreshLoginCards();
+        }
+    }
+    /// <summary>Signed in again: hold automatic starts, refresh the accounts, then resend each waiting request of the provider.</summary>
+    private async Task LoginSucceeded(string provider, LoginJob job)
+    {
+        autoLogin.Succeeded(provider, DateTimeOffset.UtcNow); loginJobs.Remove(provider); loginFailures.Remove(provider);
+        if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
+        await RefreshCliAccounts();
+        if (closing) return;
+        foreach (var id in loginRetries.Requests.Values.Where(value => value.Request.Provider == provider).Select(value => value.Request.SessionId).ToArray())
+            await ResendLoginRequest(id);
+    }
+    /// <summary>
+    /// Gemini has no sign-in command (M/AppStore+CLILoginRecovery.swift startGeminiTerminalLogin): its sign-in is the
+    /// interactive CLI ("Login with Google"), which cannot run hidden, so it runs in the external sign-in terminal that
+    /// Settings opens, started in the failed pane's workspace. It counts once oauth_creds.json appears or is rewritten
+    /// after the terminal opened (CliGeminiLogin), then resends like a background sign-in. The window stays the user's:
+    /// the app does not close it (the CLI in it is now a live session) and does not read its closing as the end, since
+    /// a Windows Terminal tab hands off at once; the wait ends signed in, cancelled or after ten minutes. A console-host
+    /// window is the exception: it is known to close with its process, so closing it ends the wait, and while it is still
+    /// open a new start waits on it again instead of opening another window.
+    /// </summary>
+    private async Task RunGeminiTerminalLogin(LoginJob job, string? session)
+    {
+        const string provider = "gemini";
+        var cancellation = job.Cancellation.Token;
+        GeminiLoginWindow? window = null;
+        try
+        {
+            if (!CliAuthFailure.SignInCanFix(await accountsCoordinator.StatusAsync(provider, cancellation))) throw new InvalidOperationException();
+            var argv = CliAccountSupport.LoginArguments(provider) ?? throw new InvalidOperationException();
+            var state = service.Snapshot;
+            var workspace = state.Sessions.FirstOrDefault(p => p.Id == session)?.WorkspaceId ?? state.ActiveWorkspaceId;
+            var directory = state.Workspaces.FirstOrDefault(w => w.Id == workspace)?.Path;
+            // Taken before the CLI starts, so its own write counts as new.
+            var baseline = accountsCoordinator.GeminiCredentialsStamp();
+            cancellation.ThrowIfCancellationRequested();
+            if (geminiLoginWindow is { Open: true } open) window = open;
+            else
+            {
+                var opened = new GeminiLoginWindow(); window = geminiLoginWindow = opened;
+                opened.Exit = accountsCoordinator.StartSignInAsync(argv, CancellationToken.None, directory, value => opened.ClosesWithWindow = value);
+                // Not tracked: shutting down never waits for the user's window.
+                _ = opened.Exit.ContinueWith(exit => _ = exit.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            }
+            job.Phase = "waiting"; RefreshLoginCards();
+            var outcome = await CliGeminiLogin.RunAsync(baseline, accountsCoordinator.GeminiCredentialsStamp, token => accountsCoordinator.StatusAsync(provider, token),
+                () => !window.Exit.IsFaulted && !(window.ClosesWithWindow && window.Exit.IsCompleted), cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            if (loginJobs.GetValueOrDefault(provider) != job) return;
+            if (outcome.Outcome == CliLoginOutcome.LoggedIn) { await LoginSucceeded(provider, job); return; }
+            loginJobs.Remove(provider); autoLogin.Stopped(provider, DateTimeOffset.UtcNow);
+            loginFailures[provider] = Locale.Get(window.Exit.IsFaulted ? "loginRecovery.startFailed" : outcome.Outcome == CliLoginOutcome.TimedOut ? "loginRecovery.timedOut" : "loginRecovery.exited");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            if (!closing && loginJobs.GetValueOrDefault(provider) == job) { loginJobs.Remove(provider); autoLogin.Stopped(provider, DateTimeOffset.UtcNow); loginFailures[provider] = Locale.Get("loginRecovery.startFailed"); }
+        }
+        finally
+        {
             if (loginBusy.GetValueOrDefault(provider) == job) loginBusy.TryRemove(provider, out _);
             if (loginJobs.GetValueOrDefault(provider) == job) loginJobs.Remove(provider);
             job.Cancellation.Dispose();
@@ -271,9 +344,12 @@ public sealed partial class MainWindow
             if (job is not null)
             {
                 if (job.Automatic) words.Children.Add(Line(Locale.Get("loginRecovery.autoStarted"), ink2));
-                var busy = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                // Gemini's terminal sentence is long: a star column lets it wrap beside the ring.
+                var busy = new Grid { ColumnSpacing = 6 };
+                busy.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); busy.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 busy.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 });
-                busy.Children.Add(Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : "loginRecovery.waiting"), ink2)); words.Children.Add(busy);
+                var state = Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : job.Terminal ? "loginRecovery.geminiTerminal" : "loginRecovery.waiting"), ink2);
+                Grid.SetColumn(state, 1); busy.Children.Add(state); words.Children.Add(busy);
             }
             else if (failure is not null) words.Children.Add(Line(failure, wait));
             else words.Children.Add(Line(Locale.Get("loginRecovery.body"), ink2));
@@ -299,12 +375,13 @@ public sealed partial class MainWindow
             {
                 // Sends of the provider wait while its sign-in runs, so resending is offered again once it ends.
                 buttons.Children.Add(Small(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
-                buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
+                // Gemini signs in in a terminal already, so it has no second terminal button.
+                if (provider != "gemini") buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
             }
             else
             {
-                buttons.Children.Add(Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider)));
-                if (failure is not null) buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
+                buttons.Children.Add(Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider, session: id)));
+                if (failure is not null && provider != "gemini") buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
                 var resend = Small(Locale.Get("loginRecovery.resendButton"), () => owner.ResendLoginRequest(id)); ToolTipService.SetToolTip(resend, Locale.Get("loginRecovery.resendHelp")); buttons.Children.Add(resend);
             }
             var dismiss = owner.SafeButton("×", () => { owner.DismissLoginRecovery(id); return Task.CompletedTask; });

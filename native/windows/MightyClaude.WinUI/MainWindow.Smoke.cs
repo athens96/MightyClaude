@@ -30,8 +30,9 @@ public sealed partial class MainWindow
     }
     private Task StartAdmitted(StartRunRequest request)
     {
-        if (loginJobs.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(request.Provider) }));
-        if (loginBusy.ContainsKey(request.Provider) || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
+        // Gemini's terminal sign-in changes nothing in the background, so its sends go ahead.
+        if (loginJobs.GetValueOrDefault(request.Provider) is { Terminal: false }) throw new InvalidOperationException(Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(request.Provider) }));
+        if (loginBusy.GetValueOrDefault(request.Provider) is { Terminal: false } || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
         if (automaticUpdateRunning && automaticallyUpdatingProvider == request.Provider) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
         if (ManualMutationBlockReason(new RunSession { Kind = request.Kind, Provider = request.Provider }) is { } block) throw new InvalidOperationException(block);
         return options.SmokeTest ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("스모크 모드에서는 실제 CLI를 실행하지 않습니다.") : service.StartAsync(request);

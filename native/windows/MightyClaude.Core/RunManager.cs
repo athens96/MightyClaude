@@ -59,7 +59,9 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     {
         if (run.Finished || string.IsNullOrEmpty(text)) return;
         text = run.PaneBinding?.Redact(text) ?? text;
-        if (kind == "error" && (run.Request.Provider == "claude" ? CliAuthFailure.Claude(text) : run.Request.Provider == "codex" && CliAuthFailure.Codex(text))) run.AuthenticationFailure = true;
+        // Gemini's failures arrive as error lines (its last one decides, as on the Mac); its stderr and plain stdout lines only raise the signal.
+        if (kind == "error" && run.Request.Provider == "gemini") run.AuthenticationFailure = CliAuthFailure.Gemini(text);
+        else if (kind == "error" && CliAuthFailure.Matches(run.Request.Provider, text)) run.AuthenticationFailure = true;
         if (kind is "output" or "assistant")
         {
             if (run.Truncated) return;
@@ -246,12 +248,23 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 if (request.Kind == "shell") { Log(run, "output", line); return; }
                 if (run.CodexPermissions is { } codex) { codex.Receive(line); return; }
                 run.Permissions?.Receive(line);
+                // Gemini prints its sign-in consent prompt as a plain line, never as JSON.
+                if (request.Provider == "gemini")
+                {
+                    if (!line.TrimStart().StartsWith('{')) { if (CliAuthFailure.GeminiConsole(line)) run.AuthenticationFailure = true; }
+                    else if (CliAuthFailure.GeminiSucceeded(line)) run.AuthenticationFailure = false;
+                }
                 Consume(line);
                 // One-shot shutdown: EOF only after the CLI's own turn result,
                 // so an approval reply is still possible while the turn runs.
                 if (run.Permissions is not null && ClaudeStream.IsTurnResult(line)) CloseChannel(run, child);
             }, token);
-            var error = PumpAsync(child.Error, 1024 * 1024, line => Log(run, "output", line), token);
+            var error = PumpAsync(child.Error, 1024 * 1024, line =>
+            {
+                // Only Gemini reports a lost sign-in on stderr ("Please set an Auth method", "Error authenticating: …").
+                if (request.Kind != "shell" && request.Provider == "gemini" && CliAuthFailure.GeminiConsole(line)) run.AuthenticationFailure = true;
+                Log(run, "output", line);
+            }, token);
             if (interactive || codexApprovals)
             {
                 run.Permissions?.Start(); run.CodexPermissions?.Start();
