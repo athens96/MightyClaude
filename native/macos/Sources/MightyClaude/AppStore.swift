@@ -928,6 +928,16 @@ final class AppStore: ObservableObject {
 
     func toggleTheme() { snapshot.theme = snapshot.theme == "light" ? "dark" : "light" }
 
+    /// The left sidebar folded away entirely; saved with the snapshot, `sidebarWidth` untouched.
+    var sidebarCollapsed: Bool { snapshot.sidebarCollapsed == true }
+
+    func setSidebarCollapsed(_ collapsed: Bool) {
+        guard collapsed != sidebarCollapsed else { return }
+        snapshot.sidebarCollapsed = collapsed
+    }
+
+    func toggleSidebar() { setSidebarCollapsed(!sidebarCollapsed) }
+
     func receivePermissionEvent(_ event: RunEvent) {
         guard !ending else { return }
         if event.type == "status", let status = event.status, ["running", "completed", "error", "stopped"].contains(status) {

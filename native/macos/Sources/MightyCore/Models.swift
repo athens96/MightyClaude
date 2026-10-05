@@ -370,14 +370,32 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     public var modelDefaults: ModelDefaultsConfig?
     /// Machine-wide per-phase / per-run Claude and Codex model knobs; nil means all phases use CLI defaults.
     public var phaseModels: PhaseModelHardcodedConfig?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil) {
+    /// The left sidebar is folded away (⌃⌘S). nil (older state) means open;
+    /// `sidebarWidth` is kept while folded, so unfolding restores it.
+    public var sidebarCollapsed: Bool?
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil) {
         self.autoUpdatePlugins = autoUpdatePlugins
+        self.sidebarCollapsed = sidebarCollapsed
         self.version = version; self.workspaces = workspaces; self.sessions = sessions; self.activeWorkspaceId = activeWorkspaceId; self.activeSessionId = activeSessionId; self.layout = layout; self.theme = theme; self.sidebarWidth = sidebarWidth
         self.paneLayouts = paneLayouts
         self.paneLayoutModes = paneLayoutModes; self.paneLayoutActiveSessionIds = paneLayoutActiveSessionIds
         self.autoUpdateCLIs = autoUpdateCLIs; self.expandedWorkspaceIds = expandedWorkspaceIds; self.mobileRemote = mobileRemote
         self.modelDefaults = modelDefaults
         self.phaseModels = phaseModels
+    }
+}
+
+/// What the sidebar's measured width may change while it is dragged or folded.
+public enum SidebarFold {
+    /// The split view's narrowest open sidebar.
+    public static let minimumWidth: Double = 210
+
+    /// The width to save for a measured sidebar, or nil to keep the saved one: never while folded,
+    /// never within a point of the minimum (a drag that closes the sidebar passes through it, and the
+    /// fold must not leave that behind), and never for a move of a point or less.
+    public static func widthToSave(measured: Double, saved: Double, collapsed: Bool) -> Double? {
+        guard !collapsed, measured > minimumWidth + 1, abs(saved - measured) > 1 else { return nil }
+        return measured
     }
 }
 

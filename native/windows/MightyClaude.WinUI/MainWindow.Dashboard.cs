@@ -73,7 +73,7 @@ public sealed partial class MainWindow
         // so the divider itself turns accent while the grip is hovered, dragged or keyboard-focused.
         var grip = new Thumb { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Opacity = 0, IsTabStop = true };
         AutomationProperties.SetName(grip, Locale.Get("sidebar.resize")); AutomationProperties.SetAutomationId(grip, "sidebar-resize");
-        var gripHost = new ResizeCursorHost(grip, horizontal: true) { Width = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        var gripHost = sidebarGripHost = new ResizeCursorHost(grip, horizontal: true) { Width = 8, HorizontalAlignment = HorizontalAlignment.Right, Visibility = sidebarSurface.Visibility };
         Grid.SetRowSpan(gripHost, 3); root.Children.Add(gripHost);
         var gripHovered = false;
         void ShowGrip() => sidebarSurface.BorderBrush = gripHovered || grip.IsDragging || grip.FocusState == FocusState.Keyboard ? brushes.Brush(DesignToken.Accent) : SidebarEdge;
@@ -127,7 +127,11 @@ public sealed partial class MainWindow
         AutomationProperties.SetHeadingLevel(title, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level1);
         heading.Children.Add(title);
         heading.Children.Add(new TextBlock { Text = Locale.Get("dashboard.subtitle", new Dictionary<string, string> { ["workspaces"] = state.Workspaces.Count.ToString(), ["panes"] = state.Sessions.Count.ToString() }), FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink2) });
-        content.Children.Add(heading);
+        // The sidebar button stands before the title, 10 apart, as in the workspace header.
+        var headingRow = new Grid { ColumnSpacing = 10 };
+        headingRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); headingRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        headingRow.Children.Add(NewSidebarToggle("dashboard-sidebar-toggle")); Grid.SetColumn(heading, 1); headingRow.Children.Add(heading);
+        content.Children.Add(headingRow);
         var stats = WorkDashboard.Count(state.Sessions, DashboardAttention);
         var tiles = new Grid { ColumnSpacing = 12, Margin = new(0, 16, 0, 0) };
         var specs = new[]

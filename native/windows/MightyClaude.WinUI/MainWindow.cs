@@ -132,7 +132,7 @@ public sealed partial class MainWindow : Window
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
         addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
         sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
-        RefreshSidebarThemeButton();
+        RefreshSidebarThemeButton(); RefreshSidebarToggles();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         if (errorBannerDismiss is { } dismiss) { AutomationProperties.SetName(dismiss, Locale.Get("window.error.dismiss")); ToolTipService.SetToolTip(dismiss, Locale.Get("window.error.dismiss")); }
@@ -178,7 +178,7 @@ public sealed partial class MainWindow : Window
         root.RequestedTheme = state.Theme == "light" ? ElementTheme.Light : ElementTheme.Dark; darkTheme = state.Theme != "light";
         // Every open window of this app shares the theme; ApplyTitleBar skips a bar already in this palette.
         brushes.ApplyTitleBar(AppWindow); if (settingsWindow is { } settings) brushes.ApplyTitleBar(settings.AppWindow); if (companionQuestionWindow is { } companion) brushes.ApplyTitleBar(companion.AppWindow);
-        root.Background = WindowBackground(); root.ColumnDefinitions[0].Width = new GridLength(state.SidebarWidth);
+        root.Background = WindowBackground(); ApplySidebarCollapsed();
         layout.SelectedItem = layout.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == LayoutMode(state, state.ActiveWorkspaceId)); RenderSidebar(); RefreshWorkspaceHeader();
         RenderAccountUsage();
         DetachPaneViews(); panes.Children.Clear(); panes.RowDefinitions.Clear(); panes.ColumnDefinitions.Clear();

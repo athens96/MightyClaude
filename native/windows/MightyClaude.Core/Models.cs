@@ -227,6 +227,9 @@ public sealed record AppSnapshot
     public Dictionary<string, string>? PaneLayoutActiveSessionIds { get; init; }
     public string Theme { get; init; } = "dark";
     public double SidebarWidth { get; init; } = 252;
+    // The sidebar folded away (Ctrl+B or the header's sidebar button). Additive with a default
+    // (false = open) so Version stays 1; SidebarWidth is kept while folded, so unfolding restores it.
+    public bool SidebarCollapsed { get; init; }
     public Dictionary<string, string>? TrustedStatusLines { get; init; }
     public bool StatusLineEnabled { get; init; } = true;
     public bool CompletionNotificationsEnabled { get; init; } = true;
