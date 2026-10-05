@@ -101,11 +101,39 @@ public sealed class ChildProcess : IAsyncDisposable
         }
         return result.Append('\\', slashes * 2).Append('"').ToString();
     }
+    private static bool consoleReady;
+
+    /// <summary>
+    /// Gives the app, once, a console of its own that every child inherits: cmd built-ins and native CLIs then
+    /// write UTF-8 into the pipes. Windows 11 24H2 can make a console that never has a window
+    /// (AllocConsoleWithOptions). Before that one can only be made with its window and hidden at once, and the
+    /// window shows for a frame or two as the first child starts. The app's own standard handles are put back.
+    /// </summary>
+    private static void EnsureConsole()
+    {
+        if (consoleReady) return;
+        consoleReady = true;
+        if (Native.GetConsoleWindow() != 0) return;
+        var stdIn = Native.GetStdHandle(-10); var stdOut = Native.GetStdHandle(-11); var stdErr = Native.GetStdHandle(-12);
+        if (!WindowlessConsole()) { Native.AllocConsole(); Native.ShowWindow(Native.GetConsoleWindow(), 0); }
+        Native.SetStdHandle(-10, stdIn); Native.SetStdHandle(-11, stdOut); Native.SetStdHandle(-12, stdErr);
+    }
+
+    /// <summary>A console with no window at all, or false where Windows has no such call or it gave none (a process that already has a console keeps it).</summary>
+    private static bool WindowlessConsole()
+    {
+        try
+        {
+            var options = new Native.AllocConsoleOptions { Mode = Native.AllocConsoleNoWindow };
+            return Native.AllocConsoleWithOptions(ref options, out var made) >= 0 && made != Native.AllocConsoleNone;
+        }
+        catch (EntryPointNotFoundException) { return false; }
+    }
+
     private static ChildProcess StartWindows(ProcessStartInfo info, string? shellCommand)
     {
         // A hidden inherited console gives cmd built-ins and native CLIs UTF-8 pipes.
-        var stdIn = Native.GetStdHandle(-10); var stdOut = Native.GetStdHandle(-11); var stdErr = Native.GetStdHandle(-12);
-        if (Native.GetConsoleWindow() == 0) { Native.AllocConsole(); Native.ShowWindow(Native.GetConsoleWindow(), 0); Native.SetStdHandle(-10, stdIn); Native.SetStdHandle(-11, stdOut); Native.SetStdHandle(-12, stdErr); }
+        EnsureConsole();
         Native.SetConsoleCP(65001); Native.SetConsoleOutputCP(65001);
         var security = new Native.SecurityAttributes { Length = Marshal.SizeOf<Native.SecurityAttributes>(), InheritHandle = 1 };
         nint stdinRead = 0, stdinWrite = 0, stdoutRead = 0, stdoutWrite = 0, stderrRead = 0, stderrWrite = 0, environment = 0, job = 0;
@@ -160,6 +188,12 @@ public sealed class ChildProcess : IAsyncDisposable
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool TerminateProcess(nint process, uint code);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool CloseHandle(nint handle);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool AllocConsole();
+        /// <summary>ALLOC_CONSOLE_OPTIONS: the mode (2 = a console session without a window), and the show command for a window when one is made.</summary>
+        [StructLayout(LayoutKind.Sequential)] internal struct AllocConsoleOptions { public int Mode, UseShowWindow; public ushort ShowWindow; }
+        /// <summary>ALLOC_CONSOLE_MODE_NO_WINDOW, and ALLOC_CONSOLE_RESULT_NO_CONSOLE (the other results are a new console and the one the process already had).</summary>
+        internal const int AllocConsoleNoWindow = 2, AllocConsoleNone = 0;
+        /// <summary>Windows 11 24H2 (build 26100) and later; older systems have no such entry point.</summary>
+        [DllImport("kernel32.dll")] internal static extern int AllocConsoleWithOptions(ref AllocConsoleOptions options, out int result);
         [DllImport("kernel32.dll")] internal static extern nint GetConsoleWindow();
         [DllImport("kernel32.dll")] internal static extern nint GetStdHandle(int type);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetStdHandle(int type, nint handle);

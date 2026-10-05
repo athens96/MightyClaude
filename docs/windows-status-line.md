@@ -5,6 +5,8 @@
 On Windows the status line command runs in **the shell Claude Code itself uses**: Git Bash when it is installed, PowerShell when it is not (`StatusLineSupport.Shell`). macOS and Linux keep `/bin/sh -c <command>`.
 
 - Git Bash is looked up in `CLAUDE_CODE_GIT_BASH_PATH`, then `%ProgramFiles%\Git\bin\bash.exe`, `%ProgramFiles(x86)%\Git\bin\bash.exe`, `%LocalAppData%\Programs\Git\bin\bash.exe`, and is started as `bash.exe -c <command>`.
+- `CLAUDE_CODE_GIT_BASH_PATH` counts only when its file name is `bash.exe`, `sh.exe`, `bash` or `sh` (any case), as in the CLI (Claude Code 2.1.289: "is not a bash/sh binary; falling back to auto-detection"). Anything else is passed over for the folders above. An install can point the variable at `git-bash.exe`, the launcher that opens a terminal window: taken literally, that window showed at every refresh and the command's output stayed in it, so the status line was empty.
+- Two differences from the CLI remain. A drive-relative name (`C:bash.exe`) or one that ends in a separator is refused here. And the CLI's last step, the `bin\bash.exe` of the `git` it finds on PATH, is not taken here, so a Git in a folder of its own is found only through the variable.
 - Without Git Bash the command runs as `powershell.exe -NoProfile -NonInteractive -Command <command>`.
 - The working directory is the pane's folder (`cwd` of the payload), as in the CLI.
 

@@ -400,13 +400,20 @@ public static class StatusLineSupport
         exists ??= File.Exists;
         environment ??= Environment.GetEnvironmentVariable;
         var candidates = new List<string>();
-        if (environment("CLAUDE_CODE_GIT_BASH_PATH") is { Length: > 0 } named) candidates.Add(named);
+        if (environment("CLAUDE_CODE_GIT_BASH_PATH") is { Length: > 0 } named && NamesBash(named)) candidates.Add(named);
         foreach (var root in new[] { environment("ProgramFiles"), environment("ProgramFiles(x86)"), environment("LocalAppData") is { Length: > 0 } local ? local + "\\Programs" : null })
             if (root is { Length: > 0 }) candidates.Add(root + "\\Git\\bin\\bash.exe");
         foreach (var bash in candidates) if (exists(bash)) return (bash, ["-c", command]);
         var system = environment("SystemRoot") is { Length: > 0 } windowsRoot ? windowsRoot : "C:\\Windows";
         return (system + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]);
     }
+
+    // The CLI takes CLAUDE_CODE_GIT_BASH_PATH only when its file name is bash or sh, and goes on to look for an
+    // installed Git Bash when it is anything else. An install can point it at git-bash.exe, the launcher that
+    // opens a terminal window of its own: run from here that window would show at every refresh, and what the
+    // command prints would stay in it instead of coming back through the pipes.
+    private static readonly string[] BashNames = ["bash.exe", "sh.exe", "bash", "sh"];
+    private static bool NamesBash(string path) => BashNames.Contains(path[(path.LastIndexOfAny(['\\', '/']) + 1)..].ToLowerInvariant());
 
     // Run the status line command. timeout is in seconds (default 8).
     public static async Task<StatusLineResult> RunAsync(StatusLineConfig config, StatusLineContext ctx, double timeout = 8, CancellationToken cancellation = default)
