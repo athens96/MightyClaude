@@ -446,7 +446,8 @@ public sealed partial class MainWindow
             Require(Math.Abs(surface!.ActualWidth - ChoiceSheetWidth) <= 1, $"{key} ({theme}): the shown choice sheet must be {ChoiceSheetWidth} wide; got {surface.ActualWidth:F1}");
             if (surface is Border border) RequireBrush(border, e => ((Border)e).BorderBrush, DesignToken.Line, "the shown sheet's border", key: key);
             // A dialog opens outside the window's tree: it must take the window's theme, or its stock controls draw the system's.
-            Require(sheet.RequestedTheme == root.RequestedTheme, $"{key} ({theme}): the shown sheet must take the window's theme; got {sheet.RequestedTheme}, window {root.RequestedTheme}");
+            // It follows on the window's ActualThemeChanged, raised after the layout pass that applies the toggle.
+            await WaitUI(() => sheet.RequestedTheme == root.RequestedTheme, () => $"{key} ({theme}): the shown sheet must take the window's theme; got {sheet.RequestedTheme}, window {root.RequestedTheme}");
             // When the sheet takes the keyboard, its default (Enter) button holds it, never Cancel.
             Require(Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(sheet.XamlRoot) is not Button focused || !order.Contains(focused) || ReferenceEquals(focused, order[2]),
                 $"{key} ({theme}): the shown choice sheet must put the focus on Start new, its default button");
