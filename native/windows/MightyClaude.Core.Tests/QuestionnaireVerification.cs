@@ -19,6 +19,10 @@ internal static class QuestionnaireVerification
         Check(UserQuestionnaire.Parse(Input.Replace("다음 선택", "첫 선택", StringComparison.Ordinal)) is null, "duplicate option labels are refused");
         Check(UserQuestionnaire.Parse(Input.Replace("범위는?", "어떻게 처리할까요?", StringComparison.Ordinal)) is null, "duplicate question keys are refused");
         Check(UserQuestionnaire.Parse(Input.Replace("설명", new string('가', 30_000), StringComparison.Ordinal)) is null, "complete-display UTF-8 bound is enforced");
+        // A transcript asks this of every reply it draws: text that is not JSON, or not even valid UTF-16, is no form and no error.
+        var lone = ((char)0xD83D).ToString();
+        Check(UserQuestionnaire.Parse("{\"questions\":\"" + lone + "\"}") is null && UserQuestionnaire.Parse("prose " + lone) is null, "a surrogate without its pair is refused, not thrown");
+        Check(UserQuestionnaire.Parse(" \r\n\t" + Input)?.Questions.Count == 2 && UserQuestionnaire.Parse("[" + Input + "]") is null && UserQuestionnaire.Parse("") is null && UserQuestionnaire.Parse("# heading {\"questions\":[]}") is null, "only a JSON object is read, whatever whitespace leads it");
         return Task.CompletedTask;
     }
 

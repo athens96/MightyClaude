@@ -3,6 +3,7 @@ using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace MightyClaude.WinUI;
 
@@ -196,13 +197,10 @@ public sealed partial class MainWindow
     }
     private sealed partial class PaneView
     {
-        private readonly StackPanel loginRecoveryHost = new() { Spacing = 5, Visibility = Visibility.Collapsed };
+        /// <summary>The sign-in card, between the editor and the toolbar (M/SessionPaneView.swift:619-621, M/CLILoginRecoveryCard.swift:67).</summary>
+        private readonly StackPanel loginRecoveryHost = new() { Margin = new Thickness(12, 0, 12, 0), Visibility = Visibility.Collapsed };
         private string? loginCardFingerprint;
-        private void InitializeLoginRecoveryCard(StackPanel composer)
-        {
-            composer.Children.Insert(0, loginRecoveryHost);
-            AutomationProperties.SetAutomationId(loginRecoveryHost, "login-required-" + id);
-        }
+        private void InitializeLoginRecoveryCard() => AutomationProperties.SetAutomationId(loginRecoveryHost, "login-required-" + id);
         internal void RenderLoginRecovery()
         {
             if (!owner.loginRetries.Requests.TryGetValue(id, out var retry)) { loginRecoveryHost.Children.Clear(); loginRecoveryHost.Visibility = Visibility.Collapsed; loginCardFingerprint = null; return; }
@@ -212,32 +210,58 @@ public sealed partial class MainWindow
             var fingerprint = $"{owner.service.Snapshot.LanguagePreference}:{retry.Generation}:{job?.Phase}:{progress?.Url}:{progress?.AsksForCode}:{failure}:{note}";
             if (loginCardFingerprint == fingerprint) return;
             loginCardFingerprint = fingerprint; loginRecoveryHost.Children.Clear(); loginRecoveryHost.Visibility = Visibility.Visible;
-            // The Mac's card (M/CLILoginRecoveryCard.swift:14-30): the title in ink, the explanation in ink2,
-            // and a note or failure in the amber waitText.
-            loginRecoveryHost.Children.Add(new TextBlock { Text = Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = owner.brushes.Brush(DesignToken.Ink) });
-            loginRecoveryHost.Children.Add(new TextBlock { Text = note is not null ? Locale.Get("loginRecovery.resendBlockedTemplate", new Dictionary<string, string> { ["reason"] = note }) : failure ?? Locale.Get(job?.Phase == "starting" ? "loginRecovery.starting" : job is not null ? "loginRecovery.waiting" : "loginRecovery.body"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = owner.brushes.Brush(note is not null || failure is not null ? DesignToken.WaitText : DesignToken.Ink2) });
+            // The Mac's card (M/CLILoginRecoveryCard.swift:15-69), one 11pt row: the amber account mark; the title in medium
+            // ink over what is happening (the explanation in ink2, a note or failure in the amber waitText, a spinner while
+            // the CLI signs in); then the small buttons and the dismiss cross.
+            var b = owner.brushes; var ink = b.Brush(DesignToken.Ink); var ink2 = b.Brush(DesignToken.Ink2); var wait = b.Brush(DesignToken.WaitText);
+            TextBlock Line(string text, Brush brush) => new() { Text = text, FontSize = 11, Foreground = brush, TextWrapping = TextWrapping.Wrap };
+            Button Small(string title, Func<Task> action) => SmallButton(title, () => owner.Act(action));
+            var card = new Grid { ColumnSpacing = 7 };
+            card.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); card.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); card.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            card.Children.Add(new FontIcon { Glyph = "", FontSize = 12, Foreground = wait, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) });
+            var words = new StackPanel { Spacing = 4 };
+            var title = Line(Locale.Get("loginRecovery.title", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(provider) }), ink); title.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
+            words.Children.Add(title);
+            if (note is not null) words.Children.Add(Line(Locale.Get("loginRecovery.resendBlockedTemplate", new Dictionary<string, string> { ["reason"] = note }), wait));
+            if (job is not null)
+            {
+                var busy = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                busy.Children.Add(new ProgressRing { IsActive = true, Width = 12, Height = 12, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center, Foreground = ink2 });
+                busy.Children.Add(Line(Locale.Get(job.Phase == "starting" ? "loginRecovery.starting" : "loginRecovery.waiting"), ink2)); words.Children.Add(busy);
+            }
+            else if (failure is not null) words.Children.Add(Line(failure, wait));
+            else words.Children.Add(Line(Locale.Get("loginRecovery.body"), ink2));
             if (progress?.Url is { } url)
-                loginRecoveryHost.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.openLink"), () => { Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); return Task.CompletedTask; }));
+            {
+                var link = Small(Locale.Get("loginRecovery.openLink"), () => { Process.Start(new ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); return Task.CompletedTask; });
+                link.HorizontalAlignment = HorizontalAlignment.Left; ToolTipService.SetToolTip(link, url.AbsoluteUri); AutomationProperties.SetAutomationId(link, "login-link-" + id); words.Children.Add(link);
+            }
             if (progress?.AsksForCode == true)
             {
-                var field = new PasswordBox { PlaceholderText = Locale.Get("loginRecovery.codePlaceholder"), MaxLength = 4096, MaxWidth = 320, HorizontalAlignment = HorizontalAlignment.Left };
+                var field = new PasswordBox { PlaceholderText = Locale.Get("loginRecovery.codePlaceholder"), MaxLength = 4096, Width = 240, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Left };
+                // AppKit's placeholder is the tertiary ink (M/CLILoginRecoveryCard.swift:41). A password box has no placeholder property: its template reads these resources.
+                owner.SetResourcesOnce(field, new[] { "", "PointerOver", "Focused" }.Select(state => ("TextControlPlaceholderForeground" + state, (object)b.Tertiary)).ToList());
                 AutomationProperties.SetName(field, Locale.Get("loginRecovery.codePlaceholder"));
                 Task SubmitCode() { if (job?.Process?.SendCode(field.Password) == true) field.Password = ""; return Task.CompletedTask; }
                 field.KeyDown += async (_, args) => { if (args.Key == Windows.System.VirtualKey.Enter) { args.Handled = true; await SubmitCode(); } };
-                loginRecoveryHost.Children.Add(new TextBlock { Text = Locale.Get("loginRecovery.codePrompt"), FontSize = 11 });
-                loginRecoveryHost.Children.Add(field); loginRecoveryHost.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.codeSubmit"), SubmitCode));
+                words.Children.Add(Line(Locale.Get("loginRecovery.codePrompt"), ink2));
+                var code = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 }; code.Children.Add(field); code.Children.Add(Small(Locale.Get("loginRecovery.codeSubmit"), SubmitCode)); words.Children.Add(code);
             }
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            if (job is not null) buttons.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
+            Grid.SetColumn(words, 1); card.Children.Add(words);
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(4, 0, 0, 0) };
+            if (job is not null) buttons.Children.Add(Small(Locale.Get("loginRecovery.cancel"), () => { owner.CancelBackgroundLogin(provider); owner.RefreshLoginCards(); return Task.CompletedTask; }));
             else
             {
-                buttons.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider)));
-                if (failure is not null) buttons.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
-                buttons.Children.Add(owner.SafeButton(Locale.Get("loginRecovery.resendButton"), () => owner.ResendLoginRequest(id)));
+                buttons.Children.Add(Small(Locale.Get("loginRecovery.loginButton"), () => owner.StartBackgroundLogin(provider)));
+                if (failure is not null) buttons.Children.Add(Small(Locale.Get("loginRecovery.terminalButton"), () => owner.TerminalLoginFallback(provider)));
+                var resend = Small(Locale.Get("loginRecovery.resendButton"), () => owner.ResendLoginRequest(id)); ToolTipService.SetToolTip(resend, Locale.Get("loginRecovery.resendHelp")); buttons.Children.Add(resend);
             }
-            buttons.Children.Add(owner.SafeButton("×", () => { owner.DismissLoginRecovery(id); return Task.CompletedTask; }));
-            AutomationProperties.SetName(buttons.Children[^1], Locale.Get("loginRecovery.dismiss"));
-            loginRecoveryHost.Children.Add(buttons);
+            var dismiss = owner.SafeButton("×", () => { owner.DismissLoginRecovery(id); return Task.CompletedTask; });
+            dismiss.Content = new FontIcon { Glyph = "", FontSize = 9 }; dismiss.Width = 18; dismiss.Height = 16; dismiss.MinWidth = 0; dismiss.MinHeight = 0; dismiss.Padding = new Thickness(0); dismiss.BorderThickness = new Thickness(0); dismiss.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); dismiss.VerticalAlignment = VerticalAlignment.Center;
+            owner.PaintPlainButton(dismiss, b.Transparent, b.Subtle, ink: ink2);
+            AutomationProperties.SetName(dismiss, Locale.Get("loginRecovery.dismiss")); buttons.Children.Add(dismiss);
+            Grid.SetColumn(buttons, 2); card.Children.Add(buttons);
+            loginRecoveryHost.Children.Add(card);
         }
         internal async Task<bool> ResendLoginRequest(CliLoginRetry retry)
         {

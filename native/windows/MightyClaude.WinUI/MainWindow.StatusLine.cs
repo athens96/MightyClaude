@@ -37,9 +37,9 @@ public sealed partial class MainWindow
         private bool statusLineRestartPending;
         private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton statusLineToggle = new()
         {
-            // A 22×24 header button, like the Mac's (M/SessionPaneView.swift:261, 271, 298).
-            Width = 22, Height = 24, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(3), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment),
+            // The toggle sits in the composer's right cluster in a 16 × 32 frame (M/SessionPaneView.swift:123-133, 736).
+            Width = 16, Height = 32, MinWidth = 0, MinHeight = 0, VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
         };
 
         internal StatusLineRefresher? Refresher => _refresher;
@@ -101,13 +101,13 @@ public sealed partial class MainWindow
 
         private bool StatusLineEligible => owner.service.Snapshot.StatusLineEnabled && Session.Kind == "claude" && Session.Provider == "claude";
 
-        private void InitializeStatusLineToggle(StackPanel header)
+        /// <summary>Adds the status-line toggle to the composer's right cluster, between the context ring and stop / send.</summary>
+        private void InitializeStatusLineToggle(StackPanel cluster)
         {
             InitializeStatusLineGlyph();
             AutomationProperties.SetName(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
-            ToolTipService.SetToolTip(statusLineToggle, Locale.Get("settings.display.statusLineToggle"));
             statusLineToggle.Click += async (_, _) => await owner.Act(() => owner.SetStatusLineEnabled(statusLineToggle.IsChecked == true));
-            header.Children.Add(statusLineToggle);
+            cluster.Children.Add(statusLineToggle);
         }
 
         private StatusLineContext BuildStatusLineContext()
@@ -158,27 +158,33 @@ public sealed partial class MainWindow
         /// </summary>
         internal void RenderStatusLine(StatusLineConfig? config, StatusLineConfig? untrusted, StatusLineResult? result, int padding = 0)
         {
+            var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var mono = new FontFamily(DesignMetrics.Font.Mono);
             statusLineUntrusted = untrusted;
             statusLineHost.Children.Clear();
-            statusLineHost.Margin = new Thickness(padding * 6, 2, 0, 0);
+            // The Mac's own padding: 12 at the sides (plus the command's own, 6 a step), 2 over and 8 under (M/StatusLineView.swift:42-43).
+            statusLineHost.Margin = new Thickness(12 + padding * 6, 2, 12, 8);
             if (untrusted is not null)
             {
+                // The question a workspace's command must answer first (M/StatusLineView.swift:15-29): the terminal mark and
+                // the 11pt ink2 question, the command on the subtle wash at radius 6, two small buttons and a quiet note.
                 var prompt = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
-                prompt.Children.Add(new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source), FontSize = 11, Opacity = .75, TextWrapping = TextWrapping.Wrap });
+                var question = new Grid { ColumnSpacing = 5 }; question.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); question.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+                question.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
+                var asked = new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
+                Grid.SetColumn(asked, 1); question.Children.Add(asked); prompt.Children.Add(question);
                 prompt.Children.Add(new Border
                 {
-                    Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = new FontFamily(DesignMetrics.Font.Mono), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
-                    CornerRadius = new CornerRadius(6), Padding = new Thickness(6),
-                    Background = owner.brushes.Subtle,
+                    Child = new TextBlock { Text = untrusted.Command, FontSize = 11, FontFamily = mono, Foreground = b.Brush(DesignToken.Ink), MaxLines = 3, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), Padding = new Thickness(6),
+                    Background = b.Subtle,
                 });
                 var answers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-                var allow = Button(StatusLineStrings.TrustAllow, () => owner.Act(() => TrustStatusLine(untrusted)));
-                allow.Height = 28; allow.MinHeight = 0; allow.Padding = new Thickness(10, 0, 10, 0); allow.FontSize = 11;
+                var allow = SmallButton(StatusLineStrings.TrustAllow, () => owner.Act(() => TrustStatusLine(untrusted)));
                 AutomationProperties.SetAutomationId(allow, "status-line-trust-" + id);
-                var deny = Button(StatusLineStrings.TrustDeny, () => { DismissStatusLine(); RenderStatusLine(config, null, result, padding); return Task.CompletedTask; });
-                deny.Height = 28; deny.MinHeight = 0; deny.Padding = new Thickness(10, 0, 10, 0); deny.FontSize = 11;
+                var deny = SmallButton(StatusLineStrings.TrustDeny, () => { DismissStatusLine(); RenderStatusLine(config, null, result, padding); return Task.CompletedTask; });
                 answers.Children.Add(allow); answers.Children.Add(deny);
-                answers.Children.Add(new TextBlock { Text = StatusLineStrings.TrustNote, FontSize = 10, Opacity = .55, VerticalAlignment = VerticalAlignment.Center });
+                // The note beside the answers: 10pt in the tertiary ink (M/StatusLineView.swift:24).
+                answers.Children.Add(new TextBlock { Text = StatusLineStrings.TrustNote, FontSize = 10, Foreground = b.Tertiary, VerticalAlignment = VerticalAlignment.Center });
                 prompt.Children.Add(answers);
                 AutomationProperties.SetAutomationId(prompt, "status-line-untrusted-" + id);
                 statusLineHost.Children.Add(prompt);
@@ -187,12 +193,42 @@ public sealed partial class MainWindow
             {
                 foreach (var line in result.Lines.Take(StatusLineSupport.MaximumLines)) statusLineHost.Children.Add(Row(line));
                 if (result.ErrorText is { Length: > 0 } error && result.Lines.Count == 0)
-                    statusLineHost.Children.Add(new TextBlock { Text = "⚠ " + error, FontSize = 11, Opacity = .75, TextTrimming = TextTrimming.CharacterEllipsis });
+                {
+                    // A failed command says so in one quiet line behind the warning mark (M/StatusLineView.swift:35-37).
+                    var failed = new Grid { ColumnSpacing = 5 }; failed.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); failed.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+                    failed.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
+                    var said = new TextBlock { Text = error, FontSize = 11, FontFamily = mono, Foreground = ink2, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+                    Grid.SetColumn(said, 1); failed.Children.Add(said); statusLineHost.Children.Add(failed);
+                }
             }
             AutomationProperties.SetName(statusLineHost, StatusLineStrings.AccessibilityLabel);
             AutomationProperties.SetHelpText(statusLineHost, result is null ? "" : string.Join("\n", result.Lines.Select(line => string.Concat(line.Select(segment => segment.Text)))));
             ToolTipService.SetToolTip(statusLineHost, config is null ? "statusLine" : "statusLine · " + config.Source + " · " + config.Command);
             statusLineHost.Visibility = statusLineHost.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            // The toolbar sits 10 over the card's edge, or 4 over a status line (M/SessionPaneView.swift:645).
+            if (toolbar is not null) toolbar.Margin = new Thickness(10, 0, 10, statusLineHost.Visibility == Visibility.Visible ? 4 : 10);
+        }
+
+        /// <summary>
+        /// A small push button, the Mac's <c>.controlSize(.small)</c>: 11pt, about 20 high, radius 5; <c>card</c> with a
+        /// 1pt <c>line</c> and <c>ink</c> words, or, when prominent, <c>accent</c> behind <c>onAccent</c> words.
+        /// </summary>
+        private Button SmallButton(string title, Func<Task> action, bool prominent = false)
+        {
+            var b = owner.brushes; var button = Button(title, action);
+            button.FontSize = 11; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(8, 1, 8, 2); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); button.VerticalAlignment = VerticalAlignment.Center;
+            if (prominent)
+            {
+                button.BorderThickness = new Thickness(0); button.FontWeight = Microsoft.UI.Text.FontWeights.Medium;
+                owner.PaintPlainButton(button, b.Brush(DesignToken.Accent), b.Brush(DesignToken.Accent, 0.9), ink: b.Brush(DesignToken.OnAccent), disabledInk: b.Brush(DesignToken.OnAccent));
+                button.IsEnabledChanged += (_, _) => button.Opacity = button.IsEnabled ? 1 : DisabledDim;
+            }
+            else
+            {
+                button.BorderThickness = new Thickness(DesignMetrics.Stroke.Line);
+                owner.PaintPlainButton(button, b.Brush(DesignToken.Card), b.Subtle, b.Brush(DesignToken.Line), b.Brush(DesignToken.Ink), b.Brush(DesignToken.Ink3));
+            }
+            return button;
         }
 
         /// <summary>
@@ -211,6 +247,7 @@ public sealed partial class MainWindow
             var answers = Descendants(question).OfType<Button>().Select(b => b.Content as string).ToList();
             Require(answers.Contains(StatusLineStrings.TrustAllow) && answers.Contains(StatusLineStrings.TrustDeny), "the allow / not now buttons are missing");
             Require(!StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId), "the workspace command was trusted before it was allowed");
+            await SettleDesktopCapture(owner.root); await CaptureElement(Container, Path.Combine(owner.options.ProfileDirectory!, "smoke-composer-status-line-question.png"));
 
             await TrustStatusLine(untrusted);
             Require(StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId) && StatusLineUntrusted is null, "the question stayed after allowing");
@@ -224,6 +261,9 @@ public sealed partial class MainWindow
             var segments = rows[0].Inlines.OfType<Microsoft.UI.Xaml.Documents.Run>().ToList();
             Require(segments[0].Foreground is SolidColorBrush, "the terminal colour was not applied to the first status line segment");
             Require(segments.Any(r => r.FontWeight.Weight >= Microsoft.UI.Text.FontWeights.SemiBold.Weight), "bold text was not applied to the status line");
+            // The toolbar sits 4 over a status line, 10 over the card's edge without one (M/SessionPaneView.swift:645).
+            Require(toolbar.Margin.Bottom == 4, $"the toolbar must sit 4 over the status line; got {toolbar.Margin.Bottom}");
+            await SettleDesktopCapture(owner.root); await CaptureElement(Container, Path.Combine(owner.options.ProfileDirectory!, "smoke-composer-status-line.png"));
             return true;
         }
 

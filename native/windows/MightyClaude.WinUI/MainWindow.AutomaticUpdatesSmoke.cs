@@ -1,6 +1,7 @@
 using MightyClaude.Core;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 
 namespace MightyClaude.WinUI;
 
@@ -13,9 +14,10 @@ public sealed partial class MainWindow
         {
             await service.UpdateAsync(s => s with { AutoUpdatePlugins = null });
             var section = BuildCliUpdateSection([]);
-            var toggle = section.Children.OfType<ToggleSwitch>().Single(t => AutomationProperties.GetAutomationId(t) == "plugin-auto-update");
-            Require(toggle.IsOn, "Plugin automatic updates must default on independently of CLI updates.");
-            toggle.IsOn = false; await WaitUI(() => service.Snapshot.AutoUpdatePlugins == false);
+            // The switch sits at the trailing edge of its own row now; it is still found by its id.
+            var toggle = SettingsElements(section).OfType<ToggleButton>().Single(t => AutomationProperties.GetAutomationId(t) == "plugin-auto-update");
+            Require(toggle.IsChecked == true, "Plugin automatic updates must default on independently of CLI updates.");
+            toggle.IsChecked = false; await WaitUI(() => service.Snapshot.AutoUpdatePlugins == false);
             var id = saved.Sessions.First(p => p.Provider == "claude" && p.Kind == "claude" && p.WorkspaceId == workspace.Id).Id;
             await SelectLayoutSession(id); Render(); var pane = views[id];
             await WaitUI(() => pane.Container.IsLoaded);

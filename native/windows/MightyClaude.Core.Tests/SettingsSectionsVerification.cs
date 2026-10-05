@@ -18,7 +18,7 @@ internal static class SettingsSectionsVerification
             ComponentSection.SectionTitle,
             Locale.Get("settings.mobileRemote.sectionTitle"),
             CliUpdateStrings.SectionTitle,
-            Locale.Get("settings.nav.companion"),
+            Locale.Get("companion.settings.sectionTitle"),
             "이 PC의 CLI",
             CliAccountStrings.SectionTitle,
             "Claude Mods",

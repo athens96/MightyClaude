@@ -76,29 +76,62 @@ public sealed partial class MainWindow
         private Grid? terminalHost;
         private Button? terminalRestart;
         private TextBlock? terminalTitle, terminalDirectory, terminalGrid;
+        /// <summary>The footer room the working directory may take, and the whole path it stands for.</summary>
+        private Border? terminalDirectoryRoom;
+        private string terminalDirectoryPath = "";
         private bool terminalRestarting;
         private int terminalColumns = 100, terminalRows = 30;
         private void RefreshTerminalTheme() => PostTerminal(new { type = "theme", light = owner.service.Snapshot.Theme == "light" });
 
-        private void InitializeTerminal(Grid grid, FrameworkElement composer, IEnumerable<UIElement> copyItems)
+        /// <summary>
+        /// A terminal pane (M/LocalTerminalView.swift:67-89, M/AgentTerminalPaneView.swift:57-73): the terminal
+        /// edge to edge in the card, 2 under a shell's slim bar or from the card's top for an agent's (whose
+        /// bar its tab group draws); under it, when it has something to say, the notice with the shell's
+        /// restart button (11pt <c>ink2</c>, padding 10) and always the footer line (9pt <c>ink2</c>, padding
+        /// h10 v6, 7 apart, the grid size in the tertiary ink), both on the subtle wash.
+        /// </summary>
+        private void InitializeTerminal(Grid grid, FrameworkElement composer)
         {
             if (Session.Kind is not ("shell" or AgentIOPaneKind.Terminal) || owner.options.SmokeTest && !owner.smokeTerminalEnabled) return;
             output.View.Visibility = composer.Visibility = Visibility.Collapsed;
-            foreach (var item in copyItems) item.Visibility = Visibility.Collapsed;
-            var host = terminalHost = new Grid(); Grid.SetRow(host, 1); grid.Children.Add(host);
+            const double inset = 12;
+            var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var shell = Session.Kind == "shell";
+            var inner = DesignMetrics.Radius.Pane - DesignMetrics.Stroke.Line;
+            // Over the pane grid's padding and row spacing, as the header and the conversation are; the corners follow the card's inner curve.
+            var host = terminalHost = new Grid
+            {
+                Margin = new Thickness(-inset, shell ? 2 - grid.RowSpacing : -inset - grid.RowSpacing, -inset, -inset),
+                CornerRadius = shell ? new CornerRadius(0, 0, inner, inner) : new CornerRadius(inner),
+            };
+            Grid.SetRow(host, 1); Grid.SetRowSpan(host, 2); grid.Children.Add(host);
             host.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
             host.RowDefinitions.Add(new() { Height = GridLength.Auto });
             host.RowDefinitions.Add(new() { Height = GridLength.Auto });
             InstallTerminalRenderer();
-            terminalNotice = new TextBlock { Text = Locale.Get("terminal.starting"), TextWrapping = TextWrapping.Wrap, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
-            terminalRestart = Button(Locale.Get("terminal.restart"), RestartTerminalAsync); terminalRestart.FontSize = 11; terminalRestart.IsEnabled = false; terminalRestart.Visibility = Session.Kind == "shell" ? Visibility.Visible : Visibility.Collapsed;
-            var notices = new Grid { ColumnSpacing = 8, Padding = new(8, 4, 8, 4) }; notices.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); notices.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            terminalNotice = new TextBlock { Text = Locale.Get("terminal.starting"), FontFamily = BodyFont, TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
+            terminalRestart = Button(Locale.Get("terminal.restart"), RestartTerminalAsync); terminalRestart.FontSize = 11; terminalRestart.MinHeight = 0; terminalRestart.Padding = new Thickness(9, 2, 9, 3); terminalRestart.VerticalAlignment = VerticalAlignment.Center;
+            terminalRestart.IsEnabled = false; terminalRestart.Visibility = shell ? Visibility.Visible : Visibility.Collapsed;
+            var notices = new Grid { ColumnSpacing = 8, Padding = new Thickness(10), Background = b.Subtle }; notices.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); notices.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             notices.Children.Add(terminalNotice); Grid.SetColumn(terminalRestart, 1); notices.Children.Add(terminalRestart); Grid.SetRow(notices, 1); host.Children.Add(notices);
-            var footer = new Grid { ColumnSpacing = 8, Padding = new(8, 4, 8, 4) };
+            // The bar shows only while the notice does: a running terminal has nothing between it and its footer.
+            terminalNotice.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => notices.Visibility = terminalNotice.Visibility);
+            var footer = new Grid { ColumnSpacing = 7, Padding = new Thickness(10, 6, 10, 6), Background = b.Subtle };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-            terminalTitle = new TextBlock { Text = "ConPTY · " + Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell), FontSize = 9, Opacity = .65, MaxWidth = 180, TextTrimming = TextTrimming.CharacterEllipsis };
-            terminalDirectory = new TextBlock { Text = Workspace.Path, FontSize = 9, Opacity = .65, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right }; ToolTipService.SetToolTip(terminalDirectory, Workspace.Path);
-            terminalGrid = new TextBlock { FontSize = 9, Opacity = .5 }; footer.Children.Add(terminalTitle); Grid.SetColumn(terminalDirectory, 1); footer.Children.Add(terminalDirectory); Grid.SetColumn(terminalGrid, 2); footer.Children.Add(terminalGrid); Grid.SetRow(footer, 2); host.Children.Add(footer);
+            TextBlock Words(string text, bool medium = false) => new() { Text = text, FontFamily = BodyFont, FontSize = 9, Foreground = ink2, TextWrapping = TextWrapping.NoWrap, FontWeight = medium ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal };
+            // A shell names its engine and its title, "ConPTY · powershell" (the Mac's "Ghostty · zsh"); an agent's terminal says what it is.
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+            name.Children.Add(Words(shell ? "ConPTY" : Locale.Get("agentTerminal.terminalPane.title"), medium: true));
+            terminalTitle = Words(Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell)); terminalTitle.MaxWidth = 180; terminalTitle.TextTrimming = TextTrimming.CharacterEllipsis;
+            if (shell) { name.Children.Add(Words("·")); name.Children.Add(terminalTitle); }
+            footer.Children.Add(name);
+            terminalDirectory = Words(""); terminalDirectory.HorizontalAlignment = HorizontalAlignment.Right; terminalDirectory.TextTrimming = TextTrimming.CharacterEllipsis;
+            terminalDirectoryRoom = new Border { Child = terminalDirectory }; terminalDirectoryRoom.SizeChanged += (_, _) => FitTerminalDirectory();
+            Grid.SetColumn(terminalDirectoryRoom, 1); footer.Children.Add(terminalDirectoryRoom);
+            ShowTerminalDirectory(Workspace.Path);
+            // The grid size is the tertiary ink (M/LocalTerminalView.swift:85, M/AgentTerminalPaneView.swift:69).
+            terminalGrid = Words(""); terminalGrid.Foreground = b.Tertiary;
+            Microsoft.UI.Xaml.Documents.Typography.SetNumeralAlignment(terminalGrid, FontNumeralAlignment.Tabular);
+            Grid.SetColumn(terminalGrid, 2); footer.Children.Add(terminalGrid); Grid.SetRow(footer, 2); host.Children.Add(footer);
             terminalFlush.Tick += (_, _) => FlushTerminal();
         }
         private void InstallTerminalRenderer()
@@ -161,12 +194,14 @@ public sealed partial class MainWindow
                         else terminal?.Resize(value.GetProperty("columns").GetInt32(), value.GetProperty("rows").GetInt32());
                         break;
                     case "title":
-                        if (terminalTitle is not null && value.Text("title") is { Length: > 0 and <= 200 } title && !title.Any(char.IsControl)) terminalTitle.Text = "ConPTY · " + title;
+                        if (terminalTitle is not null && value.Text("title") is { Length: > 0 and <= 200 } title && !title.Any(char.IsControl)) terminalTitle.Text = title;
                         break;
                     case "directory":
                         if (terminalDirectory is not null && value.Text("url") is { Length: <= 8192 } location && Uri.TryCreate(location, UriKind.Absolute, out var uri) && uri.IsFile && !uri.IsUnc && (uri.Host.Length == 0 || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)))
-                        { terminalDirectory.Text = uri.LocalPath; ToolTipService.SetToolTip(terminalDirectory, uri.LocalPath); }
+                            ShowTerminalDirectory(uri.LocalPath);
                         break;
+                    // A press inside the terminal page never reaches the pane as a pointer event.
+                    case "pressed": owner.ActivatePane(id); break;
                     case "copy": if (value.Text("text") is { Length: <= 1_000_000 } selection) Copy(selection); break;
                     case "paste":
                         var data = Clipboard.GetContent();
@@ -180,6 +215,34 @@ public sealed partial class MainWindow
                 }
             }
             catch (Exception ex) { if (!terminalClosed) { owner.error.Text = ex.Message; if (terminal is null && terminalNotice is not null) { terminalNotice.Text = Locale.Get("terminal.failed") + "\n" + ex.Message; if (terminalRestart is not null) terminalRestart.IsEnabled = true; } } }
+        }
+        private void ShowTerminalDirectory(string path)
+        {
+            terminalDirectoryPath = path; ToolTipService.SetToolTip(terminalDirectory!, path); FitTerminalDirectory();
+        }
+
+        /// <summary>
+        /// The working directory keeps both ends and drops its middle when the footer has no room for all
+        /// of it, as the Mac's <c>.truncationMode(.middle)</c> does (M/LocalTerminalView.swift:84); WinUI only
+        /// trims the end, which stays as the backstop. Cut between text elements, each candidate measured.
+        /// </summary>
+        private void FitTerminalDirectory()
+        {
+            if (terminalDirectory is not { } label) return;
+            var full = terminalDirectoryPath; label.Text = full;
+            if (terminalDirectoryRoom is not { ActualWidth: > 0 } room) return;
+            bool Fits(string text)
+            {
+                label.Text = text; label.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                return label.DesiredSize.Width <= room.ActualWidth;
+            }
+            var starts = System.Globalization.StringInfo.ParseCombiningCharacters(full);
+            if (Fits(full) || starts.Length <= 2) return;
+            string Kept(int keep) => full[..starts[(keep + 1) / 2]] + "…" + (keep / 2 == 0 ? "" : full[starts[starts.Length - keep / 2]..]);
+            // The longest kept count (head and tail elements) that fits; 1 always shows the first element.
+            int low = 1, high = starts.Length - 1;
+            while (low < high) { var mid = (low + high + 1) / 2; if (Fits(Kept(mid))) low = mid; else high = mid - 1; }
+            label.Text = Kept(low);
         }
         private void UpdateTerminalGrid(int columns, int rows)
         { terminalColumns = Math.Clamp(columns, 2, 1000); terminalRows = Math.Clamp(rows, 1, 1000); if (terminalGrid is not null) terminalGrid.Text = terminalColumns + "×" + terminalRows; }

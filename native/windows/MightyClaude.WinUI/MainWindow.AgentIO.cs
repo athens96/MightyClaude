@@ -72,20 +72,38 @@ public sealed partial class MainWindow
         await service.UpdateAsync(state =>
         {
             RequireActiveAgentBinding(binding);
-            var parent = state.Sessions.FirstOrDefault(p => p.Id == binding.PaneId && p.WorkspaceId == binding.WorkspaceId) ?? throw new InvalidOperationException("Agent pane closed.");
-            if (state.Sessions.Any(p => p.Id == paneId)) return state;
-            if (state.Sessions.Count >= 128) throw new InvalidOperationException("Close a pane before opening another.");
-            var before = EffectiveLayout(state, binding.WorkspaceId);
-            var target = PaneLayout.Groups(before).FirstOrDefault(g => g.SessionIds.Contains(binding.PaneId));
-            var pane = new RunSession { Id = paneId, Kind = kind, OwnerSessionId = binding.PaneId, WorkspaceId = binding.WorkspaceId, WorkspaceProfileKey = binding.WorkspaceId, Provider = parent.Provider, Title = parent.Title + " — " + Locale.Get(kind == AgentIOPaneKind.Terminal ? "agentTerminal.terminalPane.title" : "agentTerminal.browserPane.title") };
-            var next = state with { Sessions = state.Sessions.Append(pane).ToList() };
-            var tree = EffectiveLayout(next, binding.WorkspaceId);
-            if (tree is not null && target is not null) tree = PaneLayout.Move(tree, paneId, target.Id, "right");
-            return SaveLayoutMode(SaveLayout(next, binding.WorkspaceId, tree), binding.WorkspaceId, "custom");
+            return WithAgentIOPane(state, binding.PaneId, binding.WorkspaceId, kind);
         });
         RequireActiveAgentBinding(binding);
         HideDashboard(); Render(); return paneId;
     }
+    /// <summary>The state with the agent pane's terminal or browser pane to its right; unchanged while that pane is already open.</summary>
+    private AppSnapshot WithAgentIOPane(AppSnapshot state, string agentPaneId, string workspaceId, string kind)
+    {
+        var paneId = AgentIOPaneKind.PaneId(agentPaneId, kind);
+        var parent = state.Sessions.FirstOrDefault(p => p.Id == agentPaneId && p.WorkspaceId == workspaceId) ?? throw new InvalidOperationException("Agent pane closed.");
+        if (state.Sessions.Any(p => p.Id == paneId)) return state;
+        if (state.Sessions.Count >= 128) throw new InvalidOperationException("Close a pane before opening another.");
+        var before = EffectiveLayout(state, workspaceId);
+        var target = PaneLayout.Groups(before).FirstOrDefault(g => g.SessionIds.Contains(agentPaneId));
+        // Titled as on the Mac, "터미널" or "브라우저" (M/AppStore+AgentIO.swift:97-98, 114-115); it opens beside its agent.
+        var pane = new RunSession { Id = paneId, Kind = kind, OwnerSessionId = agentPaneId, WorkspaceId = workspaceId, WorkspaceProfileKey = workspaceId, Provider = parent.Provider, Title = Locale.Get(kind == AgentIOPaneKind.Terminal ? "agentTerminal.terminalPane.title" : "agentTerminal.browserPane.title") };
+        var next = state with { Sessions = state.Sessions.Append(pane).ToList() };
+        var tree = EffectiveLayout(next, workspaceId);
+        if (tree is not null && target is not null) tree = PaneLayout.Move(tree, paneId, target.Id, "right");
+        return SaveLayoutMode(SaveLayout(next, workspaceId, tree), workspaceId, "custom");
+    }
+    /// <summary>
+    /// The agent header's terminal button (M/SessionPaneView.swift:269-276, M/AppStore+AgentIO.swift:95-99):
+    /// puts the agent's terminal pane back beside it when it was closed, and selects it. The terminal
+    /// itself kept running, so the pane shows its output again.
+    /// </summary>
+    private Task OpenAgentTerminalPane(string agentPaneId) => Act(async () =>
+    {
+        if (!agentTerminals.ContainsKey(agentPaneId) || service.Snapshot.Sessions.FirstOrDefault(p => p.Id == agentPaneId) is not { } agent) return;
+        await service.UpdateAsync(state => state.Sessions.Any(p => p.Id == agentPaneId) ? WithAgentIOPane(state, agentPaneId, agent.WorkspaceId, AgentIOPaneKind.Terminal) : state);
+        await SelectLayoutSession(AgentIOPaneKind.PaneId(agentPaneId, AgentIOPaneKind.Terminal));
+    });
     private async Task<object> OpenAgentUrl(AgentIOBinding binding, Uri url, CancellationToken cancellation)
     {
         RequireActiveAgentBinding(binding);
@@ -153,19 +171,6 @@ public sealed partial class MainWindow
         service.ConfigureAgentIO(null);
         if (agentIO is not null) { await agentIO.DisposeAsync(); agentIO = null; }
         await Task.WhenAll(agentTerminals.Values.Select(t => t.DisposeAsync().AsTask()).Concat(agentTerminalClosures)); agentTerminals.Clear(); agentTerminalClosures.Clear();
-    }
-    private FrameworkElement BuildAgentWebOpenSetting()
-    {
-        var workspace = service.Snapshot.ActiveWorkspaceId;
-        var picker = new ComboBox { Header = Locale.Get("agentTerminal.urlOpen.settingTitle"), IsEnabled = workspace is not null, HorizontalAlignment = HorizontalAlignment.Stretch };
-        foreach (var pair in new[] { ("ask", "settingAsk"), ("inApp", "settingInApp"), ("external", "settingExternal") }) picker.Items.Add(new ComboBoxItem { Tag = pair.Item1, Content = Locale.Get("agentTerminal.urlOpen." + pair.Item2) });
-        picker.SelectedIndex = service.Snapshot.AgentWebOpenChoices?.GetValueOrDefault(workspace ?? "") switch { "inApp" => 1, "external" => 2, _ => 0 };
-        picker.SelectionChanged += async (_, _) =>
-        {
-            if (workspace is null || picker.SelectedItem is not ComboBoxItem { Tag: string value }) return;
-            await Act(() => service.UpdateAsync(state => { var choices = new Dictionary<string, string>(state.AgentWebOpenChoices ?? []); if (value == "ask") choices.Remove(workspace); else choices[workspace] = value; return state with { AgentWebOpenChoices = choices }; }));
-        };
-        return picker;
     }
     private sealed partial class PaneView
     {

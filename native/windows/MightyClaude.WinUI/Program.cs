@@ -47,9 +47,18 @@ public sealed record StartupOptions(string? ProfileDirectory = null, bool SmokeT
         catch { /* Diagnostics must not change startup behavior. */ }
     }
 
+    private bool failureWritten;
+
+    /// <summary>The smoke has written its own record of a failed run: nothing thrown afterwards replaces it.</summary>
+    internal void KeepFailureRecord() => failureWritten = true;
+
     internal void WriteStartupFailure(Exception error)
     {
         if (!SmokeTest || ProfileDirectory is null) return;
+        // The first failure is the run's. One thrown later, while the failed run is being taken down, goes to the
+        // log and leaves the record of the first as it is.
+        if (failureWritten) { TraceStartup("later-failure " + error.GetType().FullName + ": " + error.Message); return; }
+        failureWritten = true;
         try
         {
             Directory.CreateDirectory(ProfileDirectory);

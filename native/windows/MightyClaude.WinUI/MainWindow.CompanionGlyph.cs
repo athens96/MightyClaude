@@ -1,7 +1,7 @@
+using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 
@@ -34,30 +34,37 @@ public sealed partial class MainWindow
         AddPad(1); if (!filled) AddPad(.73); shape.Children.Add(pad); return shape;
     }
 
+    /// <summary>The paw's drawn size: the Mac's 10pt pawprint is about 10.6 across (M/AgentCompanionViews.swift:10).</summary>
+    internal const double CompanionGlyphSize = 10.6;
+
     private void InitializeCompanionGlyph()
     {
         var button = companionToggleControl!;
-        button.Content = companionGlyph;
+        // The outline is drawn on a 16-unit box; the viewbox brings it to the status bar's 10pt symbols.
+        button.Content = new Viewbox { Width = CompanionGlyphSize, Height = CompanionGlyphSize, Child = companionGlyph };
         AutomationProperties.SetAutomationId(button, "companion-toggle");
         AutomationProperties.SetAccessibilityView(companionGlyph, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        void BindForeground()
-        {
-            if (VisualChildren(button).OfType<ContentPresenter>().FirstOrDefault(p => ReferenceEquals(p.Content, companionGlyph)) is { } presenter)
-                companionGlyph.SetBinding(IconElement.ForegroundProperty, new Binding { Source = presenter, Path = new PropertyPath("Foreground"), Mode = BindingMode.OneWay });
-        }
-        button.Loaded += (_, _) => BindForeground();
-        button.ActualThemeChanged += (_, _) => button.DispatcherQueue.TryEnqueue(BindForeground);
+    }
+
+    /// <summary>
+    /// The paw as the Mac draws it (M/AgentCompanionViews.swift:10-11): filled and <c>accent</c> while the
+    /// pet shows, outlined and <c>ink2</c> otherwise. Both are shared brushes set on the symbol itself
+    /// (a look that changes at runtime goes on the content), so a theme toggle recolours it in place.
+    /// </summary>
+    private void PaintCompanionGlyph(bool enabled)
+    {
+        companionGlyph.Data = enabled ? companionGlyphOn : companionGlyphOff;
+        companionGlyph.Foreground = brushes.Brush(enabled ? DesignToken.Accent : DesignToken.Ink2);
     }
 
     private void CheckSidebarChromeForSmoke()
     {
-        var presenter = VisualChildren(companionToggleControl!).OfType<ContentPresenter>().Single(p => ReferenceEquals(p.Content, companionGlyph));
-        Require(companionGlyph.Foreground is SolidColorBrush actual && presenter.Foreground is SolidColorBrush inherited && actual.Color == inherited.Color,
-            "Pet icon must use the native button foreground in each theme.");
+        Require(ReferenceEquals(companionGlyph.Foreground, brushes.Brush(companionPreferences.Enabled ? DesignToken.Accent : DesignToken.Ink2)),
+            "Pet icon must be accent while the pet shows and ink2 otherwise (M/AgentCompanionViews.swift:11).");
         Require(ReferenceEquals(companionGlyph.Data, companionPreferences.Enabled ? companionGlyphOn : companionGlyphOff), "Pet icon must reflect its enabled state.");
         var footer = VisualChildren(root).OfType<Grid>().Single(g => AutomationProperties.GetAutomationId(g) == "sidebar-footer");
         var themeButton = sidebarThemeButton!;
-        Require(settingsButton.IsLoaded && themeButton.IsLoaded && settingsButton.ActualWidth == 28 && themeButton.ActualWidth == 28,
+        Require(settingsButton.IsLoaded && themeButton.IsLoaded && settingsButton.ActualWidth == SidebarFooterButton && themeButton.ActualWidth == SidebarFooterButton,
             "Sidebar global actions must remain loaded native controls.");
         var settingsPoint = settingsButton.TransformToVisual(footer).TransformPoint(new Point());
         var themePoint = themeButton.TransformToVisual(footer).TransformPoint(new Point());

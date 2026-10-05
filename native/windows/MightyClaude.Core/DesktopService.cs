@@ -24,6 +24,8 @@ public sealed class DesktopService : IAsyncDisposable
     public event Action<ToolPermissionRequest>? ToolPermissionChanged;
     public event Action<Exception>? PersistenceFailed;
     public AppSnapshot Snapshot { get { lock (sync) { var copy = Wire.Clone(snapshot); return copy with { Sessions = copy.Sessions.Select(s => s with { CurrentActivity = snapshot.Sessions.FirstOrDefault(original => original.Id == s.Id)?.CurrentActivity }).ToList() }; } } }
+    /// <summary>The active pane's id alone, for a caller that asks on every pointer press and needs no copy of the state.</summary>
+    public string? ActiveSessionId { get { lock (sync) return snapshot.ActiveSessionId; } }
     public DesktopService(string directory, string? legacyDirectory, string pluginDirectory, ProviderCatalog? providers = null)
     {
         store = new(directory, legacyDirectory); Providers = providers ?? new(); Images = new(Path.Combine(directory, "image-cache"));

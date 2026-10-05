@@ -12,21 +12,33 @@ public sealed partial class MainWindow
 {
     private sealed partial class PaneView
     {
-        private readonly PathIcon statusLineGlyph = new() { Width = 16, Height = 12, IsHitTestVisible = false };
+        private readonly PathIcon statusLineGlyph = new() { Width = 14, Height = 11, IsHitTestVisible = false };
         private readonly PathGeometry statusLineGlyphOff = StatusLineGeometry(false), statusLineGlyphOn = StatusLineGeometry(true);
 
+        /// <summary>
+        /// The Mac's <c>rectangle</c> (off) and <c>rectangle.bottomthird.inset.filled</c> (on) at 12pt
+        /// (M/SessionPaneView.swift:126): a rounded outline about 13.6 × 10.6 with a 1pt line; while on, a bar
+        /// fills its lower third, inset from the outline.
+        /// </summary>
         private static PathGeometry StatusLineGeometry(bool enabled)
         {
             var shape = new PathGeometry { FillRule = FillRule.EvenOdd };
-            void Rect(double x, double y, double width, double height)
+            void Rounded(double x, double y, double width, double height, double radius)
             {
-                var path = new PathFigure { StartPoint = new Point(x, y), IsClosed = true, IsFilled = true };
-                path.Segments.Add(new LineSegment { Point = new Point(x + width, y) });
-                path.Segments.Add(new LineSegment { Point = new Point(x + width, y + height) });
-                path.Segments.Add(new LineSegment { Point = new Point(x, y + height) }); shape.Figures.Add(path);
+                var corner = new Size(radius, radius);
+                var path = new PathFigure { StartPoint = new Point(x + radius, y), IsClosed = true, IsFilled = true };
+                path.Segments.Add(new LineSegment { Point = new Point(x + width - radius, y) });
+                path.Segments.Add(new ArcSegment { Point = new Point(x + width, y + radius), Size = corner, SweepDirection = SweepDirection.Clockwise });
+                path.Segments.Add(new LineSegment { Point = new Point(x + width, y + height - radius) });
+                path.Segments.Add(new ArcSegment { Point = new Point(x + width - radius, y + height), Size = corner, SweepDirection = SweepDirection.Clockwise });
+                path.Segments.Add(new LineSegment { Point = new Point(x + radius, y + height) });
+                path.Segments.Add(new ArcSegment { Point = new Point(x, y + height - radius), Size = corner, SweepDirection = SweepDirection.Clockwise });
+                path.Segments.Add(new LineSegment { Point = new Point(x, y + radius) });
+                path.Segments.Add(new ArcSegment { Point = new Point(x + radius, y), Size = corner, SweepDirection = SweepDirection.Clockwise });
+                shape.Figures.Add(path);
             }
-            Rect(0, 0, 16, 12); Rect(1.2, 1.2, 13.6, 9.6);
-            if (enabled) Rect(2.5, 7.5, 11, 2);
+            Rounded(0.2, 0.2, 13.6, 10.6, 2.2); Rounded(1.2, 1.2, 11.6, 8.6, 1.2);
+            if (enabled) Rounded(2.7, 6.2, 8.6, 2.1, 0.6);
             return shape;
         }
 
@@ -76,6 +88,12 @@ public sealed partial class MainWindow
             UpdateStatusLineGlyph();
         }
 
-        private void UpdateStatusLineGlyph() => statusLineGlyph.Data = statusLineToggle.IsChecked == true ? statusLineGlyphOn : statusLineGlyphOff;
+        private void UpdateStatusLineGlyph()
+        {
+            var on = statusLineToggle.IsChecked == true;
+            statusLineGlyph.Data = on ? statusLineGlyphOn : statusLineGlyphOff;
+            // The help says what a press does next (M/SessionPaneView.swift:130).
+            ToolTipService.SetToolTip(statusLineToggle, Locale.Get(on ? "composer.statusLine.hide" : "composer.statusLine.show"));
+        }
     }
 }

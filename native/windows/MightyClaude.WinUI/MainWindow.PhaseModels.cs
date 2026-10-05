@@ -28,57 +28,90 @@ public sealed partial class MainWindow
 
     internal StackPanel BuildPhaseModelsSection(PhaseModelsSnapshot config, PhaseModelTools tools)
     {
-        var panel = new StackPanel { Spacing = 12 };
+        var panel = new StackPanel();
         FillPhaseModelsSection(panel, config, tools);
         return panel;
     }
 
     private ModelCatalog PhaseCatalog(string provider) => Runtime(provider)?.ModelCatalog ?? ProviderCatalog.Fallback(provider);
     private List<RegisteredModelEntry> PhaseRegistered(string provider) => provider == "codex" ? service.Snapshot.ModelDefaults?.Codex.RegisteredModels ?? [] : service.Snapshot.ModelDefaults?.Claude.RegisteredModels ?? [];
-    private static TextBlock PhaseHint(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = .75 };
 
+    /// <summary>The widths of a phase row's two trailing columns: the model pop-up and the effort pop-up (M/PhaseModelSettingsView.swift:139, 149).</summary>
+    internal const double PhaseModelColumn = 220, PhaseEffortColumn = 110;
+
+    /// <summary>A rule between the parts of a provider's block (the Mac's <c>Divider()</c> in the block's stack).</summary>
+    private Border PhaseRule() => new() { Height = DesignMetrics.Stroke.Line, Background = brushes.Brush(DesignToken.Line) };
+
+    // M/PhaseModelSettingsView.swift:9-67: the two explanations, then a block per provider — its name
+    // (12 medium) and 베타 capsule, the phase rows (label | model pop-up | effort pop-up, in columns),
+    // a rule, the alias rows (label | pop-up), a rule, the registered names and the row that adds one.
     private void FillPhaseModelsSection(StackPanel panel, PhaseModelsSnapshot config, PhaseModelTools tools)
     {
         panel.Children.Clear();
-        panel.Children.Add(PhaseHint(PhaseModelSection.Description));
-        panel.Children.Add(PhaseHint(Locale.Get("settings.phaseModels.effortNote")));
+        SettingsRow(panel, SettingsText(PhaseModelSection.Description, 11, DesignToken.Ink2));
+        SettingsRow(panel, SettingsText(Locale.Get("settings.phaseModels.effortNote"), 11, DesignToken.Ink2));
         foreach (var provider in new[] { "claude", "codex" })
         {
-            var block = new StackPanel { Spacing = 8 };
+            var block = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
             AutomationProperties.SetAutomationId(block, "phaseModels-provider-" + provider);
             var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            header.Children.Add(ProviderMarkView.Labelled(ProviderMark.Label(provider), provider, 13, Microsoft.UI.Text.FontWeights.SemiBold));
+            header.Children.Add(SettingsText(ProviderMark.Label(provider), 12, medium: true));
             if (ProviderCatalog.IsBeta(provider)) header.Children.Add(BetaBadgeView.Create(brushes));
             block.Children.Add(header);
             foreach (var phase in PhaseModelSection.Phases.Where(p => provider != "claude" || p != Phase.Review))
             {
-                var row = new Grid { ColumnSpacing = 8 };
+                var row = new Grid { ColumnSpacing = 8, MinHeight = SettingsControlHeight };
                 row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new() { Width = new GridLength(120) });
+                row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseModelColumn) });
+                row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseEffortColumn) });
                 var state = provider == "claude" ? PhaseModelRouting.ClaudeRowState(phase, config) : PhaseModelRouting.CodexRowState(phase, config);
                 var title = PhaseModelSection.PhaseLabel(phase);
                 var phaseId = phase.ToString().ToLowerInvariant();
-                if (state is not null) row.Children.Add(PhaseModelPicker(provider, title, state.Value ?? PhaseModelSection.MixedSentinel, "phaseModels-model-" + provider + "-" + phaseId, value => ApplyProviderPhaseRow(provider, phase, value)));
-                else row.Children.Add(PhaseHint(title + " · " + Locale.Get("settings.phaseModels.paneModel")));
+                row.Children.Add(SettingsText(title, 11));
+                // A phase with no knob for one of the two says so instead of offering a choice the CLI would ignore.
+                FrameworkElement modelCell;
+                if (state is not null) modelCell = SettingsPopupFrame(PhaseModelPicker(provider, title, state.Value ?? PhaseModelSection.MixedSentinel, "phaseModels-model-" + provider + "-" + phaseId, value => ApplyProviderPhaseRow(provider, phase, value)));
+                else { modelCell = SettingsText(Locale.Get("settings.phaseModels.paneModel"), 11, DesignToken.Ink2); modelCell.HorizontalAlignment = HorizontalAlignment.Right; }
+                Grid.SetColumn(modelCell, 1); row.Children.Add(modelCell);
                 var effort = (provider, phase) switch { ("claude", Phase.Execution) => config.ClaudeMainEffort ?? "default", ("codex", Phase.Planning) => config.CodexPlanModeReasoningEffort, ("codex", Phase.Execution) => config.CodexMainEffort ?? "default", ("codex", Phase.Subagents) => config.CodexSubagentEffort ?? "default", _ => null };
-                FrameworkElement effortCell = effort is null ? PhaseHint(Locale.Get("settings.phaseModels.effortUnsupported")) : PhasePicker(title, PhaseModelPreferences.Efforts(provider, PhaseCatalog(provider), effort).Select(v => new PhaseModelVersion(v, v)), effort, "phaseModels-effort-" + provider + "-" + phaseId, value => ApplyPhaseEffort(provider, phase, value));
-                if (effort is not null) AutomationProperties.SetName(effortCell, title + " · " + Locale.Get("composer.label.effort"));
-                Grid.SetColumn(effortCell, 1); row.Children.Add(effortCell); block.Children.Add(row);
+                FrameworkElement effortCell;
+                // The word for a phase with no effort setting is the tertiary ink (M/PhaseModelSettingsView.swift:152).
+                if (effort is null) effortCell = SettingsTertiary(Locale.Get("settings.phaseModels.effortUnsupported"));
+                else
+                {
+                    var effortPicker = PhasePicker(title, PhaseModelPreferences.Efforts(provider, PhaseCatalog(provider), effort).Select(v => new PhaseModelVersion(v, v)), effort, "phaseModels-effort-" + provider + "-" + phaseId, value => ApplyPhaseEffort(provider, phase, value));
+                    AutomationProperties.SetName(effortPicker, title + " · " + Locale.Get("composer.label.effort"));
+                    effortCell = SettingsPopupFrame(effortPicker);
+                }
+                Grid.SetColumn(effortCell, 2); row.Children.Add(effortCell); block.Children.Add(row);
             }
+            block.Children.Add(PhaseRule());
             foreach (var knob in PhaseModelSection.ToolBlocks(config, tools).Single(b => b.Tool == provider).Knobs.Where(k => !k.IsEffort))
-                block.Children.Add(PhaseModelPicker(provider, knob.Label, knob.Value, "phase-models-knob-" + knob.KnobId, value => ApplyPhaseModelKnob(knob.KnobId, value)));
+            {
+                var row = new Grid { ColumnSpacing = 8, MinHeight = SettingsControlHeight };
+                row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseModelColumn) });
+                row.Children.Add(SettingsText(knob.Label, 11, DesignToken.Ink2));
+                var picker = SettingsPopupFrame(PhaseModelPicker(provider, knob.Label, knob.Value, "phase-models-knob-" + knob.KnobId, value => ApplyPhaseModelKnob(knob.KnobId, value)));
+                Grid.SetColumn(picker, 1); row.Children.Add(picker); block.Children.Add(row);
+            }
+            block.Children.Add(PhaseRule());
             AddRegisteredModels(block, provider);
-            panel.Children.Add(block);
+            // The Mac's form draws the rule between the two blocks as an empty row of its own (M/PhaseModelSettingsView.swift:18).
+            if (panel.Children.Count > 2) SettingsRow(panel, new Border());
+            SettingsRow(panel, block);
         }
-        if (tools.Error is { } error) panel.Children.Add(PhaseModelErrorText(error));
+        if (tools.Error is { } error) SettingsRow(panel, PhaseModelErrorText(error));
     }
 
     private ComboBox PhaseModelPicker(string provider, string label, string current, string id, Func<string, Task> action) =>
         PhasePicker(label, PhaseModelPreferences.Versions(PhaseCatalog(provider), PhaseRegistered(provider), current), current, id, action);
 
-    private static ComboBox PhasePicker(string label, IEnumerable<PhaseModelVersion> values, string current, string id, Func<string, Task> action)
+    // A pop-up as wide as its chosen title, centred in its column as the Mac's (M/PhaseModelSettingsView.swift:135-150).
+    private ComboBox PhasePicker(string label, IEnumerable<PhaseModelVersion> values, string current, string id, Func<string, Task> action)
     {
-        var picker = new ComboBox { Header = label, HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0 };
+        var picker = SettingsPopup(new ComboBox());
+        // The Mac's pop-up title and chevrons stand 4.5 right of the column's centre; a stock ComboBox's words stand 3.5 left of its own.
+        picker.Margin = new Thickness(16, 0, 0, 0);
         AutomationProperties.SetAutomationId(picker, id);
         AutomationProperties.SetName(picker, label);
         picker.Items.Add(new ComboBoxItem { Content = PhaseModelSection.DefaultOption, Tag = "default" });
@@ -90,23 +123,35 @@ public sealed partial class MainWindow
         return picker;
     }
 
+    // M/PhaseModelSettingsView.swift:54-64, 233-285: the title, a row per registered name with its small
+    // destructive delete button, then the name field beside its label and the add button, the
+    // supports-effort switch, and the level chips that show while it is on.
     private void AddRegisteredModels(StackPanel block, string provider)
     {
-        block.Children.Add(PhaseHint(Locale.Get("settings.phaseModels.registeredTitle")));
+        block.Children.Add(SettingsText(Locale.Get("settings.phaseModels.registeredTitle"), 11, medium: true));
         foreach (var entry in PhaseRegistered(provider))
         {
             var row = new Grid { ColumnSpacing = 8 };
             row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             AutomationProperties.SetAutomationId(row, "phaseModels-registered-" + provider + "-" + entry.Name);
-            row.Children.Add(PhaseHint(entry.Name + (entry.SupportsEffort ? " · " + Locale.Get("settings.phaseModels.supportsEffortLabel") : "")));
-            var remove = new Button { Content = Locale.Get("settings.phaseModels.deleteButton") };
+            var words = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            words.Children.Add(SettingsText(entry.Name, 11, mono: true));
+            if (entry.SupportsEffort) words.Children.Add(SettingsText(Locale.Get("settings.phaseModels.supportsEffortLabel"), 10, DesignToken.Ink2));
+            row.Children.Add(words);
+            var remove = SettingsPush(new Button { Content = Locale.Get("settings.phaseModels.deleteButton") }, SettingsControlSize.Small, destructive: true);
             remove.Click += async (_, _) => await UpdatePhaseRegistered(provider, entries => entries.Where(e => e.Name != entry.Name).ToList());
             Grid.SetColumn(remove, 1); row.Children.Add(remove); block.Children.Add(row);
         }
         if (!phaseRegistrationDrafts.TryGetValue(provider, out var draft)) phaseRegistrationDrafts[provider] = draft = new();
-        var addRow = new Grid { ColumnSpacing = 8 };
-        addRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); addRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var input = new TextBox { PlaceholderText = Locale.Get("settings.phaseModels.addPlaceholder"), Text = draft.Name };
+        // The field stands 3 closer to the title than the block's 6 (screens/10-settings-models-*.webp).
+        var addPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, -3, 0, 0) };
+        // In the Mac's form a text field's title is its leading label; the field takes the trailing half.
+        var fieldLabel = Locale.Get("settings.phaseModels.addPlaceholder");
+        var addRow = new Grid { ColumnSpacing = 6 };
+        addRow.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); addRow.ColumnDefinitions.Add(new() { Width = new GridLength(PhaseNameField) }); addRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        addRow.Children.Add(SettingsText(fieldLabel));
+        var input = SettingsField(new TextBox { Text = draft.Name });
+        AutomationProperties.SetName(input, fieldLabel);
         var composing = false;
         input.TextCompositionStarted += (_, _) => composing = true;
         input.TextCompositionEnded += (_, _) => composing = false;
@@ -115,16 +160,16 @@ public sealed partial class MainWindow
         // WinUI can deliver TextChanged after a following click. Keep the
         // redraw draft synchronized with the value, not the queued text event.
         input.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => draft.Name = input.Text);
-        var add = new Button { Content = Locale.Get("settings.phaseModels.addButton") };
+        var add = SettingsPush(new Button { Content = Locale.Get("settings.phaseModels.addButton") }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(add, "phaseModels-addButton-" + provider);
-        var supports = new CheckBox { Content = Locale.Get("settings.phaseModels.supportsEffortLabel"), IsChecked = draft.SupportsEffort };
-        AutomationProperties.SetAutomationId(supports, "phaseModels-addEffort-" + provider);
-        var levels = new StackPanel { Spacing = 4, Visibility = draft.SupportsEffort ? Visibility.Visible : Visibility.Collapsed };
-        levels.Children.Add(PhaseHint(Locale.Get("settings.phaseModels.effortLevelsLabel")));
-        var chips = new PillWrapPanel();
+        var supportsLabel = Locale.Get("settings.phaseModels.supportsEffortLabel");
+        var supports = SettingsSwitch(supportsLabel, draft.SupportsEffort, "phaseModels-addEffort-" + provider);
+        var levels = new StackPanel { Spacing = 2, Visibility = draft.SupportsEffort ? Visibility.Visible : Visibility.Collapsed };
+        levels.Children.Add(SettingsText(Locale.Get("settings.phaseModels.effortLevelsLabel"), 10, DesignToken.Ink2));
+        var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         foreach (var level in Wire.Efforts)
         {
-            var chip = new CheckBox { Content = level, IsChecked = draft.Levels.Contains(level) };
+            var chip = PhaseLevelChip(level, draft.Levels.Contains(level));
             AutomationProperties.SetAutomationId(chip, "phaseModels-addLevel-" + provider + "-" + level);
             chip.RegisterPropertyChangedCallback(ToggleButton.IsCheckedProperty, (_, _) => { if (chip.IsChecked == true) draft.Levels.Add(level); else draft.Levels.Remove(level); }); chips.Children.Add(chip);
         }
@@ -132,7 +177,7 @@ public sealed partial class MainWindow
         supports.RegisterPropertyChangedCallback(ToggleButton.IsCheckedProperty, (_, _) =>
         {
             draft.SupportsEffort = supports.IsChecked == true;
-            if (!draft.SupportsEffort) { draft.Levels.Clear(); foreach (var chip in chips.Children.OfType<CheckBox>()) chip.IsChecked = false; }
+            if (!draft.SupportsEffort) { draft.Levels.Clear(); foreach (var chip in chips.Children.OfType<ToggleButton>()) chip.IsChecked = false; }
             levels.Visibility = draft.SupportsEffort ? Visibility.Visible : Visibility.Collapsed;
         });
         var validation = PhaseModelErrorText(draft.Error ?? "");
@@ -143,16 +188,36 @@ public sealed partial class MainWindow
             {
                 // The action boundary uses the live form, including a final IME
                 // commit or automation edit whose text event is still queued.
-                var selectedLevels = chips.Children.OfType<CheckBox>().Where(chip => chip.IsChecked == true).Select(chip => (string)chip.Content).ToArray();
+                var selectedLevels = chips.Children.OfType<ToggleButton>().Where(chip => chip.IsChecked == true).Select(chip => (string)chip.Tag).ToArray();
                 var entry = PhaseModelPreferences.Registration(input.Text, PhaseRegistered(provider), supports.IsChecked == true, selectedLevels);
                 await UpdatePhaseRegistered(provider, entries => entries.Any(e => e.Name == entry.Name) ? entries : [.. entries, entry], () => { draft.Name = ""; draft.SupportsEffort = false; draft.Levels.Clear(); draft.Error = null; });
             }
-            catch (ArgumentException ex) { validation.Text = draft.Error = ex.Message; }
+            catch (ArgumentException ex) { validation.Text = draft.Error = ex.Message; validation.Visibility = Visibility.Visible; }
         }
         add.Click += async (_, _) => await Add();
         input.KeyDown += async (_, e) => { if (e.Key == VirtualKey.Enter && !composing) { e.Handled = true; await Add(); } };
-        addRow.Children.Add(input); Grid.SetColumn(add, 1); addRow.Children.Add(add);
-        block.Children.Add(addRow); block.Children.Add(supports); block.Children.Add(levels); block.Children.Add(validation);
+        Grid.SetColumn(input, 1); addRow.Children.Add(input); Grid.SetColumn(add, 2); addRow.Children.Add(add);
+        addPanel.Children.Add(addRow); addPanel.Children.Add(SettingsLabeled(SettingsText(supportsLabel, 11), supports)); addPanel.Children.Add(levels);
+        block.Children.Add(addPanel); block.Children.Add(validation);
+    }
+
+    /// <summary>The name field's width in the add row: the trailing half of the row, as the Mac's form gives a text field (screens/10-settings-models-*.webp).</summary>
+    internal const double PhaseNameField = 276;
+
+    /// <summary>
+    /// One effort level of a name being registered (M/PhaseModelSettingsView.swift:272-280): a mini
+    /// prominent chip, full strength when chosen and at 0.4 when not. A ToggleButton whose look is its content.
+    /// </summary>
+    private ToggleButton PhaseLevelChip(string level, bool chosen)
+    {
+        var words = new TextBlock { Text = level, FontSize = 9, Foreground = brushes.Brush(DesignToken.OnAccent), VerticalAlignment = VerticalAlignment.Center };
+        var face = new Border { Child = words, Height = SettingsMiniHeight, Padding = new Thickness(5, 0, 5, 0), CornerRadius = new CornerRadius(3.5), Background = brushes.Brush(DesignToken.Accent) };
+        var chip = new ToggleButton { Content = face, Tag = level, IsChecked = chosen, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(3.5) };
+        ClearToggleChrome(chip);
+        void Paint() => face.Opacity = chip.IsChecked == true ? 1 : 0.4;
+        chip.Checked += (_, _) => Paint(); chip.Unchecked += (_, _) => Paint(); Paint();
+        AutomationProperties.SetName(chip, level);
+        return chip;
     }
 
     private Task UpdatePhaseRegistered(string provider, Func<List<RegisteredModelEntry>, List<RegisteredModelEntry>> change, Action? accepted = null) => Act(async () =>
@@ -172,11 +237,14 @@ public sealed partial class MainWindow
         await service.UpdateAsync(snapshot => snapshot with { PhaseModels = edit.Config }); RefreshPhaseModelsSection();
     }
     private void RefreshPhaseModelsSection() { if (phaseModelsPanel is { } panel) FillPhaseModelsSection(panel, service.Snapshot.PhaseModels ?? new(), phaseModelTools); }
-    private TextBlock PhaseModelErrorText(string error) => new() { Text = error, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = brushes.Brush(DesignToken.ErrText) };
-    internal static IEnumerable<FrameworkElement> PhaseModelElements(FrameworkElement element)
+    // The refusal in 11pt errText (M/PhaseModelSettingsView.swift:60-64); it takes no room while there is none.
+    private TextBlock PhaseModelErrorText(string error)
     {
-        yield return element;
-        if (element is Panel panel) foreach (var child in panel.Children.OfType<FrameworkElement>()) foreach (var descendant in PhaseModelElements(child)) yield return descendant;
+        var words = SettingsText(error, 11, DesignToken.ErrText);
+        words.Visibility = error.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        return words;
     }
-    internal static List<string> PhaseModelSectionTexts(StackPanel panel) => PhaseModelElements(panel).SelectMany(e => e switch { TextBlock t => new[] { t.Text }, ComboBox c => c.Items.OfType<ComboBoxItem>().Select(i => i.Content?.ToString() ?? "").Prepend(c.Header?.ToString() ?? ""), Button b => new[] { b.Content?.ToString() ?? "" }, CheckBox c => new[] { c.Content?.ToString() ?? "" }, TextBox t => new[] { t.PlaceholderText }, _ => Array.Empty<string>() }).Where(t => t.Length > 0).ToList();
+    /// <summary>Every element of the section, rows and their contents alike (the logical tree, so it reads a section that is not on screen).</summary>
+    internal static IEnumerable<FrameworkElement> PhaseModelElements(FrameworkElement element) => SettingsElements(element);
+    internal static List<string> PhaseModelSectionTexts(StackPanel panel) => PhaseModelElements(panel).SelectMany(e => e switch { TextBlock t => new[] { t.Text }, ComboBox c => c.Items.OfType<ComboBoxItem>().Select(i => i.Content?.ToString() ?? ""), Button b => new[] { b.Content as string ?? "" }, _ => Array.Empty<string>() }).Where(t => t.Length > 0).ToList();
 }

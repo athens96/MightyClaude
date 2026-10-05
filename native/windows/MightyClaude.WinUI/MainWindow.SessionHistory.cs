@@ -129,15 +129,20 @@ public sealed partial class MainWindow
         /// <summary>
         /// The top of the diagram: loads the previous requests from the session record, shows that it
         /// is doing so, or that the record begins here. A capsule on <c>card</c> with a 1pt <c>line</c>
-        /// edge in [4, 3] pt dashes, its words 11pt <c>ink2</c> and the load link <c>accent</c>
-        /// (M/MightyGraphView.swift:594-632).
+        /// edge in [4, 3] pt dashes, padding h14, its parts 6 apart in 11pt <c>ink2</c>: the load or retry
+        /// link in <c>accent</c> after its symbol (the circled arrow, the turning arrow), a small spinner
+        /// while it reads, a flag at the record's start; then how many requests were loaded
+        /// (M/MightyGraphView.swift:584-622).
         /// </summary>
         private FrameworkElement BuildHistoryCard(RunSession pane, IReadOnlyList<MightyGraphRun> retained, int loaded, GraphRect frame)
         {
-            var b = owner.brushes;
+            var b = owner.brushes; var ink2 = b.Brush(DesignToken.Ink2); var accent = b.Brush(DesignToken.Accent);
             var state = graphHistory.Connects(retained.FirstOrDefault()?.Id, pane.ResumeId) ? graphHistory : new SessionHistoryState();
             var text = state.BlockText(loaded);
-            var label = new TextBlock { Text = text, FontSize = DesignMetrics.Type.Pill, Foreground = b.Brush(DesignToken.Ink2), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            // The line names its state first and, after " · ", the requests already loaded.
+            var tail = loaded > 0 ? " · " + Locale.Get("graph.history.loaded", new Dictionary<string, string> { ["count"] = loaded.ToString(System.Globalization.CultureInfo.InvariantCulture) }) : "";
+            var lead = tail.Length > 0 && text.EndsWith(tail, StringComparison.Ordinal) ? text[..^tail.Length] : text;
+            TextBlock Words(string value, Brush ink) => new() { Text = value, FontSize = DesignMetrics.Type.Pill, Foreground = ink, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             var card = new Grid { Width = frame.W, Height = frame.H };
             var dashes = new DoubleCollection();
             foreach (var length in DesignMetrics.Dash.InStrokeUnits([4, 3], DesignMetrics.Stroke.Line)) dashes.Add(length);
@@ -146,16 +151,27 @@ public sealed partial class MainWindow
                 RadiusX = frame.H / 2, RadiusY = frame.H / 2, StrokeThickness = DesignMetrics.Stroke.Line, StrokeDashArray = dashes,
                 Stroke = b.Brush(DesignToken.Line), Fill = b.Brush(DesignToken.Card),
             });
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(14, 0, 14, 0), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             if (state.BlockActs)
             {
-                var button = new HyperlinkButton { Content = label, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(8, 2, 8, 2) };
-                label.Foreground = b.Brush(DesignToken.Accent);
-                AutomationProperties.SetAutomationId(button, (state.Phase == SessionHistoryState.Phases.Failed ? "mighty-history-retry-" : "mighty-history-load-") + id);
+                var failed = state.Phase == SessionHistoryState.Phases.Failed;
+                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+                face.Children.Add(MightySymbols.Create(failed ? "arrow.clockwise" : "arrow.up.circle", DesignMetrics.Type.Pill, accent)); face.Children.Add(Words(lead, accent));
+                var button = new Button { Content = face, MinWidth = 0, MinHeight = 0, Height = 22, Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(-4, 0, -4, 0), CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment), BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+                owner.PaintPlainButton(button, b.Transparent, b.Subtle, ink: accent);
+                AutomationProperties.SetAutomationId(button, (failed ? "mighty-history-retry-" : "mighty-history-load-") + id);
                 AutomationProperties.SetName(button, text);
                 button.Click += (_, _) => LoadOlderGraphHistory();
-                card.Children.Add(button);
+                row.Children.Add(button);
             }
-            else card.Children.Add(label);
+            else
+            {
+                if (state.Phase == SessionHistoryState.Phases.Loading) row.Children.Add(new ProgressRing { IsActive = true, Width = 11, Height = 11, MinWidth = 0, MinHeight = 0, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center });
+                else if (state.Phase == SessionHistoryState.Phases.Start) row.Children.Add(MightySymbols.Create("flag", 11, ink2));
+                row.Children.Add(Words(lead, ink2));
+            }
+            if (tail.Length > 0) row.Children.Add(Words(tail.TrimStart(), ink2));
+            card.Children.Add(row);
             ToolTipService.SetToolTip(card, Locale.Get("graph.history.help"));
             AutomationProperties.SetAutomationId(card, "mighty-node-" + MightyGraphLayout.HistoryNodeID + "-" + id);
             AutomationProperties.SetName(card, text);
@@ -167,10 +183,17 @@ public sealed partial class MainWindow
         // ── smoke accessors ───────────────────────────────────────────────────
 
         internal SessionHistoryState GraphHistoryForSmoke => graphHistory;
-        internal string? GraphHistoryTextForSmoke() =>
-            graphCanvas.Children.OfType<Grid>().Where(g => AutomationProperties.GetAutomationId(g).StartsWith("mighty-node-" + MightyGraphLayout.HistoryNodeID, StringComparison.Ordinal))
-                .Select(AutomationProperties.GetName).FirstOrDefault();
+        /// <summary>The history block drawn at the top of the diagram (null when the pane has none).</summary>
+        internal Grid? GraphHistoryCardForSmoke() =>
+            graphCanvas.Children.OfType<Grid>().FirstOrDefault(g => AutomationProperties.GetAutomationId(g).StartsWith("mighty-node-" + MightyGraphLayout.HistoryNodeID, StringComparison.Ordinal));
+        internal string? GraphHistoryTextForSmoke() => GraphHistoryCardForSmoke() is { } card ? AutomationProperties.GetName(card) : null;
+        /// <summary>The history block as it would be drawn now, built again for a capture (the one on the diagram is usually scrolled out of sight).</summary>
+        internal FrameworkElement? HistoryCardForCapture() => owner.service.Snapshot.Sessions.FirstOrDefault(p => p.Id == id) is { } pane
+            ? BuildHistoryCard(pane, pane.GraphRuns ?? [], graphHistory.Runs.Count, new GraphRect(0, 0, MightyGraphLayout.HistoryWidth, MightyGraphLayout.HistoryHeight))
+            : null;
         internal double GraphOriginYForSmoke => graphLayout?.OriginY ?? 0;
+        /// <summary>The newest result's measured height, once no redraw is waiting; null until then. While it changes, the blocks above it still move.</summary>
+        internal double? GraphSettledResultHeightForSmoke => graphRefreshQueued || graphDrawing ? null : graphLatestResultId is { } latest ? graphResultHeights.TryGetValue(latest, out var height) ? height : null : 0;
         internal (double X, double Y)? GraphCardPositionForSmoke(string nodeId) =>
             graphCards.TryGetValue(nodeId, out var card) ? (Canvas.GetLeft(card) * graphZoom + graphPan.X, Canvas.GetTop(card) * graphZoom + graphPan.Y) : null;
     }

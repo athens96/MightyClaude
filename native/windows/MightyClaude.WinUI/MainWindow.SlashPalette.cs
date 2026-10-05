@@ -22,6 +22,8 @@ public sealed partial class MainWindow
         // This layer draws the state SlashPalette produced and forwards keys; the
         // open/closed decision, the filtering and the highlight all live in Core.
         private const double SlashRowHeight = 40, SlashVisibleRows = 8;
+        /// <summary>A row's quieter inks (M/SlashCommandPalette.swift:53-64): the description and the source on the highlighted row, the source on the others.</summary>
+        private const double SlashSaid = 0.9, SlashQuietOn = 0.75, SlashQuiet = 0.7;
         private readonly StackPanel slashRows = new();
         private ScrollViewer slashScroll = null!;
         private readonly TextBlock slashCount = new() { FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
@@ -37,8 +39,8 @@ public sealed partial class MainWindow
                 Content = slashRows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled,
             };
-            // The palette is a card with a line border, r10; the hints ink2, the count ink3 (macOS SlashCommandPalette.swift:34-43).
-            var ink2 = owner.brushes.Brush(DesignToken.Ink2); slashCount.Foreground = owner.brushes.Brush(DesignToken.Ink3);
+            // The palette is a card with a line border, r10; the hints ink2, the count in the tertiary ink (M/SlashCommandPalette.swift:34-43).
+            var ink2 = owner.brushes.Brush(DesignToken.Ink2); slashCount.Foreground = owner.brushes.Tertiary;
             TextBlock Hint(string text) => new() { Text = text, FontSize = 10, Foreground = ink2, VerticalAlignment = VerticalAlignment.Center };
             var footer = new Grid { ColumnSpacing = 10, Padding = new Thickness(12, 5, 12, 5) };
             footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
@@ -59,7 +61,8 @@ public sealed partial class MainWindow
                 Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Entry), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
                 BorderBrush = owner.brushes.Brush(DesignToken.Line),
                 Background = owner.brushes.Brush(DesignToken.Card),
-                Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 6),
+                // Padding h10 t10 in the composer's stack (M/SessionPaneView.swift:562).
+                Visibility = Visibility.Collapsed, Margin = new Thickness(10, 10, 10, 0),
             };
             AutomationProperties.SetAutomationId(host, "slash-palette-" + id);
             slashPaletteHost = host;
@@ -143,23 +146,28 @@ public sealed partial class MainWindow
                 VerticalAlignment = VerticalAlignment.Top,
             };
             grid.Children.Add(invocation);
+            // The highlighted row is accent behind onAccent words (the description × 0.9, the source and the mark × 0.75);
+            // the others ink, ink2 and ink2 × 0.7 (macOS SlashCommandPalette.swift:49-69).
+            var b = owner.brushes;
+            invocation.Foreground = b.Brush(highlighted ? DesignToken.OnAccent : DesignToken.Ink);
+            var said = highlighted ? b.Brush(DesignToken.OnAccent, SlashSaid) : b.Brush(DesignToken.Ink2);
+            var quiet = highlighted ? b.Brush(DesignToken.OnAccent, SlashQuietOn) : b.Brush(DesignToken.Ink2, SlashQuiet);
             var text = new StackPanel { Spacing = 1 };
-            text.Children.Add(new TextBlock { Text = SlashPalette.Description(command), FontSize = 11, Opacity = highlighted ? .9 : .7, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock { Text = command.Source, FontSize = 9, Opacity = highlighted ? .75 : .55, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
+            text.Children.Add(new TextBlock { Text = SlashPalette.Description(command), FontSize = 11, Foreground = said, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = command.Source, FontSize = 9, Foreground = quiet, FontWeight = Microsoft.UI.Text.FontWeights.Medium });
             Grid.SetColumn(text, 1); grid.Children.Add(text);
-            // ↵ runs in the app, › continues with the argument choices.
-            var mark = command.Action is not null ? "↵" : command.Argument is not null ? "›" : null;
-            if (mark is not null)
+            // The return mark runs in the app, the chevron continues with the argument choices: 9pt semibold symbols at the row's end.
+            if (command.Action is not null || command.Argument is not null)
             {
-                var glyph = new TextBlock { Text = mark, FontSize = 11, Opacity = highlighted ? .75 : .55, VerticalAlignment = VerticalAlignment.Center };
-                ToolTipService.SetToolTip(glyph, command.Action is not null ? SlashCommandStrings.PaletteActionTooltip : SlashCommandStrings.PaletteArgumentTooltip);
-                Grid.SetColumn(glyph, 2); grid.Children.Add(glyph);
+                var mark = command.Action is not null
+                    ? ComposerGlyph.Icon("", 9, 12, 12, Microsoft.UI.Text.FontWeights.SemiBold).Ink(quiet).View
+                    : ComposerGlyph.ChevronRight(9, 1.3).Ink(quiet).View;
+                // The symbol alone would be a tiny tooltip target: its transparent box takes the pointer.
+                var holder = new Border { Child = mark, Background = b.Transparent, VerticalAlignment = VerticalAlignment.Center };
+                ToolTipService.SetToolTip(holder, command.Action is not null ? SlashCommandStrings.PaletteActionTooltip : SlashCommandStrings.PaletteArgumentTooltip);
+                Grid.SetColumn(holder, 2); grid.Children.Add(holder);
             }
-            // The highlighted row is accent behind onAccent words; the others ink and ink2 (macOS SlashCommandPalette.swift:50-69).
-            var ink = owner.brushes.Brush(highlighted ? DesignToken.OnAccent : DesignToken.Ink); var quiet = owner.brushes.Brush(highlighted ? DesignToken.OnAccent : DesignToken.Ink2);
-            foreach (var words in new[] { invocation }.Concat(text.Children.OfType<TextBlock>().Take(1))) words.Foreground = ink;
-            foreach (var words in text.Children.OfType<TextBlock>().Skip(1).Concat(grid.Children.OfType<TextBlock>().Where(t => Grid.GetColumn(t) == 2))) words.Foreground = quiet;
-            var row = new Border { Child = grid, Background = highlighted ? accent : owner.brushes.Transparent, CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment) };
+            var row = new Border { Child = grid, Background = highlighted ? accent : b.Transparent };
             AutomationProperties.SetAutomationId(row, "slash-command-" + command.Invocation);
             AutomationProperties.SetName(row, "/" + command.Invocation + " " + SlashPalette.Description(command) + " " + command.Source);
             row.PointerEntered += (_, _) => HighlightSlashRow(index);
@@ -268,7 +276,7 @@ public sealed partial class MainWindow
                     var label = PermissionLabel(pane.Provider, mode);
                     if (running) { await SlashNote(SlashCommandStrings.NotePermissionRunning); break; }
                     if (pane.Settings.PermissionMode == mode) { await SlashNote(SlashCommandStrings.NotePermissionAlreadyTemplate.Replace("{label}", label)); break; }
-                    await ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode == "acceptEdits" && s.NetworkAccess });
+                    await ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode is ("acceptEdits" or "onRequest") && s.NetworkAccess });
                     if (Session.Settings.PermissionMode == mode)
                         await SlashNote(SlashCommandStrings.NotePermissionChangedTemplate.Replace("{label}", label).Replace("{particle}", KoreanParticle.Ro(label)));
                     break;

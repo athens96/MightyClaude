@@ -57,7 +57,8 @@ public sealed class ToolPermissionPresentation
         if (input.Text("command") is { } cmd) fields.Add(new(ToolPermissionStrings.FieldCommand, cmd, true));
         if (input.TryGetProperty("timeout", out var timeout) && timeout.ValueKind == JsonValueKind.Number)
             fields.Add(new(ToolPermissionStrings.FieldTimeoutMs, timeout.GetRawText(), false));
-        if (input.TryGetProperty("background", out var bg) && bg.ValueKind != JsonValueKind.Null)
+        // Only a real yes or no is shown; a tool input may put anything under the name.
+        if (input.TryGetProperty("run_in_background", out var bg) && bg.ValueKind is JsonValueKind.True or JsonValueKind.False)
             fields.Add(new(ToolPermissionStrings.FieldBackground, bg.GetBoolean() ? ToolPermissionStrings.BooleanYes : ToolPermissionStrings.BooleanNo, false));
         return new(ToolPermissionStrings.TitleBash, string.IsNullOrEmpty(headline) ? null : headline, fields);
     }
@@ -79,7 +80,7 @@ public sealed class ToolPermissionPresentation
         if (input.Text("file_path") is { } path) fields.Add(new(ToolPermissionStrings.FieldFile, path, false));
         if (input.Text("old_string") is { } old) fields.Add(new(ToolPermissionStrings.FieldOldString, old, true));
         if (input.Text("new_string") is { } @new) fields.Add(new(ToolPermissionStrings.FieldNewString, @new, true));
-        if (input.TryGetProperty("replace_all", out var all) && all.ValueKind != JsonValueKind.Null)
+        if (input.TryGetProperty("replace_all", out var all) && all.ValueKind is JsonValueKind.True or JsonValueKind.False)
             fields.Add(new(ToolPermissionStrings.FieldReplaceAll, all.GetBoolean() ? ToolPermissionStrings.BooleanYes : ToolPermissionStrings.BooleanNo, false));
         if (input.TryGetProperty("edits", out var edits) && edits.ValueKind == JsonValueKind.Array)
             fields.Add(new(ToolPermissionStrings.FieldEdits, edits.GetArrayLength().ToString(), false));

@@ -3,6 +3,7 @@ using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 
 namespace MightyClaude.WinUI;
 
@@ -74,6 +75,11 @@ public sealed partial class MainWindow
     private TextBlock? appUpdateStatus, appUpdateNotes, appUpdateAddressHint, appUpdateSignature;
     private Button? appUpdateButton;
     private TextBox? appUpdateAddress;
+    // The rows a build with a key shows (typed address, built-in address, automatic check, signature) and the notes row.
+    private Border? appUpdateAddressRow, appUpdateBuiltInRow, appUpdateAutomaticRow, appUpdateSignatureRow, appUpdateNoticeRow, appUpdateNotesRow;
+    private Grid? appUpdateState;
+    private ProgressRing? appUpdateBusy;
+    private ProgressBar? appUpdateDownload;
 
     // The smoke run walks the section through the download phases, which a build
     // without a public key never reaches (Windows rule 1). CI builds carry no
@@ -83,16 +89,17 @@ public sealed partial class MainWindow
 
     private StackPanel BuildAppUpdateSectionFromState() => BuildAppUpdateSection();
 
+    // M/AppUpdateSettingsView.swift:8-45: the version beside its label; the update address (the build's own
+    // beside its label, or the field to type one over its hint); the automatic-check switch; the 10pt
+    // signature note; the state beside the one button; then the release notes. A build with no key shows
+    // the version, the refusal in waitText and the disabled button.
     internal StackPanel BuildAppUpdateSection()
     {
-        var panel = new StackPanel { Spacing = 6 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = AppUpdateStrings.CurrentVersionLabel + " · " + Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = AppVersionText }),
-            FontSize = 12,
-        });
+        var rows = new StackPanel();
+        var version = SettingsText(Locale.Get("settings.appUpdate.betaVersionTemplate", new Dictionary<string, string> { ["version"] = AppVersionText }), 13, DesignToken.Ink2, selectable: true);
+        SettingsRow(rows, SettingsLabeled(SettingsText(AppUpdateStrings.CurrentVersionLabel), version));
 
-        var address = new TextBox { PlaceholderText = AppUpdateStrings.ManifestUrlPlaceholder, FontSize = 12 };
+        var address = SettingsField(new TextBox { PlaceholderText = AppUpdateStrings.ManifestUrlPlaceholder }, 12);
         AutomationProperties.SetAutomationId(address, AppUpdateAddressId);
         address.Text = service.Snapshot.AppUpdateManifestUrlOverride ?? "";
         address.TextChanged += async (_, _) =>
@@ -100,39 +107,46 @@ public sealed partial class MainWindow
             var typed = address.Text;
             await service.UpdateAsync(s => s with { AppUpdateManifestUrlOverride = typed.Length == 0 ? null : typed });
         };
-        var addressHint = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap };
-        panel.Children.Add(address);
-        panel.Children.Add(addressHint);
+        var addressHint = SettingsText("", 11, DesignToken.Ink2);
+        var typedAddress = new StackPanel { Spacing = 6 };
+        typedAddress.Children.Add(address); typedAddress.Children.Add(addressHint);
+        appUpdateAddressRow = SettingsRow(rows, typedAddress);
+        // The address is longer than the line beside its label, so the form sets it under the label (screens/10-settings-about-*.webp).
+        var builtIn = new StackPanel { Spacing = 4 };
+        builtIn.Children.Add(SettingsText(Locale.Get("settings.appUpdate.manifestUrlAddressLabel")));
+        builtIn.Children.Add(SettingsText(AppUpdate.BuiltInManifestUrl ?? "", 11, DesignToken.Ink2, mono: true, selectable: true));
+        appUpdateBuiltInRow = SettingsRow(rows, builtIn);
 
-        var automatic = new ToggleSwitch
-        {
-            Header = AppUpdateStrings.AutoCheckToggle,
-            IsOn = service.Snapshot.AppUpdateAutoCheck,
-            OffContent = "",
-            OnContent = "",
-        };
-        AutomationProperties.SetAutomationId(automatic, AppUpdateToggleId);
-        automatic.Toggled += async (_, _) => await service.UpdateAsync(s => s with { AppUpdateAutoCheck = automatic.IsOn });
-        panel.Children.Add(automatic);
+        var automatic = SettingsSwitch(AppUpdateStrings.AutoCheckToggle, service.Snapshot.AppUpdateAutoCheck, AppUpdateToggleId);
+        async void AutomaticToggled() => await service.UpdateAsync(s => s with { AppUpdateAutoCheck = automatic.IsChecked == true });
+        automatic.Checked += (_, _) => AutomaticToggled(); automatic.Unchecked += (_, _) => AutomaticToggled();
+        appUpdateAutomaticRow = SettingsRow(rows, SettingsLabeled(SettingsText(AppUpdateStrings.AutoCheckToggle), automatic));
 
-        var signature = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap };
-        panel.Children.Add(signature);
+        var signature = SettingsText("", 10, DesignToken.Ink2);
+        appUpdateSignatureRow = SettingsRow(rows, signature);
+        // A build with no key says so on a row of its own, over the disabled button (M/AppUpdateSettingsView.swift:10-17);
+        // the state's words move there and back as the section is rendered.
+        appUpdateNoticeRow = SettingsRow(rows, new Grid());
+        appUpdateNoticeRow.Visibility = Visibility.Collapsed;
 
-        var status = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
-        var button = new Button();
+        var status = SettingsText("", 11, DesignToken.Ink2, selectable: true);
+        var button = SettingsPush(new Button());
         AutomationProperties.SetAutomationId(status, AppUpdateStatusId);
         AutomationProperties.SetAutomationId(button, AppUpdateButtonId);
         button.Click += async (_, _) => await AppUpdate.PressAsync(service.Snapshot.AppUpdateManifestUrlOverride);
-        var row = new Grid { ColumnSpacing = 8 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.Children.Add(status);
-        Grid.SetColumn(button, 1);
-        row.Children.Add(button);
-        panel.Children.Add(row);
+        // The spinner while checking, staging or installing and the 140-wide bar while downloading lead the words (M/AppUpdateSettingsView.swift:54-67).
+        appUpdateBusy = new ProgressRing { Width = 14, Height = 14, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        appUpdateDownload = new ProgressBar { Width = 140, Minimum = 0, Maximum = 1, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var state = new Grid();
+        state.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); state.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); state.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        state.Children.Add(appUpdateBusy); Grid.SetColumn(appUpdateDownload, 1); state.Children.Add(appUpdateDownload); Grid.SetColumn(status, 2); state.Children.Add(status);
+        appUpdateState = state;
+        SettingsRow(rows, SettingsLabeled(state, button));
 
-        var notes = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
-        panel.Children.Add(notes);
+        var notes = SettingsText("", 11, DesignToken.Ink2, selectable: true);
+        notes.MaxLines = 8; notes.TextTrimming = TextTrimming.CharacterEllipsis;
+        appUpdateNotesRow = SettingsRow(rows, notes);
+        appUpdateNotesRow.Visibility = Visibility.Collapsed;
 
         appUpdateAddress = address;
         appUpdateAddressHint = addressHint;
@@ -141,7 +155,7 @@ public sealed partial class MainWindow
         appUpdateButton = button;
         appUpdateNotes = notes;
         RenderAppUpdateSection();
-        return panel;
+        return rows;
     }
 
     internal static string AppVersionText =>
@@ -167,8 +181,34 @@ public sealed partial class MainWindow
         if (appUpdateNotes is not null)
         {
             appUpdateNotes.Text = view.Notes ?? "";
-            appUpdateNotes.Visibility = view.Notes is null ? Visibility.Collapsed : Visibility.Visible;
+            if (appUpdateNotesRow is not null) appUpdateNotesRow.Visibility = view.Notes is null ? Visibility.Collapsed : Visibility.Visible;
         }
+        // A build with no key shows neither address nor switch nor signature note; one with its own address shows it instead of the field.
+        static Visibility Shown(bool shown) => shown ? Visibility.Visible : Visibility.Collapsed;
+        if (appUpdateAddressRow is not null) appUpdateAddressRow.Visibility = Shown(view.SectionEnabled && view.AddressFieldEnabled);
+        if (appUpdateBuiltInRow is not null) appUpdateBuiltInRow.Visibility = Shown(view.SectionEnabled && !view.AddressFieldEnabled);
+        if (appUpdateAutomaticRow is not null) appUpdateAutomaticRow.Visibility = Shown(view.SectionEnabled);
+        if (appUpdateSignatureRow is not null) appUpdateSignatureRow.Visibility = Shown(view.SectionEnabled);
+        if (appUpdateNoticeRow is not null && appUpdateState is not null)
+        {
+            var alone = !view.SectionEnabled;
+            if (alone != ReferenceEquals(appUpdateNoticeRow.Child, appUpdateStatus))
+            {
+                if (alone) { appUpdateState.Children.Remove(appUpdateStatus); appUpdateNoticeRow.Child = appUpdateStatus; }
+                else { appUpdateNoticeRow.Child = new Grid(); appUpdateState.Children.Add(appUpdateStatus); }
+            }
+            appUpdateNoticeRow.Visibility = Shown(alone);
+        }
+        // The state's ink (M/AppUpdateSettingsView.swift:48-70): accent and medium for a new version, waitText for a
+        // failure or a build that cannot check, the primary ink while it works, the quiet ink otherwise.
+        var phase = AppUpdate.State.Phase;
+        var working = view.SectionEnabled && phase is AppUpdatePhase.Checking or AppUpdatePhase.Staging or AppUpdatePhase.Installing;
+        var downloading = view.SectionEnabled && phase == AppUpdatePhase.Downloading;
+        appUpdateStatus.Foreground = brushes.Brush(!view.SectionEnabled || phase == AppUpdatePhase.Failed ? DesignToken.WaitText
+            : phase == AppUpdatePhase.Available ? DesignToken.Accent : working || downloading ? DesignToken.Ink : DesignToken.Ink2);
+        appUpdateStatus.FontWeight = view.SectionEnabled && phase == AppUpdatePhase.Available ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal;
+        if (appUpdateBusy is not null) { appUpdateBusy.IsActive = working; appUpdateBusy.Visibility = Shown(working); }
+        if (appUpdateDownload is not null) { appUpdateDownload.Value = AppUpdate.State.DownloadFraction; appUpdateDownload.Visibility = Shown(downloading); }
     }
 
     /// The once-a-day check at app start. It never delays the window: it is
@@ -204,12 +244,9 @@ public sealed partial class MainWindow
     internal async Task<AppUpdateSmokeOutcome> RunAppUpdateSectionSmoke()
     {
         var panel = BuildAppUpdateSection();
-        var status = AppUpdateDescendants(panel).OfType<TextBlock>()
-            .First(block => AutomationProperties.GetAutomationId(block) == AppUpdateStatusId);
-        var button = AppUpdateDescendants(panel).OfType<Button>()
-            .First(control => AutomationProperties.GetAutomationId(control) == AppUpdateButtonId);
-        var toggle = AppUpdateDescendants(panel).OfType<ToggleSwitch>()
-            .First(control => AutomationProperties.GetAutomationId(control) == AppUpdateToggleId);
+        var status = SettingsElement<TextBlock>(panel, AppUpdateStatusId);
+        var button = SettingsElement<Button>(panel, AppUpdateButtonId);
+        var toggle = SettingsElement<ToggleButton>(panel, AppUpdateToggleId);
 
         // Windows rule 1 first, on the real control. A build with no public key —
         // which is what CI builds are until the key is configured — must show the
@@ -249,17 +286,9 @@ public sealed partial class MainWindow
             () => service.Snapshot.AppUpdateAutoCheck,
             value => service.UpdateAsync(s => s with { AppUpdateAutoCheck = value }));
 
-        Require(toggle.Header as string == AppUpdateStrings.AutoCheckToggle, "the app update section must show the automatic check switch");
+        // The switch is named for its label, and the label stands beside it in the same row.
+        Require(AutomationProperties.GetName(toggle) == AppUpdateStrings.AutoCheckToggle && SettingsElements(panel).OfType<TextBlock>().Any(label => label.Text == AppUpdateStrings.AutoCheckToggle),
+            "the app update section must show the automatic check switch");
         return outcome;
-    }
-
-    private static IEnumerable<DependencyObject> AppUpdateDescendants(Panel panel)
-    {
-        foreach (var child in panel.Children)
-        {
-            yield return child;
-            if (child is Panel nested)
-                foreach (var grandchild in AppUpdateDescendants(nested)) yield return grandchild;
-        }
     }
 }

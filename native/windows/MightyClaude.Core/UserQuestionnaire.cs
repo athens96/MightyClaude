@@ -13,7 +13,9 @@ public sealed record UserQuestionnaire(IReadOnlyList<UserQuestion> Questions)
 {
     public static UserQuestionnaire? Parse(string input)
     {
-        if (Encoding.UTF8.GetByteCount(input) > 65_536) return null;
+        // The input is a JSON object or it is nothing: a transcript asks this of every reply and every code
+        // block it draws, and nearly all of them are prose or code that should not cost a thrown parse error.
+        if (input.AsSpan().TrimStart() is not ['{', ..] || Encoding.UTF8.GetByteCount(input) > 65_536) return null;
         try
         {
             using var document = JsonDocument.Parse(input);
@@ -37,7 +39,8 @@ public sealed record UserQuestionnaire(IReadOnlyList<UserQuestion> Questions)
             }
             return result.Select(q => q.Question).Distinct(StringComparer.Ordinal).Count() != result.Count ? null : new(result);
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException) { return null; }
+        // ArgumentException: text that is no valid UTF-16 (a surrogate without its pair) cannot be read as JSON at all.
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException) { return null; }
     }
 
     public IReadOnlyDictionary<string, string> ValidateAnswers(IReadOnlyDictionary<string, UserQuestionAnswer> answers)

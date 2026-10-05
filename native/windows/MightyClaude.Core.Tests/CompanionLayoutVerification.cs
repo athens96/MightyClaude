@@ -10,6 +10,10 @@ internal static class CompanionLayoutVerification
         Check(CompanionBubbleLayout.Hit(1, 90, 258, 180, true) == CompanionResizeEdges.Left && CompanionBubbleLayout.Hit(130, 1, 258, 180, true) == CompanionResizeEdges.Top, "Thin side and top strips leave central content interactive.");
         Check(CompanionBubbleLayout.Hit(130, 90, 258, 180, true) == CompanionResizeEdges.None && CompanionBubbleLayout.Hit(-1, 90, 258, 180, true) == CompanionResizeEdges.None, "Content and outside release cannot become resize handles.");
         Check(CompanionBubbleLayout.Hit(130, 1, 258, 180, false) == CompanionResizeEdges.None && CompanionBubbleLayout.Hit(1, 90, 258, 180, false) == CompanionResizeEdges.Left, "An approval card retains automatic height while its sides resize.");
+        Check(CompanionBubbleLayout.Hit(257, 179, 258, 180, true) == CompanionResizeEdges.Right && CompanionBubbleLayout.Hit(130, 179, 258, 180, true) == CompanionResizeEdges.None, "The bubble's bottom meets the pet: no strip and no corner there.");
+        // The Mac's panel around the bubble (ResizeEdges.swift:46-75): 12 at each side; 330 high, or the fixed height plus 153; 494 around an approval.
+        Check(CompanionBubbleLayout.Chrome == 153 && CompanionBubbleLayout.PanelSize(null, null, false) == (282, 330) && CompanionBubbleLayout.PanelSize(300, 100, false) == (324, 330) && CompanionBubbleLayout.PanelSize(300, 200, false) == (324, 353), "The window follows the bubble's width and a fixed height.");
+        Check(CompanionBubbleLayout.PanelSize(220, 300, true) == (282, 494) && CompanionBubbleLayout.ApprovalWidth(220) == 258 && CompanionBubbleLayout.ApprovalWidth(400) == 400, "An approval stands in the taller window and is never narrower than the default.");
         foreach (var dpi in new[] { 1.0, 1.25, 2.0, 4.0 })
         {
             var drag = CompanionBubbleLayout.Resize(258, 180, -60 * dpi, -80 * dpi, dpi, CompanionResizeEdges.Left | CompanionResizeEdges.Top);

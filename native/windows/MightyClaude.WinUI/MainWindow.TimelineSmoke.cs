@@ -41,9 +41,11 @@ public sealed partial class MainWindow
                 Require(timelineTranscripts[requestId].OpenReference is not null && timelineTranscripts[requestId].OpenImage is not null, "expanded timeline detail shares transcript actions");
                 var unchanged = timelineGroups[latest.Id].View; RefreshMightyView(Session);
                 Require(ReferenceEquals(unchanged, timelineGroups[latest.Id].View), "identical refresh preserves native selection and focus");
+                // The result shows its answer as plain words, eight lines until "show all" opens it (M/MightyGraphTimelineView.swift:216, 234-236).
+                Require(timelineResults[resultId].Body is { MaxLines: TimelineResultLines }, "the folded timeline result shows eight lines of its answer");
                 Invoke(FindButton("mighty-timeline-result-more-" + resultId));
                 await WaitUI(() => timelineFull.Contains(resultId));
-                Require(double.IsPositiveInfinity(timelineTranscripts[resultId].View.MaxHeight), "show-all removes preview height cap");
+                Require(timelineResults[resultId].Body is { MaxLines: 0 }, "show-all removes the preview's line cap");
                 var files = FindButton("mighty-timeline-result-files-" + resultId);
                 await WaitUI(() => files.IsLoaded && files.ActualWidth > 0 && files.ActualHeight > 0);
                 files.Flyout!.ShowAt(files);
@@ -53,7 +55,14 @@ public sealed partial class MainWindow
                 ((IInvokeProvider)itemPeer.GetPattern(PatternInterface.Invoke)).Invoke();
                 await WaitUI(() => referenceTarget?.RelativePath == "docs/mighty-note.md" && referenceBody?.Child is not ProgressRing);
                 Require(referencePanel?.Visibility == Visibility.Visible, "timeline result file opens the same inline reference bubble");
-                files.Flyout.Hide(); CloseReferencePreview();
+                files.Flyout.Hide();
+                // The bubble stands 12 inside the timeline, on the right, its tail towards the content (M/MightyGraphReferenceBubble.swift:33-45).
+                owner.root.UpdateLayout();
+                Require(referencePanel is { HorizontalAlignment: HorizontalAlignment.Right, ActualWidth: > ReferenceMinimumWidth } && referencePanel.Margin.Right == ReferenceMargin && referenceCard is { Margin.Left: ReferenceTail },
+                    "the reference bubble docks on the right, 12 from the edge, its tail on the left");
+                await SettleDesktopCapture(Container);
+                captures.Add(await owner.CaptureSmoke(Path.Combine(owner.options.ProfileDirectory!, "smoke-mighty-reference.png")));
+                CloseReferencePreview();
                 captures.Add(await owner.CaptureSmoke(Path.Combine(owner.options.ProfileDirectory!, "smoke-mighty-timeline.png")));
                 Invoke(FindButton("mighty-timeline-request-" + old.Id));
                 await WaitUI(() => VisualChildren(timelineScroll!).OfType<Button>().Count(b => AutomationProperties.GetAutomationId(b).StartsWith("mighty-timeline-row-", StringComparison.Ordinal)) == 3);
@@ -67,7 +76,9 @@ public sealed partial class MainWindow
                     // Design stage 4: the header stays one 34pt line at any width (the Mac's); a narrow pane
                     // shows the Default | Mighty switch as icons instead of moving it to a second row.
                     await WaitUI(() => HeaderFitsSmoke(true), "320px pane header controls must remain fully inside its one 34pt line, the switch as icons only");
-                    Require(graphToolbar is { ActualHeight: > 45 }, "320px pane moves toolbar controls below summary");
+                    // The Mighty bar is one row on the Mac at any width (M/MightyGraphView.swift:175-201): a pane this narrow keeps
+                    // it one row, 46 over its rule, by showing the Diagram | Timeline switch as symbols only.
+                    await WaitUI(() => graphToolbar is { ActualHeight: > 46.5 and < 47.5 } && !ViewWordsShown, "320px pane keeps the Mighty bar one row, its view switch as symbols only");
                     foreach (var control in new FrameworkElement[] { diagramButton!, timelineButton!, zoomOutButton!, zoomResetButton!, zoomInButton! })
                     {
                         var edge = control.TransformToVisual(graphToolbar!).TransformPoint(new Windows.Foundation.Point(control.ActualWidth, 0));
@@ -78,6 +89,7 @@ public sealed partial class MainWindow
                 }
                 finally { Container.Width = width; Container.HorizontalAlignment = horizontal; owner.root.UpdateLayout(); }
                 await WaitUI(() => paneHeader is { ActualWidth: >= NarrowHeader } && HeaderFitsSmoke(false), "Growing the pane must show the switch words again with every header control inside the line");
+                await WaitUI(() => ViewWordsShown, "Growing the pane must show the Diagram | Timeline switch's words again");
                 return new() { ["modePersists"] = true, ["groupAndRowExpansion"] = true, ["sameTranscriptActions"] = true, ["resultFilesOpenSharedPreview"] = true, ["unchangedRefreshKeepsControls"] = true, ["diagramAndDraftPreserved"] = true, ["historyAffordance"] = true, ["narrowToolbar"] = true, ["screenshots"] = captures };
             }
             finally

@@ -40,13 +40,16 @@ public sealed partial class MainWindow
             var remove = Item(Locale.Get("composer.attachment.removeAll"), () =>
             {
                 if (attachmentsLoading) return Task.CompletedTask;
-                pendingAttachments.Clear(); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask;
+                pendingAttachments.Clear(); ShowAttachmentError(null); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask;
             });
-            menu.Items.Add(choose); menu.Items.Add(paste); menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(remove);
+            var rule = new MenuFlyoutSeparator();
+            menu.Items.Add(choose); menu.Items.Add(paste); menu.Items.Add(rule); menu.Items.Add(remove);
             menu.Opening += (_, _) =>
             {
                 choose.IsEnabled = paste.IsEnabled = !attachmentsLoading && Session.Kind == "claude" && Capabilities.Attachments;
                 remove.IsEnabled = !attachmentsLoading && pendingAttachments.Count > 0;
+                // The rule and "remove all" show only while something is attached (M/SessionPaneView.swift:881-884).
+                rule.Visibility = remove.Visibility = pendingAttachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             };
             attach.ContextFlyout = menu;
             AutomationProperties.SetHelpText(attach, Locale.Get("composer.attachment.choose") + " · " + Locale.Get("composer.attachment.paste") + " · " + Locale.Get("composer.attachment.removeAll"));

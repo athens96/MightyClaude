@@ -86,13 +86,16 @@ internal sealed class StatusMark
         if (canvas.IsLoaded) spin.Begin();
     }
 
-    /// <summary>The pane's own symbol while it is idle and not an agent's (Segoe Fluent Icons).</summary>
+    /// <summary>
+    /// The pane's own symbol while it is idle and not an agent's (M/DashboardView.swift:81-87, Segoe
+    /// Fluent Icons): a globe for a browser, the user's or an agent's; a folder for the files pane; a
+    /// terminal for everything else.
+    /// </summary>
     private static string PaneSymbol(string kind) => kind switch
     {
-        "shell" => "",
-        "browser" => "",
-        "files" => "",
-        _ => "",
+        "browser" or AgentIOPaneKind.Browser => "",
+        FilePaneKind.Kind => "",
+        _ => "",
     };
 
     private static ShapePath Stroke(IReadOnlyList<GlyphFigure> figures, Brush ink, double thickness, double scale) => new()
@@ -232,6 +235,7 @@ public sealed partial class MainWindow
             headerMark.Update(pane.Status, pane.Kind, pending, dark);
             label.Text = StateLabel(shown); label.Foreground = slimHeader ? owner.brushes.Brush(DesignToken.OnStatus) : owner.brushes.Text(StatusGlyph.Tone(shown));
             if (headerTitle.Text != pane.Title) { headerTitle.Text = pane.Title; ToolTipService.SetToolTip(headerTitle, PaneTitle.Help(pane)); }
+            RefreshHeaderLine(pane);
         }
     }
 }
