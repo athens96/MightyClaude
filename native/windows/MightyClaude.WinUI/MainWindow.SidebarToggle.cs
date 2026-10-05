@@ -79,9 +79,11 @@ public sealed partial class MainWindow
     {
         if (service.Snapshot.SidebarCollapsed == collapsed) return Task.CompletedTask;
         var focusInSidebar = collapsed && root.XamlRoot is { } xamlRoot && FocusManager.GetFocusedElement(xamlRoot) is DependencyObject focused && IsInsideSidebar(focused);
+        // Focus moves before the fold: once the focused element collapses, WinUI hands focus to the
+        // next control on its own (the status bar), after any move made here.
+        if (focusInSidebar && sidebarToggles.FirstOrDefault(b => b.ActualWidth > 0 && b.ActualHeight > 0 && !IsInsideSidebar(b)) is { } toggle) toggle.Focus(FocusState.Keyboard);
         var save = service.UpdateAsync(s => s with { SidebarCollapsed = collapsed });
         ApplySidebarCollapsed();
-        if (focusInSidebar && sidebarToggles.FirstOrDefault(b => b.ActualWidth > 0 && b.ActualHeight > 0) is { } toggle) toggle.Focus(FocusState.Keyboard);
         return save;
     }
 

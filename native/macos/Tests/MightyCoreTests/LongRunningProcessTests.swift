@@ -216,9 +216,10 @@ struct LongRunningProcessTests {
         // "Returns at once" is pinned exactly on the fake clock by
         // stopSendsSIGINTAndReturnsAtOnceForACooperativeProcess. Here the real PTY
         // has to deliver SIGINT and end the process with it (the signal above);
-        // the wall bound only has to show stop did not sit through the whole
-        // escalation. Bounding it by the 3 s SIGINT stage measured the suite's
-        // scheduling instead: under load it took 4.7 s and 5.1 s with SIGINT delivered.
-        #expect(Date().timeIntervalSince(began) < AgentTerminalRunner.sigintToSIGTERMSeconds + AgentTerminalRunner.sigtermToSIGKILLSeconds)
+        // that the process ended by SIGINT, not by an escalation, is the signal
+        // above. The wall bound only catches a stop that hangs: any tighter
+        // bound measured the runner's scheduling (4.7 s and 5.1 s under load
+        // locally, 9.4 s on CI's runner, each with SIGINT delivered).
+        #expect(Date().timeIntervalSince(began) < 25)
     }
 }
