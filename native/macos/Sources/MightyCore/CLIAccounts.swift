@@ -87,6 +87,8 @@ public enum CLIAccountSupport {
         return CLIAccountStatus(provider: "codex", loggedIn: true, method: method, account: account, plan: plan)
     }
 
+    /// The method label of Gemini's Google sign-in, the only one a sign-in renews.
+    public static let geminiGoogleMethod = "Google 계정"
     /// Gemini has no status command: the selected auth type is in
     /// `settings.json`, the Google account in `google_accounts.json`, and the
     /// OAuth session exists while `oauth_creds.json` does.
@@ -103,7 +105,7 @@ public enum CLIAccountSupport {
         switch selected {
         case "oauth-personal", nil:
             guard hasOAuth else { return CLIAccountStatus(provider: "gemini", loggedIn: false) }
-            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Google 계정", account: active)
+            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, account: active)
         case "gemini-api-key":
             let present = environment["GEMINI_API_KEY"]?.isEmpty == false
             return CLIAccountStatus(provider: "gemini", loggedIn: present ? true : nil, method: "Gemini API 키",
@@ -193,6 +195,9 @@ public actor CLIAccountService {
     public func invalidateEnvironment() async {
         if fixedEnvironment == nil { await environmentResolver.invalidate(workspacePath: home.path) }
     }
+
+    /// When Gemini's credentials file was last written (`CLIGeminiLogin`).
+    public nonisolated func geminiCredentialsStamp() -> Date? { CLIGeminiLogin.credentialsStamp(home: home) }
 
     /// The environment the status and logout commands run with, for a sign-in
     /// the app runs in the background itself.

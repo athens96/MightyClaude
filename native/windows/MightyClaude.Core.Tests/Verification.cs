@@ -93,6 +93,15 @@ internal static class Verification
                 foreach (var file in Directory.EnumerateFiles(directory)) captured.Add(file, Convert.ToBase64String(await File.ReadAllBytesAsync(file)));
                 await File.WriteAllTextAsync(record + ".attachments", JsonSerializer.Serialize(captured, Wire.Json));
             }
+            // What Gemini CLI 0.43 prints on stderr when its stored Google sign-in is stale, and the same words as a model answer.
+            const string geminiSignInLost = "Error authenticating: FatalCancellationError: Authentication cancelled by user.";
+            if (args.Contains("--gemini-signin-lost")) { await Console.Error.WriteLineAsync(geminiSignInLost); Environment.ExitCode = 1; return; }
+            if (args.Contains("--gemini-quoted"))
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { type = "message", role = "assistant", content = geminiSignInLost, delta = false }));
+                Console.WriteLine("{\"type\":\"result\",\"status\":\"error\",\"error\":{\"type\":\"unknown\",\"message\":\"[API Error: Internal error encountered. (Status: INTERNAL)]\"}}");
+                Environment.ExitCode = 1; return;
+            }
             Console.WriteLine("{\"type\":\"thread.started\",\"thread_id\":\"fixture-thread\"}"); Console.WriteLine("{\"type\":\"item.completed\",\"item\":{\"id\":\"answer\",\"type\":\"agent_message\",\"text\":\"FAKE_CLI_OK\"}}");
             if (args.Contains("--hold-run")) await Task.Delay(60000);
             if (args.Contains("--fail-run")) Environment.ExitCode = 2;
@@ -169,6 +178,9 @@ internal static class Verification
         await Test("Login recovery latest request generation and one-shot retry", CliLoginRecoveryVerification.RetryGenerationPreservesAttachmentsAndDropsStaleWork);
         await Test("Login recovery requires fresh successful sign-in", CliLoginRecoveryVerification.WaitRequiresFreshSuccessWhenAlreadySignedIn);
         await Test("Login recovery automatic start once per provider with cooldown", CliLoginRecoveryVerification.AutomaticStartOncePerProviderWithCooldown);
+        await Test("Login recovery Gemini sign-in failures and methods a sign-in renews", CliLoginRecoveryVerification.GeminiSignalsAndMethods);
+        await Test("Login recovery Gemini sign-in is the credentials file changing", CliLoginRecoveryVerification.GeminiSignInIsTheCredentialsFileChanging);
+        await Test("Login recovery Gemini fake CLI run: the sign-in message on stderr is the reason, the same words as an answer are not", CliLoginRecoveryVerification.GeminiFakeCliRunRaisesTheReasonFromStderrOnly);
         await Test("Agent IO TerminalCleanerAndEphemeralOwnership", AgentIOVerification.TerminalCleanerAndEphemeralOwnership);
         if (OperatingSystem.IsWindows()) await Test("Agent IO real ConPTY process ownership", AgentIOVerification.RealWindowsInteractiveProcess);
         else { skipped++; Console.WriteLine("SKIP Agent IO real ConPTY process (requires Windows)"); }

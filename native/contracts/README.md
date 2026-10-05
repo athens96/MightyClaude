@@ -151,7 +151,9 @@ marketplace command, and Codex Git marketplaces) while CLI updates are on. Both
 preferences are local to the Mac app profile, and an update applies from the next
 request. Mac and Windows snapshots may also include `autoLoginCLIs`, an optional
 Boolean; anything but explicit `false` keeps the automatic sign-in on: a run that
-lost its Claude or Codex sign-in starts one background sign-in per provider, and
+lost its Claude or Codex sign-in starts one background sign-in per provider (Gemini,
+which has no sign-in command, opens one sign-in terminal running `gemini` instead and
+counts as signed in once `~/.gemini/oauth_creds.json` appears or is rewritten), and
 none again for two minutes after one failed, was cancelled or succeeded. A request
 that login recovery itself resent, or that started before the last sign-in, only
 shows the card.

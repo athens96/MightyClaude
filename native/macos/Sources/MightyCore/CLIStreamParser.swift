@@ -29,6 +29,7 @@ public final class CLIStreamParser {
     /// later failure or result replaces it, so a 401 the CLI recovered from
     /// does not mark a run that failed for another reason.
     public private(set) var authFailure = false
+    private var stderrTail = ""
     /// One stdout line larger than this is dropped with a notice. Lines carry
     /// whole base64 pictures (twice, for Claude's tool_use_result echo), so
     /// the cap leaves room for a picture at `AgentImageSupport.maximumImageBytes`.
@@ -73,6 +74,23 @@ public final class CLIStreamParser {
     public func flush() {
         if let line = lines.finish() { consume(AgentOutputLine(line)) }
         flushText()
+    }
+    /// The CLI's stderr. Only Gemini reports a lost sign-in there ("Please set
+    /// an Auth method", "Error authenticating: …"). Each complete line is
+    /// matched on its own (`CLIAuthFailure.geminiConsole`); an unfinished last
+    /// line waits for the rest of it, or for `finishStderr`.
+    public func receiveStderr(_ text: String) {
+        guard provider == "gemini", !text.isEmpty else { return }
+        var lines = (stderrTail + text).split(separator: "\n", omittingEmptySubsequences: false)
+        // Only the start of a line is matched, so a runaway line keeps just that.
+        stderrTail = String(lines.removeLast().prefix(16_384))
+        if lines.contains(where: { CLIAuthFailure.geminiConsole(line: String($0)) }) { authFailure = true }
+    }
+    /// The process ended: its last stderr line is complete.
+    public func finishStderr() {
+        guard provider == "gemini", !stderrTail.isEmpty else { return }
+        if CLIAuthFailure.geminiConsole(line: stderrTail) { authFailure = true }
+        stderrTail = ""
     }
     /// A line the runner already cut and parsed (`AgentOutputLines`).
     func receive(_ line: AgentOutputLine) { consume(line) }
@@ -308,6 +326,9 @@ public final class CLIStreamParser {
             let head = data.prefix(32_771)
             var text = String(decoding: head, as: UTF8.self)
             if head.count < data.count, text.last == "\u{FFFD}" { text.removeLast() }
+            // Gemini prints its sign-in consent prompt as a plain line, never as JSON;
+            // a cut-off JSON line may quote anything, so it never counts.
+            if provider == "gemini", !text.drop(while: \.isWhitespace).hasPrefix("{"), CLIAuthFailure.geminiConsole(line: text) { authFailure = true }
             log("output", String(text.prefix(32_768))); return
         }
         guard var value = object as? [String: Any], let type = value["type"] as? String else { return }
@@ -436,10 +457,18 @@ public final class CLIStreamParser {
                     if failed { log("system", errorText(value["error"], fallback: "Gemini 도구 실행이 실패했습니다.")) }
                 }
             } else if type == "error" {
-                flushText(); let warning = value["severity"] as? String == "warning"; if !warning { failed = true }
-                log(warning ? "system" : "error", errorText(value["message"], fallback: "Gemini 실행 중 오류가 발생했습니다."))
+                flushText(); let warning = value["severity"] as? String == "warning"
+                let text = errorText(value["message"], fallback: "Gemini 실행 중 오류가 발생했습니다.")
+                if !warning { failed = true; authFailure = CLIAuthFailure.gemini(text: text) }
+                log(warning ? "system" : "error", text)
             } else if type == "result" {
-                flushText(); if value["status"] as? String == "error" { failed = true; log("error", errorText(value["error"], fallback: "Gemini 실행 중 오류가 발생했습니다.")) }
+                flushText()
+                if value["status"] as? String == "error" {
+                    failed = true
+                    let text = errorText(value["error"], fallback: "Gemini 실행 중 오류가 발생했습니다.")
+                    authFailure = CLIAuthFailure.gemini(text: text)
+                    log("error", text)
+                } else { authFailure = false }
                 turn("Gemini 응답 마무리 중")
             }
         default: break

@@ -11,6 +11,8 @@ struct BackgroundLoginState: Equatable {
     var asksForCode = false
     /// Started by the app on a lost sign-in, not by the card's button.
     var automatic = false
+    /// Gemini signs in in this visible terminal pane rather than in the background.
+    var terminalSessionId: String?
 }
 
 /// The running sign-in behind a `BackgroundLoginState` with the same id.
@@ -52,7 +54,7 @@ extension AppStore {
         sendGenerations[id] = generation
         providerLastActive[session.provider] = Date()
         dismissLoginRequired(id)
-        if session.kind == "claude", ["claude", "codex"].contains(session.provider) {
+        if session.kind == "claude", CLIAuthFailure.providers.contains(session.provider) {
             inFlightRequests[id] = (CLILoginRetryRequest(sessionId: id, provider: session.provider, input: input, attachments: attachments, sentAt: Date()), generation)
         } else { inFlightRequests.removeValue(forKey: id) }
     }
@@ -94,7 +96,7 @@ extension AppStore {
         let active = backgroundLoginJobs[provider] != nil || accountBusyReason(provider) != nil
         guard !ending, autoLoginGate.shouldStart(provider: provider, enabled: snapshot.autoLoginCLIs != false, status: status, loginActive: active,
                                                  resent: request.resent, sentAt: request.sentAt) else { return }
-        startBackgroundLogin(provider, automatic: true)
+        startBackgroundLogin(provider, automatic: true, sessionId: request.sessionId)
     }
 
     func forgetLoginRecovery(_ id: String) {
@@ -113,14 +115,16 @@ extension AppStore {
         if !loginRequired.values.contains(provider) { cancelBackgroundLogin(provider) }
     }
 
-    func startBackgroundLogin(_ provider: String, automatic: Bool = false) {
-        guard !ending, ["claude", "codex"].contains(provider), backgroundLoginJobs[provider] == nil,
+    /// `sessionId`: the pane whose run lost the sign-in; Gemini's terminal opens beside it.
+    func startBackgroundLogin(_ provider: String, automatic: Bool = false, sessionId: String? = nil) {
+        guard !ending, CLIAuthFailure.providers.contains(provider), backgroundLoginJobs[provider] == nil,
               let command = CLIAccountSupport.loginCommand(provider: provider, option: .account) else { return }
         let id = UUID()
         if let reason = accountBusyReason(provider) {
             backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .failed(reason)); return
         }
         cliAccountMessages[provider] = nil
+        if provider == "gemini" { startGeminiTerminalLogin(id: id, command: command, automatic: automatic, sessionId: sessionId); return }
         backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
         let job = BackgroundLoginJob(id: id)
         backgroundLoginJobs[provider] = job
@@ -190,6 +194,99 @@ extension AppStore {
             autoLoginGate.stopped(provider: provider)
         }
         backgroundLogins.removeValue(forKey: provider)
+    }
+
+    /// Gemini has no sign-in command: its sign-in is the interactive CLI
+    /// ("Login with Google"), which cannot run hidden, so it runs in a terminal
+    /// pane beside the failed pane (to its right, or a tab in its group when no
+    /// split fits). It counts as signed in once `oauth_creds.json` appears or is
+    /// rewritten after the start (`CLIGeminiLogin`), and then resends like a
+    /// background sign-in.
+    /// - An automatic start never moves the user: the pane is added without
+    ///   being selected, switching workspace or changing the layout mode. With a
+    ///   sheet open no pane can be added, so the card just keeps its button and
+    ///   nothing is held.
+    /// - The pane of an earlier sign-in, while still open, is used again (and
+    ///   selected for the card's button) instead of stacking another. Nothing is
+    ///   typed into it, since Gemini may still be running there.
+    /// - The pane stays open after signing in, as a Settings sign-in terminal
+    ///   does: it now holds a live Gemini session the user may be typing in, and
+    ///   closing it would end that session. Closing it before signing in ends the wait.
+    private func startGeminiTerminalLogin(id: UUID, command: String, automatic: Bool, sessionId: String?) {
+        let provider = "gemini"
+        let failed = sessionId.flatMap { id in snapshot.sessions.first { $0.id == id } }
+        let reused = geminiLoginTerminal.flatMap { terminalPaneOpen($0) ? $0 : nil }
+        if reused == nil, automatic, hasModal { return }
+        let job = BackgroundLoginJob(id: id)
+        backgroundLoginJobs[provider] = job
+        backgroundLogins[provider] = BackgroundLoginState(id: id, phase: .starting, automatic: automatic)
+        var pane = reused
+        if let reused { if !automatic { selectSession(reused) } }
+        else if automatic { pane = failed.flatMap { insertLoginTerminal(beside: $0) } }
+        else if let workspaceId = failed?.workspaceId ?? activeWorkspace?.id ?? snapshot.workspaces.first?.id {
+            let group = failed.flatMap { session in layoutForWorkspace(session.workspaceId)?.group(containing: session.id)?.id }
+            // A refused split falls back to a tab; neither may leave a window-wide alert behind.
+            let previous = error
+            pane = addSession(kind: "shell", targetGroupId: group, placement: "right", workspaceId: workspaceId)
+            if pane == nil { error = previous; pane = addSession(kind: "shell", targetGroupId: group, placement: "tab", workspaceId: workspaceId) }
+            error = previous
+        }
+        guard let pane else { failBackgroundLogin(provider, id: id, message: L("loginRecovery.startFailed")); return }
+        geminiLoginTerminal = pane
+        let service = cliAccountService
+        // Taken before the CLI starts, so its own write counts as new.
+        let baseline = service.geminiCredentialsStamp()
+        if reused == nil {
+            updateSession(pane) { $0.title = L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]) }
+            // The app wrote this command itself, so it presses Enter for the user (§1.5).
+            pendingTerminalInput[pane] = TerminalInput(text: command, autoRun: true)
+        }
+        backgroundLogins[provider]?.phase = .waiting
+        backgroundLogins[provider]?.terminalSessionId = pane
+        job.task = Task { [weak self] in
+            let outcome = await CLIGeminiLogin.wait(baseline: baseline, stamp: { service.geminiCredentialsStamp() },
+                                                    status: { await service.status(provider: provider) },
+                                                    isOpen: { [weak self] in await self?.terminalPaneOpen(pane) ?? false },
+                                                    interval: Self.cliLoginPollInterval, limit: Self.cliLoginPollLimit)
+            guard let self, self.backgroundLoginJobs[provider]?.id == id else { return }
+            switch outcome {
+            case .loggedIn(let status):
+                self.autoLoginGate.succeeded(provider: provider)
+                self.backgroundLoginJobs.removeValue(forKey: provider)
+                await self.loginRestored(provider, status: status)
+            case .exited(let status):
+                self.cliAccounts[provider] = status
+                self.failBackgroundLogin(provider, id: id, message: L("loginRecovery.exited"))
+            case .timedOut(let status):
+                self.cliAccounts[provider] = status
+                self.failBackgroundLogin(provider, id: id, message: L("loginRecovery.timedOut"))
+            case .cancelled: break
+            }
+        }
+    }
+
+    /// Adds the sign-in terminal beside `failed` the way an agent's own
+    /// terminal pane opens, but leaves the selection, the workspace and the
+    /// layout mode as they were. Nil when the layout has no place for it.
+    private func insertLoginTerminal(beside failed: RunSession) -> String? {
+        guard snapshot.sessions.count < 128 else { return nil }
+        let session = RunSession(workspaceId: failed.workspaceId, title: L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label("gemini")]), kind: "shell")
+        reconcilePaneLayout(failed.workspaceId)
+        let root = layoutForWorkspace(failed.workspaceId)
+        let group = root?.group(containing: failed.id)
+        var next = PaneLayouts.inserting(root: root, sessionId: session.id, targetGroupId: group?.id, placement: "right")
+        if next?.group(containing: session.id) == nil {
+            // A new tab is selected on insert; keep showing what the group showed.
+            next = PaneLayouts.selecting(root: PaneLayouts.inserting(root: root, sessionId: session.id, targetGroupId: group?.id, placement: "tab"), id: group?.selectedSessionId ?? failed.id)
+        }
+        guard let next, next.group(containing: session.id) != nil else { return nil }
+        snapshot.sessions.append(session)
+        savePaneLayout(next, workspaceId: failed.workspaceId)
+        return session.id
+    }
+
+    private func terminalPaneOpen(_ id: String) -> Bool {
+        !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
     }
 
     /// The fallback after a failed background sign-in: the terminal-pane
