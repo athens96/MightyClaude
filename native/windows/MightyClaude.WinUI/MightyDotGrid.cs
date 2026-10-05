@@ -32,6 +32,8 @@ internal sealed class MightyDotGrid
     private CanvasRenderTarget? tile;
     private CanvasImageBrush? fill;
     private (double Step, double Radius, Windows.UI.Color Color) tileKey;
+    /// <summary>Device pixels a point, and the dot's centre in the tile, in points: the middle of the tile's middle pixel.</summary>
+    private double pixels = 1, dotCentre;
     private CanvasControl canvas;
 
     /// <summary>The surface's host, laid behind the diagram canvas; it takes no input and is hidden from UI automation.</summary>
@@ -119,6 +121,8 @@ internal sealed class MightyDotGrid
     internal double Step => MightyGraphDotGrid.Step(zoom);
     internal double Radius => MightyGraphDotGrid.Radius(zoom);
     internal bool Shown => MightyGraphDotGrid.Shown(zoom);
+    /// <summary>The dot's centre in the last tile built, in device pixels from the tile's edge.</summary>
+    internal double DotCentrePixels => dotCentre * pixels;
     /// <summary>How many times a tile was drawn: only a zoom or colour change (or a new device) adds one.</summary>
     internal int TileBuilds { get; private set; }
     /// <summary>How many times Win2D asked for resources again (a new device or a reloaded control); each one rebuilds the tile.</summary>
@@ -133,7 +137,12 @@ internal sealed class MightyDotGrid
         fill?.Dispose(); tile?.Dispose(); fill = null; tile = null;
     }
 
-    /// <summary>The step × step tile with one dot at its centre, for the current zoom and colour; kept while they hold.</summary>
+    /// <summary>
+    /// The step × step tile with one dot in its middle, for the current zoom and colour; kept while they hold. The dot
+    /// stands on the middle of a device pixel, so that pixel is all <c>line</c>, as the middle of the Mac's dot is
+    /// (M/MightyGraphView.swift:1003-1008; #2D323E and #E0E2E6 on docs/design-system/screens/04-mighty-result-card-*.webp):
+    /// across a pixel corner a 1pt dot is four half-covered pixels on a display at 100%.
+    /// </summary>
     private void BuildTile(CanvasControl sender)
     {
         if (!MightyGraphDotGrid.Shown(zoom)) return;
@@ -142,19 +151,32 @@ internal sealed class MightyDotGrid
         DropTile();
         var (step, radius, color) = key;
         tile = new CanvasRenderTarget(sender, (float)step, (float)step);
+        pixels = sender.Dpi / 96;
+        dotCentre = (Math.Floor(step * pixels / 2) + 0.5) / pixels;
         using (var session = tile.CreateDrawingSession())
         {
             session.Clear(Microsoft.UI.Colors.Transparent);
-            session.FillCircle((float)(step / 2), (float)(step / 2), (float)radius, color);
+            session.FillCircle((float)dotCentre, (float)dotCentre, (float)radius, color);
         }
-        // The tile's own size can round up a pixel at this DPI: the brush repeats exactly one step of it.
+        // The tile's own size can round up a pixel at this DPI: the brush repeats exactly one step of it. Every repeat
+        // takes the tile's own pixels, never a blend of two of them, so each dot is that same dot whatever the step.
         fill = new CanvasImageBrush(sender, tile)
         {
             ExtendX = CanvasEdgeBehavior.Wrap, ExtendY = CanvasEdgeBehavior.Wrap,
             SourceRectangle = new Windows.Foundation.Rect(0, 0, step, step),
+            Interpolation = CanvasImageInterpolation.NearestNeighbor,
         };
         tileKey = key; TileBuilds++;
     }
+
+    /// <summary>
+    /// Where the tile starts along one axis so that its dot stands on <paramref name="offset"/> + n · step: on a whole
+    /// device pixel and <see cref="PixelPhase"/> of one more, so no repeat of the tile is read on the line between two of its pixels.
+    /// </summary>
+    private float TileStart(double offset, double step) => (float)((Math.Floor(MightyGraphDotGrid.First(offset - dotCentre, step) * pixels) + PixelPhase) / pixels);
+
+    /// <summary>A part of a pixel that no step of the grid adds up to at 100%, 125%, 150% or 175% and a zoom of a tenth.</summary>
+    private const double PixelPhase = 0.375;
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
     {
@@ -164,8 +186,8 @@ internal sealed class MightyDotGrid
         var filled = false;
         if (MightyGraphDotGrid.Shown(zoom) && fill is not null)
         {
-            // The tile's dot sits at its centre, so the tile starts half a step before the offset: a dot on every offset + n · step.
-            fill.Transform = Matrix3x2.CreateTranslation((float)MightyGraphDotGrid.First(offsetX - step / 2, step), (float)MightyGraphDotGrid.First(offsetY - step / 2, step));
+            // The tile's dot sits in its middle, so the tile starts that far before the offset: a dot on every offset + n · step.
+            fill.Transform = Matrix3x2.CreateTranslation(TileStart(offsetX, step), TileStart(offsetY, step));
             args.DrawingSession.FillRectangle(0, 0, (float)width, (float)height, fill);
             filled = true;
         }

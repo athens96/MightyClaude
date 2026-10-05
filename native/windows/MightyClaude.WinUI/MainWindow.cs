@@ -84,7 +84,7 @@ public sealed partial class MainWindow : Window
         // Claude's extra tool-permission requests never travel as a RunEvent:
         // they are ephemeral, so they reach the pane that can show the bar and
         // nowhere else — not the snapshot.
-        service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; ReceiveCompanionPermission(value); if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); });
+        service.ToolPermissionChanged += value => DispatcherQueue.TryEnqueue(() => { if (closing) return; if (views.TryGetValue(value.RunId, out var pane)) pane.ReceiveToolPermission(value); try { ReceiveCompanionPermission(value); } catch (Exception ex) { companionError = ex.Message; } });
         service.PersistenceFailed += ex => DispatcherQueue.TryEnqueue(() => error.Text = Locale.Get("window.error.saveFailed", new Dictionary<string, string> { ["reason"] = ex.Message }));
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(DesignMetrics.Layout.SidebarDefault), MinWidth = DesignMetrics.Layout.SidebarMin, MaxWidth = DesignMetrics.Layout.SidebarMax }); root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -95,18 +95,15 @@ public sealed partial class MainWindow : Window
         var sideHost = new Grid(); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto }); sideHost.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); sideHost.RowDefinitions.Add(new() { Height = GridLength.Auto });
         sideHost.Children.Add(sidebarTop);
         var list = new ScrollViewer { Content = sidebar, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled }; Grid.SetRow(list, 1); sideHost.Children.Add(list);
-        // Under the list, the open-folder button (only while none is listed), the layout picker and pet buttons, then the footer.
+        // Under the list, the open-folder button (only while none is listed), the layout picker, then the footer.
         var navigation = new StackPanel(); navigation.Children.Add(addFolderButton); navigation.Children.Add(BuildSidebarTools());
-        settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); ApplyChromeText(); Grid.SetRow(navigation, 2); sideHost.Children.Add(navigation);
+        settingsButton = Button("", OpenSettings); navigation.Children.Add(BuildSidebarFooter()); Grid.SetRow(navigation, 2); sideHost.Children.Add(navigation);
         search.TextChanged += (_, _) => RenderSidebar();
         sidebarSurface.Child = sideHost; Grid.SetRowSpan(sidebarSurface, 3); root.Children.Add(sidebarSurface);
-        Grid.SetColumn(workspaceHeader, 1); root.Children.Add(workspaceHeader); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
-        var footer = new StackPanel { Spacing = 3 }; footer.Children.Add(error);
-        // The bottom status bar: the account usage chips, then the status text.
-        var statusRow = new Grid { ColumnSpacing = 10 };
-        statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        statusRow.Children.Add(BuildAccountUsage()); Grid.SetColumn(status, 1); statusRow.Children.Add(status);
-        footer.Children.Add(statusRow); statusBar.Child = footer; Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
+        // Over the dock, the error banner and the workspace header (M/WorkspaceView.swift:16-22).
+        Grid.SetColumn(detailTop, 1); root.Children.Add(detailTop); Grid.SetRow(panes, 1); Grid.SetColumn(panes, 1); root.Children.Add(panes);
+        // The bottom status bar, in the Mac's order (MainWindow.Shell.cs).
+        statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
         AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
         InitFilePane(); InitAddPaneShortcuts();
@@ -138,6 +135,9 @@ public sealed partial class MainWindow : Window
         RefreshSidebarThemeButton();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));
+        if (errorBannerDismiss is { } dismiss) { AutomationProperties.SetName(dismiss, Locale.Get("window.error.dismiss")); ToolTipService.SetToolTip(dismiss, Locale.Get("window.error.dismiss")); }
+        // The counts' words and the status bar's are in the language too.
+        workspaceHeaderCounts?.Invalidate(); RefreshStatusBar(); RefreshCompanionControls();
     }
     private async Task Act(Func<Task> action)
     {
@@ -157,13 +157,14 @@ public sealed partial class MainWindow : Window
     private Task RemoveWorkspace() => service.Snapshot.ActiveWorkspaceId is { } id ? ConfirmRemoveWorkspace(id) : Task.CompletedTask;
     private async Task AddPane(string kind, string provider = "claude", string? groupId = null, Func<RunSession, RunSession>? shape = null)
     {
-        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); HideDashboard(); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, service.Snapshot.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => { var added = s with { Sessions = s.Sessions.Append(pane).ToList(), ActiveSessionId = pane.Id }; var tree = EffectiveLayout(added, workspace); if (tree is not null && groupId is not null) tree = PaneLayout.Move(tree, pane.Id, groupId); return SaveLayoutSelection(SaveLayout(added, workspace, tree), workspace, pane.Id); }); Render(); });
+        await Act(async () => { var workspace = service.Snapshot.ActiveWorkspaceId ?? throw new InvalidOperationException(Locale.Get("window.error.addWorkspaceFirst")); HideDashboard(); var pane = new RunSession { WorkspaceId = workspace, Kind = kind, Provider = provider, Title = kind == "shell" ? Locale.Get("session.title.shell") : ProviderCatalog.Name(provider) }; pane = SessionTemplate.Inherit(pane, service.Snapshot.Sessions); if (shape is not null) pane = shape(pane); await service.UpdateAsync(s => AddToLayout(s, workspace, pane, groupId)); Render(); });
     }
-    private async Task RefreshRuntime() { await Act(async () => { status.Text = Locale.Get("window.status.checkingRuntimeAndModels"); if (await ReloadProviderModels()) RefreshEnvironment(); }); }
+    // While a check runs the status bar says so; at rest it names the machine, as the Mac's does (RefreshStatusBar).
+    private async Task RefreshRuntime() { await Act(async () => { runtimeChecks++; RefreshStatusBar(); try { if (await ReloadProviderModels()) RefreshEnvironment(); } finally { runtimeChecks--; RefreshStatusBar(); } }); }
     private void RefreshEnvironment()
     {
         foreach (var pane in views.Values) pane.Refresh();
-        status.Text = runtime is null ? Locale.Get("window.status.checkingRuntime") : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
+        RefreshStatusBar();
     }
     private ProviderRuntime? Runtime(string provider) => runtime?.Providers.FirstOrDefault(p => p.Id == provider);
     private void RenderSidebar()
@@ -185,7 +186,7 @@ public sealed partial class MainWindow : Window
         foreach (var stale in views.Keys.Where(id => !state.Sessions.Any(s => s.Id == id)).ToArray()) { CloseStatusLine(views[stale]); views[stale].ForgetGraphHistory(); views[stale].CloseReferencePreview(); views[stale].CloseBrowserView(); CloseTerminal(views[stale]); views.Remove(stale); }
         RenderPaneLayout(state);
         foreach (var (id, view) in views) view.ShowActive(id == state.ActiveSessionId);
-        status.Text = runtime is null ? Locale.Get("window.status.checkingRuntime") : string.Join("   ·   ", runtime.Providers.Select(p => $"{p.Name}: {(p.Available ? p.Version : p.Detail)}"));
+        RefreshStatusBar();
         rendering = false;
         RefreshWorkspaceGit();
         RenderDashboard();
@@ -223,6 +224,47 @@ public sealed partial class MainWindow : Window
             return finalSize;
         }
     }
+    /// <summary>
+    /// The Mac's <c>LazyVGrid</c> with one adaptive column rule (M/UserQuestionnaireCard.swift:167, M/AgentQuestionPanel.swift:34,
+    /// M/GuidedPanel.swift:92): as many equal columns as fit at <see cref="Minimum"/>, none wider than <see cref="Maximum"/>,
+    /// <see cref="Gap"/> apart both ways, each row as tall as its tallest tile and the tiles aligned to its top.
+    /// </summary>
+    private sealed class AdaptiveGridPanel : Panel
+    {
+        internal double Minimum { get; init; } = 200;
+        internal double Maximum { get; init; } = double.PositiveInfinity;
+        internal double Gap { get; init; } = 6;
+        private (int Columns, double Width) Fit(double available)
+        {
+            var columns = Math.Max(1, (int)Math.Floor((available + Gap) / (Minimum + Gap)));
+            return (columns, Math.Min(Maximum, Math.Max(0, (available - (columns - 1) * Gap) / columns)));
+        }
+        protected override Windows.Foundation.Size MeasureOverride(Windows.Foundation.Size availableSize)
+        {
+            var available = double.IsFinite(availableSize.Width) ? Math.Max(0, availableSize.Width) : 600;
+            var (columns, width) = Fit(available);
+            double y = 0, row = 0; var index = 0;
+            foreach (var child in Children.Where(c => c.Visibility == Visibility.Visible))
+            {
+                if (index > 0 && index % columns == 0) { y += row + Gap; row = 0; }
+                child.Measure(new(width, double.PositiveInfinity)); row = Math.Max(row, child.DesiredSize.Height); index++;
+            }
+            return new(available, y + row);
+        }
+        protected override Windows.Foundation.Size ArrangeOverride(Windows.Foundation.Size finalSize)
+        {
+            var (columns, width) = Fit(finalSize.Width);
+            var visible = Children.Where(c => c.Visibility == Visibility.Visible).ToList();
+            double y = 0;
+            for (var start = 0; start < visible.Count; start += columns)
+            {
+                var cells = visible.Skip(start).Take(columns).ToList(); var row = cells.Max(c => c.DesiredSize.Height);
+                for (var column = 0; column < cells.Count; column++) cells[column].Arrange(new(column * (width + Gap), y, width, cells[column].DesiredSize.Height));
+                y += row + Gap;
+            }
+            return finalSize;
+        }
+    }
     private sealed partial class PaneView
     {
         private static string InputShortcuts => Locale.Get("composer.inputShortcuts");
@@ -231,36 +273,42 @@ public sealed partial class MainWindow : Window
         /// <summary>The pane header's state word: 11.5 semibold in its tone's ink (M/SessionPaneView.swift:220).</summary>
         private readonly TextBlock label = new() { FontSize = DesignMetrics.Type.State, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock detail = new() { FontSize = 10, Opacity = .6, TextWrapping = TextWrapping.Wrap };
+        /// <summary>Why a draft cannot run yet: the reason line of the row over the toolbar (M/SessionPaneView.swift:636).</summary>
         private readonly TextBlock inputHint = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
-        private readonly TextBlock permissionHint = new() { FontSize = 11, Opacity = .75, TextWrapping = TextWrapping.Wrap };
         private readonly AgentTranscript output = new();
         /// <summary>The pane header's figures: 11 mono in <c>ink2</c>, the first part of the line to give way (M/PaneChrome.swift:61-70).</summary>
         private readonly TextBlock elapsed = new() { FontSize = DesignMetrics.Type.Mono, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
         // Auto height uses the native text layout, including soft wraps and IME
-        // composition. Start with one line and scroll internally at the cap.
-        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 30, MaxHeight = 140, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Padding = new Thickness(4, 5, 4, 5), FontSize = DesignMetrics.Type.Body };
-        private readonly Button provider = Pill(100), model = Pill(180), effort = Pill(125), permission = Pill(135), more = Pill(40);
-        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = new() { Content = PillFace(PillWords("ϟ Fast"), new Thickness(10, 5, 10, 5)), MinWidth = 0, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, MinHeight = 32, Height = 32, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
-        private readonly Button send, attach, context;
+        // composition. One 13pt line is 20 high and the editor scrolls inside itself after six
+        // (M/NativeComposerEditor.swift:32-33, M/TextEditorHeightReader.swift:143-149); the 5pt side padding
+        // is the Mac text view's line-fragment padding. A 13pt line of the body font is laid out 18 high here
+        // (16 on the Mac), so the padding above and below it is 1.
+        private readonly TextBox input = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = ComposerLine, MaxHeight = ComposerLine + 5 * ComposerLineStep, MaxLength = 100000, PlaceholderText = Locale.Get("composer.placeholder.idle"), BorderThickness = new Thickness(0), Padding = new Thickness(5, 1, 5, 1), FontSize = DesignMetrics.Type.Body };
+        /// <summary>The editor with one line, and what each further line adds (13pt in the body font).</summary>
+        private const double ComposerLine = 20, ComposerLineStep = 17.3;
+        // The pills, in the Mac's order (M/SessionPaneView.swift:713-723): attach, model, effort, permission, Fast, … and,
+        // in a narrow pane, the options menu that stands in for the last four.
+        private readonly Button attach = NewPill<Button>(), model = NewPill<Button>(chevron: true), effort = NewPill<Button>(chevron: true), permission = NewPill<Button>(chevron: true), more = NewPill<Button>(), options = NewPill<Button>();
+        private readonly Microsoft.UI.Xaml.Controls.Primitives.ToggleButton fast = NewPill<Microsoft.UI.Xaml.Controls.Primitives.ToggleButton>();
+        private Button send = null!, context = null!;
         /// <summary>The send / stop button's coloured shape, drawn under the button (PaintSend, MainWindow.Composer.cs).</summary>
         private readonly Border sendDisc = new() { Width = 32, Height = 32, IsHitTestVisible = false };
-        /// <summary>The send button's symbol (↑, ■ or +), inked by <see cref="PaintSend"/> in every state.</summary>
-        private readonly TextBlock sendGlyph = new() { Text = "↑", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>The send button's symbols (the arrow, the queue mark and the stop square), one shown and inked by <see cref="PaintSend"/> in every state.</summary>
+        private readonly Grid sendGlyph = new() { Width = 32, Height = 32 };
         /// <summary>The pills last painted active (<see cref="PaintPill"/>), so a change of enablement keeps their look.</summary>
         private readonly HashSet<ContentControl> activePills = [];
         private readonly Grid sendHost = new() { Width = 32, Height = 32, VerticalAlignment = VerticalAlignment.Center };
-        /// <summary>The composer card (M/SessionPaneView.swift:654-656).</summary>
-        private readonly Border composerCard;
+        /// <summary>The composer card's surface (M/SessionPaneView.swift:654); its edge is <see cref="composerRing"/>.</summary>
+        private Border composerCard = null!;
         /// <summary>The shape under the composer card that casts its shadow (CardShadow).</summary>
-        private readonly Microsoft.UI.Xaml.Shapes.Rectangle composerShadow;
+        private Microsoft.UI.Xaml.Shapes.Rectangle composerShadow = null!;
         private bool composerFocused, composerDropTargeted;
-        /// <summary>The primary button stops the run (it shows the stop square) rather than sending or queueing.</summary>
-        private bool sendIsStop;
-        private readonly Grid selectors = new() { ColumnSpacing = 3, Height = 32, VerticalAlignment = VerticalAlignment.Center };
-        private readonly PillWrapPanel attachmentChips = new();
+        private readonly StackPanel selectors = new() { Orientation = Orientation.Horizontal, Spacing = ToolbarSpacing, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        /// <summary>The attachments of the next request: one row that scrolls sideways (M/SessionPaneView.swift:542-553).</summary>
+        private readonly StackPanel attachmentChips = new() { Orientation = Orientation.Horizontal, Spacing = 7 };
+        private readonly ScrollViewer attachmentsScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollMode = ScrollMode.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollMode = ScrollMode.Disabled, Margin = new Thickness(10, 10, 10, 0), Visibility = Visibility.Collapsed };
         private readonly List<RunAttachment> pendingAttachments = [];
         private bool updating, draftLoaded, attachmentsLoading, composingInput, starting, stopping, canSend;
-        private int composerMode;
         public Border Container { get; }
         private RunSession Session => owner.service.Snapshot.Sessions.First(s => s.Id == id);
         private Workspace Workspace => owner.service.Snapshot.Workspaces.First(w => w.Id == Session.WorkspaceId);
@@ -272,20 +320,6 @@ public sealed partial class MainWindow : Window
                 return owner.Runtime(pane.Provider)?.Capabilities ?? ProviderCatalog.Capabilities(pane.Provider);
             }
         }
-        /// <summary>
-        /// A ComposerPill (M/ComposerControls.swift:4-33): 32 high, capsule, padding h8, 11pt; painted by <see cref="PaintPill"/>.
-        /// The button itself draws nothing; its face (<see cref="PillFace"/>) carries the fill, the edge and the words.
-        /// </summary>
-        private static Button Pill(double maxWidth) => new() { MinWidth = 0, MaxWidth = maxWidth, MinHeight = 32, Height = 32, Padding = new Thickness(0), CornerRadius = new CornerRadius(16), FontSize = DesignMetrics.Type.Pill, BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, Content = PillFace(PillWords(""), new Thickness(8, 0, 8, 0)) };
-        /// <summary>A pill's face: the capsule with its Stroke.Line edge, filling the button.</summary>
-        private static Border PillFace(FrameworkElement content, Thickness padding) => new() { Child = content, Padding = padding, CornerRadius = new CornerRadius(16), BorderThickness = new Thickness(DesignMetrics.Stroke.Line) };
-        private static TextBlock PillWords(string text) => new() { Text = text, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.Medium, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        /// <summary>The words on a pill's face.</summary>
-        private static TextBlock PillText(ContentControl pill) => (TextBlock)((Border)pill.Content).Child;
-        private static void Label(Button button, string text, string name)
-        {
-            PillText(button).Text = text; AutomationProperties.SetName(button, name + ": " + text);
-        }
         internal PaneView(MainWindow owner, string id)
         {
             this.owner = owner; this.id = id;
@@ -295,44 +329,16 @@ public sealed partial class MainWindow : Window
             foreach (var height in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) grid.RowDefinitions.Add(new RowDefinition { Height = height });
             // The 34pt header line runs edge to edge over the pane card (MainWindow.PaneHeader.cs).
             var header = BuildPaneHeader(); grid.Children.Add(header);
-            InitializeStatusLineToggle(paneHeaderControls);
             // Copy lives in the header's … menu, as on the Mac (decision Q4).
-            var copy = AddPaneMenu();
-            InitializeResponsiveHeader(header);
+            AddPaneMenu();
             Grid.SetRow(output.View, 1); grid.Children.Add(output.View);
             PaintTranscriptSurface(grid); InitializeEmptyOutput(grid);
-            ScrollViewer.SetVerticalScrollBarVisibility(input, ScrollBarVisibility.Auto);
-            ScrollViewer.SetHorizontalScrollBarVisibility(input, ScrollBarVisibility.Disabled);
-            StyleComposerInput();
-            attach = Button("+", PickAttachments); attach.MinWidth = 0; attach.Width = attach.Height = 32; attach.Padding = new Thickness(0); attach.CornerRadius = new CornerRadius(16); attach.BorderThickness = new Thickness(0); attach.HorizontalContentAlignment = HorizontalAlignment.Stretch; attach.VerticalContentAlignment = VerticalAlignment.Stretch; attach.Content = PillFace(new SymbolIcon(Symbol.Attach) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }, new Thickness(5)); AutomationProperties.SetName(attach, Locale.Get("composer.attach.name")); ToolTipService.SetToolTip(attach, Locale.Get("composer.attach.tooltip"));
-            InitializePills();
-            InitializeAttachmentMenu();
-            var controls = new FrameworkElement[] { attach, provider, model, effort, permission, fast, more };
-            for (var index = 0; index < controls.Length; index++) { selectors.ColumnDefinitions.Add(new() { Width = index == 2 ? new(1, GridUnitType.Star) : GridLength.Auto }); Grid.SetColumn(controls[index], index); controls[index].VerticalAlignment = VerticalAlignment.Center; selectors.Children.Add(controls[index]); }
-            model.HorizontalAlignment = HorizontalAlignment.Stretch; PillText(model).HorizontalAlignment = HorizontalAlignment.Left; model.MaxWidth = double.PositiveInfinity; model.MinWidth = 0;
-            selectors.SizeChanged += (_, _) => ArrangeComposer();
-            var bottom = new Grid { ColumnSpacing = 5, Height = 32 }; bottom.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.Children.Add(selectors);
-            context = Button("—", ShowContext); context.Width = 44; context.Height = 32; context.MinWidth = 0; context.Padding = new(2, 0, 2, 0); context.CornerRadius = new(16); context.FontSize = 10; owner.PaintPlainButton(context, owner.brushes.Transparent, owner.brushes.Subtle, ink: owner.brushes.Brush(DesignToken.Ink2)); AutomationProperties.SetName(context, Locale.Get("composer.context.name")); Grid.SetColumn(context, 1); bottom.Children.Add(context);
-            send = Button("↑", PrimaryAction); send.Content = sendGlyph; send.Width = send.Height = 32; send.MinWidth = 0; send.Padding = new Thickness(0); send.CornerRadius = new CornerRadius(16); send.FontSize = 16; send.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; AutomationProperties.SetName(send, Locale.Get("composer.send.name"));
-            // The button draws no fill of its own in any state; the shape under it carries run, track or err
-            // and the symbol carries its own ink in every state (PaintSend), so its resources never change.
-            owner.PaintPlainButton(send, owner.brushes.Transparent, owner.brushes.Transparent);
-            send.IsEnabledChanged += (_, _) => PaintSend();
-            sendHost.Children.Add(sendDisc); sendHost.Children.Add(send); Grid.SetColumn(sendHost, 2); bottom.Children.Add(sendHost);
-            var composer = new StackPanel { Spacing = 9 }; attachmentChips.Visibility = Visibility.Collapsed; composer.Children.Add(styleHost); composer.Children.Add(toolPermissionHost); composer.Children.Add(attachmentChips); composer.Children.Add(slashPaletteHost); composer.Children.Add(input); composer.Children.Add(bottom); composer.Children.Add(permissionHint); composer.Children.Add(inputHint); composer.Children.Add(statusLineHost);
-            var card = composerCard = new Border { Child = composer, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), Background = owner.brushes.Brush(DesignToken.Card) };
-            PaintComposerRing();
-            // The card's shadow is cast by a shape under it; two points under the card keep the
-            // shadow inside the scroll view, which clips its content (decision Q5).
-            var cardHost = new Grid { Margin = new Thickness(0, 0, 0, 2) }; cardHost.Children.Add(composerShadow = CardShadow.Caster(DesignMetrics.Radius.Composer, CardShadow.Composer, owner.brushes.Brush(DesignToken.Card))); cardHost.Children.Add(card);
-            var composerRegion = new StackPanel(); composerRegion.Children.Add(nextActionsHost); composerRegion.Children.Add(cardHost);
-            var composerScroll = new ScrollViewer { Content = composerRegion, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto };
-            Grid.SetRow(composerScroll, 2); grid.Children.Add(composerScroll);
+            // The composer and what hangs off it (MainWindow.Composer.cs).
+            var composerScroll = BuildComposer(grid); var card = composerCard;
             Container = new Border { Child = grid, Background = owner.brushes.Brush(DesignToken.Card), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), BorderBrush = owner.brushes.Brush(DesignToken.Line), CornerRadius = new CornerRadius(DesignMetrics.Radius.Pane) };
-            InitializeQueuedComposer(composer, bottom);
-            InitializeLoginRecoveryCard(composer);
-            InitializeAgentWebPrompts(composer);
-            InitializeTerminal(grid, composerScroll, copy);
+            InitializeTerminal(grid, composerScroll);
+            // A press anywhere in the pane makes it the active one, also where a control handles the press itself (M/SessionPaneView.swift:170-190).
+            Container.AddHandler(UIElement.PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => owner.ActivatePane(id)), true);
             Container.SizeChanged += (_, args) => composerScroll.MaxHeight = Math.Max(150, args.NewSize.Height - 144);
             fast.Click += async (_, _) => { if (!updating) await ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode }); };
             ToolTipService.SetToolTip(fast, Locale.Get("composer.fast.tooltip")); AutomationProperties.SetName(fast, "Codex Fast");
@@ -387,11 +393,26 @@ public sealed partial class MainWindow : Window
             input.LostFocus += (_, _) => { composingInput = false; composerFocused = false; PaintComposerRing(); };
         }
         /// <summary>
-        /// The pane card's border: <c>line</c>, or accent × 0.58 on the active pane (M/SessionPaneView.swift:164).
-        /// Both are shared brushes, so a theme toggle recolours a reused pane in place. Render sets it on every pane.
+        /// The pane card's border: <c>line</c>, or accent × 0.58 on the active pane (M/SessionPaneView.swift:164,
+        /// M/AgentTerminalPaneView.swift:46). A browser or the files pane is part of its group's card under
+        /// the group's slim bar: no edge of its own and square top corners (M/BrowserPaneView.swift:30-34,
+        /// M/FilePaneView.swift:22-28). All are shared brushes, so a theme toggle recolours a reused pane in
+        /// place. Render sets it on every pane.
         /// </summary>
-        internal void ShowActive(bool active) =>
-            Container.BorderBrush = active ? owner.brushes.Brush(DesignToken.Accent, DesignMetrics.Opacity.PaneActiveBorder) : owner.brushes.Brush(DesignToken.Line);
+        internal void ShowActive(bool active)
+        {
+            var b = owner.brushes;
+            if (paneKind is "browser" or AgentIOPaneKind.Browser or FilePaneKind.Kind)
+            {
+                Container.BorderBrush = b.Transparent; Container.BorderThickness = new Thickness(0);
+                Container.CornerRadius = new CornerRadius(0, 0, DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane);
+                // Its content fills the card, over the pane grid's 12pt padding (the browser's host is built that way);
+                // a margin the files pane gives its own host is left alone.
+                if (filesHost is { } files && files.Margin == default) files.Margin = new Thickness(-12);
+            }
+            else Container.BorderBrush = active ? b.Brush(DesignToken.Accent, DesignMetrics.Opacity.PaneActiveBorder) : b.Brush(DesignToken.Line);
+            PaintHeaderFade();
+        }
         private static bool IsInputKeyDown(Windows.System.VirtualKey key) =>
             (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
         private static bool SubmitKeyAllowed(bool composing, bool shift, bool otherModifier) => !composing && !shift && !otherModifier;
@@ -429,26 +450,36 @@ public sealed partial class MainWindow : Window
             var pane = Session; var busy = pane.Status == "running" || starting || queueStarting || owner.BackgroundUpdateHolds(pane); var runtime = owner.Runtime(pane.Provider); var workspace = Workspace;
             var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
             var registeredModels = RegisteredModelsFor(pane.Provider, workspace, owner.service.Snapshot);
-            var unsupportedEffort = pane.Kind == "claude" && pane.Settings.Effort != "default" && !ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels).Contains(pane.Settings.Effort);
+            var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels);
+            var unsupportedEffort = pane.Kind == "claude" && pane.Settings.Effort != "default" && !levels.Contains(pane.Settings.Effort);
             string? unsupportedSettings = null;
             if (pane.Kind == "claude" && pane.Settings.PermissionMode == "auto" && runtime?.Capabilities.PermissionModes?.Contains("auto") != true) unsupportedSettings = Locale.Get("composer.hint.autoModeUnverified");
             if (pendingAttachments.Count > 0 && !Capabilities.Attachments) unsupportedSettings = Locale.Get("composer.hint.attachmentsUnsupported");
             var mutationBlock = owner.ManualMutationBlockReason(pane);
-            var reason = mutationBlock ?? (busy ? ""
-                : attachmentsLoading ? Locale.Get("composer.hint.attachmentsLoading")
+            // Why a draft cannot run yet: its own row over the toolbar (M/SessionPaneView.swift:631-643). Attachments being
+            // read and a background update holding sends each have their own row with a spinner (:585-590, 622-630).
+            var reason = mutationBlock ?? (busy || attachmentsLoading ? ""
                 : pane.Kind == "claude" && runtime?.Available != true ? Locale.Get("composer.hint.draftStillAllowed", new Dictionary<string, string> { ["reason"] = runtime?.Detail ?? Locale.Get("composer.hint.refreshRuntime") })
                 : unsupportedEffort ? Locale.Get("composer.hint.effortUnverified", new Dictionary<string, string> { ["effort"] = pane.Settings.Effort })
                 : unsupportedSettings ?? "");
-            inputHint.Text = reason; inputHint.Visibility = reason.Length == 0 ? Visibility.Collapsed : Visibility.Visible; AutomationProperties.SetHelpText(input, reason.Length == 0 ? InputShortcuts : reason + " " + InputShortcuts);
-            permissionHint.Text = pane.Settings.PermissionMode == "fullAccess" ? Locale.Get("composer.hint.fullAccess") : "";
-            permissionHint.Visibility = pane.Kind == "claude" && permissionHint.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-            input.PlaceholderText = busy ? Locale.Get("composer.placeholder.busy") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
+            inputHint.Text = reason; blockedRow.Visibility = reason.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            loadingRow.Visibility = attachmentsLoading ? Visibility.Visible : Visibility.Collapsed;
+            var holds = owner.BackgroundUpdateHolds(pane); holdRow.Visibility = holds ? Visibility.Visible : Visibility.Collapsed;
+            if (holds) holdText.Text = Locale.Get("settings.cliUpdate.backgroundUpdateQueued", new Dictionary<string, string> { ["provider"] = ProviderMark.Label(pane.Provider) });
+            var said = reason.Length > 0 ? reason : attachmentsLoading && !busy ? Locale.Get("composer.hint.attachmentsLoading") : "";
+            AutomationProperties.SetHelpText(input, said.Length == 0 ? InputShortcuts : said + " " + InputShortcuts);
+            // While a run is busy the editor says what Enter will do with the next request (M/SessionPaneView.swift:98-99).
+            input.PlaceholderText = busy ? Locale.Get(pane.Kind == "claude" && pane.Provider == "claude" ? "composer.placeholder.busy" : "composer.placeholder.busyQueue") : pane.Kind == "shell" ? Locale.Get("composer.placeholder.shell") : Locale.Get("composer.placeholder.idle");
             canSend = mutationBlock is null && !busy && !attachmentsLoading && (pane.Kind == "shell" || runtime?.Available == true) && !unsupportedEffort && unsupportedSettings is null && (!string.IsNullOrWhiteSpace(input.Text) || pendingAttachments.Count > 0);
-            send.IsEnabled = busy ? !stopping : canSend; sendGlyph.Text = busy ? "■" : "↑"; sendIsStop = busy; send.FontSize = busy ? 12 : 16;
+            send.IsEnabled = busy ? !stopping : canSend; ShowSendSymbol(busy ? "stop" : "send");
             AutomationProperties.SetName(send, busy ? Locale.Get("composer.stop.name") : Locale.Get("composer.send.name")); ToolTipService.SetToolTip(send, busy ? Locale.Get("composer.stop.tooltip") : Locale.Get("composer.send.tooltip"));
             context.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible; RefreshContextIndicator();
             ToolTipService.SetToolTip(context, pane.SessionUsage?.ContextPercent is null ? Locale.Get("composer.context.unavailable") : Locale.Get("composer.context.tooltip"));
-            foreach (var control in selectors.Children.OfType<Control>()) control.IsEnabled = !busy;
+            resumeHost.Visibility = pane.ResumeId is null ? Visibility.Collapsed : Visibility.Visible;
+            foreach (var control in selectors.Children.OfType<Control>()) control.IsEnabled = !busy; HoldRunSettings(busy);
+            // With no level to choose and none chosen the effort menu is off, and Fast where it is unsupported and off (M/SessionPaneView.swift:378, 410).
+            if (levels.Length == 0 && pane.Settings.Effort == "default") effort.IsEnabled = false;
+            if (!Capabilities.FastMode && !pane.Settings.FastMode) fast.IsEnabled = false;
             attach.IsEnabled = !attachmentsLoading; attach.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
             RefreshStyles();
             RefreshQueuedComposer(busy);
@@ -465,36 +496,61 @@ public sealed partial class MainWindow : Window
         private async Task LoadAttachments(Func<Task<List<RunAttachment>>> read)
         {
             if (attachmentsLoading || Session.Kind == "shell") return;
-            attachmentsLoading = true; RefreshComposerState();
+            // A new read takes the last one's notice down; what goes wrong with this one says so in the composer (M/AppStore+Attachments.swift:105, 117).
+            attachmentsLoading = true; ShowAttachmentError(null); RefreshComposerState();
             try
             {
                 var files = await read();
                 if (owner.closing || !owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
                 _ = AttachmentSupport.Validate(pendingAttachments.Concat(files).ToArray()); pendingAttachments.AddRange(files); RefreshAttachments();
             }
-            catch (Exception ex) { owner.error.Text = ex.Message; }
+            catch (Exception ex) { if (!owner.closing && owner.service.Snapshot.Sessions.Any(p => p.Id == id)) ShowAttachmentError(ex.Message); }
             finally
             {
                 attachmentsLoading = false;
                 if (!owner.closing && owner.service.Snapshot.Sessions.Any(p => p.Id == id)) { RefreshComposerState(); input.Focus(FocusState.Programmatic); }
             }
         }
+        /// <summary>A size as the Mac's file byte count reads it (M/ComposerAttachments.swift:40-42): decimal units, whole kilobytes, one decimal from a megabyte.</summary>
+        private static string ByteLabel(long bytes) => bytes < 1000 ? bytes.ToString(CultureInfo.CurrentCulture) + " bytes"
+            : bytes < 1_000_000 ? (bytes / 1000.0).ToString("0", CultureInfo.CurrentCulture) + " KB" : (bytes / 1_000_000.0).ToString("0.#", CultureInfo.CurrentCulture) + " MB";
+        /// <summary>
+        /// The attachment chips (M/ComposerAttachments.swift:12-36): a 34pt thumbnail or an accent document mark at radius 5,
+        /// the name in 11 medium over its size in 10pt <c>ink2</c> (106 wide), and a 20 × 26 remove button, 7 apart and padded 6
+        /// on the subtle wash at radius 9 with a hairline <c>line</c>. Pressing the chip previews the attachment.
+        /// </summary>
         private void RefreshAttachments()
         {
-            attachmentChips.Children.Clear(); attachmentChips.Visibility = pendingAttachments.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            var b = owner.brushes;
+            attachmentChips.Children.Clear(); attachmentsScroll.Visibility = pendingAttachments.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            FitComposerSpacing();
             foreach (var file in pendingAttachments)
             {
-                var row = new Grid { ColumnSpacing = 2 }; row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var preview = Button(file.Name, () => PreviewAttachment(file)); preview.Content = new TextBlock { Text = (file.MediaType.StartsWith("image/", StringComparison.Ordinal) ? "▧ " : "▤ ") + file.Name, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11 }; preview.MinWidth = 0; preview.MaxWidth = 210; preview.Padding = new Thickness(7, 4, 7, 4); preview.Background = new SolidColorBrush(Colors.Transparent); preview.BorderThickness = new Thickness(0); AutomationProperties.SetName(preview, Locale.Get("composer.attachment.preview", new Dictionary<string, string> { ["name"] = file.Name })); ToolTipService.SetToolTip(preview, $"{file.Name} · {AttachmentSupport.DecodedLength(file):N0} bytes"); row.Children.Add(preview);
-                if (file.MediaType.StartsWith("image/", StringComparison.Ordinal))
-                {
-                    var thumbnail = new Image { Width = 28, Height = 28, Stretch = Stretch.Uniform }; var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 }; content.Children.Add(thumbnail); content.Children.Add(new TextBlock { Text = file.Name, MaxWidth = 145, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11, VerticalAlignment = VerticalAlignment.Center }); preview.Content = content; _ = LoadThumbnail(file, thumbnail);
-                }
-                var remove = Button("×", () => { pendingAttachments.RemoveAll(a => a.Id == file.Id); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask; }); remove.MinWidth = 0; remove.Width = 25; remove.Padding = new Thickness(3); remove.Background = new SolidColorBrush(Colors.Transparent); remove.BorderThickness = new Thickness(0); AutomationProperties.SetName(remove, Locale.Get("composer.attachment.remove", new Dictionary<string, string> { ["name"] = file.Name })); Grid.SetColumn(remove, 1); row.Children.Add(remove);
-                attachmentChips.Children.Add(new Border { Child = row, CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = owner.brushes.Brush(DesignToken.CardRaised), BorderBrush = owner.brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line), MaxWidth = 240 });
+                var image = file.MediaType.StartsWith("image/", StringComparison.Ordinal); var size = ByteLabel(AttachmentSupport.DecodedLength(file));
+                var picture = new Grid { Width = 34, Height = 34, CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), Background = b.Brush(DesignToken.Ink, AttachmentPictureWash) };
+                if (image) { var thumbnail = new Microsoft.UI.Xaml.Shapes.Rectangle { RadiusX = DesignMetrics.Radius.FileRow, RadiusY = DesignMetrics.Radius.FileRow }; picture.Children.Add(thumbnail); _ = LoadThumbnail(file, thumbnail); }
+                else picture.Children.Add(new FontIcon { Glyph = file.MediaType == "application/pdf" ? "" : "", FontSize = 17, Foreground = b.Brush(DesignToken.Accent) });
+                var words = new StackPanel { Spacing = 2, Width = 106, VerticalAlignment = VerticalAlignment.Center };
+                words.Children.Add(new TextBlock { Text = file.Name, FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = b.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap });
+                words.Children.Add(new TextBlock { Text = size, FontSize = 10, Foreground = b.Brush(DesignToken.Ink2) });
+                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 }; face.Children.Add(picture); face.Children.Add(words);
+                var preview = Button(file.Name, () => PreviewAttachment(file)); preview.Content = face; preview.MinWidth = 0; preview.MinHeight = 0; preview.Padding = new Thickness(0); preview.BorderThickness = new Thickness(0); preview.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow);
+                owner.PaintPlainButton(preview, b.Transparent, b.Transparent);
+                AutomationProperties.SetName(preview, Locale.Get("composer.attachment.preview", new Dictionary<string, string> { ["name"] = file.Name })); ToolTipService.SetToolTip(preview, $"{file.Name} · {size}");
+                var remove = Button("×", () => { pendingAttachments.RemoveAll(a => a.Id == file.Id); ShowAttachmentError(null); RefreshAttachments(); RefreshComposerState(); input.Focus(FocusState.Programmatic); return Task.CompletedTask; });
+                remove.Content = new FontIcon { Glyph = "", FontSize = 9, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold }; remove.MinWidth = 0; remove.MinHeight = 0; remove.Width = 20; remove.Height = 26; remove.Padding = new Thickness(0); remove.BorderThickness = new Thickness(0); remove.CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow); remove.VerticalAlignment = VerticalAlignment.Center;
+                owner.PaintPlainButton(remove, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink2));
+                AutomationProperties.SetName(remove, Locale.Get("composer.attachment.remove", new Dictionary<string, string> { ["name"] = file.Name })); AutomationProperties.SetAutomationId(remove, "remove-attachment-" + file.Id);
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 }; row.Children.Add(preview); row.Children.Add(remove);
+                var chip = new Border { Child = row, Padding = new Thickness(6), CornerRadius = new CornerRadius(AttachmentChipRadius), Background = b.Brush(DesignToken.Ink, AttachmentChipWash), BorderBrush = b.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Hairline) };
+                AutomationProperties.SetAutomationId(chip, "attachment-" + file.Id);
+                attachmentChips.Children.Add(chip);
             }
         }
-        private static async Task LoadThumbnail(RunAttachment file, Image image) { try { image.Source = await AttachmentInput.PreviewAsync(file, 48); } catch (Exception) { image.Visibility = Visibility.Collapsed; } }
+        /// <summary>An attachment chip's corner, and the ink washes under the chip and under its picture (M/ComposerAttachments.swift:31, 19).</summary>
+        private const double AttachmentChipRadius = 9, AttachmentChipWash = 0.045, AttachmentPictureWash = 0.04;
+        /// <summary>Fills a chip's rounded thumbnail with the picture, scaled to fill it (M/ComposerAttachments.swift:15-20, 117-127).</summary>
+        private static async Task LoadThumbnail(RunAttachment file, Microsoft.UI.Xaml.Shapes.Rectangle thumbnail) { try { thumbnail.Fill = new ImageBrush { ImageSource = await AttachmentInput.PreviewAsync(file, 96), Stretch = Stretch.UniformToFill }; } catch (Exception) { thumbnail.Visibility = Visibility.Collapsed; } }
         private Task PreviewAttachment(RunAttachment file) => owner.Act(async () =>
         {
             var content = new StackPanel { Spacing = 10, MaxWidth = 640 }; content.Children.Add(new TextBlock { Text = $"{file.MediaType} · {AttachmentSupport.DecodedLength(file):N0} bytes", FontSize = 11 });
@@ -506,11 +562,45 @@ public sealed partial class MainWindow : Window
         private Task Change(Func<RunSession, RunSession> update) => owner.service.UpdateAsync(s => s with { Sessions = s.Sessions.Select(p => p.Id == id ? update(p) : p).ToList() });
         private Task ChangeSettings(Func<RunSettings, RunSettings> update) => owner.Act(async () => { if (Session.Status == "running") return; await Change(p => p with { Settings = update(p.Settings) }); Refresh(); input.Focus(FocusState.Programmatic); });
         private Task ChangeModel(string value) => owner.Act(async () => { if (Session.Status == "running") return; if (!Wire.Model(value)) throw new ArgumentException(Locale.Get("composer.model.invalidName")); var pane = Session; var catalog = owner.Runtime(pane.Provider)?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider); var registeredModels = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot); await Change(p => p with { Model = value, Settings = p.Settings with { Effort = ProviderCatalog.Efforts(p.Provider, value, catalog, registeredModels).Contains(p.Settings.Effort) ? p.Settings.Effort : "default" } }); Refresh(); input.Focus(FocusState.Programmatic); });
-        private static MenuFlyoutItem Item(string text, Func<Task> action, bool selected = false, string? help = null)
+        private static MenuFlyoutItem Item(string text, Func<Task> action, string? help = null)
         {
-            var item = new MenuFlyoutItem { Text = (selected ? "✓  " : "") + text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
+            var item = new MenuFlyoutItem { Text = text }; item.Click += async (_, _) => await action(); if (help is not null) ToolTipService.SetToolTip(item, help); return item;
         }
-        private static string PermissionLabel(string provider, string mode) => mode switch { "onRequest" => Locale.Get("permission.label.onRequest"), "manual" => provider == "codex" ? Locale.Get("permission.label.defaultCodex") : Locale.Get("permission.label.default"), "plan" => Locale.Get("permission.label.plan"), "acceptEdits" => provider == "codex" ? Locale.Get("composer.permission.acceptEditsCodex") : Locale.Get("composer.permission.acceptEdits"), "auto" => "Auto mode", "fullAccess" => Locale.Get("composer.permission.fullAccess"), _ => mode };
+        /// <summary>
+        /// A row of a choice menu, with the standard check mark on the current choice as the Mac's menus show it
+        /// (M/SessionPaneView.swift:331-347). A click flips a toggle item's mark by itself; the mark is the
+        /// setting's, so it is put back, and the menu is built again when the setting changes.
+        /// </summary>
+        private static ToggleMenuFlyoutItem Choice(string text, Func<Task> action, bool selected, string? help = null)
+        {
+            var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = selected };
+            item.Click += async (_, _) => { item.IsChecked = selected; await action(); };
+            if (help is not null) ToolTipService.SetToolTip(item, help);
+            return item;
+        }
+        /// <summary>A section header in a menu (the Mac's <c>Section("공급자")</c>): a small quiet line over its rows that cannot be chosen.</summary>
+        private MenuFlyoutItem MenuHeader(string text)
+        {
+            var item = new MenuFlyoutItem { Text = text, IsEnabled = false, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MinHeight = 0, Padding = new Thickness(11, 7, 11, 3) };
+            owner.SetResourcesOnce(item, [("MenuFlyoutItemForegroundDisabled", owner.brushes.Brush(DesignToken.Ink3))]);
+            return item;
+        }
+        /// <summary>
+        /// A permission mode's name (M/SettingsViews.swift:341-346): the Claude CLI's own mode names for Claude, in
+        /// every language as on the Mac, and the shared labels for the other agents.
+        /// </summary>
+        private static string PermissionLabel(string provider, string mode)
+        {
+            if (provider == "claude") return mode switch { "plan" => "Plan mode", "acceptEdits" => "Accept file edits", "auto" => "Auto mode", "fullAccess" => "Bypass", _ => "Always ask" };
+            return mode switch
+            {
+                "plan" => Locale.Get("permission.label.plan"), "onRequest" => Locale.Get("permission.label.onRequest"), "fullAccess" => Locale.Get("permission.label.fullAccess"),
+                "acceptEdits" => Locale.Get(provider == "codex" ? "permission.label.acceptEditsCodex" : "permission.label.acceptEdits"),
+                _ => Locale.Get(provider == "codex" ? "permission.label.defaultCodex" : "permission.label.default"),
+            };
+        }
+        /// <summary>A thinking effort's name on its pill and in its menu: the CLI's own level names (M/SessionPaneView.swift:899-901).</summary>
+        private static string EffortLabel(string effort) => effort switch { "low" => "Low", "medium" => "Medium", "high" => "High", "xhigh" => "XHigh", "max" => "Max", _ => "Auto" };
         private static string PermissionHelp(string provider, string mode) => mode switch { "onRequest" => Locale.Get("permission.codex.onRequest"), "manual" => provider == "codex" ? Locale.Get("composer.permissionHelp.manualCodex") : Locale.Get("composer.permissionHelp.manual"), "plan" => Locale.Get("composer.permissionHelp.plan"), "acceptEdits" => provider == "codex" ? Locale.Get("composer.permissionHelp.acceptEditsCodex") : Locale.Get("composer.permissionHelp.acceptEdits"), "auto" => Locale.Get("composer.permissionHelp.auto"), "fullAccess" => Locale.Get("composer.permissionHelp.fullAccess"), _ => "" };
         /// Model names registered in saved state, for the effort list. Workspace
         /// entries come first and an app entry whose name is already present is
@@ -530,30 +620,126 @@ public sealed partial class MainWindow : Window
             var names = fromWorkspace.Select(entry => entry.Name).ToHashSet();
             return fromWorkspace.Concat(fromApp.Where(entry => !names.Contains(entry.Name))).ToList().AsReadOnly();
         }
+        /// <summary>The provider mark on the model pill: 12 on the Mac, which draws it at 12 × 1.15 (M/ComposerControls.swift:16, M/ProviderIcon.swift:18).</summary>
+        private const double ModelMarkSize = 13.8;
+        /// <summary>The permission pill's symbol now: the open lock while everything is allowed, else the half shield (M/SessionPaneView.swift:398).</summary>
+        private bool? permissionUnlocked;
+
+        /// <summary>
+        /// Brings the pills and their menus up to the pane (M/SessionPaneView.swift:326-450): the model pill with
+        /// its provider's mark, effort, permission, Fast, the … pill (on while a run setting is set) and the
+        /// options menu a narrow pane shows instead. Which of them show is <see cref="ArrangeComposer"/>'s.
+        /// </summary>
         private void RefreshMenus(RunSession pane, ModelCatalog catalog)
         {
             var caps = Capabilities;
-            Label(provider, pane.Provider == "claude" ? "Claude ⌄" : pane.Provider == "codex" ? "Codex ⌄" : "Gemini ⌄", Locale.Get("composer.label.runner")); ToolTipService.SetToolTip(provider, ProviderCatalog.IsBeta(pane.Provider) ? ProviderCatalog.BetaLabel(pane.Provider, ProviderCatalog.Name(pane.Provider)) : null);
-            var providers = new MenuFlyout(); foreach (var value in Wire.Providers) providers.Items.Add(Item(ProviderCatalog.BetaLabel(value, ProviderCatalog.Name(value)), () => owner.Act(async () => { if (Session.Status == "running" || Session.Provider == value) return; await Change(p => p with { Provider = value, Title = p.Title == ProviderCatalog.Name(p.Provider) ? ProviderCatalog.Name(value) : p.Title, Model = "default", Settings = new(), ResumeId = null }); Refresh(); input.Focus(FocusState.Programmatic); }), pane.Provider == value)); provider.Flyout = providers;
-            var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model); Label(model, ModelLabel.Selection(pane, catalog) + " ⌄", Locale.Get("composer.label.model")); ToolTipService.SetToolTip(model, selectedModel?.Description ?? pane.Model);
-            var models = new MenuFlyout(); foreach (var row in ModelLabel.PickerOptions(pane, catalog)) models.Items.Add(Item(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description));
-            models.Items.Insert(0, new MenuFlyoutSeparator());
-            models.Items.Insert(0, Item(Locale.Get("composer.model.refresh"), RefreshPaneModels));
-            if (pane.Provider != "gemini") { models.Items.Add(new MenuFlyoutSeparator()); models.Items.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); } model.Flyout = models;
-            var registeredModels2 = RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot);
-            var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, registeredModels2); var knownEffort = pane.Settings.Effort == "default" || levels.Contains(pane.Settings.Effort);
-            Label(effort, (pane.Settings.Effort == "default" ? "Auto" : pane.Settings.Effort) + (knownEffort ? " ⌄" : Locale.Get("composer.effort.unverifiedSuffix")), Locale.Get("composer.label.effort")); var efforts = new MenuFlyout();
-            foreach (var value in new[] { "default" }.Concat(levels)) efforts.Items.Add(Item(value == "default" ? Locale.Get("composer.effort.auto") : value, () => ChangeSettings(s => s with { Effort = value }), pane.Settings.Effort == value)); effort.Flyout = efforts;
-            effort.Visibility = caps.Effort || pane.Settings.Effort != "default" ? Visibility.Visible : Visibility.Collapsed;
-            Label(permission, PermissionLabel(pane.Provider, pane.Settings.PermissionMode) + " ⌄", Locale.Get("composer.label.permission")); ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode)); var permissions = new MenuFlyout();
-            foreach (var mode in (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains)) permissions.Items.Add(Item(PermissionLabel(pane.Provider, mode), () => ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode is ("acceptEdits" or "onRequest") && s.NetworkAccess }), pane.Settings.PermissionMode == mode, PermissionHelp(pane.Provider, mode)));
-            permission.Flyout = permissions; PaintPill(permission, pane.Settings.PermissionMode == "fullAccess");
-            fast.IsChecked = pane.Settings.FastMode; fast.Visibility = pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode) ? Visibility.Visible : Visibility.Collapsed;
-            Label(more, "···", Locale.Get("composer.more")); more.Flyout = MoreMenu(pane, caps);
-            provider.Visibility = model.Visibility = permission.Visibility = more.Visibility = pane.Kind == "shell" ? Visibility.Collapsed : Visibility.Visible;
-            if (pane.Kind == "shell") effort.Visibility = fast.Visibility = Visibility.Collapsed;
+            if (pillProvider != pane.Provider)
+            {
+                pillProvider = pane.Provider; var parts = Parts(model);
+                var mark = ProviderMarkView.Create(pane.Provider, ModelMarkSize); mark.HorizontalAlignment = HorizontalAlignment.Center;
+                parts.IconHost.Children.Clear(); parts.IconHost.Children.Add(mark); parts.IconHost.Visibility = Visibility.Visible;
+            }
+            var selection = ModelLabel.Selection(pane, catalog); var selectedModel = catalog.Models.FirstOrDefault(m => m.Value == pane.Model);
+            Label(model, selection, Locale.Get("composer.label.model"));
+            ToolTipService.SetToolTip(model, ProviderCatalog.BetaLabel(pane.Provider, ProviderMark.Label(pane.Provider)) + " · " + selection + (selectedModel?.Description is { Length: > 0 } description ? "\n" + description : ""));
+            model.Flyout = ModelMenu(pane, catalog);
+
+            var levels = ProviderCatalog.Efforts(pane.Provider, pane.Model, catalog, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot));
+            Label(effort, EffortLabel(pane.Settings.Effort), Locale.Get("composer.effort.label"));
+            if (pane.Settings.Effort != "default" && !levels.Contains(pane.Settings.Effort)) AutomationProperties.SetName(effort, AutomationProperties.GetName(effort) + Locale.Get("composer.effort.unverifiedSuffix"));
+            // What the pill does, or why it is off (M/SessionPaneView.swift:377).
+            ToolTipService.SetToolTip(effort, levels.Length == 0 ? Locale.Get("composer.effort.unknownLevels") : Locale.Get("composer.effort.label") + " · " + Locale.Get("settings.run.appliesNextRequest"));
+            effort.Flyout = ChoiceMenu(EffortChoices(pane, levels));
+
+            var unlocked = pane.Settings.PermissionMode == "fullAccess";
+            Label(permission, PermissionLabel(pane.Provider, pane.Settings.PermissionMode), Locale.Get("composer.label.permission"));
+            ToolTipService.SetToolTip(permission, PermissionHelp(pane.Provider, pane.Settings.PermissionMode));
+            AutomationProperties.SetHelpText(permission, unlocked ? Locale.Get("composer.hint.fullAccess") : "");
+            permission.Flyout = ChoiceMenu(PermissionChoices(pane, caps));
+            if (permissionUnlocked != unlocked) { permissionUnlocked = unlocked; SetPillIcon(permission, unlocked ? ComposerGlyph.Unlock() : ComposerGlyph.Shield()); }
+            PaintPill(permission, unlocked);
+
+            fast.IsChecked = pane.Settings.FastMode;
+            // The … pill is on while a run setting is set (M/SessionPaneView.swift:417-419); its own menu keeps the pane's
+            // actions the Mac has in the pane header (rename, plugins, a new conversation).
+            AutomationProperties.SetName(more, Locale.Get("composer.more")); ToolTipService.SetToolTip(more, Locale.Get("settings.run.title"));
+            PaintPill(more, pane.Settings.WebSearch != "default" || pane.Settings.NetworkAccess || pane.Settings.MaxTurns is not null || pane.Settings.MaxBudgetUsd is not null);
+            more.ContextFlyout = PaneActionsMenu(pane); options.ContextFlyout = PaneActionsMenu(pane);
+            var optionsName = Locale.Get("composer.effort.label") + " · " + Locale.Get("composer.label.permission") + " · " + Locale.Get("settings.run.title");
+            AutomationProperties.SetName(options, optionsName); ToolTipService.SetToolTip(options, optionsName);
+            options.Flyout = OptionsMenu(pane, caps, levels);
+            PaintPill(options, unlocked || pane.Settings.FastMode);
         }
-        private MenuFlyout MoreMenu(RunSession pane, ProviderCapabilities caps)
+
+        private static MenuFlyout ChoiceMenu(IEnumerable<MenuFlyoutItemBase> rows)
+        {
+            var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.TopEdgeAlignedLeft };
+            foreach (var row in rows) menu.Items.Add(row);
+            return menu;
+        }
+
+        /// <summary>
+        /// The model pill's menu (M/SessionPaneView.swift:326-350): the providers under their header, the model list's
+        /// refresh, then the models under theirs, the current provider and model checked. Entering a model ID by hand
+        /// stays at the end, where Windows had it.
+        /// </summary>
+        private MenuFlyout ModelMenu(RunSession pane, ModelCatalog catalog)
+        {
+            var rows = new List<MenuFlyoutItemBase> { MenuHeader(Locale.Get("composer.label.runner")) };
+            foreach (var value in Wire.Providers) rows.Add(Choice(ProviderCatalog.BetaLabel(value, ProviderMark.Label(value)), () => ChangeProvider(value), pane.Provider == value));
+            rows.Add(new MenuFlyoutSeparator());
+            var refresh = Item(Locale.Get(refreshingPaneModels ? "composer.model.refreshing" : "composer.model.refresh"), RefreshPaneModels); refresh.IsEnabled = !refreshingPaneModels;
+            rows.Add(refresh); rows.Add(new MenuFlyoutSeparator());
+            rows.Add(MenuHeader(Locale.Get("composer.label.model")));
+            foreach (var row in ModelLabel.PickerOptions(pane, catalog)) rows.Add(Choice(row.DisplayName, () => ChangeModel(row.Value), pane.Model == row.Value, row.Description.Length > 0 ? row.Description : null));
+            if (pane.Provider != "gemini") { rows.Add(new MenuFlyoutSeparator()); rows.Add(Item(Locale.Get("composer.model.enterIdMenu"), CustomModel)); }
+            return ChoiceMenu(rows);
+        }
+
+        /// <summary>Auto, then the levels the model takes, the current one checked (M/SessionPaneView.swift:359-366).</summary>
+        private IEnumerable<MenuFlyoutItemBase> EffortChoices(RunSession pane, string[] levels) =>
+            new[] { "default" }.Concat(levels).Select(value => (MenuFlyoutItemBase)Choice(EffortLabel(value), () => ChangeSettings(s => s with { Effort = value }), pane.Settings.Effort == value, value == "default" ? Locale.Get("composer.effort.auto") : null)).ToList();
+
+        /// <summary>The permission modes this runner takes, in the Mac's order (M/SessionPaneView.swift:385-392).</summary>
+        private IEnumerable<MenuFlyoutItemBase> PermissionChoices(RunSession pane, ProviderCapabilities caps)
+        {
+            var offered = (caps.PermissionModes ?? []).Where(ProviderCatalog.PermissionModes(pane.Provider).Contains).ToHashSet();
+            return new[] { "plan", "manual", "acceptEdits", "auto", "onRequest", "fullAccess" }.Where(offered.Contains).Select(mode => (MenuFlyoutItemBase)Choice(PermissionLabel(pane.Provider, mode),
+                () => ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode is ("acceptEdits" or "onRequest") && s.NetworkAccess }), pane.Settings.PermissionMode == mode, PermissionHelp(pane.Provider, mode))).ToList();
+        }
+
+        /// <summary>
+        /// The options menu of a narrow pane (M/SessionPaneView.swift:428-450): effort and permission as submenus
+        /// that say the current choice, Fast for Codex, then the run settings.
+        /// </summary>
+        private MenuFlyout OptionsMenu(RunSession pane, ProviderCapabilities caps, string[] levels)
+        {
+            var rows = new List<MenuFlyoutItemBase>();
+            if (caps.Effort || pane.Settings.Effort != "default")
+            {
+                var efforts = new MenuFlyoutSubItem { Text = Locale.Get("composer.effort.label") + " · " + EffortLabel(pane.Settings.Effort), IsEnabled = levels.Length > 0 || pane.Settings.Effort != "default" };
+                foreach (var row in EffortChoices(pane, levels)) efforts.Items.Add(row);
+                rows.Add(efforts);
+            }
+            var permissions = new MenuFlyoutSubItem { Text = Locale.Get("composer.label.permission") + " · " + PermissionLabel(pane.Provider, pane.Settings.PermissionMode) };
+            foreach (var row in PermissionChoices(pane, caps)) permissions.Items.Add(row);
+            rows.Add(permissions);
+            if (pane.Provider == "codex" && (caps.FastMode || pane.Settings.FastMode))
+            {
+                var quick = Choice(Locale.Get(pane.Settings.FastMode ? "composer.fast.on" : "composer.fast.off"), () => ChangeSettings(s => s with { FastMode = !s.FastMode && Capabilities.FastMode }), pane.Settings.FastMode, Locale.Get("composer.fast.tooltip"));
+                quick.IsEnabled = caps.FastMode || pane.Settings.FastMode; rows.Add(quick);
+            }
+            rows.Add(new MenuFlyoutSeparator());
+            rows.Add(Item(Locale.Get("composer.runSettings.more"), () => ShowRunSettings(options)));
+            return ChoiceMenu(rows);
+        }
+
+        /// <summary>
+        /// The pane's own actions that the composer's … menu used to list: rename, the plugin window and a new
+        /// conversation. The Mac keeps them in the pane header; here they stay reachable from the … pill's
+        /// context menu, since its click now opens the run settings as on the Mac.
+        /// </summary>
+        private MenuFlyout PaneActionsMenu(RunSession pane)
         {
             var menu = new MenuFlyout();
             var rename = Item(RenameStrings.MenuEntry, () => owner.RenameSession(id));
@@ -567,31 +753,12 @@ public sealed partial class MainWindow : Window
                     () => owner.OpenPluginBrowser(pane.Provider));
                 menu.Items.Add(plugins);
             }
-            menu.Items.Add(new MenuFlyoutSeparator());
             menu.Opening += (_, _) => { rename.IsEnabled = !owner.dialogOpen; if (plugins is not null) plugins.IsEnabled = !owner.dialogOpen; };
-            AddOverflowSettings(menu, pane, caps);
-            if (pane.Kind == "claude" && pane.Provider == "codex")
-            {
-                if (caps.WebSearch || pane.Settings.WebSearch != "default")
-                {
-                    var web = new MenuFlyoutSubItem { Text = Locale.Get("composer.webSearch.menu") };
-                    foreach (var value in caps.WebSearch ? new[] { "default", "disabled", "cached", "live" } : ["default"])
-                    { var title = Locale.Get(value == "default" ? "settings.run.webSearchDefault" : value == "disabled" ? "composer.webSearch.off" : value == "cached" ? "settings.run.webSearchCached" : "settings.run.webSearchLive"); web.Items.Add(Item(title, () => ChangeSettings(s => s with { WebSearch = value }), pane.Settings.WebSearch == value)); }
-                    menu.Items.Add(web);
-                }
-                if (caps.NetworkAccess || pane.Settings.NetworkAccess)
-                {
-                    var network = Item(Locale.Get("composer.network.toggle"), () => ChangeSettings(s => s with { NetworkAccess = !s.NetworkAccess && s.PermissionMode is ("acceptEdits" or "onRequest") && Capabilities.NetworkAccess }), pane.Settings.NetworkAccess, Locale.Get("composer.network.help"));
-                    network.IsEnabled = pane.Settings.NetworkAccess || caps.NetworkAccess && pane.Settings.PermissionMode is ("acceptEdits" or "onRequest"); menu.Items.Add(network);
-                }
-            }
-            if (pane.Kind == "claude" && (caps.MaxTurns || caps.MaxBudgetUsd)) menu.Items.Add(Item(Locale.Get("composer.limits.menu"), Limits));
             if (pane.Kind == "claude")
             {
-                if (menu.Items.Count > 0) menu.Items.Add(new MenuFlyoutSeparator());
+                menu.Items.Add(new MenuFlyoutSeparator());
                 menu.Items.Add(Item(Locale.Get("composer.newConversation"), () => owner.Act(ResetConversation)));
             }
-            if (menu.Items.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = Locale.Get("composer.more.empty"), IsEnabled = false });
             return menu;
         }
         internal void Refresh()
@@ -616,26 +783,6 @@ public sealed partial class MainWindow : Window
             var dialog = owner.StyledDialog(new ContentDialog { Title = Locale.Get("composer.model.enterIdTitle"), Content = content, XamlRoot = owner.root.XamlRoot, PrimaryButtonText = Locale.Get("composer.model.select"), CloseButtonText = Locale.Get("settings.run.cancelButton") });
             dialog.PrimaryButtonClick += (_, args) => { if (!Wire.Model(field.Text.Trim())) { validation.Text = Locale.Get("composer.model.invalidName"); args.Cancel = true; } };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ChangeModel(field.Text.Trim());
-        });
-        private Task Limits() => owner.Act(async () =>
-        {
-            var pane = Session; if (pane.Status == "running") return; var caps = Capabilities; var content = new StackPanel { Spacing = 10 };
-            var turns = new TextBox { Header = Locale.Get("composer.limits.maxTurns"), Text = pane.Settings.MaxTurns?.ToString(CultureInfo.InvariantCulture) ?? "" }; var budget = new TextBox { Header = Locale.Get("composer.limits.maxBudget"), Text = pane.Settings.MaxBudgetUsd?.ToString(CultureInfo.InvariantCulture) ?? "" };
-            if (caps.MaxTurns) content.Children.Add(turns); if (caps.MaxBudgetUsd) content.Children.Add(budget);
-            var validation = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = owner.brushes.Brush(DesignToken.ErrText) }; content.Children.Add(validation);
-            var dialog = owner.StyledDialog(new ContentDialog { Title = Locale.Get("settings.run.limitsTitle"), XamlRoot = owner.root.XamlRoot, Content = content, PrimaryButtonText = Locale.Get("settings.run.applyButton"), CloseButtonText = Locale.Get("settings.run.cancelButton") });
-            dialog.PrimaryButtonClick += async (sender, args) =>
-            {
-                var deferral = args.GetDeferral();
-                try
-                {
-                    int? maxTurns = caps.MaxTurns && turns.Text.Trim() != "" ? int.Parse(turns.Text, CultureInfo.InvariantCulture) : null; double? maxBudget = caps.MaxBudgetUsd && budget.Text.Trim() != "" ? double.Parse(budget.Text, CultureInfo.InvariantCulture) : null;
-                    var setting = Session.Settings with { MaxTurns = maxTurns, MaxBudgetUsd = maxBudget }; _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, "validation", [], pane.Model, pane.Provider, setting).Validate(); await Change(p => p with { Settings = setting });
-                }
-                catch (Exception ex) { args.Cancel = true; validation.Text = ex.Message; }
-                finally { deferral.Complete(); }
-            };
-            await dialog.ShowAsync(); Refresh(); input.Focus(FocusState.Programmatic);
         });
     }
 }

@@ -15,6 +15,7 @@ namespace MightyClaude.WinUI;
 internal sealed class DesignBrushes
 {
     private readonly Dictionary<(DesignToken Token, double Opacity), SolidColorBrush> brushes = [];
+    private readonly Dictionary<(DesignToken Token, double Opacity), SolidColorBrush> splitLines = [];
     private readonly Dictionary<string, SolidColorBrush> syntax = [];
     private readonly Dictionary<string, Brush> providers = [];
     private SolidColorBrush? subtle, segmentTrack, segmentOn;
@@ -35,8 +36,37 @@ internal sealed class DesignBrushes
         return brush;
     }
 
+    /// <summary>
+    /// How strongly <c>ink</c> shows where the Mac draws its tertiary label colour: <c>.foregroundStyle(.tertiary)</c>,
+    /// <c>NSColor.tertiaryLabelColor</c> and the placeholder of every text field (<c>placeholderTextColor</c>,
+    /// M/TextEditorHeightReader.swift:94). AppKit draws them as white × 0.25 by night and black × 0.26 by day; <c>ink</c> at
+    /// this strength gives the same #4F5460 on the dark card and #BEBFC3 on white (docs/design-system/crops/composer-codex-*.webp).
+    /// </summary>
+    internal const double TertiaryOpacity = 0.27;
+
+    /// <summary>
+    /// The Mac's tertiary ink (<see cref="TertiaryOpacity"/>): its quietest words and symbols, and every text box's
+    /// placeholder. Not <c>ink3</c>, which is the idle state's dot and nothing else (M/Palette.swift:105). Shared: never mutate it.
+    /// </summary>
+    internal SolidColorBrush Tertiary => Brush(DesignToken.Ink, TertiaryOpacity);
+
     /// <summary>The neutral wash for hover and selected rows: black by day, white by night, at 0.035. Shared: never mutate it.</summary>
     internal SolidColorBrush Subtle => subtle ??= new SolidColorBrush(ToColor(DesignTokens.Subtle(Palette), DesignMetrics.Opacity.Subtle));
+
+    /// <summary>
+    /// The line of an AppKit split view (the sidebar's trailing edge, M/WorkspaceView.swift:12, and the files pane's
+    /// splitter, M/FilePaneView.swift:22): black by night, as AppKit draws its dividers there (#000100 and #000305 on
+    /// docs/design-system/screens/01-main-mighty-diagram-dark.webp and crops/files-pane-dark.webp), and by day the
+    /// <paramref name="day"/> token at <paramref name="opacity"/> (the separator beside the sidebar, <c>line</c> in the
+    /// files pane). Derived per theme, so each is its own brush. Shared: never mutate it.
+    /// </summary>
+    internal SolidColorBrush SplitLine(DesignToken day, double opacity = 1)
+    {
+        if (!splitLines.TryGetValue((day, opacity), out var brush)) splitLines[(day, opacity)] = brush = new SolidColorBrush(SplitLineColor(Palette, day, opacity));
+        return brush;
+    }
+
+    private static Windows.UI.Color SplitLineColor(DesignPalette palette, DesignToken day, double opacity) => palette.IsDark ? ShadowColor : ToColor(palette[day], opacity);
 
     /// <summary>
     /// The hairline around the selected sidebar pane row: black at 0.07 in both themes, as the Mac
@@ -94,10 +124,11 @@ internal sealed class DesignBrushes
         return providers[id] = gradient;
     }
 
-    /// <summary>Every shared brush handed out so far (token, subtle, segment, syntax, provider, hairline, transparent), for the palette walk of the GUI smoke.</summary>
+    /// <summary>Every shared brush handed out so far (token, split line, subtle, segment, syntax, provider, hairline, transparent), for the palette walk of the GUI smoke.</summary>
     internal IEnumerable<Brush> HandedOut()
     {
         foreach (var brush in brushes.Values) yield return brush;
+        foreach (var brush in splitLines.Values) yield return brush;
         foreach (var brush in syntax.Values) yield return brush;
         foreach (var brush in providers.Values) yield return brush;
         foreach (var brush in new SolidColorBrush?[] { subtle, segmentTrack, segmentOn, RowSelectedBorder, Transparent }) if (brush is not null) yield return brush;
@@ -109,6 +140,7 @@ internal sealed class DesignBrushes
         if (ReferenceEquals(palette, Palette)) return;
         Palette = palette;
         foreach (var ((token, opacity), brush) in brushes) brush.Color = ToColor(palette[token], opacity);
+        foreach (var ((day, opacity), brush) in splitLines) brush.Color = SplitLineColor(palette, day, opacity);
         if (subtle is not null) subtle.Color = ToColor(DesignTokens.Subtle(palette), DesignMetrics.Opacity.Subtle);
         if (segmentTrack is not null) segmentTrack.Color = ToColor(palette.SegmentTrack);
         if (segmentOn is not null) segmentOn.Color = ToColor(palette.SegmentOn);

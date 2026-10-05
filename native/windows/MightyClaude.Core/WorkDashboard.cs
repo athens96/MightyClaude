@@ -84,7 +84,8 @@ public static class WorkDashboard
         if (card.Session.Status == "running")
         {
             if (card.Timing is { } timing) parts.Add(timing.Label(now));
-            if (card.ContextPercent is { } percent) parts.Add(Math.Round(percent, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture) + "%");
+            // "컨텍스트 41%" in the sidebar and the dashboard (M/WorkspaceView.swift:272, M/DashboardView.swift:322); the pane header keeps the bare figure.
+            if (card.ContextPercent is { } percent) parts.Add(Locale.Get("phone.card.context", new Dictionary<string, string> { ["percent"] = Math.Round(percent, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture) }));
         }
         else
         {

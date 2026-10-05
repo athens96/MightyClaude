@@ -1,4 +1,7 @@
 using MightyClaude.Core;
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Brushes;
+using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.UI.Dispatching;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
@@ -213,4 +216,172 @@ internal sealed class AgentPictures(AgentImageCache cache, DispatcherQueue dispa
         }
         return (bytes, (int)thumbnailWidth, (int)thumbnailHeight);
     }
+}
+
+/// <summary>
+/// The small marks the Mac draws into a transcript line as attachments (M/AgentTranscriptFormat.swift:92-150):
+/// a tool call's state as a 14pt filled square with its glyph, and the speaker's own provider mark at 13pt.
+/// An RTF line has no shapes, so each is a tiny PNG drawn once per look and device scale (Win2D, off screen)
+/// and kept as its ready <c>\pict</c> group. Null when the device cannot draw: the line then shows a glyph.
+/// </summary>
+internal static class TranscriptMarks
+{
+    /// <summary>The state square's side and corner radius (M/AgentTranscriptFormat.swift:134-137).</summary>
+    internal const double StatusSize = 14, StatusRadius = 4;
+    /// <summary>The provider mark's side (M/AgentTranscriptFormat.swift:97).</summary>
+    internal const double ProviderSize = 13;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> drawn = new();
+    /// <summary>
+    /// When a mark last failed to draw (<see cref="Environment.TickCount64"/>). A failure is not kept as the
+    /// mark: the next line that needs it tries again. But a device that is gone fails for every mark of every
+    /// line, so nothing is tried for <see cref="RetryAfter"/> milliseconds after one.
+    /// </summary>
+    private static long failedAt = -RetryAfter;
+    private const long RetryAfter = 2_000;
+
+    /// <summary>A mark by its key: the one already drawn, or a new drawing, kept only when it worked.</summary>
+    private static string? Mark(string key, Func<string?> draw)
+    {
+        if (drawn.TryGetValue(key, out var mark)) return mark;
+        if (Environment.TickCount64 - Interlocked.Read(ref failedAt) < RetryAfter) return null;
+        if (draw() is { } made) return drawn.GetOrAdd(key, made);
+        Interlocked.Exchange(ref failedAt, Environment.TickCount64);
+        return null;
+    }
+
+    /// <summary>
+    /// ✓ done, ✕ failed, ● still going (amber while it waits), – stopped: the fill of the state with only
+    /// its own glyph ink on it (<c>onStatus</c>; <c>onWait</c> on the amber).
+    /// </summary>
+    internal static string? Status(string state, bool live, DesignPalette palette, double scale, double lift)
+    {
+        var (fill, ink, glyph) = state switch
+        {
+            "completed" => (palette.Done, palette.OnStatus, 'c'),
+            "error" => (palette.Err, palette.OnStatus, 'x'),
+            "waiting" when live => (palette.Wait, palette.OnWait, 'o'),
+            "running" when live => (palette.Run, palette.OnStatus, 'o'),
+            _ => (palette.Stop, palette.OnStatus, 'm'),
+        };
+        return Mark($"status:{glyph}:{fill}:{ink}:{Pixels(StatusSize, scale)}:{Pixels(lift, scale)}", () => Draw(StatusSize, scale, lift, session =>
+        {
+            var paint = DesignBrushes.ToColor(ink);
+            session.FillRoundedRectangle(0, 0, (float)StatusSize, (float)StatusSize, (float)StatusRadius, (float)StatusRadius, DesignBrushes.ToColor(fill));
+            // The Mac's symbols are 8pt heavy (the dot 5pt), centred in the square.
+            using var stroke = new CanvasStrokeStyle { StartCap = CanvasCapStyle.Round, EndCap = CanvasCapStyle.Round, LineJoin = CanvasLineJoin.Round };
+            switch (glyph)
+            {
+                case 'c':
+                    using (var builder = new CanvasPathBuilder(session))
+                    {
+                        builder.BeginFigure(3.8f, 7.3f); builder.AddLine(6.05f, 9.5f); builder.AddLine(10.3f, 4.6f); builder.EndFigure(CanvasFigureLoop.Open);
+                        using var check = CanvasGeometry.CreatePath(builder);
+                        session.DrawGeometry(check, paint, 1.8f, stroke);
+                    }
+                    break;
+                case 'x': session.DrawLine(4.5f, 4.5f, 9.5f, 9.5f, paint, 1.8f, stroke); session.DrawLine(9.5f, 4.5f, 4.5f, 9.5f, paint, 1.8f, stroke); break;
+                case 'o': session.FillCircle(7, 7, 2.6f, paint); break;
+                default: session.DrawLine(4.2f, 7, 9.8f, 7, paint, 1.8f, stroke); break;
+            }
+        }));
+    }
+
+    /// <summary>The provider's own mark in its brand colours (Core <see cref="ProviderMark"/>), or null for a provider without one.</summary>
+    internal static string? Provider(string? provider, double scale, double lift)
+    {
+        if (ProviderMark.MarkedProvider(provider) is not { } marked) return null;
+        return Mark($"provider:{marked}:{Pixels(ProviderSize, scale)}:{Pixels(lift, scale)}", () => Draw(ProviderSize, scale, lift, session =>
+        {
+            using var builder = new CanvasPathBuilder(session);
+            builder.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Winding);
+            foreach (var figure in ProviderMark.Figures(marked))
+            {
+                builder.BeginFigure((float)figure.X, (float)figure.Y);
+                foreach (var segment in figure.Segments)
+                {
+                    if (segment is GlyphCurve curve) builder.AddCubicBezier(new((float)curve.X1, (float)curve.Y1), new((float)curve.X2, (float)curve.Y2), new((float)curve.X, (float)curve.Y));
+                    else builder.AddLine((float)segment.X, (float)segment.Y);
+                }
+                builder.EndFigure(figure.Closed ? CanvasFigureLoop.Closed : CanvasFigureLoop.Open);
+            }
+            using var outline = CanvasGeometry.CreatePath(builder);
+            var colors = ProviderMark.Colors(marked);
+            // The outline sits in its 24-unit box; Gemini's sweep runs from the bottom-left to the top-right corner.
+            session.Transform = System.Numerics.Matrix3x2.CreateScale((float)(ProviderSize / ProviderMark.Box)) * session.Transform;
+            if (colors.Count == 1) { session.FillGeometry(outline, DesignBrushes.ToColor(new DesignColor(colors[0]))); return; }
+            var stops = colors.Select((color, index) => new CanvasGradientStop { Color = DesignBrushes.ToColor(new DesignColor(color)), Position = (float)index / (colors.Count - 1) }).ToArray();
+            using var sweep = new CanvasLinearGradientBrush(session, stops) { StartPoint = new(0, (float)ProviderMark.Box), EndPoint = new((float)ProviderMark.Box, 0) };
+            session.FillGeometry(outline, sweep);
+        }));
+    }
+
+    private static int Pixels(double size, double scale) => Math.Max(0, (int)Math.Round(size * Math.Clamp(scale, 1, 4)));
+
+    /// <summary>
+    /// A square of <paramref name="size"/> epx drawn at the device's scale, as the <c>\pict</c> group shown at
+    /// that size. RichEdit hangs a picture from the top of its line (the paragraph's space before included)
+    /// and takes no baseline offset for one, so the square is drawn <paramref name="lift"/> epx down a taller,
+    /// clear picture: that puts it where the Mac's attachment bounds do.
+    /// </summary>
+    private static string? Draw(double size, double scale, double lift, Action<CanvasDrawingSession> paint)
+    {
+        try
+        {
+            int pixels = Math.Max(1, Pixels(size, scale)), above = Pixels(Math.Max(0, lift), scale);
+            var device = CanvasDevice.GetSharedDevice(forceSoftwareRenderer: true);
+            using var target = new CanvasRenderTarget(device, pixels, above + pixels, 96);
+            using (var session = target.CreateDrawingSession())
+            {
+                session.Clear(default(Windows.UI.Color)); // transparent: every channel 0
+                session.Antialiasing = CanvasAntialiasing.Antialiased;
+                session.Transform = System.Numerics.Matrix3x2.CreateScale((float)(pixels / size)) * System.Numerics.Matrix3x2.CreateTranslation(0, above);
+                paint(session);
+            }
+            // The goal is in twips (15 an epx), so the picture is shown on the device pixels it was drawn with.
+            var twips = 15 / Math.Clamp(scale, 1, 4);
+            return new System.Text.StringBuilder(@"{\pict\pngblip\picw").Append(pixels).Append(@"\pich").Append(above + pixels)
+                .Append(@"\picwgoal").Append((int)Math.Round(pixels * twips)).Append(@"\pichgoal").Append((int)Math.Round((above + pixels) * twips)).Append(' ')
+                .Append(Convert.ToHexString(Png(target.GetPixelBytes(), pixels, above + pixels))).Append('}').ToString();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { return null; }
+    }
+
+    /// <summary>A PNG of premultiplied BGRA pixels: straight RGBA, no filter, one zlib stream.</summary>
+    private static byte[] Png(byte[] bgra, int width, int height)
+    {
+        var raw = new byte[(width * 4 + 1) * height];
+        for (var y = 0; y < height; y++)
+        {
+            var row = y * (width * 4 + 1) + 1;
+            for (var x = 0; x < width; x++)
+            {
+                var from = (y * width + x) * 4; var to = row + x * 4; var alpha = bgra[from + 3];
+                byte Straight(byte value) => alpha == 0 ? (byte)0 : (byte)Math.Min(255, value * 255 / alpha);
+                raw[to] = Straight(bgra[from + 2]); raw[to + 1] = Straight(bgra[from + 1]); raw[to + 2] = Straight(bgra[from]); raw[to + 3] = alpha;
+            }
+        }
+        using var packed = new MemoryStream();
+        using (var zlib = new System.IO.Compression.ZLibStream(packed, System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true)) zlib.Write(raw);
+        using var png = new MemoryStream();
+        png.Write([137, 80, 78, 71, 13, 10, 26, 10]);
+        var header = new byte[13];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(header, width); System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
+        header[8] = 8; header[9] = 6; // 8 bits a channel, RGBA
+        Chunk(png, "IHDR"u8, header); Chunk(png, "IDAT"u8, packed.ToArray()); Chunk(png, "IEND"u8, []);
+        return png.ToArray();
+    }
+
+    private static void Chunk(Stream png, ReadOnlySpan<byte> type, byte[] data)
+    {
+        Span<byte> word = stackalloc byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(word, data.Length); png.Write(word);
+        png.Write(type); png.Write(data);
+        var crc = uint.MaxValue;
+        void Add(ReadOnlySpan<byte> bytes) { foreach (var value in bytes) { crc ^= value; for (var bit = 0; bit < 8; bit++) crc = (crc & 1) != 0 ? (crc >> 1) ^ PngPolynomial : crc >> 1; } }
+        Add(type); Add(data);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(word, ~crc); png.Write(word);
+    }
+
+    /// <summary>The reversed CRC-32 polynomial every PNG chunk is checked with.</summary>
+    private const uint PngPolynomial = 0xEDB88320u;
 }

@@ -134,6 +134,10 @@ public sealed partial class MainWindow
             await WaitUI(() => dots.LastDraw.Filled && Math.Abs(dots.LastDraw.Step - dots.Step) < 1e-9 && Hex(dots.LastDraw.Color) == lineHex
                     && dots.LastDraw.OffsetX == graphPan.X && dots.LastDraw.OffsetY == graphPan.Y && Math.Abs(dots.LastDraw.Width - viewport.ActualWidth) < .5 && Math.Abs(dots.LastDraw.Height - viewport.ActualHeight) < .5,
                 () => $"{key} ({theme}): the dot grid must fill the viewport with a {dots.Step} tile in token Line {lineHex} at the camera offset ({graphPan.X:F1}, {graphPan.Y:F1}); its last draw: {Drawn()}");
+            // The dot stands on the middle of a device pixel in the tile's middle, so that pixel is all line colour (M/MightyGraphView.swift:1003-1008).
+            var tilePixels = dots.Step * viewport.XamlRoot.RasterizationScale; var centre = dots.DotCentrePixels;
+            Require(Math.Abs(centre - Math.Floor(centre) - 0.5) < 1e-6 && Math.Abs(centre - tilePixels / 2) <= 0.5 + 1e-6,
+                $"{key} ({theme}): the tile's dot must stand on the middle of the device pixel in the tile's middle; got {centre:F3} px in a tile of {tilePixels:F3} px");
             // A pan moves the same tile: it draws again at the new offset without building another.
             // Win2D may ask for its resources again at any time (a theme change can reload the control),
             // which rebuilds the tile; only builds beyond those would come from the pan.
@@ -148,32 +152,48 @@ public sealed partial class MainWindow
             }
             finally { UserPan(-7, 0); }
 
-            // The Mighty bar.
-            var bar = graphToolbar!;
-            Require(bar.Padding == new Thickness(12, 10, 12, 10) && bar.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
-                $"{key} ({theme}): the Mighty bar must have padding h12 v10 over a bottom Stroke.Line rule; got {bar.Padding}, {bar.BorderThickness}");
+            // The Mighty bar (M/MightyGraphView.swift:175-201): one row, the view switch first, then the title and
+            // the summary on the same line, the zoom at the right; padding h12 v10, its parts 10 apart, over a line.
+            var bar = graphToolbar!; var lead = graphToolbarLead!; var track = graphViewSwitch!;
+            Require(bar.Padding == new Thickness(12, 10, 12, 10) && bar.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line) && bar.ColumnSpacing == 10 && lead.Spacing == 10,
+                $"{key} ({theme}): the Mighty bar must have padding h12 v10 and its parts 10 apart over a bottom Stroke.Line rule; got {bar.Padding}, {bar.BorderThickness}, spacing {bar.ColumnSpacing} / {lead.Spacing}");
             o.RequireBrush(bar, e => ((Grid)e).BorderBrush, DesignToken.Line, "the rule under the Mighty bar", key: key);
+            Require(bar.RowDefinitions.Count == 0 && lead.Children.Count == 3 && ReferenceEquals(lead.Children[0], track) && ReferenceEquals(lead.Children[1], graphStyleHeader) && ReferenceEquals(lead.Children[2], graphStyleBadge)
+                    && Grid.GetColumn(lead) == 0 && Grid.GetColumn(graphTotal) == 1 && Grid.GetColumn(graphZoomControls!) == 2,
+                $"{key} ({theme}): the Mighty bar must be one row: the view switch, the title and its badge, the summary, then the zoom; got {lead.Children.Count} leading parts in columns {Grid.GetColumn(lead)} / {Grid.GetColumn(graphTotal)} / {Grid.GetColumn(graphZoomControls!)}");
+            // 10 + the switch (22 in a 2pt track) + 10, over the rule.
+            var barHeight = 2 * 10 + 22 + 2 * 2 + DesignMetrics.Stroke.Line;
+            double Left(FrameworkElement part) => part.TransformToVisual(bar).TransformPoint(new Windows.Foundation.Point()).X;
+            Require(Math.Abs(bar.ActualHeight - barHeight) < .5 && Left(track) < Left(graphStyleHeader) && Left(graphStyleHeader) < Left(graphTotal) && Left(graphTotal) < Left(graphZoomControls!),
+                $"{key} ({theme}): the Mighty bar must be {barHeight} tall with the switch, the title, the summary and the zoom from left to right; got {bar.ActualHeight:F1} tall, at x {Left(track):F1} / {Left(graphStyleHeader):F1} / {Left(graphTotal):F1} / {Left(graphZoomControls!):F1}");
+            Require(Math.Abs(Left(track) - 12) < .5 && Math.Abs(Left(graphStyleHeader) - (Left(track) + track.ActualWidth + 10)) < .5,
+                $"{key} ({theme}): the view switch must lead the bar at its 12pt padding with the title 10 after it; got the switch at {Left(track):F1} ({track.ActualWidth:F1} wide), the title at {Left(graphStyleHeader):F1}");
             RequireFont(graphStyleHeader, DesignMetrics.Type.Block, FontWeights.Bold, $"({theme}) the Mighty bar title", key);
             o.RequireBrush(graphStyleHeader, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the Mighty bar title", key: key);
             Require(graphTotal.FontSize == DesignMetrics.Type.Small, $"{key} ({theme}): the Mighty bar summary must be Type.Small {DesignMetrics.Type.Small}pt; got {graphTotal.FontSize}");
             o.RequireBrush(graphTotal, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the Mighty bar summary", key: key);
-            var track = graphViewSwitch!;
-            Require(track.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && track.Padding == new Thickness(2), $"{key} ({theme}): the view switch track must be radius {DesignMetrics.Radius.Row}, padding 2; got {track.CornerRadius}, {track.Padding}");
+            Require(track.CornerRadius == new CornerRadius(DesignMetrics.Radius.Row) && track.Padding == new Thickness(2) && track.Spacing == 2, $"{key} ({theme}): the view switch track must be radius {DesignMetrics.Radius.Row}, padding 2, its options 2 apart; got {track.CornerRadius}, {track.Padding}, {track.Spacing}");
             o.RequireBrush(track, e => ((StackPanel)e).Background, DesignToken.Track, "the view switch track", key: key);
+            Require(ViewWordsShown, $"{key} ({theme}): a bar this wide ({bar.ActualWidth:F0}) must show the view switch's words");
             foreach (var (option, selected, what) in new[] { (diagramButton!, true, "the chosen view (Diagram)"), (timelineButton!, false, "the other view (Timeline)") })
             {
-                // The look is on the option's chip and words; the button keeps the resources written once.
-                var chip = (Border)option.Content; var optionWords = (TextBlock)chip.Child;
+                // The look is on the option's chip, symbol and words; the button keeps the resources written once.
+                var (chip, optionSymbol, optionWords) = ViewOptionParts(option);
                 Require(option.Height == 22 && option.Padding == new Thickness(0) && chip.Padding == new Thickness(9, 0, 9, 0) && option.CornerRadius == new CornerRadius(DesignMetrics.Radius.Segment) && chip.CornerRadius == option.CornerRadius,
                     $"{key} ({theme}): {what} must be 22 tall, its chip padding h9, both radius {DesignMetrics.Radius.Segment}; got {option.Height}, chip padding {chip.Padding} (button {option.Padding}), {option.CornerRadius} / {chip.CornerRadius}");
                 RequireFont(optionWords, DesignMetrics.Type.Pill, selected ? FontWeights.Bold : FontWeights.SemiBold, $"({theme}) {what}", key);
                 o.RequireBrush(optionWords, e => ((TextBlock)e).Foreground, selected ? DesignToken.Ink : DesignToken.Ink2, what + "'s words", key: key);
+                // Each option carries its symbol before its word (M/MightyGraphTimelineView.swift:17-18), in the word's ink.
+                Require(optionSymbol is Microsoft.UI.Xaml.Shapes.Path { IsLoaded: true, ActualWidth: > 0 } && Left(optionSymbol) < Left(optionWords),
+                    $"{key} ({theme}): {what} must draw its symbol before its word; got {optionSymbol.GetType().Name} at {Left(optionSymbol):F1}, the word at {Left(optionWords):F1}");
+                o.RequireBrush(optionSymbol, e => ((Microsoft.UI.Xaml.Shapes.Path)e).Stroke, selected ? DesignToken.Ink : DesignToken.Ink2, what + "'s symbol", key: key);
                 if (selected) o.RequireBrush(chip, e => ((Border)e).Background, DesignToken.Card, what + "'s chip", key: key);
                 else o.RequireClear(chip.Background, what + "'s chip", key);
                 o.RequireClear(option.Background, what + "'s button at rest", key);
                 o.RequireSubtle(await StateBackground(option, "PointerOver", b.Subtle, key), what + " under the pointer", key);
             }
-            Require(zoomResetButton!.Width == 38, $"{key} ({theme}): the zoom percentage must be 38 wide; got {zoomResetButton.Width}");
+            Require(zoomResetButton!.Width == 38 && zoomResetButton.Content is TextBlock { FontSize: DesignMetrics.Type.Body },
+                $"{key} ({theme}): the zoom percentage must be 38 wide in the body size {DesignMetrics.Type.Body}; got {zoomResetButton.Width}, {(zoomResetButton.Content as TextBlock)?.FontSize}");
             foreach (var zoom in new[] { zoomOutButton!, zoomResetButton, zoomInButton! })
                 o.RequireBrush(zoom, e => ((Control)e).Foreground, DesignToken.Ink2, "the zoom control " + AutomationProperties.GetAutomationId(zoom), key: key);
 
@@ -184,10 +204,24 @@ public sealed partial class MainWindow
             Require(card.Padding == new Thickness(0), $"{key} ({theme}): a block card insets nothing, so its header and band run edge to edge; got padding {card.Padding}");
             o.RequireBrush(card, e => ((Border)e).Background, DesignToken.Card, "a block card", key: key);
             o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "a block card's edge", key: key);
-            var header = view.Header!;
-            Require(header.Height == DesignMetrics.Layout.BlockHead + DesignMetrics.Stroke.Line && header.Padding == new Thickness(12, 0, 12, 0) && header.ColumnSpacing == 7 && header.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
-                $"{key} ({theme}): a block header must be Layout.BlockHead {DesignMetrics.Layout.BlockHead} over a Stroke.Line rule, padding h12, spacing 7; got {header.Height}, {header.Padding}, {header.ColumnSpacing}, {header.BorderThickness}");
+            // The Mac strokes the card's 1pt edge over its content (M/MightyGraphActivityView.swift:142-146): the 38pt head
+            // and its h12 padding are measured from the card's own edge, the edge included.
+            var header = view.Header!; var edge = card.BorderThickness.Left;
+            Require(header.Height + edge == DesignMetrics.Layout.BlockHead + DesignMetrics.Stroke.Line && header.Padding == new Thickness(12 - edge, 0, 12 - edge, 0) && header.ColumnSpacing == 7 && header.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
+                $"{key} ({theme}): a block header must end Layout.BlockHead {DesignMetrics.Layout.BlockHead} from the card's top over a Stroke.Line rule, padding h12 from the card's edge, spacing 7; got {header.Height} under a {edge} edge, {header.Padding}, {header.ColumnSpacing}, {header.BorderThickness}");
             o.RequireBrush(header, e => ((Grid)e).BorderBrush, DesignToken.Line, "the rule under a block header", key: key);
+            // The head starts with the block's symbol in its tint (a plain request: the message with its arrow, in accent).
+            Require(view.Symbol is { IsLoaded: true } headed && Math.Abs(headed.ActualWidth - (headed is IconElement ? 13 : Math.Round(13 * MightySymbols.DrawnScale * 2) / 2)) < .5 && ReferenceEquals(header.Children[0], headed),
+                $"{key} ({theme}): a block header must start with its 13pt symbol (a drawn one {MightySymbols.DrawnScale} times as wide, as on the Mac); got {view.Symbol?.GetType().Name ?? "none"} {view.Symbol?.ActualWidth}");
+            o.RequireBrush(view.Symbol!, SymbolInk, TintToken(RequestStyleLook(live.Input).Tint), "the request block's symbol", key: key);
+            foreach (var (agentId, token, what) in new[] { (waiting, DesignToken.AgentText, "the waiting sub-agent"), (MightyGraphLayout.NodeID(live, "agent:design-smoke-live-finished"), DesignToken.AgentText, "the finished sub-agent") })
+                o.RequireBrush(graphCardViews[agentId].Symbol ?? throw new InvalidOperationException($"{key} ({theme}): {what}'s header has no symbol"), SymbolInk, token, what + "'s symbol", key: key);
+            // It ends with the expand control, the last of its parts (M/MightyGraphView.swift:538-547), 12 from the card's edge.
+            var expand = view.Expand ?? throw new InvalidOperationException($"{key} ({theme}): the request block's header has no expand control");
+            var controls = (StackPanel)header.Children[^1];
+            Require(ReferenceEquals(controls.Children[^1], expand) && controls.Spacing == 7 && AutomationProperties.GetAutomationId(expand) == "mighty-expand-" + liveRequest,
+                $"{key} ({theme}): a block header must end with its expand control, its trailing parts 7 apart; got {controls.Children.Count} parts {controls.Spacing} apart");
+            o.RequireBrush(expand, e => ((Control)e).Foreground, DesignToken.Ink2, "the expand control", key: key);
             var title = graphTitles[liveRequest];
             var words = Words(title);
             Require(words.Count > 0 && words.All(w => w.FontSize == DesignMetrics.Type.Block && w.FontWeight.Weight == FontWeights.Bold.Weight),
@@ -195,9 +229,12 @@ public sealed partial class MainWindow
             foreach (var word in words) o.RequireBrush(word, e => ((TextBlock)e).Foreground, DesignToken.Ink, $"the request header word '{word.Text}'", key: key);
             if (ProviderMark.MarkedProvider(Session.Provider) is { } marked)
                 Require(ProviderMarkView.LabelledProvider(title) == marked, $"{key} ({theme}): the request header must carry the {marked} mark before its name; got {ProviderMarkView.LabelledProvider(title) ?? "none"}");
+            // The request keeps its place between the header and the transcript, its words 14 to 64 tall and scrolling within (M/MightyGraphView.swift:551-556, 1025-1042).
             var band = view.RequestBand!;
-            Require(band.Visibility == Visibility.Visible && band.Padding == new Thickness(12, 8, 12, 8) && band.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
-                $"{key} ({theme}): the request band must show with padding h12 v8 over a Stroke.Line rule; got {band.Visibility}, {band.Padding}, {band.BorderThickness}");
+            Require(band.Visibility == Visibility.Visible && band.Padding == new Thickness(12 - edge, 8, 12 - edge, 8) && band.BorderThickness == new Thickness(0, 0, 0, DesignMetrics.Stroke.Line),
+                $"{key} ({theme}): the request band must show with padding h12 (from the card's edge) v8 over a Stroke.Line rule; got {band.Visibility}, {band.Padding}, {band.BorderThickness}");
+            Require(view.Body!.Children.Contains(band) && Grid.GetRow(band) == 1 && band.Child is ScrollViewer { MaxHeight: 64 } && view.Request!.MinHeight == 14 && graphBodies.TryGetValue(liveRequest, out var transcriptScroll) && Grid.GetRow(transcriptScroll) == 2,
+                $"{key} ({theme}): the request band must stand between the header and the scrolling transcript, its words at most 64 tall; got row {Grid.GetRow(band)}, {band.Child?.GetType().Name}");
             o.RequireBrush(band, e => ((Border)e).Background, TintToken(RequestStyleLook(live.Input).Tint), "the request band (inputPreview)", DesignMetrics.Opacity.InputPreview, key);
             Require(view.Request!.FontSize == DesignMetrics.Type.Pill, $"{key} ({theme}): the request text must be {DesignMetrics.Type.Pill}pt; got {view.Request.FontSize}");
             o.RequireBrush(view.Request, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the request text", key: key);
@@ -242,50 +279,119 @@ public sealed partial class MainWindow
                 $"{key} ({theme}): the waiting sub-agent must keep a solid 2pt outline");
             o.RequireBrush(still.Line, e => ((Rectangle)e).Stroke, DesignToken.Wait, "the waiting outline", key: key);
 
-            // The draft's dashed accent edge: [5, 4] pt at 1.5pt.
-            var draft = graphDraftOutline!;
+            // The corner handle (M/MightyGraphView.swift:928-942): the two arrows in ink2 on card x 0.95, 22 square, radius 5, 2 from the card's corner.
+            var grip = view.Grip ?? throw new InvalidOperationException($"{key} ({theme}): the request block has no corner handle");
+            Require(grip.Width == 22 && grip.Height == 22 && grip.CornerRadius == new CornerRadius(DesignMetrics.Radius.FileRow) && grip.Margin == new Thickness(0, 0, 2 - edge, 2 - edge) && grip.HorizontalAlignment == HorizontalAlignment.Right && grip.VerticalAlignment == VerticalAlignment.Bottom,
+                $"{key} ({theme}): a block's corner handle must be 22 square, radius {DesignMetrics.Radius.FileRow}, 2 from the card's bottom right corner; got {grip.Width}x{grip.Height}, {grip.CornerRadius}, {grip.Margin}");
+            o.RequireBrush(grip, e => ((Border)e).Background, DesignToken.Card, "the corner handle's backing", GripOpacity, key);
+            o.RequireBrush(view.GripSymbol!, SymbolInk, DesignToken.Ink2, "the corner handle's arrows", key: key);
+
+            // The draft (M/MightyGraphView.swift:404-420): its dashed accent edge, [5, 4] pt at 1.5pt, stroked on the card's outline;
+            // inside, 16 from the edge, "Next request" 12 semibold after its pencil, the state word 11 ink2, the draft 12 in four lines at most.
+            var draft = graphDraftOutline!; var draftCard = graphCards[draftId]; var draftView = graphCardViews[draftId];
             var draftDash = draft.StrokeDashArray?.ToArray() ?? [];
             Require(draft.StrokeThickness == DesignMetrics.Dash.DraftWidth && draftDash.Length == 2 && Math.Abs(draftDash[0] - 5 / 1.5) < 1e-6 && Math.Abs(draftDash[1] - 4 / 1.5) < 1e-6,
                 $"{key} ({theme}): the draft edge must be {DesignMetrics.Dash.DraftWidth}pt in [3.3333, 2.6667] stroke units ([5, 4] pt); got {draft.StrokeThickness}pt [{string.Join(", ", draftDash.Select(d => d.ToString("F4")))}]");
+            Require(Math.Abs(draft.Width - (draftCard.Width + DesignMetrics.Dash.DraftWidth)) < 1e-9 && Math.Abs(Canvas.GetLeft(draft) - (Canvas.GetLeft(draftCard) - DesignMetrics.Dash.DraftWidth / 2)) < 1e-9 && draft.RadiusX == DesignMetrics.Radius.Block,
+                $"{key} ({theme}): the draft's dashes must run on the card's radius-{DesignMetrics.Radius.Block} outline, half the line inside it; got {draft.Width} wide at {Canvas.GetLeft(draft)} for a {draftCard.Width} card at {Canvas.GetLeft(draftCard)}, radius {draft.RadiusX}");
             o.RequireBrush(draft, e => ((Rectangle)e).Stroke, DesignToken.Accent, "the draft's dashed edge (draft)", DesignMetrics.Opacity.Draft, key);
-            Require(graphCards[draftId].BorderThickness == new Thickness(0), $"{key} ({theme}): the draft card shows only its dashes; got a {graphCards[draftId].BorderThickness} edge");
+            Require(draftCard.BorderThickness == new Thickness(0), $"{key} ({theme}): the draft card shows only its dashes; got a {draftCard.BorderThickness} edge");
+            var (draftTitle, draftState, draftText) = (draftView.DraftTitle!, draftView.DraftState!, draftView.Request!);
+            RequireFont(draftTitle, DesignMetrics.Type.Block, FontWeights.SemiBold, $"({theme}) the draft's title", key);
+            o.RequireBrush(draftTitle, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the draft's title", key: key);
+            o.RequireBrush(draftView.DraftSymbol!, SymbolInk, DesignToken.Ink, "the draft's pencil", key: key);
+            Require(draftTitle.Text == MightyGraphBlockModel.DraftTitle(true) && draftState.Text == MightyGraphBlockModel.DraftState(Session.Draft) && draftState.FontSize == DesignMetrics.Type.Pill && draftText.Text == Session.Draft && draftText.FontSize == DesignMetrics.Type.Block && draftText.MaxLines == 4,
+                $"{key} ({theme}): the draft must read '{MightyGraphBlockModel.DraftTitle(true)}' and '{MightyGraphBlockModel.DraftState(Session.Draft)}' (11pt) over the draft itself (12pt, four lines); got '{draftTitle.Text}', '{draftState.Text}' ({draftState.FontSize}pt), '{draftText.Text}' ({draftText.FontSize}pt, {draftText.MaxLines} lines)");
+            o.RequireBrush(draftState, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the draft's state word", key: key);
+            o.RequireBrush(draftText, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the draft's words", key: key);
+            double InCard(FrameworkElement part, bool vertical) { var at = part.TransformToVisual(draftCard).TransformPoint(new Windows.Foundation.Point()); return vertical ? at.Y : at.X; }
+            Require(Math.Abs(InCard(draftView.DraftSymbol!, false) - 16) < .5 && Math.Abs(InCard(draftText, false) - 16) < .5 && Math.Abs(InCard(draftText, true) - (InCard(draftTitle, true) + draftTitle.ActualHeight + 10)) < 1.5 && draftView.Expand is null,
+                $"{key} ({theme}): the draft's parts must sit 16 inside its card, the draft 10 under its title, with no expand control; got x {InCard(draftView.DraftSymbol!, false):F1} / {InCard(draftText, false):F1}, y {InCard(draftTitle, true):F1} + {draftTitle.ActualHeight:F1} then {InCard(draftText, true):F1}");
 
-            // The result card's outcome strip: heroFill(done), every word heroInk.
-            var result = graphCardViews[doneResult]; var strip = result.Header!;
+            // The result card's outcome strip: heroFill(done), its seal and every word heroInk. The Mac draws the strip as a
+            // shape of the card's own radius, round at all four corners (docs/design-system/crops/result-card-*.webp).
+            var result = graphCardViews[doneResult]; var strip = result.Header!; var resultEdge = result.Card.BorderThickness.Left;
             o.RequireBrush(strip, e => ((Grid)e).Background, DesignPalette.FillToken(DesignTone.Done), "the finished result's strip (heroFill)", key: key);
-            Require(strip.Height == DesignMetrics.Layout.BlockHead && strip.BorderThickness == new Thickness(0) && strip.CornerRadius == new CornerRadius(DesignMetrics.Radius.Block - 1, DesignMetrics.Radius.Block - 1, 0, 0),
-                $"{key} ({theme}): the result strip must be Layout.BlockHead {DesignMetrics.Layout.BlockHead} with no rule and the card's top corners; got {strip.Height}, {strip.BorderThickness}, {strip.CornerRadius}");
+            Require(strip.Height + resultEdge == DesignMetrics.Layout.BlockHead && strip.BorderThickness == new Thickness(0) && strip.CornerRadius == new CornerRadius(DesignMetrics.Radius.Block - resultEdge),
+                $"{key} ({theme}): the result strip must end Layout.BlockHead {DesignMetrics.Layout.BlockHead} from the card's top with no rule and the card's radius at every corner; got {strip.Height} under a {resultEdge} edge, {strip.BorderThickness}, {strip.CornerRadius}");
             foreach (var word in Words(graphTitles[doneResult]))
                 o.RequireBrush(word, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the result title on its strip (heroInk)", key: key);
+            o.RequireBrush(result.Symbol ?? throw new InvalidOperationException($"{key} ({theme}): the result strip has no seal"), SymbolInk, DesignToken.OnStatus, "the result strip's seal (heroInk)", key: key);
             Require(result.StatePill is null, $"{key} ({theme}): the result strip shows no status pill");
             // Core gives a result block no usage capsule (it has no records of its own), as on the Mac.
             Require(result.Capsule is null, $"{key} ({theme}): the result strip shows no usage capsule");
 
-            // Edges: ink2 x 0.45 at 1.5pt; run at 2pt into the running request; each with its arrowhead.
-            var into = graphEdgeLines.FirstOrDefault(e => e.Target == liveRequest); var quiet = graphEdgeLines.FirstOrDefault(e => e.Target == draftId);
-            Require(into.Line is not null && quiet.Line is not null,
-                $"{key} ({theme}): the diagram must draw an edge into the running request and one into the draft; edges into [{string.Join(", ", graphEdgeLines.Select(e => e.Target))}]");
-            foreach (var (edge, token, opacity, width, what) in new[] { (into, DesignToken.Run, 1.0, DesignMetrics.Stroke.Active, "the edge into the running request"), (quiet, DesignToken.Ink2, DesignMetrics.Opacity.Edge, DesignMetrics.Stroke.Focus, "the edge into the draft") })
+            // Edges (M/MightyGraphView.swift:372-398): each turns once on its way down and ends under an arrow head 4 to
+            // either side and 6 back; the quiet ones are one ink2 x 0.45 stroke at 1.5pt, those into a running block one run stroke at 2pt.
+            var into = graphEdgeRoutes.FirstOrDefault(e => e.Target == liveRequest); var quiet = graphEdgeRoutes.FirstOrDefault(e => e.Target == draftId);
+            Require(into.Route is not null && into.Live && quiet.Route is not null && !quiet.Live,
+                $"{key} ({theme}): the diagram must draw a run edge into the running request and a quiet one into the draft; edges into [{string.Join(", ", graphEdgeRoutes.Select(e => e.Target + (e.Live ? " (run)" : "")))}]");
+            foreach (var (edgeRoute, what) in new[] { (into, "the edge into the running request"), (quiet, "the edge into the draft") })
             {
-                Require(edge.Line.StrokeThickness == width && edge.Head.StrokeThickness == width && edge.Head.Points.Count == 3 && ReferenceEquals(edge.Line.Stroke, edge.Head.Stroke),
-                    $"{key} ({theme}): {what} must be {width}pt with a three-point arrowhead in the same brush; got {edge.Line.StrokeThickness}pt, head {edge.Head.StrokeThickness}pt with {edge.Head.Points.Count} points");
-                o.RequireBrush(edge.Line, e => ((Microsoft.UI.Xaml.Shapes.Line)e).Stroke, token, what, opacity, key);
+                var (route, head) = (edgeRoute.Route, edgeRoute.Head);
+                Require(route.Length == 4 && route[0].X == route[1].X && route[1].Y == route[2].Y && route[2].X == route[3].X && route[3].Y > route[0].Y
+                        && head.Length == 3 && head[1] == route[3] && head[0] == new Windows.Foundation.Point(route[3].X - 4, route[3].Y - 6) && head[2] == new Windows.Foundation.Point(route[3].X + 4, route[3].Y - 6),
+                    $"{key} ({theme}): {what} must go down, across and down to its block's top centre under a (±4, −6) arrow head; got route [{string.Join(" ", route.Select(p => $"({p.X:F1},{p.Y:F1})"))}] head [{string.Join(" ", head.Select(p => $"({p.X:F1},{p.Y:F1})"))}]");
+            }
+            foreach (var (stroke, live2, token, opacity, width, what) in new[] { (graphLiveEdges, true, DesignToken.Run, 1.0, DesignMetrics.Stroke.Active, "the stroke of the edges into running blocks"), (graphQuietEdges, false, DesignToken.Ink2, DesignMetrics.Opacity.Edge, DesignMetrics.Stroke.Focus, "the stroke of the quiet edges") })
+            {
+                var figures = (stroke.Data as PathGeometry)?.Figures.Count ?? -1; var expected = 2 * graphEdgeRoutes.Count(e => e.Live == live2);
+                Require(stroke.StrokeThickness == width && figures == expected && graphCanvas.Children.Contains(stroke) && stroke.StrokeLineJoin == PenLineJoin.Round && stroke.StrokeEndLineCap == PenLineCap.Round,
+                    $"{key} ({theme}): {what} must be one {width}pt round-capped path of {expected} figures (a route and a head for each edge); got {stroke.StrokeThickness}pt, {figures} figures");
+                o.RequireBrush(stroke, e => ((Microsoft.UI.Xaml.Shapes.Path)e).Stroke, token, what, opacity, key);
             }
 
-            // Selection: 2pt accent, back to 1pt line.
+            // Selection (M/MightyGraphView.swift:498, 917-924, 932): a 2pt accent line on the card's outline (a point inside, a
+            // point outside), the scroll hint in the header and the corner handle in accent; the card keeps its own 1pt line edge.
+            Require(view.ScrollHint is { Visibility: Visibility.Collapsed } && (graphSelectionOutline is null || !graphCanvas.Children.Contains(graphSelectionOutline)),
+                $"{key} ({theme}): with nothing selected no block shows the scroll hint or the selection outline");
             SelectGraphBlock(liveRequest);
             try
             {
-                RequireThickness(card, DesignMetrics.Stroke.Active, $"({theme}) the selected block (Stroke.Active)", key);
-                o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Accent, "the selected block's edge", key: key);
+                var selection = graphSelectionOutline ?? throw new InvalidOperationException($"{key} ({theme}): the selected block has no outline");
+                Require(graphCanvas.Children.Contains(selection) && selection.StrokeThickness == DesignMetrics.Stroke.Active && selection.RadiusX == DesignMetrics.Radius.Block
+                        && Math.Abs(selection.Width - (card.Width + 2)) < 1e-9 && Math.Abs(selection.Height - (card.Height + 2)) < 1e-9 && Math.Abs(Canvas.GetLeft(selection) - (Canvas.GetLeft(card) - 1)) < 1e-9 && Math.Abs(Canvas.GetTop(selection) - (Canvas.GetTop(card) - 1)) < 1e-9,
+                    $"{key} ({theme}): the selection must be a {DesignMetrics.Stroke.Active}pt line on the card's radius-{DesignMetrics.Radius.Block} outline; got {selection.StrokeThickness}pt, radius {selection.RadiusX}, {selection.Width}x{selection.Height} at ({Canvas.GetLeft(selection)}, {Canvas.GetTop(selection)}) for a {card.Width}x{card.Height} card at ({Canvas.GetLeft(card)}, {Canvas.GetTop(card)})");
+                o.RequireBrush(selection, e => ((Rectangle)e).Stroke, DesignToken.Accent, "the selected block's outline", key: key);
+                RequireThickness(card, DesignMetrics.Stroke.Line, $"({theme}) the selected block's own edge (Stroke.Line)", key);
+                o.RequireBrush(card, e => ((Border)e).BorderBrush, DesignToken.Line, "the selected block's own edge", key: key);
+                Require(view.ScrollHint is { Visibility: Visibility.Visible, FontSize: DesignMetrics.Type.Badge }, $"{key} ({theme}): the selected block's header must show the 9pt scroll hint");
+                o.RequireBrush(view.ScrollHint!, e => ((TextBlock)e).Foreground, DesignToken.Accent, "the scroll hint", key: key);
+                o.RequireBrush(view.GripSymbol!, SymbolInk, DesignToken.Accent, "the selected block's corner handle", key: key);
             }
             finally { ClearGraphSelection(); }
+            Require(!graphCanvas.Children.Contains(graphSelectionOutline!) && view.ScrollHint!.Visibility == Visibility.Collapsed, $"{key} ({theme}): clearing the selection must take its outline and scroll hint away");
+            o.RequireBrush(view.GripSymbol!, SymbolInk, DesignToken.Ink2, "the corner handle after its selection cleared", key: key);
             RequireThickness(card, DesignMetrics.Stroke.Line, $"({theme}) a block after its selection cleared (Stroke.Line)", key);
+
 
             if (before is not null)
                 Require(ReferenceEquals(viewport, before.Viewport) && ReferenceEquals(dots, before.Dots) && ReferenceEquals(card, before.Card) && ReferenceEquals(outline, before.Outline) && ReferenceEquals(draft, before.Draft),
                     $"{key} ({theme}): the theme toggle replaced the viewport, dot grid, block card, running outline or draft edge instead of recolouring them in place");
+            await CaptureMightyDiagram(theme, liveRequest, doneResult);
             return (viewport, dots, card, outline, draft);
+        }
+
+        /// <summary>
+        /// Pictures of the fixture's diagram for the design review, in the theme on screen: as the camera
+        /// stands on the running request, the finished result with the request after it, and the running
+        /// request with its sub-agents and the draft at 60%. The camera goes back where it stood.
+        /// </summary>
+        private async Task CaptureMightyDiagram(string theme, string liveRequest, string doneResult)
+        {
+            var directory = owner.options.ProfileDirectory!;
+            var (zoom, panX, panY) = (graphZoom, graphPan.X, graphPan.Y);
+            async Task Capture(string name) { await SettleDesktopCapture(Container); await owner.CaptureSmoke(Path.Combine(directory, $"smoke-mighty-diagram-{theme}{name}.png")); }
+            try
+            {
+                await Capture("");
+                graphPan.Y = 16 - Canvas.GetTop(graphCards[doneResult]) * graphZoom;
+                await Capture("-result");
+                SetGraphZoom(MightyGraphViewModel.ZoomLevels()[1]); owner.root.UpdateLayout();
+                graphPan.X = (graphViewport!.ActualWidth - graphCanvas.Width * graphZoom) / 2; graphPan.Y = 8 - Canvas.GetTop(graphCards[liveRequest]) * graphZoom;
+                await Capture("-all");
+            }
+            finally { SetGraphZoom(zoom); graphPan.X = panX; graphPan.Y = panY; owner.root.UpdateLayout(); }
         }
 
         private async Task<(Border RowCard, Border ResultCard, Grid ResultHead)> RequireMightyTimeline(IReadOnlyList<MightyGraphRun> runs, MightyDesignViews? before)
@@ -323,7 +429,13 @@ public sealed partial class MainWindow
             o.RequireBrush(head.Tally, e => ((TextBlock)e).Foreground, DesignToken.Ink2, "the timeline tally", key: key);
             RequirePill(head.Pill, DesignTone.Run, 20, "the timeline request's status pill");
 
-            // The rows: card r14, run 2pt while running, wait 2pt while waiting, line 1pt once finished; the node on its rail.
+            // The open request's parts stand 8 apart and its rows 6 (M/MightyGraphView.swift:704-707): the header, the rows, no result yet.
+            var group = timelineGroups[live.Id].View;
+            Require(group.Spacing == 8 && group.Children.Count == 2 && group.Children[1] is StackPanel { Spacing: TimelineRowGap, Children.Count: 3 },
+                $"{key} ({theme}): the open request must hold its header and its three rows, 8 and {TimelineRowGap} apart; got {group.Children.Count} parts {group.Spacing} apart, rows {(group.Children.Count > 1 && group.Children[1] is StackPanel listed ? $"{listed.Children.Count} at {listed.Spacing}" : "missing")}");
+
+            // The rows: card r14, run 2pt while running, wait 2pt while waiting, line 1pt once finished, padding h11 v7 from the
+            // card's own edge (the Mac strokes the edge over the row); the node on its rail with the block's symbol in heroInk.
             foreach (var (node, edge, width, tone, what) in new[] { (liveRequest, DesignToken.Run, DesignMetrics.Stroke.Active, DesignTone.Run, "the running row"), (waiting, DesignToken.Wait, DesignMetrics.Stroke.Active, DesignTone.Wait, "the waiting row"), (finished, DesignToken.Line, DesignMetrics.Stroke.Line, DesignTone.Done, "a finished row") })
             {
                 var row = timelineRows[node];
@@ -331,20 +443,37 @@ public sealed partial class MainWindow
                 RequireThickness(row.Card, width, $"({theme}) {what}'s edge", key);
                 o.RequireBrush(row.Card, e => ((Border)e).Background, DesignToken.Card, what, key: key);
                 o.RequireBrush(row.Card, e => ((Border)e).BorderBrush, edge, what + "'s edge", key: key);
+                Require(row.Card.Child is StackPanel { Children: [Button face, ..] } && face.Padding == new Thickness(11 - width, 7 - width, 11 - width, 7 - width),
+                    $"{key} ({theme}): {what} must be padded h11 v7 from its card's edge; got {((row.Card.Child as StackPanel)?.Children[0] as Button)?.Padding} inside a {width} edge");
                 Require(row.Node.Width == 24 && row.Node.BorderThickness == new Thickness(DesignMetrics.Stroke.Rail), $"{key} ({theme}): {what}'s node must be 24 with a Stroke.Rail ring; got {row.Node.Width}, {row.Node.BorderThickness}");
                 o.RequireBrush(row.Node, e => ((Border)e).Background, DesignPalette.FillToken(tone), what + "'s node (heroFill)", key: key);
                 o.RequireBrush(row.Node, e => ((Border)e).BorderBrush, DesignToken.CardRaised, what + "'s node ring", key: key);
+                o.RequireBrush(row.Node.Child as FrameworkElement ?? throw new InvalidOperationException($"{key} ({theme}): {what}'s node has no symbol"), SymbolInk, DesignPalette.FillInkToken(tone), what + "'s node symbol (heroInk)", key: key);
                 RequirePill(row.Pill, tone, 19, what + "'s status pill");
             }
+            // A settled row is its title over one line, 46 high as the Mac's: v7 around the 13pt title on 16, 2, and the 11pt line on 14 (M/MightyGraphTimelineView.swift:160-180).
+            var twoLines = 7 + TimelineTitleLine + 2 + TimelineMetaLine + 7;
+            Require(Math.Abs(timelineRows[finished].Card.ActualHeight - twoLines) < .6, $"{key} ({theme}): a timeline row of a title and one line must be {twoLines} high; got {timelineRows[finished].Card.ActualHeight:F1}");
+            // The running row's latest step follows the pulsing run dot, 7 across (M/MightyGraphTimelineView.swift:171).
+            var pulse = VisualChildren(timelineRows[liveRequest].Card).OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().FirstOrDefault(dot => dot.Width == 7)
+                ?? throw new InvalidOperationException($"{key} ({theme}): the running row shows no pulse dot beside its latest step");
+            o.RequireBrush(pulse, e => ((Microsoft.UI.Xaml.Shapes.Ellipse)e).Fill, DesignToken.Run, "the running row's pulse dot", key: key);
+            Require(!VisualChildren(timelineRows[waiting].Card).OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().Any(), $"{key} ({theme}): only a running row carries the pulse dot");
 
-            // The result card: card r16 with no edge, its strip heroFill(done) with the title and caption in heroInk.
+            // The result card: card r16 with no edge, its strip heroFill(done) with the seal, the title and the caption in heroInk.
+            // The Mac draws the strip as a shape of the card's own radius, round at every corner (docs/design-system/crops/timeline-*.webp).
             var result = timelineResults[doneResult];
             RequireRadius(result.Card, DesignMetrics.Radius.Composer, $"({theme}) the timeline result card", key);
             RequireThickness(result.Card, 0, $"({theme}) the timeline result card (no edge)", key);
             o.RequireBrush(result.Card, e => ((Border)e).Background, DesignToken.Card, "the timeline result card", key: key);
-            Require(result.Head.Padding == new Thickness(13, 6, 13, 6) && result.Head.CornerRadius == new CornerRadius(DesignMetrics.Radius.Composer, DesignMetrics.Radius.Composer, 0, 0),
-                $"{key} ({theme}): the timeline result strip must have padding h13 v6 and the card's top corners; got {result.Head.Padding}, {result.Head.CornerRadius}");
+            Require(result.Head.Padding == new Thickness(13, 6, 13, 6) && result.Head.CornerRadius == new CornerRadius(DesignMetrics.Radius.Composer),
+                $"{key} ({theme}): the timeline result strip must have padding h13 v6 and the card's radius at every corner; got {result.Head.Padding}, {result.Head.CornerRadius}");
             o.RequireBrush(result.Head, e => ((Grid)e).Background, DesignPalette.FillToken(DesignTone.Done), "the timeline result strip (heroFill)", key: key);
+            o.RequireBrush(((Panel)result.Head.Children[0]).Children[0] as FrameworkElement ?? throw new InvalidOperationException($"{key} ({theme}): the timeline result strip has no seal"), SymbolInk, DesignToken.OnStatus, "the timeline result's seal (heroInk)", key: key);
+            // The answer is plain words, 12.5 in ink, eight lines until it is opened (M/MightyGraphTimelineView.swift:216, 234-236).
+            Require(result.Body is { FontSize: TimelineResultBody, MaxLines: TimelineResultLines, TextWrapping: TextWrapping.Wrap } && result.Body.Text == MightyTimeline.Groups(runs)[0].Result?.Text,
+                $"{key} ({theme}): the timeline result must show its answer as {TimelineResultBody}pt words in {TimelineResultLines} lines; got {result.Body?.FontSize}pt, {result.Body?.MaxLines} lines");
+            o.RequireBrush(result.Body!, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the timeline result's answer", key: key);
             RequireFont(result.Title, DesignMetrics.Type.Block, FontWeights.ExtraBold, $"({theme}) the timeline result title", key);
             o.RequireBrush(result.Title, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the timeline result title (heroInk)", key: key);
             Require(result.Caption.FontSize == 10.5 && result.Caption.FontFamily?.Source == DesignMetrics.Font.Mono, $"{key} ({theme}): the timeline result caption must be Font.Mono at 10.5pt; got '{result.Caption.FontFamily?.Source}' at {result.Caption.FontSize}");
@@ -353,11 +482,23 @@ public sealed partial class MainWindow
                 ?? throw new InvalidOperationException($"{key} ({theme}): the folded result shows no 'show all' link");
             RequireFont((TextBlock)more.Content, DesignMetrics.Type.Block, FontWeights.Bold, $"({theme}) the 'show all' link", key);
             o.RequireBrush(more, e => ((Control)e).Foreground, DesignToken.Accent, "the 'show all' link", key: key);
+            // A picture of the fixture's timeline for the design review; nothing is redrawn for it.
+            await SettleDesktopCapture(Container); await o.CaptureSmoke(Path.Combine(o.options.ProfileDirectory!, $"smoke-mighty-timeline-{theme}.png"));
             return (timelineRows[liveRequest].Card, result.Card, result.Head);
         }
 
         /// <summary>Every word of a title line: one text, or the head and name around an agent mark.</summary>
         private static List<TextBlock> Words(FrameworkElement line) => line is TextBlock single ? [single] : line is Panel panel ? panel.Children.OfType<TextBlock>().ToList() : [];
+
+        /// <summary>The ink a Mighty symbol is drawn in: a glyph's foreground, a drawn symbol's stroke or fill (of its own parts, not a cut-out detail).</summary>
+        private static Brush? SymbolInk(FrameworkElement symbol) => symbol switch
+        {
+            IconElement icon => icon.Foreground,
+            TextBlock words => words.Foreground,
+            Microsoft.UI.Xaml.Shapes.Path path => path.Stroke ?? path.Fill,
+            Panel pair => pair.Children.OfType<Microsoft.UI.Xaml.Shapes.Path>().Where(part => part.Tag is true).Select(part => part.Stroke ?? part.Fill).FirstOrDefault(),
+            _ => null,
+        };
 
         /// <summary>A status pill: the tone's text ink on its soft tint, 10 bold, padding h7, <paramref name="height"/> tall.</summary>
         private void RequirePill(Border? pill, DesignTone tone, double height, string what)

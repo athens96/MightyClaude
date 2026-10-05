@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 
 namespace MightyClaude.WinUI;
 
@@ -38,8 +39,9 @@ public sealed partial class MainWindow
             effort.SelectedItem = effort.Items.OfType<ComboBoxItem>().Single(i => Equals(i.Tag, "xhigh"));
             await WaitUI(() => service.Snapshot.PhaseModels?.CodexSubagentEffort == "xhigh" && Replaced(effort, "phaseModels-effort-codex-subagents"));
             ((TextBox)Control("phaseModels-add-claude")).Text = "registered-phase-fixture";
-            ((CheckBox)Control("phaseModels-addEffort-claude")).IsChecked = true;
-            ((CheckBox)Control("phaseModels-addLevel-claude-max")).IsChecked = true;
+            // The supports-effort switch and the level chips are toggle buttons (M/PhaseModelSettingsView.swift:263-280).
+            ((ToggleButton)Control("phaseModels-addEffort-claude")).IsChecked = true;
+            ((ToggleButton)Control("phaseModels-addLevel-claude-max")).IsChecked = true;
             var add = (Button)Control("phaseModels-addButton-claude");
             frame.UpdateLayout(); await WaitUI(() => add.IsLoaded && add.ActualWidth > 0);
             ((IInvokeProvider)new ButtonAutomationPeer(add).GetPattern(PatternInterface.Invoke)).Invoke();

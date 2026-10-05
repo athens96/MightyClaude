@@ -54,7 +54,7 @@ public static class SettingsSections
         new(Components, ComponentSection.SectionTitle),
         new(MobileRemote, Locale.Get("settings.mobileRemote.sectionTitle")),
         new(CliUpdate, CliUpdateStrings.SectionTitle),
-        new(Companion, Locale.Get("settings.nav.companion")),
+        new(Companion, Locale.Get("companion.settings.sectionTitle")),
         new(Providers, ProvidersTitle),
         new(CliAccounts, CliAccountStrings.SectionTitle),
         new(ClaudeMods, "Claude Mods"),

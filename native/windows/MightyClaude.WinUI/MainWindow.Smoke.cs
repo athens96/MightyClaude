@@ -103,6 +103,9 @@ public sealed partial class MainWindow
             Checkpoint("transcriptActions", "running");
             result["transcriptActions"] = await pane.Transcript.RunActionsSmoke();
             Checkpoint("transcriptActions", "passed");
+            // The Default conversation at the window's width, as the Mac's 02-pane-basic shows it.
+            root.UpdateLayout(); await Task.Delay(200);
+            result["transcriptScreenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-transcript-wide.png"));
             Checkpoint(CompletionNotificationSmokeOutcome.ResultKey, "running");
             result[CompletionNotificationSmokeOutcome.ResultKey] = await RunCompletionNotificationSmoke();
             Checkpoint(CompletionNotificationSmokeOutcome.ResultKey, "passed");
@@ -282,6 +285,9 @@ public sealed partial class MainWindow
             var settingsPanelForLeak = new StackPanel { Spacing = 0, MinWidth = 420, MaxWidth = 540 };
             foreach (var sec in settingsSectionsForLeak)
                 settingsPanelForLeak.Children.Add(BuildSectionContainer(sec.Title, sec.Build()));
+            // The boxes a tab draws beside its registered slots (agent links, the toolkit, screen view and control) are scanned as well.
+            foreach (var extra in SettingsNavigation.Available.SelectMany(tab => SettingsGroups(tab.Id)).Where(box => settingsSectionsForLeak.All(slot => slot.Title != box.Title)))
+                settingsPanelForLeak.Children.Add(BuildSectionContainer(extra.Title, extra.Build(), extra.Beta));
             CollectVisibleStrings(settingsPanelForLeak, leakStrings);
             // 페이즈별 모델 칸의 ComboBox 머리글과 항목은 화면 나무에 바로 보이지 않으므로 따로 넣는다.
             leakStrings.AddRange(PhaseModelSectionTexts(BuildPhaseModelsSection(new(), PhaseModelSection.SmokeFixtureTools)));
@@ -307,6 +313,8 @@ public sealed partial class MainWindow
             try { result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png")); } catch (Exception capture) { result["captureError"] = capture.Message; }
         }
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+        // 실패한 실행의 기록은 그 실패의 것이다. 정리하는 동안 뒤따라 나는 예외가 이 기록을 덮어쓰지 못하게 한다.
+        if (!passed) options.KeepFailureRecord();
         await FinishSmoke(passed);
     }
     // 브라우저 창 스모크: 임시 --profile 안에서 실제 WebView2로 임시 폴더의 로컬 페이지
@@ -329,6 +337,8 @@ public sealed partial class MainWindow
         Require(view.BrowserControlLive, "WebView2 컨트롤이 만들어지지 않았습니다.");
 
         var (navigated, backWorked, popupBlocked) = await view.DriveBrowserSmokeAsync();
+        // The slim bar and the toolbar on screen (the page itself is not part of a XAML capture), for the parity review.
+        root.UpdateLayout(); await CaptureSmoke(Path.Combine(options.ProfileDirectory!, "smoke-chrome-browser.png"));
 
         // 프로필 폴더는 임시 --profile 아래의 상태 폴더 안에 있어야 한다.
         var profile = BrowserProfile.ProfileFolder(StateDirectory, session.WorkspaceProfileKey ?? session.WorkspaceId);
@@ -366,7 +376,7 @@ public sealed partial class MainWindow
         foreach (var provider in new[] { "claude", "codex" })
         {
             Require(elements.OfType<TextBox>().Any(e => AutomationProperties.GetAutomationId(e) == "phaseModels-add-" + provider), "Provider model registration is available.");
-            Require(elements.OfType<CheckBox>().Count(e => AutomationProperties.GetAutomationId(e).StartsWith("phaseModels-addLevel-" + provider + "-", StringComparison.Ordinal)) == Wire.Efforts.Length, "Every supported reasoning level can be registered.");
+            Require(elements.OfType<Microsoft.UI.Xaml.Controls.Primitives.ToggleButton>().Count(e => AutomationProperties.GetAutomationId(e).StartsWith("phaseModels-addLevel-" + provider + "-", StringComparison.Ordinal)) == Wire.Efforts.Length, "Every supported reasoning level can be registered.");
         }
         return true;
     }
@@ -405,9 +415,11 @@ public sealed partial class MainWindow
             // 승인은 파일을 다시 쓴다 — 이 저장 뒤에도 macOS 전용 객체가 남아야 한다.
             foreach (var id in ComponentsSmokeVisible) store.Approve(id);
 
+            // The CLI rows and the toolkit are two boxes of the tab now, as on the Mac; both are built here.
             var panel = BuildComponentsSection();
+            var toolkit = BuildToolkitSection();
             const string rowPrefix = "toolkit-entry-";
-            var visibleIds = toolkitListPanel!.Children.OfType<FrameworkElement>()
+            var visibleIds = SettingsElements(toolkitListPanel!)
                 .Select(AutomationProperties.GetAutomationId)
                 .Where(id => id.StartsWith(rowPrefix, StringComparison.Ordinal))
                 .Select(id => id[rowPrefix.Length..])
@@ -417,7 +429,7 @@ public sealed partial class MainWindow
                 Require(visibleIds.Contains(id), "구성 요소 칸에 이 PC 항목이 보이지 않습니다: " + id);
             foreach (var id in ComponentsSmokeOtherOs)
                 Require(!visibleIds.Contains(id), "구성 요소 칸에 macOS 전용 항목이 보입니다: " + id);
-            Require(panel.Children.OfType<FrameworkElement>().Any(), "구성 요소 칸이 비어 있습니다.");
+            Require(panel.Children.OfType<FrameworkElement>().Any() && toolkit.Children.OfType<FrameworkElement>().Any(), "구성 요소 칸이 비어 있습니다.");
 
             var probe = new ToolkitProbeContext
             {
@@ -447,6 +459,7 @@ public sealed partial class MainWindow
 
             // 설치 결과 표까지 채운 칸의 글자가 로케일 키 누수 검사에 들어간다.
             CollectVisibleStrings(panel, leakStrings);
+            CollectVisibleStrings(toolkit, leakStrings);
 
             using var before = JsonDocument.Parse(ComponentsSmokeFixture);
             using var after = JsonDocument.Parse(File.ReadAllText(toolkitPath));
@@ -561,7 +574,7 @@ public sealed partial class MainWindow
             // to the latest request (40 characters), and hovering the sidebar title shows the request whole.
             Require(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).TitleMode == PaneTitle.Fixed, "이름을 바꾼 창의 제목이 고정되지 않았습니다.");
             var offersAutomatic = false;
-            smokeAskName = (dialog, _, _) => { offersAutomatic = dialog.SecondaryButtonText == Locale.Get("pane.rename.automatic"); return Task.FromResult(ContentDialogResult.Secondary); };
+            smokeAskName = (dialog, _, _) => { offersAutomatic = RenameButtons(dialog).Any(b => AutomationProperties.GetAutomationId(b) == RenameAutomaticId && b.Content as string == Locale.Get("pane.rename.automatic")); return Task.FromResult(ContentDialogResult.Secondary); };
             await RenameSession(fixtureSession.Id);
             Require(offersAutomatic, "이름 변경 대화창에 자동 (요청 따름) 단추가 없습니다.");
             var latest = PaneTitle.Tooltip(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id)) ?? "";
@@ -630,7 +643,8 @@ public sealed partial class MainWindow
         {
             // The section must expose the button before we press it.
             var section = BuildCliUpdateSection([]);
-            var button = section.Children.OfType<Button>()
+            // The button stands at the trailing edge of the progress row; it is still found by its id.
+            var button = SettingsElements(section).OfType<Button>()
                 .FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == "cli-update-start");
             Require(button is not null, "업데이트 하기 button must be present in the CLI update section");
             Require((string?)button!.Content == CliUpdateStrings.UpdateButton, "button must read 업데이트 하기 when idle");
@@ -1015,6 +1029,8 @@ public sealed partial class MainWindow
         }
 
         var wide = await Draw(1000, 700, 1);
+        // The result strip with a saved size in force: "fit to window" and the expand control (M/MightyGraphView.swift:528-547).
+        await SettleDesktopCapture(root); await CaptureSmoke(Path.Combine(options.ProfileDirectory!, "smoke-mighty-result-saved.png"));
         var grewToSaved = wide.Cap == (saved.Width, saved.Height) && wide.Card.W == saved.Width;
         Require(grewToSaved, $"넓은 창에서 결과 박스가 저장한 크기가 아닙니다: {wide.Card.W}×{wide.Card.H} (최대 {wide.Cap.W}×{wide.Cap.H})");
         var narrow = await Draw(600, 300, 1);
@@ -1212,18 +1228,25 @@ public sealed partial class MainWindow
             var titles = new List<string?>(); var listed = -1; var hiddenText = "";
             smokeResumeDialog = async dialog =>
             {
-                titles.Add(dialog.Title as string);
+                // The sheets draw their own titles (the Mac's layout); each is named after its title.
+                titles.Add(AutomationProperties.GetName(dialog));
                 if (AutomationProperties.GetAutomationId(dialog) == "add-pane-choice") return ContentDialogResult.Secondary;
-                var content = (StackPanel)dialog.Content;
-                var list = content.Children.OfType<ListView>().First();
-                await WaitUI(() => list.Items.Count > 0);
-                listed = list.Items.Count;
-                hiddenText = content.Children.OfType<StackPanel>().First().Children.OfType<TextBlock>().First().Text;
-                ((Action<ResumableSession>)dialog.Tag)((ResumableSession)((FrameworkElement)list.Items[0]).Tag);
+                var sheet = (ResumeSheetParts)dialog.Tag;
+                await WaitUI(() => sheet.List.Items.Count > 0);
+                listed = sheet.List.Items.Count;
+                hiddenText = sheet.Hidden.Text;
+                // The show-all check box's words (M/ResumeSessionSheet.swift:93): the regular caption in ink, set at its own size
+                // beside the scaled box (not inside it), which keeps their name.
+                var showAllWords = sheet.ShowAllWords;
+                Require(sheet.ShowAll.Content is null && AutomationProperties.GetName(sheet.ShowAll) == showAllWords.Text && showAllWords.Text == Locale.Get("resume.showAll")
+                    && showAllWords.FontSize == DesignMetrics.Type.Small && showAllWords.FontWeight.Weight == Microsoft.UI.Text.FontWeights.Normal.Weight && ReferenceEquals(showAllWords.Foreground, brushes.Brush(DesignToken.Ink)),
+                    $"the resume sheet's show-all words must be the regular {DesignMetrics.Type.Small}pt caption in ink beside their box, which keeps their name; got {showAllWords.FontSize}pt at weight {showAllWords.FontWeight.Weight} in {(showAllWords.Foreground as SolidColorBrush)?.Color}, box named '{AutomationProperties.GetName(sheet.ShowAll)}' holding {sheet.ShowAll.Content ?? "nothing"}");
+                await CaptureSheet(dialog, "sheet-resume-list");
+                sheet.Choose((ResumableSession)((FrameworkElement)sheet.List.Items[0]).Tag);
                 return ContentDialogResult.None;
             };
             await AddAgentPane("claude", null);
-            var name = ProviderCatalog.BetaLabel("claude", ProviderCatalog.Name("claude"));
+            var name = ProviderMark.Label("claude");
             Require(titles.Count == 2 && titles[0] == Locale.Get("resume.choice.title", new Dictionary<string, string> { ["provider"] = name }) && titles[1] == Locale.Get("resume.title"), "창 추가가 새로 시작 / 이어가기… 선택과 세션 목록을 차례로 열지 않았습니다: " + string.Join(" | ", titles));
             checks["choiceOffered"] = true;
             Require(listed == 1 && hiddenText == Locale.Get("resume.hiddenCount", new Dictionary<string, string> { ["count"] = "1" }), $"세션 목록이 자동 실행 기록을 숨기지 않았습니다: 줄 {listed}, 숨김 '{hiddenText}'");
@@ -1241,8 +1264,17 @@ public sealed partial class MainWindow
             await WaitUI(() => pane.GraphHistoryForSmoke.Runs.Count == 10 && pane.GraphHistoryForSmoke.Phase == SessionHistoryState.Phases.Idle);
             Require(pane.GraphHistoryForSmoke.Runs.Select(r => r.Input).SequenceEqual(Enumerable.Range(3, 10).Select(i => "이전 요청 " + i)), "마이티 화면이 기록의 최근 요청 10개를 불러오지 않았습니다.");
             Require(pane.GraphHistoryTextForSmoke() == pane.GraphHistoryForSmoke.BlockText(10), "다이어그램 맨 위 기록 블록의 문구가 다릅니다: " + pane.GraphHistoryTextForSmoke());
+            await CaptureHistoryBlock(pane, "load");
             checks["latestLoadedOnOpen"] = true;
             var firstLoaded = MightyGraphLayout.NodeID(pane.GraphHistoryForSmoke.Runs[0], "request");
+            // The newest result is measured after it is drawn, and that moves the blocks above it: sample once its height holds.
+            double? settled = null;
+            for (int tries = 0, held = 0; tries < 120 && held < 6; tries++)
+            {
+                await Task.Delay(25);
+                var height = pane.GraphSettledResultHeightForSmoke; held = height is not null && height == settled ? held + 1 : 0; settled = height;
+            }
+            root.UpdateLayout();
             var position = pane.GraphCardPositionForSmoke(firstLoaded);
             pane.LoadOlderGraphHistory();
             await WaitUI(() => pane.GraphHistoryForSmoke.Phase == SessionHistoryState.Phases.Start);
@@ -1251,6 +1283,7 @@ public sealed partial class MainWindow
             var after = pane.GraphCardPositionForSmoke(firstLoaded);
             Require(position is { } p0 && after is { } p1 && Math.Abs(p0.Y - p1.Y) < 0.5, $"이전 요청을 불러올 때 화면의 카드가 움직였습니다: {position} → {after}");
             Require(pane.GraphHistoryTextForSmoke() == pane.GraphHistoryForSmoke.BlockText(12), "기록의 처음에 닿았다는 문구가 없습니다.");
+            await CaptureHistoryBlock(pane, "start");
             checks["olderLoadedAboveWithoutMoving"] = true;
 
             // The pane holds the typed session and the nested one is hidden: nothing left to offer.
@@ -1316,6 +1349,22 @@ public sealed partial class MainWindow
             await AddPaneFromShortcut();
             Require(!asked && service.Snapshot.Sessions.Count == count + 2 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: AddPaneMenu.NewPaneShortcutProvider, ResumeId: null }, "Ctrl+N이 묻지 않고 곧바로 Claude 창을 만들지 않았습니다.");
             checks["ctrlNStartsAtOnce"] = true;
+            // 새 창은 활성 창이 있는 탭 그룹에 붙고, 다른 그룹이 보여 주던 탭은 그대로다 (M/AppStore.swift:520).
+            string a = Wire.Id(), b = Wire.Id(), c = Wire.Id(), z = Wire.Id(), space = Wire.Id();
+            RunSession Fixture(string id) => new() { Id = id, WorkspaceId = space };
+            var tree = new PaneLayoutNode { Kind = "split", Axis = "horizontal", Children = [new() { SessionIds = [a, b, c], SelectedSessionId = b }, new() { SessionIds = [z], SelectedSessionId = z }] };
+            var laid = service.Snapshot with { Sessions = [Fixture(a), Fixture(b), Fixture(c), Fixture(z)], ActiveWorkspaceId = space, ActiveSessionId = z, PaneLayouts = new() { [space] = tree } };
+            var joining = Fixture(Wire.Id());
+            try
+            {
+                var placed = AddToLayout(laid, space, joining, null);
+                var groups = PaneLayout.Groups(placed.PaneLayouts![space]).ToList();
+                Require(placed.ActiveSessionId == joining.Id && groups.Count == 2 && groups[0].SessionIds.SequenceEqual(new[] { a, b, c }) && groups[0].SelectedSessionId == b
+                    && groups[1].SessionIds.SequenceEqual(new[] { z, joining.Id }) && groups[1].SelectedSessionId == joining.Id,
+                    "A new pane must join the active pane's tab group and leave the tab every other group shows; got " + string.Join(" | ", groups.Select(g => g.SessionIds.Count + " tabs, showing #" + g.SessionIds.IndexOf(g.SelectedSessionId ?? ""))));
+            }
+            finally { layoutDefaults.Remove(space); }
+            checks["newPaneJoinsActiveGroup"] = true;
         }
         finally
         {
@@ -1325,9 +1374,11 @@ public sealed partial class MainWindow
         }
         return checks;
     }
-    private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "")
+    /// <summary>Longer than a UI wait: for a step that first reads the CLIs again, which takes as long as starting each of them does.</summary>
+    private const double RuntimeReadWait = 30;
+    private static async Task WaitUI(Func<bool> predicate, [CallerArgumentExpression(nameof(predicate))] string condition = "", double seconds = 4)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(4);
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
         while (!predicate()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("WinUI 검증 상태 대기 시간이 초과되었습니다: " + condition); await Task.Delay(20); }
     }
 
@@ -1428,7 +1479,9 @@ public sealed partial class MainWindow
             composingInput = true; var nativeInput = input; Refresh(); Require(ReferenceEquals(input, nativeInput) && input.Text == "한글 첫 입력", "상태 갱신이 조합 중인 입력 컨트롤을 변경했습니다."); composingInput = false;
             input.Text = ""; Container.UpdateLayout(); await Task.Delay(40); var singleHeight = input.ActualHeight;
             input.Text = "첫째 줄\n둘째 줄\n셋째 줄\n" + string.Concat(Enumerable.Repeat("자동 줄바꿈 ", 30)); Container.UpdateLayout();
-            await WaitUI(() => input.ActualHeight > singleHeight && input.ActualHeight <= 141);
+            // 한 줄은 20, 여섯 줄에서 멈춘다 (M/NativeComposerEditor.swift:32-33, M/SessionPaneView.swift:579).
+            Require(Math.Abs(singleHeight - ComposerLine) < .6 && input.MaxHeight == ComposerLine + 5 * ComposerLineStep, $"입력창 한 줄 높이는 {ComposerLine}, 최대 여섯 줄이어야 합니다: {singleHeight:F1}, 최대 {input.MaxHeight:F1}");
+            await WaitUI(() => input.ActualHeight > singleHeight && input.ActualHeight <= input.MaxHeight + .6);
             input.Text = ""; Container.UpdateLayout(); await WaitUI(() => input.ActualHeight <= singleHeight + 1);
             checks["nativeEditorRetainedAndAutoHeight"] = true;
             var doc = output.View.Document; doc.GetText(TextGetOptions.None, out var text);
@@ -1439,16 +1492,28 @@ public sealed partial class MainWindow
             await Change(p => p with { Logs = p.Logs.Append(new LogEntry(Wire.Id(), "assistant", "추가 응답", Wire.Now(), p.Provider)).ToList() }); Refresh();
             doc.Selection.GetText(TextGetOptions.None, out var retained); Require(selected == retained, "새 출력이 여러 문단의 선택 범위를 바꿨습니다."); Require(output.View.IsReadOnly, "추가 출력 후 읽기 전용 상태가 복원되지 않았습니다."); checks["crossParagraphSelectionSurvivesAppend"] = true;
             Container.Width = 315; Container.UpdateLayout(); await WaitUI(() => Math.Abs(Container.ActualWidth - 315) < 1); ArrangeComposer(); Container.UpdateLayout(); await Task.Delay(40);
-            var controls = selectors.Children.OfType<FrameworkElement>().Where(c => c.Visibility == Visibility.Visible).Concat([context, send]).ToArray();
+            var controls = selectors.Children.OfType<FrameworkElement>().Concat(toolbarActions.Children.OfType<FrameworkElement>()).Where(c => c.Visibility == Visibility.Visible).ToArray();
             var centers = controls.Select(c => c.TransformToVisual(Container).TransformPoint(new(0, 0)).Y + c.ActualHeight / 2).ToArray();
+            Require(controls.Contains(context) && controls.Contains(sendHost) && controls.Contains(statusLineToggle), "입력창 도구 줄에 컨텍스트 링, 상태줄 토글, 전송 버튼이 모두 있어야 합니다.");
             Require(controls.All(c => Math.Abs(c.ActualHeight - 32) < 1 && c.TransformToVisual(Container).TransformPoint(new(c.ActualWidth, 0)).X <= Container.ActualWidth + 1) && centers.Max() - centers.Min() < 1, "좁은 입력창의 버튼이 한 줄 안에 맞지 않습니다.");
+            // 좁은 패널은 모델 필과 옵션 메뉴 하나로 접힌다 (M/ComposerControls.swift:48-55, M/SessionPaneView.swift:713-720); 필은 오른쪽 묶음 밑으로 들어가지 않는다.
+            var pillsEnd = selectors.TransformToVisual(toolbar).TransformPoint(new(selectors.ActualWidth, 0)).X; var clusterStart = toolbarActions.TransformToVisual(toolbar).TransformPoint(new(0, 0)).X;
+            Require(toolbarStyle == ToolbarStyle.Overflow && options.Visibility == Visibility.Visible && more.Visibility == Visibility.Collapsed && permission.Visibility == Visibility.Collapsed && effort.Visibility == Visibility.Collapsed && pillsEnd <= clusterStart + .5,
+                $"좁은 입력창은 첨부, 모델, 옵션 메뉴만 보여야 합니다: {toolbarStyle}, 필 끝 {pillsEnd:F1}, 오른쪽 묶음 시작 {clusterStart:F1}");
+            // 세 단계의 경계는 Mac의 식 그대로다: 필 = 글자(상한) + 16 + 14 + 5 (+ 12 chevron), 전체 = 64 + 모델(155) + 권한(90) + 강도(48) + 간격, 축약 = 32 x (개수 - 1) + 모델(90) + 간격.
+            double Words(string text, double cap) => Math.Min(PillTextWidth(text), cap);
+            var fullWidth = 64 + (Words("Opus 4.7", 155) + 47) + (Words("Auto mode", 90) + 47) + (Words("High", 48) + 47) + 4 * 6; var compactWidth = 32 * 4 + (Words("Opus 4.7", 90) + 47) + 4 * 6;
+            Require(StyleFor(fullWidth + 4, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Full && StyleFor(fullWidth + 3, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Compact
+                && StyleFor(compactWidth + 4, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Compact && StyleFor(compactWidth + 3, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Overflow
+                && ModelTextCap(ToolbarStyle.Overflow, 171) == 48 && ModelTextCap(ToolbarStyle.Overflow, 400) == 110,
+                $"입력창 도구 줄의 단계 경계가 Mac과 다릅니다: 전체 {fullWidth:F1}, 축약 {compactWidth:F1}");
             checks["compactControls32pxSingleRow"] = true; Container.Width = double.NaN; Container.UpdateLayout();
             var oldFile = AttachmentSupport.Make("old.txt", "old"u8.ToArray()); var newFile = AttachmentSupport.Make("next.txt", "next"u8.ToArray()); pendingAttachments.Add(oldFile); RefreshAttachments();
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var calls = 0; StartRunRequest? submitted = null;
             owner.smokeStart = async request => { calls++; submitted = request; await Change(p => p with { Status = "running" }); await gate.Task; await Change(p => p with { Status = "completed" }); };
             input.Text = "전송할 요청"; await WaitUI(() => Session.Draft == input.Text); RefreshComposerState();
             var sending = Send(); await WaitUI(() => calls == 1 && Session.Status == "running");
-            Require(sendGlyph.Text == "■" && send.IsEnabled && !canSend, "실행 중 단일 버튼이 중지로 바뀌지 않았습니다.");
+            Require(sendSymbol == "stop" && sendStop.View.Visibility == Visibility.Visible && send.IsEnabled && !canSend, "실행 중 단일 버튼이 중지로 바뀌지 않았습니다.");
             await Send(); Require(calls == 1, "중복 입력이 같은 요청을 다시 시작했습니다.");
             input.Text = "다음 요청 초안"; pendingAttachments.Add(newFile); RefreshAttachments();
             gate.SetResult(); await sending;
@@ -1487,6 +1552,7 @@ public sealed partial class MainWindow
                 Require(Session.Provider == "claude" || !paletteState.Commands.Any(c => c.Action == SlashCommandAction.OpenPlugins),
                     "Windows에 화면이 없는 앱 명령이 팔레트에 나왔습니다.");
                 checks["opensAboveComposerWithFixtureRows"] = true;
+                await SettleDesktopCapture(owner.root); await CaptureElement(Container, Path.Combine(owner.options.ProfileDirectory!, "smoke-composer-slash.png"));
 
                 input.Text = "/rev";
                 // Description matches are part of the palette contract. In

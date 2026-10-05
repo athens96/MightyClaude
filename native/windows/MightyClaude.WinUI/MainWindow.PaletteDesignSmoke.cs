@@ -69,9 +69,18 @@ public sealed partial class MainWindow
                 await WaitUI(() => ConversationInkAt(standard) is var (at, tokens) && RtfInkIs(standard.Transcript.View, at, tokens) && RtfInkIs(files.FilesMarkdownForSmoke!, 0, [DesignToken.Ink]),
                     () => $"{key} ({theme}): the conversation or the Markdown preview was not drawn again in this theme's colours; conversation {InkAt(standard.Transcript.View, ConversationInkAt(standard).At)}, Markdown {InkAt(files.FilesMarkdownForSmoke!, 0)}");
                 var parts = RequireTerminalHeaderInTheme(terminal, light);
+                RequireGroupSlimHeaderInTheme(files);
+                checks[theme + ".dropScreenshot"] = await RequireDockInTheme();
+                // The whole dock, wider than the window with its five panes side by side, for the parity review of the pane chrome.
+                if (panes.Children.OfType<ScrollViewer>().FirstOrDefault()?.Content is FrameworkElement dock) checks[theme + ".chromeScreenshot"] = await CaptureElement(dock, Path.Combine(options.ProfileDirectory!, "smoke-chrome-panes-" + theme + ".png"));
                 RequireConversationInTheme(standard, empty);
                 RequireRtfInk(files.FilesMarkdownForSmoke!, 0, [DesignToken.Ink], "the Markdown preview's heading (files pane)", light?.Markdown);
                 RequireEmptyStateBuilders();
+                // The conversation, the empty agent pane and the Markdown preview as they are drawn, for the eye.
+                await SettleDesktopCapture(root);
+                await CaptureElement(standard.Container, Path.Combine(options.ProfileDirectory!, "smoke-transcript-" + theme + ".png"));
+                await CaptureElement(empty.Container, Path.Combine(options.ProfileDirectory!, "smoke-transcript-empty-" + theme + ".png"));
+                await CaptureMarkdownPreview(theme);
 
                 var walked = WalkPalette(root, "main window");
                 RequireVisited(walked, sidebarSurface, "the sidebar"); RequireVisited(walked, parts.Header, "the terminal header");
@@ -95,6 +104,8 @@ public sealed partial class MainWindow
 
                 light ??= new(parts.Header, files.FilesMarkdownForSmoke!);
             }
+            // Last, as it redraws the dock: the divider's double-click.
+            await RequireSplitReset(workspace.Id); checks["dividerReset"] = true;
             checks["terminalHeader"] = true; checks["conversationSurface"] = true; checks["rtfFollowsTheme"] = true; checks["emptyStates"] = true; checks["paletteWalk"] = true; checks["bothThemes"] = true;
             return checks;
         }
@@ -135,7 +146,8 @@ public sealed partial class MainWindow
         RequirePaletteShared(header.Background, brushes.Brush(DesignToken.Idle), "the terminal header's fill");
         RequireBrush(header, e => ((Grid)e).Background, DesignToken.Idle, "the terminal header's fill", key: key);
         RequireBrush(slim.Symbol!, e => ((FontIcon)e).Foreground, DesignToken.OnStatus, "the terminal header's symbol", key: key);
-        Require(slim.Symbol!.FontSize == 11, $"{key} ({theme}): the terminal symbol must be 11pt; got {slim.Symbol.FontSize}");
+        // The Mac's 11pt terminal symbol draws 12.7 wide; Segoe's CommandPrompt needs 13 to draw as large (PaneSymbol).
+        Require(slim.Symbol!.FontSize == 13 && slim.Symbol.Width == 15 && slim.Symbol.FontWeight.Weight == FontWeights.SemiBold.Weight, $"{key} ({theme}): the terminal symbol must be the 13pt semibold glyph in its 15-wide slot; got {slim.Symbol.FontSize}pt in {slim.Symbol.Width}, weight {slim.Symbol.FontWeight.Weight}");
         RequireFont(slim.Title, DesignMetrics.Type.Title, FontWeights.Bold, $"({theme}) the terminal title", key);
         RequireBrush(slim.Title, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the terminal title", key: key);
         Require(slim.Subtitle!.FontSize == DesignMetrics.Type.State && slim.Subtitle.Text.Length > 0, $"{key} ({theme}): the terminal kind words must be {DesignMetrics.Type.State}pt and not empty; got {slim.Subtitle.FontSize}pt '{slim.Subtitle.Text}'");
@@ -145,8 +157,143 @@ public sealed partial class MainWindow
         var pill = slim.Pill!;
         Require(pill.Height == 20 && pill.BorderThickness == new Thickness(DesignMetrics.Stroke.Focus) && ReferenceEquals(pill.Child, slim.Word),
             $"{key} ({theme}): the status capsule must be 20 high with a {DesignMetrics.Stroke.Focus}pt edge around the word; got {pill.Height}, {pill.BorderThickness}");
+        // The edge is drawn inside the capsule's h8 padding (M/PaneChrome.swift:41-42), so word and edge together stand 8 in.
+        Require(pill.Padding.Left + pill.BorderThickness.Left == 8 && pill.Padding.Right + pill.BorderThickness.Right == 8, $"{key} ({theme}): the status word must stand 8 inside the capsule; got padding {pill.Padding} inside a {pill.BorderThickness} edge");
         RequireBrush(pill, e => ((Border)e).BorderBrush, DesignToken.OnStatus, "the status capsule's edge", key: key);
+        // The bar is set in h8 t8 from the card's edge with 2 under it, and its parts stand in the Mac's order, 8 apart (M/PaneChrome.swift:107-119).
+        var card = terminal.Container; var edge = card.BorderThickness.Left;
+        var at = header.TransformToVisual(card).TransformPoint(new Windows.Foundation.Point());
+        Require(Math.Abs(at.X - edge - 8) < .6 && Math.Abs(at.Y - edge - 8) < .6 && Math.Abs(card.ActualWidth - at.X - header.ActualWidth - edge - 8) < .6,
+            $"{key} ({theme}): the terminal header must be set in 8 from the leading, top and trailing edges inside the card's border; got {at.X - edge:F1}, {at.Y - edge:F1}, {card.ActualWidth - at.X - header.ActualWidth - edge:F1}");
+        double Left(FrameworkElement part) => part.TransformToVisual(header).TransformPoint(new Windows.Foundation.Point()).X;
+        // Symbol, title, kind, then after at least 6 of room the capsule and the 22-wide menu against the trailing padding, each 8 from
+        // the one before; a text that had to trim ends short of its place, so the texts are held to "at least".
+        double End(FrameworkElement part) => Left(part) + part.ActualWidth;
+        Require(Math.Abs(Left(slim.Symbol) - 13) < .6 && Math.Abs(Left(slim.Title) - (End(slim.Symbol) + 8)) < .6 && Left(slim.Subtitle) >= End(slim.Title) + 8 - .6
+            && Left(pill) >= End(slim.Subtitle) + 8 + 6 + 8 - .6 && Math.Abs(End(pill) - (header.ActualWidth - 13 - 22 - 8)) < .6,
+            $"{key} ({theme}): the terminal header must read symbol, title, kind, then the capsule 8 before the menu, from its 13 padding and 8 apart; got symbol {Left(slim.Symbol):F1}..{End(slim.Symbol):F1}, title {Left(slim.Title):F1}..{End(slim.Title):F1}, kind {Left(slim.Subtitle):F1}..{End(slim.Subtitle):F1}, capsule {Left(pill):F1}..{End(pill):F1} of {header.ActualWidth:F1}");
         return (header, slim.Word);
+    }
+
+    /// <summary>
+    /// The slim ink bar a tab group draws over a pane that is not a conversation (M/PaneChrome.swift:99-141,
+    /// M/PaneDockView.swift:178-180), here the files pane's: between the tab strip and the pane, set in h8 t8 b2,
+    /// 34 high on <c>idle</c>, radius 11, padding h13; the folder, the title in 13pt bold and the kind in 11.5pt,
+    /// all <c>onStatus</c>, with no status capsule and no menu. The pane under it draws no header and no outline.
+    /// </summary>
+    private void RequireGroupSlimHeaderInTheme(PaneView files)
+    {
+        const string key = PaletteDesignKey; var theme = SmokeTheme;
+        var session = files.SessionForSmoke;
+        Require(groupSlimHeaders.TryGetValue(session.Id, out var slim) && slim.Bar.IsLoaded, $"{key} ({theme}): the files pane's tab group draws no slim header over it");
+        var bar = slim.Bar;
+        Require(bar.Height == DesignMetrics.Layout.PaneHeader && Math.Abs(bar.ActualHeight - DesignMetrics.Layout.PaneHeader) < .5 && bar.Margin == new Thickness(8, 8, 8, 2)
+            && bar.CornerRadius == new CornerRadius(DesignMetrics.Radius.Pane) && bar.Padding == new Thickness(13, 0, 13, 0),
+            $"{key} ({theme}): the files header must be {DesignMetrics.Layout.PaneHeader} high, set in h8 t8 b2, radius {DesignMetrics.Radius.Pane}, padding h13; got {bar.Height} (laid out {bar.ActualHeight:F1}), {bar.Margin}, {bar.CornerRadius}, {bar.Padding}");
+        RequirePaletteShared(bar.Background, brushes.Brush(DesignToken.Idle), "the files header's fill");
+        RequireBrush(bar, e => ((Grid)e).Background, DesignToken.Idle, "the files header's fill", key: key);
+        Require(slim.Symbol.Glyph == "\uE8B7" && slim.Symbol.FontSize == 12.5 && slim.Symbol.FontWeight.Weight == FontWeights.SemiBold.Weight, $"{key} ({theme}): the files header must lead with the 12.5pt semibold folder (the Mac's 11pt folder draws 12.3 wide); got {slim.Symbol.FontSize}pt");
+        RequireBrush(slim.Symbol, e => ((FontIcon)e).Foreground, DesignToken.OnStatus, "the files header's symbol", key: key);
+        RequireFont(slim.Title, DesignMetrics.Type.Title, FontWeights.Bold, $"({theme}) the files header's title", key);
+        Require(slim.Title.Text == session.Title && slim.Subtitle.Text == Locale.Get("files.pane.title") && slim.Subtitle.FontSize == DesignMetrics.Type.State,
+            $"{key} ({theme}): the files header must read the pane's title and its kind in {DesignMetrics.Type.State}pt; got '{slim.Title.Text}' and '{slim.Subtitle.Text}' at {slim.Subtitle.FontSize}pt");
+        RequireBrush(slim.Title, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the files header's title", key: key);
+        RequireBrush(slim.Subtitle, e => ((TextBlock)e).Foreground, DesignToken.OnStatus, "the files header's kind", key: key);
+        Require(!VisualChildren(bar).OfType<Button>().Any(), $"{key} ({theme}): the files header carries no button (M/PaneChrome.swift:131-141)");
+        // Under the strip, over the pane; the pane itself shows no header and no outline of its own.
+        var group = PaneLayout.Groups(EffectiveLayout(service.Snapshot, session.WorkspaceId)!).First(g => g.SessionIds.Contains(session.Id));
+        var strip = tabStrips[group.Id].Strip;
+        var top = bar.TransformToVisual(strip).TransformPoint(new Windows.Foundation.Point()).Y;
+        var paneTop = files.Container.TransformToVisual(bar).TransformPoint(new Windows.Foundation.Point()).Y;
+        Require(Math.Abs(top - (strip.ActualHeight + 8)) < 1 && Math.Abs(paneTop - (bar.ActualHeight + 2)) < 1,
+            $"{key} ({theme}): the files header must sit 8 under the tab strip and 2 over the pane; got {top - strip.ActualHeight:F1} and {paneTop - bar.ActualHeight:F1}");
+        RequireClear(files.Container.BorderBrush, "the files pane's own outline", key);
+    }
+
+    /// <summary>
+    /// The dock's dividers and drop previews in the theme just rendered. A divider (M/PaneDockView.swift:42,
+    /// 125-133) is a 10pt strip that takes the pointer, with a 3x30 handle (30x3 between rows) of radius 2 in
+    /// its middle, <c>line</c> until the pointer is on it. A drop preview (M/PaneDockDrag.swift:131-146,
+    /// M/PaneDockView.swift:28-38) is the zone set in 5 with radius 9: <c>accent</c> x 0.16 under a 2pt accent
+    /// dash [6, 4], and the zone's words in 12pt semibold accent on a <c>page</c> x 0.95 capsule (h12 v7,
+    /// radius 15) in its middle. Returns the capture of the dock showing three zones.
+    /// </summary>
+    private async Task<string> RequireDockInTheme()
+    {
+        const string key = PaletteDesignKey; var theme = SmokeTheme;
+        Require(DesignMetrics.Layout.SplitDivider == 10 && splitDividers.Count >= 2, $"{key} ({theme}): the side-by-side layout must hold dividers of Layout.SplitDivider 10; got {splitDividers.Count} of {DesignMetrics.Layout.SplitDivider}");
+        foreach (var (splitId, (divider, handle)) in splitDividers)
+        {
+            var sideways = handle.Width < handle.Height;
+            Require((sideways ? handle is { Width: 3, Height: 30 } : handle is { Width: 30, Height: 3 }) && handle.CornerRadius == new CornerRadius(2) && !handle.IsHitTestVisible,
+                $"{key} ({theme}): the handle of divider {splitId} must be 3x30 (30x3 between rows), radius 2, and leave the pointer to its strip; got {handle.Width}x{handle.Height}, {handle.CornerRadius}, hit {handle.IsHitTestVisible}");
+            var across = sideways ? divider.ActualWidth : divider.ActualHeight;
+            var offset = handle.TransformToVisual(divider).TransformPoint(new Windows.Foundation.Point());
+            Require(Math.Abs(across - DesignMetrics.Layout.SplitDivider) < .5 && Math.Abs(offset.X + handle.ActualWidth / 2 - divider.ActualWidth / 2) < .6 && Math.Abs(offset.Y + handle.ActualHeight / 2 - divider.ActualHeight / 2) < .6,
+                $"{key} ({theme}): divider {splitId} must take the pointer over {DesignMetrics.Layout.SplitDivider} with its handle in the middle; got {across:F1} across, handle at ({offset.X:F1}, {offset.Y:F1}) of {divider.ActualWidth:F1}x{divider.ActualHeight:F1}");
+        }
+        // The pointer may rest on one divider while the check runs; that one is accent, every other is line.
+        var resting = splitDividers.Values.Where(parts => ReferenceEquals(parts.Handle.Background, brushes.Brush(DesignToken.Line))).ToList();
+        Require(resting.Count >= splitDividers.Count - 1 && splitDividers.Values.All(parts => ReferenceEquals(parts.Handle.Background, brushes.Brush(DesignToken.Line)) || ReferenceEquals(parts.Handle.Background, brushes.Brush(DesignToken.Accent))),
+            $"{key} ({theme}): a divider's handle must be the shared line brush, accent under the pointer; got {string.Join(", ", splitDividers.Values.Select(parts => Describe(parts.Handle.Background)))}");
+        RequireBrush(resting[0].Handle, e => ((Border)e).Background, DesignToken.Line, "a divider's handle at rest", key: key);
+
+        var zones = new[] { "left", "center", "bottom" };
+        Require(dropHints.Count >= zones.Length, $"{key} ({theme}): the side-by-side layout must hold {zones.Length} tab groups to show a drop preview on; got {dropHints.Count}");
+        var hints = dropHints.Values.Take(zones.Length).ToList();
+        try
+        {
+            for (var i = 0; i < zones.Length; i++) hints[i].Show(zones[i]);
+            root.UpdateLayout();
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var (hint, edge, label, words, _) = hints[i]; var zone = zones[i]; var group = (FrameworkElement)hint.Parent;
+                var at = hint.TransformToVisual(group).TransformPoint(new Windows.Foundation.Point());
+                var (left, top, width, height) = zone switch
+                {
+                    "left" => (5d, 5d, group.ActualWidth / 2 - 10, group.ActualHeight - 10),
+                    "bottom" => (5d, group.ActualHeight / 2 + 5, group.ActualWidth - 10, group.ActualHeight / 2 - 10),
+                    _ => (5d, 5d, group.ActualWidth - 10, group.ActualHeight - 10),
+                };
+                Require(hint.Visibility == Visibility.Visible && !hint.IsHitTestVisible && Math.Abs(at.X - left) < .6 && Math.Abs(at.Y - top) < .6 && Math.Abs(hint.ActualWidth - width) < .6 && Math.Abs(hint.ActualHeight - height) < .6,
+                    $"{key} ({theme}): the '{zone}' drop preview must cover its zone set in 5, {width:F1}x{height:F1} at ({left:F1}, {top:F1}); got {hint.ActualWidth:F1}x{hint.ActualHeight:F1} at ({at.X:F1}, {at.Y:F1}) in {group.ActualWidth:F1}x{group.ActualHeight:F1}");
+                Require(edge.RadiusX == 9 && edge.RadiusY == 9 && edge.StrokeThickness == DesignMetrics.Stroke.Active && edge.StrokeDashArray.SequenceEqual([3, 2]),
+                    $"{key} ({theme}): the '{zone}' drop preview must be radius 9 under a {DesignMetrics.Stroke.Active}pt dash of 6 on, 4 off (3 and 2 strokes); got radius {edge.RadiusX}, {edge.StrokeThickness}pt, [{string.Join(", ", edge.StrokeDashArray)}]");
+                RequireBrush(edge, e => ((Microsoft.UI.Xaml.Shapes.Shape)e).Fill, DesignToken.Accent, $"the '{zone}' drop preview's wash", DropHintOpacity, key);
+                RequireBrush(edge, e => ((Microsoft.UI.Xaml.Shapes.Shape)e).Stroke, DesignToken.Accent, $"the '{zone}' drop preview's dash", key: key);
+                Require(label.Padding == new Thickness(12, 7, 12, 7) && label.CornerRadius == new CornerRadius(15) && ReferenceEquals(label.Child, words),
+                    $"{key} ({theme}): the '{zone}' drop preview's words must stand in a capsule of padding h12 v7, radius 15; got {label.Padding}, {label.CornerRadius}");
+                RequireBrush(label, e => ((Border)e).Background, DesignToken.Page, $"the capsule under the '{zone}' drop preview's words", DropHintLabelOpacity, key);
+                RequireFont(words, DesignMetrics.Type.Block, FontWeights.SemiBold, $"({theme}) the '{zone}' drop preview's words", key);
+                RequireBrush(words, e => ((TextBlock)e).Foreground, DesignToken.Accent, $"the '{zone}' drop preview's words", key: key);
+                var wordsWant = Locale.Get(zone switch { "left" => "layout.drop.left", "bottom" => "layout.drop.bottom", _ => "layout.drop.merge" });
+                var middle = label.TransformToVisual(hint).TransformPoint(new Windows.Foundation.Point());
+                Require(words.Text == wordsWant && Math.Abs(middle.X + label.ActualWidth / 2 - hint.ActualWidth / 2) < 1 && Math.Abs(middle.Y + label.ActualHeight / 2 - hint.ActualHeight / 2) < 1,
+                    $"{key} ({theme}): the '{zone}' drop preview must read '{wordsWant}' in its middle; got '{words.Text}' at ({middle.X:F1}, {middle.Y:F1}), {label.ActualWidth:F1}x{label.ActualHeight:F1} in {hint.ActualWidth:F1}x{hint.ActualHeight:F1}");
+            }
+            var dock = (FrameworkElement)panes.Children.OfType<ScrollViewer>().First().Content;
+            return await CaptureElement(dock, Path.Combine(options.ProfileDirectory!, "smoke-chrome-drop-" + theme + ".png"));
+        }
+        finally { foreach (var parts in dropHints.Values) parts.Hint.Visibility = Visibility.Collapsed; }
+    }
+
+    /// <summary>
+    /// A double-click on a divider shares its split's room evenly again (M/PaneDockView.swift:146): a split
+    /// moved off the middle comes back to a ratio of 0.5 through the call the double-click makes, and keeps
+    /// its divider.
+    /// </summary>
+    private async Task RequireSplitReset(string workspace)
+    {
+        const string key = PaletteDesignKey;
+        static PaneLayoutNode? Find(PaneLayoutNode node, string id) => node.Id == id ? node : node.Children.Select(child => Find(child, id)).FirstOrDefault(found => found is not null);
+        double? Ratio(string id) => EffectiveLayout(service.Snapshot, workspace) is { } tree ? Find(tree, id)?.Ratio : null;
+        Require(splitDividers.Count > 0, $"{key}: the layout holds no split to reset");
+        var splitId = splitDividers.Keys.First();
+        await service.UpdateAsync(s => EffectiveLayout(s, workspace) is { } current ? SaveLayout(s, workspace, PaneLayout.Resize(current, splitId, .3)) : s);
+        Require(Ratio(splitId) is { } moved && Math.Abs(moved - .3) < .001, $"{key}: the split {splitId} did not take the ratio 0.3 before the reset; got {Ratio(splitId)}");
+        await ResetSplit(workspace, splitId);
+        Require(Ratio(splitId) is { } even && Math.Abs(even - .5) < .001 && splitDividers.ContainsKey(splitId),
+            $"{key}: a double-click on a divider must share its split evenly (ratio 0.5) and keep its divider; got {Ratio(splitId)}, divider {splitDividers.ContainsKey(splitId)}");
     }
 
     /// <summary>
@@ -164,17 +311,23 @@ public sealed partial class MainWindow
         RequireBrush(view, e => ((Control)e).Background, DesignToken.CardRaised, "the Default conversation surface", key: key);
         foreach (var state in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
             RequirePaletteShared(OwnResource(view, state) as Brush, raised, $"the conversation's {state}");
-        // The fixture's conversation opens with the request heading (accent); any other first line is in one of the RTF's inks.
+        // The fixture's conversation opens with the request in its bubble (the card colour); any other first line is in one of the RTF's inks.
         var (inkAt, inks) = ConversationInkAt(standard);
-        RequireRtfInk(view, inkAt, inks, inks.Length == 1 ? "the Default conversation's request heading" : "the Default conversation's first line", null);
+        RequireRtfInk(view, inkAt, inks, inks.Length == 1 ? "the Default conversation's request bubble" : "the Default conversation's first line", null);
+        RequireConversationType(standard);
         Require(standard.EmptyOutputForSmoke is { Visibility: Visibility.Collapsed }, $"{key} ({theme}): the empty state shows over a pane that has a conversation");
         var state0 = empty.EmptyOutputForSmoke!;
+        Require(state0.Margin == new Thickness(PaneView.EmptyOutputPadding, PaneView.EmptyOutputPadding - 8, PaneView.EmptyOutputPadding, 0) && state0.Spacing == 10,
+            $"{key} ({theme}): the empty agent pane must sit {PaneView.EmptyOutputPadding} inside the output area (M/SessionPaneView.swift:515), its parts 10 apart; got margin {state0.Margin}, spacing {state0.Spacing}");
         var heading = state0.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault()
             ?? throw new InvalidOperationException($"{key} ({theme}): the empty agent pane has no title line");
         var body = state0.Children.OfType<TextBlock>().LastOrDefault() ?? throw new InvalidOperationException($"{key} ({theme}): the empty agent pane has no explanation");
         Require(state0.Children.OfType<Microsoft.UI.Xaml.Shapes.Path>().Any(p => p.Width == 24), $"{key} ({theme}): the empty agent pane must lead with the agent's 24pt mark");
-        Require(heading.Text == Locale.Get("pane.empty.agentTitle", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name("claude") }) && body.Text == Locale.Get("pane.empty.agentBody"),
+        // The Mac names the agent by its short label here: "Claude와 작업을 시작하세요" (M/SessionPaneView.swift:509).
+        Require(heading.Text == Locale.Get("pane.empty.agentTitle", new Dictionary<string, string> { ["provider"] = ProviderMark.Label("claude") }) && body.Text == Locale.Get("pane.empty.agentBody"),
             $"{key} ({theme}): the empty agent pane's words differ from pane.empty.agentTitle / agentBody; got '{heading.Text}' / '{body.Text}'");
+        Require(heading.TextWrapping == TextWrapping.Wrap && heading.ActualWidth <= state0.ActualWidth + 0.5,
+            $"{key} ({theme}): the empty agent pane's title must wrap inside the pane; it is {heading.ActualWidth:F0} wide in {state0.ActualWidth:F0}");
         RequireFont(heading, 16, FontWeights.Medium, $"({theme}) the empty agent pane's title", key);
         RequireBrush(heading, e => ((TextBlock)e).Foreground, DesignToken.Ink, "the empty agent pane's title", key: key);
         Require(body.FontSize == DesignMetrics.Type.Block, $"{key} ({theme}): the empty agent pane's explanation must be {DesignMetrics.Type.Block}pt; got {body.FontSize}");
@@ -182,16 +335,100 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
+    /// The files pane's Markdown preview as its renderer draws it, for the eye. Side by side with four other
+    /// panes the files pane is too narrow to show one, so the Mac's own Markdown sample
+    /// (M/AgentMarkdownView.swift:308-329) goes into a box set up as the pane's (padding 18,
+    /// M/FilePaneView.swift:246) over the window for the length of one capture.
+    /// </summary>
+    private async Task CaptureMarkdownPreview(string theme)
+    {
+        const string sample = "# \uC791\uC5C5\uC744 \uC815\uB9AC\uD588\uC5B4\uC694\n\n**\uB124\uC774\uD2F0\uBE0C \uD654\uBA74**\uC5D0\uC11C \uC77D\uAE30 \uD3B8\uD558\uAC8C \uD45C\uC2DC\uD569\uB2C8\uB2E4. `SessionPaneView.swift`\uC640 [Swift \uBB38\uC11C](https://www.swift.org/documentation/)\uB97C \uD655\uC778\uD558\uC138\uC694.\n\n## \uBCC0\uACBD \uC0AC\uD56D\n- \uC77D\uAE30 \uD3B8\uD55C \uC81C\uBAA9\uACFC \uBAA9\uB85D\n  - \uC911\uCCA9 \uD56D\uBAA9\uB3C4 \uC720\uC9C0\n- [x] \uC785\uB825\uACFC \uD130\uBBF8\uB110 \uC720\uC9C0\n\n1. \uCCAB\uC9F8\n2. \uB458\uC9F8\n\n> \uC791\uC131 \uC911\uC778 \uCD08\uC548\uACFC \uC2E4\uD589 \uC911\uC778 \uD130\uBBF8\uB110\uC740 \uADF8\uB300\uB85C \uC774\uC5B4\uC9D1\uB2C8\uB2E4.\n\n```swift\nlet message = \"\uC548\uB155\uD558\uC138\uC694\"\nprint(message)\n```\n\n| \uD56D\uBAA9 | \uC0C1\uD0DC |\n|:---|---:|\n| Markdown | \uC644\uB8CC |\n| \uC9C4\uD589 \uC0C1\uD0DC | \uD655\uC778 \uC911 |\n\n---\n\n### \uB9C8\uBB34\uB9AC\n\uB9C8\uC9C0\uB9C9 \uBB38\uB2E8\uC785\uB2C8\uB2E4.";
+        var view = new RichEditBox { IsReadOnly = true, IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Background = brushes.Transparent, Padding = new Thickness(18) };
+        var card = new Border
+        {
+            Width = 620, Height = 720, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Child = view,
+            Background = brushes.Brush(DesignToken.Card), BorderBrush = brushes.Brush(DesignToken.Line), BorderThickness = new Thickness(DesignMetrics.Stroke.Line),
+        };
+        Grid.SetRowSpan(card, Math.Max(1, root.RowDefinitions.Count)); Grid.SetColumnSpan(card, Math.Max(1, root.ColumnDefinitions.Count));
+        root.Children.Add(card);
+        try
+        {
+            await WaitUI(() => view.IsLoaded, () => $"{PaletteDesignKey} ({theme}): the Markdown preview box never loaded");
+            await Task.Delay(120);
+            try { view.IsReadOnly = false; view.Document.SetText(TextSetOptions.FormatRtf, TranscriptRtf.RenderMarkdown(sample, theme == "light")); }
+            finally { view.IsReadOnly = true; }
+            await SettleDesktopCapture(card);
+            await CaptureElement(card, Path.Combine(options.ProfileDirectory!, "smoke-markdown-preview-" + theme + ".png"));
+        }
+        finally { root.Children.Remove(card); }
+    }
+
+    /// <summary>
+    /// The Default conversation as the Mac's concept D draws it (M/AgentTranscriptFormat.swift:174-248, 298-360):
+    /// the words 12 + 15 in from the pane's edge; the body at 13 exactly (9.75 typographic points: RTF counts
+    /// points where the Mac counts epx), a level-two heading 18 semibold, a tool row's detail 11.5 mono with
+    /// its timing at 10.5; no request heading; and behind the words the ink bubble, the reply card, the chip,
+    /// the quote's bar and the code surface, in the shared token brushes at radius 11.
+    /// </summary>
+    private void RequireConversationType(PaneView standard)
+    {
+        const string key = PaletteDesignKey; var theme = SmokeTheme;
+        var transcript = standard.Transcript; var view = transcript.View;
+        view.Document.GetText(TextGetOptions.None, out var text);
+        var inset = PaneView.TranscriptGutter + TranscriptRtf.Inset;
+        Require(view.FontSize == DesignMetrics.Type.Body && view.Padding == new Thickness(inset, 0, inset, 0),
+            $"{key} ({theme}): the conversation's box must be {DesignMetrics.Type.Body}pt with its words {inset} in from the pane's edge and its top and bottom insets in the document; got {view.FontSize}pt, padding {view.Padding}");
+        (float Size, int Weight, string Name) Face(string words)
+        {
+            var at = text.IndexOf(words, StringComparison.Ordinal);
+            Require(at >= 0, $"{key} ({theme}): the conversation does not show '{words}'");
+            var format = view.Document.GetRange(at, at + 1).CharacterFormat; return (format.Size, format.Weight, format.Name);
+        }
+        void Sized(string what, (float Size, int Weight, string Name) face, double epx, int weight) =>
+            Require(Math.Abs(face.Size - epx * 0.75) < 0.26 && face.Weight == weight, $"{key} ({theme}): {what} must be {epx} epx ({epx * 0.75:0.###} typographic points) at weight {weight}; got {face.Size}pt ({face.Size / 0.75:0.##} epx) at {face.Weight} in {face.Name}");
+        var body = Face("\uB450 \uBC88\uC9F8 \uBB38\uB2E8");
+        Require(Math.Abs(body.Size - DesignMetrics.Type.Body * 0.75) < 0.005, $"{key} ({theme}): the conversation's body must be exactly {DesignMetrics.Type.Body} epx ({DesignMetrics.Type.Body * 0.75} typographic points); got {body.Size}pt ({body.Size / 0.75:0.##} epx)");
+        Sized("a paragraph", body, DesignMetrics.Type.Body, 400);
+        Sized("a level-two heading", Face("Windows \uB124\uC774\uD2F0\uBE0C \uAC80\uC99D"), TranscriptRtf.HeadingSize(2), 600);
+        var detail = Face("dotnet test");
+        Sized("a tool row's detail", detail, 11.5, 400);
+        Require(DesignMetrics.Font.Mono.Split(',').Select(family => family.Trim()).Contains(detail.Name), $"{key} ({theme}): a tool row's detail must be in the monospace family; got {detail.Name}");
+        Sized("a tool row's timing", Face(Locale.Get("run.activity.durationSeconds", new Dictionary<string, string> { ["seconds"] = "12.3" })), 10.5, 400);
+        Require(!text.Contains(Locale.Get("transcript.requestHeading"), StringComparison.Ordinal) && !text.Contains("HYPERLINK", StringComparison.Ordinal),
+            $"{key} ({theme}): the request is a bubble with no heading over it, and no word of the conversation is a native link");
+        var painted = transcript.Painted(); var round = new CornerRadius(TranscriptRtf.BlockRadius);
+        foreach (var kind in new[] { TranscriptBlockKind.Bubble, TranscriptBlockKind.Card, TranscriptBlockKind.Chip, TranscriptBlockKind.Quote, TranscriptBlockKind.Code })
+            Require(painted.Any(p => p.Kind == kind && p.Height > 0), $"{key} ({theme}): the conversation paints no {kind} behind its words; painted [{string.Join(", ", painted.Select(p => $"{p.Kind} {p.Height:F0}"))}]");
+        foreach (var p in painted)
+        {
+            SolidColorBrush fill = p.Kind switch
+            {
+                TranscriptBlockKind.Bubble => brushes.Brush(DesignToken.Ink),
+                TranscriptBlockKind.Card or TranscriptBlockKind.Chip => brushes.Brush(DesignToken.Card),
+                TranscriptBlockKind.Code => brushes.Brush(DesignToken.CodeSurface),
+                _ => brushes.Brush(DesignToken.Accent, TranscriptRtf.QuoteBarOpacity),
+            };
+            var edge = p.Kind is TranscriptBlockKind.Card or TranscriptBlockKind.Chip ? brushes.Brush(DesignToken.Line) : null;
+            Require(ReferenceEquals(p.Fill, fill) && ReferenceEquals(p.Edge, edge) && p.Line == new Thickness(edge is null ? 0 : DesignMetrics.Stroke.Line) && p.Corners == (p.Kind == TranscriptBlockKind.Quote ? new CornerRadius(0) : round),
+                $"{key} ({theme}): the conversation's {p.Kind} must be the shared {Describe(fill)} brush{(edge is null ? "" : " with a " + DesignMetrics.Stroke.Line + "pt " + Describe(edge) + " edge")} at radius {(p.Kind == TranscriptBlockKind.Quote ? 0 : TranscriptRtf.BlockRadius)}; got {Describe(p.Fill)}, edge {Describe(p.Edge)} {p.Line}, corners {p.Corners}");
+        }
+    }
+
+    /// <summary>
     /// The character at <paramref name="at"/> of an RTF view is drawn in one of <paramref name="tokens"/> in the
     /// current theme: the document was rendered from this theme's colour table. Each of these inks differs
     /// between the themes, so a document left in the other theme fails.
     /// </summary>
-    /// <summary>Where the Default conversation's ink is read: the request heading (accent), or else its first character in one of the RTF's inks.</summary>
-    private static (int At, DesignToken[] Tokens) ConversationInkAt(PaneView standard)
+    /// <summary>
+    /// Where the Default conversation's ink is read: the request in its bubble, whose words are the card colour
+    /// on the ink (M/AgentTranscriptFormat.swift:197-202), or else its first character in one of the RTF's inks.
+    /// </summary>
+    private (int At, DesignToken[] Tokens) ConversationInkAt(PaneView standard)
     {
         standard.Transcript.View.Document.GetText(TextGetOptions.None, out var conversation);
-        var requestAt = conversation.IndexOf(Locale.Get("transcript.requestHeading"), StringComparison.Ordinal);
-        return requestAt >= 0 ? (requestAt, [DesignToken.Accent]) : (0, [DesignToken.Ink, DesignToken.Ink2, DesignToken.Accent, DesignToken.ErrText]);
+        var request = views.Where(pair => ReferenceEquals(pair.Value, standard)).Select(pair => service.Snapshot.Sessions.FirstOrDefault(s => s.Id == pair.Key)).FirstOrDefault()?.Logs.FirstOrDefault(e => e.Kind == "user")?.Text.Split('\n')[0];
+        var requestAt = string.IsNullOrEmpty(request) ? -1 : conversation.IndexOf(request, StringComparison.Ordinal);
+        return requestAt >= 0 ? (requestAt, [DesignToken.Card]) : (0, [DesignToken.Ink, DesignToken.Ink2, DesignToken.Accent, DesignToken.ErrText]);
     }
 
     private static string InkAt(RichEditBox view, int at)

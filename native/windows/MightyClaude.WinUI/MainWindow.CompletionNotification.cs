@@ -114,31 +114,4 @@ public sealed partial class MainWindow
         var impl = new WindowsAppNotifier();
         return CompletionNotificationSmoke.RunAsync(impl.IsSupported, () => impl.TryRegisterAsync(_ => { }), impl.SendAsync);
     }
-
-    // Settings section built from Core strings — portable to the future sectioned screen.
-    private StackPanel BuildNotificationSettingsSection()
-    {
-        var panel = new StackPanel { Spacing = 6 };
-        var toggle = new ToggleSwitch
-        {
-            Header = CompletionNotificationStrings.ToggleLabel,
-            IsOn = service.Snapshot.CompletionNotificationsEnabled,
-            OffContent = "",
-            OnContent = ""
-        };
-        toggle.Toggled += async (_, _) =>
-            await service.UpdateAsync(s => s with { CompletionNotificationsEnabled = toggle.IsOn });
-        panel.Children.Add(toggle);
-        panel.Children.Add(new TextBlock
-        {
-            Text = notifierPermission switch
-            { NotificationPermission.Allowed => CompletionNotificationStrings.StatusAllowed, NotificationPermission.NeedPermission => CompletionNotificationStrings.StatusNeedPermission, _ => CompletionNotificationStrings.StatusVerificationMode },
-            FontSize = 12,
-            Opacity = .7,
-            TextWrapping = TextWrapping.Wrap
-        });
-        panel.Children.Add(Button(CompletionNotificationStrings.SettingsButton, async () =>
-            await Windows.System.Launcher.LaunchUriAsync(new Uri("ms-settings:notifications"))));
-        return panel;
-    }
 }

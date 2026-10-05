@@ -49,6 +49,8 @@ public sealed partial class MainWindow
     /// The /plugin slash action and the run pane menu both land here.
     internal Task OpenPluginBrowser(string provider) => Act(async () =>
     {
+        // One sheet at a time: while Settings or another sheet is open this one waits to be asked again.
+        if (dialogOpen) return;
         if (service.Snapshot.Workspaces.FirstOrDefault(w => w.Id == service.Snapshot.ActiveWorkspaceId) is not { } workspace) return;
         await ShowPluginBrowser(provider, workspace);
     });
@@ -68,38 +70,60 @@ public sealed partial class MainWindow
                 ? new CodexPluginReader(runner)
                 : (IPluginReader)new ClaudePluginReader(runner);
 
-        var rows = new StackPanel { Spacing = 8 };
-        var status = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = brushes.Brush(DesignToken.WaitText), Visibility = Visibility.Collapsed };
+        // The window the Mac's way (M/ClaudePluginView.swift:184-303): 760×620 with padding 20 — the heading, the
+        // tabs beside the reload button, the search box beside the marketplace filter, on the marketplace tab the
+        // scope beside the marketplace refresh, what the read and the last operation said, the note, a rule and
+        // the rows; then the progress, the cancel and the close buttons on the last line.
+        var rows = new StackPanel { Spacing = 10 };
+        var status = SettingsText("", 11, DesignToken.WaitText, selectable: true); status.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(status, PluginAutomationId(provider, "load-status"));
-        var diagnostics = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        // The command's own output, 80 high behind its disclosure (M/ClaudePluginView.swift:277-282).
+        var diagnostics = SettingsText("", 10, mono: true, selectable: true);
+        var diagnosticsBox = new ScrollViewer { Content = diagnostics, Height = 80, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Visibility = Visibility.Collapsed };
+        var diagnosticsMark = new FontIcon { Glyph = PluginFoldedGlyph, FontSize = 8, VerticalAlignment = VerticalAlignment.Center };
         var diagnosticsToggle = Button(PluginStrings.DiagnosticsDisclosure, () =>
         {
-            diagnostics.Visibility = diagnostics.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            var open = diagnosticsBox.Visibility != Visibility.Visible;
+            diagnosticsBox.Visibility = open ? Visibility.Visible : Visibility.Collapsed; diagnosticsMark.Glyph = open ? PluginUnfoldedGlyph : PluginFoldedGlyph;
             return Task.CompletedTask;
         });
+        var diagnosticsLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        diagnosticsLabel.Children.Add(diagnosticsMark); diagnosticsLabel.Children.Add(new TextBlock { Text = PluginStrings.DiagnosticsDisclosure, FontSize = 10, VerticalAlignment = VerticalAlignment.Center });
+        diagnosticsToggle.Content = diagnosticsLabel; diagnosticsToggle.Padding = new Thickness(0); diagnosticsToggle.MinWidth = 0; diagnosticsToggle.MinHeight = 0;
+        diagnosticsToggle.BorderThickness = new Thickness(0); diagnosticsToggle.HorizontalAlignment = HorizontalAlignment.Left;
+        PaintPlainButton(diagnosticsToggle, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink));
         diagnosticsToggle.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(diagnosticsToggle, PluginAutomationId(provider, "diagnostics"));
 
-        var version = new TextBlock { FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .7, VerticalAlignment = VerticalAlignment.Center };
-        var progress = new TextBlock { FontSize = 11, Opacity = .7, Text = PluginStrings.ProgressLoading, Visibility = Visibility.Collapsed };
+        var version = SettingsText("", 10, DesignToken.Ink2, mono: true); version.VerticalAlignment = VerticalAlignment.Top;
+        var progress = SettingsText(PluginStrings.ProgressLoading, 11, DesignToken.Ink2); progress.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(progress, PluginAutomationId(provider, "progress"));
 
         // The controls are built first and their handlers attached below, after
         // every local the handlers read has been assigned.
-        var installedTab = new Button { Content = browser.TabLabel(ClaudePluginBrowser.InstalledTab) };
-        var marketplaceTab = new Button { Content = browser.TabLabel(ClaudePluginBrowser.MarketplaceTab) };
+        var installedTab = PluginTab(); var marketplaceTab = PluginTab();
         AutomationProperties.SetAutomationId(installedTab, PluginAutomationId(provider, "tab-installed"));
         AutomationProperties.SetAutomationId(marketplaceTab, PluginAutomationId(provider, "tab-marketplace"));
         AutomationProperties.SetName(installedTab, PluginStrings.TabInstalled);
         AutomationProperties.SetName(marketplaceTab, PluginStrings.TabMarketplace);
 
-        var search = new TextBox { PlaceholderText = PluginStrings.SearchPlaceholder, MinWidth = 260 };
+        // The search box (M/ClaudePluginView.swift:227-231): a plain field after the magnifier, on the subtle wash.
+        var search = new TextBox { PlaceholderText = PluginStrings.SearchPlaceholder, FontSize = DesignMetrics.Type.Title, BorderThickness = new Thickness(0), Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
+        var plain = new List<(string Key, object Value)>();
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled", "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused", "TextControlBorderBrushDisabled" }) plain.Add((key, brushes.Transparent));
+        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" }) plain.Add((key, brushes.Brush(DesignToken.Ink)));
+        foreach (var key in new[] { "TextControlPlaceholderForeground", "TextControlPlaceholderForegroundPointerOver", "TextControlPlaceholderForegroundFocused" }) plain.Add((key, brushes.Tertiary));
+        plain.Add(("TextControlBorderThemeThicknessFocused", new Thickness(0)));
+        SetResourcesOnce(search, plain);
+        // AppKit's placeholder is the tertiary ink; the template takes it from the property in every state (BuildSidebarSearch).
+        search.PlaceholderForeground = brushes.Tertiary;
         AutomationProperties.SetAutomationId(search, PluginAutomationId(provider, "search"));
-        var filter = new ComboBox { MinWidth = 210 };
+        AutomationProperties.SetName(search, PluginStrings.SearchPlaceholder);
+        var filter = SettingsPopup(new ComboBox(), bordered: true);
         AutomationProperties.SetAutomationId(filter, PluginAutomationId(provider, "marketplace-filter"));
         AutomationProperties.SetName(filter, PluginStrings.TabMarketplace);
 
-        var reload = new Button { Content = PluginStrings.ButtonReload };
+        var reload = SettingsPush(new Button { Content = SettingsGlyphLabel(PluginReloadGlyph, PluginStrings.ButtonReload, DesignMetrics.Type.Title) });
         AutomationProperties.SetAutomationId(reload, PluginAutomationId(provider, "reload"));
         AutomationProperties.SetName(reload, PluginStrings.ButtonReload);
 
@@ -128,37 +152,63 @@ public sealed partial class MainWindow
         }
 
         // Scope picker (Claude: 3 options, Codex: 1 option) and install controls.
-        var scopePicker = new ComboBox { MinWidth = 230 };
+        var scopePicker = SettingsPopup(new ComboBox(), bordered: true);
         AutomationProperties.SetAutomationId(scopePicker, PluginAutomationId(provider, "scope-picker"));
+        AutomationProperties.SetName(scopePicker, PluginStrings.ScopePickerLabel);
         foreach (var opt in browser.ScopeOptions)
             scopePicker.Items.Add(new ComboBoxItem { Content = opt.Label, Tag = opt.Value });
-        var pickerNote = new TextBlock { FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap };
+        var pickerNote = SettingsText("", 10, DesignToken.Ink2);
         AutomationProperties.SetAutomationId(pickerNote, PluginAutomationId(provider, "picker-note"));
 
         // The marketplace refresh button and the Codex Git-only note.
-        var refreshBtn = new Button { Content = PluginStrings.ButtonMarketplaceRefresh };
+        var refreshBtn = SettingsPush(new Button { Content = PluginStrings.ButtonMarketplaceRefresh });
         AutomationProperties.SetAutomationId(refreshBtn, PluginAutomationId(provider, "refresh-marketplaces"));
-        var marketplaceUnavailable = new TextBlock { FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        var marketplaceUnavailable = SettingsText("", 10, DesignToken.Ink2); marketplaceUnavailable.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(marketplaceUnavailable, PluginAutomationId(provider, "marketplace-unavailable"));
 
         // Progress label, cancel button and result text for running operations.
-        var operationProgress = new TextBlock { FontSize = 11, Opacity = .7 };
+        var operationProgress = SettingsText("", 11, DesignToken.Ink2); operationProgress.Visibility = Visibility.Collapsed;
         AutomationProperties.SetAutomationId(operationProgress, PluginAutomationId(provider, "operation-progress"));
-        var cancelBtn = new Button();
+        var cancelBtn = SettingsPush(new Button());
         AutomationProperties.SetAutomationId(cancelBtn, PluginAutomationId(provider, "cancel-operation"));
         cancelBtn.Click += (_, _) => browser.RequestCancel();
-        var progressRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Visibility = Visibility.Collapsed };
-        progressRow.Children.Add(operationProgress);
-        progressRow.Children.Add(cancelBtn);
-        var operationResult = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        cancelBtn.Visibility = Visibility.Collapsed;
+        // The small ring that turns while the list is read or an operation runs (M/ClaudePluginView.swift:198-202).
+        var working = new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Center };
+        // What the last operation said (M/ClaudePluginView.swift:270-276): its mark and sentence, doneText when it succeeded and waitText otherwise.
+        var operationMark = new FontIcon { FontSize = 11, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) };
+        var operationResult = SettingsText("", 11, selectable: true);
         AutomationProperties.SetAutomationId(operationResult, PluginAutomationId(provider, "operation-result"));
+        var resultRow = new Grid { ColumnSpacing = 5, Visibility = Visibility.Collapsed };
+        resultRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); resultRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        resultRow.Children.Add(operationMark); Grid.SetColumn(operationResult, 1); resultRow.Children.Add(operationResult);
+        void ShowResult(string? text, bool succeeded)
+        {
+            operationResult.Text = text ?? ""; resultRow.Visibility = text is { Length: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+            var ink = brushes.Brush(succeeded ? DesignToken.DoneText : DesignToken.WaitText);
+            operationResult.Foreground = ink; operationMark.Foreground = ink; operationMark.Glyph = succeeded ? PluginDoneGlyph : PluginNoteGlyph;
+        }
+
+        // The scope beside the marketplace refresh (M/ClaudePluginView.swift:239-252): its label and pop-up at the
+        // leading edge, the button at the trailing one, 12 apart.
+        var pickerRow = new Grid { ColumnSpacing = 12 };
+        pickerRow.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); pickerRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var scopeLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        scopePicker.HorizontalAlignment = HorizontalAlignment.Left;
+        scopeLine.Children.Add(SettingsText(PluginStrings.ScopePickerLabel)); scopeLine.Children.Add(scopePicker);
+        pickerRow.Children.Add(scopeLine); Grid.SetColumn(refreshBtn, 1); pickerRow.Children.Add(refreshBtn);
+
+        // The close button of the last line. It waits while an operation runs, as on the Mac.
+        ContentDialog? sheet = null;
+        var close = SettingsPush(Button(PluginStrings.ButtonClose, () => { sheet?.Hide(); return Task.CompletedTask; }));
+        AutomationProperties.SetAutomationId(close, PluginAutomationId(provider, "close"));
 
         // Wraps an install or refresh call: starts the operation (Phase set
         // synchronously), redraws to show progress, awaits, redraws the result.
         async Task<ClaudePluginOperationResult> OperateAsync(Func<Task<ClaudePluginOperationResult>> op)
         {
             if (PluginMutationBlockReason(provider, workspace) is { } block)
-            { operationResult.Text = block; operationResult.Visibility = Visibility.Visible; return new(ClaudePluginStatus.Skipped, block); }
+            { ShowResult(block, false); return new(ClaudePluginStatus.Skipped, block); }
             var task = op();
             NotifyAutomaticUpdates(); RenderPlugins();
             try { var result = await task; if (!closing) RenderPlugins(); return result; }
@@ -167,72 +217,82 @@ public sealed partial class MainWindow
 
         void RenderPlugins()
         {
-            installedTab.Content = browser.TabLabel(ClaudePluginBrowser.InstalledTab);
-            marketplaceTab.Content = browser.TabLabel(ClaudePluginBrowser.MarketplaceTab);
-            installedTab.Opacity = browser.Tab == ClaudePluginBrowser.InstalledTab ? 1 : .6;
-            marketplaceTab.Opacity = browser.Tab == ClaudePluginBrowser.MarketplaceTab ? 1 : .6;
+            // A tab's words are semibold on the accent tint when it is chosen, regular on the subtle wash otherwise.
+            foreach (var (tab, value) in new[] { (installedTab, ClaudePluginBrowser.InstalledTab), (marketplaceTab, ClaudePluginBrowser.MarketplaceTab) })
+            {
+                var chosen = browser.Tab == value; var chip = (Border)tab.Content; var words = (TextBlock)chip.Child;
+                words.Text = browser.TabLabel(value); words.FontWeight = chosen ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
+                chip.Background = chosen ? brushes.Brush(DesignToken.Accent, PluginTabTint) : brushes.Subtle;
+            }
+            var onMarketplace = browser.Tab == ClaudePluginBrowser.MarketplaceTab;
             version.Text = browser.Snapshot?.CliVersion ?? "";
-            progress.Visibility = browser.Loading ? Visibility.Visible : Visibility.Collapsed;
             reload.IsEnabled = !browser.Loading;
             status.Text = browser.StatusText ?? "";
             status.Visibility = browser.StatusText is { Length: > 0 } ? Visibility.Visible : Visibility.Collapsed;
             var output = browser.Snapshot?.DiagnosticOutput ?? "";
+            // The sentence is quiet while the list is good and nothing went wrong on the way to it.
+            status.Foreground = brushes.Brush(browser.IsReady && output.Length == 0 ? DesignToken.Ink2 : DesignToken.WaitText);
             diagnostics.Text = output;
             diagnosticsToggle.Visibility = output.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (output.Length == 0) diagnostics.Visibility = Visibility.Collapsed;
+            if (output.Length == 0) { diagnosticsBox.Visibility = Visibility.Collapsed; diagnosticsMark.Glyph = PluginFoldedGlyph; }
             RenderFilter();
 
-            // Scope picker: keep the selection stable across redraws.
+            // Scope picker: keep the selection stable across redraws. The scope and the marketplace refresh belong to the marketplace tab.
             var scopeIdx = browser.ScopeOptions.ToList().FindIndex(o => o.Value == browser.Scope);
             scopePicker.SelectedIndex = Math.Max(0, scopeIdx);
             pickerNote.Text = browser.ScopeNote;
+            pickerRow.Visibility = pickerNote.Visibility = onMarketplace ? Visibility.Visible : Visibility.Collapsed;
 
             // Refresh button: enabled when there is at least one refreshable marketplace.
             refreshBtn.IsEnabled = browser.CanRefreshMarketplaces;
             marketplaceUnavailable.Text = browser.RefreshUnavailableNote ?? "";
-            marketplaceUnavailable.Visibility = browser.RefreshUnavailableNote is { Length: > 0 }
+            marketplaceUnavailable.Visibility = onMarketplace && browser.RefreshUnavailableNote is { Length: > 0 }
                 ? Visibility.Visible : Visibility.Collapsed;
 
             // Progress / cancel / result.
             operationProgress.Text = browser.ProgressLabel ?? "";
             cancelBtn.Content = browser.CancelLabel;
             cancelBtn.IsEnabled = browser.CanCancel;
-            progressRow.Visibility = browser.IsMutating ? Visibility.Visible : Visibility.Collapsed;
-            operationResult.Text = browser.ResultText ?? "";
-            operationResult.Visibility = browser.ResultText is { Length: > 0 }
-                ? Visibility.Visible : Visibility.Collapsed;
+            operationProgress.Visibility = cancelBtn.Visibility = browser.IsMutating ? Visibility.Visible : Visibility.Collapsed;
+            progress.Visibility = browser.Loading && !browser.IsMutating ? Visibility.Visible : Visibility.Collapsed;
+            working.IsActive = browser.Loading || browser.IsMutating; working.Visibility = working.IsActive ? Visibility.Visible : Visibility.Collapsed;
+            // macOS keeps Close disabled while an operation runs.
+            close.IsEnabled = browser.CanClose;
+            ShowResult(browser.ResultText, browser.LastResult?.Status == ClaudePluginStatus.Succeeded);
 
             // Rows: catalog tab gets an install button per row.
             rows.Children.Clear();
-            if (browser.Tab == ClaudePluginBrowser.MarketplaceTab)
+            if (onMarketplace)
             {
                 foreach (var row in browser.Rows())
                 {
-                    var panel = PluginRowPanel(provider, row);
                     var btnLabel = browser.InstallButtonLabel(row.Id);
-                    var installBtn = new Button { Content = btnLabel, IsEnabled = browser.CanInstall(row.Id) };
+                    var installBtn = SettingsPush(new Button { Content = btnLabel, IsEnabled = browser.CanInstall(row.Id) });
                     AutomationProperties.SetAutomationId(installBtn, PluginAutomationId(provider, "install-" + row.Id));
                     var capturedId = row.Id;
                     installBtn.Click += async (_, _) => await OperateAsync(() => operations.InstallAsync(browser, reader, capturedId));
-                    panel.Children.Add(installBtn);
-                    rows.Children.Add(Toned(panel));
+                    rows.Children.Add(PluginRowPanel(provider, row, installBtn));
                 }
             }
             else
             {
-                foreach (var row in browser.Rows()) rows.Children.Add(Toned(PluginRow(provider, row)));
+                foreach (var row in browser.Rows()) rows.Children.Add(PluginRow(provider, row));
             }
             if (rows.Children.Count == 0)
             {
-                rows.Children.Add(Toned(new TextBlock { Text = browser.EmptyMessage, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 28, 0, 28) }));
+                // M/ClaudePluginView.swift:349-362: the sentence, and under it the way to add a marketplace, centred with 28 above and below.
+                var empty = new StackPanel { Spacing = 10, Margin = new Thickness(0, 28, 0, 28) };
+                var message = SettingsText(browser.EmptyMessage, 12, DesignToken.Ink2); message.HorizontalAlignment = HorizontalAlignment.Center; message.TextAlignment = TextAlignment.Center;
+                empty.Children.Add(message);
                 if (browser.ShowsMarketplaceHelpLink)
-                    rows.Children.Add(new HyperlinkButton { Content = PluginStrings.MarketplaceHelpLink, NavigateUri = new Uri("https://code.claude.com/docs/en/discover-plugins#add-marketplaces"), HorizontalAlignment = HorizontalAlignment.Center });
+                    empty.Children.Add(new HyperlinkButton { Content = PluginStrings.MarketplaceHelpLink, NavigateUri = new Uri("https://code.claude.com/docs/en/discover-plugins#add-marketplaces"), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, Padding = new Thickness(0), MinHeight = 0 });
                 if (browser.MarketplaceHelpText is { Length: > 0 } help)
                 {
-                    var sentence = new TextBlock { Text = help, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center };
+                    var sentence = SettingsText(help, 11, DesignToken.Ink2); sentence.HorizontalAlignment = HorizontalAlignment.Center; sentence.TextAlignment = TextAlignment.Center;
                     AutomationProperties.SetAutomationId(sentence, PluginAutomationId(provider, "marketplace-help"));
-                    rows.Children.Add(Toned(sentence));
+                    empty.Children.Add(sentence);
                 }
+                rows.Children.Add(empty);
             }
         }
 
@@ -280,53 +340,79 @@ public sealed partial class MainWindow
             RenderPlugins();
         };
 
-        var header = new StackPanel { Spacing = 2 };
-        header.Children.Add(new TextBlock { Text = workspace.Name, FontSize = 12, Opacity = .75, TextTrimming = TextTrimming.CharacterEllipsis });
-        header.Children.Add(new TextBlock { Text = workspace.Path, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .55, TextTrimming = TextTrimming.CharacterEllipsis });
-        header.Children.Add(version);
+        // The heading (M/ClaudePluginView.swift:186-195): the puzzle piece in accent, the title (18 semibold) over the
+        // workspace's name and its path (10pt mono in the tertiary ink, :191), and the CLI's version at the trailing edge.
+        var title = new TextBlock { Text = browser.Title, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), LineHeight = 22, LineStackingStrategy = LineStackingStrategy.BlockLineHeight };
+        AutomationProperties.SetAutomationId(title, PluginAutomationId(provider, "title"));
+        var workspaceName = SettingsText(workspace.Name, 12, DesignToken.Ink2); var workspacePath = SettingsTertiary(workspace.Path, mono: true);
+        foreach (var line in new[] { workspaceName, workspacePath }) { line.TextWrapping = TextWrapping.NoWrap; line.TextTrimming = TextTrimming.CharacterEllipsis; }
+        ToolTipService.SetToolTip(workspacePath, workspace.Path);
+        var named = new StackPanel { Spacing = 4 };
+        named.Children.Add(title); named.Children.Add(workspaceName); named.Children.Add(workspacePath);
+        var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var piece = new FontIcon { Glyph = PluginGlyph, FontSize = 25, Foreground = brushes.Brush(DesignToken.Accent), VerticalAlignment = VerticalAlignment.Top };
+        AutomationProperties.SetAccessibilityView(piece, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        header.Children.Add(piece); Grid.SetColumn(named, 1); header.Children.Add(named); Grid.SetColumn(version, 2); header.Children.Add(version);
 
-        var body = new StackPanel { Spacing = 10, Width = 700 };
-        body.Children.Add(header);
-        {
-            var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            tabs.Children.Add(installedTab);
-            tabs.Children.Add(marketplaceTab);
-            tabs.Children.Add(new TextBlock { Width = 180 });
-            tabs.Children.Add(reload);
-            body.Children.Add(tabs);
-            var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            filters.Children.Add(search);
-            filters.Children.Add(filter);
-            body.Children.Add(filters);
-            body.Children.Add(progress);
-            body.Children.Add(status);
-            body.Children.Add(diagnosticsToggle);
-            body.Children.Add(diagnostics);
-            // Scope picker and explanation.
-            var pickerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            pickerRow.Children.Add(scopePicker);
-            pickerRow.Children.Add(refreshBtn);
-            body.Children.Add(pickerRow);
-            body.Children.Add(pickerNote);
-            body.Children.Add(marketplaceUnavailable);
-            body.Children.Add(progressRow);
-            body.Children.Add(operationResult);
-            body.Children.Add(new TextBlock { Text = browser.FooterNote, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
-            body.Children.Add(new ScrollViewer { Content = rows, Height = 340, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled });
-            RenderPlugins();
-        }
+        // The tabs, 6 apart, and the reload button at the trailing edge.
+        var tabs = new Grid();
+        tabs.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); tabs.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var tabLine = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        tabLine.Children.Add(installedTab); tabLine.Children.Add(marketplaceTab);
+        tabs.Children.Add(tabLine); Grid.SetColumn(reload, 1); tabs.Children.Add(reload);
 
+        // The search box takes what the 230-wide marketplace filter leaves (M/ClaudePluginView.swift:226-237).
+        var searchLine = new Grid { ColumnSpacing = 7 };
+        searchLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); searchLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        searchLine.Children.Add(SettingsSymbol(PluginSearchGlyph, 12, DesignToken.Ink2)); Grid.SetColumn(search, 1); searchLine.Children.Add(search);
+        var searchBox = new Border { Child = searchLine, Padding = new Thickness(9), CornerRadius = new CornerRadius(DesignMetrics.Radius.Row), Background = brushes.Subtle };
+        var filterLine = new Grid { ColumnSpacing = 8, Width = PluginFilterWidth, VerticalAlignment = VerticalAlignment.Center };
+        filterLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); filterLine.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        filter.HorizontalAlignment = HorizontalAlignment.Stretch;
+        filterLine.Children.Add(SettingsText(PluginStrings.TabMarketplace)); Grid.SetColumn(filter, 1); filterLine.Children.Add(filter);
+        var filters = new Grid { ColumnSpacing = 10 };
+        filters.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); filters.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        filters.Children.Add(searchBox); Grid.SetColumn(filterLine, 1); filters.Children.Add(filterLine);
+
+        // Everything above the rows, 12 apart; what does not apply is collapsed and leaves no gap.
+        var controls = new StackPanel { Spacing = 12 };
+        foreach (var part in new FrameworkElement[] { tabs, filters, pickerRow, pickerNote, marketplaceUnavailable, status, resultRow, diagnosticsToggle, diagnosticsBox, SettingsText(browser.FooterNote, 10, DesignToken.Ink2) }) controls.Children.Add(part);
+        var list = new Grid { RowSpacing = 12 };
+        list.RowDefinitions.Add(new() { Height = GridLength.Auto }); list.RowDefinitions.Add(new() { Height = GridLength.Auto }); list.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
+        list.Children.Add(controls);
+        var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = brushes.Brush(DesignToken.Line) };
+        Grid.SetRow(rule, 1); list.Children.Add(rule);
+        // The rows keep 16 clear at the trailing edge for the scroller (M/ClaudePluginView.swift:299).
+        rows.Padding = new Thickness(0, 0, 16, 0);
+        var scroller = new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
+        Grid.SetRow(scroller, 2); list.Children.Add(scroller);
+
+        // The last line (M/ClaudePluginView.swift:197-210): the ring and what is being done, then the cancel and close buttons.
+        var footer = new Grid { ColumnSpacing = 8 };
+        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var doing = new Grid(); doing.Children.Add(progress); doing.Children.Add(operationProgress);
+        footer.Children.Add(working); Grid.SetColumn(doing, 1); footer.Children.Add(doing);
+        Grid.SetColumn(cancelBtn, 2); footer.Children.Add(cancelBtn); Grid.SetColumn(close, 3); footer.Children.Add(close);
+
+        var body = new Grid { RowSpacing = 14 };
+        body.RowDefinitions.Add(new() { Height = GridLength.Auto }); body.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); body.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        body.Children.Add(header); Grid.SetRow(list, 1); body.Children.Add(list); Grid.SetRow(footer, 2); body.Children.Add(footer);
+        RenderPlugins();
+
+        // The sheet has no title or buttons of its own: the heading and the last line are its content, as on the Mac.
         var dialog = StyledDialog(new ContentDialog
         {
-            Title = browser.Title,
             Content = body,
-            CloseButtonText = PluginStrings.ButtonClose,
             XamlRoot = root.XamlRoot,
-        });
+        }, PluginSheetWidth, PluginSheetHeight);
+        sheet = dialog;
         AutomationProperties.SetAutomationId(dialog, PluginAutomationId(provider, "browser"));
+        AutomationProperties.SetName(dialog, browser.Title);
         dialog.Opened += (_, _) => _ = LoadPluginsAsync();
-        // macOS keeps Close disabled while an operation runs; a ContentDialog's
-        // close button cannot be disabled, so the close itself is refused.
+        // macOS keeps Close disabled while an operation runs; Esc closes a
+        // ContentDialog whatever its buttons say, so the close itself is refused.
         dialog.Closing += (_, args) => { if (!browser.CanClose) args.Cancel = true; };
 
         dialogOpen = true;
@@ -351,6 +437,29 @@ public sealed partial class MainWindow
 
     private static string PluginAutomationId(string provider, string part) => ClaudePluginSupport.AutomationId(provider, part);
 
+    /// <summary>The plugin sheet's size and its marketplace filter's width (M/ClaudePluginView.swift:212, 236).</summary>
+    internal const double PluginSheetWidth = 760, PluginSheetHeight = 620, PluginFilterWidth = 230;
+    /// <summary>The chosen tab's tint: accent at 0.17 (M/ClaudePluginView.swift:309).</summary>
+    private const double PluginTabTint = 0.17;
+    /// <summary>The Mac's symbols in Segoe Fluent Icons: puzzlepiece.extension, arrow.clockwise, magnifyingglass, the disclosure's chevrons, checkmark.circle.fill and info.circle.</summary>
+    private const string PluginGlyph = "", PluginReloadGlyph = "", PluginSearchGlyph = "", PluginFoldedGlyph = "", PluginUnfoldedGlyph = "", PluginDoneGlyph = "", PluginNoteGlyph = "";
+
+    /// <summary>
+    /// A tab of the plugin sheet (M/ClaudePluginView.swift:305-311): a plain button around a radius-7 chip
+    /// with padding h12 v7 and 12pt words. The words, their weight and the chip's fill are drawn as the
+    /// sheet is rendered, on the content.
+    /// </summary>
+    private Button PluginTab()
+    {
+        var chip = new Border { Child = new TextBlock { FontSize = 12, Foreground = brushes.Brush(DesignToken.Ink) }, Padding = new Thickness(12, 7, 12, 7), CornerRadius = new CornerRadius(7) };
+        var tab = new Button { Content = chip, Padding = new Thickness(0), MinWidth = 0, MinHeight = 0, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(7) };
+        PaintPlainButton(tab, brushes.Transparent, brushes.Transparent);
+        return tab;
+    }
+
+    /// <summary>The words a tab shows, read off its chip.</summary>
+    private static string PluginTabLabel(Button tab) => ((TextBlock)((Border)tab.Content).Child).Text;
+
     // Every element the built dialog holds, so the smoke run finds its controls
     // by automation id the way a user finds them on screen.
     private static IEnumerable<DependencyObject> PluginDescendants(object? node)
@@ -369,6 +478,13 @@ public sealed partial class MainWindow
                 {
                     yield return content;
                     foreach (var nested in PluginDescendants(content)) yield return nested;
+                }
+                break;
+            case Border border:
+                if (border.Child is { } boxed)
+                {
+                    yield return boxed;
+                    foreach (var nested in PluginDescendants(boxed)) yield return nested;
                 }
                 break;
             case ContentControl control:
@@ -437,12 +553,13 @@ public sealed partial class MainWindow
             smokePluginDialog = async surface =>
             {
                 var dialog = surface.Dialog;
-                title = (string)dialog.Title;
+                // The title stands in the sheet's own heading, as on the Mac.
+                title = PluginControl<TextBlock>(dialog, "claude", "title").Text;
                 // The Opened handler's own action: the first read.
                 await surface.Load();
                 Require(surface.Browser.IsReady, "the plugin list did not load from the fixture");
-                installedTab = (string)PluginControl<Button>(dialog, "claude", "tab-installed").Content!;
-                marketplaceTab = (string)PluginControl<Button>(dialog, "claude", "tab-marketplace").Content!;
+                installedTab = PluginTabLabel(PluginControl<Button>(dialog, "claude", "tab-installed"));
+                marketplaceTab = PluginTabLabel(PluginControl<Button>(dialog, "claude", "tab-marketplace"));
                 installedRows = PluginRowCount(dialog, "claude");
                 installedSubtitle = surface.Browser.InstalledRows()[0].Subtitle;
 
@@ -474,8 +591,10 @@ public sealed partial class MainWindow
                         && ClaudePluginSupport.NamesAChange(id, "claude"));
                 Require(dialog.PrimaryButtonText is null or "" && dialog.SecondaryButtonText is null or "",
                     "the plugin window must have no dialog button that changes the list");
-                Require(dialog.CloseButtonText == PluginStrings.ButtonClose, "the close button text differs");
-                Require((string)PluginControl<Button>(dialog, "claude", "reload").Content! == PluginStrings.ButtonReload,
+                // The close button is the last line's own (M/ClaudePluginView.swift:208), and the sheet has no button of its own.
+                Require(dialog.CloseButtonText is null or "" && (string)PluginControl<Button>(dialog, "claude", "close").Content! == PluginStrings.ButtonClose, "the close button text differs");
+                // The reload button's words stand after its symbol.
+                Require(((StackPanel)PluginControl<Button>(dialog, "claude", "reload").Content).Children.OfType<TextBlock>().Single().Text == PluginStrings.ButtonReload,
                     "the reload button text differs");
 
                 // The reload button's own action, answered by a missing CLI.
@@ -510,6 +629,32 @@ public sealed partial class MainWindow
             Require(outcome.MutatingControls == 5, "unexpected number of changing controls on the Claude marketplace tab: " + outcome.MutatingControls);
             Require(outcome.ReloadedFromStatus == PluginStrings.DetailMissingCli, "the missing-CLI sentence differs from macOS");
             Require(outcome.Reads == 2, "wrong number of list reads: " + outcome.Reads);
+
+            // The same sheet once more, shown for real with the fixture's rows: its size and heading are the
+            // Mac's (M/ClaudePluginView.swift:186-212), and both tabs are captured to be read next to that file.
+            smokePluginRead = _ => Task.FromResult(PluginSmokeSnapshot);
+            smokePluginDialog = async surface =>
+            {
+                var dialog = surface.Dialog; var theme = SmokeTheme;
+                // The Mac's size, or what a smaller window leaves it (a display scaled past 125% makes this window that small).
+                var fits = root.XamlRoot.Size;
+                Require(OwnResource(dialog, "ContentDialogMinWidth") is double width && width == SheetFit(PluginSheetWidth, fits.Width) && OwnResource(dialog, "ContentDialogMaxHeight") is double height && height == SheetFit(PluginSheetHeight, fits.Height),
+                    $"the plugin sheet must be {PluginSheetWidth}×{PluginSheetHeight}, or as much of that as the {fits.Width}×{fits.Height} window leaves; got {OwnResource(dialog, "ContentDialogMinWidth")}×{OwnResource(dialog, "ContentDialogMaxHeight")}");
+                var heading = PluginControl<TextBlock>(dialog, "claude", "title");
+                Require(heading.FontSize == 18 && heading.FontWeight.Weight == Microsoft.UI.Text.FontWeights.SemiBold.Weight, $"the plugin sheet's title must be 18pt semibold; got {heading.FontSize} at {heading.FontWeight.Weight}");
+                var showing = dialog.ShowAsync();
+                try
+                {
+                    await WaitUI(() => dialog.IsLoaded && surface.Browser.IsReady && !surface.Browser.Loading && PluginRowCount(dialog, "claude") == 2, () => "the plugin sheet never showed the fixture's installed rows");
+                    await SettleDesktopCapture(dialog);
+                    await CaptureElement(dialog, Path.Combine(options.ProfileDirectory!, "smoke-plugins-installed-" + theme + ".png"));
+                    await surface.SelectTab(ClaudePluginBrowser.MarketplaceTab);
+                    await SettleDesktopCapture(dialog);
+                    await CaptureElement(dialog, Path.Combine(options.ProfileDirectory!, "smoke-plugins-marketplace-" + theme + ".png"));
+                }
+                finally { dialog.Hide(); await showing; }
+            };
+            await ShowPluginBrowser("claude", workspace);
             return outcome;
         }
         finally
@@ -575,11 +720,11 @@ public sealed partial class MainWindow
             smokeCodexPluginDialog = async surface =>
             {
                 var dialog = surface.Dialog;
-                title = (string)dialog.Title;
+                title = PluginControl<TextBlock>(dialog, "codex", "title").Text;
                 await surface.Load();
                 Require(surface.Browser.IsReady, "the Codex plugin list did not load from the fixture");
-                installedTab = (string)PluginControl<Button>(dialog, "codex", "tab-installed").Content!;
-                marketplaceTab = (string)PluginControl<Button>(dialog, "codex", "tab-marketplace").Content!;
+                installedTab = PluginTabLabel(PluginControl<Button>(dialog, "codex", "tab-installed"));
+                marketplaceTab = PluginTabLabel(PluginControl<Button>(dialog, "codex", "tab-marketplace"));
                 installedRows = PluginRowCount(dialog, "codex");
                 installedSubtitle = surface.Browser.InstalledRows()[0].Subtitle;
                 footer = PluginDescendants(dialog.Content).OfType<TextBlock>().Select(t => t.Text).First(t => t == surface.Browser.FooterNote);
@@ -657,27 +802,51 @@ public sealed partial class MainWindow
         }
     }
 
-    /// <summary>A plugin as a row on the subtle wash at radius 9; secondary words <c>ink2</c>, errors <c>waitText</c>.</summary>
-    private StackPanel PluginRowPanel(string provider, ClaudePluginRow row)
+    /// <summary>
+    /// A plugin as a row on the subtle wash at radius 9 with padding 12 (M/ClaudePluginView.swift:312-348).
+    /// An installed one: its name (13 semibold) and version (10 mono) against its state word at the trailing
+    /// edge, the description, where it comes from, its project path, its errors in <c>waitText</c> and its
+    /// notes, 7 apart. A catalog one: the same words 6 apart, with <paramref name="install"/> at the top of
+    /// the trailing edge, 14 from them.
+    /// </summary>
+    private Grid PluginRowPanel(string provider, ClaudePluginRow row, Button? install = null)
     {
-        var panel = new StackPanel { Spacing = 5, Padding = new Thickness(11), CornerRadius = new CornerRadius(DesignMetrics.Radius.CardButton), Background = brushes.Subtle };
+        var panel = new Grid { ColumnSpacing = 14, Padding = new Thickness(12), CornerRadius = new CornerRadius(9), Background = brushes.Subtle };
+        panel.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); panel.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         AutomationProperties.SetAutomationId(panel, PluginAutomationId(provider, "row-" + row.Id));
-        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
-        title.Children.Add(new TextBlock { Text = row.Name, FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        var words = new StackPanel { Spacing = install is null ? 7 : 6 };
+        var title = new Grid { ColumnSpacing = 8 };
+        title.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); title.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); title.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+        var name = SettingsText(row.Name, 13); name.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; name.MaxLines = 2; name.TextTrimming = TextTrimming.CharacterEllipsis;
+        title.Children.Add(name);
         if (row.Version is { Length: > 0 })
-            title.Children.Add(new TextBlock { Text = row.Version, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .7, VerticalAlignment = VerticalAlignment.Center });
+        {
+            var version = SettingsText(row.Version, 10, DesignToken.Ink2, mono: true); Grid.SetColumn(version, 1); title.Children.Add(version);
+        }
         if (row.State is { Length: > 0 })
-            title.Children.Add(new TextBlock { Text = row.State, FontSize = 10, Opacity = .7, VerticalAlignment = VerticalAlignment.Center });
-        panel.Children.Add(title);
+        {
+            // The state word: doneText while the plugin is on (M/ClaudePluginView.swift:318-319).
+            var state = SettingsText(row.State, 10, row.State == PluginStrings.StateEnabled ? DesignToken.DoneText : DesignToken.Ink2, medium: true);
+            state.HorizontalAlignment = HorizontalAlignment.Right; Grid.SetColumn(state, 2); title.Children.Add(state);
+        }
+        words.Children.Add(title);
         if (row.Description.Length > 0)
-            panel.Children.Add(new TextBlock { Text = row.Description, FontSize = 11, Opacity = .75, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = row.Subtitle, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+        {
+            var description = SettingsText(row.Description, 11, DesignToken.Ink2); description.MaxLines = 3; description.TextTrimming = TextTrimming.CharacterEllipsis;
+            words.Children.Add(description);
+        }
+        // Where it comes from: ink2 on an installed row, the tertiary ink on a catalog one (M/ClaudePluginView.swift:322, 340).
+        words.Children.Add(install is null ? SettingsText(row.Subtitle, 10, DesignToken.Ink2) : SettingsTertiary(row.Subtitle));
         if (row.ProjectPath is { Length: > 0 })
-            panel.Children.Add(new TextBlock { Text = row.ProjectPath, FontSize = 10, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Opacity = .5, TextTrimming = TextTrimming.CharacterEllipsis });
-        foreach (var error in row.Errors)
-            panel.Children.Add(new TextBlock { Text = error, FontSize = 10, Foreground = brushes.Brush(DesignToken.WaitText), TextWrapping = TextWrapping.Wrap });
-        foreach (var note in row.Notes)
-            panel.Children.Add(new TextBlock { Text = note, FontSize = 10, Opacity = .65, TextWrapping = TextWrapping.Wrap });
+        {
+            // The project's path: 10pt mono in the tertiary ink (M/ClaudePluginView.swift:323).
+            var path = SettingsTertiary(row.ProjectPath, mono: true); path.TextWrapping = TextWrapping.NoWrap; path.TextTrimming = TextTrimming.CharacterEllipsis;
+            ToolTipService.SetToolTip(path, row.ProjectPath); words.Children.Add(path);
+        }
+        foreach (var error in row.Errors) words.Children.Add(SettingsText(error, 10, DesignToken.WaitText));
+        foreach (var note in row.Notes) words.Children.Add(SettingsText(note, 10, DesignToken.Ink2));
+        panel.Children.Add(words);
+        if (install is not null) { install.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(install, 1); panel.Children.Add(install); }
         return panel;
     }
 

@@ -257,12 +257,18 @@ public sealed partial class MainWindow
                 child.Visibility = Visibility.Collapsed;
 
             browserHistory = new BrowserHistory();
-            browserHost = new Grid { RowSpacing = 8 };
+            // Edge to edge in the card, under the slim bar its tab group draws (M/BrowserPaneView.swift:30-34):
+            // the toolbar, a 1pt line, then the page, with nothing between them.
+            const double inset = 12;
+            browserHost = new Grid { Margin = new Thickness(-inset), CornerRadius = new CornerRadius(0, 0, DesignMetrics.Radius.Pane, DesignMetrics.Radius.Pane) };
+            browserHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             browserHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             browserHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             browserHost.Children.Add(BuildBrowserNavBar());
-            browserContent = new Border { VerticalAlignment = VerticalAlignment.Stretch };
-            Grid.SetRow(browserContent, 1); browserHost.Children.Add(browserContent);
+            var rule = new Border { Height = DesignMetrics.Stroke.Line, Background = owner.brushes.Brush(DesignToken.Line) };
+            Grid.SetRow(rule, 1); browserHost.Children.Add(rule);
+            browserContent = new Border { VerticalAlignment = VerticalAlignment.Stretch, Background = owner.brushes.Brush(DesignToken.Page) };
+            Grid.SetRow(browserContent, 2); browserHost.Children.Add(browserContent);
             AutomationProperties.SetAutomationId(browserHost, "browser-pane-" + id);
             Grid.SetRow(browserHost, 0); Grid.SetRowSpan(browserHost, grid.RowDefinitions.Count);
             grid.Children.Add(browserHost);
@@ -270,20 +276,26 @@ public sealed partial class MainWindow
             browserInitTask = StartBrowserAsync();
         }
 
+        /// <summary>
+        /// The toolbar (M/BrowserPaneView.swift:40-87): back, forward and reload as plain 12pt symbols, then the
+        /// 12pt address field taking the rest, 6 apart, padding h12 v8, on the subtle wash.
+        /// </summary>
         private Grid BuildBrowserNavBar()
         {
-            var nav = new Grid { ColumnSpacing = 4, Height = 36, VerticalAlignment = VerticalAlignment.Center };
+            var nav = new Grid { ColumnSpacing = 6, Padding = new Thickness(12, 8, 12, 8), Background = owner.brushes.Subtle };
             for (var index = 0; index < 3; index++) nav.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             nav.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            browserBack = NavButton("←", Locale.Get("browser.back"));
-            browserForward = NavButton("→", Locale.Get("browser.forward"));
-            browserReload = NavButton("↻", Locale.Get("browser.reload"));
+            // Segoe Fluent Icons ChevronLeft, ChevronRight and Refresh.
+            browserBack = NavButton("\uE76B", 10, Locale.Get("browser.back"));
+            browserForward = NavButton("\uE76C", 10, Locale.Get("browser.forward"));
+            browserReload = NavButton("\uE72C", 13, Locale.Get("browser.reload"));
             addressBox = new TextBox
             {
-                PlaceholderText = Locale.Get("browser.address.placeholder"),
+                // AppKit's placeholder is the tertiary ink (M/BrowserPaneView.swift:72).
+                PlaceholderText = Locale.Get("browser.address.placeholder"), PlaceholderForeground = owner.brushes.Tertiary,
                 VerticalAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(8, 4, 8, 4),
+                FontSize = 12, MinHeight = 0, Padding = new Thickness(7, 3, 7, 4), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow),
             };
             AutomationProperties.SetName(addressBox, Locale.Get("browser.address.placeholder"));
 
@@ -303,13 +315,20 @@ public sealed partial class MainWindow
                 if (control is not null) control.IsEnabled = enabled;
         }
 
-        private static Button NavButton(string icon, string label)
+        /// <summary>
+        /// A toolbar button drawn the Mac's plain way: only its 12pt symbol, <c>ink</c>, <c>ink3</c> while it
+        /// can do nothing. It stands as wide as the Mac's symbol (<paramref name="width"/>) so the row keeps the
+        /// Mac's spacing, and takes clicks 3 further out on each side.
+        /// </summary>
+        private Button NavButton(string glyph, double width, string label)
         {
+            var b = owner.brushes;
             var button = new Button
             {
-                Content = icon, Width = 36, Height = 36, MinWidth = 0,
-                Padding = new Thickness(4), FontSize = 14,
+                Content = new FontIcon { Glyph = glyph, FontSize = 12 }, Width = width + 6, Height = 22, MinWidth = 0, MinHeight = 0, Margin = new Thickness(-3, 0, -3, 0),
+                Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(DesignMetrics.Radius.FileRow), VerticalAlignment = VerticalAlignment.Center,
             };
+            owner.PaintPlainButton(button, b.Transparent, b.Subtle, ink: b.Brush(DesignToken.Ink), disabledInk: b.Brush(DesignToken.Ink3));
             AutomationProperties.SetName(button, label);
             ToolTipService.SetToolTip(button, label);
             return button;
@@ -432,8 +451,8 @@ public sealed partial class MainWindow
             };
             panel.Children.Add(new TextBlock
             {
-                Text = Locale.Get("browser.runtime.missing"),
-                TextWrapping = TextWrapping.Wrap,
+                Text = Locale.Get("browser.runtime.missing"), FontFamily = BodyFont, FontSize = DesignMetrics.Type.Body, Foreground = owner.brushes.Brush(DesignToken.Ink2),
+                TextWrapping = TextWrapping.Wrap, MaxWidth = 380,
                 TextAlignment = TextAlignment.Center,
             });
             var install = new Button { Content = Locale.Get("browser.runtime.install") };
@@ -473,16 +492,18 @@ public sealed partial class MainWindow
             }
         }
 
-        private static TextBlock BrowserNotice(string text) =>
-            new()
-            {
-                Text = text,
-                TextWrapping = TextWrapping.Wrap,
-                TextAlignment = TextAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Padding = new Thickness(24),
-            };
+        /// <summary>
+        /// What the pane says in place of a page (M/BrowserPaneView.swift:95-108): a 36pt globe over the reason
+        /// in 13pt, both <c>ink2</c>, centred and at most 380 wide, on the page surface.
+        /// </summary>
+        private StackPanel BrowserNotice(string text)
+        {
+            var ink = owner.brushes.Brush(DesignToken.Ink2);
+            var notice = new StackPanel { Spacing = 12, Padding = new Thickness(24), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            notice.Children.Add(new FontIcon { Glyph = "\uE774", FontSize = 36, Foreground = ink, HorizontalAlignment = HorizontalAlignment.Center });
+            notice.Children.Add(new TextBlock { Text = text, FontFamily = BodyFont, FontSize = DesignMetrics.Type.Body, Foreground = ink, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 380 });
+            return notice;
+        }
 
         /// <summary>The nav bar strings the smoke feeds to the locale-key leak scan.</summary>
         internal IEnumerable<string> BrowserVisibleStrings()

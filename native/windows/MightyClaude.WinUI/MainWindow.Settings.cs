@@ -2,6 +2,7 @@ using MightyClaude.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Windows.Storage.Pickers;
 
 namespace MightyClaude.WinUI;
@@ -48,145 +49,158 @@ public sealed partial class MainWindow
         _ => throw new InvalidOperationException("no Settings builder registered for slot " + slotId),
     };
 
-    private Task OpenSettings() => Act(ShowCategorizedSettingsAsync);
+    /// <summary>One box of a settings tab: its heading, the builder of its rows, and whether the 베타 capsule follows the heading.</summary>
+    internal sealed record SettingsGroup(string Title, Func<StackPanel> Build, bool Beta = false);
 
-    // Display — theme, language picker, and completion-notification controls.
-    private StackPanel BuildDisplaySection()
+    /// <summary>
+    /// Each tab's boxes in the Mac's order (M/SettingsViews.swift:218-322). A registered slot keeps the
+    /// heading Core gives it; the three boxes the Mac draws as sections of their own inside a slot's tab
+    /// (agent links, the toolkit, screen view and control) take their heading from the catalogue.
+    /// </summary>
+    internal IReadOnlyList<SettingsGroup> SettingsGroups(string category)
     {
-        var panel = new StackPanel { Spacing = 8 };
-        var theme = new ComboBox { Header = Locale.Get("settings.display.themeLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
-        theme.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.themeDarkWindows"), Tag = "dark" });
-        theme.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.themeLightWindows"), Tag = "light" });
-        theme.SelectedIndex = service.Snapshot.Theme == "light" ? 1 : 0;
-        theme.SelectionChanged += async (_, _) =>
+        SettingsGroup Slot(string id) => new(SettingsSections.Windows.First(slot => slot.Id == id).WindowsTitle!, BuilderFor(id));
+        return category switch
         {
-            if (theme.SelectedItem is ComboBoxItem item)
-                await Act(async () => { await service.UpdateAsync(s => s with { Theme = (string)item.Tag }); Render(); });
+            "general" => [Slot(SettingsSections.Display), new(Locale.Get("agentTerminal.urlOpen.settingTitle"), BuildAgentLinksSection)],
+            "models" => [Slot(SettingsSections.PhaseModels)],
+            "styles" => [Slot(SettingsSections.Styles)],
+            "tools" => [Slot(SettingsSections.Components), new(Locale.Get("settings.toolkit.sectionTitle"), BuildToolkitSection)],
+            "cli" => [Slot(SettingsSections.Providers), Slot(SettingsSections.CliAccounts), Slot(SettingsSections.ClaudeMods), Slot(SettingsSections.CliUpdate)],
+            "mobile" => [Slot(SettingsSections.MobileRemote), new(Locale.Get("settings.screenShare.sectionTitle"), BuildScreenShareSection, Beta: true)],
+            "companion" => [Slot(SettingsSections.Companion)],
+            "about" => [Slot(SettingsSections.AppUpdate), Slot(SettingsSections.AppInfo)],
+            _ => [],
         };
-        panel.Children.Add(theme);
-
-        // Language picker — takes effect on the next app start.
-        var language = new ComboBox { Header = Locale.Get("settings.display.languageLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
-        AutomationProperties.SetAutomationId(language, "settings-language");
-        language.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.languageSystem"), Tag = "system" });
-        language.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.languageKorean"), Tag = "ko" });
-        language.Items.Add(new ComboBoxItem { Content = Locale.Get("settings.display.languageEnglish"), Tag = "en" });
-        var savedLang = service.Snapshot.LanguagePreference;
-        language.SelectedIndex = savedLang switch { "ko" => 1, "en" => 2, _ => 0 };
-        language.SelectionChanged += async (_, _) =>
-        {
-            if (language.SelectedItem is ComboBoxItem item)
-                await Act(async () => await service.UpdateAsync(s => s with { LanguagePreference = (string)item.Tag }));
-        };
-        panel.Children.Add(language);
-
-        panel.Children.Add(BuildNotificationSettingsSection());
-        var statusLineToggle = new ToggleSwitch
-        {
-            Header = Locale.Get("settings.display.statusLineToggle"),
-            IsOn = service.Snapshot.StatusLineEnabled,
-        };
-        AutomationProperties.SetAutomationId(statusLineToggle, "settings-status-line");
-        statusLineToggle.Toggled += async (_, _) => await Act(() => SetStatusLineEnabled(statusLineToggle.IsOn));
-        panel.Children.Add(statusLineToggle);
-        panel.Children.Add(new TextBlock { Text = Locale.Get("settings.display.statusLineDescription"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = .65 });
-
-        // Browser engine toggle — opt-in, off by default; restart required to apply.
-        var browserToggle = new ToggleSwitch
-        {
-            Header = Locale.Get("settings.display.browserToggle"),
-            IsOn = service.Snapshot.BrowserEngineEnabled,
-        };
-        AutomationProperties.SetName(browserToggle, Locale.Get("settings.display.browserToggle"));
-        panel.Children.Add(new TextBlock { Text = Locale.Get("windows.settings.browserDescription"), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = .65 });
-        browserToggle.Toggled += async (_, _) =>
-            await Act(async () => await service.UpdateAsync(s => s with { BrowserEngineEnabled = browserToggle.IsOn }));
-        panel.Children.Add(browserToggle);
-        panel.Children.Add(BuildAgentWebOpenSetting());
-
-        return panel;
     }
 
+    private Task OpenSettings() => Act(ShowCategorizedSettingsAsync);
+
+    // 화면 (M/SettingsViews.swift:221-251): the theme and the language as segmented pickers, the language
+    // note, then the status-line and browser switches, each with its 11pt explanation under the label.
+    private StackPanel BuildDisplaySection()
+    {
+        var rows = new StackPanel();
+        var themeLabel = Locale.Get("settings.display.themeLabel");
+        var theme = SettingsSegmented(themeLabel, "settings-theme",
+            [("dark", Locale.Get("settings.display.themeDarkWindows")), ("light", Locale.Get("settings.display.themeLightWindows"))],
+            service.Snapshot.Theme == "light" ? "light" : "dark",
+            value => Act(async () => { await service.UpdateAsync(s => s with { Theme = value }); Render(); }));
+        SettingsRow(rows, SettingsLabeled(SettingsText(themeLabel), theme, share: true));
+        // The sidebar's own theme button may change the theme while this window is open; the picker follows it.
+        rows.ActualThemeChanged += (_, _) => ShowSegment(theme, service.Snapshot.Theme == "light" ? "light" : "dark");
+
+        // Language picker — takes effect on the next app start.
+        var languageLabel = Locale.Get("settings.display.languageLabel");
+        var language = SettingsSegmented(languageLabel, "settings-language",
+            [("system", Locale.Get("settings.display.languageSystem")), ("ko", Locale.Get("settings.display.languageKorean")), ("en", Locale.Get("settings.display.languageEnglish"))],
+            service.Snapshot.LanguagePreference switch { "ko" => "ko", "en" => "en", _ => "system" },
+            value => Act(async () => await service.UpdateAsync(s => s with { LanguagePreference = value })));
+        SettingsRow(rows, SettingsLabeled(SettingsText(languageLabel), language, share: true));
+        SettingsRow(rows, SettingsText(Locale.Get("settings.display.languageRestartNote"), 11, DesignToken.Ink2));
+
+        var statusLineLabel = Locale.Get("settings.display.statusLineToggle");
+        var statusLineToggle = SettingsSwitch(statusLineLabel, service.Snapshot.StatusLineEnabled, "settings-status-line");
+        void StatusLineToggled() => _ = Act(() => SetStatusLineEnabled(statusLineToggle.IsChecked == true));
+        statusLineToggle.Checked += (_, _) => StatusLineToggled(); statusLineToggle.Unchecked += (_, _) => StatusLineToggled();
+        SettingsRow(rows, SettingsLabeled(SettingsTitled(statusLineLabel, Locale.Get("settings.display.statusLineDescription")), statusLineToggle, top: true));
+
+        // Browser engine toggle — opt-in, off by default; restart required to apply.
+        var browserLabel = Locale.Get("settings.display.browserToggle");
+        var browserToggle = SettingsSwitch(browserLabel, service.Snapshot.BrowserEngineEnabled, "settings-browser-engine");
+        void BrowserToggled() => _ = Act(async () => await service.UpdateAsync(s => s with { BrowserEngineEnabled = browserToggle.IsChecked == true }));
+        browserToggle.Checked += (_, _) => BrowserToggled(); browserToggle.Unchecked += (_, _) => BrowserToggled();
+        SettingsRow(rows, SettingsLabeled(SettingsTitled(browserLabel, Locale.Get("windows.settings.browserDescription")), browserToggle, top: true));
+        return rows;
+    }
+
+    // 에이전트 링크 열기 (M/SettingsViews.swift:256-270): where this workspace opens the links an agent asks for.
+    private StackPanel BuildAgentLinksSection()
+    {
+        var rows = new StackPanel(); var workspace = service.Snapshot.ActiveWorkspaceId;
+        var title = Locale.Get("agentTerminal.urlOpen.settingTitle");
+        var picker = SettingsSegmented(title, "settings-web-open-choice",
+            [("ask", Locale.Get("agentTerminal.urlOpen.settingAsk")), ("inApp", Locale.Get("agentTerminal.urlOpen.settingInApp")), ("external", Locale.Get("agentTerminal.urlOpen.settingExternal"))],
+            service.Snapshot.AgentWebOpenChoices?.GetValueOrDefault(workspace ?? "") switch { "inApp" => "inApp", "external" => "external", _ => "ask" },
+            value => workspace is null ? Task.CompletedTask : Act(() => service.UpdateAsync(state =>
+            {
+                var choices = new Dictionary<string, string>(state.AgentWebOpenChoices ?? []);
+                if (value == "ask") choices.Remove(workspace); else choices[workspace] = value;
+                return state with { AgentWebOpenChoices = choices };
+            })), enabled: workspace is not null);
+        SettingsRow(rows, SettingsLabeled(SettingsText(title), picker, share: true));
+        return rows;
+    }
+
+    // Claude Mods (M/SettingsViews.swift:299-304): the status sentence, then the minimum version beside its label.
     private StackPanel BuildClaudeModsSection()
     {
-        var panel = new StackPanel { Spacing = 8 };
+        var rows = new StackPanel();
         var mods = runtime?.Mods;
-        panel.Children.Add(new TextBlock { Text = mods?.Detail ?? Locale.Get("window.status.checkingRuntime"), TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        SettingsRow(rows, SettingsText(mods?.Detail ?? Locale.Get("window.status.checkingRuntime"), 12, DesignToken.Ink2, selectable: true));
         if (mods is not null)
-            panel.Children.Add(new TextBlock { Text = Locale.Get("settings.claudeMods.compatLabel") + "  " + mods.MinimumVersion, FontSize = 12, IsTextSelectionEnabled = true });
-        return panel;
+            SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.claudeMods.compatLabel")), SettingsText(mods.MinimumVersion, 13, DesignToken.Ink2, selectable: true)));
+        return rows;
     }
 
     // CLI updates — delegates to the parameterised builder so smoke can inject fixture results.
     private StackPanel BuildCliUpdateSectionFromState() => BuildCliUpdateSection(lastCliUpdateResults);
 
     // Called by both OpenSettings (via BuildCliUpdateSectionFromState) and the smoke check.
+    // M/CLIUpdateSettingsView.swift:8-74: the two switches, each over its explanation, the progress or
+    // last-run words beside the update button, then one row per result.
     internal StackPanel BuildCliUpdateSection(IReadOnlyList<CliUpdateResult> results)
     {
-        var panel = new StackPanel { Spacing = 6 };
-        var toggle = new ToggleSwitch
-        {
-            Header = CliUpdateStrings.AutoUpdateToggle,
-            IsOn = service.Snapshot.AutoUpdateCLIs == true,
-            OffContent = "",
-            OnContent = "",
-        };
-        AutomationProperties.SetAutomationId(toggle, "cli-auto-update");
-        toggle.Toggled += async (_, _) =>
-            await service.UpdateAsync(s => s with { AutoUpdateCLIs = toggle.IsOn });
-        panel.Children.Add(toggle);
-        panel.Children.Add(new TextBlock
-        {
-            Text = CliUpdateStrings.SectionDescription,
-            FontSize = 12,
-            Opacity = .7,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        var pluginsToggle = new ToggleSwitch { Header = Locale.Get("settings.cliUpdate.autoUpdatePluginsToggle"), IsOn = service.Snapshot.AutoUpdatePlugins != false, OffContent = "", OnContent = "" };
-        AutomationProperties.SetAutomationId(pluginsToggle, "plugin-auto-update");
-        pluginsToggle.Toggled += async (_, _) => await service.UpdateAsync(s => s with { AutoUpdatePlugins = pluginsToggle.IsOn });
-        panel.Children.Add(pluginsToggle);
-        panel.Children.Add(new TextBlock { Text = Locale.Get("settings.cliUpdate.autoUpdatePluginsDescription"), FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap });
-        var updateProgress = new TextBlock { FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap };
-        AutomationProperties.SetAutomationId(updateProgress, "cli-update-progress"); panel.Children.Add(updateProgress);
+        var rows = new StackPanel();
+        var toggle = SettingsSwitch(CliUpdateStrings.AutoUpdateToggle, service.Snapshot.AutoUpdateCLIs == true, "cli-auto-update");
+        async void AutoUpdateToggled() => await service.UpdateAsync(s => s with { AutoUpdateCLIs = toggle.IsChecked == true });
+        toggle.Checked += (_, _) => AutoUpdateToggled(); toggle.Unchecked += (_, _) => AutoUpdateToggled();
+        SettingsRow(rows, SettingsLabeled(SettingsText(CliUpdateStrings.AutoUpdateToggle), toggle));
+        SettingsRow(rows, SettingsText(CliUpdateStrings.SectionDescription, 11, DesignToken.Ink2));
+        var pluginsLabel = Locale.Get("settings.cliUpdate.autoUpdatePluginsToggle");
+        var pluginsToggle = SettingsSwitch(pluginsLabel, service.Snapshot.AutoUpdatePlugins != false, "plugin-auto-update");
+        async void PluginsToggled() => await service.UpdateAsync(s => s with { AutoUpdatePlugins = pluginsToggle.IsChecked == true });
+        pluginsToggle.Checked += (_, _) => PluginsToggled(); pluginsToggle.Unchecked += (_, _) => PluginsToggled();
+        SettingsRow(rows, SettingsLabeled(SettingsText(pluginsLabel), pluginsToggle));
+        SettingsRow(rows, SettingsText(Locale.Get("settings.cliUpdate.autoUpdatePluginsDescription"), 11, DesignToken.Ink2));
+        var updateProgress = SettingsText("", 11, DesignToken.Ink2);
+        AutomationProperties.SetAutomationId(updateProgress, "cli-update-progress");
 
         // The update-now button — reflects coordinator state live.
-        var updateButton = new Button
+        var updateButton = SettingsPush(new Button
         {
             Content = AnyCliUpdateRunning ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton,
             IsEnabled = !AnyCliUpdateRunning && !pluginOperations.IsRunning,
-        };
+        });
         AutomationProperties.SetAutomationId(updateButton, "cli-update-start");
         updateButton.Click += (_, _) => { if (!AnyCliUpdateRunning && !pluginOperations.IsRunning) coordinator.Start(); };
-        panel.Children.Add(updateButton);
+        SettingsRow(rows, SettingsLabeled(updateProgress, updateButton));
 
-        // Dynamic results area: rebuilt on each StateChanged while the section is visible.
-        var resultsPanel = new StackPanel { Spacing = 6 };
-        void AddResultRow(CliUpdateResult result)
+        // Result rows: rebuilt on each StateChanged while the section is visible.
+        const string cliResults = "cli-results", pluginResultRows = "plugin-results";
+        StackPanel ResultRow(string glyph, DesignToken ink, string title, string? provider, string? change, string detail, string id)
         {
-            var row = new StackPanel { Spacing = 2 };
-            row.Children.Add(new TextBlock
-            {
-                Text = CliUpdateService.ResultRow(result),
-                FontSize = 12,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            });
-            if (CliUpdateService.VersionChange(result) is { } change)
-                row.Children.Add(new TextBlock { Text = change, FontSize = 11, Opacity = .7 });
-            if (!string.IsNullOrEmpty(result.Detail))
-                row.Children.Add(new TextBlock
-                {
-                    Text = result.Detail,
-                    FontSize = 11,
-                    Opacity = .7,
-                    TextWrapping = TextWrapping.Wrap,
-                });
-            AutomationProperties.SetAutomationId(row, ResultRowAutomationId(result));
-            resultsPanel.Children.Add(Toned(row));
+            var row = new StackPanel { Spacing = 4 };
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            head.Children.Add(SettingsSymbol(glyph, 12, ink)); head.Children.Add(SettingsText(title, 11, medium: true));
+            if (provider is not null && ProviderCatalog.IsBeta(provider)) head.Children.Add(BetaBadgeView.Create(brushes));
+            row.Children.Add(head);
+            if (change is not null) row.Children.Add(SettingsText(change, 10, DesignToken.Ink2, mono: true));
+            if (!string.IsNullOrEmpty(detail)) row.Children.Add(SettingsText(detail, 11, DesignToken.Ink2, selectable: true));
+            AutomationProperties.SetAutomationId(row, id);
+            return row;
         }
-        foreach (var result in results) AddResultRow(result);
-        panel.Children.Add(resultsPanel);
-        var pluginResults = new StackPanel { Spacing = 6 }; panel.Children.Add(pluginResults);
+        // checkmark.circle.fill for a run that went through, exclamationmark.circle (waitText) for a failed one, info.circle for the rest.
+        static (string Glyph, DesignToken Ink) Mark(string status) => status switch
+        {
+            "updated" or "current" => ("", DesignToken.Ink2), "failed" => ("", DesignToken.WaitText), _ => ("", DesignToken.Ink2),
+        };
+        void ShowResults(IReadOnlyList<CliUpdateResult> shown) => ReplaceSettingsRows(rows, cliResults, shown.Select(result =>
+        {
+            var (glyph, ink) = Mark(result.Status);
+            return (FrameworkElement)ResultRow(glyph, ink, CliUpdateService.ResultRow(result), result.Provider, CliUpdateService.VersionChange(result), result.Detail, ResultRowAutomationId(result));
+        }), rows.Children.OfType<Border>().FirstOrDefault(row => Equals(row.Tag, pluginResultRows)));
+        ShowResults(results);
         void RefreshBackgroundUpdates()
         {
             updateButton.Content = AnyCliUpdateRunning ? CliUpdateStrings.UpdatingButton : CliUpdateStrings.UpdateButton;
@@ -196,35 +210,29 @@ public sealed partial class MainWindow
                 : AnyCliUpdateRunning ? CliUpdateStrings.ProgressInspecting
                 : (automaticUpdateFinishedAt is { } autoFinished && (coordinator.FinishedAt is not { } manualFinished || autoFinished > manualFinished) ? autoFinished : coordinator.FinishedAt) is { } finished
                     ? Locale.Get("settings.cliUpdate.lastRunTemplate", new Dictionary<string, string> { ["time"] = finished.ToLocalTime().ToString("t") }) : "";
-            updateProgress.Visibility = updateProgress.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-            pluginResults.Children.Clear();
-            foreach (var providerName in Wire.Providers)
+            // While something runs the words are the progress (primary ink); otherwise the quiet last-run time.
+            updateProgress.Foreground = brushes.Brush(AnyCliUpdateRunning ? DesignToken.Ink : DesignToken.Ink2);
+            ReplaceSettingsRows(rows, pluginResultRows, Wire.Providers.Where(pluginUpdateResults.ContainsKey).Select(providerName =>
             {
-                if (!pluginUpdateResults.TryGetValue(providerName, out var result)) continue;
-                var row = new StackPanel { Spacing = 2 };
-                var status = CliUpdateStrings.StatusLabel(result.Status == "succeeded" ? "updated" : result.Status);
-                row.Children.Add(new TextBlock { Text = Locale.Get("settings.cliUpdate.pluginRowTemplate", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(providerName), ["status"] = status }), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-                row.Children.Add(new TextBlock { Text = result.Detail, FontSize = 11, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = .7 });
-                AutomationProperties.SetAutomationId(row, "plugin-update-result-" + providerName); pluginResults.Children.Add(Toned(row));
-            }
-            if (automaticUpdateRunning) { resultsPanel.Children.Clear(); foreach (var result in lastCliUpdateResults) AddResultRow(result); }
+                var result = pluginUpdateResults[providerName];
+                var status = result.Status == "succeeded" ? "updated" : result.Status; var (glyph, ink) = Mark(status);
+                var title = Locale.Get("settings.cliUpdate.pluginRowTemplate", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(providerName), ["status"] = CliUpdateStrings.StatusLabel(status) });
+                return (FrameworkElement)ResultRow(glyph, ink, title, providerName, null, result.Detail, "plugin-update-result-" + providerName);
+            }));
+            if (automaticUpdateRunning) ShowResults(lastCliUpdateResults);
         }
         RefreshBackgroundUpdates();
         void CoordinatorChanged() => DispatcherQueue.TryEnqueue(() =>
         {
-            if (closing || !panel.IsLoaded) return;
+            if (closing || !rows.IsLoaded) return;
             RefreshBackgroundUpdates();
             var live = coordinator.Results;
-            if (live.Count > 0)
-            {
-                resultsPanel.Children.Clear();
-                foreach (var r in live) AddResultRow(r);
-            }
+            if (live.Count > 0) ShowResults(live);
         });
-        panel.Loaded += (_, _) => { AutomaticUpdatesChanged += RefreshBackgroundUpdates; coordinator.StateChanged += CoordinatorChanged; RefreshBackgroundUpdates(); };
-        panel.Unloaded += (_, _) => { AutomaticUpdatesChanged -= RefreshBackgroundUpdates; coordinator.StateChanged -= CoordinatorChanged; };
+        rows.Loaded += (_, _) => { AutomaticUpdatesChanged += RefreshBackgroundUpdates; coordinator.StateChanged += CoordinatorChanged; RefreshBackgroundUpdates(); };
+        rows.Unloaded += (_, _) => { AutomaticUpdatesChanged -= RefreshBackgroundUpdates; coordinator.StateChanged -= CoordinatorChanged; };
 
-        return panel;
+        return rows;
     }
 
     // One id per row. The status is part of it because a run can report the same
@@ -261,142 +269,117 @@ public sealed partial class MainWindow
         LocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     };
 
+    // 구성 요소 (M/ComponentsSettingsView.swift:11-91): one row per CLI, then the explanation beside the
+    // recheck button. The toolkit is the next box (BuildToolkitSection).
     private StackPanel BuildComponentsSection()
     {
-        var panel = new StackPanel { Spacing = 8 };
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = Locale.Get("settings.components.sectionDescription"),
-            FontSize = 12,
-            Opacity = .8,
-            TextWrapping = TextWrapping.Wrap,
-        });
-
-        // CLI rows — re-filled by the recheck button.
-        componentsCliPanel = new StackPanel { Spacing = 6 };
-        FillComponentCliRows(componentsCliPanel);
-        panel.Children.Add(componentsCliPanel);
+        // CLI rows — re-filled by the recheck button; the last row stays under them.
+        var rows = componentsCliPanel = new StackPanel();
 
         // Recheck button — re-probes the runtime without closing the dialog.
         var recheckLabel = Locale.Get("settings.components.recheckButton");
         var checkingLabel = Locale.Get("settings.components.checkingButton");
-        var recheckBtn = new Button { Content = recheckLabel };
+        var recheckBtn = SettingsPush(new Button { Content = recheckLabel });
         AutomationProperties.SetAutomationId(recheckBtn, "components-refresh");
         recheckBtn.Click += async (_, _) => await Act(async () =>
         {
             recheckBtn.Content = checkingLabel;
             recheckBtn.IsEnabled = false;
             await RefreshRuntime();
-            FillComponentCliRows(componentsCliPanel);
+            FillComponentCliRows(rows);
             recheckBtn.Content = recheckLabel;
             recheckBtn.IsEnabled = true;
         });
-        panel.Children.Add(recheckBtn);
+        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.components.sectionDescription"), 11, DesignToken.Ink2), recheckBtn), tag: ComponentsFooterRow);
+        FillComponentCliRows(rows);
+        return rows;
+    }
 
-        // Toolkit heading
-        panel.Children.Add(new TextBlock
-        {
-            Text = Locale.Get("settings.toolkit.sectionTitle"),
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Opacity = .85,
-        });
+    private const string ComponentsFooterRow = "components-footer", ComponentRow = "component", ToolkitEntryRow = "toolkit-entry", ToolkitFooterRow = "toolkit-footer", ToolkitResultsRow = "toolkit-results";
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = Locale.Get("settings.toolkit.sectionDescription"),
-            FontSize = 12,
-            Opacity = .8,
-            TextWrapping = TextWrapping.Wrap,
-        });
+    // 내 작업 도구 모음 (M/ComponentsSettingsView.swift:105-214): the file error, one row per tool, the
+    // results of the last run, then the explanation beside the add, export, import and install buttons.
+    private StackPanel BuildToolkitSection()
+    {
+        var rows = toolkitListPanel = new StackPanel();
 
         // Toolkit list — error banner + entry rows.
         var store = GetToolkitStore();
         var (entries, fileError) = store.List();
 
         if (fileError is not null)
-            panel.Children.Add(new TextBlock
-            {
-                Text = Locale.Get("settings.toolkit.errorBanner"),
-                FontSize = 12,
-                Foreground = brushes.Brush(DesignToken.WaitText),
-                TextWrapping = TextWrapping.Wrap,
-            });
-
-        toolkitListPanel = new StackPanel { Spacing = 4 };
-        FillToolkitList(toolkitListPanel, store, entries);
-        panel.Children.Add(toolkitListPanel);
+        {
+            var banner = new Grid { ColumnSpacing = 6 };
+            banner.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); banner.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+            var mark = SettingsSymbol("", 12, DesignToken.WaitText); mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
+            banner.Children.Add(mark);
+            var words = SettingsText(Locale.Get("settings.toolkit.errorBanner"), 11, selectable: true);
+            Grid.SetColumn(words, 1); banner.Children.Add(words);
+            SettingsRow(rows, banner);
+        }
 
         // Results from the last install run.
-        toolkitResultsPanel = new StackPanel { Spacing = 4 };
+        toolkitResultsPanel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 4, 0, 4) };
+        AutomationProperties.SetAutomationId(toolkitResultsPanel, "settings-toolkit-results");
+        SettingsRow(rows, toolkitResultsPanel, tag: ToolkitResultsRow).Visibility = Visibility.Collapsed;
         if (toolkitRunResults is not null) FillToolkitResults(toolkitResultsPanel, toolkitRunResults);
-        panel.Children.Add(toolkitResultsPanel);
 
         // Action buttons row.
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        var addBtn = new Button { Content = Locale.Get("settings.toolkit.addButton") };
+        var addBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.addButton") }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(addBtn, "settings-toolkit-add");
         addBtn.Click += async (_, _) => await Act(() => AddToolkitEntry(store));
-        var exportBtn = new Button { Content = Locale.Get("settings.toolkit.exportButton") };
+        var exportBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.exportButton") }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(exportBtn, "settings-toolkit-export");
         exportBtn.Click += async (_, _) => await Act(() => ExportToolkit(store));
-        var importBtn = new Button { Content = Locale.Get("settings.toolkit.importButton") };
+        var importBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.importButton") }, SettingsControlSize.Small);
         AutomationProperties.SetAutomationId(importBtn, "settings-toolkit-import");
         importBtn.Click += async (_, _) => await Act(() => ImportToolkit(store));
-        toolkitInstallButton = new Button { Content = Locale.Get("settings.toolkit.installButton"), IsEnabled = !toolkitRunning };
+        toolkitInstallButton = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.installButton"), IsEnabled = !toolkitRunning });
         AutomationProperties.SetAutomationId(toolkitInstallButton, "settings-toolkit-install");
         toolkitInstallButton.Click += async (_, _) => await Act(() => RunToolkitInstall(store));
         btnRow.Children.Add(addBtn);
         btnRow.Children.Add(exportBtn);
         btnRow.Children.Add(importBtn);
         btnRow.Children.Add(toolkitInstallButton);
-        panel.Children.Add(btnRow);
+        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.toolkit.sectionDescription"), 11, DesignToken.Ink2), btnRow), tag: ToolkitFooterRow);
 
-        return panel;
+        FillToolkitList(rows, store, entries);
+        return rows;
     }
 
-    // Renders one row per CLI provider (claude/codex/gemini).
+    // Renders one row per CLI provider (claude/codex/gemini), above the box's last row.
+    // M/ComponentsSettingsView.swift:42-74: the mark, the 13pt medium name, the 베타 capsule, the version
+    // in 10pt mono and the state word at the trailing edge; the 11pt detail; then the row's small buttons.
     private void FillComponentCliRows(StackPanel panel)
     {
-        panel.Children.Clear();
         var rt = runtime ?? new RuntimeInfo("win32", "0.0.0", false, null, null, [], null);
+        var contents = new List<FrameworkElement>();
         foreach (var row in ComponentSection.SectionRows(rt))
         {
-            var rowPanel = new StackPanel { Spacing = 4 };
+            var rowPanel = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
             AutomationProperties.SetAutomationId(rowPanel, "component-" + row.Id);
 
-            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            header.Children.Add(new TextBlock
-            {
-                Text = row.Title,
-                FontSize = 13,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            });
-            if (row.Version is { } ver)
-                header.Children.Add(new TextBlock { Text = ver, FontSize = 10, Opacity = .6 });
-            header.Children.Add(new TextBlock
-            {
-                Text = ComponentStateLabel(row.State),
-                FontSize = 10,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            });
+            var header = new Grid { ColumnSpacing = 8 };
+            header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            name.Children.Add(ProviderMarkView.Create(row.Id, SettingsProviderMark));
+            name.Children.Add(SettingsText(row.Title, 13, medium: true));
+            if (ProviderCatalog.IsBeta(row.Id)) name.Children.Add(BetaBadgeView.Create(brushes));
+            if (row.Version is { } ver) name.Children.Add(SettingsText(ver, 10, DesignToken.Ink2, mono: true));
+            header.Children.Add(name);
+            var state = SettingsText(ComponentStateLabel(row.State), 10, ComponentStateInk(row.State), medium: true);
+            Grid.SetColumn(state, 1); header.Children.Add(state);
             rowPanel.Children.Add(header);
-            rowPanel.Children.Add(new TextBlock
-            {
-                Text = row.Detail,
-                FontSize = 11,
-                Opacity = .7,
-                TextWrapping = TextWrapping.Wrap,
-            });
+            rowPanel.Children.Add(SettingsText(row.Detail, 11, DesignToken.Ink2, selectable: true));
 
             if (row.Actions.Count > 0)
             {
-                var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var actionsPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                 foreach (var action in row.Actions)
                 {
                     var actionId = action.Id;
-                    var btn = new Button { Content = action.Title };
+                    var btn = SettingsPush(new Button { Content = action.Title }, SettingsControlSize.Small);
                     AutomationProperties.SetAutomationId(btn, "component-" + row.Id + "-" + actionId);
                     if (actionId == "copy-command" && ComponentSection.InstallCommand(row.Id) is { } cmd)
                         btn.Click += (_, _) => Copy(cmd);
@@ -404,9 +387,19 @@ public sealed partial class MainWindow
                 }
                 rowPanel.Children.Add(actionsPanel);
             }
-            panel.Children.Add(Toned(rowPanel));
+            contents.Add(rowPanel);
         }
+        ReplaceSettingsRows(panel, ComponentRow, contents, panel.Children.OfType<Border>().FirstOrDefault(row => Equals(row.Tag, ComponentsFooterRow)));
     }
+
+    /// <summary>A provider's mark beside a 13pt name: the Mac draws it in a 13 × 1.15 box (M/ProviderIcon.swift:18).</summary>
+    private const double SettingsProviderMark = 15;
+
+    /// <summary>The state word's ink (M/ComponentsSettingsView.swift:81-90): done for installed, wait for missing or attention, err for unsupported.</summary>
+    private static DesignToken ComponentStateInk(string state) => state switch
+    {
+        "installed" => DesignToken.DoneText, "missing" or "attention" => DesignToken.WaitText, "unsupported" => DesignToken.ErrText, _ => DesignToken.Ink2,
+    };
 
     private static string ComponentStateLabel(string state) => state switch
     {
@@ -417,41 +410,46 @@ public sealed partial class MainWindow
         _ => Locale.Get("settings.components.statusChecking"),
     };
 
-    // Fills the toolkit list with bundled + user entries.
+    // Fills the toolkit list with bundled + user entries, above the results and the box's last row.
+    // M/ComponentsSettingsView.swift:147-187: the wrench, the 13pt medium name, the bundled or approved
+    // chip and the probe's state word at the trailing edge; a user's tool adds its approve and remove buttons.
     private void FillToolkitList(StackPanel panel, ToolkitStore store, IReadOnlyList<ToolkitFileReader.ToolkitFileEntry> entries)
     {
-        panel.Children.Clear();
+        var contents = new List<FrameworkElement>();
+        // A smoke run never looks at the user's own tools: its probe reads the isolated profile only.
+        var probe = options.SmokeTest ? new ToolkitProbeContext { HomeDirectory = StateDirectory, PathDirectories = [], LocalAppData = StateDirectory } : LiveProbeContext();
         foreach (var entry in entries)
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 2, 0, 2) };
+            var row = new StackPanel { Spacing = 4, Margin = new Thickness(0, 2, 0, 2) };
             AutomationProperties.SetAutomationId(row, "toolkit-entry-" + entry.Id);
 
             var isBundled = entry.Source == ToolkitFileReader.ToolkitEntrySource.Bundled;
             var approval = isBundled ? null : store.GetApproval(entry);
-            var badge = isBundled
-                ? Locale.Get("settings.toolkit.bundledBadge")
-                : (approval is not null ? Locale.Get("settings.toolkit.approvedBadge") : Locale.Get("settings.toolkit.needsApproval"));
 
-            row.Children.Add(new TextBlock
-            {
-                Text = entry.DisplayName,
-                FontSize = 12,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            row.Children.Add(new TextBlock
-            {
-                Text = badge,
-                FontSize = 10,
-                Opacity = .7,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+            var header = new Grid { ColumnSpacing = 6 };
+            header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            name.Children.Add(SettingsSymbol("", 12, DesignToken.Ink));
+            name.Children.Add(SettingsText(entry.DisplayName, 13, medium: true));
+            if (isBundled) name.Children.Add(SettingsCapsule(Locale.Get("settings.toolkit.bundledBadge"), brushes.Brush(DesignToken.Ink2), brushes.Brush(DesignToken.Ink2, ToolkitBadgeTint), 9, 3));
+            else if (approval is not null) name.Children.Add(SettingsCapsule(Locale.Get("settings.toolkit.approvedBadge"), brushes.Brush(DesignToken.DoneText), brushes.Brush(DesignToken.DoneSoft), 9, 3));
+            header.Children.Add(name);
+            // The probe only looks for files; an address it cannot read counts as not installed.
+            bool installed;
+            try { installed = ToolkitProbe.Probe(entry, approval, probe) == ToolkitProbe.Result.Installed; }
+            catch (UriFormatException) { installed = false; }
+            var state = SettingsText(Locale.Get(installed ? "settings.toolkit.statusInstalled" : "settings.toolkit.statusMissing"), 10, installed ? DesignToken.DoneText : DesignToken.WaitText, medium: true);
+            Grid.SetColumn(state, 1); header.Children.Add(state);
+            row.Children.Add(header);
 
             if (!isBundled)
             {
+                var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 if (approval is null)
                 {
+                    actions.Children.Add(SettingsText(Locale.Get("settings.toolkit.needsApproval"), 11, DesignToken.Ink2));
                     var entryId = entry.Id;
-                    var approveBtn = new Button { Content = Locale.Get("settings.toolkit.approveButton"), Padding = new Thickness(8, 4, 8, 4) };
+                    var approveBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.approveButton") }, SettingsControlSize.Mini);
                     AutomationProperties.SetAutomationId(approveBtn, "toolkit-approve-" + entryId);
                     approveBtn.Click += async (_, _) => await Act(async () =>
                     {
@@ -460,10 +458,10 @@ public sealed partial class MainWindow
                         FillToolkitList(toolkitListPanel!, store, reloaded);
                         await Task.CompletedTask;
                     });
-                    row.Children.Add(approveBtn);
+                    actions.Children.Add(approveBtn);
                 }
                 var removeEntryId = entry.Id;
-                var removeBtn = new Button { Content = Locale.Get("settings.toolkit.removeButton"), Padding = new Thickness(8, 4, 8, 4) };
+                var removeBtn = SettingsPush(new Button { Content = Locale.Get("settings.toolkit.removeButton") }, SettingsControlSize.Mini);
                 AutomationProperties.SetAutomationId(removeBtn, "toolkit-remove-" + removeEntryId);
                 removeBtn.Click += async (_, _) => await Act(async () =>
                 {
@@ -472,31 +470,38 @@ public sealed partial class MainWindow
                     FillToolkitList(toolkitListPanel!, store, reloaded);
                     await Task.CompletedTask;
                 });
-                row.Children.Add(removeBtn);
+                actions.Children.Add(removeBtn);
+                row.Children.Add(actions);
             }
-            panel.Children.Add(Toned(row));
+            contents.Add(row);
         }
+        ReplaceSettingsRows(panel, ToolkitEntryRow, contents, panel.Children.OfType<Border>().FirstOrDefault(row => row.Tag is ToolkitResultsRow or ToolkitFooterRow));
     }
 
-    // Fills the result table after a run.
+    /// <summary>The bundled chip's tint: the secondary ink at 0.15 (M/ComponentsSettingsView.swift:155).</summary>
+    private const double ToolkitBadgeTint = 0.15;
+
+    // Fills the result table after a run: one line per tool with its verdict's mark and word
+    // (M/ComponentsSettingsView.swift:199-214), in a row of its own that shows once there is a result.
     private void FillToolkitResults(StackPanel panel, IReadOnlyList<ToolkitRunItem> results)
     {
         panel.Children.Clear();
         foreach (var item in results)
         {
-            var label = item.RunVerdict switch
+            var (label, glyph, ink) = item.RunVerdict switch
             {
-                ToolkitRunItem.Verdict.Installed => Locale.Get("settings.toolkit.verdictInstalled"),
-                ToolkitRunItem.Verdict.Failed => Locale.Get("settings.toolkit.verdictFailed"),
-                _ => Locale.Get("settings.toolkit.verdictSkipped"),
+                ToolkitRunItem.Verdict.Installed => (Locale.Get("settings.toolkit.verdictInstalled"), "", DesignToken.DoneText),
+                ToolkitRunItem.Verdict.Failed => (Locale.Get("settings.toolkit.verdictFailed"), "", DesignToken.ErrText),
+                _ => (Locale.Get("settings.toolkit.verdictSkipped"), "", DesignToken.Ink2),
             };
-            panel.Children.Add(Toned(new TextBlock
-            {
-                Text = item.EntryId + " — " + label,
-                FontSize = 11,
-                Opacity = .8,
-            }));
+            var line = new Grid { ColumnSpacing = 6 };
+            line.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); line.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); line.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            line.Children.Add(SettingsSymbol(glyph, 11, ink));
+            var name = SettingsText(item.EntryId, 11); Grid.SetColumn(name, 1); line.Children.Add(name);
+            var verdict = SettingsText(label, 10, ink, medium: true); Grid.SetColumn(verdict, 2); line.Children.Add(verdict);
+            panel.Children.Add(line);
         }
+        if (panel.Parent is Border row) row.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // One confirm view that lists every argv before anything runs.
@@ -636,24 +641,54 @@ public sealed partial class MainWindow
         }
     }
 
-    // The CLIs on this PC — provider list and refresh button; behaviour unchanged.
+    // The CLIs on this PC (M/SettingsViews.swift:279-297): one row per CLI — its mark, name and 베타
+    // capsule against the ready or needs-setup word, the version in 10pt mono, the detail — then the
+    // note beside the recheck button, which probes the runtime again and redraws the rows.
     private StackPanel BuildProvidersSection()
     {
-        var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock
+        var rows = new StackPanel();
+        const string footerRow = "providers-footer", providerRow = "provider";
+        var checkLabel = Locale.Get("settings.providers.checkButton");
+        void Fill()
         {
-            Text = Locale.Get("settings.providers.windowsDescription"),
-            TextWrapping = TextWrapping.Wrap,
-        });
-        panel.Children.Add(Button(Locale.Get("settings.providers.refreshButton"), RefreshRuntime));
-        foreach (var item in runtime?.Providers ?? [])
-            panel.Children.Add(new TextBlock
+            var contents = new List<FrameworkElement>();
+            foreach (var id in Wire.Providers)
             {
-                Text = ProviderCatalog.BetaLabel(item.Id, item.Name) + " · " + (item.Available ? item.Version : item.Detail),
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 12,
-            });
-        return panel;
+                var item = runtime?.Providers.FirstOrDefault(provider => provider.Id == id);
+                var row = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
+                AutomationProperties.SetAutomationId(row, "settings-provider-" + id);
+                var header = new Grid { ColumnSpacing = 8 };
+                header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+                var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                name.Children.Add(ProviderMarkView.Create(id, SettingsProviderMark));
+                name.Children.Add(SettingsText(item?.Name ?? ProviderCatalog.Name(id), 13, medium: true));
+                if (ProviderCatalog.IsBeta(id)) name.Children.Add(BetaBadgeView.Create(brushes));
+                header.Children.Add(name);
+                // Until the runtime has been read the row says so, in the quiet ink, rather than that the CLI needs setting up.
+                var ready = item?.Available == true;
+                var state = item is null ? SettingsText(Locale.Get("settings.components.statusChecking"), 10, DesignToken.Ink2)
+                    : SettingsText(Locale.Get(ready ? "settings.providers.statusReady" : "settings.providers.statusNeedsSetup"), 10, ready ? DesignToken.DoneText : DesignToken.WaitText);
+                Grid.SetColumn(state, 1); header.Children.Add(state);
+                row.Children.Add(header);
+                if (item?.Version is { Length: > 0 } version) row.Children.Add(SettingsText(version, 10, DesignToken.Ink2, mono: true));
+                row.Children.Add(SettingsText(item?.Detail ?? Locale.Get("window.status.checkingRuntime"), 11, DesignToken.Ink2, selectable: true));
+                contents.Add(row);
+            }
+            ReplaceSettingsRows(rows, providerRow, contents, rows.Children.OfType<Border>().FirstOrDefault(row => Equals(row.Tag, footerRow)));
+        }
+        var check = SettingsPush(new Button { Content = checkLabel });
+        AutomationProperties.SetName(check, checkLabel); AutomationProperties.SetAutomationId(check, "settings-providers-check");
+        check.Click += async (_, _) =>
+        {
+            check.Content = Locale.Get("settings.providers.checkingButton"); check.IsEnabled = false;
+            try { await RefreshRuntime(); }
+            finally { check.Content = checkLabel; check.IsEnabled = true; if (!closing) Fill(); }
+        };
+        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.providers.loginNote"), 11, DesignToken.Ink2), check), tag: footerRow);
+        Fill();
+        // The tab's own read of the runtime draws these rows again through this (RefreshVisibleSettingsAccountsAsync).
+        rows.Tag = new Action(Fill);
+        return rows;
     }
 
     // CLI accounts — who each CLI is signed in as, and the sign-in / change / sign-out
@@ -672,77 +707,173 @@ public sealed partial class MainWindow
 
     // Called by OpenSettings (via BuildCliAccountsSectionFromState) and by the smoke
     // check, which hands it fixture statuses instead of live ones.
+    // M/CLIAccountsSettingsView.swift:11-85: one row per CLI, all on one line — its mark in an 18-wide
+    // column, the name (12 medium) with the 베타 capsule over the 11pt status line, a spacer, then the ring
+    // while the row works, the buttons the state allows, Claude's model reset and Bedrock buttons and the
+    // plain refresh mark — and the section's explanation as the last row.
     internal StackPanel BuildCliAccountsSection(IReadOnlyList<CliAccountStatus> statuses)
     {
-        var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock
+        var rows = new StackPanel();
+        var shown = statuses.ToList();
+        // What holds a row while one of its buttons works: its ring turns and its buttons wait (.disabled(busy)).
+        // The rows are drawn again whenever any of them finishes, so the ones still working are held again as they are drawn.
+        var holds = new Dictionary<string, Action>(); var working = new HashSet<string>();
+        void Fill()
         {
-            Text = CliAccountStrings.SectionDescription,
-            FontSize = 12,
-            Opacity = .7,
-            TextWrapping = TextWrapping.Wrap,
-        });
-
-        foreach (var status in statuses)
-        {
-            var row = new StackPanel { Spacing = 4 };
-            AutomationProperties.SetAutomationId(row, AccountRowIdPrefix + status.Provider);
-            row.Children.Add(new TextBlock
-            {
-                Text = CliUpdateService.ProviderLabel(status.Provider),
-                FontSize = 12,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            });
-            // Not installed shows the not-installed word; otherwise the summary, which already reads
-            // "account · plan · method", the signed-out word, or the unknown sentence.
-            row.Children.Add(new TextBlock
-            {
-                Text = status.Installed ? status.Summary : CliAccountStrings.StatusNotInstalled,
-                FontSize = 12,
-                Opacity = .8,
-                TextWrapping = TextWrapping.Wrap,
-            });
-
-            if (status.Detail.Length > 0)
-                row.Children.Add(new TextBlock { Text = status.Detail, FontSize = 11, Opacity = .7, TextWrapping = TextWrapping.Wrap });
-            if (status.Installed)
-            {
-                var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                if (status.LoggedIn == true)
-                {
-                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonChange,
-                        () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
-                    // Sign-out is offered only where the app can undo the sign-in.
-                    if (status.CanSignOut)
-                        buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLogout,
-                            () => ConfirmCliSignOut(status.Provider)));
-                }
-                else if (status.Provider == "claude")
-                {
-                    // Claude signs in two ways: the subscription or the API-billed console.
-                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLoginClaude,
-                        () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
-                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLoginConsole,
-                        () => StartCliSignIn(status.Provider, CliLoginOption.Console)));
-                }
-                else
-                {
-                    buttons.Children.Add(SafeButton(CliAccountStrings.ButtonLogin,
-                        () => StartCliSignIn(status.Provider, CliLoginOption.Account)));
-                }
-                if (buttons.Children.Count > 0) row.Children.Add(buttons);
-                if (status.Provider == "claude")
-                {
-                    var settingsButtons = new StackPanel { Spacing = 6 };
-                    settingsButtons.Children.Add(SafeButton(Locale.Get("settings.cliAccounts.bedrockButton"), () => StartCliSignIn("claude", CliLoginOption.Bedrock)));
-                    settingsButtons.Children.Add(SafeButton(Locale.Get("settings.cliAccounts.resetModelsButton"), ResetClaudeModels));
-                    settingsButtons.Children.Add(SafeButton(Locale.Get("settings.cliAccounts.resetBedrockButton"), ResetClaudeBedrock));
-                    row.Children.Add(settingsButtons);
-                }
-            }
-            panel.Children.Add(Toned(row));
+            rows.Children.Clear(); holds.Clear();
+            foreach (var status in shown) SettingsRow(rows, AccountRow(status));
+            SettingsRow(rows, SettingsText(CliAccountStrings.SectionDescription, 11, DesignToken.Ink2));
         }
-        return panel;
+        // The rows again from what the coordinator now knows.
+        void Refill()
+        {
+            for (var i = 0; i < shown.Count; i++) if (accountsCoordinator.Statuses.TryGetValue(shown[i].Provider, out var fresh)) shown[i] = fresh;
+            Fill();
+        }
+        // A button's action, then the rows again.
+        Func<Task> Then(string provider, Func<Task> action) => async () =>
+        {
+            working.Add(provider);
+            if (holds.TryGetValue(provider, out var hold)) hold();
+            try { await action(); }
+            finally { working.Remove(provider); if (!closing) Refill(); }
+        };
+        // The tab's own read of the statuses draws these rows again through this, in place (RefreshVisibleSettingsAccountsAsync).
+        rows.Tag = new Action(Refill);
+        Grid AccountRow(CliAccountStatus status)
+        {
+            var provider = status.Provider;
+            var row = new Grid { RowSpacing = 6 };
+            AutomationProperties.SetAutomationId(row, AccountRowIdPrefix + provider);
+            row.RowDefinitions.Add(new() { Height = GridLength.Auto }); row.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            var buttons = new List<Button>();
+            // The line's parts stand 8 apart, each at its own width. The words and the model reset are the two
+            // that give way where the line is too short — the Mac draws "모델 초기화·…" beside a cut account —
+            // and the spacer between the words and the ring takes what is left over.
+            void Place(FrameworkElement part, GridLength width, double most = double.PositiveInfinity)
+            {
+                var first = row.ColumnDefinitions.Count == 0;
+                row.ColumnDefinitions.Add(new() { Width = width, MaxWidth = first ? most : most + AccountGap });
+                if (!first) part.Margin = new Thickness(AccountGap, part.Margin.Top, 0, 0);
+                Grid.SetColumn(part, row.ColumnDefinitions.Count - 1); row.Children.Add(part);
+            }
+            static double Natural(FrameworkElement part) { part.Measure(new(double.PositiveInfinity, double.PositiveInfinity)); return Math.Ceiling(part.DesiredSize.Width) + 1; }
+            T Held<T>(T button) where T : Button { button.VerticalAlignment = VerticalAlignment.Top; buttons.Add(button); return button; }
+
+            var mark = ProviderMarkView.Create(provider, 16);
+            mark.HorizontalAlignment = HorizontalAlignment.Center; mark.VerticalAlignment = VerticalAlignment.Top; mark.Margin = new Thickness(0, 1, 0, 0);
+            Place(mark, new(18));
+
+            var words = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Left };
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            name.Children.Add(SettingsText(CliUpdateService.ProviderLabel(provider), 12, medium: true));
+            if (ProviderCatalog.IsBeta(provider)) name.Children.Add(BetaBadgeView.Create(brushes));
+            words.Children.Add(name);
+            // The summary already reads "account · plan · method", the signed-out word, or the unknown sentence.
+            var summary = SettingsText(status.Summary, 11, status.LoggedIn == false ? DesignToken.WaitText : DesignToken.Ink2, selectable: true);
+            summary.TextWrapping = TextWrapping.NoWrap; summary.TextTrimming = TextTrimming.CharacterEllipsis;
+            AutomationProperties.SetAutomationId(summary, "cli-account-status-" + provider);
+            // The line's end may be cut; the pointer shows it whole.
+            ToolTipService.SetToolTip(summary, status.Summary);
+            words.Children.Add(summary);
+            // The detail under the summary: 10pt in the tertiary ink (M/CLIAccountsSettingsView.swift:46).
+            // The detail of a signed-in account is the Mac's tertiary line; one that says what went wrong (not signed in, a
+            // status that could not be read) has to be read, so it keeps the secondary ink.
+            if (status.Detail.Length > 0 && status.Detail != status.Summary) words.Children.Add(status.LoggedIn == true ? SettingsTertiary(status.Detail) : SettingsText(status.Detail, 10, DesignToken.Ink2));
+            Place(words, new(AccountGive, GridUnitType.Star), Natural(words));
+            row.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+
+            // The ring turns while the status is being read (the tab just opened, or nothing is known yet) and while a button of the row works.
+            var reading = settingsAccountRefreshes > 0 || status.LoggedIn is null && status.Detail == CliAccountStrings.StatusChecking;
+            var ring = new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = reading, Visibility = reading ? Visibility.Visible : Visibility.Collapsed, Foreground = brushes.Brush(DesignToken.Ink2), VerticalAlignment = VerticalAlignment.Top };
+            Place(ring, GridLength.Auto);
+            holds[provider] = () => { ring.IsActive = true; ring.Visibility = Visibility.Visible; foreach (var button in buttons) button.IsEnabled = false; };
+
+            if (!status.Installed)
+            {
+                var missing = SettingsText(CliAccountStrings.StatusNotInstalled, 11, DesignToken.Ink2);
+                missing.VerticalAlignment = VerticalAlignment.Top; Place(missing, GridLength.Auto);
+            }
+            else if (status.LoggedIn == true)
+            {
+                var change = Held(SettingsPush(SafeButton(CliAccountStrings.ButtonChange, Then(provider, () => StartCliSignIn(provider, CliLoginOption.Account)))));
+                AutomationProperties.SetAutomationId(change, "cli-account-change-" + provider); Place(change, GridLength.Auto);
+                // Sign-out is offered only where the app can undo the sign-in.
+                if (status.CanSignOut) Place(Held(SettingsPush(SafeButton(CliAccountStrings.ButtonLogout, Then(provider, () => ConfirmCliSignOut(provider))))), GridLength.Auto);
+            }
+            else if (provider == "claude")
+            {
+                // Claude signs in two ways: the subscription or the API-billed console (the Mac's 로그인 menu).
+                var menu = new MenuFlyout();
+                foreach (var (title, option) in new[] { (CliAccountStrings.ButtonLoginClaude, CliLoginOption.Account), (CliAccountStrings.ButtonLoginConsole, CliLoginOption.Console) })
+                {
+                    var item = new MenuFlyoutItem { Text = title };
+                    var signIn = Then(provider, () => StartCliSignIn(provider, option));
+                    item.Click += async (_, _) => await Act(signIn);
+                    menu.Items.Add(item);
+                }
+                var login = Held(SettingsMenuButton(CliAccountStrings.ButtonLogin, menu));
+                AutomationProperties.SetAutomationId(login, "cli-account-login-" + provider); Place(login, GridLength.Auto);
+            }
+            else
+            {
+                var login = Held(SettingsPush(SafeButton(CliAccountStrings.ButtonLogin, Then(provider, () => StartCliSignIn(provider, CliLoginOption.Account)))));
+                AutomationProperties.SetAutomationId(login, "cli-account-login-" + provider); Place(login, GridLength.Auto);
+            }
+
+            Button? resetBedrock = null;
+            if (status.Installed && provider == "claude")
+            {
+                var resetTitle = Locale.Get("settings.cliAccounts.resetModelsButton");
+                var resetModels = Held(SettingsPush(SafeButton(resetTitle, Then(provider, ResetClaudeModels))));
+                var resetWords = new TextBlock { Text = resetTitle, FontSize = resetModels.FontSize, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+                resetModels.Content = resetWords; resetModels.HorizontalAlignment = HorizontalAlignment.Stretch;
+                ToolTipService.SetToolTip(resetModels, Locale.Get("settings.cliAccounts.resetModelsHelp")); AutomationProperties.SetAutomationId(resetModels, "cli-account-reset-models-claude");
+                Place(resetModels, new(AccountGive, GridUnitType.Star), Natural(resetWords) + resetModels.Padding.Left + resetModels.Padding.Right + 2 * DesignMetrics.Stroke.Line);
+                var bedrock = Held(SettingsPush(SafeButton(Locale.Get("settings.cliAccounts.bedrockButton"), Then(provider, () => StartCliSignIn("claude", CliLoginOption.Bedrock)))));
+                ToolTipService.SetToolTip(bedrock, Locale.Get("settings.cliAccounts.bedrockHelp")); AutomationProperties.SetAutomationId(bedrock, "cli-account-bedrock-claude");
+                Place(bedrock, GridLength.Auto);
+                resetBedrock = Held(SettingsPush(SafeButton(Locale.Get("settings.cliAccounts.resetBedrockButton"), Then(provider, ResetClaudeBedrock))));
+                AutomationProperties.SetAutomationId(resetBedrock, "cli-account-reset-bedrock-claude");
+            }
+            var refresh = Held(SettingsIconButton("", CliAccountStrings.RefreshTooltip, () => Act(Then(provider, () => accountsCoordinator.RefreshAsync([provider])))));
+            AutomationProperties.SetAutomationId(refresh, "cli-account-refresh-" + provider); Place(refresh, GridLength.Auto);
+            // The symbol stands on the buttons' line a point over their middle (the Mac sets it at the line's top).
+            refresh.Margin = new Thickness(refresh.Margin.Left, -1, 0, 0);
+
+            // Windows also resets Claude's Bedrock settings. The Mac has no such button, so it takes the line under the Mac's own.
+            if (resetBedrock is not null)
+            {
+                resetBedrock.HorizontalAlignment = HorizontalAlignment.Right;
+                Grid.SetRow(resetBedrock, 1); Grid.SetColumnSpan(resetBedrock, row.ColumnDefinitions.Count); row.Children.Add(resetBedrock);
+            }
+            if (working.Contains(provider)) holds[provider]();
+            return row;
+        }
+        Fill();
+        return rows;
+    }
+
+    /// <summary>The space between the parts of an account's line (M/CLIAccountsSettingsView.swift:36).</summary>
+    private const double AccountGap = 8;
+    /// <summary>The words' and the model reset's weight against the spacer's 1 on a short line: they take all of it but a thousandth.</summary>
+    private const double AccountGive = 1000;
+    /// <summary>How many readings of the account statuses are under way for the open CLI tab.</summary>
+    private int settingsAccountRefreshes;
+
+    /// <summary>
+    /// The Mac's pull-down button in a form (M/CLIAccountsSettingsView.swift:66): its 13pt words, then a
+    /// 16pt rounded chip with the chevron that says it opens a menu. A Button with a MenuFlyout.
+    /// </summary>
+    private Button SettingsMenuButton(string title, MenuFlyout menu)
+    {
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
+        line.Children.Add(new TextBlock { Text = title, FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+        line.Children.Add(SettingsChip(""));
+        var button = new Button { Content = line, Flyout = menu, Height = SettingsControlHeight, MinHeight = 0, MinWidth = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(SettingsControlRadius) };
+        PaintPlainButton(button, brushes.Transparent, brushes.Transparent, ink: brushes.Brush(DesignToken.Ink), disabledInk: brushes.Brush(DesignToken.Ink3));
+        AutomationProperties.SetName(button, title);
+        return button;
     }
 
     // Opens the external sign-in terminal and refreshes the status when it closes.
@@ -827,18 +958,19 @@ public sealed partial class MainWindow
         await ResetClaudeModels();
     }
 
-    // About — usage notes; behaviour unchanged.
+    // 앱 정보 (M/SettingsViews.swift:313-320): the version beside its label, the 11pt note (on Windows the
+    // usage notes), the state folder's label beside the button that shows it, and its path in 10pt mono.
     private StackPanel BuildAppInfoSection()
     {
-        var panel = new StackPanel { Spacing = 6 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = Locale.Get("settings.appInfo.windowsNote"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = .7,
-            FontSize = 12,
-        });
-        return panel;
+        var rows = new StackPanel();
+        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.appInfo.versionLabel")), SettingsText(AppVersionText, 13, DesignToken.Ink2, selectable: true)));
+        SettingsRow(rows, SettingsText(Locale.Get("settings.appInfo.windowsNote"), 11, DesignToken.Ink2));
+        var folder = StateDirectory;
+        var show = SettingsPush(SafeButton(Locale.Get("menu.showInExplorer"), async () => await Windows.System.Launcher.LaunchFolderPathAsync(folder)));
+        AutomationProperties.SetAutomationId(show, "settings-state-folder");
+        SettingsRow(rows, SettingsLabeled(SettingsText(Locale.Get("settings.appInfo.stateLocationLabel")), show));
+        SettingsRow(rows, SettingsText(folder, 10, DesignToken.Ink2, mono: true, selectable: true));
+        return rows;
     }
 
     // Smoke: opens the sectioned Settings screen, checks the sections appear in
@@ -865,9 +997,8 @@ public sealed partial class MainWindow
 
         // Show the fixture results in the CLI update section and read the rows back.
         var cliPanel = BuildCliUpdateSection(SettingsSectionsSmoke.FixtureResults);
-        // The rows sit inside the nested results panel, so look one level down as well.
-        var renderedStatuses = cliPanel.Children.OfType<StackPanel>()
-            .SelectMany(child => child.Children.OfType<StackPanel>().Prepend(child))
+        // Each result is a row of the box, in the order shown; its id is on the row's own panel.
+        var renderedStatuses = SettingsElements(cliPanel)
             .Select(row => AutomationProperties.GetAutomationId(row))
             .Where(id => id.StartsWith(ResultRowIdPrefix, StringComparison.Ordinal))
             .Select(id => id[(id.LastIndexOf('-') + 1)..])
@@ -880,7 +1011,7 @@ public sealed partial class MainWindow
             value => service.UpdateAsync(s => s with { AutoUpdateCLIs = value }));
 
         // The toggle the user sees must reflect the restored saved value.
-        Require(cliPanel.Children.OfType<ToggleSwitch>().Any(), "the CLI update section must show the auto-update switch");
+        Require(SettingsElements(cliPanel).OfType<ToggleButton>().Any(toggle => AutomationProperties.GetAutomationId(toggle) == "cli-auto-update"), "the CLI update section must show the auto-update switch");
         return outcome;
     }
 }

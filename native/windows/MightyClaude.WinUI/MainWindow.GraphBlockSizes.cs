@@ -14,38 +14,28 @@ public sealed partial class MainWindow
         private string? graphResizeNodeId;
 
         /// <summary>
-        /// The expand / collapse and reset controls of a block's header, plain in the header's quiet
-        /// <paramref name="ink"/> (<c>ink2</c>, the strip's ink on a result) with the subtle wash under the pointer.
+        /// The expand / collapse control that ends a block's header (M/MightyGraphView.swift:538-547): the two
+        /// brackets with their arrows leaving (expand) or entering (collapse), plain in the header's quiet
+        /// <paramref name="ink"/> (<c>ink2</c>, the strip's ink on a result) with the subtle wash under the
+        /// pointer. The newest result has none while it fits the window. Putting a dragged size back is the
+        /// corner handle's menu (<see cref="BuildResultResizeGrip"/>), as on the Mac.
         /// </summary>
-        private void AddGraphBlockSizeControls(StackPanel controls, MightyGraphBlock block, Brush ink)
+        private void AddGraphBlockSizeControls(StackPanel controls, MightyGraphBlock block, Brush ink, GraphCardView view)
         {
-            if (block.Kind is not ("request" or "result" or "agent" or "draft")) return;
-            if (graphLayout?.FittedResultID != block.Id)
+            if (graphLayout?.FittedResultID == block.Id) return;
+            var expanded = graphExpanded.Contains(block.Id);
+            var name = expanded ? Locale.Get("graph.block.collapse") : Locale.Get("graph.block.expand");
+            var toggle = HeaderButton(MightySymbols.Create(expanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical", 13, ink), ink);
+            toggle.Click += async (_, _) => await owner.Act(async () =>
             {
-                var expanded = graphExpanded.Contains(block.Id);
-                var toggle = ReferenceButton(expanded ? "↥" : "↧", expanded ? "graph.block.collapse" : "graph.block.expand", () => owner.Act(async () =>
-                {
-                    CancelResultReveal();
-                    await Change(p => GraphBlockPreferences.Set(p, block.Id, null));
-                    if (!graphExpanded.Remove(block.Id)) graphExpanded.Add(block.Id);
-                    RefreshMightyView(Session);
-                }));
-                PaintSizeControl(toggle, ink);
-                AutomationProperties.SetAutomationId(toggle, "mighty-expand-" + block.Id); controls.Children.Add(toggle);
-            }
-            if (Session.GraphBlockSizes?.ContainsKey(block.Id) == true || graphExpanded.Contains(block.Id))
-            {
-                var reset = ReferenceButton("↺", "graph.block.reset", () => ResetGraphBlockSize(block.Id));
-                PaintSizeControl(reset, ink);
-                AutomationProperties.SetAutomationId(reset, "mighty-reset-" + block.Id); controls.Children.Add(reset);
-            }
-        }
-
-        private void PaintSizeControl(Button button, Brush ink)
-        {
-            button.MinHeight = 0; button.Height = 22; button.Padding = new Thickness(6, 0, 6, 0); button.FontSize = DesignMetrics.Type.Pill;
-            button.BorderThickness = new Thickness(0); button.CornerRadius = new CornerRadius(DesignMetrics.Radius.Segment); button.VerticalAlignment = VerticalAlignment.Center;
-            owner.PaintPlainButton(button, owner.brushes.Transparent, owner.brushes.Subtle, ink: ink);
+                CancelResultReveal();
+                await Change(p => GraphBlockPreferences.Set(p, block.Id, null));
+                if (!graphExpanded.Remove(block.Id)) graphExpanded.Add(block.Id);
+                RefreshMightyView(Session);
+            });
+            AutomationProperties.SetName(toggle, name); ToolTipService.SetToolTip(toggle, name);
+            AutomationProperties.SetAutomationId(toggle, "mighty-expand-" + block.Id);
+            controls.Children.Add(view.Expand = toggle);
         }
 
         private Task ResetGraphBlockSize(string nodeId) => owner.Act(async () =>

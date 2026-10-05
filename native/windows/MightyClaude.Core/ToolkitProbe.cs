@@ -29,6 +29,10 @@ public static class ToolkitProbe
             _ => Result.Missing,
         };
 
+    // A file of more than 4 Mi characters counts as missing. One of more than four times as many bytes holds
+    // more characters than that whatever its text, so it is refused before it is read.
+    private static bool TooLargeToRead(string path) => new FileInfo(path).Length > 16L * 1024 * 1024;
+
     // plugin: exact pluginID key in installed_plugins.json with at least one user-scope record.
     private static Result ProbePlugin(string pluginId, string home)
     {
@@ -36,6 +40,7 @@ public static class ToolkitProbe
         if (!File.Exists(path)) return Result.Missing;
         try
         {
+            if (TooLargeToRead(path)) return Result.Missing;
             var text = File.ReadAllText(path);
             if (text.Length > 4 * 1024 * 1024) return Result.Missing;
             using var doc = JsonDocument.Parse(text);
@@ -56,6 +61,7 @@ public static class ToolkitProbe
         if (!File.Exists(path)) return Result.Missing;
         try
         {
+            if (TooLargeToRead(path)) return Result.Missing;
             var text = File.ReadAllText(path);
             if (text.Length > 4 * 1024 * 1024) return Result.Missing;
             using var doc = JsonDocument.Parse(text);
