@@ -101,6 +101,9 @@ try {
     foreach ($key in @('independentDisclosure', 'selectionReopensOnlyTarget', 'inactiveWorkspacePaneSelection', 'workspaceBoundAddMenu', 'collapsedStatePersists', 'draftAndPaneIdentity', 'keyboardAccessible', 'quickTheme')) {
         if ($result.workspaceSidebar.$key -ne $true) { throw "Windows workspace sidebar smoke failed: workspaceSidebar.$key" }
     }
+    foreach ($key in @('shortcutBound', 'toggleCollapses', 'contentTakesSpace', 'toggleRestoresWidth', 'statePersists', 'automationNameFollows', 'focusLeavesFoldedSidebar')) {
+        if ($result.sidebarToggle.$key -ne $true) { throw "Windows sidebar fold smoke failed: sidebarToggle.$key" }
+    }
     if ($result.mightyGraph.retainedNativeDocuments -ne $true) { throw 'Graph redraw replaced a retained native document or its parent.' }
     $screenshot = Join-Path $ProfileDirectory 'smoke-window.png'
     if (-not (Test-Path $screenshot -PathType Leaf) -or (Get-Item $screenshot).Length -eq 0) { throw 'GUI 스크린샷이 없습니다.' }

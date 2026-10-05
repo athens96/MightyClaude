@@ -60,6 +60,14 @@ struct MightyClaudeApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                     .disabled(!store.isLoaded || store.activeWorkspace == nil || store.hasModal)
             }
+            // View menu: the standard "Toggle Sidebar" place and key.
+            CommandGroup(replacing: .sidebar) {
+                Button(L(store.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")) {
+                    withAnimation(.easeInOut(duration: 0.2)) { store.toggleSidebar() }
+                }
+                .keyboardShortcut("s", modifiers: [.control, .command])
+                .disabled(!store.isLoaded || store.hasModal)
+            }
             CommandMenu(L("menu.workspace")) {
                 Button(L("menu.searchWorkspaces")) { store.focusSearch = true }
                     .keyboardShortcut("k", modifiers: .command).disabled(!store.isLoaded || store.hasModal)

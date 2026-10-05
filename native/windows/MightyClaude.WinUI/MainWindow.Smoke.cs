@@ -87,6 +87,9 @@ public sealed partial class MainWindow
             Checkpoint("workspaceSidebar", "running");
             result["workspaceSidebar"] = await RunSidebarSmoke();
             Checkpoint("workspaceSidebar", "passed");
+            Checkpoint("sidebarToggle", "running");
+            result["sidebarToggle"] = await RunSidebarToggleSmoke();
+            Checkpoint("sidebarToggle", "passed");
             Checkpoint("desktopSurfaces", "running");
             result["desktopSurfaces"] = await RunDesktopSurfaceSmoke();
             Checkpoint("desktopSurfaces", "passed");

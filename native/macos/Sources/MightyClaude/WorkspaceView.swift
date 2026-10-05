@@ -5,13 +5,15 @@ import MightyCore
 struct WorkspaceView: View {
     @EnvironmentObject private var store: AppStore
     @FocusState private var searchFocused: Bool
+    /// ⌘K asked for the search while the sidebar was folded: it takes focus once the sidebar is back.
+    @ViewState private var focusSearchOnUnfold = false
     @StateObject private var gitState = WorkspaceGitState()
     @StateObject private var accountUsage = AccountUsageStatusController()
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: columnVisibility) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 210, ideal: store.snapshot.sidebarWidth, max: 360)
+                .navigationSplitViewColumnWidth(min: SidebarFold.minimumWidth, ideal: store.snapshot.sidebarWidth, max: 360)
         } detail: {
             VStack(spacing: 0) {
                 if let warning = store.resourceWarning { resourceWarningBanner(warning) }
@@ -56,7 +58,22 @@ struct WorkspaceView: View {
                 .onDisappear { Task { await browser.shutdown() } }
         }
         .onChange(of: store.focusSearch) { _, value in
-            if value { searchFocused = true; store.focusSearch = false }
+            guard value else { return }
+            store.focusSearch = false
+            // The search lives in the sidebar: a folded sidebar opens first, and the field
+            // takes focus once it is back in the window (its onAppear, or after the unfold).
+            if store.sidebarCollapsed {
+                focusSearchOnUnfold = true
+                withAnimation(.easeInOut(duration: 0.2)) { store.setSidebarCollapsed(false) }
+            } else { searchFocused = true }
+        }
+        .onChange(of: store.sidebarCollapsed) { _, collapsed in
+            guard !collapsed, focusSearchOnUnfold else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard focusSearchOnUnfold else { return }
+                focusSearchOnUnfold = false; searchFocused = true
+            }
         }
         .confirmationDialog("워크스페이스를 목록에서 제거할까요?", isPresented: Binding(get: { store.pendingRemoval != nil }, set: { if !$0 { store.pendingRemoval = nil } }), titleVisibility: .visible) {
             if let workspace = store.pendingRemoval {
@@ -66,12 +83,20 @@ struct WorkspaceView: View {
         } message: { Text("실행 중인 작업을 중지하고 앱의 실행 기록을 제거합니다. 프로젝트 폴더와 파일은 유지됩니다.") }
     }
 
+    /// Folded (⌃⌘S or the header's sidebar button) is `.detailOnly`: no icon rail, the
+    /// content takes the window. The state lives in the snapshot, so it survives a restart.
+    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(get: { store.sidebarCollapsed ? .detailOnly : .all },
+                set: { store.setSidebarCollapsed($0 == .detailOnly) })
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.sidebarInk2)
                 TextField("워크스페이스 검색", text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
                     .focused($searchFocused)
+                    .onAppear { if focusSearchOnUnfold { searchFocused = true } }
                     .accessibilityLabel("워크스페이스 검색")
             }
             .padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.top, 10)
@@ -126,7 +151,9 @@ struct WorkspaceView: View {
             Color.clear.preference(key: SidebarWidthKey.self, value: proxy.size.width)
         })
         .onPreferenceChange(SidebarWidthKey.self) { width in
-            if width >= 200, abs(store.snapshot.sidebarWidth - width) > 1 { store.snapshot.sidebarWidth = width }
+            if let width = SidebarFold.widthToSave(measured: Double(width), saved: store.snapshot.sidebarWidth, collapsed: store.sidebarCollapsed) {
+                store.snapshot.sidebarWidth = width
+            }
         }
     }
 
@@ -288,17 +315,20 @@ struct WorkspaceView: View {
 
     private func workspaceHeader(_ workspace: Workspace) -> some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(workspace.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
-                HStack(spacing: 10) {
-                    Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                    if let git = gitState.info(for: workspace) { WorkspaceGitBadge(info: git) }
-                    Spacer(minLength: 0)
-                        .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
+            HStack(spacing: 10) {
+                SidebarToggleButton()
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(workspace.name).font(.system(size: 17, weight: .semibold)).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
+                    HStack(spacing: 10) {
+                        Text(workspace.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        if let git = gitState.info(for: workspace) { WorkspaceGitBadge(info: git) }
+                        Spacer(minLength: 0)
+                            .overlay { WorkspaceTitlebarRegion(enabled: !store.hasModal, rename: { store.beginRenameWorkspace(workspace.id) }) }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -313,7 +343,7 @@ struct WorkspaceView: View {
             .help(L("menu.showFiles") + " (⇧⌘E)")
             .accessibilityLabel(L("menu.showFiles"))
             .accessibilityIdentifier("workspace-open-files-\(workspace.id)")
-        }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 10)
+        }.leadingPastTrafficLights(24).padding(.trailing, 24).padding(.top, 14).padding(.bottom, 10)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("workspace-header-\(workspace.id)")
     }
@@ -362,6 +392,7 @@ struct WorkspaceView: View {
             Spacer()
             Text("로컬 CLI와 직접 연결되는 macOS 앱").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topLeading) { SidebarToggleButton().leadingPastTrafficLights(24).padding(.top, 14) }
     }
 
     private var emptyPanes: some View {
@@ -399,7 +430,7 @@ struct WorkspaceView: View {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.waitText)
             Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("경고 닫기")
-        }.padding(12).background(Palette.waitSoft)
+        }.padding([.vertical, .trailing], 12).leadingPastTrafficLights(12).background(Palette.waitSoft)
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -407,8 +438,44 @@ struct WorkspaceView: View {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.errText)
             Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("오류 닫기")
-        }.padding(12).background(Palette.errSoft)
+        }.padding([.vertical, .trailing], 12).leadingPastTrafficLights(12).background(Palette.errSoft)
     }
+}
+
+/// Folds the left sidebar away or brings it back (⌃⌘S). It sits at the content's
+/// top-leading edge in every header, so it stays in reach with the sidebar gone.
+struct SidebarToggleButton: View {
+    @EnvironmentObject private var store: AppStore
+
+    /// With the sidebar folded the window's traffic lights sit over the content's
+    /// top-leading corner; a header's leading edge moves past them.
+    static let trafficLightInset: CGFloat = 76
+
+    var body: some View {
+        let label = L(store.sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse")
+        Button { withAnimation(.easeInOut(duration: 0.2)) { store.toggleSidebar() } } label: {
+            Image(systemName: "sidebar.left").font(.system(size: 13)).frame(width: 26, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help(label + " (⌃⌘S)")
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("sidebar-toggle")
+    }
+}
+
+/// Leading padding `base`, widened to clear the window's traffic lights while the sidebar is folded
+/// (they then sit over the content's top-leading corner).
+private struct TrafficLightClearance: ViewModifier {
+    @EnvironmentObject private var store: AppStore
+    let base: CGFloat
+
+    func body(content: Content) -> some View {
+        content.padding(.leading, store.sidebarCollapsed ? max(base, SidebarToggleButton.trafficLightInset) : base)
+    }
+}
+
+extension View {
+    func leadingPastTrafficLights(_ base: CGFloat) -> some View { modifier(TrafficLightClearance(base: base)) }
 }
 
 /// The "창 추가" menu's items, shared by the sidebar's last row and the dashboard's

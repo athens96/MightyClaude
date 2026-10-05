@@ -57,6 +57,10 @@ public sealed partial class MainWindow
         // The Mac's column keeps its spacing between the lower Spacer and the foot line (18, less the 2 Segoe's line is taller), so the parts stand that much above the middle.
         var footer = new TextBlock { Text = Locale.Get("layout.welcome.footer"), FontSize = DesignMetrics.Type.Pill, Foreground = brushes.Tertiary, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 25) };
         Grid.SetRow(footer, 1); page.Children.Add(footer);
+        // The sidebar button at the top-leading corner, where the workspace header has it (padding l24 t14).
+        var toggle = NewSidebarToggle("welcome-sidebar-toggle");
+        toggle.HorizontalAlignment = HorizontalAlignment.Left; toggle.VerticalAlignment = VerticalAlignment.Top; toggle.Margin = new Thickness(24, 14, 0, 0);
+        page.Children.Add(toggle);
         AutomationProperties.SetAutomationId(page, "welcome");
         return page;
     }

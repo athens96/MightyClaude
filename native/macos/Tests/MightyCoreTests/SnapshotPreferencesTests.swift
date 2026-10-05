@@ -68,6 +68,36 @@ struct SnapshotPreferencesTests {
         #expect(StateRepository.decodeSnapshot(Data(nullRemote.utf8)).workspaces.map(\.id) == ["n"])
     }
 
+    @Test func foldedSidebarPersistsAndKeepsItsWidth() async throws {
+        // Older state has no field: the sidebar is open.
+        let legacy = Data(#"{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}"#.utf8)
+        let old = StateRepository.decodeSnapshot(legacy)
+        #expect(old.sidebarCollapsed == nil)
+        #expect(old.sidebarWidth == 300)
+        #expect(StateRepository.normalize(AppSnapshot(sidebarWidth: 280, sidebarCollapsed: true), restoring: false).sidebarCollapsed == true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-sidebar-fold-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for collapsed in [true, false] {
+            try await StateRepository(directory: directory, legacyStateURL: nil).save(AppSnapshot(sidebarWidth: 310, sidebarCollapsed: collapsed))
+            let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()
+            #expect(restored.sidebarCollapsed == collapsed)
+            #expect(restored.sidebarWidth == 310)
+        }
+        // The measured width is saved only while open and clear of the minimum a closing drag passes through.
+        #expect(SidebarFold.widthToSave(measured: 280, saved: 252, collapsed: false) == 280)
+        #expect(SidebarFold.widthToSave(measured: 280, saved: 252, collapsed: true) == nil)
+        #expect(SidebarFold.widthToSave(measured: SidebarFold.minimumWidth, saved: 300, collapsed: false) == nil)
+        #expect(SidebarFold.widthToSave(measured: SidebarFold.minimumWidth + 1, saved: 300, collapsed: false) == nil)
+        #expect(SidebarFold.widthToSave(measured: 0, saved: 300, collapsed: false) == nil)
+        #expect(SidebarFold.widthToSave(measured: 300.5, saved: 300, collapsed: false) == nil)
+        // Only a JSON boolean counts; anything else reads as open.
+        var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
+        for invalid: Any in [1, "true", NSNull()] {
+            object["sidebarCollapsed"] = invalid
+            #expect(StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object)).sidebarCollapsed == nil)
+        }
+    }
+
     @Test func numberedTitleStrippingOnlyTouchesGeneratedNames() {
         #expect(StateRepository.legacyNumberedTitle("Gemini 4") == "Gemini")
         #expect(StateRepository.legacyNumberedTitle("Claude 10") == "Claude")

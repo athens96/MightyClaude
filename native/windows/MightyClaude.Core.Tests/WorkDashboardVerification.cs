@@ -68,4 +68,26 @@ internal static class WorkDashboardVerification
         Check(SettingsNavigation.Categories.SelectMany(c => c.Sections).Distinct().Count() == SettingsSections.MacOrder.Count, "every Mac settings section belongs to one category");
         return Task.CompletedTask;
     }
+
+    internal static async Task SidebarCollapsedPersistsAndKeepsWidth()
+    {
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<AppSnapshot>("""{"version":1,"workspaces":[],"sessions":[],"layout":"grid","theme":"dark","sidebarWidth":300}""", Wire.Json)!;
+        Check(!legacy.SidebarCollapsed && !new AppSnapshot().SidebarCollapsed, $"old state without the field must open the sidebar; got collapsed={legacy.SidebarCollapsed}");
+        var normalized = StateStore.Normalize(new AppSnapshot { SidebarCollapsed = true, SidebarWidth = 300 }, false);
+        Check(normalized.SidebarCollapsed && normalized.SidebarWidth == 300, $"normalize must keep the fold and the width; got collapsed={normalized.SidebarCollapsed} width={normalized.SidebarWidth}");
+        var directory = Verification.Temp();
+        try
+        {
+            foreach (var collapsed in new[] { true, false })
+            {
+                var store = new StateStore(directory); await store.LoadAsync();
+                await store.SaveAsync(new AppSnapshot { SidebarCollapsed = collapsed, SidebarWidth = 310 });
+                var text = await File.ReadAllTextAsync(Path.Combine(directory, "workspace-state.json"));
+                Check(!collapsed || text.Contains("\"sidebarCollapsed\":true"), $"the saved file must name sidebarCollapsed as true; got {text}");
+                var restored = await new StateStore(directory).LoadAsync();
+                Check(restored.SidebarCollapsed == collapsed && restored.SidebarWidth == 310, $"reload must restore collapsed={collapsed} width=310; got collapsed={restored.SidebarCollapsed} width={restored.SidebarWidth}");
+            }
+        }
+        finally { Directory.Delete(directory, true); }
+    }
 }

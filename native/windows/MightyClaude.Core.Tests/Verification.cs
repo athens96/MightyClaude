@@ -123,6 +123,7 @@ internal static class Verification
         await Test("WorkDashboardVerification CardsRespectUsageIdentityAndStablePriority", WorkDashboardVerification.CardsRespectUsageIdentityAndStablePriority);
         await Test("WorkDashboardVerification ActivityAndAgeRemainBoundedAndTruthful", WorkDashboardVerification.ActivityAndAgeRemainBoundedAndTruthful);
         await Test("WorkDashboardVerification SettingsSelectionSurvivesPersistence", WorkDashboardVerification.SettingsSelectionSurvivesPersistence);
+        await Test("WorkDashboardVerification SidebarCollapsedPersistsAndKeepsWidth", WorkDashboardVerification.SidebarCollapsedPersistsAndKeepsWidth);
         await Test("QueuedComposerVerification QueuePreservesOrderBoundsAndSettlementPolicy", QueuedComposerVerification.QueuePreservesOrderBoundsAndSettlementPolicy);
         await Test("QueuedComposerVerification SteerRequiresLiveInitializedChannelAndSuccessfulWrite", QueuedComposerVerification.SteerRequiresLiveInitializedChannelAndSuccessfulWrite);
         await Test("QueuedComposerVerification PermissionResponsesAndCancellationSettleOnlyOnce", QueuedComposerVerification.PermissionResponsesAndCancellationSettleOnlyOnce);

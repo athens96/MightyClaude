@@ -1382,6 +1382,8 @@
   "settings.cliAccounts.resetBedrockConfirm": "Back up and remove Bedrock keys and Bedrock model pins from Claude user settings. Windows environment variables, AWS profiles, project and managed settings remain unchanged. Remove any conflicting values there before switching to subscription login.",
   "settings.cliAccounts.waitForRuns": "Wait for this provider’s runs to finish before changing its account or models.",
   "sidebar.resize": "Resize sidebar",
+  "sidebar.collapse": "Collapse sidebar",
+  "sidebar.expand": "Expand sidebar",
   "terminal.exited": "Shell exited ({code}).",
   "terminal.failed": "Could not start the terminal.",
   "terminal.inputBusy": "Terminal input is full or the shell has exited. Try again.",

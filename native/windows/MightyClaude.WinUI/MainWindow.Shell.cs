@@ -60,6 +60,10 @@ public sealed partial class MainWindow
     private readonly MenuFlyoutItem workspaceHeaderCopyPath = new();
     /// <summary>The one item of the menu over the header's name and blank space: "Rename workspace…" (M/WorkspaceTitlebar.swift:30-36).</summary>
     private readonly MenuFlyoutItem workspaceHeaderRename = new();
+    /// <summary>The header's leading sidebar button beside the name and path, 10 apart (M/WorkspaceView.swift:302-303).</summary>
+    private readonly Grid workspaceHeaderTitle = new() { ColumnSpacing = 10 };
+    /// <summary>The path's row: the path and the Git capsule, 10 apart.</summary>
+    private readonly Grid workspaceHeaderPathRow = new() { ColumnSpacing = 10 };
     /// <summary>Whether the sidebar's rows were last drawn for the dashboard (none selected) or for the panes.</summary>
     private bool sidebarDrawnForDashboard;
 
@@ -92,7 +96,7 @@ public sealed partial class MainWindow
         workspaceHeader.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         workspaceHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); workspaceHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var text = new StackPanel { Spacing = 3 }; text.Children.Add(workspaceHeaderName);
-        var pathRow = new Grid { ColumnSpacing = 10 };
+        var pathRow = workspaceHeaderPathRow;
         pathRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); pathRow.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         pathRow.Children.Add(workspaceHeaderPath); Grid.SetColumn(workspaceHeaderGit, 1); pathRow.Children.Add(workspaceHeaderGit);
         // The path is fitted again whenever the room it has changes: the header's width, the counts beside it, the Git capsule.
@@ -106,7 +110,11 @@ public sealed partial class MainWindow
         var headerMenu = new MenuFlyout(); headerMenu.Items.Add(workspaceHeaderRename);
         headerMenu.Opening += (_, _) => workspaceHeaderRename.IsEnabled = !dialogOpen;
         workspaceHeader.Background = brushes.Transparent; workspaceHeader.ContextFlyout = headerMenu;
-        text.Children.Add(pathRow); workspaceHeader.Children.Add(text);
+        text.Children.Add(pathRow);
+        var toggle = NewSidebarToggle("sidebar-toggle");
+        workspaceHeaderTitle.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); workspaceHeaderTitle.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        workspaceHeaderTitle.Children.Add(toggle); Grid.SetColumn(text, 1); workspaceHeaderTitle.Children.Add(text);
+        workspaceHeader.Children.Add(workspaceHeaderTitle);
         var counts = workspaceHeaderCounts = new StatusCountsView(brushes, "workspace-header-running", longForm: true);
         Grid.SetColumn(counts.View, 1); workspaceHeader.Children.Add(counts.View);
         workspaceHeaderFiles.Click += async (_, _) => { if (!dialogOpen && workspaceHeaderId is { } id) await OpenFilePane(id); };
@@ -264,11 +272,11 @@ public sealed partial class MainWindow
         var full = workspaceHeaderFullPath;
         workspaceHeaderPath.MaxWidth = double.PositiveInfinity;
         workspaceHeaderPath.Text = full;
-        // The room is the header's own first column: a row that overflows reports its content's width,
-        // not what it was given, and would call a path that runs under the Git capsule a fit.
-        var room = workspaceHeader.ColumnDefinitions.Count > 0 ? workspaceHeader.ColumnDefinitions[0].ActualWidth : 0;
-        if (workspaceHeaderPath.Parent is not Grid row || room <= 0) return;
-        var available = Math.Max(0, room - workspaceHeaderGit.ActualWidth - (workspaceHeaderGit.ActualWidth > 0 ? row.ColumnSpacing : 0));
+        // The room is the text's own column beside the sidebar button: a row that overflows reports its
+        // content's width, not what it was given, and would call a path that runs under the Git capsule a fit.
+        var room = workspaceHeaderTitle.ColumnDefinitions.Count > 1 ? workspaceHeaderTitle.ColumnDefinitions[1].ActualWidth : 0;
+        if (room <= 0) return;
+        var available = Math.Max(0, room - workspaceHeaderGit.ActualWidth - (workspaceHeaderGit.ActualWidth > 0 ? workspaceHeaderPathRow.ColumnSpacing : 0));
         bool Fits(string text)
         {
             workspaceHeaderPath.Text = text;

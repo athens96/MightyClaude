@@ -125,7 +125,7 @@ public actor StateRepository {
             guard let bytes = try? JSONSerialization.data(withJSONObject: value) else { return nil }
             return try? decoder.decode(MobileRemoteSettings.self, from: bytes)
         }
-        return normalize(AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? 252, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins")), restoring: restoring)
+        return normalize(AppSnapshot(workspaces: workspaces, sessions: sessions, activeWorkspaceId: object["activeWorkspaceId"] as? String, activeSessionId: object["activeSessionId"] as? String, layout: object["layout"] as? String ?? "grid", theme: object["theme"] as? String ?? "dark", sidebarWidth: object["sidebarWidth"] as? Double ?? 252, paneLayouts: paneLayouts, paneLayoutModes: workspaceStrings("paneLayoutModes"), paneLayoutActiveSessionIds: workspaceStrings("paneLayoutActiveSessionIds"), autoUpdateCLIs: autoUpdateCLIs, expandedWorkspaceIds: object["expandedWorkspaceIds"] as? [String], mobileRemote: mobileRemote, autoUpdatePlugins: jsonBool("autoUpdatePlugins"), sidebarCollapsed: jsonBool("sidebarCollapsed")), restoring: restoring)
     }
 
     public static let totalLogBudget = 4 * 1024 * 1024
@@ -273,6 +273,7 @@ public actor StateRepository {
         output.sidebarWidth = value.sidebarWidth.isFinite ? min(400, max(200, value.sidebarWidth)) : 252
         output.autoUpdateCLIs = value.autoUpdateCLIs
         output.autoUpdatePlugins = value.autoUpdatePlugins
+        output.sidebarCollapsed = value.sidebarCollapsed
         output.expandedWorkspaceIds = value.expandedWorkspaceIds.map { Array(Set($0).intersection(workspaceIds)).sorted() }
         output.mobileRemote = value.mobileRemote?.normalized
         return output

@@ -96,23 +96,32 @@ struct DashboardView: View {
     var body: some View {
         let sessions = store.snapshot.sessions
         let stats = WorkDashboard.stats(sessions: sessions, permissions: store.toolPermissions)
+        // M/DashboardView padding: h28 t20 b24; only the header row moves past the traffic lights while folded.
+        let inset: CGFloat = 28
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(L("phone.dashboard.title")).font(Palette.heading(29)).foregroundStyle(Palette.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(L("dashboard.subtitle", ["workspaces": "\(store.snapshot.workspaces.count)", "panes": "\(sessions.count)"]))
-                        .font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                HStack(spacing: 10) {
+                    SidebarToggleButton()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L("phone.dashboard.title")).font(Palette.heading(29)).foregroundStyle(Palette.ink)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(L("dashboard.subtitle", ["workspaces": "\(store.snapshot.workspaces.count)", "panes": "\(sessions.count)"]))
+                            .font(.system(size: 12)).foregroundStyle(Palette.ink2)
+                    }
                 }
-                statRow(stats).padding(.top, 16)
-                if store.snapshot.workspaces.isEmpty {
-                    Text(L("dashboard.empty")).font(.system(size: 13)).foregroundStyle(Palette.ink2).padding(.top, 28)
+                .leadingPastTrafficLights(inset)
+                VStack(alignment: .leading, spacing: 0) {
+                    statRow(stats).padding(.top, 16)
+                    if store.snapshot.workspaces.isEmpty {
+                        Text(L("dashboard.empty")).font(.system(size: 13)).foregroundStyle(Palette.ink2).padding(.top, 28)
+                    }
+                    ForEach(store.snapshot.workspaces) { workspace in
+                        group(workspace, sessions: sessions.filter { $0.workspaceId == workspace.id }).padding(.top, 22)
+                    }
                 }
-                ForEach(store.snapshot.workspaces) { workspace in
-                    group(workspace, sessions: sessions.filter { $0.workspaceId == workspace.id }).padding(.top, 22)
-                }
+                .padding(.leading, inset)
             }
-            .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 24)
+            .padding(.trailing, inset).padding(.top, 20).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("work-dashboard")

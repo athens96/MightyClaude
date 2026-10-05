@@ -76,7 +76,14 @@ public sealed partial class MainWindow
             shortcut.Invoked += async (_, args) => { args.Handled = true; if (!dialogOpen && launchSplash is null) await action(); };
             root.KeyboardAccelerators.Add(shortcut);
         }
-        Bind(VirtualKey.K, () => { search.Focus(FocusState.Keyboard); search.SelectAll(); return Task.CompletedTask; });
+        // The search lives in the sidebar: a folded sidebar opens first.
+        Bind(VirtualKey.K, () => Act(async () =>
+        {
+            var save = SetSidebarCollapsed(false); root.UpdateLayout();
+            search.Focus(FocusState.Keyboard); search.SelectAll();
+            await save;
+        }));
+        Bind(VirtualKey.B, ToggleSidebar);
         Bind(VirtualKey.T, () => service.Snapshot.ActiveWorkspaceId is null ? Task.CompletedTask : AddPane("shell"));
         Bind((VirtualKey)188, OpenSettings); // OEM comma, the macOS ⌘, counterpart.
     }
