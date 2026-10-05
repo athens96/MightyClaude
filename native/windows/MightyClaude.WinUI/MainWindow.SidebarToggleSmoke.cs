@@ -82,7 +82,7 @@ public sealed partial class MainWindow
             root.UpdateLayout();
             object? focusedAfter = null;
             await WaitUI(() => (focusedAfter = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root.XamlRoot!)) is Button { ActualWidth: > 0 } shown && sidebarToggles.Contains(shown),
-                () => $"folding with focus in the search must move focus to the shown sidebar button; focus is on {(focusedAfter is FrameworkElement e ? e.GetType().Name + " '" + AutomationProperties.GetAutomationId(e) + "'" : focusedAfter?.GetType().Name ?? "nothing")}");
+                () => $"folding with focus in the search must move focus to the shown sidebar button ({string.Join(", ", sidebarToggles.Select(t => AutomationProperties.GetAutomationId(t) + (IsShownToRoot(t) ? " shown" : " hidden")))}); focus is on {(focusedAfter is FrameworkElement e ? e.GetType().Name + " '" + AutomationProperties.GetAutomationId(e) + "'" : focusedAfter?.GetType().Name ?? "nothing")}");
             Require(service.Snapshot.SidebarCollapsed && focusedAfter is Button { ActualWidth: > 0 } focusedToggle && sidebarToggles.Contains(focusedToggle),
                 $"folding with focus in the search must move focus to the shown sidebar button; got collapsed={service.Snapshot.SidebarCollapsed}, focus on {(focusedAfter is FrameworkElement f ? f.GetType().Name + " '" + AutomationProperties.GetAutomationId(f) + "'" : focusedAfter?.GetType().Name ?? "nothing")}");
             await ToggleSidebar();
