@@ -304,6 +304,7 @@ public sealed partial class MainWindow
                     : pane).ToList(),
             });
             Render();
+            // i18n-exempt-begin: RunAccountUsageSmoke (--smoke-test) failure messages, written to smoke-result.json, not UI.
             Require(usage is not null && usageButton is not null && usageButton.Visibility == Visibility.Visible, "\uACC4\uC815 \uC0AC\uC6A9\uB7C9 \uCE69\uC774 \uC0C1\uD0DC \uC904\uC5D0 \uBCF4\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
             RenderAccountUsageDetails();
             await WaitUI(() => usageChips.Children.Count > 0 && usageDetails.Children.Count > 0);
@@ -318,6 +319,7 @@ public sealed partial class MainWindow
             // The switch sits beside its words in the popover's own row (M/StatusBarUsage.swift:223-229).
             Require(usageDirectToggle is { IsChecked: false } directToggle && usageDetails.Children.OfType<Grid>().Any(row => row.Children.Contains(directToggle)), "\uC9C1\uC811 \uC870\uD68C \uC2A4\uC704\uCE58\uAC00 \uAEBC\uC9C4 \uCC44\uB85C \uBCF4\uC5EC\uC57C \uD569\uB2C8\uB2E4.");
             Require(usageDetails.Children.OfType<TextBlock>().Any(t => t.Text == AccountUsageStrings.SharedLimitsNote), "\uACF5\uC720 \uD55C\uB3C4 \uC124\uBA85\uC774 \uD31D\uC624\uBC84\uC5D0 \uC5C6\uC2B5\uB2C8\uB2E4.");
+            // i18n-exempt-end
             return new AccountUsageSmokeOutcome
             {
                 Chips = usageChips.Children.Count,

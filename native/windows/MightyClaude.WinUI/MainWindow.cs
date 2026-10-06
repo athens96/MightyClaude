@@ -502,6 +502,8 @@ public sealed partial class MainWindow : Window
             {
                 var files = await read();
                 if (owner.closing || !owner.service.Snapshot.Sessions.Any(p => p.Id == id)) return;
+                // The combined count is the composer's own limit, said as the Mac says it (M/AppStore+Attachments.swift:103).
+                if (pendingAttachments.Count + files.Count > AttachmentSupport.MaximumCount) throw new ArgumentException(Locale.Get("composer.attachment.tooMany"));
                 _ = AttachmentSupport.Validate(pendingAttachments.Concat(files).ToArray()); pendingAttachments.AddRange(files); RefreshAttachments();
             }
             catch (Exception ex) { if (!owner.closing && owner.service.Snapshot.Sessions.Any(p => p.Id == id)) ShowAttachmentError(ex.Message); }
@@ -578,7 +580,7 @@ public sealed partial class MainWindow : Window
             if (help is not null) ToolTipService.SetToolTip(item, help);
             return item;
         }
-        /// <summary>A section header in a menu (the Mac's <c>Section("공급자")</c>): a small quiet line over its rows that cannot be chosen.</summary>
+        /// <summary>A section header in a menu (the Mac's provider <c>Section</c>): a small quiet line over its rows that cannot be chosen.</summary>
         private MenuFlyoutItem MenuHeader(string text)
         {
             var item = new MenuFlyoutItem { Text = text, IsEnabled = false, FontSize = DesignMetrics.Type.Pill, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, MinHeight = 0, Padding = new Thickness(11, 7, 11, 3) };

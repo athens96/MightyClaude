@@ -447,4 +447,28 @@ public sealed partial class MainWindow
         }
 
     }
+
+    // The composer's send path: a send waits out the provider's automatic sign-in, then is admitted.
+    // Under --smoke-test the start goes to the smoke's own stand-in (smokeStart), never to a CLI.
+    private Task StartFromComposer(StartRunRequest request) =>
+        AutomaticLoginOf(request.Provider) is { } login ? StartAfterAutomaticLogin(request, login.Task) : StartAdmitted(request);
+    /// <summary>
+    /// A send while the provider's automatic sign-in runs cancels it (holding the next automatic start for the
+    /// cooldown) and goes ahead once its process is gone. The checks and the start below stay one synchronous step.
+    /// </summary>
+    private async Task StartAfterAutomaticLogin(StartRunRequest request, Task login)
+    {
+        CancelBackgroundLogin(request.Provider); RefreshLoginCards();
+        try { await login.WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { }
+        await StartAdmitted(request);
+    }
+    private Task StartAdmitted(StartRunRequest request)
+    {
+        // Gemini's terminal sign-in changes nothing in the background, so its sends go ahead.
+        if (loginJobs.GetValueOrDefault(request.Provider) is { Terminal: false }) throw new InvalidOperationException(Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(request.Provider) }));
+        if (loginBusy.GetValueOrDefault(request.Provider) is { Terminal: false } || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
+        if (automaticUpdateRunning && automaticallyUpdatingProvider == request.Provider) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
+        if (ManualMutationBlockReason(new RunSession { Kind = request.Kind, Provider = request.Provider }) is { } block) throw new InvalidOperationException(block);
+        return options.SmokeTest ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("The GUI smoke never starts a real CLI.") : service.StartAsync(request);
+    }
 }

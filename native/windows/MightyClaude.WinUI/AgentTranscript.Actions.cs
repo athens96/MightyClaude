@@ -150,7 +150,9 @@ internal sealed partial class AgentTranscript
         var previous = last; var previousExpanded = expandedTools.ToArray();
         try
         {
+            // i18n-exempt-begin: RunActionsSmoke (--smoke-test) code-copy fixture: Korean source text that must be copied back unchanged.
             const string exactCode = "const \uD55C\uAE00 = `\uADF8\uB300\uB85C \uBCF5\uC0AC`;";
+            // i18n-exempt-end
             var fixture = new RunSession { Logs = [
                 new("copy-fixture", "assistant", "```js\n" + exactCode + "\n```\n\nhttps://example.com/agent-link [link](https://example.com/labelled)", Wire.Now()),
                 new("tool-fixture", "activity", "read", Wire.Now(), "claude", new("tool", "claude", "read", "completed", "Read README.md", Output: "hidden tool detail")),

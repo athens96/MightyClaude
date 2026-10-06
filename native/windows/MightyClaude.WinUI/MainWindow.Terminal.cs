@@ -329,7 +329,9 @@ public sealed partial class MainWindow
             Require(terminal is not null && terminalReady && terminalView?.CoreWebView2 is not null, "Trusted xterm/ConPTY did not become ready: " + terminalNotice?.Text);
             var process = terminal!; var core = terminalView!.CoreWebView2;
             Require(IsTerminalAddress(core.Source), "Terminal renderer did not load from the packaged trusted origin.");
+            // i18n-exempt-begin: RunTerminalBridgeSmoke (--smoke-test) marker: Korean output the terminal must render back through ConPTY.
             var marker = "MIGHTY_" + Guid.NewGuid().ToString("N") + "_\uD55C\uAE00";
+            // i18n-exempt-end
             var powershell = Path.GetFileNameWithoutExtension(PseudoTerminal.DefaultShell).Equals("powershell", StringComparison.OrdinalIgnoreCase);
             var command = powershell ? "[Console]::WriteLine(('" + marker[..16] + "'+'" + marker[16..] + "'))\r"
                 : "chcp 65001\rset MIGHTY_SMOKE=" + marker[..16] + "\rset MIGHTY_SMOKE=%MIGHTY_SMOKE%" + marker[16..] + "\recho %MIGHTY_SMOKE%\r";

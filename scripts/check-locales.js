@@ -29,7 +29,9 @@
 //                  are not counted; a marker in any other file is an error
 //   allow          literals that must stay as written (they are matched against CLI output or
 //                  parsed back from saved data), per file, with the literal as it appears
-//                  between its quotes in the source
+//                  between its quotes in the source, Hangul escapes (\uXXXX, \u{XXXX}) decoded
+//
+// Hangul spelled as a Unicode escape counts like Hangul typed out (decodeHangulEscapes).
 // An exemption that no longer matches anything fails, so the list cannot go stale.
 // --write-budget lowers each area to its count and never raises one.
 //
@@ -64,6 +66,20 @@ const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
 // `t("key")` / `t('key')` (phone), `L("key")` (Swift), `Locale.Get("key")` (C#)
 const REFERENCE = /\b(?:t|L|Locale\.Get)\(\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)["']/g;
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
+const HANGUL_CODE = (code) => (code >= 0x1100 && code <= 0x11ff) || (code >= 0x3130 && code <= 0x318f) || (code >= 0xac00 && code <= 0xd7af);
+// `\uAC00` (C#, TS) and `\u{AC00}` (Swift, TS) spelled in a source. An even run of backslashes
+// before it is an escaped backslash, not an escape, and is kept as it is.
+const UNICODE_ESCAPE = /(?<!\\)((?:\\\\)*)\\u(?:\{([0-9A-Fa-f]{1,6})\}|([0-9A-Fa-f]{4}))/g;
+
+/// Hangul written as a Unicode escape is still Korean in the app: it is decoded before
+/// anything is counted, so escaping cannot hide a literal from the ratchet. Other escapes
+/// stay as written.
+function decodeHangulEscapes(source) {
+  return source.replace(UNICODE_ESCAPE, (match, backslashes, braced, plain) => {
+    const code = parseInt(braced ?? plain, 16);
+    return HANGUL_CODE(code) ? backslashes + String.fromCodePoint(code) : match;
+  });
+}
 
 /// The five clients (the budget's areas). `roots` is where literals are counted and key
 /// references are found; `copies` are the copies that must be byte-identical to the original.
@@ -331,7 +347,8 @@ function splitRegions(relative, source, record = true) {
 /// The literals of one file, sorted into counted, exempt (a smoke file or region) and
 /// allowed (an allow-list entry for this file). `record` false classifies without crediting
 /// the exemptions and allow entries, for a second look at a file (--touched-since).
-function classifyLiterals(relative, source, record = true) {
+function classifyLiterals(relative, rawSource, record = true) {
+  const source = decodeHangulEscapes(rawSource);
   // Every glob that matches is credited, so none of them looks stale while another covers the file.
   const exemptBy = exemptGlobs.filter((entry) => entry.pattern.test(relative));
   if (record) for (const entry of exemptBy) entry.matched += 1;

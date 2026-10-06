@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Hard-coded Korean string literals left per client (area of scripts/check-locales.js). The count must equal its area's budget: more is a new literal, fewer means the budget is stale; lower it with node scripts/check-locales.js --write-budget, which never raises one. Stage 2-1 added a last-resort count of Hangul the literal pattern cannot see (inside interpolations and Swift/C# \"\"\" blocks), so the other areas were re-based on that true count: macOS core 872→874, WinUI 189→190, phone 202→219; Windows Core fell 161→137 when SlashCommandStrings moved to the shared keys macOS reads. Exemptions and allowed literals are not counted; each says why, and one that no longer matches anything fails the check. Stage 2-2 moved macOS core to the shared keys (874→0): the frozen style engine (Styles/**, v6) and the Hangul composer's jamo tables are exempt, and saved-data markers, the status-line trust names and reply matchers are allowed. Stage 2-3 moved Windows Core (137→0) and WinUI (190→0) to the shared keys: the WinUI GUI smoke (MainWindow.Smoke.cs) is exempt and the status-line trust names stay as written; --touched-since now leaves out what the budget exempts or allows.",
+  "note": "Hard-coded Korean string literals left per client (area of scripts/check-locales.js). The count must equal its area's budget: more is a new literal, fewer means the budget is stale; lower it with node scripts/check-locales.js --write-budget, which never raises one. Stage 2-1 added a last-resort count of Hangul the literal pattern cannot see (inside interpolations and Swift/C# \"\"\" blocks), so the other areas were re-based on that true count: macOS core 872→874, WinUI 189→190, phone 202→219; Windows Core fell 161→137 when SlashCommandStrings moved to the shared keys macOS reads. Exemptions and allowed literals are not counted; each says why, and one that no longer matches anything fails the check. Stage 2-2 moved macOS core to the shared keys (874→0): the frozen style engine (Styles/**, v6) and the Hangul composer's jamo tables are exempt, and saved-data markers, the status-line trust names and reply matchers are allowed. Stage 2-3 moved Windows Core (137→0) and WinUI (190→0) to the shared keys: the WinUI GUI smoke (MainWindow.Smoke.cs) is exempt and the status-line trust names stay as written; --touched-since now leaves out what the budget exempts or allows. Hangul spelled as \\uXXXX / \\u{XXXX} escapes is decoded before counting, so escapes cannot hide a literal: the Windows matchers and smoke fixtures written that way are allowed or exempt by name.",
   "areas": {
     "macOS app": 0,
     "macOS core": 0,
@@ -26,11 +26,19 @@
     "native/macos/Sources/MightyClaude/AppStore+*Smoke.swift": "The GUI smoke steps (--smoke-test), one file per area. Their fixtures and failure messages go to smoke-result.json, not to the UI.",
     "native/macos/Sources/MightyCore/Styles/*.swift": "frozen style engine v6; localizing needs v7",
     "native/macos/Sources/MightyCore/HangulComposer.swift": "The 2-set Hangul composer's jamo tables: single consonants and vowels it composes into syllables. They are input data, not copy, and must stay Korean.",
-    "native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs": "The Windows GUI smoke (--smoke-test): its Korean is fixture input (IME text, Markdown, session history, rename and draft samples the smoke types and then finds again) and failure messages written to smoke-result.json, not UI. The one guard outside RunUISmoke (StartAdmitted) throws only under --smoke-test. UI text it compares goes through Locale.Get or the Core strings classes."
+    "native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs": "The Windows GUI smoke (--smoke-test): its Korean is fixture input (IME text, Markdown, session history, rename and draft samples the smoke types and then finds again) and failure messages written to smoke-result.json, not UI. The one guard outside RunUISmoke (StartAdmitted) throws only under --smoke-test. UI text it compares goes through Locale.Get or the Core strings classes.",
+    "native/windows/MightyClaude.WinUI/MainWindow.PaletteDesignSmoke.cs": "The palette design smoke (--smoke-test): its Hangul is Markdown fixture text whose drawn ink and type sizes it measures; nothing here reaches the UI outside the smoke.",
+    "native/windows/MightyClaude.WinUI/MainWindow.SmallParitySmoke.cs": "The small-parity smoke (--smoke-test): its Hangul is a draft fixture that a conversation reset must keep; nothing here reaches the UI outside the smoke.",
+    "native/windows/MightyClaude.WinUI/MainWindow.TimelineSmoke.cs": "The timeline smoke (--smoke-test): its Hangul is the requests, answers and agent titles of the fixture runs it draws; nothing here reaches the UI outside the smoke.",
+    "native/windows/MightyClaude.WinUI/WindowsScreenTransportSmoke.cs": "The screen-share transport smoke (--smoke-test): its Hangul is the Unicode text fixture sent over the data channel and checked on arrival."
   },
   "exemptRegions": {
     "native/macos/Sources/MightyClaude/AppStore.swift": "The GUI smoke (runSmokeTest and its composer and attachment checks): fixtures and failure messages for smoke-result.json, not UI.",
-    "native/macos/Sources/MightyClaude/AgentMarkdownView.swift": "AgentMarkdownDiagnostics, the GUI smoke's Markdown fixture, not UI."
+    "native/macos/Sources/MightyClaude/AgentMarkdownView.swift": "AgentMarkdownDiagnostics, the GUI smoke's Markdown fixture, not UI.",
+    "native/windows/MightyClaude.WinUI/MainWindow.AccountUsage.cs": "RunAccountUsageSmoke (--smoke-test): failure messages for smoke-result.json, not UI.",
+    "native/windows/MightyClaude.WinUI/AgentTranscript.Actions.cs": "RunActionsSmoke (--smoke-test): the Korean code-copy fixture.",
+    "native/windows/MightyClaude.WinUI/MainWindow.NextActions.cs": "RunNextActionsSmoke (--smoke-test): the Korean draft fixture.",
+    "native/windows/MightyClaude.WinUI/MainWindow.Terminal.cs": "RunTerminalBridgeSmoke (--smoke-test): the Korean marker echoed through ConPTY."
   },
   "allow": [
     {
@@ -99,6 +107,34 @@
         "사용자 설정"
       ],
       "reason": "StatusLineConfig.Source names: the trust fingerprint a workspace's allowed status-line command is saved under hashes this text (as on macOS), so it stays as written in every language; SourceLabel shows the localized name."
+    },
+    {
+      "file": "native/windows/MightyClaude.Core/PaneTitle.cs",
+      "literal": "첨부: ",
+      "reason": "The \"첨부: \" attachment marker in a saved user log entry (AttachmentSupport.Summary writes it, PaneTitle parses it back), kept as written in every language; spelled with escapes in the source."
+    },
+    {
+      "file": "native/windows/MightyClaude.Core/NextActions.cs",
+      "literals": [
+        ", 또는 ",
+        " — 또는 ",
+        " 또는 ",
+        " 중에서 선택",
+        " 중 선택",
+        " 중 하나",
+        "또는"
+      ],
+      "reason": "Matched against the agent's own reply text to split Korean next-action choices, as on macOS; the English words beside them cover English replies."
+    },
+    {
+      "file": "native/windows/MightyClaude.Core/Companion.cs",
+      "literals": [
+        "읽",
+        "검색",
+        "검토",
+        "찾는"
+      ],
+      "reason": "Matched against activity summaries (Korean summaries kept in saved logs) to choose the companion's reviewing animation, as on macOS; the English words beside them cover English summaries."
     }
   ]
 }
