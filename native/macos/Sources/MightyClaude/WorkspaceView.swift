@@ -395,7 +395,7 @@ struct WorkspaceView: View {
             Spacer()
             Text(L("window.status.paneCount", ["count": "\(store.activeSessions.count)"]))
             Text("·").padding(.horizontal, 3)
-            Text(L("window.status.runningCount", ["count": "\(store.snapshot.sessions.filter { $0.status == "running" }.count)"]))
+            Text(L("window.status.runningCount", ["count": "\(WorkDashboard.stats(sessions: store.snapshot.sessions, permissions: store.toolPermissions).running)"]))
             if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
                 Button { store.showSettings = true } label: {
                     Label(L("window.status.updateBadge", ["version": version]), systemImage: "arrow.down.circle.fill").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accent)

@@ -197,7 +197,8 @@ public actor StateRepository {
             session.provider = ProviderOptions.normalizeProvider(session.provider); session.model = CoreValidation.model(session.model) ? session.model : "default"
             session.settings = ProviderOptions.normalizedSettings(provider: session.provider, settings: session.settings)
             if !["idle", "running", "completed", "error", "stopped"].contains(session.status) { session.status = "idle" }
-            if restoring && session.status == "running" { session.status = "stopped" }
+            // A shell starts again at its prompt; an agent's run did not survive the quit.
+            if restoring && session.status == "running" { session.status = session.kind == SessionKind.shell ? "idle" : "stopped" }
             if let id = session.resumeId, !CoreValidation.identifier(id) { session.resumeId = nil }
             session.agentViewMode = ["default", "mighty"].contains(session.agentViewMode ?? "") ? session.agentViewMode : nil
             session.mightyStyle = normalizedStyle(session, knownStyleIds: knownStyleIds)

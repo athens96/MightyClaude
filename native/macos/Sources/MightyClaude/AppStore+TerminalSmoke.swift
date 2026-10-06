@@ -43,6 +43,11 @@ extension AppStore {
             originalFrame = window.frame
             window.makeKeyAndOrderFront(nil)
             terminal.view.acquireProgrammaticFocus()
+            // A shell that has just started sits at its prompt: it is not running anything.
+            stage = "attach-idle"
+            result["statusAfterAttach"] = terminalSmokeStatus(id) ?? "missing"
+            guard terminalSmokeStatus(id) == "idle" else { throw MightyError("A new shell pane is \(terminalSmokeStatus(id) ?? "missing"), not idle") }
+            result["attachIdle"] = true
 
             stage = "tty"
             let shellPIDFile = folder.appendingPathComponent("shell-pid.txt")
@@ -56,6 +61,24 @@ extension AppStore {
             result["tty"] = true
             result["shellPID"] = Int(shellPID)
             result["initialPTYGrid"] = initialGrid
+
+            stage = "shell-activity"
+            do {
+                try await waitForSmoke(timeout: 5) { terminal.shellProcessId == shellPID }
+            } catch {
+                throw MightyError("The activity probe found shell \(terminal.shellProcessId.map { String($0) } ?? "none"), not \(shellPID)")
+            }
+            result["activityShellPID"] = Int(shellPID)
+            guard terminalSmokeStatus(id) == "idle" else { throw MightyError("The shell at its prompt is \(terminalSmokeStatus(id) ?? "missing"), not idle") }
+            try terminalSmokeSend(terminal, "/bin/sleep 2; printf 'MIGHTY_%s\\n' 'SLEEP_DONE'")
+            let commandSent = Date()
+            try await waitForSmoke(timeout: 1.5) { self.terminalSmokeStatus(id) == "running" }
+            result["activityRunningAfterSeconds"] = Date().timeIntervalSince(commandSent)
+            try await terminalSmokeWaitText(terminal, "MIGHTY_SLEEP_DONE", timeout: 5)
+            let commandEnded = Date()
+            try await waitForSmoke(timeout: 3) { self.terminalSmokeStatus(id) == "idle" }
+            result["activityIdleAfterSeconds"] = Date().timeIntervalSince(commandEnded)
+            result["shellActivity"] = true
 
             stage = "persistent-directory"
             let cwdFile = folder.appendingPathComponent("cwd.txt")
@@ -256,6 +279,7 @@ extension AppStore {
         return "/bin/sh -c " + terminalSmokeQuote(script)
     }
 
+    private func terminalSmokeStatus(_ id: String) -> String? { snapshot.sessions.first { $0.id == id }?.status }
     private func terminalSmokeRead(_ file: URL) -> String? { try? String(contentsOf: file, encoding: .utf8) }
     private func terminalSmokePID(_ file: URL) -> pid_t? {
         guard let value = terminalSmokeRead(file)?.trimmingCharacters(in: .whitespacesAndNewlines), let pid = pid_t(value), pid > 1 else { return nil }

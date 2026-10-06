@@ -23,6 +23,19 @@ struct SnapshotPreferencesTests {
         #expect(StateRepository.decodeSnapshot(data).sessions.map(\.title).prefix(2) == ["Claude", "Codex"])
     }
 
+    @Test func aRestoredShellStartsIdleWhileAnAgentRunIsStopped() {
+        let a = Workspace(id: "a", name: "A", path: "/tmp/a")
+        let sessions = [
+            RunSession(id: "shell", workspaceId: "a", title: "Terminal", kind: SessionKind.shell, status: "running"),
+            RunSession(id: "agent", workspaceId: "a", title: "Claude", status: "running"),
+            RunSession(id: "done", workspaceId: "a", title: "Terminal", kind: SessionKind.shell, status: "completed"),
+        ]
+        let snapshot = AppSnapshot(workspaces: [a], sessions: sessions, activeWorkspaceId: "a")
+        #expect(StateRepository.normalize(snapshot, restoring: true).sessions.map(\.status) == ["idle", "stopped", "completed"])
+        // A save while the app runs keeps the status as it is.
+        #expect(StateRepository.normalize(snapshot, restoring: false).sessions.map(\.status) == ["running", "running", "completed"])
+    }
+
     @Test func savedRemoteWorkspacesAreDroppedWithEverythingKeyedByThem() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-remote-drop-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true); defer { try? FileManager.default.removeItem(at: root) }
