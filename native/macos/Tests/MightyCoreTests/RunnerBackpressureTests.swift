@@ -449,7 +449,7 @@ struct RunnerBackpressureTests {
         do {
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "go", provider: "claude"), workspace: workspace, allowPermissionPrompts: true)
             try await wait { events.values().contains { $0.type == "status" && ["completed", "error", "stopped"].contains($0.status ?? "") } }
-            #expect(events.values().contains { $0.entry?.kind == "error" && $0.entry?.text == "Claude 승인 채널을 초기화하지 못했습니다." })
+            #expect(events.values().contains { $0.entry?.kind == "error" && $0.entry?.text == L("claude.channel.initFailed") })
             #expect(events.values().last(where: { $0.type == "status" })?.status == "error")
             #expect(!events.values().contains { $0.entry?.text == L("run.notice.outputAbandoned") })
         } catch { await runner.shutdown(); await service.shutdown(); throw error }
@@ -514,21 +514,23 @@ struct RunnerBackpressureTests {
     /// Once quit signalled the registry, a run that was still starting is
     /// refused before it spawns a child.
     @Test func aStartAfterTheRegistryClosesIsRefused() async throws {
-        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
-        let service = ProviderService()
-        let events = BackpressureRecorder()
-        let liveRuns = LiveRunRegistry()
-        let runner = ProcessRunner(providerService: service, pluginDirectory: directory, liveRuns: liveRuns, onEvent: { events.append($0) })
-        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
-        liveRuns.signalAll()
-        #expect(liveRuns.closing)
-        var refusal: Error?
-        do { try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, kind: "shell", input: "printf STARTED"), workspace: workspace) }
-        catch { refusal = error }
-        #expect(refusal as? MightyError == MightyError("앱이 종료 중입니다."))
-        #expect(!events.values().contains { $0.type == "status" && $0.status == "running" })
-        #expect(!liveRuns.signalStop(id: "pane"))
-        await runner.shutdown(); await service.shutdown()
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+            let service = ProviderService()
+            let events = BackpressureRecorder()
+            let liveRuns = LiveRunRegistry()
+            let runner = ProcessRunner(providerService: service, pluginDirectory: directory, liveRuns: liveRuns, onEvent: { events.append($0) })
+            let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+            liveRuns.signalAll()
+            #expect(liveRuns.closing)
+            var refusal: Error?
+            do { try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, kind: "shell", input: "printf STARTED"), workspace: workspace) }
+            catch { refusal = error }
+            #expect(refusal as? MightyError == MightyError("앱이 종료 중입니다."))
+            #expect(!events.values().contains { $0.type == "status" && $0.status == "running" })
+            #expect(!liveRuns.signalStop(id: "pane"))
+            await runner.shutdown(); await service.shutdown()
+        }
     }
 
     /// A child that registers after the registry closed is signalled at once.

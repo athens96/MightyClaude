@@ -143,68 +143,72 @@ struct ActivityTests {
     }
 
     @Test func toolDurationPairsEveryProviderAndFreezesAtFirstCompletion() throws {
-        for provider in ProviderOptions.ids {
-            var now: TimeInterval = 10
-            var activities: [AgentActivity] = []
-            let parser = CLIStreamParser(provider: provider, log: { _, _ in }, resume: { _ in }, activityNamespace: "duration-\(provider)", activity: { activities.append($0) }, activityClock: { now })
-            let start: [String: Any]
-            let end: [String: Any]
-            switch provider {
-            case "claude":
-                start = ["type": "assistant", "message": ["content": [["type": "tool_use", "id": "call", "name": "Bash", "input": ["command": "printf fixture"]]]]]
-                end = ["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "call", "content": "fixture"]]]]
-            case "codex":
-                start = ["type": "item.started", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
-                end = ["type": "item.completed", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
-            default:
-                start = ["type": "tool_use", "tool_id": "call", "tool_name": "run_shell_command", "parameters": ["command": "printf fixture"]]
-                end = ["type": "tool_result", "tool_id": "call", "status": "success", "output": "fixture"]
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            for provider in ProviderOptions.ids {
+                var now: TimeInterval = 10
+                var activities: [AgentActivity] = []
+                let parser = CLIStreamParser(provider: provider, log: { _, _ in }, resume: { _ in }, activityNamespace: "duration-\(provider)", activity: { activities.append($0) }, activityClock: { now })
+                let start: [String: Any]
+                let end: [String: Any]
+                switch provider {
+                case "claude":
+                    start = ["type": "assistant", "message": ["content": [["type": "tool_use", "id": "call", "name": "Bash", "input": ["command": "printf fixture"]]]]]
+                    end = ["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "call", "content": "fixture"]]]]
+                case "codex":
+                    start = ["type": "item.started", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
+                    end = ["type": "item.completed", "item": ["id": "call", "type": "command_execution", "command": "printf fixture"]]
+                default:
+                    start = ["type": "tool_use", "tool_id": "call", "tool_name": "run_shell_command", "parameters": ["command": "printf fixture"]]
+                    end = ["type": "tool_result", "tool_id": "call", "status": "success", "output": "fixture"]
+                }
+                parser.push(try lines([start])); now = 10.125
+                parser.push(try lines([start])) // A repeated start never resets the clock.
+                if provider == "claude" {
+                    parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.waiting", tool: "Bash", toolUseId: "call", sequence: 1))
+                }
+                now = 11.25
+                parser.push(try lines([end]))
+                let completed = try #require(activities.last)
+                #expect(completed.durationMs == 1_250)
+                #expect(ActivitySupport.durationLabel(completed) == "1.2초")
+                let count = activities.count
+                now = 90
+                parser.push(try lines([end, start]))
+                #expect(activities.count == count)
+                #expect(activities.last?.durationMs == 1_250)
+                #expect(activities.filter { ["running", "waiting"].contains($0.state) }.allSatisfy { $0.durationMs == nil })
             }
-            parser.push(try lines([start])); now = 10.125
-            parser.push(try lines([start])) // A repeated start never resets the clock.
-            if provider == "claude" {
-                parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.waiting", tool: "Bash", toolUseId: "call", sequence: 1))
-            }
-            now = 11.25
-            parser.push(try lines([end]))
-            let completed = try #require(activities.last)
-            #expect(completed.durationMs == 1_250)
-            #expect(ActivitySupport.durationLabel(completed) == "1.2초")
-            let count = activities.count
-            now = 90
-            parser.push(try lines([end, start]))
-            #expect(activities.count == count)
-            #expect(activities.last?.durationMs == 1_250)
-            #expect(activities.filter { ["running", "waiting"].contains($0.state) }.allSatisfy { $0.durationMs == nil })
         }
     }
 
     @Test func toolDurationHandlesModsStopOrphanAndBoundedEvictionWithoutInventingTime() throws {
-        var now: TimeInterval = 1
-        var activities: [AgentActivity] = []
-        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "durations", activity: { activities.append($0) }, activityClock: { now })
-        parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.call", tool: "Read", toolUseId: "paired", sequence: 1))
-        now = 1.125
-        parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.complete", tool: "Read", toolUseId: "paired", sequence: 3))
-        now = 3
-        parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.waiting", tool: "Read", toolUseId: "paired", sequence: 2))
-        #expect(activities.last?.durationMs == 125)
-        parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.complete", tool: "Read", toolUseId: "orphan", sequence: 1))
-        #expect(activities.last?.durationMs == nil)
-        parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.call", tool: "Read", toolUseId: "pending", sequence: 1))
-        now = 68
-        parser.finishActivities(stopped: true)
-        #expect(activities.last?.state == "stopped"); #expect(activities.last?.durationMs == 65_000)
-        #expect(ActivitySupport.durationLabel(try #require(activities.last)) == "1분 5초")
-        let count = activities.count
-        now = 100; parser.finishActivities(stopped: true)
-        #expect(activities.count == count)
-        for index in 0..<513 {
-            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.call", tool: "Read", toolUseId: "bounded-\(index)"))
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var now: TimeInterval = 1
+            var activities: [AgentActivity] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "durations", activity: { activities.append($0) }, activityClock: { now })
+            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.call", tool: "Read", toolUseId: "paired", sequence: 1))
+            now = 1.125
+            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.complete", tool: "Read", toolUseId: "paired", sequence: 3))
+            now = 3
+            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.waiting", tool: "Read", toolUseId: "paired", sequence: 2))
+            #expect(activities.last?.durationMs == 125)
+            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.complete", tool: "Read", toolUseId: "orphan", sequence: 1))
+            #expect(activities.last?.durationMs == nil)
+            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.call", tool: "Read", toolUseId: "pending", sequence: 1))
+            now = 68
+            parser.finishActivities(stopped: true)
+            #expect(activities.last?.state == "stopped"); #expect(activities.last?.durationMs == 65_000)
+            #expect(ActivitySupport.durationLabel(try #require(activities.last)) == "1분 5초")
+            let count = activities.count
+            now = 100; parser.finishActivities(stopped: true)
+            #expect(activities.count == count)
+            for index in 0..<513 {
+                parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.call", tool: "Read", toolUseId: "bounded-\(index)"))
+            }
+            now = 101
+            parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.complete", tool: "Read", toolUseId: "bounded-0"))
+            #expect(activities.last?.durationMs == nil)
         }
-        now = 101
-        parser.receiveMod(ModMetadata(claudeSessionId: "fixture", event: "tool.complete", tool: "Read", toolUseId: "bounded-0"))
-        #expect(activities.last?.durationMs == nil)
     }
 
     @Test func toolDurationPersistsAcrossWireAndRestoreWithResilientOptionalMetadata() throws {
@@ -260,14 +264,14 @@ struct ActivityTests {
         let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
         do {
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "complete", provider: "gemini"), workspace: workspace)
-            try await wait { events.values().contains { $0.activity?.summary == "Gemini 응답 마무리 중" } }
+            try await wait { events.values().contains { $0.activity?.summary == L("run.turn.finishing", ["name": "Gemini"]) } }
             #expect(!events.values().contains { $0.activity?.kind == "turn" && $0.activity?.state == "completed" })
             try Data().write(to: directory.appendingPathComponent("exit-gate"))
             try await wait { events.values().contains { $0.status == "completed" } }
             let firstTurn = try #require(events.values().first { $0.activity?.kind == "turn" && $0.activity?.state == "completed" }?.activity)
             #expect(events.values().filter { $0.activity?.kind == "turn" && $0.activity?.state == "completed" }.count == 1)
             try await runner.start(request: StartRunRequest(sessionId: "pane", workspaceId: workspace.id, input: "stop", provider: "gemini"), workspace: workspace)
-            try await wait { events.values().filter { $0.activity?.summary == "Gemini 응답 마무리 중" }.count == 2 }
+            try await wait { events.values().filter { $0.activity?.summary == L("run.turn.finishing", ["name": "Gemini"]) }.count == 2 }
             await runner.stop(id: "pane")
             let last = try #require(events.values().last { $0.activity?.kind == "turn" }?.activity)
             #expect(last.state == "stopped"); #expect(last.id != firstTurn.id)

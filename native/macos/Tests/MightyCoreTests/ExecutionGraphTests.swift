@@ -153,21 +153,23 @@ struct ExecutionGraphTests {
     }
 
     @Test func unfinishedBackgroundCommandStopsWithRunAndLaunchFailureIsAnError() throws {
-        var nodes: [ExecutionGraphNode] = []
-        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "task-stop", graph: { nodes.append($0) })
-        try send(assistant([command("long", command: "sleep 600", description: "Long job"), command("broken", command: "nope", description: "Broken launch")], id: "main"), to: parser)
-        try send(toolResult("long", text: "Command running in background with ID: t-long. Output is being written to: /tmp/t-long.output."), to: parser)
-        try send(["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "broken", "is_error": true, "content": "command not found: nope"]]]], to: parser)
-        let brokenID = ExecutionGraphSupport.agentNodeID(runId: "task-stop", toolUseId: "broken")
-        #expect(try latest(nodes, brokenID).state == "error"); #expect(try latest(nodes, brokenID).output == "command not found: nope")
-        try send(["type": "result", "result": "Done for now", "is_error": false], to: parser)
-        parser.finishActivities(stopped: false); parser.finishGraph(state: "completed")
-        let long = try latest(nodes, ExecutionGraphSupport.agentNodeID(runId: "task-stop", toolUseId: "long"))
-        #expect(long.kind == "task"); #expect(long.state == "stopped"); #expect(long.output == nil)
-        #expect(long.entries.last?.text == "백그라운드 작업의 완료 알림을 받기 전에 실행이 종료되었습니다.")
-        #expect(ExecutionGraphSupport.normalized(long, restoring: true)?.kind == "task")
-        var unknown = long; unknown.kind = "job"
-        #expect(ExecutionGraphSupport.normalized(unknown) == nil)
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "task-stop", graph: { nodes.append($0) })
+            try send(assistant([command("long", command: "sleep 600", description: "Long job"), command("broken", command: "nope", description: "Broken launch")], id: "main"), to: parser)
+            try send(toolResult("long", text: "Command running in background with ID: t-long. Output is being written to: /tmp/t-long.output."), to: parser)
+            try send(["type": "user", "message": ["content": [["type": "tool_result", "tool_use_id": "broken", "is_error": true, "content": "command not found: nope"]]]], to: parser)
+            let brokenID = ExecutionGraphSupport.agentNodeID(runId: "task-stop", toolUseId: "broken")
+            #expect(try latest(nodes, brokenID).state == "error"); #expect(try latest(nodes, brokenID).output == "command not found: nope")
+            try send(["type": "result", "result": "Done for now", "is_error": false], to: parser)
+            parser.finishActivities(stopped: false); parser.finishGraph(state: "completed")
+            let long = try latest(nodes, ExecutionGraphSupport.agentNodeID(runId: "task-stop", toolUseId: "long"))
+            #expect(long.kind == "task"); #expect(long.state == "stopped"); #expect(long.output == nil)
+            #expect(long.entries.last?.text == "백그라운드 작업의 완료 알림을 받기 전에 실행이 종료되었습니다.")
+            #expect(ExecutionGraphSupport.normalized(long, restoring: true)?.kind == "task")
+            var unknown = long; unknown.kind = "job"
+            #expect(ExecutionGraphSupport.normalized(unknown) == nil)
+        }
     }
 
     @Test func tokenUsageIsSummedPerBlockOncePerMessage() throws {
@@ -379,28 +381,30 @@ struct SteeringGraphTests {
     }
 
     @Test func midTurnMessageBecomesABlockUnderMainAndSettlesOnTheNextRootAnswer() throws {
-        var nodes: [ExecutionGraphNode] = []
-        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-steer", graph: { nodes.append($0) }, graphInput: "Refactor the parser")
-        try send(assistant([["type": "tool_use", "id": "tool-1", "name": "Bash", "input": ["command": "sleep 5"]]], id: "main-1"), to: parser)
-        parser.steer(id: "first", text: "Also add tests")
-        let main = ExecutionGraphSupport.mainNodeID(runId: "run-steer")
-        let steer = try #require(nodes.last(where: { $0.kind == "steer" }))
-        #expect(steer.parentId == main); #expect(steer.state == "running"); #expect(steer.input == "Also add tests"); #expect(steer.title == "중간 요청")
-        // A tool-only assistant message is not the reply.
-        try send(assistant([["type": "tool_use", "id": "tool-2", "name": "Read", "input": ["file_path": "/tmp/a"]]], id: "main-2"), to: parser)
-        #expect(nodes.last(where: { $0.id == steer.id })?.state == "running")
-        // A preamble beside another tool call is not the reply either.
-        try send(assistant([["type": "text", "text": "Let me check."], ["type": "tool_use", "id": "tool-3", "name": "Read", "input": ["file_path": "/tmp/b"]]], id: "main-2b"), to: parser)
-        #expect(nodes.last(where: { $0.id == steer.id })?.state == "running")
-        try send(assistant([["type": "text", "text": "Done, tests added."]], id: "main-3"), to: parser)
-        let settled = try #require(nodes.last(where: { $0.id == steer.id }))
-        #expect(settled.state == "completed"); #expect(settled.output == "Done, tests added.")
-        // Same id twice is one block; the second steer is its own block.
-        parser.steer(id: "first", text: "duplicate"); parser.steer(id: "second", text: "One more thing")
-        #expect(nodes.filter { $0.kind == "steer" }.map(\.id).reduce(into: Set<String>()) { $0.insert($1) }.count == 2)
-        parser.finishGraph(state: "completed")
-        let unanswered = try #require(nodes.last(where: { $0.input == "One more thing" }))
-        #expect(unanswered.state == "stopped"); #expect(unanswered.entries.last?.text.contains("중간 요청") == true)
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-steer", graph: { nodes.append($0) }, graphInput: "Refactor the parser")
+            try send(assistant([["type": "tool_use", "id": "tool-1", "name": "Bash", "input": ["command": "sleep 5"]]], id: "main-1"), to: parser)
+            parser.steer(id: "first", text: "Also add tests")
+            let main = ExecutionGraphSupport.mainNodeID(runId: "run-steer")
+            let steer = try #require(nodes.last(where: { $0.kind == "steer" }))
+            #expect(steer.parentId == main); #expect(steer.state == "running"); #expect(steer.input == "Also add tests"); #expect(steer.title == "중간 요청")
+            // A tool-only assistant message is not the reply.
+            try send(assistant([["type": "tool_use", "id": "tool-2", "name": "Read", "input": ["file_path": "/tmp/a"]]], id: "main-2"), to: parser)
+            #expect(nodes.last(where: { $0.id == steer.id })?.state == "running")
+            // A preamble beside another tool call is not the reply either.
+            try send(assistant([["type": "text", "text": "Let me check."], ["type": "tool_use", "id": "tool-3", "name": "Read", "input": ["file_path": "/tmp/b"]]], id: "main-2b"), to: parser)
+            #expect(nodes.last(where: { $0.id == steer.id })?.state == "running")
+            try send(assistant([["type": "text", "text": "Done, tests added."]], id: "main-3"), to: parser)
+            let settled = try #require(nodes.last(where: { $0.id == steer.id }))
+            #expect(settled.state == "completed"); #expect(settled.output == "Done, tests added.")
+            // Same id twice is one block; the second steer is its own block.
+            parser.steer(id: "first", text: "duplicate"); parser.steer(id: "second", text: "One more thing")
+            #expect(nodes.filter { $0.kind == "steer" }.map(\.id).reduce(into: Set<String>()) { $0.insert($1) }.count == 2)
+            parser.finishGraph(state: "completed")
+            let unanswered = try #require(nodes.last(where: { $0.input == "One more thing" }))
+            #expect(unanswered.state == "stopped"); #expect(unanswered.entries.last?.text.contains("중간 요청") == true)
+        }
     }
 
     @Test func codexRunsIgnoreSteeringAndSessionsKeepTheSteerKind() throws {
@@ -434,19 +438,21 @@ struct SteeringGraphTests {
     }
 
     @Test func askUserQuestionBecomesAQuestionBlockSettledByTheAnswer() throws {
-        var nodes: [ExecutionGraphNode] = []
-        let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-question", graph: { nodes.append($0) }, graphInput: "/ouroboros:interview 목표")
-        func send(_ value: [String: Any]) throws { var data = try JSONSerialization.data(withJSONObject: value); data.append(10); parser.push(data) }
-        let option: [[String: Any]] = [["label": "CLI", "description": ""], ["label": "라이브러리", "description": ""]]
-        let input: [String: Any] = ["questions": [["header": "형태", "question": "어떤 형태로 제공할까요?", "multiSelect": false, "options": option]]]
-        let use: [String: Any] = ["type": "tool_use", "id": "ask-1", "name": "AskUserQuestion", "input": input]
-        try send(["type": "assistant", "uuid": "m1", "session_id": "s", "message": ["id": "m1", "content": [use]] as [String: Any]])
-        let asked = try #require(nodes.last(where: { $0.kind == "question" }))
-        #expect(asked.state == "waiting" && asked.title == "질문 · 형태" && asked.parentId == ExecutionGraphSupport.mainNodeID(runId: "run-question"))
-        #expect(asked.input?.contains("어떤 형태로 제공할까요?") == true && asked.input?.contains("○ 라이브러리") == true)
-        let result: [String: Any] = ["type": "tool_result", "tool_use_id": "ask-1", "content": "User has answered: \"어떤 형태로 제공할까요?\"=\"CLI\""]
-        try send(["type": "user", "message": ["content": [result]] as [String: Any]])
-        let answered = try #require(nodes.last(where: { $0.id == asked.id }))
-        #expect(answered.state == "completed" && answered.output?.contains("CLI") == true)
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var nodes: [ExecutionGraphNode] = []
+            let parser = CLIStreamParser(provider: "claude", log: { _, _ in }, resume: { _ in }, activityNamespace: "run-question", graph: { nodes.append($0) }, graphInput: "/ouroboros:interview 목표")
+            func send(_ value: [String: Any]) throws { var data = try JSONSerialization.data(withJSONObject: value); data.append(10); parser.push(data) }
+            let option: [[String: Any]] = [["label": "CLI", "description": ""], ["label": "라이브러리", "description": ""]]
+            let input: [String: Any] = ["questions": [["header": "형태", "question": "어떤 형태로 제공할까요?", "multiSelect": false, "options": option]]]
+            let use: [String: Any] = ["type": "tool_use", "id": "ask-1", "name": "AskUserQuestion", "input": input]
+            try send(["type": "assistant", "uuid": "m1", "session_id": "s", "message": ["id": "m1", "content": [use]] as [String: Any]])
+            let asked = try #require(nodes.last(where: { $0.kind == "question" }))
+            #expect(asked.state == "waiting" && asked.title == "질문 · 형태" && asked.parentId == ExecutionGraphSupport.mainNodeID(runId: "run-question"))
+            #expect(asked.input?.contains("어떤 형태로 제공할까요?") == true && asked.input?.contains("○ 라이브러리") == true)
+            let result: [String: Any] = ["type": "tool_result", "tool_use_id": "ask-1", "content": "User has answered: \"어떤 형태로 제공할까요?\"=\"CLI\""]
+            try send(["type": "user", "message": ["content": [result]] as [String: Any]])
+            let answered = try #require(nodes.last(where: { $0.id == asked.id }))
+            #expect(answered.state == "completed" && answered.output?.contains("CLI") == true)
+        }
     }
 }

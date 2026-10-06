@@ -44,45 +44,49 @@ struct AgentRunTimingTests {
     }
 
     @Test func repositoryRestoresCompletedAndInterruptedClocksWithoutDowntime() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-timing-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let repository = StateRepository(directory: directory, legacyStateURL: nil)
-        let workspace = try await repository.approveWorkspace(Workspace(name: "Timing", path: directory.path))
-        var completed = RunSession(workspaceId: workspace.id, title: "Completed", status: "completed")
-        completed.beginRunTiming(at: Date(timeIntervalSince1970: 1_000)); completed.runTiming?.finish(at: Date(timeIntervalSince1970: 1_073))
-        var interrupted = RunSession(workspaceId: workspace.id, title: "Interrupted", provider: "codex", status: "running")
-        interrupted.beginRunTiming(at: Date().addingTimeInterval(-30))
-        try await repository.save(AppSnapshot(workspaces: [workspace], sessions: [completed, interrupted]))
-        let bytes = try Data(contentsOf: directory.appendingPathComponent("workspace-state.json"))
-        let saved = try JSONDecoder().decode(AppSnapshot.self, from: bytes)
-        let checkpoint = try #require(saved.sessions.last?.runTiming?.lastObservedAt)
-        let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()
-        #expect(restored.sessions.first?.runTiming == completed.runTiming)
-        #expect(restored.sessions.last?.status == "stopped")
-        #expect(restored.sessions.last?.runTiming?.finishedAt == checkpoint)
-        #expect(restored.sessions.last?.runTiming?.isApproximate == true)
-        let frozen = try #require(restored.sessions.last?.runTiming)
-        #expect(frozen.elapsed(at: checkpoint.addingTimeInterval(86_400)) == frozen.elapsed(at: checkpoint))
-        #expect(frozen.label(at: checkpoint).hasPrefix("약 "))
-        #expect(frozen.elapsed(at: checkpoint) >= 29)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mighty-timing-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let repository = StateRepository(directory: directory, legacyStateURL: nil)
+            let workspace = try await repository.approveWorkspace(Workspace(name: "Timing", path: directory.path))
+            var completed = RunSession(workspaceId: workspace.id, title: "Completed", status: "completed")
+            completed.beginRunTiming(at: Date(timeIntervalSince1970: 1_000)); completed.runTiming?.finish(at: Date(timeIntervalSince1970: 1_073))
+            var interrupted = RunSession(workspaceId: workspace.id, title: "Interrupted", provider: "codex", status: "running")
+            interrupted.beginRunTiming(at: Date().addingTimeInterval(-30))
+            try await repository.save(AppSnapshot(workspaces: [workspace], sessions: [completed, interrupted]))
+            let bytes = try Data(contentsOf: directory.appendingPathComponent("workspace-state.json"))
+            let saved = try JSONDecoder().decode(AppSnapshot.self, from: bytes)
+            let checkpoint = try #require(saved.sessions.last?.runTiming?.lastObservedAt)
+            let restored = try await StateRepository(directory: directory, legacyStateURL: nil).load()
+            #expect(restored.sessions.first?.runTiming == completed.runTiming)
+            #expect(restored.sessions.last?.status == "stopped")
+            #expect(restored.sessions.last?.runTiming?.finishedAt == checkpoint)
+            #expect(restored.sessions.last?.runTiming?.isApproximate == true)
+            let frozen = try #require(restored.sessions.last?.runTiming)
+            #expect(frozen.elapsed(at: checkpoint.addingTimeInterval(86_400)) == frozen.elapsed(at: checkpoint))
+            #expect(frozen.label(at: checkpoint).hasPrefix("약 "))
+            #expect(frozen.elapsed(at: checkpoint) >= 29)
+        }
     }
 
     @Test func legacyInferenceNeedsRealResponseAndOnlyUsesLatestRequest() {
-        let workspace = Workspace(id: "workspace", name: "Legacy", path: "/tmp")
-        var session = RunSession(id: "legacy", workspaceId: workspace.id, title: "Legacy", status: "completed", logs: [
-            LogEntry(kind: "user", text: "older", timestamp: "2026-09-16T01:00:00Z"),
-            LogEntry(kind: "assistant", text: "older response", timestamp: "2026-09-16T01:01:00Z"),
-            LogEntry(kind: "user", text: "latest", timestamp: "2026-09-16T02:00:00.000Z"),
-            LogEntry(kind: "assistant", text: "latest response", timestamp: "2026-09-16T02:01:13.000Z"),
-            LogEntry(kind: "system", text: "settings changed", timestamp: "2026-09-16T05:00:00Z")
-        ])
-        let restored = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [session]), restoring: true)
-        #expect(restored.sessions.first?.runTiming?.label() == "약 01:13")
-        session.logs.remove(at: 3)
-        #expect(AgentRunTiming.inferred(from: session.logs) == nil)
-        session.logs = [LogEntry(kind: "assistant", text: "missing request", timestamp: "2026-09-16T02:01:13Z")]
-        #expect(AgentRunTiming.inferred(from: session.logs) == nil)
+        LocaleOverride.$language.withValue(.ko) {
+            let workspace = Workspace(id: "workspace", name: "Legacy", path: "/tmp")
+            var session = RunSession(id: "legacy", workspaceId: workspace.id, title: "Legacy", status: "completed", logs: [
+                LogEntry(kind: "user", text: "older", timestamp: "2026-09-16T01:00:00Z"),
+                LogEntry(kind: "assistant", text: "older response", timestamp: "2026-09-16T01:01:00Z"),
+                LogEntry(kind: "user", text: "latest", timestamp: "2026-09-16T02:00:00.000Z"),
+                LogEntry(kind: "assistant", text: "latest response", timestamp: "2026-09-16T02:01:13.000Z"),
+                LogEntry(kind: "system", text: "settings changed", timestamp: "2026-09-16T05:00:00Z")
+            ])
+            let restored = StateRepository.normalize(AppSnapshot(workspaces: [workspace], sessions: [session]), restoring: true)
+            #expect(restored.sessions.first?.runTiming?.label() == "약 01:13")
+            session.logs.remove(at: 3)
+            #expect(AgentRunTiming.inferred(from: session.logs) == nil)
+            session.logs = [LogEntry(kind: "assistant", text: "missing request", timestamp: "2026-09-16T02:01:13Z")]
+            #expect(AgentRunTiming.inferred(from: session.logs) == nil)
+        }
     }
 
     @Test func damagedOptionalTimingPreservesConversationAndNonFiniteClockIsSafe() throws {

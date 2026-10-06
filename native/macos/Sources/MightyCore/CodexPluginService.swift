@@ -41,8 +41,8 @@ public actor CodexPluginService {
     }
 
     public func snapshot(workspace: Workspace) async -> ClaudePluginSnapshot {
-        guard !closing, !Task.isCancelled else { return ClaudePluginSnapshot(status: "cancelled", detail: "플러그인 조회를 취소했습니다.") }
-        guard active == nil else { return ClaudePluginSnapshot(status: "busy", detail: "다른 플러그인 작업이 진행 중입니다.") }
+        guard !closing, !Task.isCancelled else { return ClaudePluginSnapshot(status: "cancelled", detail: L("plugins.detail.cancelled")) }
+        guard active == nil else { return ClaudePluginSnapshot(status: "busy", detail: L("plugins.operation.busy")) }
         let configuration = configuration
         let task = Task<CodexPluginTaskResult, Never> {
             do {
@@ -56,7 +56,7 @@ public actor CodexPluginService {
             }
         }
         if case .snapshot(let value) = await finish(task) { return value }
-        return ClaudePluginSnapshot(status: "failed", detail: "플러그인 목록을 읽지 못했습니다.")
+        return ClaudePluginSnapshot(status: "failed", detail: L("plugins.detail.failed"))
     }
 
     public func install(pluginID: String, scope: String = "user", workspace: Workspace) async -> ClaudePluginOperationResult {
@@ -119,15 +119,15 @@ public actor CodexPluginService {
     }
 
     private func operation(workspace: Workspace, pluginID: String?, scope: String?, marketplace: String?) async -> ClaudePluginOperationResult {
-        guard !closing, !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: "플러그인 작업을 취소했습니다.") }
-        guard active == nil else { return ClaudePluginOperationResult(status: "busy", detail: "다른 플러그인 작업이 진행 중입니다.") }
+        guard !closing, !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: L("plugins.operation.cancelled")) }
+        guard active == nil else { return ClaudePluginOperationResult(status: "busy", detail: L("plugins.operation.busy")) }
         if let pluginID {
             guard Self.pluginParts(pluginID) != nil, let scope, scope == "user" else {
-                return ClaudePluginOperationResult(status: "failed", detail: "플러그인 이름 또는 설치 범위가 올바르지 않습니다.")
+                return ClaudePluginOperationResult(status: "failed", detail: L("plugins.install.badIdOrScope"))
             }
         } else if let marketplace {
-            guard Self.identifier(marketplace) else { return ClaudePluginOperationResult(status: "failed", detail: "마켓플레이스 이름이 올바르지 않습니다.") }
-        } else { return ClaudePluginOperationResult(status: "failed", detail: "플러그인 작업이 올바르지 않습니다.") }
+            guard Self.identifier(marketplace) else { return ClaudePluginOperationResult(status: "failed", detail: L("plugins.marketplace.badName")) }
+        } else { return ClaudePluginOperationResult(status: "failed", detail: L("plugins.operation.invalid")) }
         let configuration = configuration
         let task = Task<CodexPluginTaskResult, Never> {
             do {
@@ -141,28 +141,28 @@ public actor CodexPluginService {
                 let arguments: [String]
                 if let pluginID {
                     if snapshot.installed.contains(where: { $0.pluginID == pluginID }) {
-                        return .operation(ClaudePluginOperationResult(status: "skipped", detail: "이미 사용자 범위에 설치되어 있습니다. 비활성 상태라면 Codex에서 활성화하세요."))
+                        return .operation(ClaudePluginOperationResult(status: "skipped", detail: L("plugins.codex.installSkipped")))
                     }
                     guard snapshot.available.contains(where: { $0.id == pluginID }) else {
-                        throw CodexPluginFailure(status: "failed", detail: "현재 설치 가능한 마켓플레이스 목록에서 이 플러그인을 찾지 못했습니다. 목록과 설치 정책을 다시 확인하세요.")
+                        throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.installNotFound"))
                     }
                     arguments = ["plugin", "add", pluginID, "--json"]
                 } else if let marketplace {
                     guard let selected = snapshot.marketplaces.first(where: { $0.name == marketplace }) else {
-                        throw CodexPluginFailure(status: "failed", detail: "등록되지 않은 마켓플레이스입니다. 기존 등록 목록에서 선택하세요.")
+                        throw CodexPluginFailure(status: "failed", detail: L("plugins.marketplace.notRegistered"))
                     }
                     guard selected.sourceKind == "git" else {
-                        return .operation(ClaudePluginOperationResult(status: "skipped", detail: "이 마켓플레이스는 Git 소스가 아니어서 Codex CLI로 갱신할 수 없습니다. 목록을 다시 읽으면 현재 상태를 확인할 수 있습니다."))
+                        return .operation(ClaudePluginOperationResult(status: "skipped", detail: L("plugins.codex.marketplaceNotGit")))
                     }
                     arguments = ["plugin", "marketplace", "upgrade", marketplace, "--json"]
-                } else { throw CodexPluginFailure(status: "failed", detail: "플러그인 작업이 올바르지 않습니다.") }
+                } else { throw CodexPluginFailure(status: "failed", detail: L("plugins.operation.invalid")) }
                 let result = try await ProcessCapture.run(executable: command.executable, arguments: arguments,
                     environment: configuration.environment, cwd: cwd, timeout: configuration.operationTimeout, maximumBytes: 1024 * 1024)
                 try Task.checkCancellation()
                 let output = Self.output(result)
                 guard result.exitCode == 0,
                       let json = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any] else {
-                    throw CodexPluginFailure(status: "failed", detail: "플러그인 작업에 실패했거나 결과 형식이 올바르지 않습니다. 네트워크·권한·조직 정책을 확인하세요.", output: output)
+                    throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.operationFailed"), output: output)
                 }
                 if let pluginID, let parts = Self.pluginParts(pluginID) {
                     guard json["pluginId"] as? String == pluginID,
@@ -170,27 +170,27 @@ public actor CodexPluginService {
                           json["marketplaceName"] as? String == parts.marketplace,
                           let installedPath = json["installedPath"] as? String, installedPath.hasPrefix("/"),
                           !installedPath.contains("\0") else {
-                        throw CodexPluginFailure(status: "failed", detail: "설치 결과를 확인하지 못했습니다. 목록을 다시 읽어 설치 상태를 확인하세요.", output: output)
+                        throw CodexPluginFailure(status: "failed", detail: L("plugins.install.unconfirmed"), output: output)
                     }
                     let verified = try await Self.readSnapshot(configuration, command: command, cwd: cwd)
                     guard verified.installed.contains(where: { $0.pluginID == pluginID }) else {
-                        throw CodexPluginFailure(status: "failed", detail: "CLI가 설치 결과를 반환했지만 설치 목록에서 확인하지 못했습니다. 목록을 다시 읽으세요.", output: output)
+                        throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.installVerifyFailed"), output: output)
                     }
-                    return .operation(ClaudePluginOperationResult(status: "succeeded", detail: "플러그인을 사용자 범위에 설치했습니다. 새 Codex 세션부터 적용됩니다. 연결이 필요한 앱은 Codex에서 인증하세요.", output: output))
+                    return .operation(ClaudePluginOperationResult(status: "succeeded", detail: L("plugins.codex.installSucceeded"), output: output))
                 }
                 guard let marketplace,
                       let selected = json["selectedMarketplaces"] as? [String], selected == [marketplace],
                       json["upgradedRoots"] is [String], let errors = json["errors"] as? [Any], errors.isEmpty else {
-                    throw CodexPluginFailure(status: "failed", detail: "마켓플레이스 새로고침을 확인하지 못했습니다. CLI 진단 출력을 확인하세요.", output: output)
+                    throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.marketplaceRefreshUnconfirmed"), output: output)
                 }
-                return .operation(ClaudePluginOperationResult(status: "succeeded", detail: "선택한 마켓플레이스 목록을 새로고침했습니다.", output: output))
+                return .operation(ClaudePluginOperationResult(status: "succeeded", detail: L("plugins.marketplace.refreshSucceeded"), output: output))
             } catch {
                 let failure = Self.failure(error)
                 return .operation(ClaudePluginOperationResult(status: failure.status == "cancelled" ? "cancelled" : "failed", detail: failure.detail, output: failure.output))
             }
         }
         if case .operation(let value) = await finish(task) { return value }
-        return ClaudePluginOperationResult(status: "failed", detail: "플러그인 작업을 완료하지 못했습니다.")
+        return ClaudePluginOperationResult(status: "failed", detail: L("plugins.operation.notCompleted"))
     }
 
     private static func configuration(_ supplied: [String: String], executable: URL?, readTimeout: TimeInterval,
@@ -203,12 +203,12 @@ public actor CodexPluginService {
 
     private static func localDirectory(_ workspace: Workspace) throws -> URL {
         guard workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.utf8.count <= 16_384 else {
-            throw CodexPluginFailure(status: "failed", detail: "로컬 작업 폴더가 올바르지 않습니다.")
+            throw CodexPluginFailure(status: "failed", detail: L("plugins.detail.invalidWorkspace"))
         }
         let url = URL(fileURLWithPath: workspace.path).resolvingSymlinksInPath().standardizedFileURL
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw CodexPluginFailure(status: "failed", detail: "작업 폴더를 찾지 못했습니다.")
+            throw CodexPluginFailure(status: "failed", detail: L("plugins.detail.missingWorkspace"))
         }
         return url
     }
@@ -239,27 +239,27 @@ public actor CodexPluginService {
                     cwd: cwd, timeout: min(4, configuration.readTimeout), maximumBytes: 65_536)
                 let helpText = String(decoding: help.stdout, as: UTF8.self)
                 guard help.exitCode == 0, flags.allSatisfy({ helpText.contains($0) }) else {
-                    throw CodexPluginFailure(status: "unsupported", detail: "설치된 Codex CLI가 필요한 JSON 플러그인 명령을 지원하지 않습니다. 최신 Codex CLI로 업데이트하세요.")
+                    throw CodexPluginFailure(status: "unsupported", detail: L("plugins.codex.detailUnsupported"))
                 }
             }
             return ProviderCommand(provider: "codex", executable: executable, version: version)
         }
-        throw CodexPluginFailure(status: present ? "failed" : "missing", detail: present ? "설치된 Codex CLI 버전을 확인하지 못했습니다." : "Codex CLI가 설치되어 있지 않습니다. 먼저 CLI를 설치하세요.")
+        throw CodexPluginFailure(status: present ? "failed" : "missing", detail: present ? L("plugins.codex.detailUnknownVersion") : L("plugins.codex.detailMissingCli"))
     }
 
     private static func readSnapshot(_ configuration: CodexPluginConfiguration, command: ProviderCommand, cwd: URL) async throws -> ClaudePluginSnapshot {
         let listing = try await ProcessCapture.run(executable: command.executable, arguments: ["plugin", "list", "--json", "--available"],
             environment: configuration.environment, cwd: cwd, timeout: configuration.readTimeout, maximumBytes: configuration.maximumBytes)
         try Task.checkCancellation()
-        guard listing.exitCode == 0 else { throw CodexPluginFailure(status: "failed", detail: "Codex CLI에서 플러그인 목록을 읽지 못했습니다.", output: output(listing)) }
+        guard listing.exitCode == 0 else { throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.detailListingFailed"), output: output(listing)) }
         let markets = try await ProcessCapture.run(executable: command.executable, arguments: ["plugin", "marketplace", "list", "--json"],
             environment: configuration.environment, cwd: cwd, timeout: configuration.readTimeout, maximumBytes: 512 * 1024)
         try Task.checkCancellation()
-        guard markets.exitCode == 0 else { throw CodexPluginFailure(status: "failed", detail: "등록된 마켓플레이스 목록을 읽지 못했습니다.", output: output(markets)) }
+        guard markets.exitCode == 0 else { throw CodexPluginFailure(status: "failed", detail: L("plugins.detail.marketplacesFailed"), output: output(markets)) }
         var snapshot = try parseSnapshot(listing.stdout, marketplaces: markets.stdout, cwd: cwd, version: command.version)
         snapshot.diagnosticOutput = display(String(decoding: (listing.stderr + Data([10]) + markets.stderr).prefix(16_384), as: UTF8.self), limit: 16_384).trimmingCharacters(in: .whitespacesAndNewlines)
         if !snapshot.diagnosticOutput.isEmpty {
-            snapshot.detail += " CLI 경고가 있습니다. 일부 목록이 최신 상태가 아닐 수 있으니 진단 출력을 확인하세요."
+            snapshot.detail += L("plugins.codex.detailWarningSuffix")
         }
         return snapshot
     }
@@ -271,12 +271,12 @@ public actor CodexPluginService {
               let marketJSON = try? JSONSerialization.jsonObject(with: marketplaceData) as? [String: Any],
               let marketRows = marketJSON["marketplaces"] as? [[String: Any]],
               installedRows.count <= 10_000, availableRows.count <= 10_000, marketRows.count <= 256 else {
-            throw CodexPluginFailure(status: "failed", detail: "플러그인 목록 형식 또는 크기가 올바르지 않습니다. 빈 목록으로 처리하지 않았습니다.")
+            throw CodexPluginFailure(status: "failed", detail: L("plugins.detail.malformed"))
         }
         var marketNames = Set<String>()
         let marketplaces = try marketRows.map { row -> ClaudePluginMarketplace in
             guard let name = row["name"] as? String, identifier(name), marketNames.insert(name).inserted else {
-                throw CodexPluginFailure(status: "failed", detail: "마켓플레이스 목록에 올바르지 않거나 중복된 이름이 있습니다.")
+                throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.marketplaceNamesInvalid"))
             }
             return ClaudePluginMarketplace(name: name, sourceKind: sourceKind(row["marketplaceSource"]))
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -284,7 +284,7 @@ public actor CodexPluginService {
             guard let id = row["pluginId"] as? String, let parts = pluginParts(id), row["name"] as? String == parts.name,
                   row["marketplaceName"] as? String == parts.marketplace,
                   row["installed"] is Bool, row["enabled"] is Bool else {
-                throw CodexPluginFailure(status: "failed", detail: "플러그인 목록에 올바르지 않은 항목이 있습니다.")
+                throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.listEntryInvalid"))
             }
             return (id, parts.name, parts.marketplace)
         }
@@ -293,7 +293,7 @@ public actor CodexPluginService {
         let available = try availableRows.compactMap { row -> ClaudeCatalogPlugin? in
             let parts = try rowIdentity(row)
             guard catalogIDs.insert(parts.id).inserted else {
-                throw CodexPluginFailure(status: "failed", detail: "플러그인 목록에 중복 항목이 있습니다.")
+                throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.listEntryDuplicate"))
             }
             guard let policy = row["installPolicy"] as? String,
                   ["AVAILABLE", "INSTALLED_BY_DEFAULT"].contains(policy) else {
@@ -307,7 +307,7 @@ public actor CodexPluginService {
         let installed = try installedRows.map { row -> ClaudeInstalledPlugin in
             let parts = try rowIdentity(row)
             guard row["installed"] as? Bool == true, installedIDs.insert(parts.id).inserted else {
-                throw CodexPluginFailure(status: "failed", detail: "설치 목록에 올바르지 않거나 중복된 항목이 있습니다.")
+                throw CodexPluginFailure(status: "failed", detail: L("plugins.codex.installedInvalid"))
             }
             return ClaudeInstalledPlugin(pluginID: parts.id, name: parts.name, marketplace: parts.marketplace,
                 version: (row["version"] as? String).map { display($0, limit: 160) }, scope: "user",
@@ -315,8 +315,8 @@ public actor CodexPluginService {
                 description: display(row["description"] as? String ?? catalog[parts.id]?.description ?? "", limit: 4096),
                 errors: messages(row["errors"]), notes: messages(row["notes"]))
         }.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
-        var detail = marketplaces.isEmpty ? "등록된 마켓플레이스가 없습니다. Codex CLI에서 plugin marketplace add로 등록한 뒤 목록을 다시 읽으세요." : "Codex 사용자 설치 목록과 현재 작업 폴더의 설정을 반영한 목록입니다. 이미 실행 중인 세션의 로드 상태와 다를 수 있습니다."
-        if restricted > 0 { detail += " 설치 정책으로 설치할 수 없는 항목 \(restricted)개는 제외했습니다." }
+        var detail = marketplaces.isEmpty ? L("plugins.codex.detailNoMarketplaces") : L("plugins.codex.detailReady")
+        if restricted > 0 { detail += L("plugins.codex.detailRestrictedSuffix", ["count": String(restricted)]) }
         return ClaudePluginSnapshot(status: "ready", detail: detail, cliVersion: version, installed: installed, available: available,
                                     marketplaces: marketplaces, updatedAt: mightyTimestamp())
     }
@@ -342,8 +342,8 @@ public actor CodexPluginService {
         display(String(decoding: (result.stdout + Data([10]) + result.stderr).prefix(16_384), as: UTF8.self), limit: 16_384)
     }
     private static func failure(_ error: Error) -> CodexPluginFailure {
-        if error is CancellationError || Task.isCancelled { return CodexPluginFailure(status: "cancelled", detail: "플러그인 작업을 취소했습니다. 이미 저장된 CLI 변경은 자동으로 되돌리지 않습니다.") }
+        if error is CancellationError || Task.isCancelled { return CodexPluginFailure(status: "cancelled", detail: L("plugins.operation.cancelledKeepsChanges")) }
         if let failure = error as? CodexPluginFailure { return failure }
-        return CodexPluginFailure(status: "failed", detail: "플러그인 작업을 완료하지 못했습니다. 실행 시간·출력 한도 또는 CLI 접근 상태를 확인하세요.", output: display(error.localizedDescription, limit: 1024))
+        return CodexPluginFailure(status: "failed", detail: L("plugins.detail.incomplete"), output: display(error.localizedDescription, limit: 1024))
     }
 }

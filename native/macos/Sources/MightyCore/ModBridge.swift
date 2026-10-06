@@ -52,11 +52,11 @@ public actor ModBridge {
     public private(set) var receivedCount = 0
     public init(graphEnabled: Bool = false, onEvent: @escaping @Sendable (ModMetadata) -> Void) throws {
         var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { throw MightyError("안전한 Mods 연결 키를 만들지 못했습니다.") }
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { throw MightyError(L("mods.error.keyCreate")) }
         token = bytes.map { String(format: "%02x", $0) }.joined(); self.onEvent = onEvent; self.graphEnabled = graphEnabled
     }
     public func start() async throws -> [String: String] {
-        guard !closed, server == nil else { throw MightyError("Mods 연결이 이미 시작되었거나 종료되었습니다.") }
+        guard !closed, server == nil else { throw MightyError(L("mods.error.alreadyStarted")) }
         let expectedAuthorization = Array(("Bearer " + token).utf8), acceptsGraph = graphEnabled
         let http = HTTPServer(address: "127.0.0.1", port: 0, requestBodyLimit: { request in
             // The larger body allowance is limited to authenticated graph
@@ -72,7 +72,7 @@ public actor ModBridge {
         server = http
         do {
             let port = try await http.start()
-            guard !closed else { await http.stop(); throw MightyError("Mods 연결이 취소되었습니다.") }
+            guard !closed else { await http.stop(); throw MightyError(L("mods.error.cancelled")) }
             return ["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1", "MIGHTY_CLAUDE_BRIDGE_URL": "http://127.0.0.1:\(port)/events", "MIGHTY_CLAUDE_BRIDGE_TOKEN": token, "MIGHTY_CLAUDE_RUN_ID": runId, "MIGHTY_CLAUDE_ACTIVITY": "1", "MIGHTY_CLAUDE_USAGE": "1", "MIGHTY_CLAUDE_GRAPH": graphEnabled ? "1" : "0"]
         } catch { await http.stop(); server = nil; throw error }
     }

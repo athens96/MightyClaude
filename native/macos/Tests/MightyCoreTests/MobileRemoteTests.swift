@@ -186,72 +186,74 @@ struct MobileRemoteTests {
     }
 
     @Test func routesValidateAndForwardCommandsAndLongPollWakesOnNotify() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
-        let host = FakeMobileHost()
-        await service.attach(host)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
+            let host = FakeMobileHost()
+            await service.attach(host)
 
-        let info = try await call(service, "GET", "/m1/info")
-        #expect(info.0 == 200 && info.1["hostName"] as? String == "Test Mac" && info.1["appVersion"] as? String == "9.9.9" && info.1["platform"] as? String == "darwin")
-        let state = try await call(service, "GET", "/m1/state?since=0&wait=0")
-        #expect(state.0 == 200 && state.1["revision"] as? Int == 1 && (state.1["sessions"] as? [[String: Any]])?.first?["pendingPermissions"] as? Int == 1)
-        // Long-poll: blocks until notify raises the revision, well before `wait`.
-        // Notify only once the poll is really parked, not after a guessed sleep:
-        // on a busy CI runner the request may not even have started after 300 ms,
-        // and then the already-advanced path answers instead of the wake path.
-        let started = Date()
-        let wait = MobileRemoteService.maximumWait
-        async let waiting = call(service, "GET", "/m1/state?since=1&wait=\(Int(wait))")
-        let parkBy = Date().addingTimeInterval(60)
-        while await service.parkedPolls(scope: "state") == 0, Date() < parkBy { try await Task.sleep(for: .milliseconds(20)) }
-        #expect(await service.parkedPolls(scope: "state") == 1)
-        host.bump(state: true, session: false); await service.notify(scope: "state", revision: 2)
-        #expect(await service.parkedPolls(scope: "state") == 0)
-        let woken = try await waiting
-        // The requirement is "answers on notify, not when `wait` runs out". A poll
-        // nobody wakes answers only a full `wait` (the 10 s maximum) after it
-        // parked, and it parked after `started`, so any answer inside `wait`
-        // proves the wake. The bound is that wait itself rather than a latency
-        // guess: the wake needs only a few actor hops, which a starved CI runner
-        // delayed past the old 4 s bound, while a real miss can never beat it.
-        #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2)
-        #expect(Date().timeIntervalSince(started) < wait)
-        let timedOut = try await call(service, "GET", "/m1/state?since=2&wait=1")
-        #expect(timedOut.1["revision"] as? Int == 2)
-        #expect(try await call(service, "GET", "/m1/state?since=abc").0 == 400)
-        #expect(try await call(service, "GET", "/m1/state?since=1&other=1").0 == 400)
+            let info = try await call(service, "GET", "/m1/info")
+            #expect(info.0 == 200 && info.1["hostName"] as? String == "Test Mac" && info.1["appVersion"] as? String == "9.9.9" && info.1["platform"] as? String == "darwin")
+            let state = try await call(service, "GET", "/m1/state?since=0&wait=0")
+            #expect(state.0 == 200 && state.1["revision"] as? Int == 1 && (state.1["sessions"] as? [[String: Any]])?.first?["pendingPermissions"] as? Int == 1)
+            // Long-poll: blocks until notify raises the revision, well before `wait`.
+            // Notify only once the poll is really parked, not after a guessed sleep:
+            // on a busy CI runner the request may not even have started after 300 ms,
+            // and then the already-advanced path answers instead of the wake path.
+            let started = Date()
+            let wait = MobileRemoteService.maximumWait
+            async let waiting = call(service, "GET", "/m1/state?since=1&wait=\(Int(wait))")
+            let parkBy = Date().addingTimeInterval(60)
+            while await service.parkedPolls(scope: "state") == 0, Date() < parkBy { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(await service.parkedPolls(scope: "state") == 1)
+            host.bump(state: true, session: false); await service.notify(scope: "state", revision: 2)
+            #expect(await service.parkedPolls(scope: "state") == 0)
+            let woken = try await waiting
+            // The requirement is "answers on notify, not when `wait` runs out". A poll
+            // nobody wakes answers only a full `wait` (the 10 s maximum) after it
+            // parked, and it parked after `started`, so any answer inside `wait`
+            // proves the wake. The bound is that wait itself rather than a latency
+            // guess: the wake needs only a few actor hops, which a starved CI runner
+            // delayed past the old 4 s bound, while a real miss can never beat it.
+            #expect(woken.0 == 200 && woken.1["revision"] as? Int == 2)
+            #expect(Date().timeIntervalSince(started) < wait)
+            let timedOut = try await call(service, "GET", "/m1/state?since=2&wait=1")
+            #expect(timedOut.1["revision"] as? Int == 2)
+            #expect(try await call(service, "GET", "/m1/state?since=abc").0 == 400)
+            #expect(try await call(service, "GET", "/m1/state?since=1&other=1").0 == 400)
 
-        let detail = try await call(service, "GET", "/m1/sessions/session-1?since=0")
-        let permission = (detail.1["permissions"] as? [[String: Any]])?.first
-        #expect(detail.0 == 200 && permission?["title"] as? String == "명령 실행" && permission?["headline"] as? String == "Run the test suite")
-        #expect((detail.1["entries"] as? [[String: Any]])?.count == 1 && (detail.1["usage"] as? [String: Any])?["contextPercent"] as? Double == 12.5)
-        #expect(try await call(service, "GET", "/m1/sessions/missing?since=0").0 == 404)
-        #expect(try await call(service, "GET", "/m1/sessions/../x").0 == 404)
+            let detail = try await call(service, "GET", "/m1/sessions/session-1?since=0")
+            let permission = (detail.1["permissions"] as? [[String: Any]])?.first
+            #expect(detail.0 == 200 && permission?["title"] as? String == "명령 실행" && permission?["headline"] as? String == "Run the test suite")
+            #expect((detail.1["entries"] as? [[String: Any]])?.count == 1 && (detail.1["usage"] as? [String: Any])?["contextPercent"] as? Double == 12.5)
+            #expect(try await call(service, "GET", "/m1/sessions/missing?since=0").0 == 404)
+            #expect(try await call(service, "GET", "/m1/sessions/../x").0 == 404)
 
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "  테스트 추가해줘 "]).1["accepted"] as? String == "steered")
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "   "]).0 == 400)
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/submit").0 == 400)
-        host.failSubmit = true
-        let refused = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x"])
-        #expect(refused.0 == 409 && (refused.1["error"] as? String)?.contains("실행 준비") == true)
-        host.failSubmit = false
-        let stopped = try await call(service, "POST", "/m1/sessions/session-1/stop")
-        #expect(stopped.0 == 200 && stopped.1["stopped"] as? Bool == true)
-        let allowed = try await call(service, "POST", "/m1/sessions/session-1/permission", body: ["requestId": "perm-1", "runId": "run-1", "allow": true])
-        #expect(allowed.0 == 200 && allowed.1["ok"] as? Bool == true)
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/permission", body: ["requestId": "../x", "runId": "run-1", "allow": true]).0 == 400)
-        #expect(try await call(service, "POST", "/m1/sessions/session-1/answers", body: ["requestId": "ask-1", "runId": "run-1", "answers": ["어느 쪽?": ["selectedOptions": ["A"]]]]).0 == 200)
-        let created = try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "claude", "provider": "codex"])
-        #expect(created.0 == 201 && created.1["sessionId"] as? String == "session-2")
-        #expect(try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "browser"]).0 == 400)
-        #expect(try await call(service, "POST", "/m1/nothing").0 == 404)
-        #expect(try await call(service, "GET", "http://evil/m1/info").0 == 400)
-        #expect(host.recorded() == ["submit:session-1:테스트 추가해줘", "stop:session-1", "perm:perm-1:run-1:true", "answers:ask-1:어느 쪽?", "create:workspace-1:claude:codex"])
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "  테스트 추가해줘 "]).1["accepted"] as? String == "steered")
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "   "]).0 == 400)
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/submit").0 == 400)
+            host.failSubmit = true
+            let refused = try await call(service, "POST", "/m1/sessions/session-1/submit", body: ["text": "x"])
+            #expect(refused.0 == 409 && (refused.1["error"] as? String)?.contains("실행 준비") == true)
+            host.failSubmit = false
+            let stopped = try await call(service, "POST", "/m1/sessions/session-1/stop")
+            #expect(stopped.0 == 200 && stopped.1["stopped"] as? Bool == true)
+            let allowed = try await call(service, "POST", "/m1/sessions/session-1/permission", body: ["requestId": "perm-1", "runId": "run-1", "allow": true])
+            #expect(allowed.0 == 200 && allowed.1["ok"] as? Bool == true)
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/permission", body: ["requestId": "../x", "runId": "run-1", "allow": true]).0 == 400)
+            #expect(try await call(service, "POST", "/m1/sessions/session-1/answers", body: ["requestId": "ask-1", "runId": "run-1", "answers": ["어느 쪽?": ["selectedOptions": ["A"]]]]).0 == 200)
+            let created = try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "claude", "provider": "codex"])
+            #expect(created.0 == 201 && created.1["sessionId"] as? String == "session-2")
+            #expect(try await call(service, "POST", "/m1/workspaces/workspace-1/sessions", body: ["kind": "browser"]).0 == 400)
+            #expect(try await call(service, "POST", "/m1/nothing").0 == 404)
+            #expect(try await call(service, "GET", "http://evil/m1/info").0 == 400)
+            #expect(host.recorded() == ["submit:session-1:테스트 추가해줘", "stop:session-1", "perm:perm-1:run-1:true", "answers:ask-1:어느 쪽?", "create:workspace-1:claude:codex"])
+        }
     }
 
     @Test func planRouteValidatesAndForwardsTheFourAnswers() async throws {
-        try await LocaleOverride.$language.withValue(.ko) {
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
@@ -276,7 +278,7 @@ struct MobileRemoteTests {
     }
 
     @Test func aPlanRequestReachesThePhoneWithItsTextOnce() throws {
-        try LocaleOverride.$language.withValue(.ko) {
+        try LocaleOverride.$language.withValue(.ko) { () throws in
             let plan = "# 계획\n\n1. 테스트\n2. 구현"
             let input = String(decoding: try JSONSerialization.data(withJSONObject: ["plan": plan, "planFilePath": "/tmp/p.md"]), as: UTF8.self)
             let request = ToolPermissionRequest(id: "plan-1", runId: "run-1", toolUseId: "tool-1", toolName: "ExitPlanMode", inputJSON: input, summary: "plan",
@@ -781,46 +783,48 @@ struct MobileRemoteTests {
     }
 
     @Test func keysPersistAndStatusExposesTheOfferOnlyWhileConnected() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", defaultRelayURL: "")
-        let key = try await service.loadOrCreateKey()
-        #expect(RemoteValidation.token(key))
-        let reloaded = try await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").loadOrCreateKey()
-        #expect(reloaded == key)
-        #expect((try FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent("mobile-remote.key").path)[.posixPermissions] as? Int) == 0o600)
-        // Seed one device so regeneration has something to clear.
-        let seededRegistry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
-        guard case .issued = seededRegistry.issueToken(clientId: "cGhvbmUtb25lLTAwMDAwMDA", name: "iPhone") else {
-            Issue.record("토큰을 발급하지 못했습니다."); return
-        }
-        // Confirm the seed worked via the registry that wrote it.
-        #expect(seededRegistry.all().count == 1)
-        let rotated = try await service.regenerateKey()
-        let afterRotation = try await service.loadOrCreateKey()
-        #expect(rotated != key && afterRotation == rotated)
-        // A new key means every phone must re-pair: the device list is empty.
-        #expect(await service.status().devices.isEmpty)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", defaultRelayURL: "")
+            let key = try await service.loadOrCreateKey()
+            #expect(RemoteValidation.token(key))
+            let reloaded = try await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").loadOrCreateKey()
+            #expect(reloaded == key)
+            #expect((try FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent("mobile-remote.key").path)[.posixPermissions] as? Int) == 0o600)
+            // Seed one device so regeneration has something to clear.
+            let seededRegistry = MobileDeviceRegistry(url: directory.appendingPathComponent("devices.json"))
+            guard case .issued = seededRegistry.issueToken(clientId: "cGhvbmUtb25lLTAwMDAwMDA", name: "iPhone") else {
+                Issue.record("토큰을 발급하지 못했습니다."); return
+            }
+            // Confirm the seed worked via the registry that wrote it.
+            #expect(seededRegistry.all().count == 1)
+            let rotated = try await service.regenerateKey()
+            let afterRotation = try await service.loadOrCreateKey()
+            #expect(rotated != key && afterRotation == rotated)
+            // A new key means every phone must re-pair: the device list is empty.
+            #expect(await service.status().devices.isEmpty)
 
-        // Off: no offer. On without a relay: still no offer, but a hint.
-        var status = await service.apply(settings: MobileRemoteSettings(enabled: false))
-        #expect(!status.enabled && status.pairingURL == nil && status.publicKeyB64?.isEmpty == false)
-        status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
-        #expect(status.enabled && !status.relayConnected && status.pairingURL == nil && status.detail.contains("릴레이 주소"))
-        // On with an unreachable relay: connecting, still no offer until the relay accepts.
-        status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1"))
-        #expect(status.enabled && status.relayURL == "ws://127.0.0.1:1" && status.pairingURL == nil)
-        // A host shipped with a default relay connects through it when the
-        // user's field is empty, instead of asking for an address.
-        let defaulted = MobileRemoteService(dataDirectory: directory.appendingPathComponent("defaulted"), hostName: "Test Mac", defaultRelayURL: "ws://127.0.0.1:1")
-        let viaDefault = await defaulted.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
-        #expect(viaDefault.enabled && !viaDefault.detail.contains("릴레이 주소를 입력하면"))
-        await defaulted.shutdown()
-        let sameHostId = await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").status().serverId
-        #expect(sameHostId == status.serverId && CoreValidation.identifier(status.serverId))
-        // The relay serverId is derived from the host token, so the relay can check ownership.
-        #expect(status.serverId == RelayEndpoint.serverId(hostToken: try await service.loadOrCreateControlToken()))
-        await service.shutdown()
+            // Off: no offer. On without a relay: still no offer, but a hint.
+            var status = await service.apply(settings: MobileRemoteSettings(enabled: false))
+            #expect(!status.enabled && status.pairingURL == nil && status.publicKeyB64?.isEmpty == false)
+            status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
+            #expect(status.enabled && !status.relayConnected && status.pairingURL == nil && status.detail.contains("릴레이 주소"))
+            // On with an unreachable relay: connecting, still no offer until the relay accepts.
+            status = await service.apply(settings: MobileRemoteSettings(enabled: true, relayURL: "ws://127.0.0.1:1"))
+            #expect(status.enabled && status.relayURL == "ws://127.0.0.1:1" && status.pairingURL == nil)
+            // A host shipped with a default relay connects through it when the
+            // user's field is empty, instead of asking for an address.
+            let defaulted = MobileRemoteService(dataDirectory: directory.appendingPathComponent("defaulted"), hostName: "Test Mac", defaultRelayURL: "ws://127.0.0.1:1")
+            let viaDefault = await defaulted.apply(settings: MobileRemoteSettings(enabled: true, relayURL: ""))
+            #expect(viaDefault.enabled && !viaDefault.detail.contains("릴레이 주소를 입력하면"))
+            await defaulted.shutdown()
+            let sameHostId = await MobileRemoteService(dataDirectory: directory, hostName: "Test Mac").status().serverId
+            #expect(sameHostId == status.serverId && CoreValidation.identifier(status.serverId))
+            // The relay serverId is derived from the host token, so the relay can check ownership.
+            #expect(status.serverId == RelayEndpoint.serverId(hostToken: try await service.loadOrCreateControlToken()))
+            await service.shutdown()
+        }
     }
 
     // MARK: - Mighty-default AC

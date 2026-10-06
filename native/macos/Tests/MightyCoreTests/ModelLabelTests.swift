@@ -31,38 +31,44 @@ struct ModelLabelTests {
     ]
 
     @Test func cliCatalogueRowsCarryTheirVersion() {
-        let catalog = ProviderService.normalizeClaudeCatalog(Self.claudeRows)
-        #expect(catalog.source == "cli")
-        #expect(catalog.models.map { ModelLabel.option($0) } == ["Claude 설정 따름 · Opus 5.5", "Opus 5.5", "Fable 5.1 (1M)", "Sonnet 5.5", "Haiku 4.5"])
-        // The chip reads the same row the picker drew.
-        for option in catalog.models { #expect(ModelLabel.text(option.value, catalog: catalog) == ModelLabel.option(option)) }
-        // Only the label changes: the values sent to the CLI stay the aliases.
-        #expect(catalog.models.map(\.value) == ["default", "opus", "claude-fable-5-1[1m]", "sonnet", "haiku"])
+        LocaleOverride.$language.withValue(.ko) {
+            let catalog = ProviderService.normalizeClaudeCatalog(Self.claudeRows)
+            #expect(catalog.source == "cli")
+            #expect(catalog.models.map { ModelLabel.option($0) } == ["Claude 설정 따름 · Opus 5.5", "Opus 5.5", "Fable 5.1 (1M)", "Sonnet 5.5", "Haiku 4.5"])
+            // The chip reads the same row the picker drew.
+            for option in catalog.models { #expect(ModelLabel.text(option.value, catalog: catalog) == ModelLabel.option(option)) }
+            // Only the label changes: the values sent to the CLI stay the aliases.
+            #expect(catalog.models.map(\.value) == ["default", "opus", "claude-fable-5-1[1m]", "sonnet", "haiku"])
+        }
     }
 
     @Test func codexCatalogueLabelsItsIds() {
-        let catalog = ProviderService.normalizeCodexCatalog([
-            ["model": "gpt-6.1-sol", "displayName": "GPT-6.1-Sol", "isDefault": true],
-            ["model": "gpt-5.2-codex", "displayName": "GPT-5.2-Codex"],
-        ])
-        #expect(catalog.models.map { ModelLabel.option($0) } == ["Codex 설정 따름 · GPT-6.1 Sol", "GPT-6.1 Sol", "GPT-5.2 Codex"])
+        LocaleOverride.$language.withValue(.ko) {
+            let catalog = ProviderService.normalizeCodexCatalog([
+                ["model": "gpt-6.1-sol", "displayName": "GPT-6.1-Sol", "isDefault": true],
+                ["model": "gpt-5.2-codex", "displayName": "GPT-5.2-Codex"],
+            ])
+            #expect(catalog.models.map { ModelLabel.option($0) } == ["Codex 설정 따름 · GPT-6.1 Sol", "GPT-6.1 Sol", "GPT-5.2 Codex"])
+        }
     }
 
     @Test func fallbackCatalogueNeverInventsAVersion() {
-        let fallback = ProviderOptions.fallbackCatalog("claude")
-        #expect(ModelLabel.text("opus", catalog: fallback) == "Opus")
-        #expect(ModelLabel.text("default", catalog: fallback) == "Claude 설정 따름")
-        #expect(ModelLabel.text("opusplan", catalog: fallback) == "opusplan")
-        // The pane's own reported model may give a family alias its version …
-        #expect(ModelLabel.text("opus", catalog: fallback, hint: "claude-opus-5-5") == "Opus 5.5")
-        // … but never another family's, and never `default`/`best` theirs.
-        #expect(ModelLabel.text("sonnet", catalog: fallback, hint: "claude-opus-5-5") == "Sonnet")
-        #expect(ModelLabel.text("default", catalog: fallback, hint: "claude-opus-5-5") == "Claude 설정 따름")
-        #expect(ModelLabel.text("best", catalog: fallback, hint: "claude-opus-5-5") == "best")
-        #expect(ModelLabel.text("gemini-3-pro-preview", catalog: ProviderOptions.fallbackCatalog("gemini")) == "Gemini 3 Pro")
-        #expect(ModelLabel.text("gpt-6-astra", catalog: nil) == "GPT-6 Astra")
-        // An id stored after a reconcile reads directly.
-        #expect(ModelLabel.text("claude-sonnet-5-5", catalog: fallback) == "Sonnet 5.5")
+        LocaleOverride.$language.withValue(.ko) {
+            let fallback = ProviderOptions.fallbackCatalog("claude")
+            #expect(ModelLabel.text("opus", catalog: fallback) == "Opus")
+            #expect(ModelLabel.text("default", catalog: fallback) == "Claude 설정 따름")
+            #expect(ModelLabel.text("opusplan", catalog: fallback) == "opusplan")
+            // The pane's own reported model may give a family alias its version …
+            #expect(ModelLabel.text("opus", catalog: fallback, hint: "claude-opus-5-5") == "Opus 5.5")
+            // … but never another family's, and never `default`/`best` theirs.
+            #expect(ModelLabel.text("sonnet", catalog: fallback, hint: "claude-opus-5-5") == "Sonnet")
+            #expect(ModelLabel.text("default", catalog: fallback, hint: "claude-opus-5-5") == "Claude 설정 따름")
+            #expect(ModelLabel.text("best", catalog: fallback, hint: "claude-opus-5-5") == "best")
+            #expect(ModelLabel.text("gemini-3-pro-preview", catalog: ProviderOptions.fallbackCatalog("gemini")) == "Gemini 3 Pro")
+            #expect(ModelLabel.text("gpt-6-astra", catalog: nil) == "GPT-6 Astra")
+            // An id stored after a reconcile reads directly.
+            #expect(ModelLabel.text("claude-sonnet-5-5", catalog: fallback) == "Sonnet 5.5")
+        }
     }
 
     @Test func graphCapsulesReadVersionsOnlyWhenAsked() {
@@ -135,27 +141,31 @@ struct ModelLabelTests {
     }
 
     @Test func picksAndDisplaysDifferOnlyByPickerMarks() {
-        let catalog = ProviderService.normalizeClaudeCatalog(Self.claudeRows)
-        let saved = RunSession(workspaceId: "w", title: "t", model: "claude-opus-4-1")
-        #expect(ModelLabel.pickerOptions(saved, catalog: catalog).last?.displayName == "Opus 4.1 · 저장된 모델")
-        #expect(ModelLabel.selection(saved, catalog: catalog) == "Opus 4.1")
-        let bare = RunSession(workspaceId: "w", title: "t", model: "default")
-        #expect(ModelLabel.selection(bare, catalog: ModelCatalog(models: [])) == "CLI 기본값")
-        #expect(ModelLabel.pickerOptions(bare, catalog: ModelCatalog(models: [])).map(\.displayName) == ["CLI 기본값"])
+        LocaleOverride.$language.withValue(.ko) {
+            let catalog = ProviderService.normalizeClaudeCatalog(Self.claudeRows)
+            let saved = RunSession(workspaceId: "w", title: "t", model: "claude-opus-4-1")
+            #expect(ModelLabel.pickerOptions(saved, catalog: catalog).last?.displayName == "Opus 4.1 · 저장된 모델")
+            #expect(ModelLabel.selection(saved, catalog: catalog) == "Opus 4.1")
+            let bare = RunSession(workspaceId: "w", title: "t", model: "default")
+            #expect(ModelLabel.selection(bare, catalog: ModelCatalog(models: [])) == "CLI 기본값")
+            #expect(ModelLabel.pickerOptions(bare, catalog: ModelCatalog(models: [])).map(\.displayName) == ["CLI 기본값"])
+        }
     }
 
     @Test func statusLineNamesTheCurrentSelection() {
-        let catalog = ProviderService.normalizeClaudeCatalog(Self.claudeRows)
-        let current = RunSession(workspaceId: "w", title: "t", model: "opus", sessionUsage: Self.usage(model: "claude-opus-5-5", selected: "opus"))
-        #expect(ModelLabel.statusLine(current, catalog: catalog) == ("claude-opus-5-5", "Opus 5.5"))
-        // Switched to Haiku after the run: the reported Opus gives way.
-        var switched = current; switched.model = "haiku"
-        #expect(ModelLabel.statusLine(switched, catalog: catalog) == ("claude-haiku-4-5-20251001", "Haiku 4.5"))
-        // Older usage without a recorded selection keeps the reported model.
-        let legacy = RunSession(workspaceId: "w", title: "t", model: "sonnet", sessionUsage: Self.usage(model: "claude-sonnet-4-5", selected: nil))
-        #expect(ModelLabel.statusLine(legacy, catalog: catalog) == ("claude-sonnet-4-5", "Sonnet 4.5"))
-        let fallbackDefault = RunSession(workspaceId: "w", title: "t", model: "default")
-        #expect(ModelLabel.statusLine(fallbackDefault, catalog: ProviderOptions.fallbackCatalog("claude")) == ("default", "Claude 설정 따름"))
+        LocaleOverride.$language.withValue(.ko) {
+            let catalog = ProviderService.normalizeClaudeCatalog(Self.claudeRows)
+            let current = RunSession(workspaceId: "w", title: "t", model: "opus", sessionUsage: Self.usage(model: "claude-opus-5-5", selected: "opus"))
+            #expect(ModelLabel.statusLine(current, catalog: catalog) == ("claude-opus-5-5", "Opus 5.5"))
+            // Switched to Haiku after the run: the reported Opus gives way.
+            var switched = current; switched.model = "haiku"
+            #expect(ModelLabel.statusLine(switched, catalog: catalog) == ("claude-haiku-4-5-20251001", "Haiku 4.5"))
+            // Older usage without a recorded selection keeps the reported model.
+            let legacy = RunSession(workspaceId: "w", title: "t", model: "sonnet", sessionUsage: Self.usage(model: "claude-sonnet-4-5", selected: nil))
+            #expect(ModelLabel.statusLine(legacy, catalog: catalog) == ("claude-sonnet-4-5", "Sonnet 4.5"))
+            let fallbackDefault = RunSession(workspaceId: "w", title: "t", model: "default")
+            #expect(ModelLabel.statusLine(fallbackDefault, catalog: ProviderOptions.fallbackCatalog("claude")) == ("default", "Claude 설정 따름"))
+        }
     }
 
     @Test func theSummaryCarriesTheResolvedModelOnlyWhenKnown() throws {

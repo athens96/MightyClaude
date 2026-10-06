@@ -8,7 +8,10 @@ public struct CLIAccountStatus: Sendable, Equatable {
     public var installed: Bool
     /// nil when the CLI could not be asked.
     public var loggedIn: Bool?
+    /// How the CLI is signed in, as shown to the user (follows the app language).
     public var method: String?
+    /// The same method as a language-free id (`CLIAccountMethod`), for decisions.
+    public var methodId: String?
     public var account: String?
     public var plan: String?
     public var detail: String
@@ -18,18 +21,37 @@ public struct CLIAccountStatus: Sendable, Equatable {
     /// False when status only detects configuration, without checking remote
     /// access. nil preserves the CLI's ordinary account-status semantics.
     public var accessVerified: Bool?
-    public init(provider: String, installed: Bool = true, loggedIn: Bool? = nil, method: String? = nil, account: String? = nil, plan: String? = nil, detail: String = "", canSignOut: Bool = true, accessVerified: Bool? = nil) {
-        self.provider = provider; self.installed = installed; self.loggedIn = loggedIn; self.method = method; self.account = account; self.plan = plan; self.detail = detail; self.canSignOut = canSignOut; self.accessVerified = accessVerified
+    public init(provider: String, installed: Bool = true, loggedIn: Bool? = nil, method: String? = nil, methodId: String? = nil, account: String? = nil, plan: String? = nil, detail: String = "", canSignOut: Bool = true, accessVerified: Bool? = nil) {
+        self.provider = provider; self.installed = installed; self.loggedIn = loggedIn; self.method = method; self.methodId = methodId; self.account = account; self.plan = plan; self.detail = detail; self.canSignOut = canSignOut; self.accessVerified = accessVerified
     }
     /// "user@example.com · Max · claude.ai"
     public var summary: String {
-        guard loggedIn == true else { return loggedIn == false ? "로그인되지 않음" : (detail.isEmpty ? "상태를 확인하지 못했습니다." : detail) }
+        guard loggedIn == true else { return loggedIn == false ? L("settings.cliAccounts.summarySignedOut") : (detail.isEmpty ? L("settings.cliAccounts.summaryUnknown") : detail) }
         if accessVerified == false {
-            return [method, "설정됨", "접근 미확인"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            return [method, L("cliAccounts.summary.configured"), L("cliAccounts.summary.accessUnverified")].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         }
         let parts = [account, plan, method].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "로그인됨" : parts.joined(separator: " · ")
+        return parts.isEmpty ? L("settings.cliAccounts.summarySignedIn") : parts.joined(separator: " · ")
     }
+}
+
+/// Language-free ids of the sign-in methods `CLIAccountStatus.methodId` carries.
+/// Decisions compare these, never the displayed `method`.
+public enum CLIAccountMethod {
+    public static let claudeSubscription = "claude-subscription"
+    public static let claudeConsole = "claude-console"
+    public static let claudeAPIKey = "claude-api-key"
+    public static let claudeBedrock = "claude-bedrock"
+    public static let claudeVertex = "claude-vertex"
+    public static let claudeFoundry = "claude-foundry"
+    public static let claudeExternal = "claude-external"
+    public static let claudeOther = "claude-other"
+    public static let codexChatGPT = "codex-chatgpt"
+    public static let codexAPIKey = "codex-api-key"
+    public static let geminiGoogle = "gemini-google"
+    public static let geminiAPIKey = "gemini-api-key"
+    public static let geminiVertex = "gemini-vertex"
+    public static let geminiOther = "gemini-other"
 }
 
 public enum CLILoginOption: String, Sendable, CaseIterable {
@@ -42,53 +64,56 @@ public enum CLIAccountSupport {
     /// `claude auth status --json`
     public static func parseClaudeStatus(_ data: Data) -> CLIAccountStatus {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let loggedIn = object["loggedIn"] as? Bool else {
-            return CLIAccountStatus(provider: "claude", detail: "Claude 로그인 상태를 읽지 못했습니다.")
+            return CLIAccountStatus(provider: "claude", detail: L("settings.cliAccounts.detailClaudeParseError"))
         }
         let authMethod = object["authMethod"] as? String
         let apiProvider = object["apiProvider"] as? String
         let externalMethods = ["bedrock": "AWS Bedrock", "vertex": "Google Vertex AI", "foundry": "Microsoft Foundry"]
+        let externalIds = ["bedrock": CLIAccountMethod.claudeBedrock, "vertex": CLIAccountMethod.claudeVertex, "foundry": CLIAccountMethod.claudeFoundry]
         if authMethod == "third_party" || apiProvider.flatMap({ externalMethods[$0] }) != nil || authMethod == "api_key" {
-            let method = apiProvider.flatMap { externalMethods[$0] } ?? (authMethod == "api_key" ? "Anthropic API 키" : "외부 제공자")
+            let method = apiProvider.flatMap { externalMethods[$0] } ?? (authMethod == "api_key" ? L("cliAccounts.method.anthropicApiKey") : L("cliAccounts.method.external"))
+            let methodId = apiProvider.flatMap { externalIds[$0] } ?? (authMethod == "api_key" ? CLIAccountMethod.claudeAPIKey : CLIAccountMethod.claudeExternal)
             let detail = apiProvider == "bedrock"
-                ? "Bedrock 설정이 감지되었습니다. 이 상태 확인은 AWS 자격 증명, 리전 및 모델 접근 권한을 검증하지 않습니다. Bedrock 설정에서 확인하거나 변경하세요."
-                : "외부 인증 설정이 감지되었습니다. 이 상태 확인은 자격 증명과 모델 접근 권한을 검증하지 않습니다. 해당 제공자의 설정에서 변경하세요."
+                ? L("cliAccounts.detail.bedrockDetected")
+                : L("cliAccounts.detail.externalDetected")
             // OAuth account labels may still be present from a previous login;
             // they do not identify the active external-provider credentials.
-            return CLIAccountStatus(provider: "claude", loggedIn: loggedIn, method: method, detail: detail,
+            return CLIAccountStatus(provider: "claude", loggedIn: loggedIn, method: method, methodId: methodId, detail: detail,
                                     canSignOut: false, accessVerified: false)
         }
-        let method: String?
+        let method: String?, methodId: String?
         switch authMethod {
-        case "claude.ai": method = "Claude 구독"
-        case "console": method = "Anthropic Console"
-        case "none", nil: method = nil
-        default: method = "기타 인증"
+        case "claude.ai": method = L("windows.cli.method.claudeSubscription"); methodId = CLIAccountMethod.claudeSubscription
+        case "console": method = "Anthropic Console"; methodId = CLIAccountMethod.claudeConsole
+        case "none", nil: method = nil; methodId = nil
+        default: method = L("cliAccounts.method.other"); methodId = CLIAccountMethod.claudeOther
         }
         let plan = (object["subscriptionType"] as? String).map { clean($0).capitalized }
         let organisation = (object["orgName"] as? String).map(clean)
         let email = (object["email"] as? String).map(clean)
-        return CLIAccountStatus(provider: "claude", loggedIn: loggedIn, method: method, account: email ?? organisation, plan: plan)
+        return CLIAccountStatus(provider: "claude", loggedIn: loggedIn, method: method, methodId: methodId, account: email ?? organisation, plan: plan)
     }
 
     /// The method label of a Codex API-key login, which a browser sign-in cannot renew.
-    public static let codexAPIKeyMethod = "API 키"
+    public static var codexAPIKeyMethod: String { L("windows.cli.method.apiKey") }
     /// `codex login status` text plus the account claims inside `auth.json`'s id token.
     public static func parseCodexStatus(text: String, authJSON: Data?) -> CLIAccountStatus {
         let lowered = text.lowercased()
-        guard lowered.contains("logged in") || lowered.contains("not logged in") else { return CLIAccountStatus(provider: "codex", detail: "Codex 로그인 상태를 읽지 못했습니다.") }
+        guard lowered.contains("logged in") || lowered.contains("not logged in") else { return CLIAccountStatus(provider: "codex", detail: L("settings.cliAccounts.detailCodexParseError")) }
         guard !lowered.contains("not logged in") else { return CLIAccountStatus(provider: "codex", loggedIn: false) }
         let method = lowered.contains("chatgpt") ? "ChatGPT" : lowered.contains("api key") ? codexAPIKeyMethod : nil
+        let methodId = lowered.contains("chatgpt") ? CLIAccountMethod.codexChatGPT : lowered.contains("api key") ? CLIAccountMethod.codexAPIKey : nil
         var account: String?, plan: String?
         if let authJSON, let object = try? JSONSerialization.jsonObject(with: authJSON) as? [String: Any],
            let tokens = object["tokens"] as? [String: Any], let idToken = tokens["id_token"] as? String, let claims = jwtClaims(idToken) {
             account = (claims["email"] as? String).map(clean)
             plan = ((claims["https://api.openai.com/auth"] as? [String: Any])?["chatgpt_plan_type"] as? String).map { clean($0).capitalized }
         }
-        return CLIAccountStatus(provider: "codex", loggedIn: true, method: method, account: account, plan: plan)
+        return CLIAccountStatus(provider: "codex", loggedIn: true, method: method, methodId: methodId, account: account, plan: plan)
     }
 
     /// The method label of Gemini's Google sign-in, the only one a sign-in renews.
-    public static let geminiGoogleMethod = "Google 계정"
+    public static var geminiGoogleMethod: String { L("windows.cli.method.googleAccount") }
     /// Gemini has no status command: the selected auth type is in
     /// `settings.json`, the Google account in `google_accounts.json`, and the
     /// OAuth session exists while `oauth_creds.json` does.
@@ -105,17 +130,17 @@ public enum CLIAccountSupport {
         switch selected {
         case "oauth-personal", nil:
             guard hasOAuth else { return CLIAccountStatus(provider: "gemini", loggedIn: false) }
-            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, account: active)
+            return CLIAccountStatus(provider: "gemini", loggedIn: true, method: geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle, account: active)
         case "gemini-api-key":
             let present = environment["GEMINI_API_KEY"]?.isEmpty == false
-            return CLIAccountStatus(provider: "gemini", loggedIn: present ? true : nil, method: "Gemini API 키",
-                                    detail: present ? "GEMINI_API_KEY 환경 변수로 인증합니다. 바꾸려면 그 값을 바꾸거나 Gemini의 /auth에서 방식을 바꾸세요." : "GEMINI_API_KEY 환경 변수를 확인하세요.", canSignOut: false)
+            return CLIAccountStatus(provider: "gemini", loggedIn: present ? true : nil, method: L("windows.cli.method.geminiApiKey"), methodId: CLIAccountMethod.geminiAPIKey,
+                                    detail: present ? L("settings.cliAccounts.detailGeminiApiKeyPresent") : L("settings.cliAccounts.detailGeminiApiKeyAbsent"), canSignOut: false)
         case "vertex-ai":
             let configured = environment["GOOGLE_APPLICATION_CREDENTIALS"]?.isEmpty == false || environment["GOOGLE_CLOUD_PROJECT"]?.isEmpty == false
                 || FileManager.default.fileExists(atPath: home.appendingPathComponent(".config/gcloud/application_default_credentials.json").path)
-            return CLIAccountStatus(provider: "gemini", loggedIn: configured ? true : nil, method: "Vertex AI",
-                                    detail: configured ? "Google Cloud 자격 증명으로 인증합니다. gcloud에서 계정을 바꾸세요." : "Vertex AI 자격 증명을 확인하지 못했습니다.", canSignOut: false)
-        default: return CLIAccountStatus(provider: "gemini", loggedIn: hasOAuth ? true : nil, method: selected.map(clean), account: active, canSignOut: hasOAuth)
+            return CLIAccountStatus(provider: "gemini", loggedIn: configured ? true : nil, method: "Vertex AI", methodId: CLIAccountMethod.geminiVertex,
+                                    detail: configured ? L("settings.cliAccounts.detailVertexPresent") : L("settings.cliAccounts.detailVertexAbsent"), canSignOut: false)
+        default: return CLIAccountStatus(provider: "gemini", loggedIn: hasOAuth ? true : nil, method: selected.map(clean), methodId: selected == nil ? nil : CLIAccountMethod.geminiOther, account: active, canSignOut: hasOAuth)
         }
     }
 
@@ -213,18 +238,18 @@ public actor CLIAccountService {
     private func status(provider: String, snapshot: CLIEnvironmentSnapshot) async -> CLIAccountStatus {
         let environment = snapshot.values
         if provider == "gemini" {
-            guard installed("gemini", environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: "Gemini CLI가 설치되어 있지 않습니다.") }
+            guard installed("gemini", environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailGeminiNotInstalled")) }
             return CLIAccountSupport.geminiStatus(home: home, environment: environment)
         }
-        guard let arguments = CLIAccountSupport.statusArguments(provider: provider) else { return CLIAccountStatus(provider: provider, installed: false, detail: "지원하지 않는 실행기입니다.") }
-        guard installed(arguments[0], environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: "\(ProviderOptions.label(provider)) CLI가 설치되어 있지 않습니다.") }
-        guard let result = await run(arguments, environment: environment, timeout: 20) else { return CLIAccountStatus(provider: provider, detail: "상태 명령을 실행하지 못했습니다.") }
+        guard let arguments = CLIAccountSupport.statusArguments(provider: provider) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailUnsupportedProvider")) }
+        guard installed(arguments[0], environment: environment) else { return CLIAccountStatus(provider: provider, installed: false, detail: L("settings.cliAccounts.detailNotInstalledTemplate", ["provider": ProviderOptions.label(provider)])) }
+        guard let result = await run(arguments, environment: environment, timeout: 20) else { return CLIAccountStatus(provider: provider, detail: L("settings.cliAccounts.detailRunFailed")) }
         if provider == "claude" {
             var status = CLIAccountSupport.parseClaudeStatus(result.stdout)
             // Only the CLI's own JSON says "signed out"; a timeout or an old
             // CLI without `auth status` stays unknown.
-            if status.loggedIn == nil { status.detail = result.exitCode == -1 ? "Claude 상태 확인이 제한 시간 안에 끝나지 않았습니다." : "이 Claude CLI에서 로그인 상태를 읽지 못했습니다. CLI를 업데이트해 보세요." }
-            if snapshot.source != .processFallback, status.method == "AWS Bedrock", let conflict = BedrockAuthDiagnostics.conflictDetail(environment: environment, home: home) {
+            if status.loggedIn == nil { status.detail = result.exitCode == -1 ? L("settings.cliAccounts.detailClaudeTimeout") : L("settings.cliAccounts.detailClaudeUnknown") }
+            if snapshot.source != .processFallback, status.methodId == CLIAccountMethod.claudeBedrock, let conflict = BedrockAuthDiagnostics.conflictDetail(environment: environment, home: home) {
                 status.detail += (status.detail.isEmpty ? "" : " ") + conflict
             }
             return status
@@ -238,7 +263,7 @@ public actor CLIAccountService {
     public func logout(provider: String) async -> CLIAccountStatus {
         let snapshot = await environmentSnapshot()
         if provider == "gemini" {
-            do { try CLIAccountSupport.geminiLogout(home: home) } catch { return CLIAccountStatus(provider: provider, detail: "Gemini 로그아웃에 실패했습니다: \(error.localizedDescription)") }
+            do { try CLIAccountSupport.geminiLogout(home: home) } catch { return CLIAccountStatus(provider: provider, detail: L("settings.cliAccounts.detailGeminiLogoutFailedTemplate", ["reason": error.localizedDescription])) }
         } else if let arguments = CLIAccountSupport.logoutArguments(provider: provider) {
             _ = await run(arguments, environment: snapshot.values, timeout: 30)
         }

@@ -59,17 +59,19 @@ final class CoreTests {
     }
 
     @Test func testCatalogAndEffortCapabilities() throws {
-        let wire = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RunSettings())) as? [String: Any]
-        #expect(wire?["maxTurns"] is NSNull); #expect(wire?["maxBudgetUsd"] is NSNull)
-        let catalog = ProviderService.normalizeCodexCatalog([["model": "company/model", "displayName": "Company", "supportedReasoningEfforts": [["reasoningEffort": "low"], ["reasoningEffort": "high"]]], ["model": "--injected"], ["model": "hidden", "hidden": true]])
-        #expect((catalog.models.map(\.value)) == (["default", "company/model"]))
-        #expect((ProviderOptions.effortLevels(provider: "codex", model: "default", catalog: catalog, registeredModels: [])) == ([]))
-        #expect((ProviderOptions.effortLevels(provider: "codex", model: "company/model", catalog: catalog, registeredModels: [])) == (["low", "high"]))
-        let valid = StartRunRequest(sessionId: "run", workspaceId: "workspace", input: "Hello", model: "company/model", provider: "codex", settings: RunSettings(effort: "high"))
-        try CoreValidation.validateSelection(valid, catalog: catalog, registeredModels: [])
-        var invalid = valid; invalid.settings.effort = "max"; #expect(throws: (any Error).self) { try CoreValidation.validateSelection(invalid, catalog: catalog, registeredModels: []) }
-        let claude = ProviderService.normalizeClaudeCatalog([["value": "default", "displayName": "Account default", "supportedEffortLevels": ["high"]], ["value": "company/claude", "supportsEffort": true, "supportedEffortLevels": ["low", "max"]]])
-        #expect((claude.models.first?.displayName) == ("Claude 설정 따름")); #expect((claude.models.first?.supportedEffortLevels) == ["high"])
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let wire = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RunSettings())) as? [String: Any]
+            #expect(wire?["maxTurns"] is NSNull); #expect(wire?["maxBudgetUsd"] is NSNull)
+            let catalog = ProviderService.normalizeCodexCatalog([["model": "company/model", "displayName": "Company", "supportedReasoningEfforts": [["reasoningEffort": "low"], ["reasoningEffort": "high"]]], ["model": "--injected"], ["model": "hidden", "hidden": true]])
+            #expect((catalog.models.map(\.value)) == (["default", "company/model"]))
+            #expect((ProviderOptions.effortLevels(provider: "codex", model: "default", catalog: catalog, registeredModels: [])) == ([]))
+            #expect((ProviderOptions.effortLevels(provider: "codex", model: "company/model", catalog: catalog, registeredModels: [])) == (["low", "high"]))
+            let valid = StartRunRequest(sessionId: "run", workspaceId: "workspace", input: "Hello", model: "company/model", provider: "codex", settings: RunSettings(effort: "high"))
+            try CoreValidation.validateSelection(valid, catalog: catalog, registeredModels: [])
+            var invalid = valid; invalid.settings.effort = "max"; #expect(throws: (any Error).self) { try CoreValidation.validateSelection(invalid, catalog: catalog, registeredModels: []) }
+            let claude = ProviderService.normalizeClaudeCatalog([["value": "default", "displayName": "Account default", "supportedEffortLevels": ["high"]], ["value": "company/claude", "supportsEffort": true, "supportedEffortLevels": ["low", "max"]]])
+            #expect((claude.models.first?.displayName) == ("Claude 설정 따름")); #expect((claude.models.first?.supportedEffortLevels) == ["high"])
+        }
     }
 
     @Test func testExecutionSettingsLegacyCodingAndPersistence() async throws {
@@ -206,14 +208,16 @@ final class CoreTests {
     }
 
     @Test func testGeminiParserGroupsDeltasAndBoundsMalformedOutput() throws {
-        var logs: [String] = []
-        // A small line cap keeps the over-long line below cheap to build; the
-        // drop-and-notice path is the same at the production cap.
-        let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in }, maximumLineBytes: 1024 * 1024)
-        parser.push(try jsonLines([["type": "message", "role": "user", "content": "secret prompt"], ["type": "message", "role": "assistant", "delta": true, "content": "안녕"], ["type": "message", "role": "assistant", "delta": true, "content": "하세요"], ["type": "error", "severity": "warning", "message": "Retrying"], ["type": "result", "status": "success"]])); parser.flush()
-        #expect((logs) == (["안녕하세요", "Retrying"])); #expect(!(parser.failed))
-        parser.push(String(repeating: "x", count: 1024 * 1024 + 1)); parser.push("\nplain warning\n{\"type\":\"result\",\"status\":\"error\",\"error\":{\"message\":\"Quota\"}}\n"); parser.flush()
-        #expect(parser.failed); #expect(logs.contains("너무 긴 출력 한 줄을 생략했습니다.")); #expect((logs.last) == ("Quota"))
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            var logs: [String] = []
+            // A small line cap keeps the over-long line below cheap to build; the
+            // drop-and-notice path is the same at the production cap.
+            let parser = CLIStreamParser(provider: "gemini", log: { logs.append($1) }, resume: { _ in }, maximumLineBytes: 1024 * 1024)
+            parser.push(try jsonLines([["type": "message", "role": "user", "content": "secret prompt"], ["type": "message", "role": "assistant", "delta": true, "content": "안녕"], ["type": "message", "role": "assistant", "delta": true, "content": "하세요"], ["type": "error", "severity": "warning", "message": "Retrying"], ["type": "result", "status": "success"]])); parser.flush()
+            #expect((logs) == (["안녕하세요", "Retrying"])); #expect(!(parser.failed))
+            parser.push(String(repeating: "x", count: 1024 * 1024 + 1)); parser.push("\nplain warning\n{\"type\":\"result\",\"status\":\"error\",\"error\":{\"message\":\"Quota\"}}\n"); parser.flush()
+            #expect(parser.failed); #expect(logs.contains("너무 긴 출력 한 줄을 생략했습니다.")); #expect((logs.last) == ("Quota"))
+        }
     }
 
     @Test func testProcessCaptureHandlesStdinTimeoutAndOutputLimits() async throws {
@@ -282,33 +286,35 @@ final class CoreTests {
     }
 
     @Test func testThreeProviderFixturesUseOnlyMetadataBeforeExplicitPromptAndResumeFromOutput() async throws {
-        let directory = try temporary(); let events = EventRecorder()
-        var binaries: [String: URL] = [:]
-        for provider in ProviderOptions.ids { binaries[provider] = try fakeCLI(provider) }
-        let service = ProviderService(binaryOverrides: binaries)
-        let info = await service.runtimeInfo()
-        #expect(info.providers?.allSatisfy(\.available) == true)
-        #expect((info.modelCatalog?.source) == ("cli")); #expect((info.providers?.first { $0.id == "codex" }?.modelCatalog.source) == ("cli"))
-        for provider in ["claude", "codex"] {
-            let metadata = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("metadata"))
-            #expect(!(metadata.contains("\"type\":\"user\""))); #expect(!(metadata.contains("turn/start"))); #expect(!(metadata.contains("thread/start")))
-            #expect(!(FileManager.default.fileExists(atPath: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input").path)))
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let directory = try temporary(); let events = EventRecorder()
+            var binaries: [String: URL] = [:]
+            for provider in ProviderOptions.ids { binaries[provider] = try fakeCLI(provider) }
+            let service = ProviderService(binaryOverrides: binaries)
+            let info = await service.runtimeInfo()
+            #expect(info.providers?.allSatisfy(\.available) == true)
+            #expect((info.modelCatalog?.source) == ("cli")); #expect((info.providers?.first { $0.id == "codex" }?.modelCatalog.source) == ("cli"))
+            for provider in ["claude", "codex"] {
+                let metadata = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("metadata"))
+                #expect(!(metadata.contains("\"type\":\"user\""))); #expect(!(metadata.contains("turn/start"))); #expect(!(metadata.contains("thread/start")))
+                #expect(!(FileManager.default.fileExists(atPath: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input").path)))
+            }
+            let plugin = directory.appendingPathComponent("plugin/.claude-plugin")
+            try FileManager.default.createDirectory(at: plugin, withIntermediateDirectories: true); try Data("{}".utf8).write(to: plugin.appendingPathComponent("plugin.json"))
+            let runner = ProcessRunner(providerService: service, pluginDirectory: plugin.deletingLastPathComponent(), onEvent: { events.append($0) })
+            let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
+            for provider in ProviderOptions.ids {
+                try await runner.start(request: StartRunRequest(sessionId: provider, workspaceId: workspace.id, input: "한글 prompt", provider: provider), workspace: workspace)
+            }
+            try await waitUntil { ProviderOptions.ids.allSatisfy { events.hasStatus("completed", id: $0) } }
+            for provider in ProviderOptions.ids {
+                #expect(events.values().contains { $0.sessionId == provider && $0.resumeId == provider + "-session" })
+                #expect(events.values().contains { $0.sessionId == provider && $0.entry?.kind == "assistant" && $0.entry?.provider == provider })
+                let input = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input")); #expect((input) == ("한글 prompt"))
+                let args = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("args")); #expect(!(args.contains("한글 prompt"))); #expect(!(args.contains("--yolo")))
+            }
+            await runner.shutdown(); await service.shutdown()
         }
-        let plugin = directory.appendingPathComponent("plugin/.claude-plugin")
-        try FileManager.default.createDirectory(at: plugin, withIntermediateDirectories: true); try Data("{}".utf8).write(to: plugin.appendingPathComponent("plugin.json"))
-        let runner = ProcessRunner(providerService: service, pluginDirectory: plugin.deletingLastPathComponent(), onEvent: { events.append($0) })
-        let workspace = Workspace(id: "workspace", name: "Fixture", path: directory.path)
-        for provider in ProviderOptions.ids {
-            try await runner.start(request: StartRunRequest(sessionId: provider, workspaceId: workspace.id, input: "한글 prompt", provider: provider), workspace: workspace)
-        }
-        try await waitUntil { ProviderOptions.ids.allSatisfy { events.hasStatus("completed", id: $0) } }
-        for provider in ProviderOptions.ids {
-            #expect(events.values().contains { $0.sessionId == provider && $0.resumeId == provider + "-session" })
-            #expect(events.values().contains { $0.sessionId == provider && $0.entry?.kind == "assistant" && $0.entry?.provider == provider })
-            let input = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("input")); #expect((input) == ("한글 prompt"))
-            let args = try String(contentsOf: binaries[provider]!.deletingLastPathComponent().appendingPathComponent("args")); #expect(!(args.contains("한글 prompt"))); #expect(!(args.contains("--yolo")))
-        }
-        await runner.shutdown(); await service.shutdown()
     }
 
     /// A fake Gemini CLI, never the real one: what 0.43 prints on stderr when its stored Google sign-in is stale.

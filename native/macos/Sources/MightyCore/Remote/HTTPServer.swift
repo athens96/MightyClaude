@@ -56,7 +56,7 @@ public final class HTTPServer: @unchecked Sendable {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 guard !self.closing, self.listener == nil else {
-                    continuation.resume(throwing: RemoteFailure("서버가 이미 시작되었거나 종료되었습니다.")); return
+                    continuation.resume(throwing: RemoteFailure(L("http.error.alreadyStarted"))); return
                 }
                 self.continuation = continuation
                 do {
@@ -69,17 +69,17 @@ public final class HTTPServer: @unchecked Sendable {
                         guard let self else { return }
                         switch state {
                         case .ready:
-                            guard let port = listener.port?.rawValue, !self.closing else { self.finishStart(.failure(RemoteFailure("서버 시작이 취소되었습니다."))); return }
+                            guard let port = listener.port?.rawValue, !self.closing else { self.finishStart(.failure(RemoteFailure(L("http.error.startCancelled")))); return }
                             self.finishStart(.success(port))
                         case .failed(let error): self.finishStart(.failure(error)); self.closeOnQueue()
-                        case .cancelled: self.finishStart(.failure(RemoteFailure("서버 시작이 취소되었습니다.")))
+                        case .cancelled: self.finishStart(.failure(RemoteFailure(L("http.error.startCancelled"))))
                         default: break
                         }
                     }
                     listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
                     listener.start(queue: self.queue)
                     self.queue.asyncAfter(deadline: .now() + 5) {
-                        if self.continuation != nil { self.finishStart(.failure(RemoteFailure("서버 시작 시간이 초과되었습니다."))); self.closeOnQueue() }
+                        if self.continuation != nil { self.finishStart(.failure(RemoteFailure(L("http.error.startTimeout")))); self.closeOnQueue() }
                     }
                 } catch { self.finishStart(.failure(error)) }
             }
@@ -110,7 +110,7 @@ public final class HTTPServer: @unchecked Sendable {
         client.connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self, weak client] data, _, complete, error in
             guard let self, let client, !self.closing, self.clients[ObjectIdentifier(client.connection)] != nil else { return }
             if let data { client.data.append(data) }
-            if client.data.count > client.bodyLimit + self.headerLimit { self.reply(client, .json(413, ["error": "요청 크기 제한을 초과했습니다."])); return }
+            if client.data.count > client.bodyLimit + self.headerLimit { self.reply(client, .json(413, ["error": L("http.error.requestTooLarge")])); return }
             if self.parse(client) { return }
             if complete || error != nil { self.remove(client); return }
             self.receive(client)
@@ -119,34 +119,34 @@ public final class HTTPServer: @unchecked Sendable {
 
     private func parse(_ client: Client) -> Bool {
         guard let separator = client.data.range(of: Data("\r\n\r\n".utf8)) else {
-            if client.data.count > headerLimit { reply(client, .json(431, ["error": "헤더가 너무 큽니다."])); return true }
+            if client.data.count > headerLimit { reply(client, .json(431, ["error": L("http.error.headerTooLarge")])); return true }
             return false
         }
         guard separator.lowerBound <= headerLimit,
               let header = String(data: client.data[..<separator.lowerBound], encoding: .utf8) else {
-            reply(client, .json(400, ["error": "HTTP 헤더가 올바르지 않습니다."])); return true
+            reply(client, .json(400, ["error": L("http.error.badHeaders")])); return true
         }
         let lines = header.components(separatedBy: "\r\n")
         let requestLine = (lines.first ?? "").split(separator: " ", omittingEmptySubsequences: false)
         guard requestLine.count == 3, ["GET", "POST"].contains(String(requestLine[0])), requestLine[2] == "HTTP/1.1", requestLine[1].hasPrefix("/"), lines.count <= 34 else {
-            reply(client, .json(400, ["error": "HTTP 요청이 올바르지 않습니다."])); return true
+            reply(client, .json(400, ["error": L("http.error.badRequest")])); return true
         }
         var headers: [String: String] = [:]
         for line in lines.dropFirst() {
-            guard let colon = line.firstIndex(of: ":"), !line.hasPrefix(" "), !line.hasPrefix("\t") else { reply(client, .json(400, ["error": "잘못된 헤더"])); return true }
+            guard let colon = line.firstIndex(of: ":"), !line.hasPrefix(" "), !line.hasPrefix("\t") else { reply(client, .json(400, ["error": L("http.error.badHeader")])); return true }
             let key = String(line[..<colon]).lowercased()
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            guard !key.isEmpty, key.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil, headers[key] == nil else { reply(client, .json(400, ["error": "중복 또는 잘못된 헤더"])); return true }
+            guard !key.isEmpty, key.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil, headers[key] == nil else { reply(client, .json(400, ["error": L("http.error.duplicateHeader")])); return true }
             headers[key] = value
         }
-        guard headers["transfer-encoding"] == nil else { reply(client, .json(400, ["error": "Content-Length가 필요합니다."])); return true }
+        guard headers["transfer-encoding"] == nil else { reply(client, .json(400, ["error": L("http.error.lengthRequired")])); return true }
         let peer: String
         if case .hostPort(let host, _) = client.connection.endpoint { peer = String(describing: host) } else { peer = "" }
         let head = HTTPRequest(method: String(requestLine[0]), target: String(requestLine[1]), headers: headers, body: Data(), remoteAddress: peer)
         client.bodyLimit = min(AttachmentSupport.maximumRequestBytes, max(0, requestBodyLimit?(head) ?? bodyLimit))
         let lengthText = headers["content-length"] ?? "0"
         guard lengthText.range(of: "^[0-9]{1,9}$", options: .regularExpression) != nil, let length = Int(lengthText), length <= client.bodyLimit else {
-            reply(client, .json(413, ["error": "요청 크기가 올바르지 않습니다."])); return true
+            reply(client, .json(413, ["error": L("http.error.badLength")])); return true
         }
         if length > bodyLimit && !client.extendedTimeout {
             client.extendedTimeout = true; client.timer?.cancel()
@@ -155,7 +155,7 @@ public final class HTTPServer: @unchecked Sendable {
         }
         let expected = separator.upperBound + length
         if client.data.count < expected { return false }
-        guard client.data.count == expected else { reply(client, .json(400, ["error": "하나의 연결에는 하나의 요청만 허용합니다."])); return true }
+        guard client.data.count == expected else { reply(client, .json(400, ["error": L("http.error.oneRequest")])); return true }
         client.processing = true
         // The accept timer covered slow request delivery; a handler may now
         // long-poll, so give it its own generous deadline instead.
@@ -187,7 +187,7 @@ public final class HTTPServer: @unchecked Sendable {
     }
     private func closeOnQueue() {
         closing = true
-        finishStart(.failure(RemoteFailure("서버가 종료되었습니다.")))
+        finishStart(.failure(RemoteFailure(L("http.error.stopped"))))
         listener?.stateUpdateHandler = nil
         listener?.newConnectionHandler = nil
         listener?.cancel()

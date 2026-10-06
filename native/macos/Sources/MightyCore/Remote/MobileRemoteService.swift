@@ -17,8 +17,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     /// means the same thing it does for `submit`.
     func mobileGuided(sessionId: String, style: String, skill: String, text: String) async throws -> String
     /// Stops the pane's run and answers whether one was in motion at all: a
-    /// phone that slept through the end of a run still shows 중지, and must be
-    /// told there was nothing left to stop rather than "중지 요청됨".
+    /// phone that slept through the end of a run still shows Stop, and must be
+    /// told there was nothing left to stop rather than "stop requested".
     func mobileStop(sessionId: String) async throws -> Bool
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
@@ -77,7 +77,7 @@ public actor MobileRemoteService {
     private let hostId: String
     private var hostName: String
     private var appVersion: String
-    private var detail = "모바일 리모트가 꺼져 있습니다."
+    private var detail = L("mobileRemote.status.off")
     private var waiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
     private var revisions: [String: Int] = [:]
     private var disposed = false
@@ -93,7 +93,7 @@ public actor MobileRemoteService {
     /// Test seam: awaited where `disconnect` waits on the phones, so a test can
     /// land a stop inside a restart without timing an actor hop.
     var disconnectPause: (@Sendable () async -> Void)?
-    /// Network changes (docs/relay.md "재접속"). Watched while the
+    /// Network changes (docs/relay.md, the reconnect section). Watched while the
     /// remote is on; `networkPath` is the settled path the socket was dialled
     /// on, `pathWindow` what was reported since, still waiting out the settle.
     /// `pathWatchGeneration` changes whenever watching starts or stops, so a
@@ -226,12 +226,12 @@ public actor MobileRemoteService {
         }
         var bytes = [UInt8](repeating: 0, count: 32)
         let result = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        guard result == errSecSuccess else { throw MightyError("릴레이 호스트 토큰을 생성하지 못했습니다.") }
+        guard result == errSecSuccess else { throw MightyError(L("mobileRemote.error.hostTokenCreate")) }
         let fresh = bytes.map { String(format: "%02x", $0) }.joined()
         try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let temporary = dataDirectory.appendingPathComponent("relay-host-token.json." + UUID().uuidString)
         guard FileManager.default.createFile(atPath: temporary.path, contents: Data(fresh.utf8), attributes: [.posixPermissions: 0o600]) else {
-            throw MightyError("릴레이 호스트 토큰을 저장하지 못했습니다.")
+            throw MightyError(L("mobileRemote.error.hostTokenSave"))
         }
         if FileManager.default.fileExists(atPath: controlTokenURL.path) { _ = try FileManager.default.replaceItemAt(controlTokenURL, withItemAt: temporary) }
         else { try FileManager.default.moveItem(at: temporary, to: controlTokenURL) }
@@ -273,11 +273,11 @@ public actor MobileRemoteService {
         // Capture before any writes: true when an existing key is being rotated,
         // false on first-time creation where no tokens have been issued yet.
         let isRotation = key != nil || FileManager.default.fileExists(atPath: keyURL.path)
-        guard let fresh = MobilePairing.generateKey() else { throw MightyError("연결 키를 생성하지 못했습니다.") }
+        guard let fresh = MobilePairing.generateKey() else { throw MightyError(L("mobileRemote.error.pairingKeyCreate")) }
         try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
         let temporary = dataDirectory.appendingPathComponent("mobile-remote.key." + UUID().uuidString)
-        guard FileManager.default.createFile(atPath: temporary.path, contents: Data(fresh.utf8), attributes: [.posixPermissions: 0o600]) else { throw MightyError("연결 키를 저장하지 못했습니다.") }
+        guard FileManager.default.createFile(atPath: temporary.path, contents: Data(fresh.utf8), attributes: [.posixPermissions: 0o600]) else { throw MightyError(L("mobileRemote.error.pairingKeySave")) }
         if FileManager.default.fileExists(atPath: keyURL.path) { _ = try FileManager.default.replaceItemAt(keyURL, withItemAt: temporary) }
         else { try FileManager.default.moveItem(at: temporary, to: keyURL) }
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
@@ -337,7 +337,7 @@ public actor MobileRemoteService {
     public func deviceName(_ id: String) -> String? { deviceRegistry.all().first { $0.id == id }?.name }
 
     @discardableResult public func revokeDevice(_ id: String) async throws -> MobileHostStatus {
-        guard deviceRegistry.contains(id) else { throw MightyError("이미 해제된 기기입니다.") }
+        guard deviceRegistry.contains(id) else { throw MightyError(L("mobileRemote.error.deviceAlreadyRevoked")) }
         // A rotation that fails leaves everything as it was, including the
         // device: half a revoke must never be reported as a whole one.
         // regenerateKey() clears the whole registry so no remove() is needed.
@@ -374,13 +374,13 @@ public actor MobileRemoteService {
             if relayChanged || controlTask == nil { await start() }
             else if changed { publish() }
         } else {
-            await stop(reason: settings.enabled ? "릴레이 주소를 입력하면 연결합니다." : "모바일 리모트가 꺼져 있습니다.")
+            await stop(reason: settings.enabled ? L("mobileRemote.status.enterRelay") : L("mobileRemote.status.off"))
         }
         return status()
     }
 
     /// Keeps a control socket open to the relay and reconnects with backoff.
-    /// `manual` (Settings "다시 연결") dials even when the path watch reports
+    /// `manual` (the Settings Reconnect button) dials even when the path watch reports
     /// no network: the report may be wrong, and dialling is what brings an
     /// on-demand VPN up. Every other trigger waits for a network instead.
     private func start(manual: Bool = false) async {
@@ -400,7 +400,7 @@ public actor MobileRemoteService {
         generation += 1
         let current = generation
         Self.log.info("start: dialing the relay (generation \(current), manual \(manual))")
-        detail = "릴레이에 연결하는 중…"
+        detail = L("mobileRemote.status.connecting")
         publish()
         controlTask?.cancel()
         controlTask = Task { [weak self] in
@@ -420,7 +420,7 @@ public actor MobileRemoteService {
         }
     }
 
-    public func stop(reason: String = "모바일 리모트가 꺼져 있습니다.") async {
+    public func stop(reason: String = L("mobileRemote.status.off")) async {
         stopWatchingNetwork()
         await disconnect(reason: reason)
     }
@@ -447,12 +447,12 @@ public actor MobileRemoteService {
 
     /// Half-finished uploads are bytes nobody will ever claim, so the folder
     /// goes with the host.
-    public func shutdown() async { disposed = true; await stop(reason: "앱이 종료 중입니다."); await uploads.shutdown() }
+    public func shutdown() async { disposed = true; await stop(reason: L("common.appClosing")); await uploads.shutdown() }
 
     /// Dials the relay again now, even when the control socket still looks
     /// open or the path watch says there is no network: after a network change
     /// the socket can be half-open, and it reports nothing until a ping goes
-    /// unanswered (Settings "다시 연결"). The relay replaces the older socket
+    /// unanswered (the Settings Reconnect button). The relay replaces the older socket
     /// for this host, so a fresh one is always safe.
     public func reconnect() async {
         guard settings.enabled, !disposed, relayURL != nil else { return }
@@ -547,7 +547,7 @@ public actor MobileRemoteService {
         // A loop an earlier start left behind must not speak for the live one.
         guard current == generation else { return }
         relayConnected = false
-        detail = (lastRelayError.map { $0 + " · " } ?? "릴레이와 연결이 끊겼습니다. ") + "\(Int(delay))초 후 다시 시도합니다."
+        detail = (lastRelayError.map { $0 + " · " } ?? L("mobileRemote.status.disconnected") + " ") + L("mobileRemote.status.retryIn", ["seconds": String(Int(delay))])
         publish()
     }
 
@@ -558,7 +558,7 @@ public actor MobileRemoteService {
         guard current == generation, !Task.isCancelled else { return false }
         let hostToken: String
         do { hostToken = try loadOrCreateControlToken() } catch { lastRelayError = error.localizedDescription; return false }
-        guard let relay = relayURL, let url = RelayEndpoint.socketURL(relay: relay, serverId: RelayEndpoint.serverId(hostToken: hostToken), role: "server", connectionId: nil, hostToken: hostToken) else { lastRelayError = "릴레이 주소가 올바르지 않습니다."; return false }
+        guard let relay = relayURL, let url = RelayEndpoint.socketURL(relay: relay, serverId: RelayEndpoint.serverId(hostToken: hostToken), role: "server", connectionId: nil, hostToken: hostToken) else { lastRelayError = L("mobileRemote.error.badRelayURL"); return false }
         let socket = session.webSocketTask(with: url)
         socket.maximumMessageSize = 1024 * 1024
         controlSocket = socket
@@ -572,7 +572,7 @@ public actor MobileRemoteService {
             guard current == generation, !Task.isCancelled else { throw CancellationError() }
             connected = true; relayConnected = true; lastRelayError = nil
             Self.log.info("control socket open (generation \(current))")
-            detail = "휴대폰에서 QR 코드를 스캔해 연결하세요."
+            detail = L("mobileRemote.status.scanQR")
             publish()
             // `receive()` alone never notices a socket the network left
             // half-open, while the relay has long dropped this host for not
@@ -614,7 +614,7 @@ public actor MobileRemoteService {
         socket.cancel(with: .normalClosure, reason: nil)
         // A newer generation may already own live clients; never touch its state.
         guard current == generation else { return connected }
-        if !connected, lastRelayError == nil { lastRelayError = "릴레이에 연결하지 못했습니다." }
+        if !connected, lastRelayError == nil { lastRelayError = L("mobileRemote.error.relayConnectFailed") }
         Self.log.info("control socket closed (generation \(current)): \(self.lastRelayError ?? "", privacy: .public)")
         if controlSocket === socket { controlSocket = nil }
         let dropped = clients; clients.removeAll(); unauthenticated.removeAll()
@@ -643,7 +643,7 @@ public actor MobileRemoteService {
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
                 guard once.claim() else { return }
-                continuation.resume(throwing: MightyError("릴레이가 ping에 응답하지 않습니다."))
+                continuation.resume(throwing: MightyError(L("mobileRemote.error.pingTimeout")))
             }
         }
     }
@@ -652,12 +652,12 @@ public actor MobileRemoteService {
 
     private static func describe(_ error: Error, socket: URLSessionWebSocketTask) -> String {
         switch socket.closeCode.rawValue {
-        case 4400: return "릴레이가 요청을 거부했습니다(잘못된 매개변수)."
-        case 4409: return "같은 호스트 ID로 다른 앱이 릴레이에 연결했습니다."
+        case 4400: return L("mobileRemote.error.relayRejected")
+        case 4409: return L("mobileRemote.error.hostIdTaken")
         default:
             let nsError = error as NSError
-            if nsError.domain == NSURLErrorDomain { return "릴레이 연결 오류: " + nsError.localizedDescription }
-            return "릴레이 연결이 끊겼습니다."
+            if nsError.domain == NSURLErrorDomain { return L("mobileRemote.error.relayError", ["error": nsError.localizedDescription]) }
+            return L("mobileRemote.error.relayClosed")
         }
     }
 
@@ -742,17 +742,17 @@ public actor MobileRemoteService {
         return MobileReply(status: status, body: (try? JSONSerialization.data(withJSONObject: body)) ?? Data("{}".utf8))
     }
     private func decode<T: Decodable>(_ body: Data?, as type: T.Type, limit: Int? = nil) throws -> T {
-        guard let body, body.count <= (limit ?? Self.bodyLimit) else { throw Failure(body == nil ? 400 : 413, body == nil ? "요청 본문이 필요합니다." : "요청이 너무 큽니다.") }
-        do { return try JSONDecoder().decode(type, from: body) } catch { throw Failure(400, "요청 본문이 올바르지 않습니다.") }
+        guard let body, body.count <= (limit ?? Self.bodyLimit) else { throw Failure(body == nil ? 400 : 413, body == nil ? L("remote.error.bodyRequired") : L("remote.error.bodyTooLarge")) }
+        do { return try JSONDecoder().decode(type, from: body) } catch { throw Failure(400, L("remote.error.badBody")) }
     }
     private static func pollArguments(_ url: URLComponents) throws -> (since: Int, wait: TimeInterval) {
         var since = 0; var wait: TimeInterval = 0
         for item in url.queryItems ?? [] {
-            guard let value = item.value, value.range(of: "^[0-9]{1,12}$", options: .regularExpression) != nil, let number = Int(value) else { throw Failure(400, "질의 값이 올바르지 않습니다.") }
+            guard let value = item.value, value.range(of: "^[0-9]{1,12}$", options: .regularExpression) != nil, let number = Int(value) else { throw Failure(400, L("remote.error.badQueryValue")) }
             switch item.name {
             case "since": since = number
             case "wait": wait = min(Double(number), maximumWait)
-            default: throw Failure(400, "알 수 없는 질의입니다.")
+            default: throw Failure(400, L("remote.error.unknownQuery"))
             }
         }
         return (since, wait)
@@ -761,18 +761,18 @@ public actor MobileRemoteService {
         var before: String?
         var limit = MobileWire.defaultPageLimit
         for item in url.queryItems ?? [] {
-            guard let value = item.value else { throw Failure(400, "질의 값이 올바르지 않습니다.") }
+            guard let value = item.value else { throw Failure(400, L("remote.error.badQueryValue")) }
             switch item.name {
             case "before":
-                guard CoreValidation.identifier(value) else { throw Failure(400, "before가 올바르지 않습니다.") }
+                guard CoreValidation.identifier(value) else { throw Failure(400, L("remote.error.badBefore")) }
                 before = value
             case "limit":
-                guard let number = Int(value), (1...MobileWire.maximumPageLimit).contains(number) else { throw Failure(400, "limit은 1에서 \(MobileWire.maximumPageLimit) 사이여야 합니다.") }
+                guard let number = Int(value), (1...MobileWire.maximumPageLimit).contains(number) else { throw Failure(400, L("remote.error.badLimit", ["max": String(MobileWire.maximumPageLimit)])) }
                 limit = number
-            default: throw Failure(400, "알 수 없는 질의입니다.")
+            default: throw Failure(400, L("remote.error.unknownQuery"))
             }
         }
-        guard let before else { throw Failure(400, "before가 필요합니다.") }
+        guard let before else { throw Failure(400, L("remote.error.beforeRequired")) }
         return (before, limit)
     }
 
@@ -788,8 +788,8 @@ public actor MobileRemoteService {
     /// unless the request brings files instead.
     private static func requestText(_ raw: String, allowEmpty: Bool) throws -> String {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.utf8.count <= MobileWire.maximumText else { throw Failure(400, "요청 내용은 32 KiB 이하여야 합니다.") }
-        guard allowEmpty || !text.isEmpty else { throw Failure(400, "요청 내용은 1자 이상이어야 합니다.") }
+        guard text.utf8.count <= MobileWire.maximumText else { throw Failure(400, L("remote.error.textTooLong")) }
+        guard allowEmpty || !text.isEmpty else { throw Failure(400, L("remote.error.textEmpty")) }
         return text
     }
 
@@ -797,8 +797,8 @@ public actor MobileRemoteService {
     /// the composer's own limit before a single byte is read back.
     private static func uploadIds(_ raw: [String]?) throws -> [String] {
         guard let raw, !raw.isEmpty else { return [] }
-        guard raw.count <= AttachmentSupport.maximumCount else { throw Failure(413, "첨부 파일은 요청당 최대 \(AttachmentSupport.maximumCount)개입니다.") }
-        guard raw.allSatisfy(CoreValidation.identifier) else { throw Failure(400, "첨부 식별자가 올바르지 않습니다.") }
+        guard raw.count <= AttachmentSupport.maximumCount else { throw Failure(413, L("remote.error.tooManyAttachments", ["count": String(AttachmentSupport.maximumCount)])) }
+        guard raw.allSatisfy(CoreValidation.identifier) else { throw Failure(400, L("remote.error.badAttachmentId")) }
         return raw
     }
 
@@ -839,13 +839,13 @@ public actor MobileRemoteService {
     /// itself as; uploads belong to it and to no other.
     public func route(method: String, path: String, body: Data?, deviceId: String) async -> MobileReply {
         do {
-            guard let url = URLComponents(string: path), url.scheme == nil, url.host == nil else { throw Failure(400, "경로가 올바르지 않습니다.") }
-            guard let delegate else { throw Failure(503, "앱이 준비되지 않았습니다.") }
+            guard let url = URLComponents(string: path), url.scheme == nil, url.host == nil else { throw Failure(400, L("common.badPath")) }
+            guard let delegate else { throw Failure(503, L("remote.error.appNotReady")) }
             let parts = url.path.split(separator: "/").map(String.init)
-            guard parts.first == "m1" else { throw Failure(404, "모바일 경로를 찾을 수 없습니다.") }
+            guard parts.first == "m1" else { throw Failure(404, L("remote.error.routeNotFound")) }
             let route = Array(parts.dropFirst())
             func sessionID(_ value: String) throws -> String {
-                guard CoreValidation.identifier(value) else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
+                guard CoreValidation.identifier(value) else { throw Failure(404, L("remote.error.paneNotFound")) }
                 return value
             }
             if method == "GET", route == ["info"] {
@@ -864,10 +864,10 @@ public actor MobileRemoteService {
             if method == "GET", route.count == 2, route[0] == "sessions" {
                 let id = try sessionID(route[1])
                 let poll = try Self.pollArguments(url)
-                guard var detail = await delegate.mobileSession(id: id) else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
+                guard var detail = await delegate.mobileSession(id: id) else { throw Failure(404, L("remote.error.paneNotFound")) }
                 if detail.revision <= poll.since {
                     await wait(scope: "session:" + id, beyond: poll.since, seconds: poll.wait)
-                    guard let fresh = await delegate.mobileSession(id: id) else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
+                    guard let fresh = await delegate.mobileSession(id: id) else { throw Failure(404, L("remote.error.paneNotFound")) }
                     detail = fresh
                 }
                 return reply(200, detail)
@@ -888,7 +888,7 @@ public actor MobileRemoteService {
             }
             if method == "POST", route.count == 5, route[0] == "sessions", route[2] == "queue", route[4] == "remove", url.query == nil {
                 let id = try sessionID(route[1])
-                guard CoreValidation.identifier(route[3]) else { throw Failure(404, "대기 중인 항목을 찾을 수 없습니다.") }
+                guard CoreValidation.identifier(route[3]) else { throw Failure(404, L("remote.error.queueItemNotFound")) }
                 try await perform { try await delegate.mobileRemoveQueued(sessionId: id, itemId: route[3]) }
                 return reply(200, MobileOK())
             }
@@ -899,7 +899,7 @@ public actor MobileRemoteService {
                     let request = try decode(body, as: MobileSubmitRequest.self)
                     let ids = try Self.uploadIds(request.attachments)
                     let text = try Self.requestText(request.text, allowEmpty: !ids.isEmpty)
-                    if let mode = request.mode, !MobileWire.submitModes.contains(mode) { throw Failure(400, "mode는 steer 또는 queue여야 합니다.") }
+                    if let mode = request.mode, !MobileWire.submitModes.contains(mode) { throw Failure(400, L("remote.error.badMode")) }
                     guard !ids.isEmpty else {
                         let accepted = try await perform { try await delegate.mobileSubmit(sessionId: id, text: text, mode: request.mode, attachments: []) }
                         return reply(202, MobileSubmitResult(accepted: accepted))
@@ -929,7 +929,7 @@ public actor MobileRemoteService {
                     }
                     guard let action = request.resolvedAction, action.utf8.count <= 64,
                           action.range(of: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$", options: .regularExpression) != nil else {
-                        throw Failure(400, "skill 이름이 올바르지 않습니다.")
+                        throw Failure(400, L("remote.error.badSkillName"))
                     }
                     let text = try Self.requestText(request.text ?? "", allowEmpty: true)
                     let done = try await perform { try await delegate.mobileGuided(sessionId: id, style: style, skill: action, text: text) }
@@ -938,7 +938,7 @@ public actor MobileRemoteService {
                     let request = try decode(body, as: MobileUploadRequest.self)
                     // An upload belongs to the pane that asked for it; an
                     // unknown pane is a 404 before a byte is reserved.
-                    guard await delegate.mobileSession(id: id) != nil else { throw Failure(404, "실행 창을 찾을 수 없습니다.") }
+                    guard await delegate.mobileSession(id: id) != nil else { throw Failure(404, L("remote.error.paneNotFound")) }
                     let ticket = try await perform { try await uploads.begin(sessionId: id, deviceId: deviceId, name: request.name, size: request.size, mimeType: request.mimeType) }
                     return reply(201, ticket)
                 case "stop":
@@ -947,13 +947,13 @@ public actor MobileRemoteService {
                     return reply(200, MobileStopped(stopped: stopped))
                 case "permission":
                     let request = try decode(body, as: MobilePermissionAnswer.self)
-                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId) else { throw Failure(400, "권한 요청 식별자가 올바르지 않습니다.") }
+                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId) else { throw Failure(400, L("remote.error.badPermissionId")) }
                     do { try await delegate.mobilePermission(sessionId: id, requestId: request.requestId, runId: request.runId, allow: request.allow) }
                     catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileOK())
                 case "answers":
                     let request = try decode(body, as: MobileQuestionAnswers.self)
-                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId), request.answers.count <= 16 else { throw Failure(400, "답변 형식이 올바르지 않습니다.") }
+                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId), request.answers.count <= 16 else { throw Failure(400, L("remote.error.badAnswers")) }
                     do { try await delegate.mobileAnswers(sessionId: id, requestId: request.requestId, runId: request.runId, answers: request.answers) }
                     catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileOK())
@@ -972,7 +972,7 @@ public actor MobileRemoteService {
                     if request.titleMode == "auto" {
                         try await perform { try await delegate.mobileRename(sessionId: id, title: "", titleMode: "auto") }
                     } else {
-                        guard let title = MobileRemoteSupport.renameTitle(request.title) else { throw Failure(400, "이름은 앞뒤 공백을 뺀 1~\(MobileWire.maximumTitle)자여야 합니다.") }
+                        guard let title = MobileRemoteSupport.renameTitle(request.title) else { throw Failure(400, L("remote.error.badRenameTitle", ["max": String(MobileWire.maximumTitle)])) }
                         try await perform { try await delegate.mobileRename(sessionId: id, title: title, titleMode: nil) }
                     }
                     return reply(200, MobileOK())
@@ -989,21 +989,21 @@ public actor MobileRemoteService {
                     return reply(200, MobileOK())
                 case "command":
                     let request = try decode(body, as: MobileCommandRequest.self)
-                    guard MobileWire.performedActions.contains(request.action) else { throw Failure(400, "action은 clear · usage · help 중 하나여야 합니다.") }
+                    guard MobileWire.performedActions.contains(request.action) else { throw Failure(400, L("remote.error.badAction")) }
                     let message = try await perform { try await delegate.mobilePerformCommand(sessionId: id, action: request.action) }
                     return reply(200, MobileCommandResult(message: message))
                 default: break
                 }
             }
             if method == "POST", route.count >= 3, route[0] == "uploads", url.query == nil {
-                guard CoreValidation.identifier(route[1]) else { throw Failure(404, "업로드를 찾을 수 없습니다.") }
+                guard CoreValidation.identifier(route[1]) else { throw Failure(404, L("remote.error.uploadNotFound")) }
                 let uploadId = route[1]
                 if route.count == 4, route[2] == "chunks" {
-                    guard let index = Int(route[3]), route[3].range(of: "^[0-9]{1,6}$", options: .regularExpression) != nil else { throw Failure(400, "chunk 번호가 올바르지 않습니다.") }
+                    guard let index = Int(route[3]), route[3].range(of: "^[0-9]{1,6}$", options: .regularExpression) != nil else { throw Failure(400, L("remote.error.badChunkIndex")) }
                     // This route alone carries a base64 chunk, so it has its own
                     // body limit; the 64 KiB one would reject every full chunk.
                     let request = try decode(body, as: MobileChunkRequest.self, limit: MobileUploadStore.chunkBodyLimit)
-                    guard let data = Data(base64Encoded: request.dataBase64), data.count <= MobileUploadStore.chunkSize else { throw Failure(400, "chunk 내용이 올바르지 않습니다.") }
+                    guard let data = Data(base64Encoded: request.dataBase64), data.count <= MobileUploadStore.chunkSize else { throw Failure(400, L("remote.error.badChunkData")) }
                     let received = try await perform { try await uploads.append(id: uploadId, deviceId: deviceId, index: index, data: data) }
                     return reply(200, MobileChunkResult(received: received))
                 }
@@ -1016,11 +1016,11 @@ public actor MobileRemoteService {
                 }
             }
             if method == "POST", route.count == 3, route[0] == "workspaces", route[2] == "sessions", url.query == nil {
-                guard CoreValidation.identifier(route[1]) else { throw Failure(404, "워크스페이스를 찾을 수 없습니다.") }
+                guard CoreValidation.identifier(route[1]) else { throw Failure(404, L("remote.error.workspaceNotFound")) }
                 let request = try decode(body, as: MobileCreateSessionRequest.self)
-                guard ["claude", "shell"].contains(request.kind) else { throw Failure(400, "kind는 claude 또는 shell이어야 합니다.") }
+                guard ["claude", "shell"].contains(request.kind) else { throw Failure(400, L("remote.error.badKind")) }
                 let provider = request.provider ?? "claude"
-                guard ProviderOptions.ids.contains(provider) else { throw Failure(400, "지원하지 않는 실행기입니다.") }
+                guard ProviderOptions.ids.contains(provider) else { throw Failure(400, L("common.unsupportedProvider")) }
                 let created = try await perform { try await delegate.mobileCreateSession(workspaceId: route[1], kind: request.kind, provider: provider) }
                 return reply(201, MobileCreatedSession(sessionId: created))
             }
@@ -1030,21 +1030,21 @@ public actor MobileRemoteService {
             if method == "GET", route.count == 3, route[0] == "workspaces", ["files", "file"].contains(route[2]) {
                 return try await workspaceFile(listing: route[2] == "files", workspaceId: route[1], url: url, deviceId: deviceId, delegate: delegate)
             }
-            throw Failure(404, "모바일 경로를 찾을 수 없습니다.")
+            throw Failure(404, L("remote.error.routeNotFound"))
         } catch let failure as Failure { return errorReply(failure.status, failure.message, code: failure.code) }
         catch { return errorReply(500, error.localizedDescription) }
     }
 }
 
 extension MobileRemoteService {
-    /// The read-only file routes (docs/mobile-remote.md "파일"). The folder and
+    /// The read-only file routes (docs/mobile-remote.md, the files section). The folder and
     /// the file are read off this actor. Only an image's decode waits for the
     /// preview slot, and checks between its steps whether the phone gave up.
     private func workspaceFile(listing: Bool, workspaceId: String, url: URLComponents, deviceId: String, delegate: MobileHostDelegate) async throws -> MobileReply {
         guard CoreValidation.identifier(workspaceId) else { throw Failure(MobileFileError.workspaceNotFound) }
         var raw: String?
         for item in url.queryItems ?? [] {
-            guard item.name == "path", raw == nil else { throw Failure(400, "알 수 없는 질의입니다.") }
+            guard item.name == "path", raw == nil else { throw Failure(400, L("remote.error.unknownQuery")) }
             raw = item.value ?? ""
         }
         do {
@@ -1277,9 +1277,9 @@ actor RelayClientConnection {
                       let path = object["path"] as? String, path.hasPrefix("/") else { continue }
                 // Answered rather than dropped: a phone would otherwise wait out its timeout.
                 guard path.utf8.count <= Self.maximumPathBytes else {
-                    send(["id": requestId, "status": 414, "body": ["protocol": 1, "error": "경로가 너무 깁니다.", "code": "badPath"]]); continue
+                    send(["id": requestId, "status": 414, "body": ["protocol": 1, "error": L("remote.error.pathTooLong"), "code": "badPath"]]); continue
                 }
-                guard inFlight < 8 else { send(["id": requestId, "status": 429, "body": ["protocol": 1, "error": "동시 요청이 너무 많습니다."]]); continue }
+                guard inFlight < 8 else { send(["id": requestId, "status": 429, "body": ["protocol": 1, "error": L("remote.error.tooManyRequests")]]); continue }
                 let body: Data? = (object["body"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
                 inFlight += 1
                 let taskId = requestId + ":" + UUID().uuidString
@@ -1288,7 +1288,7 @@ actor RelayClientConnection {
                     let reply: MobileReply
                     let device = await self.deviceId
                     if let router = await self.router { reply = await router.route(method: method, path: path, body: body, deviceId: device) }
-                    else { reply = MobileReply(status: 503, body: Data(#"{"protocol":1,"error":"앱이 준비되지 않았습니다."}"#.utf8)) }
+                    else { reply = MobileReply(status: 503, body: (try? JSONSerialization.data(withJSONObject: ["protocol": 1, "error": L("remote.error.appNotReady")])) ?? Data()) }
                     await self.finish(taskId: taskId, requestId: requestId, reply: reply)
                 }
             }
@@ -1314,7 +1314,7 @@ actor RelayClientConnection {
         guard case .string(let text) = message, let data = text.data(using: .utf8), let hello = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               hello["type"] as? String == "hello", hello["v"] as? Int == 1,
               let clientKey = (hello["clientKey"] as? String).flatMap({ Data(base64Encoded: $0) }), clientKey.count == 32,
-              let clientNonce = (hello["nonce"] as? String).flatMap({ Data(base64Encoded: $0) }), clientNonce.count == 16 else { throw MightyError("핸드셰이크가 올바르지 않습니다.") }
+              let clientNonce = (hello["nonce"] as? String).flatMap({ Data(base64Encoded: $0) }), clientNonce.count == 16 else { throw MightyError(L("mobileRemote.error.badHandshake")) }
         let serverNonce = RelayCrypto.randomBytes(16)
         let ready = try JSONSerialization.data(withJSONObject: ["type": "ready", "v": 1, "serverKey": identity.keypair.publicKeyB64, "nonce": serverNonce.base64EncodedString()], options: [.sortedKeys])
         cipher = try RelayCipher(privateKey: identity.keypair.privateKey, peerPublicKey: clientKey, clientNonce: clientNonce, serverNonce: serverNonce, isHost: true)
@@ -1357,7 +1357,7 @@ actor RelayClientConnection {
     }
 
     private func openFrame(_ frame: Data) throws -> Data {
-        guard var cipher else { throw MightyError("암호 채널이 준비되지 않았습니다.") }
+        guard var cipher else { throw MightyError(L("mobileRemote.error.cipherNotReady")) }
         let plaintext = try cipher.open(frame)
         self.cipher = cipher
         return plaintext

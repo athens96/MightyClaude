@@ -151,7 +151,7 @@ enum AgentTranscriptDiagnostics {
         entries[1].activity?.state = "completed"
         entries[1].activity?.durationMs = 12_340
         coordinator.update(entries: entries, provider: "claude", running: true, dark: false, cards: cards)
-        local["completedActivityDurationRendered"] = editor.string.contains("· 12.3초")
+        local["completedActivityDurationRendered"] = editor.string.contains("· " + L("run.activity.durationSeconds", ["seconds": "12.3"]))
         guard local["completedActivityDurationRendered"] as? Bool == true else { throw MightyError("완료된 도구 작업의 소요 시간이 표시되지 않았습니다.") }
         local["selectionPreservedAfterEarlierUpdate"] = selectedText(editor) == selectedPhrase && editor.selectedRange().location > previousLocation
         entries.removeFirst()

@@ -169,15 +169,17 @@ struct SessionUsageTests {
 
 struct RateLimitWindowLabelTests {
     @Test func cliWindowKindsReadInKorean() {
-        #expect(RateLimitWindowLabel.label("five_hour") == "세션")
-        #expect(RateLimitWindowLabel.label("seven_day") == "주간")
-        #expect(RateLimitWindowLabel.label("session") == "세션")
-        #expect(RateLimitWindowLabel.label("weekly") == "주간")
-        #expect(RateLimitWindowLabel.label("seven_day_opus") == "주간 Opus")
-        #expect(RateLimitWindowLabel.label("seven_day_sonnet") == "주간 Sonnet")
-        #expect(RateLimitWindowLabel.label("spend_limit") == "지출 한도")
-        #expect(RateLimitWindowLabel.label("300m") == "300분")
-        #expect(RateLimitWindowLabel.label("some_other") == "some other")
+        LocaleOverride.$language.withValue(.ko) {
+            #expect(RateLimitWindowLabel.label("five_hour") == "세션")
+            #expect(RateLimitWindowLabel.label("seven_day") == "주간")
+            #expect(RateLimitWindowLabel.label("session") == "세션")
+            #expect(RateLimitWindowLabel.label("weekly") == "주간")
+            #expect(RateLimitWindowLabel.label("seven_day_opus") == "주간 Opus")
+            #expect(RateLimitWindowLabel.label("seven_day_sonnet") == "주간 Sonnet")
+            #expect(RateLimitWindowLabel.label("spend_limit") == "지출 한도")
+            #expect(RateLimitWindowLabel.label("300m") == "300분")
+            #expect(RateLimitWindowLabel.label("some_other") == "some other")
+        }
     }
 }
 

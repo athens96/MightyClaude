@@ -594,6 +594,24 @@ test('an allowed literal is not counted, and an allow entry that matches nothing
   }
 });
 
+test('an allowed literal quoted in a comment above it is still the code literal that is allowed', () => {
+  const dir = tmpDir();
+  try {
+    const allow = [{ file: `${APP}/Marker.swift`, literal: '첨부: ', reason: 'saved-data marker' }];
+    setup(dir, {
+      budget: budgetFor(0, { allow }),
+      files: { ...USED, [`${APP}/Marker.swift`]: '// one "첨부: " line per attachment\nlet typed = text.hasPrefix("첨부: ")\n' },
+      koJson: KO,
+      enJson: EN,
+    });
+    const result = run(['--root', dir]);
+    assert.equal(result.status, 0, `the code literal must be the one allowed\nstderr: ${result.stderr}`);
+    assert.match(result.stdout, /허용 1개/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ── The last-resort count: Hangul the literal pattern cannot see ───────────────
 test('Hangul nested in an interpolation or a """ block counts toward its area', () => {
   const dir = tmpDir();

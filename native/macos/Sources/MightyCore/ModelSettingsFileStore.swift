@@ -107,7 +107,7 @@ public struct ModelSettingsFileStore: Sendable {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
         guard let content = String(data: data, encoding: .utf8) else {
-            throw MightyError("config.yaml에 UTF-8로 디코딩할 수 없는 바이트가 있습니다.")
+            throw MightyError(L("settings.phaseModels.error.yamlNotUtf8"))
         }
         let all = Self.parseYAMLScalars(content)
         return all.filter { $0.key.hasSuffix("_model") }
@@ -127,7 +127,7 @@ public struct ModelSettingsFileStore: Sendable {
 
         let existing = try Data(contentsOf: url)
         guard let content = String(data: existing, encoding: .utf8) else {
-            throw MightyError("config.yaml에 UTF-8로 디코딩할 수 없는 바이트가 있습니다.")
+            throw MightyError(L("settings.phaseModels.error.yamlNotUtf8"))
         }
 
         try writeBackup(data: existing, to: url)
@@ -141,21 +141,21 @@ public struct ModelSettingsFileStore: Sendable {
     /// Throws `MightyError` when the data is not parseable.
     static func parseJSONC(_ data: Data) throws -> [String: Any] {
         guard let source = String(data: data, encoding: .utf8) else {
-            throw MightyError("config.jsonc이 유효한 UTF-8이 아닙니다.")
+            throw MightyError(L("settings.phaseModels.error.jsoncNotUtf8"))
         }
         let stripped = stripJSONCComments(source)
         guard let strippedData = stripped.data(using: .utf8) else {
-            throw MightyError("config.jsonc 주석 제거 후 인코딩 오류가 발생했습니다.")
+            throw MightyError(L("settings.phaseModels.error.jsoncEncoding"))
         }
         do {
             guard let obj = try JSONSerialization.jsonObject(with: strippedData) as? [String: Any] else {
-                throw MightyError("config.jsonc의 루트 값이 JSON 객체가 아닙니다.")
+                throw MightyError(L("settings.phaseModels.error.jsoncNotObject"))
             }
             return obj
         } catch let e as MightyError {
             throw e
         } catch {
-            throw MightyError("config.jsonc를 파싱할 수 없습니다: \(error.localizedDescription)")
+            throw MightyError(L("settings.phaseModels.error.jsoncUnparseableDetail", ["error": error.localizedDescription]))
         }
     }
 

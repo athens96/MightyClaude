@@ -94,8 +94,8 @@ public enum CLIAuthFailure {
     /// Compute ADC, …).
     public static func signInCanFix(_ status: CLIAccountStatus) -> Bool {
         guard status.installed, status.accessVerified != false else { return false }
-        if status.provider == "gemini" { return status.method == nil || status.method == CLIAccountSupport.geminiGoogleMethod }
-        return !(status.provider == "codex" && status.method == CLIAccountSupport.codexAPIKeyMethod)
+        if status.provider == "gemini" { return status.methodId == nil || status.methodId == CLIAccountMethod.geminiGoogle }
+        return !(status.provider == "codex" && status.methodId == CLIAccountMethod.codexAPIKey)
     }
 
     /// The providers whose lost sign-in raises the card and may start a sign-in.

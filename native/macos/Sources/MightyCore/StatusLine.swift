@@ -20,6 +20,17 @@ public struct StatusLineConfig: Sendable, Equatable {
         self.command = command; self.padding = padding; self.source = source; self.fromWorkspace = fromWorkspace; self.outputStyle = outputStyle; self.thinkingEnabled = thinkingEnabled
     }
 
+    /// The name to show for `source`. `source` itself stays the Korean name the
+    /// trust fingerprint has always been made with, so a command the user
+    /// allowed stays allowed whatever the app language.
+    public var sourceLabel: String {
+        switch source {
+        case "프로젝트 로컬 설정": L("statusLine.source.projectLocal")
+        case "프로젝트 설정": L("statusLine.source.project")
+        case "사용자 설정": L("statusLine.source.user")
+        default: source
+        }
+    }
     /// A stable identity for "the user allowed this exact command here".
     public var fingerprint: String { SHA256.hash(data: Data((source + "\n" + command).utf8)).map { String(format: "%02x", $0) }.joined() }
 
@@ -197,7 +208,7 @@ public enum StatusLineSupport {
             child = try NativeChildProcess(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", config.command], environment: env, cwd: URL(fileURLWithPath: cwd, isDirectory: true),
                                            stdout: { output.append($0) }, stderr: { output.appendError($0) }, exited: { _ in })
         } catch {
-            return StatusLineResult(lines: [], error: "명령을 시작하지 못했습니다: \(error.localizedDescription)", status: -1, timedOut: false)
+            return StatusLineResult(lines: [], error: L("statusLine.error.start", ["error": error.localizedDescription]), status: -1, timedOut: false)
         }
         child.write(data, closeAfter: true)
         let code = await child.wait(timeout: timeout)
@@ -228,8 +239,8 @@ public enum StatusLineSupport {
             let errorText = String(decoding: errorData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             let lines = StatusLineSupport.lines(from: text)
             var error: String?
-            if timedOut { error = "상태 줄 명령이 제한 시간 안에 끝나지 않았습니다." }
-            else if lines.isEmpty, status != 0 { error = errorText.isEmpty ? "상태 줄 명령이 종료 코드 \(status)로 끝났습니다." : String(errorText.prefix(300)) }
+            if timedOut { error = L("statusLine.error.timeout") }
+            else if lines.isEmpty, status != 0 { error = errorText.isEmpty ? L("statusLine.error.exitCode", ["status": String(status)]) : String(errorText.prefix(300)) }
             return StatusLineResult(lines: lines, error: error, status: status, timedOut: timedOut)
         }
     }

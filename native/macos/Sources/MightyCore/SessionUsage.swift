@@ -7,18 +7,18 @@ import CoreFoundation
 public enum RateLimitWindowLabel {
     public static func label(_ kind: String) -> String {
         switch kind.lowercased() {
-        case "session", "five_hour", "5h", "primary": return "세션"
-        case "weekly", "seven_day", "7d", "secondary": return "주간"
-        case "daily": return "일간"
-        case "monthly": return "월간"
-        case "spend_limit": return "지출 한도"
+        case "session", "five_hour", "5h", "primary": return L("windows.accountUsage.windowSession")
+        case "weekly", "seven_day", "7d", "secondary": return L("windows.accountUsage.windowWeekly")
+        case "daily": return L("windows.accountUsage.windowDaily")
+        case "monthly": return L("windows.accountUsage.windowMonthly")
+        case "spend_limit": return L("windows.accountUsage.windowSpendLimit")
         default: break
         }
         let lowered = kind.lowercased()
-        if lowered.hasPrefix("seven_day_") { return "주간 " + model(String(kind.dropFirst("seven_day_".count))) }
-        if lowered.hasPrefix("five_hour_") { return "세션 " + model(String(kind.dropFirst("five_hour_".count))) }
-        if let range = lowered.range(of: #"^(\d+)m$"#, options: .regularExpression) { return lowered[range].dropLast() + "분" }
-        if let range = lowered.range(of: #"^(\d+)h$"#, options: .regularExpression) { return lowered[range].dropLast() + "시간" }
+        if lowered.hasPrefix("seven_day_") { return L("windows.accountUsage.windowWeekly") + " " + model(String(kind.dropFirst("seven_day_".count))) }
+        if lowered.hasPrefix("five_hour_") { return L("windows.accountUsage.windowSession") + " " + model(String(kind.dropFirst("five_hour_".count))) }
+        if let range = lowered.range(of: #"^(\d+)m$"#, options: .regularExpression) { return L("windows.accountUsage.minutes", ["count": String(lowered[range].dropLast())]) }
+        if let range = lowered.range(of: #"^(\d+)h$"#, options: .regularExpression) { return L("windows.accountUsage.hours", ["count": String(lowered[range].dropLast())]) }
         return kind.replacingOccurrences(of: "_", with: " ")
     }
     private static func model(_ value: String) -> String {

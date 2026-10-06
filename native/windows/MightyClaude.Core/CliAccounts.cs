@@ -12,7 +12,10 @@ public sealed record CliAccountStatus
     public bool Installed { get; init; } = true;
     /// Null when the CLI could not be asked.
     public bool? LoggedIn { get; init; }
+    /// How the CLI is signed in, as shown to the user (follows the app language).
     public string? Method { get; init; }
+    /// The same method as a language-free id (<see cref="CliAccountMethod"/>), for decisions.
+    public string? MethodId { get; init; }
     public string? Account { get; init; }
     public string? Plan { get; init; }
     public string Detail { get; init; } = "";
@@ -38,6 +41,26 @@ public sealed record CliAccountStatus
 
 public enum CliLoginOption { Account, Console, Bedrock }
 
+/// Language-free ids of the sign-in methods <see cref="CliAccountStatus.MethodId"/> carries
+/// (M/CLIAccounts.swift CLIAccountMethod). Decisions compare these, never the displayed Method.
+public static class CliAccountMethod
+{
+    public const string ClaudeSubscription = "claude-subscription";
+    public const string ClaudeConsole = "claude-console";
+    public const string ClaudeApiKey = "claude-api-key";
+    public const string ClaudeBedrock = "claude-bedrock";
+    public const string ClaudeVertex = "claude-vertex";
+    public const string ClaudeFoundry = "claude-foundry";
+    public const string ClaudeExternal = "claude-external";
+    public const string ClaudeOther = "claude-other";
+    public const string CodexChatGpt = "codex-chatgpt";
+    public const string CodexApiKey = "codex-api-key";
+    public const string GeminiGoogle = "gemini-google";
+    public const string GeminiApiKey = "gemini-api-key";
+    public const string GeminiVertex = "gemini-vertex";
+    public const string GeminiOther = "gemini-other";
+}
+
 /// Parsing helpers that depend only on data — no I/O, no runner.
 /// Tests inject fixture JSON and file contents directly.
 public static class CliAccountSupport
@@ -61,8 +84,9 @@ public static class CliAccountSupport
                 return new CliAccountStatus { Provider = "claude", LoggedIn = null, Detail = CliAccountStrings.DetailClaudeParseError };
 
             var external = root.Text("apiProvider") switch { "bedrock" => "AWS Bedrock", "vertex" => "Google Vertex AI", "foundry" => "Microsoft Foundry", _ => null };
+            var externalId = root.Text("apiProvider") switch { "bedrock" => CliAccountMethod.ClaudeBedrock, "vertex" => CliAccountMethod.ClaudeVertex, "foundry" => CliAccountMethod.ClaudeFoundry, _ => null };
             if (external is not null || root.Text("authMethod") is "third_party" or "api_key")
-                return new CliAccountStatus { Provider = "claude", LoggedIn = loggedInProp.GetBoolean(), Method = external ?? (root.Text("authMethod") == "api_key" ? "Anthropic API key" : "External provider"), CanSignOut = false, AccessVerified = false, Detail = external == "AWS Bedrock" ? BedrockSettings.ConfigurationOnly : BedrockSettings.ExternalConfigurationOnly };
+                return new CliAccountStatus { Provider = "claude", LoggedIn = loggedInProp.GetBoolean(), Method = external ?? (root.Text("authMethod") == "api_key" ? "Anthropic API key" : "External provider"), MethodId = externalId ?? (root.Text("authMethod") == "api_key" ? CliAccountMethod.ClaudeApiKey : CliAccountMethod.ClaudeExternal), CanSignOut = false, AccessVerified = false, Detail = external == "AWS Bedrock" ? BedrockSettings.ConfigurationOnly : BedrockSettings.ExternalConfigurationOnly };
 
             if (!loggedInProp.GetBoolean())
                 return new CliAccountStatus { Provider = "claude", LoggedIn = false };
@@ -74,10 +98,18 @@ public static class CliAccountSupport
                 { Length: > 0 } m => Clean(m),
                 _ => null,
             };
+            var methodId = root.Text("authMethod") switch
+            {
+                "claude.ai" => CliAccountMethod.ClaudeSubscription,
+                "console" => CliAccountMethod.ClaudeConsole,
+                "none" => null,
+                { Length: > 0 } => CliAccountMethod.ClaudeOther,
+                _ => null,
+            };
             var plan = root.Text("subscriptionType") is { Length: > 0 } s ? Capitalize(Clean(s)) : null;
             var email = root.Text("email") is { Length: > 0 } e ? Clean(e) : null;
             var org = root.Text("orgName") is { Length: > 0 } o ? Clean(o) : null;
-            return new CliAccountStatus { Provider = "claude", LoggedIn = true, Method = method, Account = email ?? org, Plan = plan };
+            return new CliAccountStatus { Provider = "claude", LoggedIn = true, Method = method, MethodId = methodId, Account = email ?? org, Plan = plan };
         }
         catch
         {
@@ -95,6 +127,7 @@ public static class CliAccountSupport
             return new CliAccountStatus { Provider = "codex", LoggedIn = false };
 
         var method = lower.Contains("chatgpt") ? "ChatGPT" : lower.Contains("api key") ? Locale.Get("windows.cli.method.apiKey") : null;
+        var methodId = lower.Contains("chatgpt") ? CliAccountMethod.CodexChatGpt : lower.Contains("api key") ? CliAccountMethod.CodexApiKey : null;
         string? account = null, plan = null;
         if (authJson is { Length: > 0 })
         {
@@ -120,7 +153,7 @@ public static class CliAccountSupport
             }
             catch { /* auth.json parse errors are non-fatal */ }
         }
-        return new CliAccountStatus { Provider = "codex", LoggedIn = true, Method = method, Account = account, Plan = plan };
+        return new CliAccountStatus { Provider = "codex", LoggedIn = true, Method = method, MethodId = methodId, Account = account, Plan = plan };
     }
 
     /// Gemini has no status command: derives status from its account files.
@@ -161,17 +194,17 @@ public static class CliAccountSupport
         return selected switch
         {
             "oauth-personal" or null => hasOAuth
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, Account = active }
+                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle, Account = active }
                 : new CliAccountStatus { Provider = "gemini", LoggedIn = false },
             "gemini-api-key" => env.TryGetValue("GEMINI_API_KEY", out var key) && key.Length > 0
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false }
-                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyAbsent, CanSignOut = false },
+                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey, Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false }
+                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey, Detail = CliAccountStrings.DetailGeminiApiKeyAbsent, CanSignOut = false },
             "vertex-ai" => env.TryGetValue("GOOGLE_APPLICATION_CREDENTIALS", out var creds) && creds.Length > 0 ||
                            env.TryGetValue("GOOGLE_CLOUD_PROJECT", out var proj) && proj.Length > 0 ||
                            File.Exists(Path.Combine(home, ".config", "gcloud", "application_default_credentials.json"))
-                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = "Vertex AI", Detail = CliAccountStrings.DetailVertexPresent, CanSignOut = false }
-                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = "Vertex AI", Detail = CliAccountStrings.DetailVertexAbsent, CanSignOut = false },
-            _ => new CliAccountStatus { Provider = "gemini", LoggedIn = hasOAuth ? true : null, Method = Clean(selected), Account = active, CanSignOut = hasOAuth },
+                ? new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex, Detail = CliAccountStrings.DetailVertexPresent, CanSignOut = false }
+                : new CliAccountStatus { Provider = "gemini", LoggedIn = null, Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex, Detail = CliAccountStrings.DetailVertexAbsent, CanSignOut = false },
+            _ => new CliAccountStatus { Provider = "gemini", LoggedIn = hasOAuth ? true : null, Method = Clean(selected), MethodId = CliAccountMethod.GeminiOther, Account = active, CanSignOut = hasOAuth },
         };
     }
 
@@ -395,7 +428,7 @@ public sealed class CliAccountsCoordinator
             var status = CliAccountSupport.ParseClaudeStatus(result.Output);
             if (status.LoggedIn is null)
                 status = status with { Detail = result.TimedOut ? CliAccountStrings.DetailClaudeTimeout : CliAccountStrings.DetailClaudeUnknown };
-            if (status.Method == "AWS Bedrock")
+            if (status.MethodId == CliAccountMethod.ClaudeBedrock)
             {
                 var detail = BedrockSettings.ConflictDetail(environment, CliAccountSupport.BoundedFileText(BedrockSettings.SettingsPath(home, environment)));
                 if (detail is not null) status = status with { Detail = status.Detail + " " + detail };
@@ -501,10 +534,10 @@ public static class CliAccountSmoke
     // signed in (account + plan), signed out, not installed, cannot sign out.
     public static IReadOnlyList<CliAccountStatus> FixtureStatuses { get; } =
     [
-        new() { Provider = "claude", Installed = true, LoggedIn = true, Account = "me@example.com", Plan = "Max", Method = Locale.Get("windows.cli.method.claudeSubscription"), CanSignOut = true },
+        new() { Provider = "claude", Installed = true, LoggedIn = true, Account = "me@example.com", Plan = "Max", Method = Locale.Get("windows.cli.method.claudeSubscription"), MethodId = CliAccountMethod.ClaudeSubscription, CanSignOut = true },
         new() { Provider = "codex", Installed = true, LoggedIn = false },
         new() { Provider = "gemini", Installed = false, LoggedIn = null, Detail = CliAccountStrings.DetailGeminiNotInstalled, CanSignOut = false },
-        new() { Provider = "gemini", Installed = true, LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false },
+        new() { Provider = "gemini", Installed = true, LoggedIn = true, Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey, Detail = CliAccountStrings.DetailGeminiApiKeyPresent, CanSignOut = false },
     ];
 
     /// Drives the CLI accounts smoke through callbacks, so the whole flow —

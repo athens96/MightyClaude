@@ -64,7 +64,7 @@ final class ExecutionGraphTracker {
         guard !finished, provider == "claude", nodes.count < ExecutionGraphSupport.maximumNodes else { return }
         let nodeID = ExecutionGraphSupport.identifier(runID, "steer:" + id)
         guard nodes[nodeID] == nil else { return }
-        let node = ExecutionGraphNode(id: nodeID, runId: runID, parentId: mainID, kind: "steer", state: "running", title: "중간 요청", input: text)
+        let node = ExecutionGraphNode(id: nodeID, runId: runID, parentId: mainID, kind: "steer", state: "running", title: L("graph.block.steer"), input: text)
         guard let normalized = ExecutionGraphSupport.normalized(node) else { return }
         nodes[nodeID] = normalized; order.append(nodeID); emit(normalized)
         pendingSteers.append(nodeID)
@@ -86,7 +86,7 @@ final class ExecutionGraphTracker {
     /// Header and readable body of an AskUserQuestion input: every question with its options.
     static func questionSummary(_ input: [String: Any]?) -> (title: String?, body: String) {
         let questions = input?["questions"] as? [[String: Any]] ?? []
-        let title = (questions.first?["header"] as? String).flatMap { $0.isEmpty ? nil : "질문 · " + $0 }
+        let title = (questions.first?["header"] as? String).flatMap { $0.isEmpty ? nil : L("graph.block.questionPrefix") + $0 }
         let body = questions.map { question -> String in
             let text = question["question"] as? String ?? ""
             let options = (question["options"] as? [[String: Any]] ?? []).compactMap { $0["label"] as? String }
@@ -108,7 +108,7 @@ final class ExecutionGraphTracker {
     }
     private static func agentTool(_ name: String?) -> Bool { ["agent", "task"].contains(name?.lowercased() ?? "") }
 
-    @discardableResult private func ensureAgent(toolID: String) -> String? { ensureNode(toolID: toolID, kind: "agent", title: "하위 에이전트") }
+    @discardableResult private func ensureAgent(toolID: String) -> String? { ensureNode(toolID: toolID, kind: "agent", title: L("graph.block.agent")) }
     @discardableResult private func ensureNode(toolID: String, kind: String, title: String) -> String? {
         let id = ExecutionGraphSupport.agentNodeID(runId: runID, toolUseId: toolID)
         guard nodes[id] == nil else { return id }
@@ -228,7 +228,7 @@ final class ExecutionGraphTracker {
                         if let prompt = input?["prompt"] as? String { node.input = prompt }
                         if let title = (input?["name"] ?? input?["description"] ?? input?["subagent_type"]) as? String, !title.isEmpty { node.title = title }
                     }
-                } else if block["name"] as? String == "AskUserQuestion", let question = ensureNode(toolID: toolID, kind: "question", title: "질문") {
+                } else if block["name"] as? String == "AskUserQuestion", let question = ensureNode(toolID: toolID, kind: "question", title: L("graph.block.question")) {
                     // Each question to the user is its own block; the answer settles it.
                     setParent(question, owner: owner)
                     let summary = Self.questionSummary(input)
@@ -237,7 +237,7 @@ final class ExecutionGraphTracker {
                         if let title = summary.title { node.title = title }
                         node.input = summary.body
                     }
-                } else if background, let task = ensureNode(toolID: toolID, kind: "task", title: "백그라운드 작업") {
+                } else if background, let task = ensureNode(toolID: toolID, kind: "task", title: L("graph.block.task")) {
                     // A backgrounded command outlives its tool result. It gets its
                     // own child block; the engine's task notification settles it.
                     setParent(task, owner: owner)
@@ -603,7 +603,7 @@ final class ExecutionGraphTracker {
     private func boundedPending(_ pending: PendingAgent, agent: String) -> PendingAgent {
         let metadata = pending.metadata
         let temporary = ExecutionGraphNode(id: ExecutionGraphSupport.identifier(runID, "pending:" + agent), runId: runID,
-            kind: "agent", state: "running", title: metadata?.name ?? metadata?.agentType ?? "하위 에이전트",
+            kind: "agent", state: "running", title: metadata?.name ?? metadata?.agentType ?? L("graph.block.agent"),
             input: metadata?.input, output: metadata?.output,
             entries: pending.activities.map { LogEntry(id: $0.id, kind: "system", text: $0.summary, provider: provider, activity: $0) })
         guard let bounded = ExecutionGraphSupport.normalized(temporary) else { return PendingAgent() }
@@ -625,7 +625,7 @@ final class ExecutionGraphTracker {
         for (agent, pending) in pendingAgents.sorted(by: { $0.key < $1.key }) {
             guard nodes.count < ExecutionGraphSupport.maximumNodes else { break }
             let id = ExecutionGraphSupport.identifier(runID, "agent:" + agent)
-            let node = ExecutionGraphNode(id: id, runId: runID, kind: "agent", state: "running", title: "하위 에이전트")
+            let node = ExecutionGraphNode(id: id, runId: runID, kind: "agent", state: "running", title: L("graph.block.agent"))
             nodes[id] = node; order.append(id); emit(node)
             aliases[agent] = id
             for activity in pending.activities { appendActivity(activity, to: id) }
@@ -639,8 +639,8 @@ final class ExecutionGraphTracker {
             // agent succeeded or returned an answer.
             update(id) { value in
                 value.state = state == "error" ? "error" : "stopped"
-                let text = value.kind == "task" ? "백그라운드 작업의 완료 알림을 받기 전에 실행이 종료되었습니다."
-                    : value.kind == "steer" ? "중간 요청에 대한 응답을 받기 전에 실행이 종료되었습니다." : value.kind == "question" ? "질문에 답하기 전에 실행이 종료되었습니다." : "하위 에이전트의 완료 응답을 받기 전에 실행이 종료되었습니다."
+                let text = value.kind == "task" ? L("graph.block.unfinished.task")
+                    : value.kind == "steer" ? L("graph.block.unfinished.steer") : value.kind == "question" ? L("graph.block.unfinished.question") : L("graph.block.unfinished.agent")
                 value.entries.append(LogEntry(id: ExecutionGraphSupport.identifier(runID, id + ":unfinished"), kind: "system", text: text, provider: provider))
             }
         }

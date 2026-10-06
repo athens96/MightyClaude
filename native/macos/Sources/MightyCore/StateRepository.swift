@@ -26,11 +26,11 @@ public actor StateRepository {
         if let source {
             do {
                 let values = try source.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                guard values.isRegularFile == true, let size = values.fileSize, size <= Self.maximumStateBytes else { throw MightyError("저장된 상태 파일의 크기나 형식이 올바르지 않습니다.") }
+                guard values.isRegularFile == true, let size = values.fileSize, size <= Self.maximumStateBytes else { throw MightyError(L("state.error.fileInvalid")) }
                 let data = try Data(contentsOf: source)
-                guard data.count <= Self.maximumStateBytes, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], object["version"] as? Int == 1, object["workspaces"] is [Any], object["sessions"] is [Any] else { throw MightyError("저장된 상태 파일을 읽지 못했습니다. 원본을 보존했습니다.") }
+                guard data.count <= Self.maximumStateBytes, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], object["version"] as? Int == 1, object["workspaces"] is [Any], object["sessions"] is [Any] else { throw MightyError(L("state.error.fileUnreadable")) }
                 restored = Self.decodeSnapshot(data, restoring: true)
-            } catch { throw MightyError("저장된 상태를 불러오지 못했습니다. 원본 파일은 변경하지 않았습니다. \(error.localizedDescription)") }
+            } catch { throw MightyError(L("state.error.loadFailed", ["error": error.localizedDescription])) }
         }
         // Copy into the native profile only. The Electron profile remains intact.
         if !exists, source != nil { try persist(restored) }
@@ -43,9 +43,9 @@ public actor StateRepository {
 
     public func approveWorkspace(_ workspace: Workspace) throws -> Workspace {
         try ensureLoaded()
-        guard CoreValidation.identifier(workspace.id), workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.count <= 4096 else { throw MightyError("로컬 폴더 정보가 올바르지 않습니다.") }
+        guard CoreValidation.identifier(workspace.id), workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.count <= 4096 else { throw MightyError(L("state.error.badWorkspace")) }
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
+        guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError(L("workspace.error.folderMissing")) }
         var resolved = workspace
         resolved.path = URL(fileURLWithPath: workspace.path).resolvingSymlinksInPath().path
         if let existing = approved.values.first(where: { $0.path == resolved.path }) { return existing }
@@ -55,21 +55,21 @@ public actor StateRepository {
 
     public func workspace(id: String) throws -> Workspace {
         try ensureLoaded()
-        guard let workspace = approved[id] else { throw MightyError("등록된 워크스페이스를 찾을 수 없습니다.") }
+        guard let workspace = approved[id] else { throw MightyError(L("state.error.workspaceNotRegistered")) }
         return workspace
     }
     public func resolveLocalWorkspace(id: String) throws -> Workspace {
         let item = try workspace(id: id)
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
+        guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw MightyError(L("workspace.error.folderMissing")) }
         return item
     }
 
     public func save(_ value: AppSnapshot) throws {
         try ensureLoaded()
-        guard value.version == 1, value.workspaces.count <= 64, value.sessions.count <= 128 else { throw MightyError("저장할 상태가 올바르지 않습니다.") }
+        guard value.version == 1, value.workspaces.count <= 64, value.sessions.count <= 128 else { throw MightyError(L("state.error.badSnapshot")) }
         for workspace in value.workspaces {
-            guard let known = approved[workspace.id], workspace.path == known.path else { throw MightyError("폴더 선택으로 승인한 워크스페이스만 저장할 수 있습니다.") }
+            guard let known = approved[workspace.id], workspace.path == known.path else { throw MightyError(L("state.error.notApproved")) }
         }
         let result = Self.normalize(value, restoring: false)
         try persist(result)
@@ -79,7 +79,7 @@ public actor StateRepository {
 
     private func persist(_ value: AppSnapshot) throws {
         let data = try JSONEncoder().encode(value)
-        guard data.count <= Self.maximumStateBytes else { throw MightyError("저장할 실행 기록이 너무 큽니다.") }
+        guard data.count <= Self.maximumStateBytes else { throw MightyError(L("state.error.timingTooLarge")) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try data.write(to: stateURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stateURL.path)
@@ -285,7 +285,7 @@ public actor StateRepository {
         return output
     }
 
-    /// Panes used to be named "Claude 1", "터미널 2". New panes carry the bare
+    /// Panes used to be named "Claude 1", "터미널 2" (Korean "Terminal 2"). New panes carry the bare
     /// name, and saved auto-generated names are folded the same way. A title the
     /// user typed is left alone unless it exactly matches that generated form.
     public nonisolated static func legacyNumberedTitle(_ title: String) -> String {

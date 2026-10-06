@@ -159,7 +159,7 @@ public actor ProviderService {
             runtime.version = command.version
             runtime.capabilities = Self.capabilities(provider: provider, version: command.version)
             runtime.available = provider != "claude" || Self.supportsMods(command.version)
-            runtime.detail = runtime.available ? "설치된 CLI의 로그인·제공자 설정으로 실행합니다." : "이 앱의 Mods 연결은 2.1.271 공개 타입을 기준으로 합니다. 현재 \(command.version)에서는 Claude 실행을 지원하지 않습니다."
+            runtime.detail = runtime.available ? L("provider.available") : L("run.error.modsVersionUnsupported", ["version": command.version])
         }
         guard !Task.isCancelled else { return runtime }
         runtime.modelCatalog = await modelCatalog(provider: provider, workspacePath: workspacePath, forceRefresh: forceRefresh, snapshot: snapshot)
@@ -236,7 +236,7 @@ public actor ProviderService {
             return args
         case "codex":
             let asks = s.permissionMode == "onRequest"
-            guard !asks || allowPermissionPrompts else { throw MightyError("Codex 승인 요청은 로컬 앱의 승인 연결이 필요합니다.") }
+            guard !asks || allowPermissionPrompts else { throw MightyError(L("provider.error.codexOnRequestNeedsApp")) }
             let sandbox = s.permissionMode == "fullAccess" ? "danger-full-access" : ["acceptEdits", "onRequest"].contains(s.permissionMode) ? "workspace-write" : "read-only"
             var args = ["-c", "approval_policy=\"\(asks ? "on-request" : "never")\"", "-c", "sandbox_mode=\"\(sandbox)\"", "-c", "sandbox_workspace_write.network_access=\(s.networkAccess)", "-c", "features.fast_mode=\(s.fastMode)", "-c", "service_tier=\"\(s.fastMode ? "fast" : "default")\""]
             if s.webSearch != "default" { args += ["-c", "web_search=\"\(s.webSearch)\""] }
@@ -269,7 +269,7 @@ public actor ProviderService {
             if request.model != "default" { args += ["--model", request.model] }
             if let resume = request.resumeId { args += ["--resume", resume] }
             return args
-        default: throw MightyError("지원하지 않는 CLI입니다.")
+        default: throw MightyError(L("common.unsupportedCli"))
         }
     }
 
@@ -286,7 +286,7 @@ public actor ProviderService {
                 models[0].supportedEffortLevels = levels
             }
         }
-        return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: "설치된 Codex의 model/list 응답입니다. 실제 사용 가능 여부에는 계정·제공자 정책이 적용됩니다.") : fallback
+        return models.count > 1 ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.codexSource")) : fallback
     }
     public nonisolated static func normalizeClaudeCatalog(_ rows: [[String: Any]]) -> ModelCatalog {
         let fallback = ProviderOptions.fallbackCatalog("claude")
@@ -302,7 +302,7 @@ public actor ProviderService {
                 models[0].supportedEffortLevels = option.supportedEffortLevels
             } else { models.append(option) }
         }
-        return !seen.isEmpty ? ModelCatalog(source: "cli", models: models, detail: "설치된 Claude Code의 초기화 응답입니다. 실제 사용 가능 여부에는 계정·제공자 정책이 적용됩니다.") : fallback
+        return !seen.isEmpty ? ModelCatalog(source: "cli", models: models, detail: L("provider.catalog.claudeSource")) : fallback
     }
 }
 

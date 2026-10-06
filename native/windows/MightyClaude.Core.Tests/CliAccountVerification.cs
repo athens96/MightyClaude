@@ -23,7 +23,7 @@ internal static class CliAccountVerification
         Check(claude.LoggedIn == true, "claude: logged in");
         Check(claude.Account == "me@example.com", "claude: account is email");
         Check(claude.Plan == "Max", "claude: plan capitalised");
-        Check(claude.Method == "Claude 구독", "claude: claude.ai method");
+        Check(claude.Method == "Claude 구독" && claude.MethodId == CliAccountMethod.ClaudeSubscription, "claude: claude.ai method and its id");
         Check(claude.Summary == "me@example.com · Max · Claude 구독", "claude: summary");
 
         // Claude: signed out.
@@ -41,7 +41,7 @@ internal static class CliAccountVerification
         var org = CliAccountSupport.ParseClaudeStatus(
             """{"loggedIn":true,"authMethod":"console","orgName":"Acme"}""");
         Check(org.Account == "Acme", "claude: org name when no email");
-        Check(org.Method == "Anthropic Console", "claude: console method");
+        Check(org.Method == "Anthropic Console" && org.MethodId == CliAccountMethod.ClaudeConsole, "claude: console method and its id");
         Check(org.CanSignOut, "claude: console can sign out");
 
         // Codex: signed in via ChatGPT with account and plan from JWT claims.
@@ -53,7 +53,7 @@ internal static class CliAccountVerification
         var authJson = JsonSerializer.Serialize(new { tokens = new { id_token = idToken, access_token = "secret" } });
         var codex = CliAccountSupport.ParseCodexStatus("Logged in using ChatGPT\n", authJson);
         Check(codex.LoggedIn == true, "codex: logged in");
-        Check(codex.Method == "ChatGPT", "codex: method");
+        Check(codex.Method == "ChatGPT" && codex.MethodId == CliAccountMethod.CodexChatGpt, "codex: method and its id");
         Check(codex.Account == "dev@example.com", "codex: account from JWT");
         Check(codex.Plan == "Plus", "codex: plan capitalised");
         // Token blindness: the access_token must not appear in any visible field.
@@ -64,7 +64,7 @@ internal static class CliAccountVerification
         Check(CliAccountSupport.ParseCodexStatus("Not logged in", authJson).LoggedIn == false, "codex: signed out");
 
         // Codex: API key method.
-        Check(CliAccountSupport.ParseCodexStatus("Logged in using an API key - sk-***", null).Method == "API 키", "codex: API key method");
+        Check(CliAccountSupport.ParseCodexStatus("Logged in using an API key - sk-***", null).MethodId == CliAccountMethod.CodexApiKey, "codex: API key method id");
 
         // Codex: unrecognised output → unknown.
         Check(CliAccountSupport.ParseCodexStatus("error: boom", null).LoggedIn == null, "codex: unknown on unrecognised output");
@@ -98,7 +98,7 @@ internal static class CliAccountVerification
             var status = CliAccountSupport.GeminiStatus(home, new Dictionary<string, string>());
             Check(status.LoggedIn == true, "gemini: oauth signed in");
             Check(status.Account == "g@example.com", "gemini: account from google_accounts.json");
-            Check(status.Method == "Google 계정", "gemini: oauth method");
+            Check(status.Method == "Google 계정" && status.MethodId == CliAccountMethod.GeminiGoogle, "gemini: oauth method and its id");
 
             // Logout: removes oauth_creds.json, moves active to old list.
             CliAccountSupport.GeminiLogout(home);
@@ -118,7 +118,7 @@ internal static class CliAccountVerification
             File.WriteAllText(Path.Combine(dot, "settings.json"),
                 """{"security":{"auth":{"selectedType":"gemini-api-key"}}}""");
             var keyed = CliAccountSupport.GeminiStatus(home, new Dictionary<string, string> { ["GEMINI_API_KEY"] = "k" });
-            Check(keyed.Method == "Gemini API 키", "gemini: api-key method");
+            Check(keyed.Method == "Gemini API 키" && keyed.MethodId == CliAccountMethod.GeminiApiKey, "gemini: api-key method and its id");
             Check(keyed.LoggedIn == true, "gemini: api-key loggedIn when key present");
             Check(!keyed.CanSignOut, "gemini: api-key cannot sign out");
             // Key value must not appear in any field.

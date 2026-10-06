@@ -12,6 +12,13 @@ public struct RunAttachment: Codable, Sendable, Equatable, Identifiable {
 }
 
 public enum AttachmentSupport {
+    /// The line that points the model at one attached copy. Fixed English on every
+    /// path, whatever the app language: it is prompt text for the CLI, not copy.
+    public static func reference(_ file: PreparedAttachment) -> String {
+        let name = String(data: try! JSONEncoder().encode(file.attachment.name), encoding: .utf8)!
+        let path = String(data: try! JSONEncoder().encode(file.url.path), encoding: .utf8)!
+        return "Attached file \(name): \(path) (read this copy as needed)."
+    }
     public static let maximumCount = 8
     public static let maximumFileBytes = 5 * 1024 * 1024
     public static let maximumTotalBytes = 8 * 1024 * 1024
@@ -19,7 +26,7 @@ public enum AttachmentSupport {
     public static let mediaTypes = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain", "application/octet-stream"]
 
     public static func make(name: String, data: Data) throws -> RunAttachment {
-        guard data.count <= maximumFileBytes else { throw MightyError("파일 하나는 최대 5 MB입니다.") }
+        guard data.count <= maximumFileBytes else { throw MightyError(L("attachments.error.fileTooLarge")) }
         let basename = name.replacingOccurrences(of: "\\", with: "/").split(separator: "/").last.map(String.init) ?? "attachment"
         let clean = String(String.UnicodeScalarView(basename.unicodeScalars.map { $0.properties.generalCategory == .control ? UnicodeScalar(95)! : $0 })).trimmingCharacters(in: .whitespacesAndNewlines)
         var safeName = String((clean.isEmpty || clean == "." || clean == ".." ? "attachment" : clean).prefix(180))
@@ -28,13 +35,13 @@ public enum AttachmentSupport {
         try validate([attachment]); return attachment
     }
     public static func validate(_ attachments: [RunAttachment]) throws {
-        guard attachments.count <= maximumCount, Set(attachments.map(\.id)).count == attachments.count else { throw MightyError("첨부 파일은 서로 다른 ID로 최대 8개까지 보낼 수 있습니다.") }
+        guard attachments.count <= maximumCount, Set(attachments.map(\.id)).count == attachments.count else { throw MightyError(L("attachments.error.tooMany")) }
         var total = 0
         for item in attachments {
-            guard CoreValidation.identifier(item.id), !item.name.isEmpty, item.name.utf16.count <= 180, item.name != ".", item.name != "..", !item.name.contains("/"), !item.name.contains("\\"), !item.name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }), mediaTypes.contains(item.mediaType), item.dataBase64.utf8.count <= ((maximumFileBytes + 2) / 3) * 4, let bytes = Data(base64Encoded: item.dataBase64), bytes.count <= maximumFileBytes, bytes.base64EncodedString() == item.dataBase64 else { throw MightyError("첨부 파일의 이름·형식·크기를 확인하세요. 파일당 최대 5 MB입니다.") }
-            guard sniff(bytes) == item.mediaType else { throw MightyError("첨부 파일 내용과 형식이 일치하지 않습니다.") }
+            guard CoreValidation.identifier(item.id), !item.name.isEmpty, item.name.utf16.count <= 180, item.name != ".", item.name != "..", !item.name.contains("/"), !item.name.contains("\\"), !item.name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }), mediaTypes.contains(item.mediaType), item.dataBase64.utf8.count <= ((maximumFileBytes + 2) / 3) * 4, let bytes = Data(base64Encoded: item.dataBase64), bytes.count <= maximumFileBytes, bytes.base64EncodedString() == item.dataBase64 else { throw MightyError(L("attachments.error.invalid")) }
+            guard sniff(bytes) == item.mediaType else { throw MightyError(L("attachments.error.typeMismatch")) }
             total += bytes.count
-            guard total <= maximumTotalBytes else { throw MightyError("첨부 파일의 합계는 최대 8 MB입니다.") }
+            guard total <= maximumTotalBytes else { throw MightyError(L("attachments.error.totalTooLarge")) }
         }
     }
     public static func sniff(_ data: Data) -> String {
@@ -63,14 +70,14 @@ public final class AttachmentPreparation {
         try AttachmentSupport.validate(attachments)
         guard !attachments.isEmpty else { return }
         var template = Array(parent.appendingPathComponent("mighty-attachments-XXXXXX").path.utf8CString)
-        guard let result = mkdtemp(&template) else { throw MightyError("첨부 파일 임시 폴더를 만들지 못했습니다.") }
+        guard let result = mkdtemp(&template) else { throw MightyError(L("attachments.error.tempFolderCreate")) }
         let root = URL(fileURLWithPath: String(cString: result), isDirectory: true)
         directory = root
         let directoryFD = open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        guard directoryFD >= 0 else { cleanup(); throw MightyError("첨부 파일 임시 폴더를 열지 못했습니다.") }
+        guard directoryFD >= 0 else { cleanup(); throw MightyError(L("attachments.error.tempFolderOpen")) }
         defer { close(directoryFD) }
         do {
-            guard fchmod(directoryFD, 0o700) == 0 else { throw MightyError("첨부 파일 폴더 권한을 설정하지 못했습니다.") }
+            guard fchmod(directoryFD, 0o700) == 0 else { throw MightyError(L("attachments.error.folderPermission")) }
             for (index, item) in attachments.enumerated() {
                 let fixed = ["image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "application/pdf": "pdf", "text/plain": "txt", "application/octet-stream": "bin"]
                 let suffix = URL(fileURLWithPath: item.name).pathExtension.lowercased()
@@ -78,7 +85,7 @@ public final class AttachmentPreparation {
                 let ext = generic && suffix.range(of: "^[a-z0-9]{1,12}$", options: .regularExpression) != nil ? suffix : (fixed[item.mediaType] ?? "bin")
                 let name = "\(index)-\(UUID().uuidString).\(ext)"
                 let fd = openat(directoryFD, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
-                guard fd >= 0 else { throw MightyError("첨부 파일 복사본을 만들지 못했습니다.") }
+                guard fd >= 0 else { throw MightyError(L("attachments.error.copyCreate")) }
                 let bytes = Data(base64Encoded: item.dataBase64)!
                 let written: Bool = bytes.withUnsafeBytes { buffer in
                     guard let base = buffer.baseAddress else { return true }
@@ -92,7 +99,7 @@ public final class AttachmentPreparation {
                     return true
                 }
                 close(fd)
-                guard written else { throw MightyError("첨부 파일 복사본을 저장하지 못했습니다.") }
+                guard written else { throw MightyError(L("attachments.error.copyWrite")) }
                 files.append(PreparedAttachment(attachment: item, url: root.appendingPathComponent(name)))
             }
         } catch { cleanup(); throw error }
@@ -115,7 +122,7 @@ public struct ProviderInput {
     }
     public static func prepare(_ request: StartRunRequest, pluginDirectory: URL, attachments: AttachmentPreparation, allowPermissionPrompts: Bool = false, paneMCPBinding: PaneMCPBinding? = nil, codexHome: URL? = nil) throws -> ProviderInput {
         guard request.provider != "codex" || request.settings.permissionMode != "onRequest" else {
-            throw MightyError("Codex 승인 요청의 입력과 첨부는 app-server 연결로 전송해야 합니다.")
+            throw MightyError(L("attachments.error.codexOnRequest"))
         }
         var arguments = try ProviderService.arguments(request, pluginDirectory: pluginDirectory, allowPermissionPrompts: allowPermissionPrompts, paneMCPBinding: paneMCPBinding, codexHome: codexHome)
         guard !request.attachments.isEmpty else {
@@ -124,19 +131,14 @@ public struct ProviderInput {
             }
             return ProviderInput(arguments: arguments, standardInput: Data(request.input.utf8))
         }
-        guard attachments.files.map(\.attachment) == request.attachments, let directory = attachments.directory else { throw MightyError("첨부 파일 준비 상태가 올바르지 않습니다.") }
-        let prompt = request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "첨부한 파일을 확인해 주세요." : request.input
-        func reference(_ file: PreparedAttachment) -> String {
-            let name = String(data: try! JSONEncoder().encode(file.attachment.name), encoding: .utf8)!
-            let path = String(data: try! JSONEncoder().encode(file.url.path), encoding: .utf8)!
-            return "Attached file \(name): \(path) (read this copy as needed)."
-        }
+        guard attachments.files.map(\.attachment) == request.attachments, let directory = attachments.directory else { throw MightyError(L("attachments.error.notPrepared")) }
+        let prompt = request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L("attachments.prompt.default") : request.input
         switch request.provider {
         case "claude":
             if !allowPermissionPrompts { arguments += ["--input-format", "stream-json"] }
             let generic = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") && $0.attachment.mediaType != "application/pdf" }
             if !generic.isEmpty { arguments += ["--add-dir", directory.path] }
-            var content: [[String: Any]] = [["type": "text", "text": ([prompt] + generic.map(reference)).joined(separator: "\n\n")]]
+            var content: [[String: Any]] = [["type": "text", "text": ([prompt] + generic.map(AttachmentSupport.reference)).joined(separator: "\n\n")]]
             for file in attachments.files where !generic.contains(where: { $0.attachment.id == file.attachment.id }) {
                 content.append(["type": file.attachment.mediaType == "application/pdf" ? "document" : "image", "source": ["type": "base64", "media_type": file.attachment.mediaType, "data": file.attachment.dataBase64]])
             }
@@ -145,7 +147,7 @@ public struct ProviderInput {
             let images = attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }
             let extra = images.flatMap { ["--image", $0.url.path] }
             arguments.insert(contentsOf: extra, at: max(0, arguments.count - 1))
-            let references = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map(reference)
+            let references = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map(AttachmentSupport.reference)
             return ProviderInput(arguments: arguments, standardInput: Data(([prompt] + references).joined(separator: "\n\n").utf8))
         case "gemini":
             arguments += ["--include-directories", directory.path]
@@ -154,10 +156,10 @@ public struct ProviderInput {
                 // stripped on Windows. Escape delimiters in this Mac path.
                 let delimiters = CharacterSet(charactersIn: " \t\n\r,;!?()[]{}\"'\\|*?$`#&<>~")
                 let path = file.url.path.unicodeScalars.map { delimiters.contains($0) ? "\\\($0)" : String($0) }.joined()
-                return "@\(path)\n\(reference(file))"
+                return "@\(path)\n\(AttachmentSupport.reference(file))"
             }
             return ProviderInput(arguments: arguments, standardInput: Data(([prompt] + references).joined(separator: "\n\n").utf8))
-        default: throw MightyError("첨부 파일을 지원하지 않는 실행기입니다.")
+        default: throw MightyError(L("attachments.error.unsupportedProvider"))
         }
     }
 }

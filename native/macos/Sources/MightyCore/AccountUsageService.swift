@@ -90,12 +90,12 @@ public actor AccountUsageService {
                 let providers = ProviderService(environment: environment)
                 let command = await providers.command(provider: provider)
                 await providers.shutdown()
-                guard let command else { throw AccountUsageFailure.unavailable("Codex CLI를 설치하고 로그인하세요.") }
+                guard let command else { throw AccountUsageFailure.unavailable(L("windows.accountUsage.detailCodexNotInstalled")) }
                 return try await CodexAccountProbe.read(command: command, environment: environment)
             }
             throw AccountUsageFailure.unavailable(provider == "gemini"
-                ? "Gemini CLI는 이 연결 방식에서 계정 한도를 제공하지 않습니다. CLI의 /stats에서 확인하세요."
-                : "지원하지 않는 계정입니다.")
+                ? L("windows.accountUsage.detailGeminiUnavailable")
+                : L("windows.accountUsage.detailUnsupportedProvider"))
         }
         now = { Date() }
     }
@@ -110,7 +110,7 @@ public actor AccountUsageService {
     /// `interactive` marks a read the user asked for; only then may the login
     /// keychain show its access dialog, and a pending permission state retries.
     public func read(provider: String, force: Bool = false, interactive: Bool = false) async -> AccountUsageSnapshot {
-        guard !closing, !Task.isCancelled else { return AccountUsageSnapshot(provider: provider, status: "cancelled", detail: "계정 조회를 종료했습니다.") }
+        guard !closing, !Task.isCancelled else { return AccountUsageSnapshot(provider: provider, status: "cancelled", detail: L("windows.accountUsage.detailShutdown")) }
         if let task = tasks[provider] { return await task.value }
         if interactive, cache[provider]?.status == "permission" { nextRead.removeValue(forKey: provider) }
         let instant = now()
@@ -153,26 +153,26 @@ public actor AccountUsageService {
         nextRead[value.provider] = now().addingTimeInterval(delay)
     }
     private func failed(provider: String, error: Error, at date: Date) -> AccountUsageSnapshot {
-        if Task.isCancelled || error is CancellationError || closing { return AccountUsageSnapshot(provider: provider, status: "cancelled", detail: "계정 조회를 취소했습니다.") }
+        if Task.isCancelled || error is CancellationError || closing { return AccountUsageSnapshot(provider: provider, status: "cancelled", detail: L("windows.accountUsage.detailCancelled")) }
         var delay: TimeInterval = 60
-        var detail = "계정 사용량을 갱신하지 못했습니다. 잠시 후 다시 확인하세요."
+        var detail = L("windows.accountUsage.detailRefreshFailed")
         var preserve = true
         var status: String?
         if let failure = error as? AccountUsageFailure {
             switch failure {
             case .unavailable(let reason): detail = reason; preserve = false
-            case .authentication: detail = "CLI 로그인을 다시 확인하세요. 계정 한도 조회 권한이 없거나 로그인이 만료되었습니다."; preserve = false
-            case .rateLimited(let seconds): delay = min(86400, max(60, seconds)); detail = "조회가 제한되었습니다. 잠시 후 자동으로 다시 확인합니다."
+            case .authentication: detail = L("windows.accountUsage.detailAuthentication"); preserve = false
+            case .rateLimited(let seconds): delay = min(86400, max(60, seconds)); detail = L("windows.accountUsage.detailRateLimited")
             case .keychainPermission:
                 // Automatic polling must stay silent; the user grants access by refreshing.
                 delay = 3600; preserve = false; status = "permission"
-                detail = "macOS Keychain의 Claude Code 로그인 정보에 접근해야 계정 한도를 읽을 수 있습니다. 새로고침을 누르면 접근 허용 창이 열립니다. \"항상 허용\"을 선택하면 이 빌드에서는 다시 묻지 않습니다."
+                detail = L("usage.keychain.accessNeeded")
             case .invalidResponse, .network: break
             }
         }
         var value = preserve ? cache[provider] ?? AccountUsageSnapshot(provider: provider) : AccountUsageSnapshot(provider: provider)
         value.status = status ?? (value.windows.isEmpty ? (preserve ? "error" : "unavailable") : "stale")
-        value.detail = value.windows.isEmpty ? detail : detail + " 마지막으로 확인한 값입니다."
+        value.detail = value.windows.isEmpty ? detail : detail + L("windows.accountUsage.detailLastKnownSuffix")
         cache[provider] = value; nextRead[provider] = now().addingTimeInterval(delay)
         return value
     }
@@ -199,7 +199,7 @@ public actor AccountUsageService {
     }
 
     static func mapCodex(account: [String: Any], limits: [String: Any]) throws -> AccountUsageSnapshot {
-        guard let account = account["account"] as? [String: Any], account["type"] as? String == "chatgpt" else { throw AccountUsageFailure.unavailable("ChatGPT로 Codex CLI에 로그인하면 계정 한도를 확인할 수 있습니다.") }
+        guard let account = account["account"] as? [String: Any], account["type"] as? String == "chatgpt" else { throw AccountUsageFailure.unavailable(L("windows.accountUsage.detailCodexNeedsChatGPT")) }
         let buckets = limits["rateLimitsByLimitId"] as? [String: Any]
         guard let primary = buckets?["codex"] as? [String: Any] ?? limits["rateLimits"] as? [String: Any] else { throw AccountUsageFailure.invalidResponse }
         var windows: [AccountUsageWindow] = []
@@ -210,7 +210,7 @@ public actor AccountUsageService {
             let windowKind = mins.map { $0 == 10080 ? "weekly" : $0 == 300 ? "session" : "\($0)m" } ?? kind
             windows.append(AccountUsageWindow(kind: windowKind, usedPercent: used, resetsAt: reset(row["resetsAt"]), windowMinutes: mins))
         }
-        return AccountUsageSnapshot(provider: "codex", accountLabel: text(account["email"]), plan: text(primary["planType"]) ?? text(account["planType"]), windows: windows, status: windows.isEmpty ? "unavailable" : "available", detail: windows.isEmpty ? "이 계정에서 사용량 한도 창을 제공하지 않습니다." : "Codex 계정 한도")
+        return AccountUsageSnapshot(provider: "codex", accountLabel: text(account["email"]), plan: text(primary["planType"]) ?? text(account["planType"]), windows: windows, status: windows.isEmpty ? "unavailable" : "available", detail: windows.isEmpty ? L("windows.accountUsage.detailCodexNoWindows") : L("windows.accountUsage.detailCodex"))
     }
 
     static func mapClaude(_ body: [String: Any], profile: [String: Any] = [:], plan: String? = nil) -> AccountUsageSnapshot {
@@ -221,10 +221,10 @@ public actor AccountUsageService {
         }
         let account = profile["account"] as? [String: Any]
         let organization = profile["organization"] as? [String: Any]
-        return AccountUsageSnapshot(provider: "claude", accountLabel: text(account?["email"]), plan: text(organization?["rate_limit_tier"]) ?? text(plan), windows: windows, status: windows.isEmpty ? "unavailable" : "available", detail: windows.isEmpty ? "이 Claude 계정에서 구독 한도를 제공하지 않습니다." : "Claude 계정 한도")
+        return AccountUsageSnapshot(provider: "claude", accountLabel: text(account?["email"]), plan: text(organization?["rate_limit_tier"]) ?? text(plan), windows: windows, status: windows.isEmpty ? "unavailable" : "available", detail: windows.isEmpty ? L("windows.accountUsage.detailClaudeNoWindows") : L("windows.accountUsage.detailClaude"))
     }
 
-    /// The 리셋권 read runs on this same schedule — no extra polling — and a
+    /// The reset-pass read runs on this same schedule — no extra polling — and a
     /// failure of it never changes the base usage windows or status.
     static func claude(environment: [String: String], load: (@Sendable () throws -> ClaudeQuotaCredential?)? = nil,
                        http: @escaping @Sendable (URLRequest) async throws -> AccountUsageHTTPResponse = accountUsageHTTP,
@@ -234,7 +234,7 @@ public actor AccountUsageService {
                        shapeLog: AccountUsageShapeLog? = nil) async throws -> AccountUsageSnapshot {
         // Never forward a custom provider's credentials to the production endpoint.
         for key in ["CLAUDE_CODE_CUSTOM_OAUTH_URL", "CLAUDE_LOCAL_OAUTH_API_BASE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"] {
-            if let value = environment[key], !value.isEmpty, !["0", "false"].contains(value.lowercased()) { throw AccountUsageFailure.unavailable("사용자 지정 인증의 계정 한도는 CLI에서 확인하세요.") }
+            if let value = environment[key], !value.isEmpty, !["0", "false"].contains(value.lowercased()) { throw AccountUsageFailure.unavailable(L("windows.accountUsage.detailCustomAuthentication")) }
         }
         guard let credentials = try (load ?? { try ClaudeQuotaCredentials.read(environment: environment, interactive: interactive) })() else { throw AccountUsageFailure.authentication }
         // The CLI gives the entitlement reads a 5 second budget; the base
@@ -431,7 +431,7 @@ private final class CodexAccountProbe: @unchecked Sendable {
             } else if expected == 2 {
                 account = payload
                 guard let value = payload["account"] as? [String: Any], value["type"] as? String == "chatgpt" else {
-                    finish(.failure(.unavailable("ChatGPT로 Codex CLI에 로그인하면 계정 한도를 확인할 수 있습니다."))); return
+                    finish(.failure(.unavailable(L("windows.accountUsage.detailCodexNeedsChatGPT")))); return
                 }
                 expected = 3; send(["id": 3, "method": "account/rateLimits/read"])
             } else {

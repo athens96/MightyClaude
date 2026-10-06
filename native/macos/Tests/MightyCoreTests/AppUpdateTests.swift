@@ -188,19 +188,19 @@ import Testing
         #expect(script.contains("DESTINATION='" + root.path + "/Apps (it'\\''s here)/MightyClaude.app'"))
         #expect(!script.contains("open -n") && AppUpdateService.installScript(stagedApp: staged, destination: installed, pid: 1).contains("open -n \"$DESTINATION\""))
         // Run the real helper: the pid is gone, so it proceeds at once. Its own last word is the
-        // completion signal: "설치 완료" once the swap is done, or one of its failure lines.
+        // completion signal: "Installed: " once the swap is done, or one of its failure lines.
         // The swap (a fixed two-second pause, two ditto copies, two lsregister calls) takes a few
         // seconds here but far longer on a loaded three-core CI runner, so the bound is generous;
         // a pass returns as soon as the line appears.
         let service = AppUpdateService(directory: root.appendingPathComponent("updates"), allowsFileURLs: true)
         try await service.launchInstaller(script: script, near: package)
         let log = root.appendingPathComponent("updates/0.2.0/install.log")
-        let failures = ["건너뜁니다", "설치할 앱이 없습니다", "복사하지 못했습니다", "백업하지 못했습니다", "되돌립니다"]
+        let failures = ["skipping the update", "No app to install", "Could not copy", "Could not back up", "restoring the previous version"]
         var finished = false, failed = false, text = ""
         let deadline = ContinuousClock.now + .seconds(240)
         while ContinuousClock.now < deadline {
             text = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
-            if text.contains("설치 완료") { finished = true; break }
+            if text.contains("Installed: ") { finished = true; break }
             if failures.contains(where: text.contains) { failed = true; break }
             try await Task.sleep(for: .milliseconds(100))
         }

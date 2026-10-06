@@ -88,14 +88,14 @@ final class ClaudePermissionChannel {
 
     func initializationTimedOut() {
         guard !closed, !initialized else { return }
-        failClosed("Claude 승인 채널 초기화 시간이 초과되었습니다.")
+        failClosed(L("claude.channel.initTimeout"))
     }
 
     func receive(_ data: Data) {
         guard !closed, let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = envelope["type"] as? String else { return }
         if type == "control_response", let response = envelope["response"] as? [String: Any], response["request_id"] as? String == initializationId {
             guard !initialized else { return }
-            guard response["subtype"] as? String == "success" else { failClosed("Claude 승인 채널을 초기화하지 못했습니다."); return }
+            guard response["subtype"] as? String == "success" else { failClosed(L("claude.channel.initFailed")); return }
             initialized = true
             // Some CLIs replay pending asks in initialize as well as live frames.
             for request in response["pending_permission_requests"] as? [[String: Any]] ?? [] {
@@ -113,20 +113,20 @@ final class ClaudePermissionChannel {
 
     private func receiveRequest(_ envelope: [String: Any]) {
         guard !closed else { return }
-        guard let id = envelope["request_id"] as? String, CoreValidation.identifier(id), let request = envelope["request"] as? [String: Any], let subtype = request["subtype"] as? String else { failClosed("Claude 제어 요청 형식이 올바르지 않습니다."); return }
+        guard let id = envelope["request_id"] as? String, CoreValidation.identifier(id), let request = envelope["request"] as? [String: Any], let subtype = request["subtype"] as? String else { failClosed(L("claude.channel.badRequest")); return }
         guard seen.insert(id).inserted else { return }
-        guard seen.count <= 2_048 else { failClosed("한 실행의 Claude 승인 요청 수 제한을 초과했습니다."); return }
+        guard seen.count <= 2_048 else { failClosed(L("claude.channel.tooManyRequests")); return }
         // No dialog kinds are declared in initialize. A host must not settle a
         // future dialog kind it cannot render; the CLI owns its deadline.
-        if subtype == "request_user_dialog" { warning("현재 앱에서 표시할 수 없는 Claude 대화상자 요청입니다. 실행을 중지할 수 있습니다."); return }
-        if subtype == "elicitation" { success(id, result: ["action": "decline"]); warning("현재 앱에서 지원하지 않는 MCP 입력 요청을 거부했습니다."); return }
+        if subtype == "request_user_dialog" { warning(L("claude.channel.dialogUnsupported")); return }
+        if subtype == "elicitation" { success(id, result: ["action": "decline"]); warning(L("claude.channel.elicitationDeclined")); return }
         guard subtype == "can_use_tool" else { error(id, message: "This host does not support this control request."); return }
         guard let toolName = request["tool_name"] as? String, !toolName.isEmpty, toolName.utf8.count <= 256,
               let toolUseId = request["tool_use_id"] as? String, CoreValidation.identifier(toolUseId),
               let input = request["input"] as? [String: Any], JSONSerialization.isValidJSONObject(input) else {
-            error(id, message: "Invalid tool permission request."); warning("형식이 올바르지 않은 도구 승인 요청을 거부했습니다."); return
+            error(id, message: "Invalid tool permission request."); warning(L("claude.channel.badToolRequest")); return
         }
-        guard pending.count < Self.maximumPending else { deny(id, toolUseId: toolUseId, message: "Too many pending permission requests."); warning("대기 중인 도구 승인 요청이 16개를 넘어 추가 요청을 거부했습니다."); return }
+        guard pending.count < Self.maximumPending else { deny(id, toolUseId: toolUseId, message: "Too many pending permission requests."); warning(L("claude.channel.tooManyPending")); return }
         guard let display = try? Self.inputDisplay(input), display.utf8.count <= Self.maximumInputBytes else {
             if toolName == ClaudePlanMode.toolName {
                 // A plan the card cannot show whole is never approvable; Claude is asked for a shorter one.
@@ -135,7 +135,7 @@ final class ClaudePermissionChannel {
                 return
             }
             deny(id, toolUseId: toolUseId, message: "Tool input exceeds the host's complete-display limit; permission denied.")
-            warning("도구 인자가 64 KiB 표시 제한을 넘어 승인하지 않았습니다. 전체 내용을 표시할 수 없는 요청은 허용하지 않습니다."); return
+            warning(L("claude.channel.inputTooLarge")); return
         }
         let interaction = request["requires_user_interaction"] as? Bool == true || toolName == "AskUserQuestion"
         let details = [request["title"] as? String, request["description"] as? String, request["decision_reason"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
@@ -144,8 +144,8 @@ final class ClaudePermissionChannel {
         let canAnswerQuestions = toolName == "AskUserQuestion" && completeMetadata && UserQuestionnaire.parse(inputJSON: display) != nil
         let canAnswerPlan = toolName == ClaudePlanMode.toolName && completeMetadata && ClaudePlanMode.plan(input: input) != nil
         var reason = ActivitySupport.clean(details, maximumBytes: 8_192)
-        if interaction && !canAnswerQuestions && !canAnswerPlan { reason += (reason.isEmpty ? "" : "\n\n") + "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다." }
-        if !completeMetadata { reason += "\n\n승인 설명이 표시 한도를 넘어 허용할 수 없습니다." }
+        if interaction && !canAnswerQuestions && !canAnswerPlan { reason += (reason.isEmpty ? "" : "\n\n") + L("claude.channel.needsInteraction") }
+        if !completeMetadata { reason += "\n\n" + L("claude.channel.metadataTooLarge") }
         let value = ToolPermissionRequest(id: id, runId: runId, toolUseId: toolUseId,
             toolName: ActivitySupport.clean(toolName, maximumBytes: 256, singleLine: true), inputJSON: display,
             summary: ActivitySupport.summary(tool: toolName, input: input), reason: reason.isEmpty ? nil : reason,
@@ -156,8 +156,8 @@ final class ClaudePermissionChannel {
     }
 
     func respond(requestId: String, allow: Bool) throws {
-        guard !closed, let request = pending[requestId] else { throw MightyError("이미 처리되었거나 종료된 승인 요청입니다.") }
-        guard !allow || request.display.canAllow else { throw MightyError("이 요청에는 별도의 입력 화면이 필요하거나 전체 내용을 표시할 수 없어 허용할 수 없습니다.") }
+        guard !closed, let request = pending[requestId] else { throw MightyError(L("permission.error.requestGone")) }
+        guard !allow || request.display.canAllow else { throw MightyError(L("claude.channel.cannotAllow")) }
         // Removal precedes callbacks/writes: even a reentrant second click has
         // no request left to approve. updatedInput is the original object.
         pending.removeValue(forKey: requestId)
@@ -170,9 +170,9 @@ final class ClaudePermissionChannel {
     }
 
     func answerQuestions(requestId: String, answers: [String: UserQuestionAnswer]) throws {
-        guard !closed, let request = pending[requestId] else { throw MightyError("이미 처리되었거나 종료된 선택 요청입니다.") }
+        guard !closed, let request = pending[requestId] else { throw MightyError(L("permission.error.questionGone")) }
         guard request.display.canAnswerQuestions, let questionnaire = request.display.questionnaire else {
-            throw MightyError("이 요청은 선택 답변을 지원하지 않습니다.")
+            throw MightyError(L("permission.error.noAnswers"))
         }
         let validated = try questionnaire.validatedAnswers(answers)
         var input = request.input

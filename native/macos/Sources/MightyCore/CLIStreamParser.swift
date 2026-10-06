@@ -112,7 +112,7 @@ public final class CLIStreamParser {
     }
     /// A line the runner already cut and parsed (`AgentOutputLines`).
     func receive(_ line: AgentOutputLine) { consume(line) }
-    func lineTooLong() { log("system", "너무 긴 출력 한 줄을 생략했습니다.") }
+    func lineTooLong() { log("system", L("run.notice.lineTooLong")) }
     /// A Codex app-server event the approval channel mapped to the exec shape.
     func receive(object: [String: Any]) { consume(data: nil, object: object) }
     /// Lets the approval channel's mapped events use the pictures their frame
@@ -123,7 +123,7 @@ public final class CLIStreamParser {
     }
     private func flushText() {
         if !pendingText.isEmpty { log("assistant", pendingText) }
-        if pendingTextTruncated { log("system", "응답 한 메시지가 128 KiB를 넘어 뒷부분을 생략했습니다.") }
+        if pendingTextTruncated { log("system", L("run.notice.messageTruncated")) }
         pendingText = ""; pendingTextTruncated = false
     }
     private func errorText(_ value: Any?, fallback: String) -> String {
@@ -283,10 +283,10 @@ public final class CLIStreamParser {
         graphTracker?.receiveMod(value)
         usageTracker.consumeMod(value)
         if value.event == "session.usage" { return }
-        if value.event == "turn.start" { turn("Claude 응답 생성 중"); return }
+        if value.event == "turn.start" { turn(L("run.turn.generating", ["name": "Claude"])); return }
         if value.event == "turn.complete" {
             // A subagent or model turn ending is not the CLI process ending.
-            if value.agentId == nil { turn("Claude 응답 마무리 중") }
+            if value.agentId == nil { turn(L("run.turn.finishing", ["name": "Claude"])) }
             return
         }
         guard let rawID = value.toolUseId, let name = value.tool else { return }
@@ -312,7 +312,7 @@ public final class CLIStreamParser {
         for id in activityOrder {
             guard var value = toolActivities[id], ["running", "waiting"].contains(value.state) else { continue }
             value.state = stopped ? "stopped" : "error"
-            value.output = value.output ?? "도구 결과를 받기 전에 실행이 종료되었습니다."
+            value.output = value.output ?? L("run.tool.endedBeforeResult")
             value.durationMs = finishDuration(id: id, previous: value)
             toolActivities[id] = value
             if graphTracker?.activity(value) != true { activity?(value) }
@@ -373,7 +373,7 @@ public final class CLIStreamParser {
             }
             if !claudeChild { resumeIfValid(value["session_id"]) }
             if type == "system", value["subtype"] as? String == "permission_denied" {
-                tool(id: value["tool_use_id"] as? String, name: value["tool_name"] as? String, state: "error", output: errorText(value["message"], fallback: "Claude 권한 규칙 또는 선택한 모드에서 거부했습니다."))
+                tool(id: value["tool_use_id"] as? String, name: value["tool_name"] as? String, state: "error", output: errorText(value["message"], fallback: L("run.tool.claudeDenied")))
             } else if type == "system", value["subtype"] as? String == "session_state_changed" {
                 if value["state"] as? String == "idle" { settled?() }
             } else if type == "system", value["subtype"] as? String == "compact_boundary" {
@@ -404,16 +404,16 @@ public final class CLIStreamParser {
                 } else if value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error") {
                     failed = true
                     let errors = (value["errors"] as? [String])?.joined(separator: "\n")
-                    log("error", errors?.isEmpty == false ? errors! : errorText(value["result"], fallback: "Claude 실행 중 오류가 발생했습니다."))
+                    log("error", errors?.isEmpty == false ? errors! : errorText(value["result"], fallback: L("run.error.providerRunFailed", ["name": "Claude"])))
                 } else if !assistantSeen, let text = value["result"] as? String { emitUnique(text, id: "result") }
                 if let background, let work = backgroundTracker.turnEnded() { background(work) }
-                turn("Claude 응답 마무리 중")
+                turn(L("run.turn.finishing", ["name": "Claude"]))
                 result?()
             }
         case "codex":
             if type == "thread.started" { resumeIfValid(value["thread_id"]) }
-            if type == "turn.started" { turn("Codex 응답 생성 중") }
-            if type == "turn.completed" { turn("Codex 응답 마무리 중") }
+            if type == "turn.started" { turn(L("run.turn.generating", ["name": "Codex"])) }
+            if type == "turn.completed" { turn(L("run.turn.finishing", ["name": "Codex"])) }
             if ["item.started", "item.updated", "item.completed"].contains(type), let item = value["item"] as? [String: Any], let itemType = item["type"] as? String {
                 let ended = type == "item.completed"
                 let state = item["status"] as? String == "failed" ? "error" : ended ? "completed" : "running"
@@ -454,14 +454,14 @@ public final class CLIStreamParser {
             }
             if type == "turn.failed" || type == "error" {
                 failed = true
-                let text = errorText(value["error"] ?? value["message"], fallback: "Codex 실행 중 오류가 발생했습니다.")
+                let text = errorText(value["error"] ?? value["message"], fallback: L("run.error.providerRunFailed", ["name": "Codex"]))
                 // A "Reconnecting…" notice is not the run's failure; it keeps the previous one.
                 if type == "turn.failed" || !CLIAuthFailure.isCodexRetryNotice(text) { authFailure = CLIAuthFailure.codex(text: text) }
                 log("error", text)
             }
             if type == "turn.completed" { authFailure = false }
         case "gemini":
-            if type == "init" { resumeIfValid(value["session_id"]); turn("Gemini 응답 생성 중") }
+            if type == "init" { resumeIfValid(value["session_id"]); turn(L("run.turn.generating", ["name": "Gemini"])) }
             if type == "message", value["role"] as? String == "assistant", let text = value["content"] as? String {
                 if value["delta"] as? Bool == true {
                     let remaining = max(0, 131_072 - pendingText.utf8.count)
@@ -473,30 +473,30 @@ public final class CLIStreamParser {
                 flushText()
                 if let name = value["tool_name"] as? String {
                     tool(id: value["tool_id"] as? String, name: name, input: value["parameters"], state: "running")
-                    if activity == nil { log("system", "도구 실행 · \(name.prefix(160))") }
+                    if activity == nil { log("system", L("run.tool.started", ["name": String(name.prefix(160))])) }
                 }
             } else if type == "tool_result" {
                 flushText()
                 let failed = value["status"] as? String == "error"
-                tool(id: value["tool_id"] as? String, state: failed ? "error" : "completed", output: failed ? errorText(value["error"], fallback: "Gemini 도구 실행이 실패했습니다.") : value["output"] as? String)
+                tool(id: value["tool_id"] as? String, state: failed ? "error" : "completed", output: failed ? errorText(value["error"], fallback: L("run.tool.geminiFailed")) : value["output"] as? String)
                 if activity == nil {
                     if let text = value["output"] as? String, !text.isEmpty { log("output", text) }
-                    if failed { log("system", errorText(value["error"], fallback: "Gemini 도구 실행이 실패했습니다.")) }
+                    if failed { log("system", errorText(value["error"], fallback: L("run.tool.geminiFailed"))) }
                 }
             } else if type == "error" {
                 flushText(); let warning = value["severity"] as? String == "warning"
-                let text = errorText(value["message"], fallback: "Gemini 실행 중 오류가 발생했습니다.")
+                let text = errorText(value["message"], fallback: L("run.error.providerRunFailed", ["name": "Gemini"]))
                 if !warning { failed = true; authFailure = CLIAuthFailure.gemini(text: text) }
                 log(warning ? "system" : "error", text)
             } else if type == "result" {
                 flushText()
                 if value["status"] as? String == "error" {
                     failed = true
-                    let text = errorText(value["error"], fallback: "Gemini 실행 중 오류가 발생했습니다.")
+                    let text = errorText(value["error"], fallback: L("run.error.providerRunFailed", ["name": "Gemini"]))
                     authFailure = CLIAuthFailure.gemini(text: text)
                     log("error", text)
                 } else { authFailure = false }
-                turn("Gemini 응답 마무리 중")
+                turn(L("run.turn.finishing", ["name": "Gemini"]))
             }
         default: break
         }

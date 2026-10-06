@@ -104,11 +104,22 @@ struct CLIAuthFailureTests {
     @Test func statusOnlyRulesOutMethodsASignInCannotRenew() {
         // A dropped sign-in often still reads as signed in, or cannot be read.
         #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "claude", loggedIn: false)))
-        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "claude", loggedIn: true, method: "Claude 구독")))
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "claude", loggedIn: true, method: "Claude subscription", methodId: CLIAccountMethod.claudeSubscription)))
         #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "claude", loggedIn: nil, detail: "timeout")))
         #expect(CLIAuthFailure.signInCanFix(CLIAccountSupport.parseCodexStatus(text: "Logged in using ChatGPT", authJSON: nil)))
         #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "codex", installed: false, loggedIn: false)))
         #expect(!CLIAuthFailure.signInCanFix(CLIAccountSupport.parseCodexStatus(text: "Logged in using an API key - sk-***", authJSON: nil)))
+        // The decision reads the language-free id, never the displayed label.
+        for language in [AppLanguage.ko, .en] {
+            LocaleOverride.$language.withValue(language) {
+                let keyed = CLIAccountSupport.parseCodexStatus(text: "Logged in using an API key - sk-***", authJSON: nil)
+                #expect(keyed.methodId == CLIAccountMethod.codexAPIKey && !CLIAuthFailure.signInCanFix(keyed))
+            }
+        }
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "codex", loggedIn: true, method: "any label", methodId: CLIAccountMethod.codexAPIKey)))
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "codex", loggedIn: true, method: CLIAccountSupport.codexAPIKeyMethod, methodId: CLIAccountMethod.codexChatGPT)))
+        #expect(CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Google account", methodId: CLIAccountMethod.geminiGoogle)))
+        #expect(!CLIAuthFailure.signInCanFix(CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiVertex)))
         for json in [#"{"loggedIn":true,"authMethod":"third_party","apiProvider":"bedrock"}"#, #"{"loggedIn":true,"apiProvider":"vertex"}"#,
                      #"{"loggedIn":true,"apiProvider":"foundry"}"#, #"{"loggedIn":true,"authMethod":"api_key"}"#] {
             #expect(!CLIAuthFailure.signInCanFix(CLIAccountSupport.parseClaudeStatus(Data(json.utf8))), "\(json)")
@@ -251,7 +262,7 @@ struct CLIGeminiLoginTests {
         try Data(#"{"fixture":true}"#.utf8).write(to: url)
         try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
     }
-    private let google = CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod)
+    private let google = CLIAccountStatus(provider: "gemini", loggedIn: true, method: CLIAccountSupport.geminiGoogleMethod, methodId: CLIAccountMethod.geminiGoogle)
 
     @Test func aNewSignInIsTheCredentialsFileAppearingOrRewrittenAfterTheTerminalOpened() throws {
         let home = try home(); defer { try? FileManager.default.removeItem(at: home) }
@@ -268,7 +279,7 @@ struct CLIGeminiLoginTests {
         #expect(CLIGeminiLogin.signedIn(since: stamp, stamp: CLIGeminiLogin.credentialsStamp(home: home), status: google))
         // The status must read as a Google sign-in, not a key or Vertex, and must be signed in.
         let later = CLIGeminiLogin.credentialsStamp(home: home)
-        #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: later, status: CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Gemini API 키")))
+        #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: later, status: CLIAccountStatus(provider: "gemini", loggedIn: true, method: "Gemini API key", methodId: CLIAccountMethod.geminiAPIKey)))
         #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: later, status: CLIAccountStatus(provider: "gemini", loggedIn: false)))
         #expect(!CLIGeminiLogin.signedIn(since: stamp, stamp: nil, status: google))
         // The status read from the same files agrees.
@@ -299,7 +310,7 @@ struct CLIGeminiLoginTests {
         try write(home, at: Date())
         let outcome = await task.value
         guard case .loggedIn(let value) = outcome else { Issue.record("expected loggedIn, got \(outcome)"); return }
-        #expect(value.method == CLIAccountSupport.geminiGoogleMethod)
+        #expect(value.methodId == CLIAccountMethod.geminiGoogle)
         let cancelled = Task { await CLIGeminiLogin.wait(baseline: nil, stamp: { nil }, status: status, isOpen: { true }, interval: 1, limit: 20, tick: 0.02) }
         cancelled.cancel()
         #expect(await cancelled.value == .cancelled)

@@ -40,24 +40,24 @@ final class NativeChildProcess: @unchecked Sendable {
     init(executable: URL, arguments: [String], environment: [String: String], cwd: URL,
          stdout: @escaping @Sendable (Data) -> Void, stderr: @escaping @Sendable (Data) -> Void,
          exited: @escaping @Sendable (Int32) -> Void) throws {
-        guard executable.isFileURL, cwd.isFileURL, ([executable.path, cwd.path] + arguments + environment.map { $0.key + "=" + $0.value }).allSatisfy({ !$0.contains("\0") }) else { throw MightyError("프로세스 실행 경로 또는 인자가 올바르지 않습니다.") }
+        guard executable.isFileURL, cwd.isFileURL, ([executable.path, cwd.path] + arguments + environment.map { $0.key + "=" + $0.value }).allSatisfy({ !$0.contains("\0") }) else { throw MightyError(L("process.error.badArguments")) }
         var allFDs: [Int32] = []
         func makePipe() throws -> [Int32] {
             var fds: [Int32] = [-1, -1]
-            guard Darwin.pipe(&fds) == 0 else { throw MightyError("프로세스 파이프를 만들지 못했습니다.") }
+            guard Darwin.pipe(&fds) == 0 else { throw MightyError(L("process.error.pipeCreate")) }
             for index in fds.indices {
                 if fds[index] < 3 {
                     let replacement = fcntl(fds[index], F_DUPFD_CLOEXEC, 3)
                     Darwin.close(fds[index]); fds[index] = replacement
                 }
-                guard fds[index] >= 3 else { for fd in fds where fd >= 0 { Darwin.close(fd) }; throw MightyError("프로세스 파이프를 열지 못했습니다.") }
+                guard fds[index] >= 3 else { for fd in fds where fd >= 0 { Darwin.close(fd) }; throw MightyError(L("process.error.pipeOpen")) }
                 _ = fcntl(fds[index], F_SETFD, FD_CLOEXEC)
             }
             allFDs += fds; return fds
         }
         var actions: posix_spawn_file_actions_t?
         var attributes: posix_spawnattr_t?
-        guard posix_spawn_file_actions_init(&actions) == 0, posix_spawnattr_init(&attributes) == 0 else { throw MightyError("프로세스 실행 속성을 만들지 못했습니다.") }
+        guard posix_spawn_file_actions_init(&actions) == 0, posix_spawnattr_init(&attributes) == 0 else { throw MightyError(L("process.error.spawnAttributes")) }
         defer { posix_spawn_file_actions_destroy(&actions); posix_spawnattr_destroy(&attributes) }
         do {
             let input = try makePipe(); let output = try makePipe(); let errors = try makePipe()
@@ -72,13 +72,13 @@ final class NativeChildProcess: @unchecked Sendable {
             code |= posix_spawnattr_setsigmask(&attributes, &emptySignals)
             code |= posix_spawnattr_setsigdefault(&attributes, &defaultSignals)
             code |= posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_CLOEXEC_DEFAULT))
-            guard code == 0 else { throw MightyError("안전한 프로세스 그룹을 만들지 못했습니다 (\(code)).") }
+            guard code == 0 else { throw MightyError(L("process.error.processGroup", ["code": String(code)])) }
             let argv = ([executable.path] + arguments).map { strdup($0) } + [nil]
             let envp = environment.map { strdup($0.key + "=" + $0.value) } + [nil]
             defer { for value in argv + envp { free(value) } }
             var childPID: pid_t = 0
             let spawned = argv.withUnsafeBufferPointer { args in envp.withUnsafeBufferPointer { env in executable.path.withCString { path in posix_spawn(&childPID, path, &actions, &attributes, args.baseAddress!, env.baseAddress!) } } }
-            guard spawned == 0 else { throw MightyError("CLI를 실행하지 못했습니다: \(String(cString: strerror(spawned)))") }
+            guard spawned == 0 else { throw MightyError(L("process.error.spawn", ["error": String(cString: strerror(spawned))])) }
             pid = childPID; stdinFD = input[1]
             Darwin.close(input[0]); Darwin.close(output[1]); Darwin.close(errors[1]); allFDs = []
             _ = fcntl(stdinFD, F_SETFL, fcntl(stdinFD, F_GETFL) | O_NONBLOCK)
@@ -262,7 +262,7 @@ private final class CaptureState: @unchecked Sendable {
     func append(_ data: Data, isError: Bool) {
         lock.lock()
         if stdout.count + stderr.count + data.count > limit {
-            error = MightyError("프로세스 출력 크기 제한을 초과했습니다."); let child = process; lock.unlock(); child?.stop(); return
+            error = MightyError(L("process.error.outputLimit")); let child = process; lock.unlock(); child?.stop(); return
         }
         if isError { stderr.append(data) } else { stdout.append(data) }; lock.unlock()
     }
@@ -279,7 +279,7 @@ public enum ProcessCapture {
             let process = try NativeChildProcess(executable: executable, arguments: arguments, environment: environment ?? ProcessInfo.processInfo.environment, cwd: cwd, stdout: { state.append($0, isError: false) }, stderr: { state.append($0, isError: true) }, exited: { _ in })
             state.attach(process); process.write(input ?? Data(), closeAfter: true)
             let deadline = Task {
-                do { try await Task.sleep(nanoseconds: UInt64(max(0.01, timeout) * 1_000_000_000)); state.cancel(MightyError("프로세스 응답 시간이 초과되었습니다.")) } catch { }
+                do { try await Task.sleep(nanoseconds: UInt64(max(0.01, timeout) * 1_000_000_000)); state.cancel(MightyError(L("process.error.timeout"))) } catch { }
             }
             let code = await process.wait(timeout: timeout + 2)
             deadline.cancel()
@@ -511,12 +511,12 @@ public actor ProcessRunner {
     public func start(request: StartRunRequest, workspace: Workspace, allowPermissionPrompts: Bool = false) async throws {
         try Task.checkCancellation()
         try CoreValidation.validate(request)
-        guard !shuttingDown else { throw MightyError("앱이 종료 중입니다.") }
-        guard runs[request.sessionId] == nil else { throw MightyError("이 실행 창은 이미 실행 중입니다.") }
-        guard runs.count < 16 else { throw MightyError("동시에 실행할 수 있는 창은 16개입니다.") }
-        guard workspace.id == request.workspaceId, StateRepository.absolutePath(workspace.path) else { throw MightyError("이 컴퓨터의 승인된 워크스페이스에서 실행해야 합니다.") }
+        guard !shuttingDown else { throw MightyError(L("common.appClosing")) }
+        guard runs[request.sessionId] == nil else { throw MightyError(L("run.error.paneAlreadyRunning")) }
+        guard runs.count < 16 else { throw MightyError(L("run.error.concurrentLimit")) }
+        guard workspace.id == request.workspaceId, StateRepository.absolutePath(workspace.path) else { throw MightyError(L("run.error.approvedWorkspaceOnly")) }
         var directory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &directory), directory.boolValue else { throw MightyError("워크스페이스 폴더를 찾을 수 없습니다.") }
+        guard FileManager.default.fileExists(atPath: workspace.path, isDirectory: &directory), directory.boolValue else { throw MightyError(L("workspace.error.folderMissing")) }
         let run = ManagedProcess(request); runs[request.sessionId] = run
         do {
             let snapshot = request.kind == "shell"
@@ -531,17 +531,17 @@ public actor ProcessRunner {
             if request.kind == "shell" {
                 executable = URL(fileURLWithPath: environment["SHELL"] ?? "/bin/sh"); arguments = ["-l", "-c", request.input]
             } else {
-                guard let command = await providerService.command(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot) else { throw MightyError("\(ProviderOptions.label(request.provider)) CLI 실행 파일을 찾을 수 없습니다.") }
+                guard let command = await providerService.command(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot) else { throw MightyError(L("run.error.cliExecutableMissing", ["name": ProviderOptions.label(request.provider)])) }
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
-                if request.provider == "claude", !ProviderService.supportsMods(command.version) { throw MightyError("이 앱의 Mods 연결은 2.1.271 공개 타입을 기준으로 합니다. 현재 \(command.version)에서는 Claude 실행을 지원하지 않습니다.") }
+                if request.provider == "claude", !ProviderService.supportsMods(command.version) { throw MightyError(L("run.error.modsVersionUnsupported", ["version": command.version])) }
                 try CoreValidation.validateCapabilities(request, capabilities: ProviderService.capabilities(provider: request.provider, version: command.version))
                 let catalog = await providerService.modelCatalog(provider: request.provider, workspacePath: workspace.path, snapshot: snapshot)
                 try Task.checkCancellation()
                 guard !run.stopping, !shuttingDown, !run.finished else { await cancelPending(run); if !request.attachments.isEmpty { throw CancellationError() }; return }
                 try CoreValidation.validateSelection(request, catalog: catalog, registeredModels: request.registeredModels)
                 if request.provider == "claude" {
-                    guard FileManager.default.fileExists(atPath: pluginDirectory.appendingPathComponent(".claude-plugin/plugin.json").path) else { throw MightyError("Mighty bridge Mod 파일을 찾을 수 없습니다.") }
+                    guard FileManager.default.fileExists(atPath: pluginDirectory.appendingPathComponent(".claude-plugin/plugin.json").path) else { throw MightyError(L("run.error.modsFileMissing")) }
                     let bridge = try ModBridge(graphEnabled: true) { [weak self, weak run] metadata in guard let run else { return }; Task { await self?.receiveMod(metadata, run: run) } }
                     run.bridge = bridge
                     environment.merge(try await bridge.start()) { _, new in new }
@@ -637,7 +637,7 @@ public actor ProcessRunner {
                 }
             }
             // Quit signals the registry before it reaches this actor.
-            guard !liveRuns.closing else { throw MightyError("앱이 종료 중입니다.") }
+            guard !liveRuns.closing else { throw MightyError(L("common.appClosing")) }
             // Unbounded, but never more than the run's budget: the readers wait
             // for the consumer instead of evicting chunks it has not seen.
             let stream = AsyncStream<ChildEvent>.makeStream(bufferingPolicy: .unbounded)
@@ -647,8 +647,8 @@ public actor ProcessRunner {
             let child = try NativeChildProcess(executable: executable, arguments: arguments, environment: environment, cwd: URL(fileURLWithPath: workspace.path), stdout: { budget.acquire($0.count); continuation.yield(.stdout($0)) }, stderr: { budget.acquire($0.count); continuation.yield(.stderr($0)) }, exited: { continuation.yield(.exit($0)); continuation.finish() })
             run.child = child
             onEvent(RunEvent(sessionId: request.sessionId, type: "status", status: "running"))
-            if request.kind == "claude" { Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: request.provider, kind: "turn", state: "running", summary: "\(ProviderOptions.label(request.provider)) 실행 중"), emit: onEvent) }
-            emitLog(run, kind: "system", text: request.kind == "shell" ? "명령 실행 · 비대화형 셸" : "\(ProviderOptions.label(request.provider)) CLI 실행")
+            if request.kind == "claude" { Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: request.provider, kind: "turn", state: "running", summary: L("run.activity.running", ["name": ProviderOptions.label(request.provider)])), emit: onEvent) }
+            emitLog(run, kind: "system", text: request.kind == "shell" ? L("run.log.shellStart") : L("run.log.cliStart", ["name": ProviderOptions.label(request.provider)]))
             // A parser-driven run's stdout is cut into lines and parsed here,
             // off the actor every pane shares, with large lines' pictures
             // already decoded and cached; only finished lines hop onto it, in
@@ -730,11 +730,11 @@ public actor ProcessRunner {
     public func respondToPermission(sessionId: String, runId: String, requestId: String, allow: Bool) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
               !run.stopping, !run.finished else {
-            throw MightyError("승인 요청의 실행이 이미 종료되었거나 변경되었습니다.")
+            throw MightyError(L("run.error.permissionRunGone"))
         }
         if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
         else if let permissions = run.codexPermissions { try permissions.respond(requestId: requestId, allow: allow) }
-        else { throw MightyError("이 실행은 대화형 승인을 지원하지 않습니다.") }
+        else { throw MightyError(L("run.error.noInteractivePermission")) }
     }
     /// Answers one pending ExitPlanMode request in exactly one local run.
     public func answerPlan(sessionId: String, runId: String, requestId: String, decision: PlanDecision) async throws {
@@ -771,7 +771,7 @@ public actor ProcessRunner {
     public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
               !run.stopping, !run.finished, let permissions = run.permissions else {
-            throw MightyError("선택 요청의 실행이 이미 종료되었거나 변경되었습니다.")
+            throw MightyError(L("run.error.questionRunGone"))
         }
         try permissions.answerQuestions(requestId: requestId, answers: answers)
     }
@@ -802,7 +802,7 @@ public actor ProcessRunner {
         if ["assistant", "output"].contains(kind) {
             guard !run.truncated else { return }
             run.outputBytes += text.utf8.count
-            if run.outputBytes > 2 * 1024 * 1024 { run.truncated = true; emit(RunEvent(sessionId: run.request.sessionId, type: "log", entry: LogEntry(kind: "system", text: "출력이 2 MB를 넘어 이후 표시를 생략합니다."))); return }
+            if run.outputBytes > 2 * 1024 * 1024 { run.truncated = true; emit(RunEvent(sessionId: run.request.sessionId, type: "log", entry: LogEntry(kind: "system", text: L("run.notice.outputOver2MB")))); return }
         }
         let clean = text.replacingOccurrences(of: "\\x1b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07]*(?:\\x07|\\x1b\\\\))", with: "", options: .regularExpression).unicodeScalars.filter { $0.value == 9 || $0.value == 10 || $0.value == 13 || $0.value >= 32 && $0.value != 127 }
         let value = String(String.UnicodeScalarView(clean))
@@ -811,7 +811,7 @@ public actor ProcessRunner {
             // tables). Arbitrary 16K chunks are not separate assistant turns.
             let bounded = ActivitySupport.prefixUTF8(value, maximumBytes: 131_072)
             emit(RunEvent(sessionId: run.request.sessionId, type: "log", entry: LogEntry(kind: kind, text: bounded, provider: run.request.provider)))
-            if bounded.utf8.count < value.utf8.count { emit(RunEvent(sessionId: run.request.sessionId, type: "log", entry: LogEntry(kind: "system", text: "응답 한 메시지가 128 KiB를 넘어 뒷부분을 생략했습니다.", provider: run.request.provider))) }
+            if bounded.utf8.count < value.utf8.count { emit(RunEvent(sessionId: run.request.sessionId, type: "log", entry: LogEntry(kind: "system", text: L("run.notice.messageTruncated"), provider: run.request.provider))) }
             return
         }
         var offset = value.startIndex
@@ -881,7 +881,7 @@ public actor ProcessRunner {
     private func receiveMod(_ metadata: ModMetadata, run: ManagedProcess) {
         guard !run.finished, !run.stopping, !shuttingDown else { return }
         onEvent(RunEvent(sessionId: run.request.sessionId, type: "resume", resumeId: metadata.claudeSessionId))
-        if metadata.event == "session.start" { emitLog(run, kind: "system", text: "Claude Mods 연결됨 · Mighty bridge") }
+        if metadata.event == "session.start" { emitLog(run, kind: "system", text: L("run.log.modsConnected")) }
         run.parser?.receiveMod(metadata)
     }
     private func cancelPending(_ run: ManagedProcess) async {
@@ -904,13 +904,13 @@ public actor ProcessRunner {
         run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()
         let incompletePermissionRun = run.permissions != nil && (run.permissions?.initialized != true || !run.receivedClaudeResult)
         if incompletePermissionRun, !run.stopping, !shuttingDown, !run.planCancelled, run.permissions?.failed != true {
-            emitLog(run, kind: "error", text: "Claude가 승인 채널 초기화 또는 응답 결과를 전달하기 전에 종료되었습니다.")
+            emitLog(run, kind: "error", text: L("run.error.claudeEndedEarly"))
         }
         let incompleteCodexRun = run.codexPermissions != nil && (run.codexPermissions?.initialized != true || run.codexPermissions?.turnCompleted != true)
         if incompleteCodexRun, !run.stopping, !shuttingDown, run.codexPermissions?.failed != true {
-            emitLog(run, kind: "error", text: "Codex가 승인 채널 초기화 또는 응답 결과를 전달하기 전에 종료되었습니다.")
+            emitLog(run, kind: "error", text: L("run.error.codexEndedEarly"))
         }
-        if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: "Mods 이벤트를 받지 못했습니다. CLI 출력만 표시하며 관리자 정책과 function hooks 설정을 확인해 주세요.") }
+        if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: L("run.warning.noModsEvents")) }
         await run.bridge?.stop()
         let status = run.stopping || shuttingDown || run.planCancelled ? "stopped" : code == 0 && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
         if let watcher = run.codexSessions {
@@ -925,7 +925,7 @@ public actor ProcessRunner {
         run.parser?.finishBackground()
         run.attachments?.cleanup(); run.attachments = nil
         if run.request.kind == "claude" {
-            let summary = status == "completed" ? "응답 완료" : status == "stopped" ? "실행 중지" : "실행 오류"
+            let summary = status == "completed" ? L("run.activity.completed") : status == "stopped" ? L("run.activity.stopped") : L("run.activity.error")
             Self.deliverActivity(run, activity: AgentActivity(id: run.activityId, provider: run.request.provider, kind: "turn", state: status, summary: summary), emit: onEvent)
         }
         // The reason rides on the final status: only the run's last failure counts.

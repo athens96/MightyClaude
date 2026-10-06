@@ -55,7 +55,7 @@ final class CodexApprovalChannel {
     }
     func initializationTimedOut() {
         guard !closed, !ready else { return }
-        failClosed("Codex 승인 채널 초기화 시간이 초과되었습니다.")
+        failClosed(L("codex.channel.initTimeout"))
     }
     func receive(_ data: Data) {
         guard !closed else { return }
@@ -70,21 +70,21 @@ final class CodexApprovalChannel {
     }
     /// A frame the runner already cut and parsed (`AgentOutputLines`).
     func receive(_ line: AgentOutputLine) { guard !closed else { return }; receiveFrame(line.object) }
-    func frameTooLarge() { failClosed("Codex 응답 프레임 크기 제한을 초과했습니다.") }
+    func frameTooLarge() { failClosed(L("codex.channel.frameTooLarge")) }
     /// EOF is not success: a terminal turn/completed notification is required.
     func flush() {
         guard !closed else { return }
         if let frame = lines.finish() { receiveFrame(AgentOutputLine(frame).object) }
-        if !closed { failClosed("Codex 승인 채널이 응답 완료 전에 종료되었습니다.") }
+        if !closed { failClosed(L("codex.channel.closedEarly")) }
     }
     private func receiveFrame(_ object: Any?) {
         guard let obj = object as? [String: Any] else {
-            failClosed("Codex 승인 채널 응답 형식이 올바르지 않습니다."); return
+            failClosed(L("codex.channel.badResponse")); return
         }
         if let method = obj["method"] as? String {
             guard let params = obj["params"] as? [String: Any] else {
                 if let id = obj["id"] { rpcError(id, "Invalid request parameters.") }
-                else { failClosed("Codex 알림 형식이 올바르지 않습니다.") }; return
+                else { failClosed(L("codex.channel.badNotification")) }; return
             }
             if let id = obj["id"] { serverRequest(id, method, params) }
             else { notification(method, params) }
@@ -92,7 +92,7 @@ final class CodexApprovalChannel {
         }
         guard let id = Self.idKey(obj["id"]), let method = rpc.removeValue(forKey: id) else { return }
         guard obj["error"] == nil, let result = obj["result"] as? [String: Any] else {
-            failClosed("Codex \(method) 요청이 실패했습니다. CLI 버전과 인증·권한 설정을 확인해 주세요."); return
+            failClosed(L("codex.channel.requestFailed", ["method": method])); return
         }
         switch method {
         case "initialize":
@@ -105,21 +105,19 @@ final class CodexApprovalChannel {
             } else { call("thread/start", params) }
         case "thread/start", "thread/resume":
             guard let thread = result["thread"] as? [String: Any], let id = thread["id"] as? String, CoreValidation.identifier(id),
-                  request.resumeId == nil || request.resumeId == id else { failClosed("Codex 대화 식별자가 일치하지 않습니다."); return }
+                  request.resumeId == nil || request.resumeId == id else { failClosed(L("codex.channel.threadMismatch")); return }
             threadId = id; legacy(["type": "thread.started", "thread_id": id]); startTurn(id)
         case "turn/start":
             guard let turn = result["turn"] as? [String: Any], let id = turn["id"] as? String, CoreValidation.identifier(id),
-                  turnId == nil || turnId == id else { failClosed("Codex 실행 식별자가 일치하지 않습니다."); return }
+                  turnId == nil || turnId == id else { failClosed(L("codex.channel.turnMismatch")); return }
             if turnId == nil { turnId = id; legacy(["type": "turn.started"]) }
             awaitingTurn = false; ready = true
         default: break
         }
     }
     private func startTurn(_ id: String) {
-        let prompt = request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "첨부한 파일을 확인해 주세요." : request.input
-        let refs = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map {
-            "첨부 파일 \(Self.jsonString($0.attachment.name)): \(Self.jsonString($0.url.path))"
-        }
+        let prompt = request.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L("attachments.prompt.default") : request.input
+        let refs = attachments.files.filter { !$0.attachment.mediaType.hasPrefix("image/") }.map(AttachmentSupport.reference)
         var input: [[String: Any]] = [["type": "text", "text": ([prompt] + refs).joined(separator: "\n\n")]]
         input += attachments.files.filter { $0.attachment.mediaType.hasPrefix("image/") }.map { ["type": "localImage", "path": $0.url.path] }
         var params: [String: Any] = ["threadId": id, "input": input, "cwd": workspacePath,
@@ -137,20 +135,20 @@ final class CodexApprovalChannel {
             for id in ids { cancelPending(id) }; return
         }
         if method == "turn/started", awaitingTurn, let turn = params["turn"] as? [String: Any], let id = turn["id"] as? String, CoreValidation.identifier(id) {
-            guard turnId == nil || turnId == id else { failClosed("Codex 실행 알림이 현재 실행과 일치하지 않습니다."); return }
+            guard turnId == nil || turnId == id else { failClosed(L("codex.channel.notificationMismatch")); return }
             if turnId == nil { turnId = id; legacy(["type": "turn.started"]) }; return
         }
         if method == "turn/completed" {
             guard let turn = params["turn"] as? [String: Any], let turnId, turn["id"] as? String == turnId else { return }
             guard turn["status"] as? String == "completed" else {
-                legacy(["type": "turn.failed", "error": turn["error"] ?? ["message": "Codex 실행이 완료되지 않았습니다."]])
-                failClosed("Codex 실행이 실패하거나 중단되었습니다."); return
+                legacy(["type": "turn.failed", "error": turn["error"] ?? ["message": L("codex.channel.turnIncomplete")]])
+                failClosed(L("codex.channel.turnFailed")); return
             }
             legacy(["type": "turn.completed", "usage": usage]); turnCompleted = true; cancelAll(); completed(); return
         }
         guard let turnId, params["turnId"] as? String == turnId else { return }
         if method == "error", params["willRetry"] as? Bool != true {
-            legacy(["type": "error", "error": params["error"] ?? [:]]); failClosed("Codex 실행 오류가 발생했습니다."); return
+            legacy(["type": "error", "error": params["error"] ?? [:]]); failClosed(L("codex.channel.runError")); return
         }
         if method == "thread/tokenUsage/updated", let tokens = params["tokenUsage"] as? [String: Any], let last = tokens["last"] as? [String: Any] {
             usage = ["input_tokens": last["inputTokens"] ?? 0, "cached_input_tokens": last["cachedInputTokens"] ?? 0, "output_tokens": last["outputTokens"] ?? 0]; return
@@ -167,21 +165,21 @@ final class CodexApprovalChannel {
         if let mapped = Self.legacyItem(item) { legacy(["type": method == "item/started" ? "item.started" : "item.completed", "item": mapped]) }
     }
     private func serverRequest(_ rawID: Any, _ method: String, _ params: [String: Any]) {
-        guard let key = Self.idKey(rawID) else { failClosed("Codex 승인 요청 식별자가 올바르지 않습니다."); return }
-        guard seen.insert(key).inserted else { failClosed("중복된 Codex 승인 요청을 중단했습니다."); return }
-        guard seen.count <= 2_048 else { failClosed("Codex 승인 요청 수 제한을 초과했습니다."); return }
+        guard let key = Self.idKey(rawID) else { failClosed(L("codex.channel.badRequestId")); return }
+        guard seen.insert(key).inserted else { failClosed(L("codex.channel.duplicateRequest")); return }
+        guard seen.count <= 2_048 else { failClosed(L("codex.channel.tooManyRequests")); return }
         guard let threadId, let turnId, params["threadId"] as? String == threadId, params["turnId"] as? String == turnId else {
             rpcError(rawID, "Request does not belong to the active thread and turn."); return
         }
         if method == "item/permissions/requestApproval" {
-            reply(rawID, ["permissions": [:], "scope": "turn"]); warning("추가 권한 묶음 요청은 지원하지 않아 거부했습니다. 개별 명령 승인을 사용해 주세요."); return
+            reply(rawID, ["permissions": [:], "scope": "turn"]); warning(L("codex.channel.permissionBundleDeclined")); return
         }
         if method == "mcpServer/elicitation/request" { reply(rawID, ["action": "decline", "content": NSNull(), "_meta": NSNull()]); return }
         guard ["item/commandExecution/requestApproval", "item/fileChange/requestApproval"].contains(method) else {
-            rpcError(rawID, "This host does not support this request."); warning("지원하지 않는 Codex 입력 요청을 거부했습니다."); return
+            rpcError(rawID, "This host does not support this request."); warning(L("codex.channel.inputRequestDeclined")); return
         }
         guard let itemID = params["itemId"] as? String, CoreValidation.identifier(itemID) else { reply(rawID, ["decision": "decline"]); return }
-        guard pending.count < Self.maximumPending else { reply(rawID, ["decision": "decline"]); warning("대기 중인 승인 요청 수 제한을 초과했습니다."); return }
+        guard pending.count < Self.maximumPending else { reply(rawID, ["decision": "decline"]); warning(L("codex.channel.tooManyPending")); return }
         let isCommand = method == "item/commandExecution/requestApproval"
         var input = params
         var canAllow: Bool
@@ -197,17 +195,17 @@ final class CodexApprovalChannel {
         }
         if let decisions = params["availableDecisions"], !(decisions is NSNull) { canAllow = canAllow && (decisions as? [Any])?.contains(where: { $0 as? String == "accept" }) == true }
         guard let display = Self.displayJSON(input), display.utf8.count <= Self.maximumInputBytes else {
-            reply(rawID, ["decision": "decline"]); warning("전체 내용을 표시할 수 없는 Codex 승인 요청을 거부했습니다."); return
+            reply(rawID, ["decision": "decline"]); warning(L("codex.channel.requestTooLarge")); return
         }
         let value = ToolPermissionRequest(id: UUID().uuidString, runId: runId, toolUseId: itemID,
             toolName: isCommand ? "command_execution" : "file_change", inputJSON: display,
-            summary: isCommand ? "명령 실행 승인" : "파일 변경 승인",
-            reason: canAllow ? (params["reason"] as? String).map { ActivitySupport.clean($0, maximumBytes: 8_192) } : "전체 명령·변경 내용을 확인할 수 없거나 한 번 허용을 지원하지 않아 거부만 가능합니다.", canAllow: canAllow)
+            summary: isCommand ? L("codex.channel.commandApproval") : L("codex.channel.fileChangeApproval"),
+            reason: canAllow ? (params["reason"] as? String).map { ActivitySupport.clean($0, maximumBytes: 8_192) } : L("codex.channel.denyOnly"), canAllow: canAllow)
         pending[value.id] = Pending(rpcID: rawID, display: value); activity(value, "waiting"); emit(value)
     }
     func respond(requestId: String, allow: Bool) throws {
-        guard !closed, let ask = pending[requestId] else { throw MightyError("이미 처리되었거나 종료된 승인 요청입니다.") }
-        guard !allow || ask.display.canAllow else { throw MightyError("이 요청은 한 번 허용을 지원하지 않습니다.") }
+        guard !closed, let ask = pending[requestId] else { throw MightyError(L("permission.error.requestGone")) }
+        guard !allow || ask.display.canAllow else { throw MightyError(L("codex.channel.allowOnceUnsupported")) }
         pending.removeValue(forKey: requestId)
         reply(ask.rpcID, ["decision": allow ? "accept" : "decline"])
         var value = ask.display; value.state = allow ? "allowed" : "denied"
@@ -237,7 +235,6 @@ final class CodexApprovalChannel {
         if let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite, number.doubleValue.rounded() == number.doubleValue { return "n:" + number.stringValue }
         return nil
     }
-    private static func jsonString(_ text: String) -> String { String(decoding: (try? JSONEncoder().encode(text)) ?? Data(), as: UTF8.self) }
     private static func displayJSON(_ obj: [String: Any]) -> String? {
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else { return nil }
         return String(decoding: data, as: UTF8.self).unicodeScalars.map {

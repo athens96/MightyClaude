@@ -71,15 +71,15 @@ public actor CLIUpdateService {
     }
 
     public func inspect(provider: String) async -> CLIUpdateInstallation {
-        guard !closing else { return CLIUpdateInstallation(provider: provider, detail: "앱이 종료 중입니다.") }
+        guard !closing else { return CLIUpdateInstallation(provider: provider, detail: L("settings.cliUpdate.detailClosing")) }
         do { return try await Self.plan(provider: provider, configuration: configuration).installation }
-        catch { return CLIUpdateInstallation(provider: provider, detail: Task.isCancelled ? "설치 확인을 취소했습니다." : "CLI 설치 정보를 확인하지 못했습니다.") }
+        catch { return CLIUpdateInstallation(provider: provider, detail: Task.isCancelled ? L("settings.cliUpdate.detailInspectCancelled") : L("settings.cliUpdate.detailInspectFailed")) }
     }
 
     public func update(provider: String) async -> CLIUpdateResult {
-        guard !closing else { return CLIUpdateResult(provider: provider, status: "cancelled", detail: "앱이 종료 중입니다.") }
-        guard active == nil else { return CLIUpdateResult(provider: provider, status: "busy", detail: "다른 CLI를 업데이트하고 있습니다.") }
-        guard !Task.isCancelled else { return CLIUpdateResult(provider: provider, status: "cancelled", detail: "업데이트를 취소했습니다.") }
+        guard !closing else { return CLIUpdateResult(provider: provider, status: "cancelled", detail: L("settings.cliUpdate.detailClosing")) }
+        guard active == nil else { return CLIUpdateResult(provider: provider, status: "busy", detail: L("settings.cliUpdate.detailBusy")) }
+        guard !Task.isCancelled else { return CLIUpdateResult(provider: provider, status: "cancelled", detail: L("settings.cliUpdate.detailCancelled")) }
         let id = UUID(), configuration = configuration
         let task = Task { await Self.performUpdate(provider: provider, configuration: configuration) }
         active = (id, task)
@@ -112,41 +112,41 @@ public actor CLIUpdateService {
             let output = boundedOutput(result)
             guard result.exitCode == 0 else {
                 return CLIUpdateResult(provider: provider, status: "failed", beforeVersion: installation.version, method: installation.method,
-                    detail: "업데이트 명령이 종료 코드 \(result.exitCode)로 실패했습니다. 설치 권한이나 네트워크 상태를 확인하세요.", output: output)
+                    detail: L("settings.cliUpdate.detailFailedExitTemplate", ["code": String(result.exitCode)]), output: output)
             }
             let after = try await installedCommand(provider: provider, configuration: configuration)
             try Task.checkCancellation()
             guard let version = after?.version else {
                 return CLIUpdateResult(provider: provider, status: "failed", beforeVersion: installation.version, method: installation.method,
-                    detail: "업데이트 명령은 끝났지만 CLI 버전을 다시 확인하지 못했습니다.", output: output)
+                    detail: L("settings.cliUpdate.detailVersionRecheckFailed"), output: output)
             }
             let changed = installation.version != version
             return CLIUpdateResult(provider: provider, status: changed ? "updated" : "current", beforeVersion: installation.version, afterVersion: version,
-                method: installation.method, detail: changed ? "CLI를 업데이트했습니다." : "업데이트 명령을 완료했습니다. 설치된 버전은 동일합니다.", output: output)
+                method: installation.method, detail: changed ? L("settings.cliUpdate.detailUpdated") : L("settings.cliUpdate.detailUnchanged"), output: output)
         } catch {
             let cancelled = error is CancellationError || Task.isCancelled
             return CLIUpdateResult(provider: provider, status: cancelled ? "cancelled" : "failed", beforeVersion: installation.version, method: installation.method,
-                detail: cancelled ? "업데이트를 취소했습니다." : String(error.localizedDescription.prefix(600)))
+                detail: cancelled ? L("settings.cliUpdate.detailCancelled") : String(error.localizedDescription.prefix(600)))
         }
     }
 
     private static func plan(provider: String, configuration: CLIUpdateConfiguration) async throws -> CLIUpdatePlan {
         guard ProviderOptions.ids.contains(provider) else {
-            return CLIUpdatePlan(installation: CLIUpdateInstallation(provider: provider, detail: "지원하지 않는 CLI입니다."), invocation: nil)
+            return CLIUpdatePlan(installation: CLIUpdateInstallation(provider: provider, detail: L("settings.cliUpdate.detailUnsupportedProvider")), invocation: nil)
         }
         guard let command = try await installedCommand(provider: provider, configuration: configuration) else {
             let present = executableCandidates(provider, environment: configuration.environment).contains { FileManager.default.isExecutableFile(atPath: $0.path) }
             return CLIUpdatePlan(installation: CLIUpdateInstallation(provider: provider, method: present ? "unknown" : "missing",
-                detail: present ? "CLI 버전을 확인하지 못해 업데이트하지 않았습니다." : "설치된 CLI가 없어 건너뜁니다. 새로 설치하지 않습니다."), invocation: nil)
+                detail: present ? L("settings.cliUpdate.detailVersionUnknown") : L("settings.cliUpdate.detailMissing")), invocation: nil)
         }
         let resolved = command.executable.resolvingSymlinksInPath().standardizedFileURL
         var installation = CLIUpdateInstallation(provider: provider, version: command.version, executablePath: command.executable.path,
-            detail: "수동 설치 또는 확인할 수 없는 설치 방식입니다. 기존 설치 방법으로 직접 업데이트하세요.")
+            detail: L("settings.cliUpdate.detailUnknownMethod"))
         var environment = configuration.environment
         if let brew = brewInstallation(resolved, provider: provider) {
             installation.method = brew.cask ? "brew-cask" : "brew-formula"
             guard FileManager.default.isExecutableFile(atPath: brew.executable.path) else {
-                installation.detail = "Homebrew 설치이지만 해당 Homebrew 실행 파일을 찾지 못했습니다."
+                installation.detail = L("settings.cliUpdate.detailBrewRuntimeMissing")
                 return CLIUpdatePlan(installation: installation, invocation: nil)
             }
             // Refreshing package metadata is allowed; do not clean up or upgrade
@@ -156,7 +156,7 @@ public actor CLIUpdateService {
             environment["HOMEBREW_NO_ANALYTICS"] = "1"
             environment["HOMEBREW_NO_ASK"] = "1"
             environment["NONINTERACTIVE"] = "1"
-            installation.canUpdate = true; installation.detail = "설치된 Homebrew의 해당 \(brew.cask ? "cask" : "formula")만 업데이트합니다."
+            installation.canUpdate = true; installation.detail = L("settings.cliUpdate.detailBrewPlan", ["kind": brew.cask ? "cask" : "formula"])
             return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: brew.executable,
                 arguments: ["upgrade", brew.cask ? "--cask" : "--formula", brew.package], environment: environment))
         }
@@ -167,24 +167,24 @@ public actor CLIUpdateService {
             }
             if nativeRoots.contains(where: { resolved.deletingLastPathComponent().path == $0.resolvingSymlinksInPath().standardizedFileURL.path }) {
                 installation.method = "native"; installation.canUpdate = true
-                installation.detail = "Claude Code의 기본 업데이트 명령을 사용합니다."
+                installation.detail = L("settings.cliUpdate.detailNativeClaude")
                 return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: command.executable, arguments: ["update"], environment: environment))
             }
         }
         if let package = npmInstallation(resolved, provider: provider) {
             installation.method = "npm"
             guard package.version.range(of: "\\A[0-9]+\\.[0-9]+\\.[0-9]+(?:\\+[0-9A-Za-z.-]+)?\\z", options: .regularExpression) != nil else {
-                installation.detail = "시험판 또는 확인할 수 없는 npm 채널은 자동 변경하지 않습니다. 기존 채널에서 직접 업데이트하세요."
+                installation.detail = L("settings.cliUpdate.detailNpmPrerelease")
                 return CLIUpdatePlan(installation: installation, invocation: nil)
             }
             guard let npm = npmRuntime(prefix: package.prefix, environment: environment) else {
-                installation.detail = "npm 설치는 확인했지만 해당 설치를 업데이트할 Node.js/npm을 찾지 못했습니다."
+                installation.detail = L("settings.cliUpdate.detailNpmRuntimeMissing")
                 return CLIUpdatePlan(installation: installation, invocation: nil)
             }
             // npm lifecycle scripts and the CLI's env-node launcher use the same
             // Node installation as the npm process, including version managers.
             environment["PATH"] = npm.node.deletingLastPathComponent().path + ":" + (environment["PATH"] ?? "")
-            installation.canUpdate = true; installation.detail = "기존 npm 설치 위치에서 공식 패키지만 업데이트합니다."
+            installation.canUpdate = true; installation.detail = L("settings.cliUpdate.detailNpmPlan")
             return CLIUpdatePlan(installation: installation, invocation: CLIUpdateInvocation(executable: npm.node,
                 arguments: [npm.script.path, "install", "--global", "--prefix", package.prefix.path, package.name + "@latest", "--no-audit", "--no-fund"], environment: environment))
         }

@@ -20,11 +20,11 @@ public enum RelayCrypto {
 
     /// Derives the session key from our private key and the peer's public key.
     static func sessionKey(privateKey: Curve25519.KeyAgreement.PrivateKey, peerPublicKey: Data, clientNonce: Data, serverNonce: Data) throws -> SymmetricKey {
-        guard peerPublicKey.count == 32, clientNonce.count == 16, serverNonce.count == 16 else { throw MightyError("핸드셰이크 값의 길이가 올바르지 않습니다.") }
+        guard peerPublicKey.count == 32, clientNonce.count == 16, serverNonce.count == 16 else { throw MightyError(L("relay.error.handshakeLength")) }
         let peer = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: peerPublicKey)
         let shared = try privateKey.sharedSecretFromKeyAgreement(with: peer)
         let allZero = shared.withUnsafeBytes { buffer in buffer.allSatisfy { $0 == 0 } }
-        guard !allZero else { throw MightyError("공유 비밀이 비어 있어 연결을 거부합니다.") }
+        guard !allZero else { throw MightyError(L("relay.error.emptySecret")) }
         return shared.hkdfDerivedSymmetricKey(using: SHA256.self, salt: clientNonce + serverNonce, sharedInfo: info, outputByteCount: 32)
     }
 }
@@ -53,21 +53,21 @@ public struct RelayCipher: Sendable {
 
     /// `[12B nonce][ciphertext][16B tag]`, the same layout CryptoKit calls `combined`.
     public mutating func seal(_ plaintext: Data) throws -> Data {
-        guard sendCounter < UInt64.max else { throw MightyError("암호화 카운터가 소진되었습니다.") }
+        guard sendCounter < UInt64.max else { throw MightyError(L("relay.error.counterExhausted")) }
         let nonce = try ChaChaPoly.Nonce(data: Self.nonce(direction: sendDirection, counter: sendCounter))
         sendCounter += 1
         return try ChaChaPoly.seal(plaintext, using: key, nonce: nonce).combined
     }
 
     public mutating func open(_ frame: Data) throws -> Data {
-        guard frame.count >= RelayCrypto.nonceLength + RelayCrypto.tagLength else { throw MightyError("암호화 프레임이 너무 짧습니다.") }
+        guard frame.count >= RelayCrypto.nonceLength + RelayCrypto.tagLength else { throw MightyError(L("relay.error.frameTooShort")) }
         let nonce = frame.prefix(RelayCrypto.nonceLength)
         guard nonce[nonce.startIndex] == receiveDirection, nonce[nonce.startIndex + 1] == 0, nonce[nonce.startIndex + 2] == 0, nonce[nonce.startIndex + 3] == 0 else {
-            throw MightyError("프레임 방향이 올바르지 않습니다.")
+            throw MightyError(L("relay.error.frameDirection"))
         }
         var counter: UInt64 = 0
         for byte in nonce.dropFirst(4) { counter = (counter << 8) | UInt64(byte) }
-        guard counter <= UInt64(Int64.max), Int64(counter) > lastReceived else { throw MightyError("재전송되었거나 순서가 바뀐 프레임입니다.") }
+        guard counter <= UInt64(Int64.max), Int64(counter) > lastReceived else { throw MightyError(L("relay.error.frameReplay")) }
         let plaintext = try ChaChaPoly.open(ChaChaPoly.SealedBox(combined: frame), using: key)
         lastReceived = Int64(counter)
         return plaintext
@@ -96,7 +96,7 @@ public struct RelayKeypair: Sendable {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let payload = try JSONSerialization.data(withJSONObject: ["v": 1, "publicKeyB64": fresh.publicKeyB64, "secretKeyB64": fresh.privateKey.rawRepresentation.base64EncodedString()], options: [.sortedKeys])
         let temporary = url.deletingLastPathComponent().appendingPathComponent(url.lastPathComponent + "." + UUID().uuidString)
-        guard FileManager.default.createFile(atPath: temporary.path, contents: payload, attributes: [.posixPermissions: 0o600]) else { throw MightyError("릴레이 키쌍을 저장하지 못했습니다.") }
+        guard FileManager.default.createFile(atPath: temporary.path, contents: payload, attributes: [.posixPermissions: 0o600]) else { throw MightyError(L("relay.error.keyPairSave")) }
         if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary) }
         else { try FileManager.default.moveItem(at: temporary, to: url) }
         return fresh
