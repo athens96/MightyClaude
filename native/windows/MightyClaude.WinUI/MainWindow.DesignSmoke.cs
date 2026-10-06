@@ -625,10 +625,10 @@ public sealed partial class MainWindow
             $"{key} ({theme}): the footer must have a top Stroke.Line {DesignMetrics.Stroke.Line} and padding 16; got {footer.BorderThickness}, {footer.Padding}");
         var glyph = (sidebarThemeButton?.Content as FontIcon)?.Glyph; var glyphWant = theme == "light" ? SidebarMoonGlyph : SidebarSunGlyph;
         Require(glyph == glyphWant, $"{key} ({theme}): the theme button must show the {(theme == "light" ? "moon" : "sun")} U+{(int)glyphWant[0]:X4}; got {(glyph is { Length: > 0 } g ? $"U+{(int)g[0]:X4}" : "none")}");
-        // The row is the app icon's 20 high inside the padding (M/WorkspaceView.swift:109-120), under its 1pt line:
-        // the symbols' hit areas reach into the padding without making it taller, and the symbols stand where the Mac's do.
+        // The name and current version determine the row height; the footer must fit both without clipping.
         root.UpdateLayout();
-        Require(Math.Abs(footer.ActualHeight - (DesignMetrics.Stroke.Line + 16 + 20 + 16)) < 0.5, $"{key} ({theme}): the footer must be {DesignMetrics.Stroke.Line + 52} high (its line, then the 20pt icon in padding 16); got {footer.ActualHeight:F1}");
+        var brandHeight = ((FrameworkElement)footer.Children[0]).ActualHeight;
+        Require(brandHeight >= 20 && Math.Abs(footer.ActualHeight - (DesignMetrics.Stroke.Line + 32 + brandHeight)) < 0.5, $"{key} ({theme}): the footer must fit the brand and version inside padding 16; got footer {footer.ActualHeight:F1}, brand {brandHeight:F1}");
         Require(settingsButton.Content is FontIcon { FontSize: SidebarFooterGlyph } && settingsButton.Width == SidebarFooterButton && sidebarThemeButton!.Width == SidebarFooterButton,
             $"{key} ({theme}): the footer's symbols must be {SidebarFooterGlyph}pt in {SidebarFooterButton}pt hit areas; got {settingsButton.Width} and {sidebarThemeButton!.Width}");
         // The Mac's gear stands with its centre 24 from the sidebar's dividing line and the theme symbol's 24.5 before it

@@ -111,7 +111,7 @@ public sealed partial class MainWindow
     /// <summary>
     /// The footer under a full-width <c>line</c> (M/WorkspaceView.swift:108-120): the app icon 20,
     /// 9 from "Mighty Claude" 12pt semibold with the app's 베타 capsule right after it, then the
-    /// theme and settings symbols, plain; padding 16, so the row is the icon's 20 high.
+    /// theme and settings symbols, plain; the current app version sits below the name in muted 10pt mono.
     /// </summary>
     private FrameworkElement BuildSidebarFooter()
     {
@@ -122,12 +122,16 @@ public sealed partial class MainWindow
         footer.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         // Left-aligned, so the name takes only its own width and the capsule stays right after it while the name still trims.
-        var brand = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        var brand = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, RowSpacing = 2 };
+        brand.RowDefinitions.Add(new() { Height = GridLength.Auto }); brand.RowDefinitions.Add(new() { Height = GridLength.Auto });
         brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); brand.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); brand.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var image = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/mightyclaude.png")), Width = 20, Height = 20, Margin = new Thickness(0, 0, 9, 0) };
-        AutomationProperties.SetAccessibilityView(image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); brand.Children.Add(image);
+        AutomationProperties.SetAccessibilityView(image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw); Grid.SetRowSpan(image, 2); brand.Children.Add(image);
         var title = new TextBlock { Text = "Mighty Claude", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = brushes.Brush(DesignToken.Ink), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1); brand.Children.Add(title);
+        var version = new TextBlock { Text = "v" + AppVersionText, FontSize = DesignMetrics.Type.Small, FontFamily = new FontFamily(DesignMetrics.Font.Mono), Foreground = brushes.Brush(DesignToken.SidebarInk2), TextTrimming = TextTrimming.CharacterEllipsis };
+        AutomationProperties.SetAutomationId(version, "sidebar-app-version");
+        Grid.SetColumn(version, 1); Grid.SetColumnSpan(version, 2); Grid.SetRow(version, 1); brand.Children.Add(version);
         // The whole Windows app is a beta: the same capsule as a beta agent's, 6 after the name (M/BetaBadge.swift, M/WorkspaceView.swift:225).
         brandBeta.Foreground = brushes.Brush(DesignToken.StopText);
         var beta = sidebarFooterBeta = new Border { Child = brandBeta, CornerRadius = new CornerRadius(7), Background = brushes.Brush(DesignToken.StopSoft), Padding = new Thickness(5, 1, 5, 1), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -137,7 +141,7 @@ public sealed partial class MainWindow
         AutomationProperties.SetAutomationId(settingsButton, "sidebar-settings");
         // The Mac's two symbols are plain 13pt images. Each button keeps a hit area around its symbol,
         // reaching into the padding and a little over its neighbour, so the symbols land where the
-        // Mac's do and the row stays the icon's 20 high.
+        // Mac's do, centered beside the name and version.
         const double inset = (SidebarFooterButton - SidebarFooterGlyph) / 2, overhang = (SidebarFooterButton - 20) / 2;
         foreach (var button in new[] { theme, settingsButton })
         {

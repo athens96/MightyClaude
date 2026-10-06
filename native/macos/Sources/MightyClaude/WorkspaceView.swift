@@ -137,7 +137,12 @@ struct WorkspaceView: View {
                     if let image = BrandAssets.icon { Image(nsImage: image).resizable().interpolation(.high).scaledToFit() }
                     else { Image(systemName: "sparkles").resizable().scaledToFit().foregroundStyle(Palette.sidebarAccent) }
                 }.frame(width: 20, height: 20).accessibilityHidden(true)
-                Text("Mighty Claude").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Mighty Claude").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    Text("v\(store.appVersion)").font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Palette.sidebarInk2).lineLimit(1)
+                        .accessibilityIdentifier("sidebar-app-version")
+                }
                 Spacer()
                 Button { store.toggleTheme() } label: { Image(systemName: store.snapshot.theme == "dark" ? "sun.max" : "moon") }
                     .buttonStyle(.plain).help("화면 테마 변경").accessibilityLabel("화면 테마 변경")
