@@ -114,12 +114,19 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); HideLaunchSplash(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); }); return; }
-        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; ApplyChromeText(); Render(); HideLaunchSplash(); await RunUISmoke(); }
+        if (!options.SmokeTest) { await Act(async () => { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); HideLaunchSplash(); InitializeAgentIO(); await InitializeCompanionAsync(); await InitializeMobileRemote(); await InitNotifierAsync(); await RefreshRuntime(); BeginAutomaticUpdates(); BeginAutomaticAppUpdateCheck(); }); return; }
+        try { await service.InitializeAsync(); Locale.LanguagePreference = service.Snapshot.LanguagePreference; root.Language = WindowLanguage(); ApplyChromeText(); Render(); HideLaunchSplash(); await RunUISmoke(); }
         catch (Exception ex) { options.WriteStartupFailure(ex); await FinishSmoke(false); }
         }
         finally { HideLaunchSplash(); }
     }
+    /// <summary>
+    /// The XAML language tag of the app's chosen language, so Chinese and Japanese text take their own
+    /// region's glyph forms whatever the Windows display language is. Each window's root, and each sheet
+    /// (it opens in a popup outside the window's tree), takes it once as it is built; a change of
+    /// language takes effect on the next start.
+    /// </summary>
+    internal static string WindowLanguage() => Locale.ChosenLanguage() switch { "ko" => "ko-KR", "zh" => "zh-Hans", "ja" => "ja-JP", _ => "en-US" };
     // The sidebar chrome is built before Initialize reads the saved language,
     // so its text is set again once the preference is applied.
     private void ApplyChromeText()

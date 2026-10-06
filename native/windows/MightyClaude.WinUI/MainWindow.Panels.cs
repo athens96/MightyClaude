@@ -74,6 +74,8 @@ public sealed partial class MainWindow
             dialog.Opened += (_, _) => { dialog.RequestedTheme = root.RequestedTheme; root.ActualThemeChanged -= Follow; root.ActualThemeChanged += Follow; };
             dialog.Closed += (_, _) => root.ActualThemeChanged -= Follow;
             dialog.RequestedTheme = root.RequestedTheme;
+            // Nor does it inherit the window's language: it takes the tag itself, before it opens.
+            dialog.Language = WindowLanguage();
         }
         // Its dimmed words take ink2 and its plain buttons the bordered card look, as in settings.
         ToneSecondaryText(dialog.Content as DependencyObject, paintButtons: true);

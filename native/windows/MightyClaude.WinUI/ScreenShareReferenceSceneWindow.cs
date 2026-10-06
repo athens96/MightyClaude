@@ -29,7 +29,7 @@ internal sealed class ScreenShareReferenceSceneWindow
         label = new() { FontSize = 15, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
         terminal = new() { Foreground = new SolidColorBrush(Colors.Lime), FontFamily = new FontFamily("Consolas"), FontSize = 13, IsTextSelectionEnabled = false };
         scroll = new();
-        var root = new Grid { Background = new SolidColorBrush(Colors.White), RequestedTheme = ElementTheme.Light };
+        var root = new Grid { Background = new SolidColorBrush(Colors.White), RequestedTheme = ElementTheme.Light, Language = MainWindow.WindowLanguage() };
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
         var header = new Grid { Padding = new Thickness(16, 10, 16, 10), ColumnSpacing = 12 };
         header.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
