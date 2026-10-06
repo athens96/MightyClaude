@@ -49,17 +49,24 @@ public sealed partial class MainWindow
                 Require(FindById<ProgressRing>(guidedBody, "mighty-progress-" + id) is not null && styleActionButtons.Count == 0, "awaiting approval shows progress, not chips");
                 checks["awaitingApproval"] = CurrentPhase();
 
-                // Approved, carried out and finished with background work still running.
+                // Approved and carried out, the turn and its background work both over: the next chips.
                 ClearToolPermissions();
-                await Change(p => p with { Status = "completed", GraphRuns = [Run("completed")], PlanHistory = [approved], TodoProgress = todos, BackgroundWork = work });
+                var finished = work with { Tasks = work.Tasks.Select(t => t with { Status = "completed", EndedAt = Wire.Now() }).ToList() };
+                await Change(p => p with { Status = "completed", GraphRuns = [Run("completed")], PlanHistory = [approved], TodoProgress = todos, BackgroundWork = finished });
                 Refresh();
                 await WaitUI(() => CurrentPhase() == Title("execute"));
                 await WaitUI(() => HasText("mighty-state-", "3/7"));
                 Require(HasText("mighty-state-", Locale.Get("styles.state.todoCurrent", new Dictionary<string, string> { ["item"] = "doing step 4" })), "the current step is drawn under the bar");
-                Require(HasText("mighty-state-", PlanCardSupport.BackgroundSummary(work)), "the background line is drawn");
+                await WaitUI(() => styleActionButtons.ContainsKey("new-plan") && styleActionButtons.ContainsKey("verify"), () => "after execution: new plan and verify");
+
+                // The turn is over but a background agent still runs: the pane stays running (the process is open
+                // for that work, and the store keeps running tasks only while the pane runs), still in execute.
+                await Change(p => p with { Status = "running", BackgroundWork = work });
+                Refresh();
+                await WaitUI(() => CurrentPhase() == Title("execute") && HasText("mighty-state-", PlanCardSupport.BackgroundSummary(work)),
+                    () => $"the background line is drawn: phase {CurrentPhase()}, expected '{PlanCardSupport.BackgroundSummary(work)}', stored {Session.BackgroundWork?.Running.Count ?? -1} running, turn ended {Session.BackgroundWork?.TurnEnded}");
                 await WaitUI(() => FindById<StackPanel>(guidedBody, "background-tasks-" + id) is { IsLoaded: true } rows && rows.Children.Count == 2);
                 Require(HasText("background-tasks-", "review the diff"), "the running background agent is listed");
-                Require(styleActionButtons.ContainsKey("new-plan") && styleActionButtons.ContainsKey("verify"), "after execution: new plan and verify");
                 checks["executing"] = CurrentPhase(); checks["progressWidget"] = true; checks["backgroundList"] = true;
 
                 // Every new request starts in plan mode; the pane's stored mode stays.
