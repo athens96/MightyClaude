@@ -57,3 +57,10 @@ Mighty Claude 是一款桌面应用，可以在一个窗口中并排使用 Claud
 1. 打开{{ui:menu.settings}} → {{ui:settings.nav.general}}。
 2. 在{{ui:settings.display.languageLabel}}中选择语言。选择{{ui:settings.display.languageSystem}}时使用 Mac 的语言。
 3. 菜单栏要在重新打开应用后才会更改。其他界面如果没有立即更改，重新打开应用后也会全部更改。
+
+## 打开帮助 {#help}
+可以直接在应用中打开本帮助，并以应用中选择的语言显示。
+
+- Mac：菜单栏中的{{ui:menu.help}}（{{kbd:⌘?}}），或{{ui:menu.settings}} → {{ui:settings.nav.about}}中的{{ui:settings.appInfo.openHelpButton}}按钮
+- Windows：侧边栏底部的帮助按钮，或 {{kbd:F1}}
+- 手机：{{ui:phone.tabs.hosts}}标签页中的{{ui:phone.hosts.help}}按钮

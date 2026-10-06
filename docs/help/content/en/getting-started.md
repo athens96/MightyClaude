@@ -57,3 +57,10 @@ To open more folders, use {{ui:menu.openProject}} in the menu bar or {{kbd:⌘O}
 1. Open {{ui:menu.settings}} → {{ui:settings.nav.general}}.
 2. Pick a language under {{ui:settings.display.languageLabel}}. {{ui:settings.display.languageSystem}} follows your Mac's language.
 3. The menu bar changes the next time the app opens. If other screens don't change right away, they will after you reopen the app too.
+
+## Opening this help {#help}
+You can open this help straight from the app. It opens in the language you chose in the app.
+
+- Mac: {{ui:menu.help}} ({{kbd:⌘?}}) in the menu bar, or the {{ui:settings.appInfo.openHelpButton}} button in {{ui:menu.settings}} → {{ui:settings.nav.about}}
+- Windows: the help button at the bottom of the sidebar, or {{kbd:F1}}
+- Phone: the {{ui:phone.hosts.help}} button on the {{ui:phone.tabs.hosts}} tab

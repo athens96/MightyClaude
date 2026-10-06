@@ -57,3 +57,10 @@ Mighty Claudeは、Claude Code、Codex CLI、Gemini CLIを1つのウインドウ
 1. {{ui:menu.settings}} → {{ui:settings.nav.general}}を開きます。
 2. {{ui:settings.display.languageLabel}}で言語を選びます。{{ui:settings.display.languageSystem}}を選ぶとMacの言語に従います。
 3. メニューバーはアプリを開き直すまで変わりません。ほかの画面がすぐに変わらない場合も、アプリを開き直すとすべて切り替わります。
+
+## ヘルプを開く {#help}
+このヘルプはアプリから直接開けます。アプリで選んだ言語で表示されます。
+
+- Mac：メニューバーの{{ui:menu.help}}（{{kbd:⌘?}}）、または{{ui:menu.settings}} → {{ui:settings.nav.about}}の{{ui:settings.appInfo.openHelpButton}}ボタン
+- Windows：サイドバー下部のヘルプボタン、または{{kbd:F1}}
+- スマートフォン：{{ui:phone.tabs.hosts}}タブの{{ui:phone.hosts.help}}ボタン
