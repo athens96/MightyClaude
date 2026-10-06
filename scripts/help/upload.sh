@@ -64,7 +64,14 @@ put() { # put <file> <key>
   esac
   echo "put $BUCKET/$key ($type)"
   if [ "$DRY_RUN" -eq 0 ]; then
-    wrangler r2 object put "$BUCKET/$key" --file "$file" --content-type "$type" --cache-control "$cache" --remote >/dev/null
+    # R2 answers an occasional 500 "internal error, try again"; three tries, then stop.
+    local attempt
+    for attempt in 1 2 3; do
+      wrangler r2 object put "$BUCKET/$key" --file "$file" --content-type "$type" --cache-control "$cache" --remote >/dev/null && return 0
+      [ "$attempt" -lt 3 ] && { echo "help upload: retrying $key" >&2; sleep $((attempt * 5)); }
+    done
+    echo "help upload: $key failed three times" >&2
+    exit 1
   fi
 }
 
