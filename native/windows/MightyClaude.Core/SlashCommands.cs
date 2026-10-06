@@ -31,6 +31,8 @@ public sealed record SlashCommand(
 }
 
 // Korean particle: 로/으로 chosen by the final consonant of the preceding word.
+// Unused: macOS deleted its copy in i18n stage 2-2 (particle templates now put the particle after a
+// fixed noun). Remove this one in stage 2-3 together with the Windows literals.
 public static class KoreanParticle
 {
     public static string Ro(string word)

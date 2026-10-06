@@ -19,16 +19,18 @@ struct ModelRefreshTests {
     }
 
     @Test func providerWideDiscardLeavesOtherProviderCached() async throws {
-        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
-        let folder = try workspace(root, "workspace", model: "old-model")
-        let service = try await service(root)
-        for provider in ["claude", "codex"] { _ = await service.modelCatalog(provider: provider, workspacePath: folder.path) }
-        try configure(folder, model: "new-model")
-        await service.discardModelCatalogs(provider: "claude")
-        #expect(await service.modelCatalog(provider: "claude", workspacePath: folder.path).models.last?.value == "new-model")
-        #expect(await service.modelCatalog(provider: "codex", workspacePath: folder.path).models.last?.value == "old-model")
-        #expect(calls(folder, "claude") == 2 && calls(folder, "codex") == 1)
-        await service.shutdown()
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+            let folder = try workspace(root, "workspace", model: "old-model")
+            let service = try await service(root)
+            for provider in ["claude", "codex"] { _ = await service.modelCatalog(provider: provider, workspacePath: folder.path) }
+            try configure(folder, model: "new-model")
+            await service.discardModelCatalogs(provider: "claude")
+            #expect(await service.modelCatalog(provider: "claude", workspacePath: folder.path).models.last?.value == "new-model")
+            #expect(await service.modelCatalog(provider: "codex", workspacePath: folder.path).models.last?.value == "old-model")
+            #expect(calls(folder, "claude") == 2 && calls(folder, "codex") == 1)
+            await service.shutdown()
+        }
     }
 
     private func fixture() throws -> URL {
@@ -95,29 +97,31 @@ struct ModelRefreshTests {
     }
 
     @Test func workspaceCatalogsAndProviderRefreshesAreIsolated() async throws {
-        let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
-        let a = try workspace(root, "a", model: "company/one"), b = try workspace(root, "b", model: "company/two")
-        let service = try await service(root)
-        for provider in ["claude", "codex"] {
-            let first = await service.modelCatalog(provider: provider, workspacePath: a.path)
-            let second = await service.modelCatalog(provider: provider, workspacePath: b.path)
-            #expect(first.source == "cli" && first.models.last?.value == "company/one")
-            #expect(second.models.last?.value == "company/two")
-        }
-        try configure(a, model: "company/new")
-        let cached = await service.modelCatalog(provider: "claude", workspacePath: a.path + "/../a")
-        #expect(cached.models.last?.value == "company/one" && calls(a, "claude") == 1)
-        let fresh = await service.modelCatalog(provider: "claude", workspacePath: a.path, forceRefresh: true)
-        #expect(fresh.models.last?.value == "company/new" && calls(a, "claude") == 2)
-        #expect(await service.modelCatalog(provider: "codex", workspacePath: a.path).models.last?.value == "company/one")
-        #expect(calls(a, "codex") == 1 && calls(b, "claude") == 1)
-        for folder in [a, b] {
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let root = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+            let a = try workspace(root, "a", model: "company/one"), b = try workspace(root, "b", model: "company/two")
+            let service = try await service(root)
             for provider in ["claude", "codex"] {
-                let requests = try String(contentsOf: folder.appendingPathComponent(provider + "-requests"), encoding: .utf8)
-                #expect(!requests.contains("turn/start") && !requests.contains("thread/start") && !requests.contains("\"type\":\"user\""))
+                let first = await service.modelCatalog(provider: provider, workspacePath: a.path)
+                let second = await service.modelCatalog(provider: provider, workspacePath: b.path)
+                #expect(first.source == "cli" && first.models.last?.value == "company/one")
+                #expect(second.models.last?.value == "company/two")
             }
+            try configure(a, model: "company/new")
+            let cached = await service.modelCatalog(provider: "claude", workspacePath: a.path + "/../a")
+            #expect(cached.models.last?.value == "company/one" && calls(a, "claude") == 1)
+            let fresh = await service.modelCatalog(provider: "claude", workspacePath: a.path, forceRefresh: true)
+            #expect(fresh.models.last?.value == "company/new" && calls(a, "claude") == 2)
+            #expect(await service.modelCatalog(provider: "codex", workspacePath: a.path).models.last?.value == "company/one")
+            #expect(calls(a, "codex") == 1 && calls(b, "claude") == 1)
+            for folder in [a, b] {
+                for provider in ["claude", "codex"] {
+                    let requests = try String(contentsOf: folder.appendingPathComponent(provider + "-requests"), encoding: .utf8)
+                    #expect(!requests.contains("turn/start") && !requests.contains("thread/start") && !requests.contains("\"type\":\"user\""))
+                }
+            }
+            await service.shutdown()
         }
-        await service.shutdown()
     }
 
     @Test func forcedDiscoverySupersedesOldWorkAndConcurrentRefreshesShareAProbe() async throws {

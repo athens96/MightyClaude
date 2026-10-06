@@ -1,18 +1,5 @@
 import Foundation
 
-/// Korean particles chosen by the last syllable of the preceding word.
-public enum KoreanParticle {
-    /// 로/으로: 으로 only after a Korean syllable with a final consonant other
-    /// than ㄹ, or a digit read with one (0 영, 3 삼, 6 육 — `Opus 4.6으로`);
-    /// Latin words, other digits and open syllables take 로.
-    public static func ro(_ word: String) -> String {
-        if let last = word.unicodeScalars.last, ("0"..."9").contains(last) { return "036".unicodeScalars.contains(last) ? "으로" : "로" }
-        guard let scalar = word.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(scalar) else { return "로" }
-        let final = (scalar - 0xAC00) % 28
-        return final == 0 || final == 8 ? "로" : "으로"
-    }
-}
-
 /// What choosing a built-in does in the app instead of sending prompt text.
 /// The CLIs' own commands (`/plugin`, `/clear`, `/model`…) do not exist in
 /// their headless modes, so the app performs the equivalent itself.
@@ -36,7 +23,7 @@ public enum SlashCommandOrigin: String, Sendable, Equatable { case app, project,
 public struct SlashCommand: Sendable, Equatable, Identifiable {
     public var invocation: String
     public var description: String
-    /// Where it came from, for the badge: 사용자 스킬 · 프로젝트 스킬 · 플러그인 <name> · 사용자 명령 · 프로젝트 명령 · Codex 스킬,
+    /// Where it came from, for the badge: user skill · project skill · plugin <name> · user command · project command · Codex skill,
     /// or one of `SlashCommandCatalog.appSource` / `modelSource` / `permissionSource` for built-ins and their choices.
     public var source: String
     /// The same fact as `source`, as a value. Set at every discovery site so
@@ -81,9 +68,9 @@ public enum SlashCommandCatalog {
 
     // MARK: Built-ins
 
-    public static let appSource = "앱 기능"
-    public static let modelSource = "모델"
-    public static let permissionSource = "작업 권한"
+    public static var appSource: String { L("slash.source.app") }
+    public static var modelSource: String { L("composer.label.model") }
+    public static var permissionSource: String { L("composer.label.permission") }
 
     /// The CLI's own slash commands that the app answers itself, using the
     /// names each CLI's users already know. Gemini has no plugin browser here.
@@ -91,27 +78,27 @@ public enum SlashCommandCatalog {
         func app(_ name: String, _ description: String, action: SlashCommandAction? = nil, argument: SlashArgument? = nil) -> SlashCommand {
             SlashCommand(invocation: name, description: description, source: appSource, origin: .app, action: action, argument: argument)
         }
-        let model = app("model", "모델 바꾸기 · 이름을 이어서 고르세요", argument: .model)
-        let rename = app("rename", "실행 창 이름 바꾸기", action: .rename)
-        let help = app("help", "이 실행 창에서 쓸 수 있는 앱 명령 보기", action: .help)
+        let model = app("model", L("slash.builtin.model"), argument: .model)
+        let rename = app("rename", L("slash.builtin.rename"), action: .rename)
+        let help = app("help", L("slash.builtin.help"), action: .help)
         switch provider {
         case "claude":
-            return [app("plugin", "플러그인 마켓플레이스 열기", action: .openPlugins), model,
-                    app("permissions", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
-                    app("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
-                    app("cost", "이 실행 창의 토큰·비용 보기", action: .showUsage), app("usage", "이 실행 창의 토큰·비용 보기", action: .showUsage),
-                    app("config", "Mighty Claude 설정 열기", action: .openSettings), rename, help]
+            return [app("plugin", L("slash.builtin.plugin"), action: .openPlugins), model,
+                    app("permissions", L("slash.builtin.permission"), argument: .permission),
+                    app("clear", L("slash.builtin.newConversation"), action: .newConversation),
+                    app("cost", L("slash.builtin.usage"), action: .showUsage), app("usage", L("slash.builtin.usage"), action: .showUsage),
+                    app("config", L("slash.builtin.settings"), action: .openSettings), rename, help]
         case "codex":
-            return [app("plugins", "플러그인 마켓플레이스 열기", action: .openPlugins), model,
-                    app("approvals", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
-                    app("new", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
-                    app("status", "이 실행 창의 토큰·비용 보기", action: .showUsage),
-                    app("settings", "Mighty Claude 설정 열기", action: .openSettings), rename, help]
+            return [app("plugins", L("slash.builtin.plugin"), action: .openPlugins), model,
+                    app("approvals", L("slash.builtin.permission"), argument: .permission),
+                    app("new", L("slash.builtin.newConversation"), action: .newConversation),
+                    app("status", L("slash.builtin.usage"), action: .showUsage),
+                    app("settings", L("slash.builtin.settings"), action: .openSettings), rename, help]
         case "gemini":
-            return [model, app("approval-mode", "작업 권한 바꾸기 · 모드를 이어서 고르세요", argument: .permission),
-                    app("clear", "새 대화로 시작 · 다음 입력부터 이전 대화를 잇지 않음", action: .newConversation),
-                    app("stats", "이 실행 창의 토큰·비용 보기", action: .showUsage),
-                    app("settings", "Mighty Claude 설정 열기", action: .openSettings), rename, help]
+            return [model, app("approval-mode", L("slash.builtin.permission"), argument: .permission),
+                    app("clear", L("slash.builtin.newConversation"), action: .newConversation),
+                    app("stats", L("slash.builtin.usage"), action: .showUsage),
+                    app("settings", L("slash.builtin.settings"), action: .openSettings), rename, help]
         default: return []
         }
     }
@@ -119,7 +106,7 @@ public enum SlashCommandCatalog {
     /// The `/help` text: one line per built-in.
     public static func helpText(provider: String) -> String {
         let lines = builtins(provider: provider).map { "/" + $0.invocation + " · " + $0.description }
-        return "앱 명령 · " + ProviderOptions.label(provider) + " 실행 창\n" + lines.joined(separator: "\n") + "\n그 밖의 /이름은 스킬·사용자 명령·플러그인 명령으로 CLI에 전달됩니다."
+        return L("slash.help.headerTemplate", ["provider": ProviderOptions.label(provider)]) + "\n" + lines.joined(separator: "\n") + "\n" + L("slash.help.footer")
     }
 
     /// Prefix matches first (by name), then substring matches of name or description.
@@ -143,16 +130,16 @@ public enum SlashCommandCatalog {
         let workspace = workspacePath.map { URL(fileURLWithPath: $0, isDirectory: true) }
         switch provider {
         case "claude":
-            found += skills(in: home.appendingPathComponent(".claude/skills"), source: "사용자 스킬", origin: .user)
-            found += commandFiles(in: home.appendingPathComponent(".claude/commands"), source: "사용자 명령", origin: .user)
+            found += skills(in: home.appendingPathComponent(".claude/skills"), source: L("slash.source.userSkill"), origin: .user)
+            found += commandFiles(in: home.appendingPathComponent(".claude/commands"), source: L("slash.source.userCommand"), origin: .user)
             found += pluginCommands(home: home)
             if let workspace {
-                found += skills(in: workspace.appendingPathComponent(".claude/skills"), source: "프로젝트 스킬", origin: .project)
-                found += commandFiles(in: workspace.appendingPathComponent(".claude/commands"), source: "프로젝트 명령", origin: .project)
+                found += skills(in: workspace.appendingPathComponent(".claude/skills"), source: L("slash.source.projectSkill"), origin: .project)
+                found += commandFiles(in: workspace.appendingPathComponent(".claude/commands"), source: L("slash.source.projectCommand"), origin: .project)
             }
         case "codex":
-            found += skills(in: home.appendingPathComponent(".codex/skills"), source: "Codex 스킬", origin: .user)
-            if let workspace { found += skills(in: workspace.appendingPathComponent(".codex/skills"), source: "프로젝트 스킬", origin: .project) }
+            found += skills(in: home.appendingPathComponent(".codex/skills"), source: L("slash.source.codexSkill"), origin: .user)
+            if let workspace { found += skills(in: workspace.appendingPathComponent(".codex/skills"), source: L("slash.source.projectSkill"), origin: .project) }
         default: break
         }
         // Later sources (project) win over earlier ones (user, plugins).
@@ -201,7 +188,7 @@ public enum SlashCommandCatalog {
             guard let plugin = validName(String(key.split(separator: "@").first ?? "")), let installs = value as? [[String: Any]],
                   let path = installs.compactMap({ $0["installPath"] as? String }).first, path.hasPrefix("/") else { continue }
             let root = URL(fileURLWithPath: path, isDirectory: true)
-            let source = "플러그인 " + plugin
+            let source = L("slash.pluginSourceTemplate", ["plugin": plugin])
             result += skills(in: root.appendingPathComponent("skills"), source: source, origin: .plugin, invocationPrefix: plugin + ":")
             result += commandFiles(in: root.appendingPathComponent("commands"), source: source, origin: .plugin, invocationPrefix: plugin + ":")
         }

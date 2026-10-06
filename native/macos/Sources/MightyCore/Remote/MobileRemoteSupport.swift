@@ -83,7 +83,7 @@ public enum MobileRemoteSupport {
     /// mode is applied, so one POST can turn Mighty on and pick a style.
     public static func validate(_ request: MobileSettingsRequest, options: MobileSettingsOptions) throws {
         let fields = [request.model, request.permissionMode, request.effort, request.agentViewMode, request.mightyStyle, request.styleId]
-        guard fields.contains(where: { $0 != nil }) else { throw MobileHostError.badRequest("바꿀 설정을 하나 이상 보내세요.") }
+        guard fields.contains(where: { $0 != nil }) else { throw MobileHostError.badRequest(L("remote.settings.empty")) }
         try require(request.model, in: options.models, field: "model")
         try require(request.permissionMode, in: options.permissionModes, field: "permissionMode")
         try require(request.effort, in: options.efforts ?? [], field: "effort")
@@ -95,13 +95,13 @@ public enum MobileRemoteSupport {
             try require(request.mightyStyle, in: options.mightyStyles, field: "mightyStyle")
         }
         if let mode = request.agentViewMode, !MobileWire.agentViewModes.contains(mode) {
-            throw MobileHostError.badRequest("agentViewMode는 plain 또는 mighty여야 합니다.")
+            throw MobileHostError.badRequest(L("remote.settings.badViewMode"))
         }
     }
 
     private static func require(_ value: String?, in options: [MobileOption], field: String) throws {
         guard let value else { return }
-        guard options.contains(where: { $0.id == value }) else { throw MobileHostError.badRequest("\(field) 값이 이 실행 창의 선택지에 없습니다.") }
+        guard options.contains(where: { $0.id == value }) else { throw MobileHostError.badRequest(L("remote.settings.notAnOption", ["field": field])) }
     }
 
     /// The Mac stores nil or "default" for the plain transcript; the wire says "plain".
@@ -137,7 +137,7 @@ public enum MobileRemoteSupport {
     }
 
     /// One string for "not registered" and "not approved" alike (§4.5).
-    public static let unknownStyleMessage = "알 수 없는 스타일입니다."
+    public static var unknownStyleMessage: String { L("remote.error.unknownStyle") }
 
     /// What `POST /guided` does with a request, decided from the registry
     /// already in memory. Unregistered and unapproved answer alike and neither
@@ -162,7 +162,7 @@ public enum MobileRemoteSupport {
     public static func editable(status: String, pendingRun: Bool) -> Bool { status != "running" && !pendingRun }
 
     /// What the phone is told when a submit was dropped rather than accepted.
-    public static let droppedMessage = "요청을 전달하지 못했습니다. 실행 창 상태를 확인하고 다시 보내 주세요."
+    public static var droppedMessage: String { L("remote.error.dropped") }
 }
 
 /// The Mighty graph as a phone reads it. Every string that reaches the wire is
@@ -247,7 +247,7 @@ public enum MobileMightySupport {
     /// order the graph recorded them.
     public static func blocks(_ run: MightyGraphRun, ordinal: Int) -> [MobileBlock] {
         let mainStatus = status(run.status)
-        var result = [MobileBlock(id: run.id + ":main", kind: "main", title: "요청 \(ordinal)", status: mainStatus,
+        var result = [MobileBlock(id: run.id + ":main", kind: "main", title: L("remote.block.request", ["ordinal": String(ordinal)]), status: mainStatus,
                                   summary: summary(run.input), output: output(run.finalOutput), durationMs: duration(run.rootEntries, status: mainStatus),
                                   nodeModelLabel: run.nodeModelLabel, activity: activity(run.rootEntries, status: mainStatus))]
         for agent in run.agents {
@@ -457,8 +457,8 @@ public enum MobileCommandSupport {
 
     static func hint(_ argument: SlashArgument?) -> String? {
         switch argument {
-        case .model: return "모델 이름"
-        case .permission: return "권한 모드"
+        case .model: return L("remote.slashHint.model")
+        case .permission: return L("remote.slashHint.permission")
         case nil: return nil
         }
     }
@@ -470,18 +470,18 @@ public enum MobileUsageText {
     /// `model` is the pane's label; a model the CLI reported is labelled here.
     public static func text(usage: MobileUsage?, model: String, elapsedSeconds: Double? = nil) -> String {
         var lines: [String] = []
-        lines.append("모델 · " + (usage?.model.map { ModelLabel.text($0) } ?? model))
+        lines.append(L("remote.usage.model", ["model": usage?.model.map { ModelLabel.text($0) } ?? model]))
         if let used = usage?.contextUsedTokens {
-            var line = "컨텍스트 · " + tokens(used)
+            var line = L("remote.usage.context", ["tokens": tokens(used)])
             if let window = usage?.contextWindowTokens { line += " / " + tokens(window) }
             if let percent = usage?.contextPercent { line += " (" + String(format: "%.1f", percent) + "%)" }
             lines.append(line)
         }
-        if let total = usage?.totalTokens { lines.append("누적 토큰 · " + tokens(total)) }
-        if let cost = usage?.costUSD, cost.isFinite, cost >= 0 { lines.append("비용 · $" + String(format: "%.4f", cost)) }
-        if let elapsed = elapsedSeconds, elapsed > 0 { lines.append("경과 · \(Int(elapsed.rounded()))초") }
-        guard lines.count > 1 else { return "이 실행 창에서 아직 측정된 토큰·비용이 없습니다." }
-        return "토큰·비용\n" + lines.joined(separator: "\n")
+        if let total = usage?.totalTokens { lines.append(L("remote.usage.total", ["tokens": tokens(total)])) }
+        if let cost = usage?.costUSD, cost.isFinite, cost >= 0 { lines.append(L("remote.usage.cost", ["cost": String(format: "%.4f", cost)])) }
+        if let elapsed = elapsedSeconds, elapsed > 0 { lines.append(L("remote.usage.elapsed", ["seconds": String(Int(elapsed.rounded()))])) }
+        guard lines.count > 1 else { return L("remote.usage.none") }
+        return L("remote.usage.title") + "\n" + lines.joined(separator: "\n")
     }
 
     /// One formatter, fixed locale: these numbers are read on the phone, so

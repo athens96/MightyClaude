@@ -38,15 +38,15 @@ public struct AppUpdateManifest: Sendable, Equatable {
     /// or, for builds without a public key, the plain manifest. With a key,
     /// only an envelope whose signature verifies is accepted.
     public static func parse(_ data: Data, publicKey: Data? = nil, allowsFileURLs: Bool = false) throws -> AppUpdateManifest {
-        guard data.count <= 256 * 1024 else { throw MightyError("업데이트 정보 파일이 너무 큽니다.") }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw MightyError("업데이트 정보 파일을 JSON 객체로 읽지 못했습니다.") }
+        guard data.count <= 256 * 1024 else { throw MightyError(L("appUpdate.error.manifestFileTooLarge")) }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw MightyError(L("appUpdate.error.manifestFileNotJSON")) }
         if let payload = object["payload"] as? String, let signature = object["signature"] as? String {
-            guard object["format"] as? String == envelopeFormat else { throw MightyError("업데이트 정보의 서명 형식을 알 수 없습니다.") }
-            guard let payloadBytes = Data(base64Encoded: payload), let signatureBytes = Data(base64Encoded: signature) else { throw MightyError("업데이트 정보의 서명 인코딩이 잘못되었습니다.") }
+            guard object["format"] as? String == envelopeFormat else { throw MightyError(L("appUpdate.error.signatureFormat")) }
+            guard let payloadBytes = Data(base64Encoded: payload), let signatureBytes = Data(base64Encoded: signature) else { throw MightyError(L("appUpdate.error.signatureEncoding")) }
             var verified = false
             if let publicKey {
                 guard let key = try? Curve25519.Signing.PublicKey(rawRepresentation: publicKey), key.isValidSignature(signatureBytes, for: payloadBytes) else {
-                    throw MightyError("업데이트 정보의 서명이 이 앱의 공개 키와 맞지 않습니다.")
+                    throw MightyError(L("appUpdate.error.signatureMismatch"))
                 }
                 verified = true
             }
@@ -54,7 +54,7 @@ public struct AppUpdateManifest: Sendable, Equatable {
             manifest.signed = verified
             return manifest
         }
-        guard publicKey == nil else { throw MightyError("서명되지 않은 업데이트 정보입니다. 이 앱은 서명된 정보만 받습니다.") }
+        guard publicKey == nil else { throw MightyError(L("appUpdate.error.unsigned")) }
         return try parsePlain(data, allowsFileURLs: allowsFileURLs)
     }
 
@@ -64,9 +64,9 @@ public struct AppUpdateManifest: Sendable, Equatable {
     /// and `"url"` as `"download"`/`"downloadUrl"`. Package URLs must be https
     /// (or a file URL, for tests).
     static func parsePlain(_ data: Data, allowsFileURLs: Bool) throws -> AppUpdateManifest {
-        guard data.count <= 256 * 1024, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw MightyError("업데이트 정보를 JSON 객체로 읽지 못했습니다.") }
+        guard data.count <= 256 * 1024, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw MightyError(L("appUpdate.error.manifestNotJSON")) }
         guard let rawVersion = (object["version"] ?? object["latest"] ?? object["latestVersion"]) as? String,
-              let version = AppVersion.normalized(rawVersion) else { throw MightyError("업데이트 정보에 유효한 version이 없습니다.") }
+              let version = AppVersion.normalized(rawVersion) else { throw MightyError(L("appUpdate.error.noVersion")) }
         let assets = (object["platforms"] ?? object["downloads"] ?? object["assets"]) as? [String: Any] ?? object
         func asset(_ value: Any?) -> AppUpdateAsset? {
             // Bare string URLs are always rejected: they cannot carry sha256 or size.
@@ -148,7 +148,7 @@ public struct AppUpdateAvailability: Sendable, Equatable {
         self.current = current; self.manifest = manifest
         let newer = AppVersion.isNewer(manifest.version, than: current)
         if newer, let minimum = manifest.minimumSystemVersion, AppVersion.isNewer(minimum, than: systemVersion) {
-            isNewer = false; blockedReason = "새 버전 \(manifest.version)은 macOS \(minimum) 이상이 필요합니다. 이 Mac은 \(systemVersion)입니다."
+            isNewer = false; blockedReason = L("appUpdate.blocked.systemTooOld", ["version": manifest.version, "minimum": minimum, "system": systemVersion])
         } else { isNewer = newer; blockedReason = nil }
     }
 }
@@ -194,22 +194,22 @@ public actor AppUpdateService {
     public var verifiesSignatures: Bool { publicKey != nil }
 
     public func check(manifestURL: URL, currentVersion: String) async throws -> AppUpdateAvailability {
-        guard publicKey != nil else { throw MightyError("이 빌드는 업데이트 확인을 지원하지 않습니다.") }
-        guard AppUpdateManifest.allowed(manifestURL, allowsFileURLs: allowsFileURLs) else { throw MightyError("업데이트 정보 주소는 https여야 합니다.") }
+        guard publicKey != nil else { throw MightyError(L("appUpdate.error.noPublicKey")) }
+        guard AppUpdateManifest.allowed(manifestURL, allowsFileURLs: allowsFileURLs) else { throw MightyError(L("appUpdate.error.manifestNotHTTPS")) }
         var request = URLRequest(url: manifestURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request, delegate: AppUpdateTransportPolicy(allowsFileURLs: allowsFileURLs))
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw MightyError("업데이트 정보를 받지 못했습니다. HTTP \(http.statusCode)") }
-        guard let final = response.url, AppUpdateManifest.allowed(final, allowsFileURLs: allowsFileURLs) else { throw MightyError("업데이트 정보가 https가 아닌 주소에서 왔습니다.") }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw MightyError(L("appUpdate.error.manifestHTTP", ["status": String(http.statusCode)])) }
+        guard let final = response.url, AppUpdateManifest.allowed(final, allowsFileURLs: allowsFileURLs) else { throw MightyError(L("appUpdate.error.manifestRedirect")) }
         return AppUpdateAvailability(current: currentVersion, manifest: try AppUpdateManifest.parse(data, publicKey: publicKey, allowsFileURLs: allowsFileURLs))
     }
 
     /// Downloads the package into `updates/<version>/`, dropping every other
     /// version's folder, then verifies size and SHA-256 of the file on disk.
     public func download(_ asset: AppUpdateAsset, version: String, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
-        guard AppUpdateManifest.allowed(asset.url, allowsFileURLs: allowsFileURLs) else { throw MightyError("패키지 주소는 https여야 합니다.") }
-        if let size = asset.size, size > Self.maximumPackageBytes { throw MightyError("패키지가 너무 큽니다.") }
+        guard AppUpdateManifest.allowed(asset.url, allowsFileURLs: allowsFileURLs) else { throw MightyError(L("appUpdate.error.packageNotHTTPS")) }
+        if let size = asset.size, size > Self.maximumPackageBytes { throw MightyError(L("appUpdate.error.packageTooLarge")) }
         let name = AppVersion.normalized(version) ?? "unknown"
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         for entry in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] { try? FileManager.default.removeItem(at: entry) }
@@ -220,16 +220,16 @@ public actor AppUpdateService {
         let task = Task<URL, Error> { [session, allowsFileURLs] in
             let (temporary, response) = try await session.download(for: URLRequest(url: asset.url), delegate: policy)
             defer { try? FileManager.default.removeItem(at: temporary) }
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw MightyError("패키지를 받지 못했습니다. HTTP \(http.statusCode)") }
-            guard let final = response.url, AppUpdateManifest.allowed(final, allowsFileURLs: allowsFileURLs) else { throw MightyError("패키지가 https가 아닌 주소에서 왔습니다.") }
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw MightyError(L("appUpdate.error.packageHTTP", ["status": String(http.statusCode)])) }
+            guard let final = response.url, AppUpdateManifest.allowed(final, allowsFileURLs: allowsFileURLs) else { throw MightyError(L("appUpdate.error.packageRedirect")) }
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: temporary, to: destination)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
             let received = (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int) ?? -1
-            guard received >= 0, received <= Self.maximumPackageBytes else { throw MightyError("패키지가 너무 큽니다.") }
-            if let size = asset.size, size != received { throw MightyError("패키지 크기가 업데이트 정보와 다릅니다 (\(received) ≠ \(size)).") }
+            guard received >= 0, received <= Self.maximumPackageBytes else { throw MightyError(L("appUpdate.error.packageTooLarge")) }
+            if let size = asset.size, size != received { throw MightyError(L("appUpdate.error.packageSize", ["received": String(received), "expected": String(size)])) }
             try Task.checkCancellation()
-            if let sha256 = asset.sha256, try Self.fileDigest(destination) != sha256 { throw MightyError("패키지 SHA-256이 업데이트 정보와 다릅니다.") }
+            if let sha256 = asset.sha256, try Self.fileDigest(destination) != sha256 { throw MightyError(L("appUpdate.error.packageDigest")) }
             progress(1)
             return destination
         }
@@ -257,9 +257,9 @@ public actor AppUpdateService {
         try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let result = try await Self.run("/usr/bin/ditto", ["-x", "-k", package.path, folder.path])
-        guard result.exitCode == 0 else { throw MightyError("패키지를 풀지 못했습니다: " + String(decoding: result.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) }
+        guard result.exitCode == 0 else { throw MightyError(L("appUpdate.error.unzip", ["error": String(decoding: result.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)])) }
         let apps = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey])) ?? []).filter { $0.pathExtension == "app" }
-        guard apps.count == 1, let app = apps.first else { throw MightyError("패키지 안에 앱 번들이 하나 있어야 합니다 (\(apps.count)개).") }
+        guard apps.count == 1, let app = apps.first else { throw MightyError(L("appUpdate.error.bundleCount", ["count": String(apps.count)])) }
         try Self.validate(app: app, within: folder, expectedBundleIdentifier: expectedBundleIdentifier)
         return app
     }
@@ -269,16 +269,16 @@ public actor AppUpdateService {
         let plist = app.appendingPathComponent("Contents/Info.plist")
         let binaryDirectory = app.appendingPathComponent("Contents/MacOS", isDirectory: true)
         for url in [app, plist, binaryDirectory] {
-            if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true { throw MightyError("패키지의 앱 번들에 심볼릭 링크가 있어 설치하지 않습니다.") }
+            if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true { throw MightyError(L("appUpdate.error.bundleSymlink")) }
         }
-        if let folder, !app.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/") { throw MightyError("패키지의 앱 번들 위치가 올바르지 않습니다.") }
+        if let folder, !app.resolvingSymlinksInPath().path.hasPrefix(folder.resolvingSymlinksInPath().path + "/") { throw MightyError(L("appUpdate.error.bundleLocation")) }
         guard let data = try? Data(contentsOf: plist), let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               info["CFBundleIdentifier"] as? String == expectedBundleIdentifier, let executable = info["CFBundleExecutable"] as? String, !executable.contains("/") else {
-            throw MightyError("패키지의 앱 번들이 Mighty Claude가 아니거나 손상되었습니다.")
+            throw MightyError(L("appUpdate.error.bundleIdentity"))
         }
         let binary = binaryDirectory.appendingPathComponent(executable)
         guard (try? binary.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true, FileManager.default.isExecutableFile(atPath: binary.path) else {
-            throw MightyError("패키지의 앱 실행 파일이 없거나 실행할 수 없습니다.")
+            throw MightyError(L("appUpdate.error.bundleExecutable"))
         }
     }
 
@@ -307,17 +307,17 @@ public actor AppUpdateService {
         NEW="$DESTINATION.update-new"
         LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         for _ in $(seq 1 600); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
-        if kill -0 "$PID" 2>/dev/null; then echo "Mighty Claude가 종료되지 않아 업데이트를 건너뜁니다." >&2; exit 1; fi
+        if kill -0 "$PID" 2>/dev/null; then echo "Mighty Claude did not quit; skipping the update." >&2; exit 1; fi
         sleep 2
-        [ -d "$SOURCE" ] || { echo "설치할 앱이 없습니다: $SOURCE" >&2; exit 1; }
+        [ -d "$SOURCE" ] || { echo "No app to install: $SOURCE" >&2; exit 1; }
         rm -rf "$NEW"
-        ditto "$SOURCE" "$NEW" || { echo "새 앱을 복사하지 못했습니다." >&2; rm -rf "$NEW"; exit 1; }
+        ditto "$SOURCE" "$NEW" || { echo "Could not copy the new app." >&2; rm -rf "$NEW"; exit 1; }
         if [ -d "$DESTINATION" ]; then
-          mkdir -p "$BACKUP" && ditto "$DESTINATION" "$BACKUP/MightyClaude.app.bak" || { echo "백업하지 못했습니다." >&2; rm -rf "$NEW"; exit 1; }
+          mkdir -p "$BACKUP" && ditto "$DESTINATION" "$BACKUP/MightyClaude.app.bak" || { echo "Could not back up the current app." >&2; rm -rf "$NEW"; exit 1; }
           rm -rf "$DESTINATION"
         fi
         if ! mv "$NEW" "$DESTINATION"; then
-          echo "앱을 교체하지 못해 이전 버전을 되돌립니다." >&2
+          echo "Could not replace the app; restoring the previous version." >&2
           rm -rf "$DESTINATION" "$NEW"
           [ -d "$BACKUP/MightyClaude.app.bak" ] && ditto "$BACKUP/MightyClaude.app.bak" "$DESTINATION"
           exit 1
@@ -326,7 +326,7 @@ public actor AppUpdateService {
         "$LSREGISTER" -u "$SOURCE" >/dev/null 2>&1 || true
         rm -rf "$(dirname "$SOURCE")"
         "$LSREGISTER" -f "$DESTINATION" >/dev/null 2>&1 || true
-        echo "설치 완료: $DESTINATION"
+        echo "Installed: $DESTINATION"
         \(relaunch ? "open -n \"$DESTINATION\"" : "true")
         """
     }
@@ -339,7 +339,7 @@ public actor AppUpdateService {
         try Data(script.utf8).write(to: path, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path.path)
         let log = folder.appendingPathComponent("install.log")
-        guard FileManager.default.createFile(atPath: log.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { throw MightyError("설치 로그 파일을 만들지 못했습니다.") }
+        guard FileManager.default.createFile(atPath: log.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { throw MightyError(L("appUpdate.error.installLog")) }
         let handle = try FileHandle(forWritingTo: log)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")

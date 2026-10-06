@@ -10,7 +10,7 @@ public struct CLIEnvironmentSnapshot: Sendable, CustomStringConvertible, CustomD
     public var description: String { "CLIEnvironmentSnapshot(source: \(source.rawValue))" }
     public var debugDescription: String { description }
     public var fallbackDetail: String? {
-        source == .processFallback ? "로그인 셸 환경을 읽지 못해 앱 시작 환경을 사용합니다. 터미널과 인증 설정이 다를 수 있습니다." : nil
+        source == .processFallback ? L("cliEnvironment.processFallback") : nil
     }
 }
 

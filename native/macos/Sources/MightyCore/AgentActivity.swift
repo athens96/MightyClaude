@@ -17,9 +17,9 @@ public enum ActivitySupport {
               let milliseconds = activity.durationMs, validDuration(milliseconds) else { return nil }
         if milliseconds < 1 { return milliseconds == 0 ? "0ms" : "<1ms" }
         if milliseconds < 1_000 { return "\(Int(milliseconds))ms" }
-        if milliseconds < 60_000 { return String(format: "%.1f초", floor(milliseconds / 100) / 10) }
+        if milliseconds < 60_000 { return L("run.activity.durationSeconds", ["seconds": String(format: "%.1f", floor(milliseconds / 100) / 10)]) }
         let seconds = Int(milliseconds / 1_000)
-        return seconds % 60 == 0 ? "\(seconds / 60)분" : "\(seconds / 60)분 \(seconds % 60)초"
+        return seconds % 60 == 0 ? L("run.activity.durationMinutes", ["minutes": String(seconds / 60)]) : L("run.activity.durationMinutesSeconds", ["minutes": String(seconds / 60), "seconds": String(seconds % 60)])
     }
 
     static func prefixUTF8(_ value: String, maximumBytes: Int) -> String {
@@ -148,10 +148,10 @@ struct CodexCollaborationItem {
     var summary: String {
         let action: String
         switch tool {
-        case "spawn_agent": action = "하위 에이전트 생성"
-        case "send_input": action = "하위 에이전트에 지시"
-        case "wait": action = "하위 에이전트 응답 대기"
-        default: action = "하위 에이전트 종료"
+        case "spawn_agent": action = L("run.agent.spawn")
+        case "send_input": action = L("run.agent.sendInput")
+        case "wait": action = L("run.agent.wait")
+        default: action = L("run.agent.close")
         }
         let targets = threads.prefix(4).map { String($0.prefix(12)) }.joined(separator: ", ")
         return ActivitySupport.clean([action, prompt, targets.isEmpty ? nil : targets].compactMap { $0 }.joined(separator: " · "), maximumBytes: ActivitySupport.maximumSummaryBytes, singleLine: true)

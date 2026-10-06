@@ -69,14 +69,14 @@ public struct MobileFileError: Error, Equatable, Sendable {
     public let code: String
     public let message: String
 
-    static let workspaceNotFound = MobileFileError(status: 404, code: "workspaceNotFound", message: "워크스페이스를 찾을 수 없습니다.")
-    static let notFound = MobileFileError(status: 404, code: "notFound", message: "파일이나 폴더를 찾을 수 없습니다.")
-    static let outsideWorkspace = MobileFileError(status: 403, code: "outsideWorkspace", message: "워크스페이스 밖의 경로입니다.")
-    static let notReadable = MobileFileError(status: 403, code: "notReadable", message: "읽을 수 없습니다.")
-    static let notDirectory = MobileFileError(status: 400, code: "notDirectory", message: "폴더가 아닙니다.")
-    static let badPath = MobileFileError(status: 400, code: "badPath", message: "경로가 올바르지 않습니다.")
+    static var workspaceNotFound: MobileFileError { MobileFileError(status: 404, code: "workspaceNotFound", message: L("remote.error.workspaceNotFound")) }
+    static var notFound: MobileFileError { MobileFileError(status: 404, code: "notFound", message: L("remote.files.notFound")) }
+    static var outsideWorkspace: MobileFileError { MobileFileError(status: 403, code: "outsideWorkspace", message: L("remote.files.outsideWorkspace")) }
+    static var notReadable: MobileFileError { MobileFileError(status: 403, code: "notReadable", message: L("remote.files.notReadable")) }
+    static var notDirectory: MobileFileError { MobileFileError(status: 400, code: "notDirectory", message: L("phone.files.error.notDirectory")) }
+    static var badPath: MobileFileError { MobileFileError(status: 400, code: "badPath", message: L("common.badPath")) }
     /// A newer preview from the same phone came in while this one waited for a slot.
-    static let superseded = MobileFileError(status: 409, code: "superseded", message: "더 새 미리보기 요청이 있어 건너뛰었습니다.")
+    static var superseded: MobileFileError { MobileFileError(status: 409, code: "superseded", message: L("remote.files.superseded")) }
 }
 
 /// The phone's read-only view of a workspace folder: the Mac files pane's

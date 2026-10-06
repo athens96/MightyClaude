@@ -59,6 +59,12 @@ public extension AppLanguage {
 /// A language forced for the current task only, so a test can read one copy
 /// without touching the process-wide preference other suites read at the same
 /// time. nil follows the preference.
+///
+/// These are task-locals: they reach the task that sets them and the child and
+/// `Task {}` tasks it starts, but not `Task.detached`, GCD queues, threads or
+/// callbacks. Work the code under test runs there (the process runner's read
+/// loops and their events, for one) reads the process-wide preference, so a
+/// test of it must compare against `L(...)` rather than force a language.
 public enum LocaleOverride {
     @TaskLocal public static var language: AppLanguage?
     /// The defaults the language preference is read from for the current task

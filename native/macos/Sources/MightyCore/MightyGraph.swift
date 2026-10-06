@@ -13,7 +13,7 @@ public struct MightyGraphAgent: Codable, Sendable, Equatable, Identifiable {
     public var activityGeneration: Int?
     /// Per-response attribution; absent in older graph events.
     public var responseRecords: [GraphResponseRecord]?
-    public init(id: String, parentID: String? = nil, title: String = "서브에이전트", input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil) {
+    public init(id: String, parentID: String? = nil, title: String = L("graph.agent.defaultTitle"), input: String = "", status: String = "running", entries: [LogEntry] = [], kind: String? = nil, usage: GraphTokenUsage? = nil, activityGeneration: Int? = nil, responseRecords: [GraphResponseRecord]? = nil) {
         self.id = id; self.parentID = parentID; self.title = title; self.input = input; self.status = status; self.entries = entries; self.kind = kind; self.usage = usage; self.activityGeneration = activityGeneration; self.responseRecords = responseRecords
     }
     public var isTask: Bool { kind == "task" }
@@ -101,11 +101,11 @@ public enum MightyGraphSupport {
     /// Mighty view both read it here, so the two cannot drift apart.
     public static func blockTitle(_ agent: MightyGraphAgent) -> String {
         switch blockKind(agent) {
-        case "steer": return "중간 요청"
+        case "steer": return L("graph.block.steer")
         case "compact": return ContextCompaction.title
-        case "question": return agent.title.isEmpty ? "질문" : agent.title
-        case "task": return agent.title.isEmpty ? "백그라운드 작업" : agent.title
-        default: return agent.title.isEmpty ? "하위 에이전트" : agent.title
+        case "question": return agent.title.isEmpty ? L("graph.block.question") : agent.title
+        case "task": return agent.title.isEmpty ? L("graph.block.task") : agent.title
+        default: return agent.title.isEmpty ? L("graph.block.agent") : agent.title
         }
     }
     static func nextState(_ previous: String, _ incoming: String) -> String {

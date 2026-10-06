@@ -49,12 +49,12 @@ public struct GraphTokenUsage: Codable, Sendable, Equatable {
         if tokens < 1_000_000 { return String(format: tokens < 10_000 ? "%.1fK" : "%.0fK", Double(tokens) / 1_000) }
         return String(format: tokens < 10_000_000 ? "%.2fM" : "%.1fM", Double(tokens) / 1_000_000)
     }
-    public var summary: String { "토큰 " + Self.compact(total) }
+    public var summary: String { L("graph.usage.summary", ["total": Self.compact(total)]) }
     public var detail: String {
-        var parts = ["입력 " + Self.compact(inputTokens), "출력 " + Self.compact(outputTokens)]
-        if cacheReadTokens > 0 { parts.append("캐시 읽기 " + Self.compact(cacheReadTokens)) }
-        if cacheCreationTokens > 0 { parts.append("캐시 생성 " + Self.compact(cacheCreationTokens)) }
-        return parts.joined(separator: " · ") + " · 합계 " + Self.compact(total)
+        var parts = [L("graph.usage.input", ["value": Self.compact(inputTokens)]), L("graph.usage.output", ["value": Self.compact(outputTokens)])]
+        if cacheReadTokens > 0 { parts.append(L("graph.usage.cacheRead", ["value": Self.compact(cacheReadTokens)])) }
+        if cacheCreationTokens > 0 { parts.append(L("graph.usage.cacheCreation", ["value": Self.compact(cacheCreationTokens)])) }
+        return parts.joined(separator: " · ") + " · " + L("graph.usage.total", ["value": Self.compact(total)])
     }
 }
 

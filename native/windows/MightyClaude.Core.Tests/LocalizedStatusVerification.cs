@@ -14,7 +14,7 @@ internal static class LocalizedStatusVerification
             var koreanChip = AccountUsageStrings.ChipBeforeFirstRun;
             Locale.LanguagePreference = "en";
             Check(CompletionNotificationStrings.NotificationTitle == "MightyClaude · Task complete" && CompletionNotificationStrings.NotificationBodyTemplate.Replace("{title}", "Fixture") == "Fixture has finished.", "notifications must use the saved English preference after an earlier Korean read");
-            Check(AccountUsageStrings.ChipBeforeFirstRun == "Shown after a run" && AccountUsageSupport.WindowLabel("30m") == "30 min" && AccountUsageSupport.WindowLabel("2h") == "2 hours", "usage status and arbitrary duration windows must follow English");
+            Check(AccountUsageStrings.ChipBeforeFirstRun == "Shown after a run" && AccountUsageSupport.WindowLabel("30m") == "30 min" && AccountUsageSupport.WindowLabel("2h") == "2h", "usage status and arbitrary duration windows must follow English");
             foreach (var type in new[] { typeof(AccountUsageStrings), typeof(CompletionNotificationStrings) })
                 foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Static).Where(p => p.PropertyType == typeof(string)))
                 {

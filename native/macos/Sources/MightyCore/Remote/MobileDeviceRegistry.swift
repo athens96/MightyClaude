@@ -6,7 +6,7 @@ import Foundation
 public struct MobileDevice: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
-    /// Hex SHA-256 of the issued token; nil for the "구버전 앱" group, which has
+    /// Hex SHA-256 of the issued token; nil for the legacy-app group, which has
     /// no token and authenticates with the pairing key every time.
     public var tokenHash: String?
     public var firstSeen: String
@@ -34,7 +34,7 @@ public struct MobileDeviceInfo: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// What an auth frame leads to (docs/relay.md, "기기 토큰"). Kept apart from the
+/// What an auth frame leads to (docs/relay.md, the device token section). Kept apart from the
 /// socket so every branch — including the frames older apps still send — can be
 /// exercised without a relay.
 public enum MobileAuthDecision: Sendable, Equatable {
@@ -74,7 +74,7 @@ public enum MobileAuthSupport {
         let name = MobileDeviceRegistry.deviceName(frame["clientName"] as? String)
         // A `clientId` that is not the identifier the app mints is a malformed
         // frame. Downgrading it to the key-only path would let any phone join
-        // the shared "구버전 앱" row simply by sending rubbish in that field.
+        // the shared legacy-app row simply by sending rubbish in that field.
         var clientId: String?
         if let raw = frame["clientId"] as? String {
             guard MobileDeviceRegistry.validClientId(raw) else { return .refused(reason: "malformed") }
@@ -99,7 +99,7 @@ public enum MobileAuthSupport {
             case .refused: return .refused(reason: "device-limit")
             }
         }
-        // An older app: admitted on the key, shown as one "구버전 앱" row because
+        // An older app: admitted on the key, shown as one legacy-app row because
         // there is nothing to tell such phones apart by — unless the user has
         // asked this host to take token-carrying phones only.
         guard allowLegacy else { return .refused(reason: "legacy-refused") }
@@ -108,7 +108,7 @@ public enum MobileAuthSupport {
     }
 
     /// Which live connections owe their place to the pairing key: the ones
-    /// still inside the handshake, the "구버전 앱" group, and any device the
+    /// still inside the handshake, the legacy-app group, and any device the
     /// registry holds no token for. A phone with a token never presents the
     /// key, so rotating it must leave that phone connected.
     public static func keyDependent(connections: [String], devices: [String: String], tokenHolders: Set<String>) -> [String] {
@@ -120,7 +120,7 @@ public enum MobileAuthSupport {
     }
 }
 
-/// The host's device list (docs/relay.md, "기기 토큰"). A phone pairs once with
+/// The host's device list (docs/relay.md, the device token section). A phone pairs once with
 /// the pairing key and is handed a token it keeps; later connections present
 /// the token instead, so revoking one phone leaves the others working.
 ///
@@ -130,7 +130,9 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
     public static let maximum = 32
     /// The id every phone that predates device tokens is grouped under.
     public static let legacyId = "legacy"
-    public static let legacyName = "구버전 앱"
+    /// Drawn for the legacy row whatever name the file stored, so the label
+    /// follows the app language.
+    public static var legacyName: String { L("mobileRemote.device.legacyName") }
     /// A connected phone touches `lastSeen` at most this often; without the
     /// throttle every long poll would rewrite the file.
     public static let lastSeenInterval: TimeInterval = 60
@@ -184,7 +186,7 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
         load()
         let stamp = now()
         return devices.map { device in
-            MobileDeviceInfo(id: device.id, name: device.name, firstSeen: device.firstSeen, lastSeen: device.lastSeen,
+            MobileDeviceInfo(id: device.id, name: device.id == Self.legacyId ? Self.legacyName : device.name, firstSeen: device.firstSeen, lastSeen: device.lastSeen,
                              connected: connected.contains(device.id), legacy: device.legacy,
                              isNew: Self.isNew(firstSeen: device.firstSeen, now: stamp))
         }
@@ -220,12 +222,12 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
     }
 
     /// A phone's own name, bounded and stripped of control and invisible
-    /// characters. Empty or missing names become "휴대폰" rather than an
+    /// characters. Empty or missing names become "Phone" (localized) rather than an
     /// invisible row.
     public static func deviceName(_ raw: String?) -> String {
         let plain = MobileRemoteSupport.stripInvisibles(raw ?? "")
         let clean = ActivitySupport.clean(plain, maximumBytes: 120, singleLine: true)
-        guard !clean.isEmpty else { return "휴대폰" }
+        guard !clean.isEmpty else { return L("mobileRemote.device.defaultName") }
         return String(clean.prefix(maximumNameLength))
     }
 
@@ -380,7 +382,7 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
             // Unreadable: start empty rather than locking every phone out, but
             // keep the old bytes before the first write and say so on screen.
             corruptPending = true
-            warningText = "기기 목록 파일(devices.json)을 읽지 못해 목록을 새로 시작했습니다. 이전 파일은 같은 폴더에 devices.json.corrupt-… 이름으로 보관합니다. 휴대폰은 QR로 다시 페어링해야 합니다."
+            warningText = L("mobileRemote.device.listCorrupt")
             return
         }
         var seen = Set<String>()
@@ -407,7 +409,7 @@ public final class MobileDeviceRegistry: @unchecked Sendable {
         var placed = false
         defer { if !placed { try? FileManager.default.removeItem(at: temporary) } }
         guard FileManager.default.createFile(atPath: temporary.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
-            throw MightyError("기기 목록을 저장하지 못했습니다.")
+            throw MightyError(L("mobileRemote.device.saveFailed"))
         }
         if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary) }
         else { try FileManager.default.moveItem(at: temporary, to: url) }

@@ -25,7 +25,7 @@ public struct UserQuestionnaire: Codable, Sendable, Equatable {
                   && (2...4).contains(question.options.count)
                   && Set(question.options.map(\.label)).count == question.options.count
                   && question.options.allSatisfy { Self.textIsValid($0.label, limit: 1_024) && Self.textIsValid($0.description, limit: 8_192, allowEmpty: true) }
-              }) else { throw MightyError("선택 요청의 질문 또는 선택지 형식이 올바르지 않습니다.") }
+              }) else { throw MightyError(L("questionnaire.error.badFormat")) }
     }
 
     public static func parse(inputJSON: String) -> UserQuestionnaire? {
@@ -36,10 +36,10 @@ public struct UserQuestionnaire: Codable, Sendable, Equatable {
     /// Returns the SDK's question-text -> answer-string shape. Multiple picks
     /// follow the SDK's comma-space convention, in the original option order.
     public func validatedAnswers(_ answers: [String: UserQuestionAnswer]) throws -> [String: String] {
-        guard Set(answers.keys) == Set(questions.map(\.question)) else { throw MightyError("모든 질문에 답변해 주세요.") }
+        guard Set(answers.keys) == Set(questions.map(\.question)) else { throw MightyError(L("questionnaire.error.incomplete")) }
         var result: [String: String] = [:]
         for question in questions {
-            guard let answer = answers[question.question] else { throw MightyError("답변이 누락되었습니다.") }
+            guard let answer = answers[question.question] else { throw MightyError(L("questionnaire.error.missingAnswer")) }
             let selections = Set(answer.selectedOptions)
             let custom = answer.customText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard selections.count == answer.selectedOptions.count,
@@ -47,7 +47,7 @@ public struct UserQuestionnaire: Codable, Sendable, Equatable {
                   Self.textIsValid(custom, limit: 8_192, allowEmpty: true),
                   !selections.isEmpty || !custom.isEmpty,
                   question.multiSelect || selections.count + (custom.isEmpty ? 0 : 1) == 1 else {
-                throw MightyError("질문의 선택 방식에 맞게 답변해 주세요.")
+                throw MightyError(L("questionnaire.error.selection"))
             }
             var values = question.options.filter { selections.contains($0.label) }.map(\.label)
             if !custom.isEmpty { values.append(custom) }

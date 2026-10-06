@@ -164,7 +164,7 @@ public actor ToolkitStore {
         guard let data = try? Data(contentsOf: fileURL),
               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               object["version"] as? Int == 1 else {
-            fileError = ToolkitStoreError("toolkit.json을 읽을 수 없습니다. 원본 파일은 변경하지 않았습니다.")
+            fileError = ToolkitStoreError(L("toolkit.error.unreadable"))
             return
         }
         for rawEntry in (object["entries"] as? [[String: Any]]) ?? [] {
@@ -273,6 +273,6 @@ public actor ToolkitStore {
             let sha = String(line.split(separator: "\t").first ?? Substring()).trimmingCharacters(in: .whitespaces)
             if is40HexSHA(sha) { return sha }
         }
-        throw ToolkitStoreError("tag '\(tag)'를 커밋 SHA로 해석할 수 없습니다.")
+        throw ToolkitStoreError(L("toolkit.error.tagUnresolved", ["tag": tag]))
     }
 }

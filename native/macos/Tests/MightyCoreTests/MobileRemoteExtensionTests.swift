@@ -45,28 +45,30 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func settingsValidationRefusesEveryValueOutsideTheOptions() throws {
-        let options = MobileSettingsOptions(
-            models: [MobileOption(id: "default", label: "CLI 기본값"), MobileOption(id: "opus", label: "opus")],
-            permissionModes: [MobileOption(id: "manual", label: "Always ask")],
-            efforts: [MobileOption(id: "default", label: "Auto"), MobileOption(id: "high", label: "High")],
-            mightyStyles: [MobileOption(id: "cli", label: "CLI")])
-        #expect(throws: Never.self) { try MobileRemoteSupport.validate(MobileSettingsRequest(model: "opus", effort: "high"), options: options) }
-        #expect(throws: MobileHostError.badRequest("바꿀 설정을 하나 이상 보내세요.")) {
-            try MobileRemoteSupport.validate(MobileSettingsRequest(), options: options)
+        try LocaleOverride.$language.withValue(.ko) { () throws in
+            let options = MobileSettingsOptions(
+                models: [MobileOption(id: "default", label: "CLI 기본값"), MobileOption(id: "opus", label: "opus")],
+                permissionModes: [MobileOption(id: "manual", label: "Always ask")],
+                efforts: [MobileOption(id: "default", label: "Auto"), MobileOption(id: "high", label: "High")],
+                mightyStyles: [MobileOption(id: "cli", label: "CLI")])
+            #expect(throws: Never.self) { try MobileRemoteSupport.validate(MobileSettingsRequest(model: "opus", effort: "high"), options: options) }
+            #expect(throws: MobileHostError.badRequest("바꿀 설정을 하나 이상 보내세요.")) {
+                try MobileRemoteSupport.validate(MobileSettingsRequest(), options: options)
+            }
+            for request in [MobileSettingsRequest(model: "sonnet"), MobileSettingsRequest(permissionMode: "fullAccess"),
+                            MobileSettingsRequest(effort: "max"), MobileSettingsRequest(mightyStyle: "ouroboros"),
+                            MobileSettingsRequest(agentViewMode: "graph")] {
+                var refused = false
+                do { try MobileRemoteSupport.validate(request, options: options) } catch let failure as MobileHostError { refused = failure.status == 400 } catch { refused = false }
+                #expect(refused)
+            }
+            #expect(throws: Never.self) { try MobileRemoteSupport.validate(MobileSettingsRequest(agentViewMode: "mighty"), options: options) }
+            // No effort picker at all: any effort the phone sends is outside the options.
+            var refusedEffort = false
+            do { try MobileRemoteSupport.validate(MobileSettingsRequest(effort: "high"), options: MobileSettingsOptions(models: options.models)) }
+            catch let failure as MobileHostError { refusedEffort = failure.status == 400 }
+            #expect(refusedEffort)
         }
-        for request in [MobileSettingsRequest(model: "sonnet"), MobileSettingsRequest(permissionMode: "fullAccess"),
-                        MobileSettingsRequest(effort: "max"), MobileSettingsRequest(mightyStyle: "ouroboros"),
-                        MobileSettingsRequest(agentViewMode: "graph")] {
-            var refused = false
-            do { try MobileRemoteSupport.validate(request, options: options) } catch let failure as MobileHostError { refused = failure.status == 400 } catch { refused = false }
-            #expect(refused)
-        }
-        #expect(throws: Never.self) { try MobileRemoteSupport.validate(MobileSettingsRequest(agentViewMode: "mighty"), options: options) }
-        // No effort picker at all: any effort the phone sends is outside the options.
-        var refusedEffort = false
-        do { try MobileRemoteSupport.validate(MobileSettingsRequest(effort: "high"), options: MobileSettingsOptions(models: options.models)) }
-        catch let failure as MobileHostError { refusedEffort = failure.status == 400 }
-        #expect(refusedEffort)
     }
 
     @Test func submitOutcomesNameWhatHappenedAndDroppedIsNotAnAcceptance() {
@@ -155,29 +157,31 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func slashCommandsBecomeWireActionsAndDropMacOnlyEntries() {
-        let wire = MobileCommandSupport.wire(SlashCommandCatalog.builtins(provider: "claude"))
-        let names = wire.map(\.name)
-        #expect(!names.contains("plugin") && !names.contains("config"))
-        #expect(wire.first { $0.name == "model" }?.action == "model")
-        #expect(wire.first { $0.name == "model" }?.argumentHint == "모델 이름")
-        #expect(wire.first { $0.name == "permissions" }?.action == "permission")
-        #expect(wire.first { $0.name == "clear" }?.action == "clear")
-        #expect(wire.first { $0.name == "usage" }?.action == "usage")
-        #expect(wire.first { $0.name == "rename" }?.action == "rename")
-        #expect(wire.first { $0.name == "help" }?.action == "help")
-        #expect(wire.allSatisfy { $0.source == "app" })
-        // The wire source is the structured origin, never the Korean badge text:
-        // prose that changes must not silently reclassify a command.
-        let scanned = [SlashCommand(invocation: "spec", description: "명세", source: "프로젝트 스킬", origin: .project),
-                       SlashCommand(invocation: "note", description: "메모", source: "사용자 명령", origin: .user),
-                       SlashCommand(invocation: "omc:plan", description: "계획", source: "플러그인 omc", origin: .plugin),
-                       SlashCommand(invocation: "codex", description: "스킬", source: "Codex 스킬", origin: .user)]
-        #expect(MobileCommandSupport.wire(scanned).map(\.source) == ["project", "user", "plugin", "user"])
-        #expect(MobileCommandSupport.wire(scanned).allSatisfy { $0.action == nil && $0.argumentHint == nil })
-        // Renamed prose keeps the origin the discovery site set.
-        let renamed = SlashCommand(invocation: "spec", description: "", source: "무엇이든", origin: .project)
-        #expect(MobileCommandSupport.wire([renamed]).first?.source == "project")
-        #expect(MobileCommandSupport.wire(scanned).allSatisfy { SlashCommandOrigin(rawValue: $0.source) != nil })
+        LocaleOverride.$language.withValue(.ko) {
+            let wire = MobileCommandSupport.wire(SlashCommandCatalog.builtins(provider: "claude"))
+            let names = wire.map(\.name)
+            #expect(!names.contains("plugin") && !names.contains("config"))
+            #expect(wire.first { $0.name == "model" }?.action == "model")
+            #expect(wire.first { $0.name == "model" }?.argumentHint == "모델 이름")
+            #expect(wire.first { $0.name == "permissions" }?.action == "permission")
+            #expect(wire.first { $0.name == "clear" }?.action == "clear")
+            #expect(wire.first { $0.name == "usage" }?.action == "usage")
+            #expect(wire.first { $0.name == "rename" }?.action == "rename")
+            #expect(wire.first { $0.name == "help" }?.action == "help")
+            #expect(wire.allSatisfy { $0.source == "app" })
+            // The wire source is the structured origin, never the Korean badge text:
+            // prose that changes must not silently reclassify a command.
+            let scanned = [SlashCommand(invocation: "spec", description: "명세", source: "프로젝트 스킬", origin: .project),
+                           SlashCommand(invocation: "note", description: "메모", source: "사용자 명령", origin: .user),
+                           SlashCommand(invocation: "omc:plan", description: "계획", source: "플러그인 omc", origin: .plugin),
+                           SlashCommand(invocation: "codex", description: "스킬", source: "Codex 스킬", origin: .user)]
+            #expect(MobileCommandSupport.wire(scanned).map(\.source) == ["project", "user", "plugin", "user"])
+            #expect(MobileCommandSupport.wire(scanned).allSatisfy { $0.action == nil && $0.argumentHint == nil })
+            // Renamed prose keeps the origin the discovery site set.
+            let renamed = SlashCommand(invocation: "spec", description: "", source: "무엇이든", origin: .project)
+            #expect(MobileCommandSupport.wire([renamed]).first?.source == "project")
+            #expect(MobileCommandSupport.wire(scanned).allSatisfy { SlashCommandOrigin(rawValue: $0.source) != nil })
+        }
     }
 
     @Test func newDetailFieldsAreAbsentFromTheJSONWhenTheHostHasNone() throws {
@@ -221,24 +225,26 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func everyBlockKindAndStatusLandsOnAContractValue() {
-        let agents = [agent("a1", kind: nil, status: "running"),
-                      agent("a2", kind: "task", status: "waiting"),
-                      agent("a3", kind: "steer", status: "completed"),
-                      agent("a4", kind: "compact", status: "error"),
-                      agent("a5", kind: "question", status: "stopped"),
-                      // A kind this build has never heard of is a sub-agent, not
-                      // a new word invented on the wire.
-                      agent("a6", kind: "wormhole", status: "idle")]
-        let run = MightyGraphRun(id: "run-1", input: "정리해줘", status: "completed", agents: agents)
-        let blocks = MobileMightySupport.blocks(run, ordinal: 3)
-        #expect(blocks.map(\.kind) == ["main", "agent", "task", "steer", "compact", "question", "agent"])
-        #expect(blocks.map(\.status) == ["completed", "running", "waiting", "completed", "error", "stopped", "running"])
-        #expect(blocks.allSatisfy { MobileWire.blockKinds.contains($0.kind) && MobileWire.blockStatuses.contains($0.status) })
-        #expect(blocks.first?.id == "run-1:main" && blocks.first?.title == "요청 3")
-        // The titles are the Mac's own; a named block keeps its name.
-        #expect(blocks.map(\.title).dropFirst() == ["하위 에이전트", "백그라운드 작업", "중간 요청", ContextCompaction.title, "질문", "하위 에이전트"])
-        let named = MobileMightySupport.blocks(MightyGraphRun(id: "r", agents: [agent("a", kind: "task", status: "running", title: "테스트 실행")]), ordinal: 1)
-        #expect(named.last?.title == "테스트 실행")
+        LocaleOverride.$language.withValue(.ko) {
+            let agents = [agent("a1", kind: nil, status: "running"),
+                          agent("a2", kind: "task", status: "waiting"),
+                          agent("a3", kind: "steer", status: "completed"),
+                          agent("a4", kind: "compact", status: "error"),
+                          agent("a5", kind: "question", status: "stopped"),
+                          // A kind this build has never heard of is a sub-agent, not
+                          // a new word invented on the wire.
+                          agent("a6", kind: "wormhole", status: "idle")]
+            let run = MightyGraphRun(id: "run-1", input: "정리해줘", status: "completed", agents: agents)
+            let blocks = MobileMightySupport.blocks(run, ordinal: 3)
+            #expect(blocks.map(\.kind) == ["main", "agent", "task", "steer", "compact", "question", "agent"])
+            #expect(blocks.map(\.status) == ["completed", "running", "waiting", "completed", "error", "stopped", "running"])
+            #expect(blocks.allSatisfy { MobileWire.blockKinds.contains($0.kind) && MobileWire.blockStatuses.contains($0.status) })
+            #expect(blocks.first?.id == "run-1:main" && blocks.first?.title == "요청 3")
+            // The titles are the Mac's own; a named block keeps its name.
+            #expect(blocks.map(\.title).dropFirst() == ["하위 에이전트", "백그라운드 작업", "중간 요청", ContextCompaction.title, "질문", "하위 에이전트"])
+            let named = MobileMightySupport.blocks(MightyGraphRun(id: "r", agents: [agent("a", kind: "task", status: "running", title: "테스트 실행")]), ordinal: 1)
+            #expect(named.last?.title == "테스트 실행")
+        }
     }
 
     @Test func blockStatusesFollowTheMacsOwnBuckets() {
@@ -261,17 +267,19 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func runsCarryTheNewestTwentyWithTheirGuidedTitles() {
-        let runs = (1...25).map { MightyGraphRun(id: "run-\($0)", input: $0 == 25 ? "/ouroboros:seed" : "요청 \($0)", status: "completed") }
-        let registry = StyleRegistry(styles: BundledStyles.shared.styles())
-        let wire = MobileMightySupport.runs(runs) { registry.requestTitle(forInput: $0, workspace: nil) }
-        #expect(wire.count == 20 && wire.first?.id == "run-6" && wire.last?.id == "run-25")
-        // The ordinal keeps counting from the pane's own history, not from 1.
-        #expect(wire.first?.blocks.first?.title == "요청 6" && wire.last?.blocks.first?.title == "요청 25")
-        #expect(wire.last?.title == "시드")
-        #expect(wire.first?.title == nil)
-        // A plain CLI pane has no guided titles at all.
-        #expect(MobileMightySupport.runs(runs).last?.title == nil)
-        #expect(MobileMightySupport.runs([]).isEmpty)
+        LocaleOverride.$language.withValue(.ko) {
+            let runs = (1...25).map { MightyGraphRun(id: "run-\($0)", input: $0 == 25 ? "/ouroboros:seed" : "요청 \($0)", status: "completed") }
+            let registry = StyleRegistry(styles: BundledStyles.shared.styles())
+            let wire = MobileMightySupport.runs(runs) { registry.requestTitle(forInput: $0, workspace: nil) }
+            #expect(wire.count == 20 && wire.first?.id == "run-6" && wire.last?.id == "run-25")
+            // The ordinal keeps counting from the pane's own history, not from 1.
+            #expect(wire.first?.blocks.first?.title == "요청 6" && wire.last?.blocks.first?.title == "요청 25")
+            #expect(wire.last?.title == "시드")
+            #expect(wire.first?.title == nil)
+            // A plain CLI pane has no guided titles at all.
+            #expect(MobileMightySupport.runs(runs).last?.title == nil)
+            #expect(MobileMightySupport.runs([]).isEmpty)
+        }
     }
 
     @Test func onlyTheNewestSettledRunCarriesItsFullResult() throws {
@@ -596,19 +604,21 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func invisibleScalarsCannotDisguiseAName() {
-        // A right-to-left override makes "invoice\u{202E}gnp.exe" read as
-        // "invoicexe.png" on screen while still ending in .exe.
-        #expect(MobileUploadStore.sanitize("invoice\u{202E}gnp.exe") == "invoicegnp.exe")
-        #expect(MobileDeviceRegistry.deviceName("invoice\u{202E}gnp.exe") == "invoicegnp.exe")
-        for scalar in ["\u{200B}", "\u{200E}", "\u{202A}", "\u{2066}", "\u{2069}", "\u{FEFF}"] {
-            #expect(MobileUploadStore.sanitize("a\(scalar)b.txt") == "ab.txt")
-            #expect(MobileDeviceRegistry.deviceName("A\(scalar)B") == "AB")
+        LocaleOverride.$language.withValue(.ko) {
+            // A right-to-left override makes "invoice\u{202E}gnp.exe" read as
+            // "invoicexe.png" on screen while still ending in .exe.
+            #expect(MobileUploadStore.sanitize("invoice\u{202E}gnp.exe") == "invoicegnp.exe")
+            #expect(MobileDeviceRegistry.deviceName("invoice\u{202E}gnp.exe") == "invoicegnp.exe")
+            for scalar in ["\u{200B}", "\u{200E}", "\u{202A}", "\u{2066}", "\u{2069}", "\u{FEFF}"] {
+                #expect(MobileUploadStore.sanitize("a\(scalar)b.txt") == "ab.txt")
+                #expect(MobileDeviceRegistry.deviceName("A\(scalar)B") == "AB")
+            }
+            // A name that is nothing but invisible scalars leaves nothing behind.
+            #expect(MobileUploadStore.sanitize("\u{202E}\u{200B}") == nil)
+            #expect(MobileDeviceRegistry.deviceName("\u{202E}\u{200B}") == "휴대폰")
+            // Ordinary text is untouched.
+            #expect(MobileUploadStore.sanitize("보고서.pdf") == "보고서.pdf")
         }
-        // A name that is nothing but invisible scalars leaves nothing behind.
-        #expect(MobileUploadStore.sanitize("\u{202E}\u{200B}") == nil)
-        #expect(MobileDeviceRegistry.deviceName("\u{202E}\u{200B}") == "휴대폰")
-        // Ordinary text is untouched.
-        #expect(MobileUploadStore.sanitize("보고서.pdf") == "보고서.pdf")
     }
 
     private func store(_ clock: TestClock) -> (MobileUploadStore, URL) {
@@ -620,90 +630,96 @@ struct MobileRemoteExtensionTests {
     private static let other = "cGhvbmUtdHdvLTAwMDAwMDA"
 
     @Test func uploadsAcceptChunksInOrderAndBecomeComposerAttachments() async throws {
-        let clock = TestClock()
-        let (uploads, directory) = store(clock)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let bytes = Data(String(repeating: "문서 ", count: 4).utf8)
-        let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "note.txt", size: bytes.count, mimeType: "text/plain")
-        #expect(ticket.chunkSize == 196_608)
-        // The bytes land under the upload's own id, never under the phone's name.
-        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        #expect(files == [ticket.uploadId + ".part"])
-        #expect((try FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent(files[0]).path)[.posixPermissions] as? Int) == 0o600)
-        #expect((try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int) == 0o700)
-        let received = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: bytes)
-        #expect(received == bytes.count)
-        let attachment = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
-        #expect(attachment.name == "note.txt" && attachment.size == bytes.count)
-        let consumed = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
-        #expect(consumed.attachments.count == 1 && consumed.attachments[0].name == "note.txt" && consumed.attachments[0].mediaType == "text/plain")
-        #expect(Data(base64Encoded: consumed.attachments[0].dataBase64) == bytes)
-        // Claimed, not spent: a refused submit hands the file back to retry.
-        await uploads.release(consumed.claim)
-        let waiting = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
-        #expect(waiting.attachments.map(\.name) == consumed.attachments.map(\.name))
-        #expect(waiting.attachments.map(\.dataBase64) == consumed.attachments.map(\.dataBase64))
-        await uploads.spend(waiting.claim)
-        // One use: the file is gone and the id no longer resolves.
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
-        await #expect(throws: MobileHostError.badRequest("끝나지 않았거나 이 실행 창의 것이 아닌 업로드입니다.")) {
-            _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let clock = TestClock()
+            let (uploads, directory) = store(clock)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let bytes = Data(String(repeating: "문서 ", count: 4).utf8)
+            let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "note.txt", size: bytes.count, mimeType: "text/plain")
+            #expect(ticket.chunkSize == 196_608)
+            // The bytes land under the upload's own id, never under the phone's name.
+            let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            #expect(files == [ticket.uploadId + ".part"])
+            #expect((try FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent(files[0]).path)[.posixPermissions] as? Int) == 0o600)
+            #expect((try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int) == 0o700)
+            let received = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: bytes)
+            #expect(received == bytes.count)
+            let attachment = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
+            #expect(attachment.name == "note.txt" && attachment.size == bytes.count)
+            let consumed = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            #expect(consumed.attachments.count == 1 && consumed.attachments[0].name == "note.txt" && consumed.attachments[0].mediaType == "text/plain")
+            #expect(Data(base64Encoded: consumed.attachments[0].dataBase64) == bytes)
+            // Claimed, not spent: a refused submit hands the file back to retry.
+            await uploads.release(consumed.claim)
+            let waiting = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            #expect(waiting.attachments.map(\.name) == consumed.attachments.map(\.name))
+            #expect(waiting.attachments.map(\.dataBase64) == consumed.attachments.map(\.dataBase64))
+            await uploads.spend(waiting.claim)
+            // One use: the file is gone and the id no longer resolves.
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+            await #expect(throws: MobileHostError.badRequest("끝나지 않았거나 이 실행 창의 것이 아닌 업로드입니다.")) {
+                _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            }
         }
     }
 
     @Test func oneUploadCanBeClaimedByOnlyOneSubmitAtATime() async throws {
-        let clock = TestClock()
-        let (uploads, directory) = store(clock)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let bytes = Data("문서".utf8)
-        let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "note.txt", size: bytes.count, mimeType: nil)
-        _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: bytes)
-        _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
-        // Two submits naming the same upload: the second finds it taken, so a
-        // pane can never be handed the same file twice.
-        let first = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
-        await #expect(throws: MobileHostError.badRequest("이미 전송 중인 업로드입니다.")) {
-            _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let clock = TestClock()
+            let (uploads, directory) = store(clock)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let bytes = Data("문서".utf8)
+            let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "note.txt", size: bytes.count, mimeType: nil)
+            _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: bytes)
+            _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
+            // Two submits naming the same upload: the second finds it taken, so a
+            // pane can never be handed the same file twice.
+            let first = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            await #expect(throws: MobileHostError.badRequest("이미 전송 중인 업로드입니다.")) {
+                _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            }
+            // The first submit failed: the claim goes back and the id works again.
+            await uploads.release(first.claim)
+            let second = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            #expect(second.attachments.count == 1)
+            // A released claim is spent by nobody: only the live one may spend.
+            await uploads.spend(first.claim)
+            let stillThere = await uploads.count()
+            #expect(stillThere == 1)
+            await uploads.spend(second.claim)
+            let afterSpend = await uploads.count()
+            let onDisk = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            #expect(afterSpend == 0 && onDisk.isEmpty)
         }
-        // The first submit failed: the claim goes back and the id works again.
-        await uploads.release(first.claim)
-        let second = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
-        #expect(second.attachments.count == 1)
-        // A released claim is spent by nobody: only the live one may spend.
-        await uploads.spend(first.claim)
-        let stillThere = await uploads.count()
-        #expect(stillThere == 1)
-        await uploads.spend(second.claim)
-        let afterSpend = await uploads.count()
-        let onDisk = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        #expect(afterSpend == 0 && onDisk.isEmpty)
     }
 
     @Test func anotherPhonesUploadIsNotFoundAtAll() async throws {
-        let clock = TestClock()
-        let (uploads, directory) = store(clock)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "note.txt", size: 4, mimeType: nil)
-        // 404 rather than 403: whether the id exists is not the other phone's
-        // business either.
-        await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) {
-            _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.other, index: 0, data: Data(repeating: 65, count: 4))
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let clock = TestClock()
+            let (uploads, directory) = store(clock)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "note.txt", size: 4, mimeType: nil)
+            // 404 rather than 403: whether the id exists is not the other phone's
+            // business either.
+            await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) {
+                _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.other, index: 0, data: Data(repeating: 65, count: 4))
+            }
+            await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) { _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.other) }
+            await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) { try await uploads.cancel(id: ticket.uploadId, deviceId: Self.other) }
+            // The owner still has it, all of it.
+            _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 65, count: 4))
+            _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
+            await #expect(throws: MobileHostError.badRequest("끝나지 않았거나 이 실행 창의 것이 아닌 업로드입니다.")) {
+                _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.other)
+            }
+            let owned = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
+            #expect(owned.attachments.count == 1)
+            // Unpairing a phone takes everything it was holding with it.
+            await uploads.discard(device: Self.phone)
+            let left = await uploads.count()
+            let onDisk = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            #expect(left == 0 && onDisk.isEmpty)
         }
-        await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) { _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.other) }
-        await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) { try await uploads.cancel(id: ticket.uploadId, deviceId: Self.other) }
-        // The owner still has it, all of it.
-        _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 65, count: 4))
-        _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
-        await #expect(throws: MobileHostError.badRequest("끝나지 않았거나 이 실행 창의 것이 아닌 업로드입니다.")) {
-            _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.other)
-        }
-        let owned = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s1", deviceId: Self.phone)
-        #expect(owned.attachments.count == 1)
-        // Unpairing a phone takes everything it was holding with it.
-        await uploads.discard(device: Self.phone)
-        let left = await uploads.count()
-        let onDisk = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        #expect(left == 0 && onDisk.isEmpty)
     }
 
     @Test func aSymlinkedUploadsFolderIsRefusedRatherThanFollowed() async throws {
@@ -727,84 +743,90 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func uploadsRefuseSizeMismatchesForeignPanesAndTooManyOpenSlots() async throws {
-        let clock = TestClock()
-        let (uploads, directory) = store(clock)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "a.txt", size: 10, mimeType: nil)
-        let received = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 65, count: 10))
-        #expect(received == 10)
-        // Every chunk of the declared size has arrived: there is no index 1.
-        await #expect(throws: MobileHostError.self) { _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 1, data: Data([65])) }
-        _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
-        // Another pane's upload is not this pane's to attach.
-        await #expect(throws: MobileHostError.self) { _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s2", deviceId: Self.phone) }
-        // A chunk is exactly a chunk, or exactly what is left of the file.
-        let short = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "b.txt", size: 10, mimeType: nil)
-        await #expect(throws: MobileHostError.badRequest("chunk 크기가 선언과 다릅니다.")) {
-            _ = try await uploads.append(id: short.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 66, count: 5))
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let clock = TestClock()
+            let (uploads, directory) = store(clock)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "a.txt", size: 10, mimeType: nil)
+            let received = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 65, count: 10))
+            #expect(received == 10)
+            // Every chunk of the declared size has arrived: there is no index 1.
+            await #expect(throws: MobileHostError.self) { _ = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 1, data: Data([65])) }
+            _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone)
+            // Another pane's upload is not this pane's to attach.
+            await #expect(throws: MobileHostError.self) { _ = try await uploads.attachments(ids: [ticket.uploadId], sessionId: "s2", deviceId: Self.phone) }
+            // A chunk is exactly a chunk, or exactly what is left of the file.
+            let short = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "b.txt", size: 10, mimeType: nil)
+            await #expect(throws: MobileHostError.badRequest("chunk 크기가 선언과 다릅니다.")) {
+                _ = try await uploads.append(id: short.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 66, count: 5))
+            }
+            // Nothing arrived, so the received size cannot match the declared one.
+            await #expect(throws: MobileHostError.badRequest("받은 크기가 선언한 크기와 다릅니다.")) { _ = try await uploads.complete(id: short.uploadId, deviceId: Self.phone) }
+            // An unfinished upload can never be attached.
+            await #expect(throws: MobileHostError.self) { _ = try await uploads.attachments(ids: [short.uploadId], sessionId: "s1", deviceId: Self.phone) }
+            try await uploads.cancel(id: short.uploadId, deviceId: Self.phone)
+            await uploads.shutdown()
+            #expect(!FileManager.default.fileExists(atPath: directory.path))
         }
-        // Nothing arrived, so the received size cannot match the declared one.
-        await #expect(throws: MobileHostError.badRequest("받은 크기가 선언한 크기와 다릅니다.")) { _ = try await uploads.complete(id: short.uploadId, deviceId: Self.phone) }
-        // An unfinished upload can never be attached.
-        await #expect(throws: MobileHostError.self) { _ = try await uploads.attachments(ids: [short.uploadId], sessionId: "s1", deviceId: Self.phone) }
-        try await uploads.cancel(id: short.uploadId, deviceId: Self.phone)
-        await uploads.shutdown()
-        #expect(!FileManager.default.fileExists(atPath: directory.path))
     }
 
     @Test func openUploadsAreCappedPerPaneAndOverallAndFreedWithThePane() async throws {
-        let clock = TestClock()
-        let (uploads, directory) = store(clock)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        for index in 0..<MobileUploadStore.maximumOpenPerSession {
-            _ = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "f\(index).txt", size: 4, mimeType: nil)
-        }
-        let mine = await uploads.open(sessionId: "s1")
-        #expect(mine == MobileUploadStore.maximumOpenPerSession)
-        // Too many at once, not too big: 429, and the pane next door is fine.
-        await #expect(throws: MobileHostError.tooMany("이 실행 창에서 동시에 올릴 수 있는 파일은 16개입니다.")) {
-            _ = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "over.txt", size: 4, mimeType: nil)
-        }
-        let neighbour = try await uploads.begin(sessionId: "s2", deviceId: Self.phone, name: "ok.txt", size: 4, mimeType: nil)
-        #expect(!neighbour.uploadId.isEmpty)
-        // Fill the host's own ceiling from further panes.
-        let panes = MobileUploadStore.maximumOpen / MobileUploadStore.maximumOpenPerSession
-        for pane in 2...panes {
-            let session = "s\(pane)"
-            let already = await uploads.open(sessionId: session)
-            for index in already..<MobileUploadStore.maximumOpenPerSession {
-                _ = try await uploads.begin(sessionId: session, deviceId: Self.phone, name: "f\(index).txt", size: 4, mimeType: nil)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let clock = TestClock()
+            let (uploads, directory) = store(clock)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            for index in 0..<MobileUploadStore.maximumOpenPerSession {
+                _ = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "f\(index).txt", size: 4, mimeType: nil)
             }
+            let mine = await uploads.open(sessionId: "s1")
+            #expect(mine == MobileUploadStore.maximumOpenPerSession)
+            // Too many at once, not too big: 429, and the pane next door is fine.
+            await #expect(throws: MobileHostError.tooMany("이 실행 창에서 동시에 올릴 수 있는 파일은 16개입니다.")) {
+                _ = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "over.txt", size: 4, mimeType: nil)
+            }
+            let neighbour = try await uploads.begin(sessionId: "s2", deviceId: Self.phone, name: "ok.txt", size: 4, mimeType: nil)
+            #expect(!neighbour.uploadId.isEmpty)
+            // Fill the host's own ceiling from further panes.
+            let panes = MobileUploadStore.maximumOpen / MobileUploadStore.maximumOpenPerSession
+            for pane in 2...panes {
+                let session = "s\(pane)"
+                let already = await uploads.open(sessionId: session)
+                for index in already..<MobileUploadStore.maximumOpenPerSession {
+                    _ = try await uploads.begin(sessionId: session, deviceId: Self.phone, name: "f\(index).txt", size: 4, mimeType: nil)
+                }
+            }
+            let total = await uploads.count()
+            #expect(total == MobileUploadStore.maximumOpen)
+            await #expect(throws: MobileHostError.tooMany("동시에 올릴 수 있는 파일 수를 넘었습니다.")) {
+                _ = try await uploads.begin(sessionId: "fresh", deviceId: Self.phone, name: "over.txt", size: 4, mimeType: nil)
+            }
+            // A closed pane can never take a submit, so its slots and bytes go now.
+            await uploads.discard(sessionId: "s1")
+            let freed = await uploads.open(sessionId: "s1")
+            let afterClose = await uploads.count()
+            #expect(freed == 0 && afterClose == MobileUploadStore.maximumOpen - MobileUploadStore.maximumOpenPerSession)
+            _ = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "room.txt", size: 4, mimeType: nil)
+            await uploads.shutdown()
         }
-        let total = await uploads.count()
-        #expect(total == MobileUploadStore.maximumOpen)
-        await #expect(throws: MobileHostError.tooMany("동시에 올릴 수 있는 파일 수를 넘었습니다.")) {
-            _ = try await uploads.begin(sessionId: "fresh", deviceId: Self.phone, name: "over.txt", size: 4, mimeType: nil)
-        }
-        // A closed pane can never take a submit, so its slots and bytes go now.
-        await uploads.discard(sessionId: "s1")
-        let freed = await uploads.open(sessionId: "s1")
-        let afterClose = await uploads.count()
-        #expect(freed == 0 && afterClose == MobileUploadStore.maximumOpen - MobileUploadStore.maximumOpenPerSession)
-        _ = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "room.txt", size: 4, mimeType: nil)
-        await uploads.shutdown()
     }
 
     @Test func unfinishedUploadsExpireAndFreeTheirSlotAndBytes() async throws {
-        let clock = TestClock()
-        let (uploads, directory) = store(clock)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "a.txt", size: 8, mimeType: nil)
-        clock.advance(599)
-        // Just inside the window: the chunk lands and pushes the deadline out.
-        let received = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 65, count: 8))
-        #expect(received == 8)
-        clock.advance(601)
-        // Ten minutes without a chunk: the upload and its bytes are gone.
-        await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) { _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone) }
-        let remaining = await uploads.count()
-        #expect(remaining == 0)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let clock = TestClock()
+            let (uploads, directory) = store(clock)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let ticket = try await uploads.begin(sessionId: "s1", deviceId: Self.phone, name: "a.txt", size: 8, mimeType: nil)
+            clock.advance(599)
+            // Just inside the window: the chunk lands and pushes the deadline out.
+            let received = try await uploads.append(id: ticket.uploadId, deviceId: Self.phone, index: 0, data: Data(repeating: 65, count: 8))
+            #expect(received == 8)
+            clock.advance(601)
+            // Ten minutes without a chunk: the upload and its bytes are gone.
+            await #expect(throws: MobileHostError.notFound("업로드를 찾을 수 없습니다.")) { _ = try await uploads.complete(id: ticket.uploadId, deviceId: Self.phone) }
+            let remaining = await uploads.count()
+            #expect(remaining == 0)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        }
     }
 
     // MARK: Devices
@@ -1107,23 +1129,27 @@ struct MobileRemoteExtensionTests {
     }
 
     @Test func deviceNamesAreBoundedAndNeverBlank() {
-        #expect(MobileDeviceRegistry.deviceName(nil) == "휴대폰")
-        #expect(MobileDeviceRegistry.deviceName("   ") == "휴대폰")
-        #expect(MobileDeviceRegistry.deviceName("Young의\u{0007}iPhone") == "Young의iPhone")
-        #expect(MobileDeviceRegistry.deviceName("줄\n바꿈") == "줄 바꿈")
-        #expect(MobileDeviceRegistry.deviceName(String(repeating: "가", count: 100)).count == 40)
+        LocaleOverride.$language.withValue(.ko) {
+            #expect(MobileDeviceRegistry.deviceName(nil) == "휴대폰")
+            #expect(MobileDeviceRegistry.deviceName("   ") == "휴대폰")
+            #expect(MobileDeviceRegistry.deviceName("Young의\u{0007}iPhone") == "Young의iPhone")
+            #expect(MobileDeviceRegistry.deviceName("줄\n바꿈") == "줄 바꿈")
+            #expect(MobileDeviceRegistry.deviceName(String(repeating: "가", count: 100)).count == 40)
+        }
     }
 
     @Test func usageTextReportsWhatWasMeasuredAndNothingElse() {
-        let empty = MobileUsageText.text(usage: nil, model: "opus")
-        #expect(empty.contains("아직 측정된"))
-        let usage = MobileUsage(model: "claude-opus-5", contextUsedTokens: 12_000, contextWindowTokens: 200_000, contextPercent: 6, totalTokens: 41_000, costUSD: 0.1234)
-        let text = MobileUsageText.text(usage: usage, model: "opus", elapsedSeconds: 12.4)
-        // The reported id is labelled with its version, like the Mac's own chip.
-        #expect(text.contains("모델 · Opus 5\n") && text.contains("6.0%") && text.contains("$0.1234") && text.contains("12초"))
-        // Nothing measured but the model name: no invented numbers.
-        let modelOnly = MobileUsageText.text(usage: MobileUsage(model: "opus"), model: "opus")
-        #expect(!modelOnly.contains("$") && !modelOnly.contains("컨텍스트"))
+        LocaleOverride.$language.withValue(.ko) {
+            let empty = MobileUsageText.text(usage: nil, model: "opus")
+            #expect(empty.contains("아직 측정된"))
+            let usage = MobileUsage(model: "claude-opus-5", contextUsedTokens: 12_000, contextWindowTokens: 200_000, contextPercent: 6, totalTokens: 41_000, costUSD: 0.1234)
+            let text = MobileUsageText.text(usage: usage, model: "opus", elapsedSeconds: 12.4)
+            // The reported id is labelled with its version, like the Mac's own chip.
+            #expect(text.contains("모델 · Opus 5\n") && text.contains("6.0%") && text.contains("$0.1234") && text.contains("12초"))
+            // Nothing measured but the model name: no invented numbers.
+            let modelOnly = MobileUsageText.text(usage: MobileUsage(model: "opus"), model: "opus")
+            #expect(!modelOnly.contains("$") && !modelOnly.contains("컨텍스트"))
+        }
     }
 
     @Test func theStyleFieldsRideBesideTheFixedVocabulary() throws {

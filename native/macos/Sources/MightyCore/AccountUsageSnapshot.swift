@@ -18,7 +18,7 @@ public struct AccountUsageSnapshot: Codable, Equatable, Sendable {
     public var accountLabel: String?
     public var plan: String?
     public var windows: [AccountUsageWindow]
-    /// The Claude limit-reset (리셋권) rows, one per program. Empty until the
+    /// The Claude limit-reset (reset pass) rows, one per program. Empty until the
     /// entitlement read has happened; never carries a grant id or a credential.
     public var resets: [AccountResetEntitlement]
     public var fetchedAt: String?
@@ -31,7 +31,7 @@ public struct AccountUsageSnapshot: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey { case provider, accountLabel, plan, windows, resets, fetchedAt, status, detail }
     public init(provider: String, accountLabel: String? = nil, plan: String? = nil,
                 windows: [AccountUsageWindow] = [], resets: [AccountResetEntitlement] = [], fetchedAt: String? = nil,
-                status: String = "unavailable", detail: String = "계정 사용량을 아직 확인하지 않았습니다.") {
+                status: String = "unavailable", detail: String = L("windows.accountUsage.detailNotCheckedYet")) {
         self.provider = provider; self.accountLabel = accountLabel; self.plan = plan
         self.windows = windows; self.resets = resets; self.fetchedAt = fetchedAt; self.status = status; self.detail = detail
     }

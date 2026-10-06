@@ -196,26 +196,28 @@ struct RelayLinkTests {
     /// A stop that lands while a path-triggered restart waits on its phones'
     /// sockets: the restart must neither dial nor bring the path watch back.
     @Test func aStopDuringASettleTriggeredStartNeitherDialsNorWatches() async throws {
-        try await withRetryingHost { service, clock in
-            await service.networkPathChanged(wifi)
-            try await settle(service, clock)
-            let (entered, signal) = AsyncStream.makeStream(of: Void.self)
-            await service.setDisconnectPause { signal.yield(); try? await Task.sleep(for: .seconds(1)) }
-            let before = await service.restarts
-            let passes = await service.pathSettlePasses
-            await service.networkPathChanged(otherWifi)
-            // Not `settle`: this settle's decision is held inside `disconnect`
-            // until after the stop below.
-            #expect(await service.pathSettleDeadline != nil)
-            clock.advance(by: RelayLinkPolicy.pathSettle + 1)
-            var inside = entered.makeAsyncIterator()
-            _ = await inside.next() // the settle's start is now inside `disconnect`
-            await service.stop()
-            #expect(await waitUntil { await service.pathSettlePasses > passes })
-            #expect(await service.restarts == before)
-            #expect(await !service.watchingNetwork)
-            #expect(await service.status().detail == "모바일 리모트가 꺼져 있습니다.")
-            await service.setDisconnectPause(nil)
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            try await withRetryingHost { service, clock in
+                await service.networkPathChanged(wifi)
+                try await settle(service, clock)
+                let (entered, signal) = AsyncStream.makeStream(of: Void.self)
+                await service.setDisconnectPause { signal.yield(); try? await Task.sleep(for: .seconds(1)) }
+                let before = await service.restarts
+                let passes = await service.pathSettlePasses
+                await service.networkPathChanged(otherWifi)
+                // Not `settle`: this settle's decision is held inside `disconnect`
+                // until after the stop below.
+                #expect(await service.pathSettleDeadline != nil)
+                clock.advance(by: RelayLinkPolicy.pathSettle + 1)
+                var inside = entered.makeAsyncIterator()
+                _ = await inside.next() // the settle's start is now inside `disconnect`
+                await service.stop()
+                #expect(await waitUntil { await service.pathSettlePasses > passes })
+                #expect(await service.restarts == before)
+                #expect(await !service.watchingNetwork)
+                #expect(await service.status().detail == "모바일 리모트가 꺼져 있습니다.")
+                await service.setDisconnectPause(nil)
+            }
         }
     }
 

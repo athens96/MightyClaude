@@ -182,21 +182,23 @@ final class ClaudePluginTests {
     }
 
     @Test func structuredInstallParsesLastLineAndNeverAutoAcceptsCommands() async throws {
-        let f = try fixture(); let service = f.service()
-        try f.text("Informational preamble\n{\"command\":\"install\",\"outcome\":\"ok\",\"message\":\"ok\",\"pluginId\":\"format@sample\",\"scope\":\"local\"}\n", "install-response")
-        #expect(await service.install(pluginID: "format@sample", workspace: f.workspace).status == "succeeded")
-        try f.text("Displayed command\n{\"command\":\"install\",\"outcome\":\"failed\",\"message\":\"confirmation required\",\"shownCommand\":{\"sha256\":\"fake-digest\"}}\n", "install-response")
-        try f.text("failure", "mode")
-        let confirmation = await service.install(pluginID: "format@sample", workspace: f.workspace)
-        #expect(confirmation.status == "failed")
-        #expect(confirmation.detail.contains("명령 실행 동의"))
-        #expect(!f.read("commands").contains("arg=--accept-command"))
-        try f.text("ok", "mode")
-        for response in ["{broken", "{\"command\":\"update\",\"outcome\":\"ok\"}", "{\"command\":\"install\",\"outcome\":\"ok\",\"pluginId\":\"other@sample\"}"] {
-            try f.text(response, "install-response")
-            #expect(await service.install(pluginID: "format@sample", workspace: f.workspace).status == "failed")
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let f = try fixture(); let service = f.service()
+            try f.text("Informational preamble\n{\"command\":\"install\",\"outcome\":\"ok\",\"message\":\"ok\",\"pluginId\":\"format@sample\",\"scope\":\"local\"}\n", "install-response")
+            #expect(await service.install(pluginID: "format@sample", workspace: f.workspace).status == "succeeded")
+            try f.text("Displayed command\n{\"command\":\"install\",\"outcome\":\"failed\",\"message\":\"confirmation required\",\"shownCommand\":{\"sha256\":\"fake-digest\"}}\n", "install-response")
+            try f.text("failure", "mode")
+            let confirmation = await service.install(pluginID: "format@sample", workspace: f.workspace)
+            #expect(confirmation.status == "failed")
+            #expect(confirmation.detail.contains("명령 실행 동의"))
+            #expect(!f.read("commands").contains("arg=--accept-command"))
+            try f.text("ok", "mode")
+            for response in ["{broken", "{\"command\":\"update\",\"outcome\":\"ok\"}", "{\"command\":\"install\",\"outcome\":\"ok\",\"pluginId\":\"other@sample\"}"] {
+                try f.text(response, "install-response")
+                #expect(await service.install(pluginID: "format@sample", workspace: f.workspace).status == "failed")
+            }
+            await service.shutdown()
         }
-        await service.shutdown()
     }
 
     @Test func malformedOrOversizedCatalogDoesNotBecomeReadyEmpty() async throws {

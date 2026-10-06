@@ -270,6 +270,7 @@ const exemptGlobs = Object.entries(budget?.exemptFiles ?? {}).map(([glob, reason
   reason,
   pattern: new RegExp('^' + glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$'),
   matched: 0,
+  files: [], // { relative, count } of each matched file that holds Korean
 }));
 const exemptRegionFiles = new Map(Object.entries(budget?.exemptRegions ?? {}).map(([file, reason]) => [file, { reason, regions: 0 }]));
 const allowEntries = (budget?.allow ?? []).map((entry) => ({
@@ -331,15 +332,18 @@ function classifyLiterals(relative, source) {
   const exemptBy = exemptGlobs.filter((entry) => entry.pattern.test(relative));
   for (const entry of exemptBy) entry.matched += 1;
   if (exemptBy.length > 0) {
-    return { counted: 0, exempt: countLiterals(relative, source), allowed: 0 };
+    const exempt = countLiterals(relative, source);
+    if (exempt > 0) for (const entry of exemptBy) entry.files.push({ relative, count: exempt });
+    return { counted: 0, exempt, allowed: 0 };
   }
   const { counted: countedSource, exempted } = splitRegions(relative, source);
   const exempt = exempted ? countLiterals(relative, exempted) : 0;
   const entries = allowEntries.filter((entry) => entry.file === relative);
   if (entries.length === 0) return { counted: countLiterals(relative, countedSource), exempt, allowed: 0 };
   let allowed = 0;
-  let remaining = countedSource;
-  for (const match of stripComments(countedSource).match(STRING_LITERAL) ?? []) {
+  // Comments are stripped first, so an allowed literal quoted in a comment is not the one blanked.
+  let remaining = stripComments(countedSource);
+  for (const match of remaining.match(STRING_LITERAL) ?? []) {
     if (!HANGUL.test(match)) continue;
     const inner = match.slice(1, -1);
     const entry = entries.find((candidate) => candidate.literals.includes(inner));
@@ -743,6 +747,16 @@ function documentation() {
   out.push('- 번체 중국어(`zh-Hant`, `zh-TW`, `zh-HK`)는 지금 간체로 읽는다. 따로 둘지는 나중에 정한다.');
   out.push('- 표의 남은 문구를 단계마다 한 켜씩 옮긴다. 매니페스트 글과 `styles/**`는 데이터이므로');
   out.push('  옮기지 않는다.');
+  // Exemptions whose reason names v7 are frozen code (the style engine) waiting for the next engine version.
+  const v7 = exemptGlobs.filter((entry) => /\bv7\b/.test(entry.reason)).flatMap((entry) => entry.files);
+  if (v7.length > 0) {
+    const total = v7.reduce((sum, file) => sum + file.count, 0);
+    out.push(`- v7 작업: 고정된 스타일 엔진(v6)의 코드에 남은 한국어 문구 ${total}개. 엔진이 v6으로 고정되어 지금은`);
+    out.push('  옮기지 않고 예외로 둔다. 스타일 엔진 v7에서 `L()` 키로 옮긴다.');
+    for (const file of [...v7].sort((a, b) => a.relative.localeCompare(b.relative))) {
+      out.push(`  - \`${file.relative}\` ${file.count}개`);
+    }
+  }
   out.push('');
   return out.join('\n');
 }

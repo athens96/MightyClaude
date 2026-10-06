@@ -7,7 +7,7 @@ internal static class BedrockSettingsVerification
     internal static Task ExternalStatusDoesNotClaimVerifiedAccess()
     {
         var status = CliAccountSupport.ParseClaudeStatus("""{"loggedIn":true,"authMethod":"third_party","apiProvider":"bedrock","email":"old-account@example.test","subscriptionType":"max"}""");
-        Check(status.Method == "AWS Bedrock" && status.AccessVerified == false && !status.CanSignOut, "configuration is not verified access or OAuth signout");
+        Check(status.Method == "AWS Bedrock" && status.MethodId == CliAccountMethod.ClaudeBedrock && status.AccessVerified == false && !status.CanSignOut, "configuration is not verified access or OAuth signout");
         Check(status.Account is null && status.Plan is null, "leftover subscription identity cannot label Bedrock credentials");
         var signedOut = CliAccountSupport.ParseClaudeStatus("""{"loggedIn":false,"authMethod":"third_party","apiProvider":"bedrock"}""");
         Check(signedOut.Method == "AWS Bedrock" && signedOut.LoggedIn == false, "Bedrock configuration remains visible before login");

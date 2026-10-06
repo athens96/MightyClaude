@@ -9,7 +9,7 @@ public struct WorkspaceGitInfo: Equatable, Sendable {
     public var ahead: Int?
     public var behind: Int?
 
-    public var label: String { branch == "(detached)" ? "HEAD · \(revision.map { String($0.prefix(7)) } ?? "분리됨")" : branch }
+    public var label: String { branch == "(detached)" ? "HEAD · \(revision.map { String($0.prefix(7)) } ?? L("git.detached"))" : branch }
 
     public static func parse(_ output: String) -> WorkspaceGitInfo? {
         var branch: String?, revision: String?, ahead: Int?, behind: Int?

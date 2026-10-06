@@ -17,32 +17,34 @@ struct MightyTimelineTests {
     }
 
     @Test func rowsFollowTheDiagramsBlocksAndNodeIDs() {
-        let agents = [
-            MightyGraphAgent(id: "a1", title: "화면 구조 읽기", status: "completed"),
-            MightyGraphAgent(id: "t1", title: "", status: "running", entries: [Self.step("s1", summary: "sh render.sh")], kind: "task"),
-            MightyGraphAgent(id: "q1", title: "", status: "waiting", kind: "question"),
-        ]
-        let runs = [Self.run("r1", status: "completed", final: "끝"), Self.run("r2", agents: agents)]
-        let groups = MightyTimeline.groups(runs)
-        #expect(groups.map(\.ordinal) == [1, 2])
-        #expect(groups.map(\.runIndex) == [0, 1])
-        let rows = groups[1].rows
-        // The request first, then the agents in the order the graph recorded them.
-        #expect(rows.map(\.block.kind) == ["main", "agent", "task", "question"])
-        #expect(rows.map(\.agentIndex) == [nil, 0, 1, 2])
-        #expect(rows[0].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "request"))
-        #expect(rows[2].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "agent:t1"))
-        // Titles are the core's, as the diagram and the phone name them.
-        #expect(rows[2].block.title == MightyGraphSupport.blockTitle(agents[1]))
-        #expect(rows[0].block.title == "요청 2")
-        // Only a block in motion has a latest line.
-        #expect(rows[2].latest == "sh render.sh")
-        #expect(rows[1].latest == nil)
-        // The node ids are ones the diagram actually lays out.
-        let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [])
-        let laid = Set(layout.nodes.map(\.id))
-        for group in groups { for row in group.rows { #expect(laid.contains(row.nodeID)) } }
-        #expect(laid.contains(groups[0].result?.nodeID ?? "missing"))
+        LocaleOverride.$language.withValue(.ko) {
+            let agents = [
+                MightyGraphAgent(id: "a1", title: "화면 구조 읽기", status: "completed"),
+                MightyGraphAgent(id: "t1", title: "", status: "running", entries: [Self.step("s1", summary: "sh render.sh")], kind: "task"),
+                MightyGraphAgent(id: "q1", title: "", status: "waiting", kind: "question"),
+            ]
+            let runs = [Self.run("r1", status: "completed", final: "끝"), Self.run("r2", agents: agents)]
+            let groups = MightyTimeline.groups(runs)
+            #expect(groups.map(\.ordinal) == [1, 2])
+            #expect(groups.map(\.runIndex) == [0, 1])
+            let rows = groups[1].rows
+            // The request first, then the agents in the order the graph recorded them.
+            #expect(rows.map(\.block.kind) == ["main", "agent", "task", "question"])
+            #expect(rows.map(\.agentIndex) == [nil, 0, 1, 2])
+            #expect(rows[0].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "request"))
+            #expect(rows[2].nodeID == MightyGraphBlockSize.nodeID(runID: "r2", suffix: "agent:t1"))
+            // Titles are the core's, as the diagram and the phone name them.
+            #expect(rows[2].block.title == MightyGraphSupport.blockTitle(agents[1]))
+            #expect(rows[0].block.title == "요청 2")
+            // Only a block in motion has a latest line.
+            #expect(rows[2].latest == "sh render.sh")
+            #expect(rows[1].latest == nil)
+            // The node ids are ones the diagram actually lays out.
+            let layout = MightyGraphLayout.make(runs: runs, draft: "", running: true, expanded: [])
+            let laid = Set(layout.nodes.map(\.id))
+            for group in groups { for row in group.rows { #expect(laid.contains(row.nodeID)) } }
+            #expect(laid.contains(groups[0].result?.nodeID ?? "missing"))
+        }
     }
 
     @Test func aResultCardAppearsExactlyWhenTheDiagramDrawsOne() {

@@ -49,7 +49,7 @@ public struct AgentRunTiming: Codable, Equatable, Sendable {
     public func label(at date: Date = Date()) -> String {
         let seconds = Int(min(elapsed(at: date), Double(Int.max / 2)))
         let duration = seconds >= 3_600 ? "\(seconds / 3_600):" + String(format: "%02d:%02d", seconds / 60 % 60, seconds % 60) : String(format: "%02d:%02d", seconds / 60, seconds % 60)
-        return isApproximate ? "약 \(duration)" : duration
+        return isApproximate ? L("dashboard.card.approximate", ["time": duration]) : duration
     }
 
     /// Old versions saved MightyClaude conversation timestamps but no timer.

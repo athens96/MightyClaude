@@ -42,8 +42,8 @@ public actor ClaudePluginService {
     }
 
     public func snapshot(workspace: Workspace) async -> ClaudePluginSnapshot {
-        guard !closing, !Task.isCancelled else { return ClaudePluginSnapshot(status: "cancelled", detail: "플러그인 조회를 취소했습니다.") }
-        guard active == nil else { return ClaudePluginSnapshot(status: "busy", detail: "다른 플러그인 작업이 진행 중입니다.") }
+        guard !closing, !Task.isCancelled else { return ClaudePluginSnapshot(status: "cancelled", detail: L("plugins.detail.cancelled")) }
+        guard active == nil else { return ClaudePluginSnapshot(status: "busy", detail: L("plugins.operation.busy")) }
         let configuration = configuration
         let task = Task<ClaudePluginTaskResult, Never> {
             do {
@@ -57,7 +57,7 @@ public actor ClaudePluginService {
             }
         }
         if case .snapshot(let value) = await finish(task) { return value }
-        return ClaudePluginSnapshot(status: "failed", detail: "플러그인 목록을 읽지 못했습니다.")
+        return ClaudePluginSnapshot(status: "failed", detail: L("plugins.detail.failed"))
     }
 
     public func install(pluginID: String, scope: String = "local", workspace: Workspace) async -> ClaudePluginOperationResult {
@@ -149,15 +149,15 @@ public actor ClaudePluginService {
     }
 
     private func operation(workspace: Workspace, pluginID: String?, scope: String?, marketplace: String?) async -> ClaudePluginOperationResult {
-        guard !closing, !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: "플러그인 작업을 취소했습니다.") }
-        guard active == nil else { return ClaudePluginOperationResult(status: "busy", detail: "다른 플러그인 작업이 진행 중입니다.") }
+        guard !closing, !Task.isCancelled else { return ClaudePluginOperationResult(status: "cancelled", detail: L("plugins.operation.cancelled")) }
+        guard active == nil else { return ClaudePluginOperationResult(status: "busy", detail: L("plugins.operation.busy")) }
         if let pluginID {
             guard Self.pluginParts(pluginID) != nil, let scope, ["local", "project", "user"].contains(scope) else {
-                return ClaudePluginOperationResult(status: "failed", detail: "플러그인 이름 또는 설치 범위가 올바르지 않습니다.")
+                return ClaudePluginOperationResult(status: "failed", detail: L("plugins.install.badIdOrScope"))
             }
         } else if let marketplace {
-            guard Self.identifier(marketplace) else { return ClaudePluginOperationResult(status: "failed", detail: "마켓플레이스 이름이 올바르지 않습니다.") }
-        } else { return ClaudePluginOperationResult(status: "failed", detail: "플러그인 작업이 올바르지 않습니다.") }
+            guard Self.identifier(marketplace) else { return ClaudePluginOperationResult(status: "failed", detail: L("plugins.marketplace.badName")) }
+        } else { return ClaudePluginOperationResult(status: "failed", detail: L("plugins.operation.invalid")) }
         let configuration = configuration
         let task = Task<ClaudePluginTaskResult, Never> {
             do {
@@ -172,23 +172,23 @@ public actor ClaudePluginService {
                 if let pluginID, let scope {
                     guard snapshot.available.contains(where: { $0.id == pluginID }),
                           let parts = Self.pluginParts(pluginID), snapshot.marketplaces.contains(where: { $0.name == parts.marketplace }) else {
-                        throw ClaudePluginFailure(status: "failed", detail: "현재 등록된 마켓플레이스 목록에서 이 플러그인을 찾지 못했습니다. 목록을 다시 확인하세요.")
+                        throw ClaudePluginFailure(status: "failed", detail: L("plugins.claude.installNotFound"))
                     }
                     if snapshot.installed.contains(where: {
                         $0.pluginID == pluginID && $0.scope == scope &&
                         (scope == "user" || $0.projectPath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path == cwd.path } == true)
                     }) {
-                        return .operation(ClaudePluginOperationResult(status: "skipped", detail: "선택한 범위에 이미 설치되어 있습니다. 비활성 상태라면 Claude CLI에서 활성화하세요."))
+                        return .operation(ClaudePluginOperationResult(status: "skipped", detail: L("plugins.claude.installSkipped")))
                     }
                     // Do not pass --yes or --accept-command. Command sources and
                     // archive headersHelpers retain the CLI's explicit consent.
                     arguments = ["plugin", "install", pluginID, "--scope", scope, "--json"]
                 } else if let marketplace {
                     guard snapshot.marketplaces.contains(where: { $0.name == marketplace }) else {
-                        throw ClaudePluginFailure(status: "failed", detail: "등록되지 않은 마켓플레이스입니다. 기존 등록 목록에서 선택하세요.")
+                        throw ClaudePluginFailure(status: "failed", detail: L("plugins.marketplace.notRegistered"))
                     }
                     arguments = ["plugin", "marketplace", "update", marketplace]
-                } else { throw ClaudePluginFailure(status: "failed", detail: "플러그인 작업이 올바르지 않습니다.") }
+                } else { throw ClaudePluginFailure(status: "failed", detail: L("plugins.operation.invalid")) }
                 let result = try await ProcessCapture.run(executable: command.executable, arguments: arguments,
                     environment: configuration.environment, cwd: cwd, timeout: configuration.operationTimeout, maximumBytes: 1024 * 1024)
                 try Task.checkCancellation()
@@ -200,27 +200,27 @@ public actor ClaudePluginService {
                           let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
                           json["command"] as? String == "install", let outcome = json["outcome"] as? String,
                           ["ok", "failed"].contains(outcome) else {
-                        throw ClaudePluginFailure(status: "failed", detail: "설치 결과를 확인하지 못했습니다. 목록을 다시 읽어 설치 상태를 확인하세요.", output: output)
+                        throw ClaudePluginFailure(status: "failed", detail: L("plugins.install.unconfirmed"), output: output)
                     }
                     if json["shownCommand"] != nil {
-                        throw ClaudePluginFailure(status: "failed", detail: "이 플러그인은 추가 명령 실행 동의가 필요합니다. Claude CLI에서 표시된 명령을 확인한 뒤 설치하세요. 앱은 자동 승인하지 않습니다.", output: output)
+                        throw ClaudePluginFailure(status: "failed", detail: L("plugins.claude.installCommandRequired"), output: output)
                     }
                     guard result.exitCode == 0, outcome == "ok",
                           json["pluginId"] == nil || json["pluginId"] as? String == pluginID,
                           json["scope"] == nil || json["scope"] as? String == scope else {
-                        throw ClaudePluginFailure(status: "failed", detail: "플러그인 설치에 실패했습니다. 네트워크·권한·조직 정책을 확인하세요.", output: output)
+                        throw ClaudePluginFailure(status: "failed", detail: L("plugins.install.failed"), output: output)
                     }
-                    return .operation(ClaudePluginOperationResult(status: "succeeded", detail: "플러그인을 설치했습니다. 다음 Claude 실행부터 적용됩니다.", output: output))
+                    return .operation(ClaudePluginOperationResult(status: "succeeded", detail: L("plugins.claude.installSucceeded"), output: output))
                 }
-                guard result.exitCode == 0 else { throw ClaudePluginFailure(status: "failed", detail: "마켓플레이스 새로고침에 실패했습니다. 네트워크 상태와 접근 권한을 확인하세요.", output: output) }
-                return .operation(ClaudePluginOperationResult(status: "succeeded", detail: "선택한 마켓플레이스 목록을 새로고침했습니다.", output: output))
+                guard result.exitCode == 0 else { throw ClaudePluginFailure(status: "failed", detail: L("plugins.marketplace.refreshFailed"), output: output) }
+                return .operation(ClaudePluginOperationResult(status: "succeeded", detail: L("plugins.marketplace.refreshSucceeded"), output: output))
             } catch {
                 let failure = Self.failure(error)
                 return .operation(ClaudePluginOperationResult(status: failure.status == "cancelled" ? "cancelled" : "failed", detail: failure.detail, output: failure.output))
             }
         }
         if case .operation(let value) = await finish(task) { return value }
-        return ClaudePluginOperationResult(status: "failed", detail: "플러그인 작업을 완료하지 못했습니다.")
+        return ClaudePluginOperationResult(status: "failed", detail: L("plugins.operation.notCompleted"))
     }
 
     private static func configuration(_ supplied: [String: String], executable: URL?, readTimeout: TimeInterval,
@@ -236,12 +236,12 @@ public actor ClaudePluginService {
 
     private static func localDirectory(_ workspace: Workspace) throws -> URL {
         guard workspace.path.hasPrefix("/"), !workspace.path.contains("\0"), workspace.path.utf8.count <= 16_384 else {
-            throw ClaudePluginFailure(status: "failed", detail: "로컬 작업 폴더가 올바르지 않습니다.")
+            throw ClaudePluginFailure(status: "failed", detail: L("plugins.detail.invalidWorkspace"))
         }
         let url = URL(fileURLWithPath: workspace.path).resolvingSymlinksInPath().standardizedFileURL
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw ClaudePluginFailure(status: "failed", detail: "작업 폴더를 찾지 못했습니다.")
+            throw ClaudePluginFailure(status: "failed", detail: L("plugins.detail.missingWorkspace"))
         }
         return url
     }
@@ -262,22 +262,22 @@ public actor ClaudePluginService {
             let version = display(String(decoding: result.stdout, as: UTF8.self), limit: 160).trimmingCharacters(in: .whitespacesAndNewlines)
             guard let range = version.range(of: "\\A[0-9]+\\.[0-9]+\\.[0-9]+(?=\\s|$)", options: .regularExpression),
                   !version[range].split(separator: ".").compactMap({ Int($0) }).lexicographicallyPrecedes([2, 1, 268]) else {
-                throw ClaudePluginFailure(status: "unsupported", detail: "이 플러그인 관리 화면은 JSON 설치 결과를 지원하는 Claude Code 2.1.268 이상이 필요합니다.")
+                throw ClaudePluginFailure(status: "unsupported", detail: L("plugins.claude.detailUnsupported"))
             }
             return ProviderCommand(provider: "claude", executable: executable, version: version)
         }
-        throw ClaudePluginFailure(status: present ? "failed" : "missing", detail: present ? "설치된 Claude CLI 버전을 확인하지 못했습니다." : "Claude CLI가 설치되어 있지 않습니다. 먼저 CLI를 설치하세요.")
+        throw ClaudePluginFailure(status: present ? "failed" : "missing", detail: present ? L("plugins.claude.detailUnknownVersion") : L("plugins.claude.detailMissingCli"))
     }
 
     private static func readSnapshot(_ configuration: ClaudePluginConfiguration, command: ProviderCommand, cwd: URL) async throws -> ClaudePluginSnapshot {
         let listing = try await ProcessCapture.run(executable: command.executable, arguments: ["plugin", "list", "--json", "--available"],
             environment: configuration.environment, cwd: cwd, timeout: configuration.readTimeout, maximumBytes: configuration.maximumBytes)
         try Task.checkCancellation()
-        guard listing.exitCode == 0 else { throw ClaudePluginFailure(status: "failed", detail: "Claude CLI에서 플러그인 목록을 읽지 못했습니다.", output: output(listing)) }
+        guard listing.exitCode == 0 else { throw ClaudePluginFailure(status: "failed", detail: L("plugins.claude.detailListingFailed"), output: output(listing)) }
         let markets = try await ProcessCapture.run(executable: command.executable, arguments: ["plugin", "marketplace", "list", "--json"],
             environment: configuration.environment, cwd: cwd, timeout: configuration.readTimeout, maximumBytes: 512 * 1024)
         try Task.checkCancellation()
-        guard markets.exitCode == 0 else { throw ClaudePluginFailure(status: "failed", detail: "등록된 마켓플레이스 목록을 읽지 못했습니다.", output: output(markets)) }
+        guard markets.exitCode == 0 else { throw ClaudePluginFailure(status: "failed", detail: L("plugins.detail.marketplacesFailed"), output: output(markets)) }
         return try parseSnapshot(listing.stdout, marketplaces: markets.stdout, cwd: cwd, version: command.version)
     }
 
@@ -287,7 +287,7 @@ public actor ClaudePluginService {
               let installedRows = json["installed"] as? [[String: Any]], let availableRows = json["available"] as? [[String: Any]],
               let marketRows = try? JSONSerialization.jsonObject(with: marketplaceData) as? [[String: Any]],
               installedRows.count <= 10_000, availableRows.count <= 10_000, marketRows.count <= 256 else {
-            throw ClaudePluginFailure(status: "failed", detail: "플러그인 목록 형식 또는 크기가 올바르지 않습니다. 빈 목록으로 처리하지 않았습니다.")
+            throw ClaudePluginFailure(status: "failed", detail: L("plugins.detail.malformed"))
         }
         var marketNames = Set<String>()
         let marketplaces = marketRows.compactMap { row -> ClaudePluginMarketplace? in
@@ -320,7 +320,7 @@ public actor ClaudePluginService {
                 errors: messages(row["errors"]), notes: messages(row["notes"]))
             return installedIDs.insert(value.id).inserted ? value : nil
         }.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
-        let detail = marketplaces.isEmpty ? "등록된 마켓플레이스가 없습니다. Claude CLI에서 marketplace add로 등록한 뒤 목록을 다시 읽으세요." : "현재 작업 폴더의 CLI 설정과 등록된 마켓플레이스의 캐시 목록입니다. 이미 실행 중인 세션의 로드 상태와 다를 수 있습니다."
+        let detail = marketplaces.isEmpty ? L("plugins.claude.detailNoMarketplaces") : L("plugins.claude.detailReady")
         return ClaudePluginSnapshot(status: "ready", detail: detail, cliVersion: version, installed: installed, available: available,
                                     marketplaces: marketplaces, updatedAt: mightyTimestamp())
     }
@@ -351,8 +351,8 @@ public actor ClaudePluginService {
         display(String(decoding: (result.stdout + Data([10]) + result.stderr).prefix(16_384), as: UTF8.self), limit: 16_384)
     }
     private static func failure(_ error: Error) -> ClaudePluginFailure {
-        if error is CancellationError || Task.isCancelled { return ClaudePluginFailure(status: "cancelled", detail: "플러그인 작업을 취소했습니다. 이미 저장된 CLI 변경은 자동으로 되돌리지 않습니다.") }
+        if error is CancellationError || Task.isCancelled { return ClaudePluginFailure(status: "cancelled", detail: L("plugins.operation.cancelledKeepsChanges")) }
         if let failure = error as? ClaudePluginFailure { return failure }
-        return ClaudePluginFailure(status: "failed", detail: "플러그인 작업을 완료하지 못했습니다. 실행 시간·출력 한도 또는 CLI 접근 상태를 확인하세요.", output: display(error.localizedDescription, limit: 1024))
+        return ClaudePluginFailure(status: "failed", detail: L("plugins.detail.incomplete"), output: display(error.localizedDescription, limit: 1024))
     }
 }

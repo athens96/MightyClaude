@@ -15,7 +15,10 @@ internal static class CliLoginRecoveryVerification
         Check(!CliAuthFailure.Claude("Bedrock service control policy explicit deny, invalid API key"), "organization policy cannot be fixed by browser sign-in");
         foreach (var method in new[] { "AWS Bedrock", "Google Vertex AI", "Microsoft Foundry", "Anthropic API key" })
             Check(!CliAuthFailure.SignInCanFix(new() { Provider = "claude", Method = method, AccessVerified = false, LoggedIn = true }), "external configuration is not a browser login: " + method);
-        Check(!CliAuthFailure.SignInCanFix(new() { Provider = "codex", Method = "API 키" }), "Codex API-key login is excluded");
+        Check(!CliAuthFailure.SignInCanFix(new() { Provider = "codex", Method = "any label", MethodId = CliAccountMethod.CodexApiKey }), "Codex API-key login is excluded");
+        Check(!CliAuthFailure.SignInCanFix(CliAccountSupport.ParseCodexStatus("Logged in using an API key - sk-***", null)), "a parsed Codex API-key login is excluded, whatever its label reads");
+        Check(CliAuthFailure.SignInCanFix(new() { Provider = "codex", Method = CliAccountSupport.CodexApiKeyMethod, MethodId = CliAccountMethod.CodexChatGpt }), "the decision reads the method id, not the label");
+        Check(!CliAuthFailure.SignInCanFix(new() { Provider = "gemini", Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiVertex }), "a Gemini method other than Google is excluded by id");
         Check(CliAuthFailure.SignInCanFix(new() { Provider = "claude", LoggedIn = true }) && CliAuthFailure.SignInCanFix(new() { Provider = "codex" }), "stale persisted credentials or unknown status do not rule out login recovery");
         return Task.CompletedTask;
     }
@@ -30,7 +33,7 @@ internal static class CliLoginRecoveryVerification
         Check(gate.ShouldStart("gemini", true, new() { Provider = "gemini" }, false, now) && !gate.ShouldStart("gemini", true, claude, false, now) && !gate.ShouldStart("codex", true, claude, false, now), "Claude, Codex and Gemini, each decided on its own status");
         Check(!gate.ShouldStart("other", true, new() { Provider = "other" }, false, now), "a provider without login recovery never starts one");
         Check(!gate.ShouldStart("claude", true, claude with { Method = "AWS Bedrock", AccessVerified = false }, false, now)
-            && !gate.ShouldStart("codex", true, codex with { Method = CliAccountSupport.CodexApiKeyMethod }, false, now)
+            && !gate.ShouldStart("codex", true, codex with { Method = CliAccountSupport.CodexApiKeyMethod, MethodId = CliAccountMethod.CodexApiKey }, false, now)
             && !gate.ShouldStart("claude", true, claude with { Installed = false }, false, now), "methods a browser sign-in cannot renew never start one");
         gate.Stopped("claude", now);
         Check(!gate.ShouldStart("claude", true, claude, false, now) && !gate.ShouldStart("claude", true, claude, false, now + CliAutoLoginGate.Cooldown - TimeSpan.FromSeconds(1)), "a failed or cancelled sign-in waits for the cooldown");
@@ -159,7 +162,7 @@ internal static class CliLoginRecoveryVerification
         Directory.CreateDirectory(Path.Combine(home, ".gemini"));
         // Fixture contents only; the code under test reads nothing but the file's dates.
         void Write(DateTime utc) { var path = CliGeminiLogin.CredentialsPath(home); File.WriteAllText(path, "{\"fixture\":true}"); File.SetLastWriteTimeUtc(path, utc); }
-        var google = new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = CliAccountSupport.GeminiGoogleMethod };
+        var google = new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle };
         try
         {
             Check(CliGeminiLogin.CredentialsStamp(home) is null, "no file, no stamp");
@@ -172,7 +175,7 @@ internal static class CliLoginRecoveryVerification
             Write(opened.AddSeconds(30));
             Check(CliGeminiLogin.SignedIn(stamp, CliGeminiLogin.CredentialsStamp(home), google), "a rewrite after the terminal opened counts");
             var later = CliGeminiLogin.CredentialsStamp(home);
-            Check(!CliGeminiLogin.SignedIn(stamp, later, google with { Method = "Vertex AI" }) && !CliGeminiLogin.SignedIn(stamp, later, google with { LoggedIn = false }) && !CliGeminiLogin.SignedIn(stamp, null, google),
+            Check(!CliGeminiLogin.SignedIn(stamp, later, google with { Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex }) && !CliGeminiLogin.SignedIn(stamp, later, google with { LoggedIn = false }) && !CliGeminiLogin.SignedIn(stamp, null, google),
                 "only a signed-in Google status with the file present counts");
             Check(CliGeminiLogin.SignedIn(stamp, later, CliAccountSupport.GeminiStatus(home)), "the status read from the same files agrees");
 
@@ -186,7 +189,7 @@ internal static class CliLoginRecoveryVerification
             var waiting = CliGeminiLogin.RunAsync(baseline, () => CliGeminiLogin.CredentialsStamp(home), Status, () => true, interval: TimeSpan.FromMilliseconds(20), tick: TimeSpan.FromMilliseconds(10));
             await Task.Delay(80); Write(DateTime.UtcNow);
             var signed = await waiting.WaitAsync(TimeSpan.FromSeconds(10));
-            Check(signed.Outcome == CliLoginOutcome.LoggedIn && signed.Status.Method == CliAccountSupport.GeminiGoogleMethod, "the CLI rewriting the file while the terminal is open signs in");
+            Check(signed.Outcome == CliLoginOutcome.LoggedIn && signed.Status.MethodId == CliAccountMethod.GeminiGoogle, "the CLI rewriting the file while the terminal is open signs in");
             using var cancel = new CancellationTokenSource(); cancel.Cancel();
             try { await CliGeminiLogin.RunAsync(null, () => null, Status, () => true, cancel.Token); throw new InvalidOperationException("cancel was ignored"); } catch (OperationCanceledException) { }
             var plan = CliAccountTerminal.LaunchPlan(CliAccountSupport.LoginArguments("gemini")!, windowsTerminalAvailable: true, directory: @"C:\Projects\app");

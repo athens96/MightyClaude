@@ -84,8 +84,8 @@ public static class CliAuthFailure
     }
     /// <summary>A Gemini method other than the Google sign-in (an API key, Vertex AI, Compute ADC, …) is not renewed by signing in.</summary>
     public static bool SignInCanFix(CliAccountStatus status) => Providers.Contains(status.Provider) && status.Installed && status.AccessVerified != false
-        && !(status.Provider == "codex" && (status.Method == CliAccountSupport.CodexApiKeyMethod || status.Method == "API key"))
-        && !(status.Provider == "gemini" && status.Method is not null && status.Method != CliAccountSupport.GeminiGoogleMethod);
+        && !(status.Provider == "codex" && status.MethodId == CliAccountMethod.CodexApiKey)
+        && !(status.Provider == "gemini" && status.MethodId is not null && status.MethodId != CliAccountMethod.GeminiGoogle);
 }
 
 /// Whether a lost sign-in starts its provider's background sign-in by itself (M/CLILoginRecovery.swift

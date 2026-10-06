@@ -97,22 +97,24 @@ final class CodexPluginTests {
     }
 
     @Test func listsUserPluginsAndRemoteCatalogPreservingWarningsWithoutMutation() async throws {
-        let f = try fixture(); let service = f.service()
-        var installed = f.row(installed: true); installed["enabled"] = false
-        try f.listing(installed: [installed], available: [f.row(), f.row(id: "remote@openai-curated-remote")])
-        try f.text("Remote catalog unavailable; using cache", "warning")
-        let result = await service.snapshot(workspace: f.workspace)
-        #expect(result.status == "ready")
-        #expect(result.installed.count == 1)
-        #expect(result.installed.first?.scope == "user")
-        #expect(result.installed.first?.enabled == false)
-        #expect(result.available.count == 2)
-        #expect(result.available.first?.sourceKind == "local")
-        #expect(result.marketplaces == [ClaudePluginMarketplace(name: "sample", sourceKind: "git")])
-        #expect(result.diagnosticOutput.contains("Remote catalog unavailable"))
-        #expect(result.detail.contains("CLI 경고"))
-        #expect(f.read("mutations").isEmpty)
-        await service.shutdown()
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let f = try fixture(); let service = f.service()
+            var installed = f.row(installed: true); installed["enabled"] = false
+            try f.listing(installed: [installed], available: [f.row(), f.row(id: "remote@openai-curated-remote")])
+            try f.text("Remote catalog unavailable; using cache", "warning")
+            let result = await service.snapshot(workspace: f.workspace)
+            #expect(result.status == "ready")
+            #expect(result.installed.count == 1)
+            #expect(result.installed.first?.scope == "user")
+            #expect(result.installed.first?.enabled == false)
+            #expect(result.available.count == 2)
+            #expect(result.available.first?.sourceKind == "local")
+            #expect(result.marketplaces == [ClaudePluginMarketplace(name: "sample", sourceKind: "git")])
+            #expect(result.diagnosticOutput.contains("Remote catalog unavailable"))
+            #expect(result.detail.contains("CLI 경고"))
+            #expect(f.read("mutations").isEmpty)
+            await service.shutdown()
+        }
     }
 
     @Test func installUsesExactArgumentsUserScopeAndVerifiesRegistry() async throws {

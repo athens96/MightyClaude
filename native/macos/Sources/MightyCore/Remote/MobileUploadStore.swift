@@ -13,7 +13,7 @@ public struct MobileClaimedAttachments: Sendable {
     public let claim: MobileUploadClaim
 }
 
-/// Chunked uploads from a phone (docs/mobile-remote.md, "m1 확장"). A phone
+/// Chunked uploads from a phone (docs/mobile-remote.md, the m1 extension section). A phone
 /// declares a file, sends it in fixed chunks strictly in order, completes it,
 /// and then names the upload id in `submit`. The bytes live in an owner-only
 /// folder under the data directory and never under the phone's own name: the
@@ -79,21 +79,21 @@ public actor MobileUploadStore {
 
     public func begin(sessionId: String, deviceId: String, name: String, size: Int, mimeType: String?) throws -> MobileUploadTicket {
         sweep()
-        guard let clean = Self.sanitize(name) else { throw MobileHostError.badRequest("파일 이름이 올바르지 않습니다.") }
+        guard let clean = Self.sanitize(name) else { throw MobileHostError.badRequest(L("remote.upload.badName")) }
         // An empty or negative declaration is a malformed body; only a real
         // file that is simply too big is a size refusal.
-        guard size > 0 else { throw MobileHostError.badRequest("size는 1바이트 이상이어야 합니다.") }
-        guard size <= AttachmentSupport.maximumFileBytes else { throw MobileHostError.tooLarge("파일 하나는 최대 5 MB입니다.") }
-        if let type = mimeType, type.utf8.count > 160 { throw MobileHostError.badRequest("mimeType이 올바르지 않습니다.") }
+        guard size > 0 else { throw MobileHostError.badRequest(L("remote.upload.sizeTooSmall")) }
+        guard size <= AttachmentSupport.maximumFileBytes else { throw MobileHostError.tooLarge(L("attachments.error.fileTooLarge")) }
+        if let type = mimeType, type.utf8.count > 160 { throw MobileHostError.badRequest(L("remote.upload.badMimeType")) }
         guard open(sessionId: sessionId) < Self.maximumOpenPerSession else {
-            throw MobileHostError.tooMany("이 실행 창에서 동시에 올릴 수 있는 파일은 \(Self.maximumOpenPerSession)개입니다.")
+            throw MobileHostError.tooMany(L("remote.upload.tooManyInPane", ["count": String(Self.maximumOpenPerSession)]))
         }
-        guard uploads.count < Self.maximumOpen else { throw MobileHostError.tooMany("동시에 올릴 수 있는 파일 수를 넘었습니다.") }
+        guard uploads.count < Self.maximumOpen else { throw MobileHostError.tooMany(L("remote.upload.tooMany")) }
         try prepare()
         let id = UUID().uuidString.lowercased()
         let url = directory.appendingPathComponent(id + ".part")
         guard FileManager.default.createFile(atPath: url.path, contents: Data(), attributes: [.posixPermissions: 0o600]) else {
-            throw MightyError("업로드 파일을 만들지 못했습니다.")
+            throw MightyError(L("remote.upload.createFailed"))
         }
         uploads[id] = Upload(id: id, sessionId: sessionId, deviceId: deviceId, name: clean, size: size, received: 0, nextChunk: 0,
                              completed: false, updatedAt: now(), url: url, claim: nil)
@@ -105,18 +105,18 @@ public actor MobileUploadStore {
     public func append(id: String, deviceId: String, index: Int, data: Data) throws -> Int {
         sweep()
         var upload = try owned(id, deviceId: deviceId)
-        guard !upload.completed else { throw MobileHostError.conflict("이미 끝난 업로드입니다.") }
+        guard !upload.completed else { throw MobileHostError.conflict(L("remote.upload.alreadyFinished")) }
         let chunks = (upload.size + Self.chunkSize - 1) / Self.chunkSize
-        guard index >= 0, index < chunks else { throw MobileHostError.badRequest("chunk 번호가 범위를 벗어났습니다.") }
-        guard index == upload.nextChunk else { throw MobileHostError.conflict("chunk는 0부터 순서대로 보내야 합니다.") }
+        guard index >= 0, index < chunks else { throw MobileHostError.badRequest(L("remote.upload.chunkOutOfRange")) }
+        guard index == upload.nextChunk else { throw MobileHostError.conflict(L("remote.upload.chunkOrder")) }
         let expected = min(Self.chunkSize, upload.size - upload.received)
-        guard data.count == expected else { throw MobileHostError.badRequest("chunk 크기가 선언과 다릅니다.") }
-        guard let handle = try? FileHandle(forWritingTo: upload.url) else { throw MightyError("업로드 파일을 열지 못했습니다.") }
+        guard data.count == expected else { throw MobileHostError.badRequest(L("remote.upload.chunkSize")) }
+        guard let handle = try? FileHandle(forWritingTo: upload.url) else { throw MightyError(L("remote.upload.openFailed")) }
         defer { try? handle.close() }
         do {
             try handle.seekToEnd()
             try handle.write(contentsOf: data)
-        } catch { throw MightyError("업로드 내용을 저장하지 못했습니다.") }
+        } catch { throw MightyError(L("remote.upload.writeFailed")) }
         upload.received += data.count
         upload.nextChunk += 1
         upload.updatedAt = now()
@@ -127,8 +127,8 @@ public actor MobileUploadStore {
     public func complete(id: String, deviceId: String) throws -> MobileUploadAttachment {
         sweep()
         var upload = try owned(id, deviceId: deviceId)
-        guard !upload.completed else { throw MobileHostError.conflict("이미 끝난 업로드입니다.") }
-        guard upload.received == upload.size else { throw MobileHostError.badRequest("받은 크기가 선언한 크기와 다릅니다.") }
+        guard !upload.completed else { throw MobileHostError.conflict(L("remote.upload.alreadyFinished")) }
+        guard upload.received == upload.size else { throw MobileHostError.badRequest(L("remote.upload.sizeMismatch")) }
         upload.completed = true
         upload.updatedAt = now()
         uploads[id] = upload
@@ -145,7 +145,7 @@ public actor MobileUploadStore {
     /// the same 404 an unknown id would get: whether the file exists is not
     /// its business either.
     private func owned(_ id: String, deviceId: String) throws -> Upload {
-        guard let upload = uploads[id], upload.deviceId == deviceId else { throw MobileHostError.notFound("업로드를 찾을 수 없습니다.") }
+        guard let upload = uploads[id], upload.deviceId == deviceId else { throw MobileHostError.notFound(L("remote.error.uploadNotFound")) }
         return upload
     }
 
@@ -155,24 +155,24 @@ public actor MobileUploadStore {
     /// where they are so it can simply send again.
     public func attachments(ids: [String], sessionId: String, deviceId: String) throws -> MobileClaimedAttachments {
         sweep()
-        guard ids.count <= AttachmentSupport.maximumCount else { throw MobileHostError.tooLarge("첨부 파일은 최대 \(AttachmentSupport.maximumCount)개입니다.") }
-        guard Set(ids).count == ids.count else { throw MobileHostError.badRequest("같은 업로드를 두 번 첨부할 수 없습니다.") }
+        guard ids.count <= AttachmentSupport.maximumCount else { throw MobileHostError.tooLarge(L("remote.upload.tooManyAttachments", ["count": String(AttachmentSupport.maximumCount)])) }
+        guard Set(ids).count == ids.count else { throw MobileHostError.badRequest(L("remote.upload.duplicate")) }
         var attachments: [RunAttachment] = []
         var total = 0
         for id in ids {
             guard let upload = uploads[id], upload.completed, upload.sessionId == sessionId, upload.deviceId == deviceId else {
-                throw MobileHostError.badRequest("끝나지 않았거나 이 실행 창의 것이 아닌 업로드입니다.")
+                throw MobileHostError.badRequest(L("remote.upload.notReady"))
             }
             // Already travelling with another submit: two requests naming one
             // upload must not both get a copy of it.
-            guard upload.claim == nil else { throw MobileHostError.badRequest("이미 전송 중인 업로드입니다.") }
+            guard upload.claim == nil else { throw MobileHostError.badRequest(L("remote.upload.alreadySending")) }
             guard let data = CLIAccountSupport.boundedData(upload.url, maximumBytes: AttachmentSupport.maximumFileBytes), data.count == upload.size else {
-                throw MightyError("업로드한 파일을 읽지 못했습니다.")
+                throw MightyError(L("remote.upload.readFailed"))
             }
             total += data.count
-            guard total <= AttachmentSupport.maximumTotalBytes else { throw MobileHostError.tooLarge("첨부 파일의 합계는 최대 8 MB입니다.") }
+            guard total <= AttachmentSupport.maximumTotalBytes else { throw MobileHostError.tooLarge(L("attachments.error.totalTooLarge")) }
             do { attachments.append(try AttachmentSupport.make(name: upload.name, data: data)) }
-            catch { throw MobileHostError.badRequest("첨부할 수 없는 파일입니다.") }
+            catch { throw MobileHostError.badRequest(L("remote.upload.notAttachable")) }
         }
         let claim = MobileUploadClaim(id: UUID(), ids: ids)
         for id in ids { uploads[id]?.claim = claim.id }
@@ -240,9 +240,9 @@ public actor MobileUploadStore {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         }
         let descriptor = Darwin.open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
-        guard descriptor >= 0 else { throw MightyError("업로드 폴더를 열지 못했습니다.") }
+        guard descriptor >= 0 else { throw MightyError(L("remote.upload.folderOpenFailed")) }
         defer { close(descriptor) }
-        guard fchmod(descriptor, 0o700) == 0 else { throw MightyError("업로드 폴더 권한을 설정하지 못했습니다.") }
+        guard fchmod(descriptor, 0o700) == 0 else { throw MightyError(L("remote.upload.folderPermissionFailed")) }
         let leftovers = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         for url in leftovers where uploads.values.contains(where: { $0.url == url }) == false { try? FileManager.default.removeItem(at: url) }
         prepared = true

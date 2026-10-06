@@ -137,22 +137,24 @@ struct BedrockAuthDiagnosticsTests {
     }
 
     @Test func failedShellCaptureDoesNotClaimToKnowTheTerminalCredential() async throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("bedrock-fallback-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: home) }
-        let config = home.appendingPathComponent(".claude")
-        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
-        try settings("fake-settings").write(to: config.appendingPathComponent("settings.json"))
-        let shell = home.appendingPathComponent("failed-shell")
-        let claude = home.appendingPathComponent("claude")
-        try Data("#!/bin/sh\nexit 1\n".utf8).write(to: shell)
-        try Data("#!/bin/sh\nprintf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"third_party\",\"apiProvider\":\"bedrock\"}'\n".utf8).write(to: claude)
-        for file in [shell, claude] { try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path) }
-        let resolver = CLIEnvironmentResolver(baseEnvironment: ["PATH": home.path, key: "fake-parent"], shell: shell, home: home)
-        let service = CLIAccountService(home: home, environmentResolver: resolver)
-        let status = await service.status(provider: "claude")
-        #expect(status.method == "AWS Bedrock")
-        #expect(!status.detail.contains(BedrockAuthDiagnostics.conflictMessage))
-        #expect(status.detail.contains("앱 시작 환경"))
-        #expect(!status.detail.contains("fake-"))
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let home = FileManager.default.temporaryDirectory.appendingPathComponent("bedrock-fallback-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: home) }
+            let config = home.appendingPathComponent(".claude")
+            try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+            try settings("fake-settings").write(to: config.appendingPathComponent("settings.json"))
+            let shell = home.appendingPathComponent("failed-shell")
+            let claude = home.appendingPathComponent("claude")
+            try Data("#!/bin/sh\nexit 1\n".utf8).write(to: shell)
+            try Data("#!/bin/sh\nprintf '%s\\n' '{\"loggedIn\":true,\"authMethod\":\"third_party\",\"apiProvider\":\"bedrock\"}'\n".utf8).write(to: claude)
+            for file in [shell, claude] { try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path) }
+            let resolver = CLIEnvironmentResolver(baseEnvironment: ["PATH": home.path, key: "fake-parent"], shell: shell, home: home)
+            let service = CLIAccountService(home: home, environmentResolver: resolver)
+            let status = await service.status(provider: "claude")
+            #expect(status.method == "AWS Bedrock")
+            #expect(!status.detail.contains(BedrockAuthDiagnostics.conflictMessage))
+            #expect(status.detail.contains("앱 시작 환경"))
+            #expect(!status.detail.contains("fake-"))
+        }
     }
 }

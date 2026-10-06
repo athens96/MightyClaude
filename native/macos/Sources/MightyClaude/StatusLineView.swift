@@ -14,7 +14,7 @@ struct StatusLineView: View {
         VStack(alignment: .leading, spacing: 2) {
             if let untrusted = state.untrusted {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label(L("statusLine.untrustedPrompt", ["source": untrusted.source]), systemImage: "terminal")
+                    Label(L("statusLine.untrustedPrompt", ["source": untrusted.sourceLabel]), systemImage: "terminal")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Text(untrusted.command).font(.system(size: 11, design: .monospaced)).lineLimit(3).textSelection(.enabled)
                         .padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
@@ -41,7 +41,7 @@ struct StatusLineView: View {
         .textSelection(.enabled)
         .padding(.leading, CGFloat(padding) * 6)
         .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 8)
-        .help((state.config.map { "statusLine · " + $0.source + " · " + $0.command } ?? "statusLine") + (state.updatedAt.map { " · " + $0.formatted(date: .omitted, time: .standard) } ?? ""))
+        .help((state.config.map { "statusLine · " + $0.sourceLabel + " · " + $0.command } ?? "statusLine") + (state.updatedAt.map { " · " + $0.formatted(date: .omitted, time: .standard) } ?? ""))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(L("composer.statusLine.name"))
         .accessibilityValue(state.result?.plainText ?? "")

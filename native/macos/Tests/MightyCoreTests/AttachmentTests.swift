@@ -22,6 +22,17 @@ private final class AttachmentEvents: @unchecked Sendable {
         }
     }
 
+    @Test func theAttachmentReferenceIsTheSameFixedLineInEveryLanguage() throws {
+        let text = RunAttachment(name: "notes.txt", mediaType: "text/plain", dataBase64: Data("hello".utf8).base64EncodedString())
+        let prepared = try AttachmentPreparation([text], parent: try directory())
+        defer { prepared.cleanup() }
+        let file = try #require(prepared.files.first)
+        let korean = LocaleOverride.$language.withValue(.ko) { AttachmentSupport.reference(file) }
+        let english = LocaleOverride.$language.withValue(.en) { AttachmentSupport.reference(file) }
+        #expect(korean == english)
+        #expect(korean.hasPrefix("Attached file \"notes.txt\": ") && korean.hasSuffix(" (read this copy as needed)."))
+    }
+
     @Test func validationAndLegacyWire() throws {
         let image = try AttachmentSupport.make(name: "C:\\private\\folder\\image.png", data: png)
         #expect(image.name == "image.png"); #expect(image.mediaType == "image/png")
@@ -107,51 +118,53 @@ private final class AttachmentEvents: @unchecked Sendable {
     }
 
     @Test func fakeCLIReadsAttachmentsAndCleansCopiesOnExitErrorAndStop() async throws {
-        let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
-        let binary = root.appendingPathComponent("gemini")
-        // Gemini metadata is static; this executable only captures local bytes.
-        let script = #"""
-        #!/bin/sh
-        if [ "$1" = "--version" ]; then printf '0.43.0\n'; exit 0; fi
-        folder="$(/usr/bin/dirname "$0")"
-        printf '%s\n' "$@" > "$folder/args"
-        /bin/cat > "$folder/input"
-        previous=''
-        for value in "$@"; do
-          if [ "$previous" = '--include-directories' ]; then
-            /bin/cat "$value"/* > "$folder/copied" || exit 1
-            # Publish readiness only after the bytes have been copied. The HOLD
-            # case stops this process as soon as the stage marker appears.
-            printf '%s' "$value" > "$folder/stage.ready"
-            /bin/mv "$folder/stage.ready" "$folder/stage"
-          fi
-          previous="$value"
-        done
-        if /usr/bin/grep -q HOLD "$folder/input"; then /bin/sleep 60; fi
-        if /usr/bin/grep -q FAIL "$folder/input"; then exit 1; fi
-        printf '{"type":"result","status":"success"}\n'
-        """#
-        try Data(script.utf8).write(to: binary); try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
-        let service = ProviderService(binaryOverrides: ["gemini": binary]); let events = AttachmentEvents()
-        let runner = ProcessRunner(providerService: service, pluginDirectory: root, onEvent: { events.add($0) })
-        let workspace = Workspace(id: "space", name: "Fixture", path: root.path)
-        let attachment = try AttachmentSupport.make(name: "image.png", data: png)
-        do {
-            for prompt in ["OK", "FAIL", "HOLD"] {
-                try? FileManager.default.removeItem(at: root.appendingPathComponent("stage"))
-                try await runner.start(request: StartRunRequest(sessionId: prompt, workspaceId: workspace.id, input: prompt, provider: "gemini", attachments: [attachment]), workspace: workspace)
-                try await wait { FileManager.default.fileExists(atPath: root.appendingPathComponent("stage").path) }
-                if prompt == "HOLD" { await runner.stop(id: prompt) }
-                let status = prompt == "OK" ? "completed" : prompt == "FAIL" ? "error" : "stopped"
-                try await wait { events.values().contains { $0.sessionId == prompt && $0.status == status } }
-                #expect(try Data(contentsOf: root.appendingPathComponent("copied")) == png)
-                let stage = try String(contentsOf: root.appendingPathComponent("stage"))
-                #expect(!stage.isEmpty && stage.hasPrefix("/"))
-                #expect(!FileManager.default.fileExists(atPath: stage))
-                #expect(try String(contentsOf: root.appendingPathComponent("input")).contains("@/"))
-            }
-        } catch { await runner.shutdown(); await service.shutdown(); throw error }
-        await runner.shutdown(); await service.shutdown()
+        try await LocaleOverride.$language.withValue(.ko) { () async throws in
+            let root = try directory(); defer { try? FileManager.default.removeItem(at: root) }
+            let binary = root.appendingPathComponent("gemini")
+            // Gemini metadata is static; this executable only captures local bytes.
+            let script = #"""
+            #!/bin/sh
+            if [ "$1" = "--version" ]; then printf '0.43.0\n'; exit 0; fi
+            folder="$(/usr/bin/dirname "$0")"
+            printf '%s\n' "$@" > "$folder/args"
+            /bin/cat > "$folder/input"
+            previous=''
+            for value in "$@"; do
+              if [ "$previous" = '--include-directories' ]; then
+                /bin/cat "$value"/* > "$folder/copied" || exit 1
+                # Publish readiness only after the bytes have been copied. The HOLD
+                # case stops this process as soon as the stage marker appears.
+                printf '%s' "$value" > "$folder/stage.ready"
+                /bin/mv "$folder/stage.ready" "$folder/stage"
+              fi
+              previous="$value"
+            done
+            if /usr/bin/grep -q HOLD "$folder/input"; then /bin/sleep 60; fi
+            if /usr/bin/grep -q FAIL "$folder/input"; then exit 1; fi
+            printf '{"type":"result","status":"success"}\n'
+            """#
+            try Data(script.utf8).write(to: binary); try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binary.path)
+            let service = ProviderService(binaryOverrides: ["gemini": binary]); let events = AttachmentEvents()
+            let runner = ProcessRunner(providerService: service, pluginDirectory: root, onEvent: { events.add($0) })
+            let workspace = Workspace(id: "space", name: "Fixture", path: root.path)
+            let attachment = try AttachmentSupport.make(name: "image.png", data: png)
+            do {
+                for prompt in ["OK", "FAIL", "HOLD"] {
+                    try? FileManager.default.removeItem(at: root.appendingPathComponent("stage"))
+                    try await runner.start(request: StartRunRequest(sessionId: prompt, workspaceId: workspace.id, input: prompt, provider: "gemini", attachments: [attachment]), workspace: workspace)
+                    try await wait { FileManager.default.fileExists(atPath: root.appendingPathComponent("stage").path) }
+                    if prompt == "HOLD" { await runner.stop(id: prompt) }
+                    let status = prompt == "OK" ? "completed" : prompt == "FAIL" ? "error" : "stopped"
+                    try await wait { events.values().contains { $0.sessionId == prompt && $0.status == status } }
+                    #expect(try Data(contentsOf: root.appendingPathComponent("copied")) == png)
+                    let stage = try String(contentsOf: root.appendingPathComponent("stage"))
+                    #expect(!stage.isEmpty && stage.hasPrefix("/"))
+                    #expect(!FileManager.default.fileExists(atPath: stage))
+                    #expect(try String(contentsOf: root.appendingPathComponent("input")).contains("@/"))
+                }
+            } catch { await runner.shutdown(); await service.shutdown(); throw error }
+            await runner.shutdown(); await service.shutdown()
+        }
     }
 
     @Test func cancelledAttachmentAdmissionThrowsBeforeDraftCanBeCleared() async throws {

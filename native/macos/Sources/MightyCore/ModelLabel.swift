@@ -91,7 +91,7 @@ public enum ModelLabel {
             return labelled
         }
         if !options.contains(where: { $0.value == "default" }) { options.insert(ModelOption(value: "default", displayName: cliDefaultName), at: 0) }
-        if !options.contains(where: { $0.value == session.model }) { options.append(ModelOption(value: session.model, displayName: "\(selection(session, catalog: catalog)) · 저장된 모델")) }
+        if !options.contains(where: { $0.value == session.model }) { options.append(ModelOption(value: session.model, displayName: selection(session, catalog: catalog) + " · " + L("composer.model.saved"))) }
         return options
     }
 
@@ -104,7 +104,7 @@ public enum ModelLabel {
         return (id, format(id) ?? selection(session, catalog: catalog))
     }
 
-    static let cliDefaultName = "CLI 기본값"
+    static var cliDefaultName: String { L("composer.model.cliDefault") }
 
     // MARK: Rules
 

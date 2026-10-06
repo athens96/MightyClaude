@@ -17,7 +17,7 @@ public protocol TerminalPasteSink: AnyObject {
 /// "a manifest never presses Enter" can be asserted at the sink itself (§5.7).
 public enum TerminalInputPolicy {
     public enum Outcome: Sendable, Equatable { case pasted, pastedAndRan, refused(String), failed }
-    public static let newlineRefusal = "명령에 줄바꿈이 있어 터미널에 넣지 않았습니다."
+    public static var newlineRefusal: String { L("terminal.input.newlineRefused") }
 
     /// A second layer over §1.11's banned characters: whatever the source, a
     /// line break means nothing is pasted at all.

@@ -3,8 +3,8 @@ import Foundation
 /// Compares credential sources in memory. A mismatch identifies conflicting
 /// configuration, not which key is valid or which credential AWS accepted.
 public enum BedrockAuthDiagnostics {
-    public static let conflictMessage = "터미널 환경과 Claude 설정 파일에 서로 다른 Bedrock 키가 있습니다. Bedrock 설정에서 사용할 인증 정보를 확인하세요."
-    public static let scpInvokeModelDeniedMessage = "AWS 조직 정책(SCP)이 Bedrock 모델 호출을 명시적으로 거부했습니다. AWS Organizations 관리자에게 해당 계정·역할·모델의 호출을 차단하는 SCP를 확인해 달라고 요청하세요. 이 오류만으로 어떤 정책이나 리전 조건이 적용됐는지는 확인할 수 없습니다."
+    public static var conflictMessage: String { L("bedrock.conflict") }
+    public static var scpInvokeModelDeniedMessage: String { L("bedrock.scpDenied") }
     static let maximumSettingsBytes = 1_048_576
     private static let bearerKey = "AWS_BEARER_TOKEN_BEDROCK"
 
