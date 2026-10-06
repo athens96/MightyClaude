@@ -82,6 +82,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // "System" reads the display language first, then the user's Windows language list in order.
+        Locale.PreferredLanguages = WindowsPreferredLanguages;
         // The update helper is this same executable in a second mode: it is
         // started detached with a minimal environment just before the app quits,
         // waits for the app to exit, verifies the package again and replaces the
@@ -115,6 +117,14 @@ internal static class Program
             Console.Error.WriteLine(error.Message);
             return 1;
         }
+    }
+
+    /// The user's Windows languages, most preferred first; none when the list cannot be read
+    /// (the display language, which Locale checks first, still names the user's language).
+    private static IReadOnlyList<string> WindowsPreferredLanguages()
+    {
+        try { return Windows.System.UserProfile.GlobalizationPreferences.Languages.ToList(); }
+        catch (Exception) { return []; }
     }
 
     /// The helper half. Never elevated, never interactive: the outcome goes to

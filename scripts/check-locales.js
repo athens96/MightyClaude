@@ -9,6 +9,8 @@
 //
 //   1. ko와 en의 키 집합이 같다
 //   2. 키마다 자리표({name}) 집합이 같다
+//   2b. Translations (zh, ja) only carry keys en has, with en's placeholders per key.
+//       Keys they still miss are counted, not failed (stage 2 of the four-language plan makes it strict).
 //   3. 클라이언트 사본이 원본과 바이트까지 같다
 //   4. 쓰이지 않는 키가 없다 — 모든 키는 적어도 한 클라이언트 소스에서 불린다
 //   5. 없는 키가 없다 — 클라이언트 소스가 부르는 모든 키가 원본에 있다
@@ -37,7 +39,10 @@ const ROOT = rootIdx >= 0
 
 const touchedSinceIdx = argv.indexOf('--touched-since');
 const TOUCHED_SINCE = touchedSinceIdx >= 0 ? argv[touchedSinceIdx + 1] : null;
-const LANGUAGES = ['ko', 'en'];
+// Complete languages carry every key; translations may miss some, which then read English.
+const COMPLETE_LANGUAGES = ['ko', 'en'];
+const TRANSLATIONS = ['zh', 'ja'];
+const LANGUAGES = [...COMPLETE_LANGUAGES, ...TRANSLATIONS];
 const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
 // `t("key")` / `t('key')` (공통), `L("key")` (Swift), `Locale.Get("key")` (C#)
 const REFERENCE = /\b(?:t|L|Locale\.Get)\(\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)["']/g;
@@ -242,6 +247,26 @@ for (const key of koKeys) {
   }
 }
 
+// ── 2b. Translations: a subset of en's keys, with en's placeholders ───────────
+const translationProgress = [];
+for (const language of TRANSLATIONS) {
+  const catalogue = catalogues[language];
+  if (!catalogue) continue;
+  for (const key of Object.keys(catalogue).sort()) {
+    if (!enKeys.includes(key)) {
+      fail(`${language}.json의 ${key}가 en.json에 없습니다.`);
+      continue;
+    }
+    const inTranslation = placeholdersOf(catalogue[key]);
+    const inEn = placeholdersOf(catalogues.en[key]);
+    if (inTranslation.join(',') !== inEn.join(',')) {
+      fail(`${key}의 자리표가 다릅니다: ${language} {${inTranslation.join(', ')}} / en {${inEn.join(', ')}}`);
+    }
+  }
+  const missing = enKeys.filter((key) => !(key in catalogue)).length;
+  translationProgress.push({ language, translated: enKeys.length - missing, missing });
+}
+
 // ── 3. 클라이언트 사본이 원본과 같다 ──────────────────────────────────────────
 const originals = {};
 for (const language of LANGUAGES) {
@@ -388,6 +413,12 @@ for (const row of report) {
 }
 lines.push('');
 lines.push(`  합계 ${report.reduce((total, row) => total + row.literals, 0)}개, 옮긴 키 ${koKeys.length}개`);
+lines.push('');
+lines.push('번역 진행 (빠진 키는 영어로 보인다 — 세는 것이지 막는 것이 아니다)');
+lines.push('');
+for (const row of translationProgress) {
+  lines.push(`  ${row.language}  번역 ${row.translated}개, 빠진 키 ${row.missing}개`);
+}
 const reportText = lines.join('\n');
 console.log(reportText);
 
@@ -400,10 +431,14 @@ function documentation() {
   out.push('');
   out.push('## 하나의 원본');
   out.push('');
-  out.push('`locales/ko.json`과 `locales/en.json`이 저장소의 단 하나의 원본이다. 평평한 의미 키');
-  out.push('(`phone.pair.connect` 처럼)에서 문구로 가는 객체이고, 자리표는 `{name}` 꼴이다.');
-  out.push('두 파일의 키 집합과 키마다의 자리표 집합은 같다. 한국어 값은 옮기기 전의 리터럴과');
-  out.push('바이트까지 같다.');
+  out.push('`locales/ko.json`, `locales/en.json`, `locales/zh.json`(간체 중국어), `locales/ja.json`이');
+  out.push('저장소의 단 하나의 원본이다. 평평한 의미 키(`phone.pair.connect` 처럼)에서 문구로 가는');
+  out.push('객체이고, 자리표는 `{name}` 꼴이다.');
+  out.push('');
+  out.push('- ko와 en은 완전한 언어다. 두 파일의 키 집합과 키마다의 자리표 집합은 같다. 한국어 값은');
+  out.push('  옮기기 전의 리터럴과 바이트까지 같다.');
+  out.push('- zh와 ja는 번역이다. 담은 키는 모두 en에 있어야 하고, 키마다의 자리표 집합은 en과 같다.');
+  out.push('  아직 빠진 키는 실패가 아니라 수로 센다.');
   out.push('');
   out.push('클라이언트는 그 사본을 담는다.');
   out.push('');
@@ -413,14 +448,24 @@ function documentation() {
   out.push('| Windows | `MightyClaude.WinUI.csproj`의 `Content` 연결 — 뿌리의 파일 자체를 옮기므로 어긋날 수 없다 |');
   out.push('| 전화기 | `mobile/src/locales` (`mobile/src/lib/i18n.ts`가 import) |');
   out.push('');
-  out.push('`node scripts/check-locales.js`가 사본이 원본과 바이트까지 같은지, 키 집합과 자리표가');
+  out.push('`node scripts/check-locales.js`가 네 언어 모두 사본이 원본과 바이트까지 같은지, 키 집합과 자리표가');
   out.push('맞는지, 쓰이지 않는 키와 없는 키가 없는지를 보고, 하나라도 깨지면 0이 아닌 코드로 끝난다.');
   out.push('');
   out.push('## 언어 규칙');
   out.push('');
-  out.push('전화기는 OS 언어를 따르고 고르는 자리가 없다. OS 언어가 한국어면 한국어를, 그 밖이면');
-  out.push('영어를 읽는다. 고른 언어에 없는 키는 한국어 값으로 내려오고, 두 언어에 다 없는 키는');
-  out.push('키 자신을 돌려주어 아무것도 깨지지 않는다.');
+  out.push('맥과 윈도우는 설정에서 시스템·한국어·English·简体中文·日本語 가운데 고르고, 다음 실행 때');
+  out.push('적용된다. 언어 이름은 그 언어 자신으로 쓴다(모든 언어 파일에서 같은 값). 전화기는 고르는');
+  out.push('자리 없이 OS 언어를 따른다.');
+  out.push('');
+  out.push('- 시스템: OS가 선호하는 언어 목록을 차례로 보고, 앱이 가졌고 키가 하나라도 든 첫 언어를');
+  out.push('  고른다. 아직 키가 없는(번역 전) 언어는 건너뛰고 다음 선호 언어로 간다. `zh*`는 zh,');
+  out.push('  `ja*`는 ja, `ko*`는 ko, `en*`는 en이고, 하나도 없으면 en이다. 윈도우는 표시 언어를 먼저');
+  out.push('  보고 그다음 Windows 언어 목록을 본다. 전화기는 Intl이 알려 주는 첫 언어 하나만 본다.');
+  out.push('- 번체 중국어(`zh-Hant`, `zh-TW`, `zh-HK`)는 지금 간체 zh로 읽는다.');
+  out.push('- 번역이 들어오기 전에 설정에서 中文이나 日本語를 직접 고르면 앱 문구는 영어로 보이고,');
+  out.push('  시스템 메뉴(맥의 앱·편집·윈도우 메뉴)와 날짜·숫자 형식은 고른 언어를 따른다.');
+  out.push('- 빠진 키: ko는 ko만, en은 en → ko, zh와 ja는 자기 → en → ko 차례로 찾는다. 어디에도');
+  out.push('  없는 키는 키 자신을 돌려주어 아무것도 깨지지 않는다.');
   out.push('');
   out.push('## 영어 초안 — 화면 확인이 필요한 줄');
   out.push('');
@@ -432,6 +477,16 @@ function documentation() {
     const korean = (catalogues.ko?.[key] ?? '').replace(/\|/g, '\\|');
     const english = (catalogues.en?.[key] ?? '').replace(/\|/g, '\\|');
     out.push(`| \`${key}\` | ${korean} | ${english} |`);
+  }
+  out.push('');
+  out.push('## 번역 진행');
+  out.push('');
+  out.push('세는 것이지 막는 것이 아니다 — 빠진 키는 영어 값으로 보인다.');
+  out.push('');
+  out.push('| 언어 | 번역한 키 | 빠진 키 |');
+  out.push('| --- | --- | --- |');
+  for (const row of translationProgress) {
+    out.push(`| ${row.language} | ${row.translated} | ${row.missing} |`);
   }
   out.push('');
   out.push('## 클라이언트별 남은 한국어 하드코딩 문구');
@@ -448,6 +503,8 @@ function documentation() {
   out.push('## 남은 일');
   out.push('');
   out.push('- 언어를 바꾸면 다음 실행 때 적용된다. 그 자리에서 다시 그리는 일은 하지 않았다.');
+  out.push('- zh와 ja의 빠진 키를 번역하고, 그 뒤 번역도 키가 모두 있어야 통과하도록 검사를 엄격하게 한다.');
+  out.push('- 번체 중국어(`zh-Hant`, `zh-TW`, `zh-HK`)는 지금 간체로 읽는다. 따로 둘지는 나중에 정한다.');
   out.push('- 표의 남은 문구를 단계마다 한 켜씩 옮긴다. 매니페스트 글과 `styles/**`는 데이터이므로');
   out.push('  옮기지 않는다.');
   out.push('');

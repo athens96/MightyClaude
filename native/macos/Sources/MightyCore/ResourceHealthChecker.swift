@@ -17,16 +17,18 @@ public struct ResourceCheckResult {
 
 /// Checks locale catalogs and the default companion pet through the same search
 /// roots the running app uses, and optionally logs a built-in warning when
-/// a resource cannot be resolved. An empty JSON object is treated as a miss.
+/// a resource cannot be resolved. An empty JSON object is treated as a miss unless
+/// the caller allows it (a translation with no keys yet).
 public enum ResourceHealthChecker {
     // MARK: - Locale catalogs
 
-    public static func checkCatalog(_ lang: String) -> ResourceCheckResult {
-        checkCatalog(lang, overrideCandidates: nil)
+    /// `allowEmpty` accepts an empty JSON object: a translation that has no keys yet still exists.
+    public static func checkCatalog(_ lang: String, allowEmpty: Bool = false) -> ResourceCheckResult {
+        checkCatalog(lang, overrideCandidates: nil, allowEmpty: allowEmpty)
     }
 
     /// Internal: `overrideCandidates` replaces the default search list for tests.
-    static func checkCatalog(_ lang: String, overrideCandidates: [URL]?) -> ResourceCheckResult {
+    static func checkCatalog(_ lang: String, overrideCandidates: [URL]?, allowEmpty: Bool = false) -> ResourceCheckResult {
         let name = "\(lang).json"
         let candidates: [URL]
         if let override = overrideCandidates {
@@ -48,7 +50,7 @@ public enum ResourceHealthChecker {
         for url in candidates {
             if let data = try? Data(contentsOf: url),
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-               !obj.isEmpty {
+               allowEmpty || !obj.isEmpty {
                 return ResourceCheckResult(resource: name, resolvedPath: url.path, triedPaths: candidates.map(\.path))
             }
         }

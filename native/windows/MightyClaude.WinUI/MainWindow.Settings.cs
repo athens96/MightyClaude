@@ -93,8 +93,8 @@ public sealed partial class MainWindow
         // Language picker — takes effect on the next app start.
         var languageLabel = Locale.Get("settings.display.languageLabel");
         var language = SettingsSegmented(languageLabel, "settings-language",
-            [("system", Locale.Get("settings.display.languageSystem")), ("ko", Locale.Get("settings.display.languageKorean")), ("en", Locale.Get("settings.display.languageEnglish"))],
-            service.Snapshot.LanguagePreference switch { "ko" => "ko", "en" => "en", _ => "system" },
+            Locale.PickerChoices.Select(choice => (choice.Value, Locale.Get(choice.LabelKey))).ToList(),
+            Locale.Languages.Contains(service.Snapshot.LanguagePreference) ? service.Snapshot.LanguagePreference : "system",
             value => Act(async () => await service.UpdateAsync(s => s with { LanguagePreference = value })));
         SettingsRow(rows, SettingsLabeled(SettingsText(languageLabel), language, share: true));
         SettingsRow(rows, SettingsText(Locale.Get("settings.display.languageRestartNote"), 11, DesignToken.Ink2));

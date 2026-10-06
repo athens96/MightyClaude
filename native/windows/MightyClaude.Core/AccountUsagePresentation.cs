@@ -36,7 +36,7 @@ public sealed record AccountUsageSmokeOutcome
 public sealed class AccountUsageStatus : IAsyncDisposable
 {
     private static CultureInfo DisplayCulture => Locale.LanguagePreference switch
-    { "ko" => CultureInfo.GetCultureInfo("ko-KR"), "en" => CultureInfo.GetCultureInfo("en-US"), _ => CultureInfo.CurrentCulture };
+    { "ko" => CultureInfo.GetCultureInfo("ko-KR"), "en" => CultureInfo.GetCultureInfo("en-US"), "zh" => CultureInfo.GetCultureInfo("zh-CN"), "ja" => CultureInfo.GetCultureInfo("ja-JP"), _ => CultureInfo.CurrentCulture };
     private readonly AccountUsageService service;
     private readonly Func<DateTimeOffset> clock;
     private readonly Dictionary<string, AccountUsageSnapshot> snapshots = [];
