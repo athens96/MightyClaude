@@ -6,7 +6,7 @@ import MightyCore
 /// Owns the actual AppKit view, not only its SwiftUI presentation. Detaching a
 /// pane keeps the PTY, shell state, and scrollback alive until explicit disposal.
 @MainActor
-final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, TerminalSurfaceFocusDelegate, TerminalSurfaceGridResizeDelegate, TerminalSurfaceCloseDelegate, TerminalSurfaceLifecycleDelegate, TerminalSurfaceClipboardConfirmationDelegate {
+final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate, TerminalSurfaceFocusDelegate, TerminalSurfaceGridResizeDelegate, TerminalSurfaceCloseDelegate, TerminalSurfaceLifecycleDelegate, TerminalSurfaceClipboardConfirmationDelegate, TerminalSurfaceCommandFinishedDelegate {
     let id: String
     let view: AppTerminalView
     let controller: TerminalController
@@ -23,6 +23,11 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
     private var focusPublicationRevision: UInt64 = 0
     private var startCheck: Task<Void, Never>?
     private let statusChanged: (String) -> Void
+    /// The shell `ShellProcessProbe` found for this pane, with its start time so a
+    /// reused pid is noticed, and when the next reading is due.
+    private(set) var shellProcessId: pid_t?
+    private var shellStarted: UInt64 = 0
+    private var nextActivityProbe = ContinuousClock.now
     private let focused: () -> Void
     private let closeRequested: () -> Void
     /// Typed into the shell once, after the surface attaches. Whether Enter
@@ -56,6 +61,9 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         var seen = Set<String>()
         environment["PATH"] = paths.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
         if smoke { environment["HISTFILE"] = "/dev/null" }
+        // The shell writes its pid here as it starts, so its activity can be read.
+        try? FileManager.default.removeItem(at: ShellProcessProbe.pidFile(terminalId: id))
+        environment.merge(ShellProcessProbe.environment(terminalId: id)) { current, _ in current }
         // A per-surface command forces Ghostty's wait-after-command mode.
         // The shared controller supplies the shell command instead, so exit
         // reaches the close callback immediately without another key press.
@@ -115,6 +123,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         view.removeFromSuperview()
         surface = nil
         ready = false
+        try? FileManager.default.removeItem(at: ShellProcessProbe.pidFile(terminalId: id))
     }
 
     private func publish(_ action: @escaping (LocalTerminalSession) -> Void) {
@@ -126,7 +135,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
 
     func terminalDidAttachSurface(_ surface: TerminalSurface) {
         self.surface = surface
-        publish { $0.ready = true; $0.failure = nil; $0.statusChanged("running") }
+        publish { $0.ready = true; $0.failure = nil; $0.statusChanged("idle") }
         // Text the app wants in the shell once it is up (a CLI sign-in, a
         // style's install command). The retries and the delay stay here; the
         // paste and the Enter live in the engine's policy (§5.7).
@@ -152,7 +161,12 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         surface = nil
     }
     func terminalDidChangeTitle(_ title: String) { publish { $0.title = String(title.prefix(300)) } }
-    func terminalDidChangeWorkingDirectory(_ path: String) { publish { $0.workingDirectory = String(path.prefix(4096)) } }
+    func terminalDidChangeWorkingDirectory(_ path: String) {
+        // The shell reports its folder at the prompt, so a command has just ended.
+        nextActivityProbe = .now
+        publish { $0.workingDirectory = String(path.prefix(4096)) }
+    }
+    func terminalDidFinishCommand(exitCode: Int?, durationNanos: UInt64) { nextActivityProbe = .now }
     func terminalDidResize(_ size: TerminalGridMetrics) { publish { $0.grid = size } }
     func terminalDidChangeFocus(_ focused: Bool) {
         // Ghostty reports focus synchronously while AppKit is changing the
@@ -184,6 +198,33 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
             else { $0.exited = true; $0.statusChanged("completed") }
         }
     }
+    /// Sets the pane `running` while the shell runs a command and `idle` at its
+    /// prompt, read about every 500 ms (sooner after a command ends). A pane that
+    /// has exited or failed keeps that status, and a reading that cannot be
+    /// taken leaves the status as it is.
+    func refreshActivity(currentStatus: String) {
+        let now = ContinuousClock.now
+        guard ready, !exited, failure == nil, !disposed, !["completed", "error"].contains(currentStatus), now >= nextActivityProbe else { return }
+        nextActivityProbe = now + .milliseconds(500)
+        guard let busy = shellBusy() else { return }
+        let status = busy ? "running" : "idle"
+        if status != currentStatus { statusChanged(status) }
+    }
+
+    private func shellBusy() -> Bool? {
+        if let pid = shellProcessId {
+            if let groups = ShellProcessProbe.groups(pid: pid), groups.started == shellStarted {
+                return groups.tpgid > 0 ? ShellActivity.isBusy(shellGroup: groups.pgid, foregroundGroup: groups.tpgid) : nil
+            }
+            // Gone, or the pid now belongs to another process: find the shell again.
+            shellProcessId = nil
+        }
+        guard let pid = ShellProcessProbe.findShellPid(pidFile: ShellProcessProbe.pidFile(terminalId: id)), let groups = ShellProcessProbe.groups(pid: pid) else { return nil }
+        shellProcessId = pid
+        shellStarted = groups.started
+        return groups.tpgid > 0 ? ShellActivity.isBusy(shellGroup: groups.pgid, foregroundGroup: groups.tpgid) : nil
+    }
+
     func terminalDidRequestClipboardConfirmation(_ request: TerminalClipboardConfirmationRequest) {
         request.respond(allow: request.kind == .paste)
     }

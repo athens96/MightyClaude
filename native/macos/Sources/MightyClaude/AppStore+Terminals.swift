@@ -90,8 +90,18 @@ extension AppStore {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled, let self, let controller else { return }
                 if !self.localTerminals.isEmpty || !self.agentTerminals.isEmpty { controller.tick() }
+                self.refreshShellActivity()
             }
         }
         return controller
+    }
+
+    /// A shell pane is `running` only while a command runs in it; each terminal
+    /// throttles its own reading.
+    func refreshShellActivity() {
+        for (id, terminal) in localTerminals {
+            guard let status = snapshot.sessions.first(where: { $0.id == id })?.status else { continue }
+            terminal.refreshActivity(currentStatus: status)
+        }
     }
 }
