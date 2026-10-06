@@ -1,0 +1,19 @@
+{
+  "title": "Mighty Claude 帮助",
+  "brandSub": "使用指南",
+  "heroTitle": "帮助",
+  "intro": "介绍如何在一个窗口中同时使用 Claude Code、Codex 和 Gemini。请在左侧目录中选择主题。点击图片可查看大图。",
+  "contents": "目录",
+  "language": "语言",
+  "theme": "切换页面主题",
+  "appVersion": "应用",
+  "placeholder": "截图准备中",
+  "notTranslated": "尚未翻译",
+  "note": "说明",
+  "tip": "提示",
+  "warning": "注意",
+  "close": "关闭",
+  "prev": "上一页",
+  "next": "下一页",
+  "footer": "界面名称取自应用自身的语言文件。图片是用示例数据截取的界面。下载应用：[下载页面](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)"
+}

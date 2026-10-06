@@ -1,0 +1,19 @@
+{
+  "title": "Mighty Claude Help",
+  "brandSub": "User guide",
+  "heroTitle": "Help",
+  "intro": "How to use Claude Code, Codex and Gemini side by side in one window. Pick a topic on the left. Click a picture to see it larger.",
+  "contents": "Contents",
+  "language": "Language",
+  "theme": "Change the page theme",
+  "appVersion": "App",
+  "placeholder": "Screenshot coming soon",
+  "notTranslated": "Not translated yet",
+  "note": "Note",
+  "tip": "Tip",
+  "warning": "Warning",
+  "close": "Close",
+  "prev": "Previous",
+  "next": "Next",
+  "footer": "Screen names come from the app's own language files. The pictures show example data. Get the app: [download page](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)"
+}

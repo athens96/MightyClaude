@@ -19,7 +19,7 @@
   "badge.betaAccessibility": "베타 기능",
   "browser.address.placeholder": "주소 입력",
   "browser.back": "뒤로",
-  "browser.engine.disabled": "브라우저가 꺼져 있습니다. 설정 → 표시에서 ‘브라우저 창 사용’을 켜고 앱을 다시 시작하세요.",
+  "browser.engine.disabled": "브라우저가 꺼져 있습니다. 설정 → 일반 → 화면에서 ‘브라우저 창 사용’을 켜고 앱을 다시 시작하세요.",
   "browser.engine.failed": "브라우저 엔진을 시작하지 못했습니다. 앱을 다시 실행해 주세요.",
   "browser.engine.missing": "브라우저 엔진이 준비되지 않았습니다. scripts/fetch-browser-engine.sh로 설치하세요.",
   "browser.forward": "앞으로",

@@ -1,0 +1,19 @@
+{
+  "title": "Mighty Claude 도움말",
+  "brandSub": "사용 안내",
+  "heroTitle": "도움말",
+  "intro": "Claude Code, Codex, Gemini를 한 창에서 쓰는 방법을 안내합니다. 왼쪽 목차에서 주제를 고르세요. 그림을 누르면 크게 보입니다.",
+  "contents": "목차",
+  "language": "언어",
+  "theme": "화면 테마 변경",
+  "appVersion": "앱",
+  "placeholder": "스크린샷 준비 중",
+  "notTranslated": "아직 번역되지 않았습니다",
+  "note": "참고",
+  "tip": "팁",
+  "warning": "주의",
+  "close": "닫기",
+  "prev": "이전",
+  "next": "다음",
+  "footer": "화면 이름은 앱의 언어 파일에서 가져왔습니다. 그림은 예시 데이터로 찍은 화면입니다. 앱 내려받기: [다운로드 페이지](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)"
+}

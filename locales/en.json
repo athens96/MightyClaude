@@ -19,7 +19,7 @@
   "badge.betaAccessibility": "Beta feature",
   "browser.address.placeholder": "Enter address",
   "browser.back": "Back",
-  "browser.engine.disabled": "The browser is off. Turn on “Use browser panes” in Settings → Display and restart the app.",
+  "browser.engine.disabled": "The browser is off. Turn on “Use browser panes” in Settings → General → Display and restart the app.",
   "browser.engine.failed": "Could not start the browser engine. Please restart the app.",
   "browser.engine.missing": "Browser engine not ready. Run scripts/fetch-browser-engine.sh to install it.",
   "browser.forward": "Forward",

@@ -1,0 +1,19 @@
+{
+  "title": "Mighty Claude ヘルプ",
+  "brandSub": "ユーザーガイド",
+  "heroTitle": "ヘルプ",
+  "intro": "Claude Code、Codex、Geminiを1つのウインドウで並べて使う方法を説明します。左の目次からトピックを選んでください。画像をクリックすると拡大して表示されます。",
+  "contents": "目次",
+  "language": "言語",
+  "theme": "ページのテーマを変更",
+  "appVersion": "アプリ",
+  "placeholder": "スクリーンショットを準備中",
+  "notTranslated": "まだ翻訳されていません",
+  "note": "メモ",
+  "tip": "ヒント",
+  "warning": "注意",
+  "close": "閉じる",
+  "prev": "前へ",
+  "next": "次へ",
+  "footer": "画面の名前はアプリの言語ファイルから取得しています。画像はサンプルデータで撮影した画面です。アプリの入手: [ダウンロードページ](https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/index.html)"
+}
