@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LiveDot, reachabilityColor, reachabilityKeys } from '@/components/host-status';
@@ -7,6 +7,7 @@ import { Badge, Button, EmptyState, ScreenTitle } from '@/components/ui';
 import { hostAddress, useHostsStore, type PairedHost } from '@/store/hosts';
 import { useLiveStore } from '@/store/live';
 import { countAttention } from '@/lib/merge';
+import { helpSiteUrl } from '@/lib/help-site';
 import { t } from '@/lib/i18n';
 import {
   cardShadow,
@@ -66,7 +67,7 @@ function HostRow({ host }: { host: PairedHost }) {
   );
 }
 
-/** "호스트": the paired Macs as cards, with pairing and the connection guide under them. */
+/** "호스트": the paired Macs as cards, with pairing, the connection guide and the user guide under them. */
 export default function HostsTab() {
   const palette = usePalette();
   const styles = useStyles(makeStyles);
@@ -120,6 +121,11 @@ export default function HostsTab() {
               label={t('phone.hosts.guide')}
               tone="ghost"
               onPress={() => router.push('/connect')}
+            />
+            <Button
+              label={t('phone.hosts.help')}
+              tone="ghost"
+              onPress={() => void Linking.openURL(helpSiteUrl())}
             />
           </View>
         }

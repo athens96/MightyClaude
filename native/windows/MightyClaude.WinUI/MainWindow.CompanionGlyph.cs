@@ -70,6 +70,18 @@ public sealed partial class MainWindow
         var themePoint = themeButton.TransformToVisual(footer).TransformPoint(new Point());
         Require(Math.Abs(settingsPoint.Y - themePoint.Y) < 1 && settingsPoint.X > themePoint.X && settingsPoint.X + settingsButton.ActualWidth <= footer.ActualWidth + 1,
             "Sidebar theme and settings must fit beside the footer brand.");
+        // The help symbol stands before the theme symbol and opens the guide in the chosen language (never launched here).
+        var help = sidebarHelpButton!;
+        Require(help.IsLoaded && help.ActualWidth == SidebarFooterButton && AutomationProperties.GetAutomationId(help) == "sidebar-help" && VisualChildren(footer).Contains(help),
+            "Sidebar help must be a loaded footer control with AutomationId sidebar-help; got " + AutomationProperties.GetAutomationId(help));
+        var helpPoint = help.TransformToVisual(footer).TransformPoint(new Point());
+        Require(Math.Abs(helpPoint.Y - themePoint.Y) < 1 && helpPoint.X < themePoint.X, "Sidebar help must stand before the theme symbol on the footer row.");
+        Require(AutomationProperties.GetName(help) == Locale.Get("menu.help") && ToolTipService.GetToolTip(help) as string == Locale.Get("menu.help"),
+            "Sidebar help must be named and tooltipped " + Locale.Get("menu.help") + "; got " + AutomationProperties.GetName(help));
+        var language = Locale.ChosenLanguage();
+        Require(Locale.Languages.Contains(language) && HelpAddress() == HelpSite.Base + "/" + language + "/",
+            $"Sidebar help must open {HelpSite.Base}/{language}/ for the chosen language {language}; got {HelpAddress()}");
+        Require(HasHelpShortcut, "F1 must be bound to the help guide on the window root; no such accelerator was found");
         Require(search.TransformToVisual(root).TransformPoint(new Point()).Y < footer.TransformToVisual(root).TransformPoint(new Point()).Y,
             "Sidebar search must stay above the bottom brand and settings group.");
     }

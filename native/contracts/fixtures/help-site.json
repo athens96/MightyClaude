@@ -1,0 +1,9 @@
+{
+  "base": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help",
+  "cases": [
+    {"language": "ko", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/ko/"},
+    {"language": "en", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/en/"},
+    {"language": "zh", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/zh/"},
+    {"language": "ja", "url": "https://pub-fd035e0a9ad7411f8d8d8963cc2b9702.r2.dev/mightyclaude/help/ja/"}
+  ]
+}

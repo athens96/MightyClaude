@@ -619,6 +619,9 @@ internal static class Verification
         await Test("resume picker hides nested Ouroboros runs unless every session is shown", SessionHistoryVerification.ResumePickerHidesNestedOuroborosRunsUnlessEverySessionIsShown);
         await Test("resume picker lists only this folder's sessions, newest first, minus open panes", SessionHistoryVerification.ResumePickerListsOnlyThisFoldersSessionsNewestFirstMinusOpenPanes);
         await Test("resume picker continues the session in a new pane and remembers it", SessionHistoryVerification.ResumingContinuesTheSessionInANewPaneAndRemembersIt);
+        // native/contracts/fixtures/help-site.json is the help address macOS and the phone share.
+        await Test("help site: every language opens its folder of the shared base in native/contracts/fixtures/help-site.json", HelpSiteVerification.EveryLanguageOpensItsFolderOfTheSharedBase);
+        await Test("help site: the current guide follows the chosen language", HelpSiteVerification.TheCurrentGuideFollowsTheChosenLanguage);
         // native/contracts/fixtures/model-labels.json is the label table macOS and the phone share.
         await Test("model labels: every shared vector in native/contracts/fixtures/model-labels.json labels as committed", ModelLabelVerification.EveryFixtureCaseLabelsAsCommitted);
         await Test("model labels: CLI catalogue rows carry their version while the values sent stay the aliases", ModelLabelVerification.CliCatalogueRowsCarryTheirVersion);
