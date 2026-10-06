@@ -170,7 +170,7 @@ public sealed partial class MainWindow
                 var prompt = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 4) };
                 var question = new Grid { ColumnSpacing = 5 }; question.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); question.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
                 question.Children.Add(new FontIcon { Glyph = "", FontSize = 11, Foreground = ink2, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0) });
-                var asked = new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
+                var asked = new TextBlock { Text = StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.SourceLabel), FontSize = 11, Foreground = ink2, TextWrapping = TextWrapping.Wrap };
                 Grid.SetColumn(asked, 1); question.Children.Add(asked); prompt.Children.Add(question);
                 prompt.Children.Add(new Border
                 {
@@ -203,7 +203,7 @@ public sealed partial class MainWindow
             }
             AutomationProperties.SetName(statusLineHost, StatusLineStrings.AccessibilityLabel);
             AutomationProperties.SetHelpText(statusLineHost, result is null ? "" : string.Join("\n", result.Lines.Select(line => string.Concat(line.Select(segment => segment.Text)))));
-            ToolTipService.SetToolTip(statusLineHost, config is null ? "statusLine" : "statusLine · " + config.Source + " · " + config.Command);
+            ToolTipService.SetToolTip(statusLineHost, config is null ? "statusLine" : "statusLine · " + config.SourceLabel + " · " + config.Command);
             statusLineHost.Visibility = statusLineHost.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             // The toolbar sits 10 over the card's edge, or 4 over a status line (M/SessionPaneView.swift:645).
             if (toolbar is not null) toolbar.Margin = new Thickness(10, 0, 10, statusLineHost.Visibility == Visibility.Visible ? 4 : 10);
@@ -243,7 +243,7 @@ public sealed partial class MainWindow
             Require(statusLineHost.Visibility == Visibility.Visible && StatusLineUntrusted == untrusted, "the workspace statusLine question is not shown");
             var question = statusLineHost.Children.OfType<StackPanel>().Single();
             var texts = Descendants(question).OfType<TextBlock>().Select(t => t.Text).ToList();
-            Require(texts.Contains(StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.Source)) && texts.Contains(StatusLineStrings.TrustNote), "the statusLine question text differs from macOS");
+            Require(texts.Contains(StatusLineStrings.TrustPromptTemplate.Replace("{source}", untrusted.SourceLabel)) && texts.Contains(StatusLineStrings.TrustNote), "the statusLine question text differs from macOS");
             var answers = Descendants(question).OfType<Button>().Select(b => b.Content as string).ToList();
             Require(answers.Contains(StatusLineStrings.TrustAllow) && answers.Contains(StatusLineStrings.TrustDeny), "the allow / not now buttons are missing");
             Require(!StatusLineTrust.IsTrusted(owner.service.Snapshot, untrusted, workspaceId), "the workspace command was trusted before it was allowed");

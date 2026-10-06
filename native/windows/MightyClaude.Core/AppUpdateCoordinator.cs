@@ -178,7 +178,7 @@ public sealed class AppUpdateCoordinator
         if (!HasPublicKey) { Fail(AppUpdateStrings.NoPublicKeyNotice); return; }
         if (EffectiveManifestUrl(userUrl) is not { } url)
         {
-            Fail("업데이트 정보 주소가 설정되지 않았습니다. 설정에서 https 주소를 입력하세요.");
+            Fail(Locale.Get("settings.appUpdate.errorNoManifestURL"));
             return;
         }
         Mutate(s => s with { Phase = AppUpdatePhase.Checking, ErrorMessage = null });
@@ -207,7 +207,7 @@ public sealed class AppUpdateCoordinator
         if (State.Availability?.Manifest is not { } manifest) return;
         if (!manifest.Windows.TryGetValue(architecture, out var asset))
         {
-            Fail($"이 업데이트에는 {architecture} 패키지가 없습니다.");
+            Fail(Locale.Get("appUpdate.error.noPackageForArchitecture", new Dictionary<string, string> { ["architecture"] = architecture }));
             return;
         }
         Mutate(s => s with { Phase = AppUpdatePhase.Downloading, DownloadFraction = 0, ErrorMessage = null });
@@ -246,7 +246,7 @@ public sealed class AppUpdateCoordinator
         if (closing || State.Phase != AppUpdatePhase.Ready) return;
         if (State.InstallPlan is not { } plan || launchHelper is null)
         {
-            Fail("설치 계획이 없어 교체를 시작할 수 없습니다.");
+            Fail(Locale.Get("appUpdate.error.noInstallPlan"));
             return;
         }
         Mutate(s => s with { Phase = AppUpdatePhase.Installing, ErrorMessage = null });
@@ -329,7 +329,7 @@ public static class AppUpdateSmoke
         new() { Phase = AppUpdatePhase.Ready, Availability = FixtureAvailability },
         new() { Phase = AppUpdatePhase.Installing, Availability = FixtureAvailability },
         new() { Phase = AppUpdatePhase.UpToDate },
-        new() { Phase = AppUpdatePhase.Failed, ErrorMessage = "업데이트 확인 중 오류가 발생했습니다." },
+        new() { Phase = AppUpdatePhase.Failed, ErrorMessage = Locale.Get("appUpdate.error.checkFailed") },
     ];
 
     /// The status sentences and button labels the section must show for the

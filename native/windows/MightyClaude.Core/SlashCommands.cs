@@ -30,22 +30,6 @@ public sealed record SlashCommand(
     public string Id => Invocation;
 }
 
-// Korean particle: 로/으로 chosen by the final consonant of the preceding word.
-// Unused: macOS deleted its copy in i18n stage 2-2 (particle templates now put the particle after a
-// fixed noun). Remove this one in stage 2-3 together with the Windows literals.
-public static class KoreanParticle
-{
-    public static string Ro(string word)
-    {
-        if (string.IsNullOrEmpty(word)) return "\uB85C";
-        var offset = word.Length >= 2 && char.IsLowSurrogate(word[^1]) ? 2 : 1;
-        var last = char.ConvertToUtf32(word, word.Length - offset);
-        if (last < 0xAC00 || last > 0xD7A3) return "\uB85C";
-        var final = (last - 0xAC00) % 28;
-        return final == 0 || final == 8 ? "\uB85C" : "\uC73C\uB85C";
-    }
-}
-
 // Scans the same places the CLIs read: user and project skills and commands,
 // installed Claude plugins, Codex skills. Pure file reads, no CLI calls.
 // Caps the list at MaximumCommands = 400.
@@ -466,11 +450,11 @@ public static class SlashPalette
             SlashCommandStrings.PermissionSource, SlashCommandOrigin.App,
             SlashCommandAction.SetPermission, null, mode))];
 
-    // A row's description, falling back to macOS's "설명 없음".
+    // A row's description, falling back to the shared "no description" text macOS shows.
     public static string Description(SlashCommand command) =>
         command.Description.Length == 0 ? SlashCommandStrings.PaletteNoDescription : command.Description;
 
-    // The footer's "{count}개".
+    // The footer's command count.
     public static string CountLabel(int count) =>
         SlashCommandStrings.PaletteCountTemplate.Replace("{count}", count.ToString());
 }

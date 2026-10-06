@@ -16,7 +16,7 @@ public sealed record AgentRunTiming(DateTimeOffset StartedAt, DateTimeOffset Las
     public string Label(DateTimeOffset? at = null)
     {
         var seconds = (long)Elapsed(at); var label = seconds >= 3600 ? $"{seconds / 3600}:{seconds / 60 % 60:00}:{seconds % 60:00}" : $"{seconds / 60:00}:{seconds % 60:00}";
-        return IsApproximate ? "약 " + label : label;
+        return IsApproximate ? Locale.Get("dashboard.card.approximate", new Dictionary<string, string> { ["time"] = label }) : label;
     }
     public static AgentRunTiming? Infer(IEnumerable<LogEntry> logs)
     {

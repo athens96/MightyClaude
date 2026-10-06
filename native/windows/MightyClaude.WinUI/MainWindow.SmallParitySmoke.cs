@@ -26,7 +26,7 @@ public sealed partial class MainWindow
     {
         var starts = 0; smokeLoginStarter = _ => { starts++; return Task.CompletedTask; };
         var sends = new List<StartRunRequest>(); var previousStart = smokeStart;
-        var status = new CliAccountStatus { Provider = "claude", LoggedIn = true, Method = "claude.ai" };
+        var status = new CliAccountStatus { Provider = "claude", LoggedIn = true, Method = "claude.ai", MethodId = CliAccountMethod.ClaudeSubscription };
         try
         {
             Require(!service.HasActiveProvider("claude") && !AnyCliUpdateRunning && !loginJobs.ContainsKey("claude") && !loginBusy.ContainsKey("claude") && !accountChanges.ContainsKey("claude"),
@@ -71,7 +71,7 @@ public sealed partial class MainWindow
     private async Task<string> SmokeAutomaticGeminiLogin(PaneView pane, string id, Workspace workspace)
     {
         var starts = new List<string>(); smokeLoginStarter = provider => { starts.Add(provider); return Task.CompletedTask; };
-        var google = new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = CliAccountSupport.GeminiGoogleMethod };
+        var google = new CliAccountStatus { Provider = "gemini", LoggedIn = true, Method = CliAccountSupport.GeminiGoogleMethod, MethodId = CliAccountMethod.GeminiGoogle };
         try
         {
             Require(!service.HasActiveProvider("gemini") && !AnyCliUpdateRunning && !loginJobs.ContainsKey("gemini") && !loginBusy.ContainsKey("gemini") && !accountChanges.ContainsKey("gemini"),
@@ -82,8 +82,8 @@ public sealed partial class MainWindow
             Require(loginRetries.Settled(id) is { } settled && loginRetries.Remember(settled), "automatic Gemini sign-in: the fixture retry must be kept");
             var retry = loginRetries.Requests[id];
             // A key or Vertex AI is not renewed by signing in: only the card.
-            StartAutomaticLoginIfAllowed(retry, google with { Method = Locale.Get("windows.cli.method.geminiApiKey") });
-            StartAutomaticLoginIfAllowed(retry, google with { Method = "Vertex AI" });
+            StartAutomaticLoginIfAllowed(retry, google with { Method = Locale.Get("windows.cli.method.geminiApiKey"), MethodId = CliAccountMethod.GeminiApiKey });
+            StartAutomaticLoginIfAllowed(retry, google with { Method = "Vertex AI", MethodId = CliAccountMethod.GeminiVertex });
             Require(starts.Count == 0 && !loginJobs.ContainsKey("gemini"), "automatic Gemini sign-in: an API key or Vertex AI must never open the sign-in terminal");
             StartAutomaticLoginIfAllowed(retry, google); StartAutomaticLoginIfAllowed(retry, google);
             Require(starts.SequenceEqual(new[] { "gemini" }) && loginJobs.TryGetValue("gemini", out var job) && job.Automatic && job.Terminal,

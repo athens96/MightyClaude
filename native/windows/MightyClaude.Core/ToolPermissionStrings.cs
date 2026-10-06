@@ -1,75 +1,75 @@
 namespace MightyClaude.Core;
 
-// The Korean copy of the approval bar, mirrored from the macOS client.
-// ToolPermissionBar.swift owns the bar copy, ToolPermissions.swift the
-// channel notices and ToolPermissionPresentation.swift the titles and
-// labels. WinUI reads these constants; it never types Korean of its own.
-// StringsVerification checks every value against its macOS literal.
+// The approval bar's copy, read from the shared locale files on demand: the same keys the
+// macOS client reads. ToolPermissionBar.swift owns the bar copy, ToolPermissions.swift the
+// channel notices and ToolPermissionPresentation.swift the titles and labels. WinUI reads
+// these properties; it never types copy of its own.
+// StringsVerification checks every value against the key macOS reads.
 public static class ToolPermissionStrings
 {
     // ToolPermissionBar.swift
-    public const string BarTitleTemplate = "{title} · 승인 요청";
-    public const string BarWaitingCountTemplate = "{count}개 대기";
-    public const string BarPathTemplate = "접근 경로: {path}";
-    public const string BarRawJson = "원본 JSON";
-    public const string BarOnceOnlyNote = "이 요청에만 적용";
-    public const string BarCannotAllowHere = "이 요청은 현재 승인 화면에서 허용할 수 없습니다. 거부하거나 실행을 중지하세요.";
-    public const string ButtonDeny = "거부";
-    public const string ButtonAllowOnce = "이번만 허용";
+    public static string BarTitleTemplate => Locale.Get("permission.bar.title");
+    public static string BarWaitingCountTemplate => Locale.Get("phone.questionnaire.waiting");
+    public static string BarPathTemplate => Locale.Get("permission.bar.blockedPath");
+    public static string BarRawJson => Locale.Get("styles.approval.raw");
+    public static string BarOnceOnlyNote => Locale.Get("permission.bar.thisRequestOnly");
+    public static string BarCannotAllowHere => Locale.Get("permission.bar.cannotAllow");
+    public static string ButtonDeny => Locale.Get("permission.deny");
+    public static string ButtonAllowOnce => Locale.Get("permission.allowOnce");
 
-    // ToolPermissions.swift — notices raised by the channel itself.
-    public const string InitializeTimedOut = "Claude 승인 채널 초기화 시간이 초과되었습니다.";
-    public const string InitializeFailed = "Claude 승인 채널을 초기화하지 못했습니다.";
-    public const string MalformedControlRequest = "Claude 제어 요청 형식이 올바르지 않습니다.";
-    public const string TooManyRequestsInRun = "한 실행의 Claude 승인 요청 수 제한을 초과했습니다.";
-    public const string UnsupportedDialog = "현재 앱에서 표시할 수 없는 Claude 대화상자 요청입니다. 실행을 중지할 수 있습니다.";
-    public const string DeclinedElicitation = "현재 앱에서 지원하지 않는 MCP 입력 요청을 거부했습니다.";
-    public const string DeniedMalformedRequest = "형식이 올바르지 않은 도구 승인 요청을 거부했습니다.";
-    public const string DeniedTooManyPending = "대기 중인 도구 승인 요청이 16개를 넘어 추가 요청을 거부했습니다.";
-    public const string DeniedOversizedInput = "도구 인자가 64 KiB 표시 제한을 넘어 승인하지 않았습니다. 전체 내용을 표시할 수 없는 요청은 허용하지 않습니다.";
-    public const string NeedsSeparateInputScreen = "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다.";
-    public const string MetadataTooLarge = "승인 설명이 표시 한도를 넘어 허용할 수 없습니다.";
-    public const string AlreadySettled = "이미 처리되었거나 종료된 승인 요청입니다.";
-    public const string CannotAllow = "이 요청에는 별도의 입력 화면이 필요하거나 전체 내용을 표시할 수 없어 허용할 수 없습니다.";
+    // ToolPermissions.swift: notices raised by the channel itself.
+    public static string InitializeTimedOut => Locale.Get("claude.channel.initTimeout");
+    public static string InitializeFailed => Locale.Get("claude.channel.initFailed");
+    public static string MalformedControlRequest => Locale.Get("claude.channel.badRequest");
+    public static string TooManyRequestsInRun => Locale.Get("claude.channel.tooManyRequests");
+    public static string UnsupportedDialog => Locale.Get("claude.channel.dialogUnsupported");
+    public static string DeclinedElicitation => Locale.Get("claude.channel.elicitationDeclined");
+    public static string DeniedMalformedRequest => Locale.Get("claude.channel.badToolRequest");
+    public static string DeniedTooManyPending => Locale.Get("claude.channel.tooManyPending");
+    public static string DeniedOversizedInput => Locale.Get("claude.channel.inputTooLarge");
+    public static string NeedsSeparateInputScreen => Locale.Get("claude.channel.needsInteraction");
+    public static string MetadataTooLarge => Locale.Get("claude.channel.metadataTooLarge");
+    public static string AlreadySettled => Locale.Get("permission.error.requestGone");
+    public static string CannotAllow => Locale.Get("claude.channel.cannotAllow");
 
-    // ToolPermissionPresentation.swift — what the tool does.
-    public const string TitleBash = "명령 실행";
-    public const string TitleRead = "파일 읽기";
-    public const string TitleEdit = "파일 수정";
-    public const string TitleWrite = "파일 쓰기";
-    public const string TitleNotebookEdit = "노트북 수정";
-    public const string TitleGlob = "파일 찾기";
-    public const string TitleGrep = "내용 검색";
-    public const string TitleWebFetch = "웹 페이지 가져오기";
-    public const string TitleWebSearch = "웹 검색";
-    public const string TitleAgent = "하위 에이전트 실행";
-    public const string TitleTool = "도구 실행";
-    public const string TitleMcpTemplate = "MCP 도구 · {server}";
+    // ToolPermissionPresentation.swift: titles.
+    public static string TitleBash => Locale.Get("permission.tool.bash");
+    public static string TitleRead => Locale.Get("permission.tool.read");
+    public static string TitleEdit => Locale.Get("permission.tool.edit");
+    public static string TitleWrite => Locale.Get("permission.tool.write");
+    public static string TitleNotebookEdit => Locale.Get("permission.tool.notebook");
+    public static string TitleGlob => Locale.Get("permission.tool.glob");
+    public static string TitleGrep => Locale.Get("permission.tool.grep");
+    public static string TitleWebFetch => Locale.Get("permission.tool.webFetch");
+    public static string TitleWebSearch => Locale.Get("permission.tool.webSearch");
+    public static string TitleAgent => Locale.Get("permission.tool.agent");
+    public static string TitleTool => Locale.Get("permission.tool.tool");
+    public static string TitleMcpTemplate => Locale.Get("permission.tool.mcp");
 
-    // ToolPermissionPresentation.swift — field labels and boolean values.
-    public const string FieldCommand = "명령";
-    public const string FieldTimeoutMs = "제한 시간(ms)";
-    public const string FieldBackground = "백그라운드 실행";
-    public const string FieldFile = "파일";
-    public const string FieldOffset = "시작 줄";
-    public const string FieldLimit = "줄 수";
-    public const string FieldOldString = "바꿀 내용";
-    public const string FieldNewString = "새 내용";
-    public const string FieldReplaceAll = "모두 바꾸기";
-    public const string FieldEdits = "편집 목록";
-    public const string FieldContent = "내용";
-    public const string FieldNotebook = "노트북";
-    public const string FieldCell = "셀";
-    public const string FieldEditMode = "편집 방식";
-    public const string FieldPattern = "패턴";
-    public const string FieldPath = "경로";
-    public const string FieldGlob = "파일 필터";
-    public const string FieldUrl = "주소";
-    public const string FieldQuestion = "질문";
-    public const string FieldQuery = "검색어";
-    public const string FieldSubagentType = "에이전트 종류";
-    public const string FieldModel = "모델";
-    public const string FieldInstruction = "지시";
-    public const string BooleanYes = "예";
-    public const string BooleanNo = "아니요";
+    // ToolPermissionPresentation.swift: field labels and boolean values.
+    public static string FieldCommand => Locale.Get("permission.field.command");
+    public static string FieldTimeoutMs => Locale.Get("permission.field.timeout");
+    public static string FieldBackground => Locale.Get("permission.field.runInBackground");
+    public static string FieldFile => Locale.Get("permission.field.file");
+    public static string FieldOffset => Locale.Get("permission.field.offset");
+    public static string FieldLimit => Locale.Get("permission.field.limit");
+    public static string FieldOldString => Locale.Get("permission.field.oldString");
+    public static string FieldNewString => Locale.Get("permission.field.newString");
+    public static string FieldReplaceAll => Locale.Get("permission.field.replaceAll");
+    public static string FieldEdits => Locale.Get("permission.field.edits");
+    public static string FieldContent => Locale.Get("permission.field.content");
+    public static string FieldNotebook => Locale.Get("permission.field.notebook");
+    public static string FieldCell => Locale.Get("permission.field.cell");
+    public static string FieldEditMode => Locale.Get("permission.field.editMode");
+    public static string FieldPattern => Locale.Get("permission.field.pattern");
+    public static string FieldPath => Locale.Get("permission.field.path");
+    public static string FieldGlob => Locale.Get("permission.field.glob");
+    public static string FieldUrl => Locale.Get("permission.field.url");
+    public static string FieldQuestion => Locale.Get("permission.field.prompt");
+    public static string FieldQuery => Locale.Get("permission.field.query");
+    public static string FieldSubagentType => Locale.Get("permission.field.subagentType");
+    public static string FieldModel => Locale.Get("permission.field.model");
+    public static string FieldInstruction => Locale.Get("permission.field.instructions");
+    public static string BooleanYes => Locale.Get("permission.value.yes");
+    public static string BooleanNo => Locale.Get("permission.value.no");
 }

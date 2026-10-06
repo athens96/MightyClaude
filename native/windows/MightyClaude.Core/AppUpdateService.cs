@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 
@@ -59,12 +60,12 @@ public sealed class AppUpdateService : IDisposable
     {
         if (publicKey is null)
             throw new InvalidOperationException(AppUpdateStrings.NoPublicKeyNotice);
-        var url = RequireHttps(manifestUrl, "업데이트 정보 주소는 https여야 합니다.");
+        var url = RequireHttps(manifestUrl, Locale.Get("appUpdate.error.manifestNotHTTPS"));
 
         using var response = await SendFollowingHttpsRedirectsAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellation);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"업데이트 정보를 받지 못했습니다. HTTP {(int)response.StatusCode}");
-        var data = await ReadCappedAsync(response, 256 * 1024, "업데이트 정보 파일이 너무 큽니다.", cancellation);
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.manifestHTTP", new Dictionary<string, string> { ["status"] = ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture) }));
+        var data = await ReadCappedAsync(response, 256 * 1024, Locale.Get("appUpdate.error.manifestFileTooLarge"), cancellation);
         return new AppUpdateAvailability(currentVersion, AppUpdateManifest.Parse(data, publicKey));
     }
 
@@ -75,10 +76,10 @@ public sealed class AppUpdateService : IDisposable
     public async Task<string> DownloadAsync(
         AppUpdateAsset asset, string version, DownloadProgress? progress = null, CancellationToken cancellation = default)
     {
-        var url = RequireHttps(asset.Url, "패키지 주소는 https여야 합니다.");
-        if (asset.Size > MaxPackageBytes) throw new InvalidOperationException("패키지가 너무 큽니다.");
+        var url = RequireHttps(asset.Url, Locale.Get("appUpdate.error.packageNotHTTPS"));
+        if (asset.Size > MaxPackageBytes) throw new InvalidOperationException(Locale.Get("appUpdate.error.packageTooLarge"));
 
-        var name = AppVersion.Normalized(version) ?? throw new InvalidOperationException("업데이트 정보에 유효한 version이 없습니다.");
+        var name = AppVersion.Normalized(version) ?? throw new InvalidOperationException(Locale.Get("appUpdate.error.noVersion"));
         Directory.CreateDirectory(UpdatesDirectory);
         foreach (var folder in Directory.GetDirectories(UpdatesDirectory))
             if (!Path.GetFileName(folder).Equals(name, StringComparison.Ordinal))
@@ -97,9 +98,9 @@ public sealed class AppUpdateService : IDisposable
 
             var received = new FileInfo(destination).Length;
             if (received != asset.Size)
-                throw new InvalidOperationException($"패키지 크기가 업데이트 정보와 다릅니다 ({received} ≠ {asset.Size}).");
+                throw new InvalidOperationException(Locale.Get("appUpdate.error.packageSize", new Dictionary<string, string> { ["received"] = received.ToString(CultureInfo.InvariantCulture), ["expected"] = asset.Size.ToString(CultureInfo.InvariantCulture) }));
             if (!string.Equals(await Sha256Async(destination, owned.Token), asset.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("패키지 SHA-256이 업데이트 정보와 다릅니다.");
+                throw new InvalidOperationException(Locale.Get("appUpdate.error.packageDigest"));
         }
         catch
         {
@@ -154,11 +155,11 @@ public sealed class AppUpdateService : IDisposable
         // The package shape: exactly one MightyClaude.exe, at the expected place.
         var executables = Directory.GetFiles(root, ExecutableName, SearchOption.AllDirectories);
         if (executables.Length != 1)
-            throw new InvalidOperationException($"패키지 안에 {ExecutableName}가 하나 있어야 합니다 ({executables.Length}개).");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.executableCount", new Dictionary<string, string> { ["name"] = ExecutableName, ["count"] = executables.Length.ToString(CultureInfo.InvariantCulture) }));
 
         var appFolder = Path.GetDirectoryName(executables[0])!;
         if (appFolder != root && Path.GetDirectoryName(appFolder) != root)
-            throw new InvalidOperationException($"{ExecutableName}가 패키지의 예상 위치에 없습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.executableLocation", new Dictionary<string, string> { ["name"] = ExecutableName }));
 
         RefuseAnotherArchitecture(executables[0], expectedArchitecture);
         return appFolder;
@@ -168,16 +169,16 @@ public sealed class AppUpdateService : IDisposable
     {
         var name = entry.FullName;
         if (name.StartsWith('/') || name.StartsWith('\\') || (name.Length >= 2 && name[1] == ':'))
-            throw new InvalidOperationException("패키지에 절대 경로 항목이 있어 설치하지 않습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.entryAbsolute"));
         if (name.Split('/', '\\').Any(segment => segment == ".."))
-            throw new InvalidOperationException("패키지에 상위 폴더로 나가는 항목이 있어 설치하지 않습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.entryParent"));
         // Unix mode is stored in the high 16 bits; S_IFLNK is 0xA000.
         if ((entry.ExternalAttributes >> 16 & 0xF000) == 0xA000)
-            throw new InvalidOperationException("패키지에 링크 항목이 있어 설치하지 않습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.entryLink"));
 
         var resolved = Path.GetFullPath(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)));
         if (!resolved.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            throw new InvalidOperationException("패키지 항목이 대상 폴더를 벗어납니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.entryOutside"));
     }
 
     /// PE machine type: 0x8664 is x64, 0xAA64 is arm64.
@@ -188,11 +189,11 @@ public sealed class AppUpdateService : IDisposable
         {
             var header = new byte[4];
             file.Seek(0x3c, SeekOrigin.Begin);
-            if (file.Read(header, 0, 4) < 4) throw new InvalidOperationException("패키지의 실행 파일이 손상되었습니다.");
+            if (file.Read(header, 0, 4) < 4) throw new InvalidOperationException(Locale.Get("appUpdate.error.executableDamaged"));
             var offset = BitConverter.ToInt32(header, 0);
-            if (offset <= 0 || offset > file.Length - 6) throw new InvalidOperationException("패키지의 실행 파일이 손상되었습니다.");
+            if (offset <= 0 || offset > file.Length - 6) throw new InvalidOperationException(Locale.Get("appUpdate.error.executableDamaged"));
             file.Seek(offset + 4, SeekOrigin.Begin);
-            if (file.Read(header, 0, 2) < 2) throw new InvalidOperationException("패키지의 실행 파일이 손상되었습니다.");
+            if (file.Read(header, 0, 2) < 2) throw new InvalidOperationException(Locale.Get("appUpdate.error.executableDamaged"));
             machine = BitConverter.ToUInt16(header, 0);
         }
         var matches = expected.ToLowerInvariant() switch
@@ -202,7 +203,7 @@ public sealed class AppUpdateService : IDisposable
             _ => false,
         };
         if (!matches)
-            throw new InvalidOperationException($"패키지의 아키텍처가 {expected}와 다릅니다 (machine=0x{machine:X4}).");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.architecture", new Dictionary<string, string> { ["architecture"] = expected, ["machine"] = $"0x{machine:X4}" }));
     }
 
     /// SHA-256 of the bytes on disk, read in 1 MiB pieces.
@@ -230,9 +231,9 @@ public sealed class AppUpdateService : IDisposable
 
             var next = new Uri(current, response.Headers.Location);
             response.Dispose();
-            current = RequireHttps(next.ToString(), "업데이트 주소가 https가 아닌 주소로 넘어갔습니다.");
+            current = RequireHttps(next.ToString(), Locale.Get("appUpdate.error.redirectNotHTTPS"));
         }
-        throw new InvalidOperationException("업데이트 주소의 리디렉션이 너무 많습니다.");
+        throw new InvalidOperationException(Locale.Get("appUpdate.error.tooManyRedirects"));
     }
 
     private static Uri RequireHttps(string? value, string message)
@@ -261,7 +262,7 @@ public sealed class AppUpdateService : IDisposable
     {
         using var response = await SendFollowingHttpsRedirectsAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellation);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"패키지를 받지 못했습니다. HTTP {(int)response.StatusCode}");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.packageHTTP", new Dictionary<string, string> { ["status"] = ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture) }));
 
         await using var source = await response.Content.ReadAsStreamAsync(cancellation);
         await using (var target = File.Create(destination))
@@ -275,7 +276,7 @@ public sealed class AppUpdateService : IDisposable
                 // The cap is enforced on the bytes as they arrive, so an endless
                 // body cannot fill the disk before the size check runs.
                 if (written > MaxPackageBytes || written > expected)
-                    throw new InvalidOperationException("패키지가 너무 큽니다.");
+                    throw new InvalidOperationException(Locale.Get("appUpdate.error.packageTooLarge"));
                 await target.WriteAsync(buffer.AsMemory(0, read), cancellation);
                 if (expected > 0) progress?.Invoke(Math.Min(0.99, (double)written / expected));
             }

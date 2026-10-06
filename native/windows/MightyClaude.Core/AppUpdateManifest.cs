@@ -21,45 +21,45 @@ public sealed record AppUpdateManifest(
     /// Transport: every URL must be https.
     public static AppUpdateManifest Parse(ReadOnlySpan<byte> data, byte[] publicKey)
     {
-        if (data.Length > 256 * 1024) throw new InvalidOperationException("업데이트 정보 파일이 너무 큽니다.");
+        if (data.Length > 256 * 1024) throw new InvalidOperationException(Locale.Get("appUpdate.error.manifestFileTooLarge"));
         using var doc = JsonDocument.Parse(data.ToArray());
         var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("업데이트 정보 파일을 JSON 객체로 읽지 못했습니다.");
+        if (root.ValueKind != JsonValueKind.Object) throw new InvalidOperationException(Locale.Get("appUpdate.error.manifestFileNotJSON"));
 
         // Must be a signed envelope.
         if (!root.TryGetProperty("payload", out var payloadEl) || !root.TryGetProperty("signature", out var sigEl))
-            throw new InvalidOperationException("서명되지 않은 업데이트 정보입니다. 이 앱은 서명된 정보만 받습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.unsigned"));
 
         if (!root.TryGetProperty("format", out var fmtEl) || fmtEl.GetString() != EnvelopeFormat)
-            throw new InvalidOperationException("업데이트 정보의 서명 형식을 알 수 없습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.signatureFormat"));
 
-        var payloadB64 = payloadEl.GetString() ?? throw new InvalidOperationException("업데이트 정보의 서명 인코딩이 잘못되었습니다.");
-        var sigB64 = sigEl.GetString() ?? throw new InvalidOperationException("업데이트 정보의 서명 인코딩이 잘못되었습니다.");
+        var payloadB64 = payloadEl.GetString() ?? throw new InvalidOperationException(Locale.Get("appUpdate.error.signatureEncoding"));
+        var sigB64 = sigEl.GetString() ?? throw new InvalidOperationException(Locale.Get("appUpdate.error.signatureEncoding"));
 
         if (!Convert.TryFromBase64String(payloadB64, new byte[payloadB64.Length * 3 / 4 + 4].AsSpan(), out _))
-            throw new InvalidOperationException("업데이트 정보의 서명 인코딩이 잘못되었습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.signatureEncoding"));
         var payloadBytes = Convert.FromBase64String(payloadB64);
         var signatureBytes = Convert.FromBase64String(sigB64);
 
         if (!Ed25519Verify.Verify(payloadBytes, signatureBytes, publicKey))
-            throw new InvalidOperationException("업데이트 정보의 서명이 이 앱의 공개 키와 맞지 않습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.signatureMismatch"));
 
         return ParsePlain(payloadBytes);
     }
 
     internal static AppUpdateManifest ParsePlain(ReadOnlySpan<byte> data)
     {
-        if (data.Length > 256 * 1024) throw new InvalidOperationException("업데이트 정보를 JSON 객체로 읽지 못했습니다.");
+        if (data.Length > 256 * 1024) throw new InvalidOperationException(Locale.Get("appUpdate.error.manifestNotJSON"));
         using var doc = JsonDocument.Parse(data.ToArray());
         var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("업데이트 정보를 JSON 객체로 읽지 못했습니다.");
+        if (root.ValueKind != JsonValueKind.Object) throw new InvalidOperationException(Locale.Get("appUpdate.error.manifestNotJSON"));
 
         var rawVersion =
             TryGetString(root, "version") ??
             TryGetString(root, "latest") ??
             TryGetString(root, "latestVersion");
         if (AppVersion.Normalized(rawVersion) is not string version)
-            throw new InvalidOperationException("업데이트 정보에 유효한 version이 없습니다.");
+            throw new InvalidOperationException(Locale.Get("appUpdate.error.noVersion"));
 
         // Windows assets live in root["windows"]["x64" | "arm64"]
         var windows = new Dictionary<string, AppUpdateAsset>(StringComparer.OrdinalIgnoreCase);

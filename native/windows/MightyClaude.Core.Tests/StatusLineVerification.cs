@@ -124,6 +124,20 @@ internal static class StatusLineVerification
         // Different command → different fingerprint.
         var cfg3 = new StatusLineConfig("echo bye", 0, "사용자 설정", false);
         Check(cfg.Fingerprint != cfg3.Fingerprint, "different command gives different fingerprint");
+        // A saved trust keeps matching after a language change: the fingerprint hashes the Korean
+        // source name in every language, and only the shown label follows the language.
+        var before = Locale.LanguagePreference;
+        try
+        {
+            Locale.LanguagePreference = "ko"; Locale.ResetCache();
+            var korean = (Fingerprint: cfg.Fingerprint, Label: cfg.SourceLabel);
+            Locale.LanguagePreference = "en"; Locale.ResetCache();
+            Check(cfg.Fingerprint == korean.Fingerprint, "the fingerprint must not change with the app language");
+            Check(cfg.Source == "사용자 설정" && cfg.SourceLabel == Locale.Catalogue("en")["statusLine.source.user"] && korean.Label == Locale.Catalogue("ko")["statusLine.source.user"],
+                "the source label follows the language while the source stays the fingerprint text");
+            Check(new StatusLineConfig("echo hi", 0, "other", false).SourceLabel == "other", "an unknown source shows as it is");
+        }
+        finally { Locale.LanguagePreference = before; Locale.ResetCache(); }
         return Task.CompletedTask;
     }
 

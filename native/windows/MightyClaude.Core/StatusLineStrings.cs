@@ -1,25 +1,36 @@
 namespace MightyClaude.Core;
 
-// Korean copy for the status line feature, matching macOS StatusLineView.swift literals exactly.
-// WinUI refers to these constants by name; no JSON loader or key table is created.
+// The status line's copy, read from the shared locale files on demand: the keys macOS
+// StatusLineView.swift and StatusLine.swift read.
 public static class StatusLineStrings
 {
     // Trust prompt (StatusLineView.swift)
-    public const string TrustPromptTemplate = "{source}에 statusLine 명령이 있습니다. 이 워크스페이스에서 실행할까요?";
-    public const string TrustAllow = "이 워크스페이스에서 허용";
-    public const string TrustDeny = "지금은 안 함";
-    public const string TrustNote = "저장소가 바꾼 명령은 다시 묻습니다.";
+    public static string TrustPromptTemplate => Locale.Get("statusLine.untrustedPrompt");
+    public static string TrustAllow => Locale.Get("statusLine.trust");
+    public static string TrustDeny => Locale.Get("statusLine.notNow");
+    public static string TrustNote => Locale.Get("statusLine.reaskNote");
 
     // Accessibility / pane label
-    public const string AccessibilityLabel = "상태 줄";
+    public static string AccessibilityLabel => Locale.Get("composer.statusLine.name");
 
     // Error messages (StatusLine.swift)
-    public const string ErrorStartTemplate = "명령을 시작하지 못했습니다: {reason}";
-    public const string ErrorTimeout = "상태 줄 명령이 제한 시간 안에 끝나지 않았습니다.";
-    public const string ErrorExitTemplate = "상태 줄 명령이 종료 코드 {code}로 끝났습니다.";
+    public static string ErrorStartTemplate => Locale.Get("statusLine.error.start");
+    public static string ErrorTimeout => Locale.Get("statusLine.error.timeout");
+    public static string ErrorExitTemplate => Locale.Get("statusLine.error.exitCode");
 
-    // Source labels (StatusLine.swift: source display strings)
+    // StatusLineConfig.Source names. The trust fingerprint a workspace's allowed command is saved
+    // under hashes this text, so it stays as written in every language (as on macOS); SourceLabel
+    // is what the screen shows.
     public const string SourceWorkspaceLocal = "프로젝트 로컬 설정";
     public const string SourceWorkspace = "프로젝트 설정";
     public const string SourceUser = "사용자 설정";
+
+    /// The localized name of a <see cref="StatusLineConfig.Source"/>; an unknown source shows as it is.
+    public static string SourceLabel(string source) => source switch
+    {
+        SourceWorkspaceLocal => Locale.Get("statusLine.source.projectLocal"),
+        SourceWorkspace => Locale.Get("statusLine.source.project"),
+        SourceUser => Locale.Get("statusLine.source.user"),
+        _ => source,
+    };
 }
