@@ -5,6 +5,7 @@ import {
   MAX_ATTACHMENTS_TOTAL_BYTES,
   MAX_ATTACHMENT_BYTES,
 } from '@/api/types';
+import { t } from '@/lib/i18n';
 
 /**
  * Attachment limits and chunk planning. Pure: the Mac's limits are checked here before a
@@ -113,19 +114,22 @@ export function acceptFiles(
 
   const reasons: string[] = [];
   if (unreadable.length > 0) {
-    reasons.push(`${unreadable.join(', ')}: 파일을 읽을 수 없거나 비어 있습니다.`);
+    reasons.push(t('phone.attachments.unreadable', { names: unreadable.join(', ') }));
   }
   if (tooBig.length > 0) {
     reasons.push(
-      `${tooBig.join(', ')}: 파일 하나는 ${formatBytes(MAX_ATTACHMENT_BYTES)}까지 보낼 수 있습니다.`,
+      t('phone.attachments.tooBig', { names: tooBig.join(', '), limit: formatBytes(MAX_ATTACHMENT_BYTES) }),
     );
   }
   if (tooMany > 0) {
-    reasons.push(`한 번에 파일 ${MAX_ATTACHMENTS}개까지 붙일 수 있습니다.`);
+    reasons.push(t('phone.attachments.tooMany', { count: MAX_ATTACHMENTS }));
   }
   if (overflow.length > 0) {
     reasons.push(
-      `${overflow.join(', ')}: 첨부 합계는 ${formatBytes(MAX_ATTACHMENTS_TOTAL_BYTES)}까지입니다.`,
+      t('phone.attachments.overflow', {
+        names: overflow.join(', '),
+        limit: formatBytes(MAX_ATTACHMENTS_TOTAL_BYTES),
+      }),
     );
   }
   return reasons.length > 0 ? { files, error: reasons.join(' ') } : { files };
@@ -231,7 +235,7 @@ export type UploadOutcome =
 
 class CancelledUpload extends Error {
   constructor() {
-    super('첨부 업로드를 취소했습니다.');
+    super(t('phone.attachments.cancelled'));
     this.name = 'CancelledUpload';
   }
 }
@@ -298,12 +302,12 @@ export async function uploadAttachments(run: UploadRun): Promise<UploadOutcome> 
         // changed under us, and sending it anyway would only earn a 400 at `/complete`.
         if (bytes.length !== chunk.length) {
           // The file's name is added below, with every other refusal's.
-          throw new Error('파일을 읽는 중 크기가 달라졌습니다.');
+          throw new Error(t('phone.attachments.sizeChanged'));
         }
         const received = await sendChunk(ticket.uploadId, chunk.index, encodeChunk(bytes));
         sent += chunk.length;
         if (received !== undefined && received !== sent) {
-          throw new Error('호스트가 받은 크기가 보낸 크기와 다릅니다.');
+          throw new Error(t('phone.attachments.sizeMismatch'));
         }
         run.onProgress?.({ file: index, sentBytes: sent, totalBytes: file.size });
       }
@@ -323,9 +327,9 @@ export async function uploadAttachments(run: UploadRun): Promise<UploadOutcome> 
     if (error instanceof CancelledUpload) {
       return { ok: false, cancelled: true, error: error.message };
     }
-    // The host's own words (413 한도 초과, 429 너무 잦음, 400 크기 불일치) with the file
+    // The host's own words (413 over the limit, 429 too often, 400 size mismatch) with the file
     // they were said about, which is the only part the host cannot know to mention.
-    const reason = error instanceof Error && error.message ? error.message : '첨부를 보내지 못했습니다.';
+    const reason = error instanceof Error && error.message ? error.message : t('phone.attachments.sendFailed');
     return { ok: false, cancelled: false, error: current ? `${current}: ${reason}` : reason };
   }
 }

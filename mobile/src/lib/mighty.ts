@@ -7,6 +7,7 @@ import {
   type MobileMighty,
   type MobileMightyRun,
 } from '@/api/types';
+import { t } from '@/lib/i18n';
 import {
   blockText,
   inlineText,
@@ -22,14 +23,14 @@ import {
  * style puts around that list lives in `styles.ts`.
  */
 
-/** The Mac's own names for the six block kinds it draws. */
-export const BLOCK_KIND_LABELS: Record<string, string> = {
-  main: '요청',
-  agent: '하위 에이전트',
-  task: '백그라운드 작업',
-  steer: '중간 요청',
-  compact: '컨텍스트 정리',
-  question: '질문',
+/** The Mac's own names for the six block kinds it draws, as locale keys. */
+export const BLOCK_KIND_LABEL_KEYS: Record<string, string> = {
+  main: 'graph.timeline.kind.request',
+  agent: 'graph.block.agent',
+  task: 'graph.block.task',
+  steer: 'graph.block.steer',
+  compact: 'graph.block.compact',
+  question: 'graph.block.question',
 };
 
 /** Marks drawn in place of the Mac's SF Symbols; this app has no vector renderer. */
@@ -74,7 +75,9 @@ function labelled(table: Record<string, string>, key: string): string | undefine
 
 /** The label for a block kind, or the word the host sent when we do not know it. */
 export function blockKindLabel(kind: string): string {
-  return labelled(BLOCK_KIND_LABELS, kind) ?? (kind.length > 0 ? kind : '블록');
+  const key = labelled(BLOCK_KIND_LABEL_KEYS, kind);
+  if (key !== undefined) return t(key);
+  return kind.length > 0 ? kind : t('phone.blocks.unknownKind');
 }
 
 /** The mark for a block kind; an unknown kind gets the neutral one. */
@@ -88,10 +91,11 @@ export function blockTitle(block: MobileBlock): string {
   return title.length > 0 ? title : blockKindLabel(block.kind);
 }
 
-/** `<제목> · 요청 3`, or just `요청 3` when the run has no title. */
+/** `<title> · Request 3`, or just `Request 3` when the run has no title. */
 export function runHeading(run: MobileMightyRun, index: number): string {
   const title = run.title?.trim() ?? '';
-  return `${title.length > 0 ? `${title} · ` : ''}요청 ${index + 1}`;
+  const request = t('remote.block.request', { ordinal: index + 1 });
+  return `${title.length > 0 ? `${title} · ` : ''}${request}`;
 }
 
 /** One line of the request, for the collapsed group. */

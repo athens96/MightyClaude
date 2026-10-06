@@ -27,7 +27,9 @@ const CHOICE_SUFFIXES = [' 중에서 선택', ' 중 선택', ' 중 하나'];
  * code point with no Unicode normalization, so a decomposed `또는` is not a separator.
  */
 const WHITESPACE = new Set([' ', '\t', '\r', '\n', '\u3000']);
-const LEADING_ALTERNATIVE = /^(?:또는|[Oo][Rr])[ \t\r\n\u3000]+/;
+/** The Korean "or" a reply may open an alternative with; matched, never shown. */
+const KOREAN_OR = '또는';
+const LEADING_ALTERNATIVE = new RegExp(`^(?:${KOREAN_OR}|[Oo][Rr])[ \\t\\r\\n\\u3000]+`);
 /** `(?![\s\S])` is the end of the text in both regex engines, unlike `$`. */
 const COMMAND = /^(?:ooo(?:[ \t]|(?![\s\S]))|\/[A-Za-z][A-Za-z0-9_-]*(?::[A-Za-z0-9_-]+)?(?:[ \t]|(?![\s\S])))/;
 

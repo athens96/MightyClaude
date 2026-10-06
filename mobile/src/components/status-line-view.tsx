@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { RateLimit, StatusLine } from '@/api/types';
+import { t } from '@/lib/i18n';
 import { sanitiseRateLimits, sanitiseStatusLines } from '@/lib/status-line';
 import { monoText, radius, spacing, useStyles, type Palette } from '@/theme';
 
@@ -72,7 +73,8 @@ function RateLimitBar({ limit }: { limit: RateLimit }) {
           {limit.label}
         </Text>
         <Text style={styles.limitValue}>
-          {Math.round(limit.usedPercent)}%{resetsAt ? ` · ${resetsAt} 초기화` : ''}
+          {Math.round(limit.usedPercent)}%
+          {resetsAt ? ` · ${t('phone.statusLine.resetsAt', { time: resetsAt })}` : ''}
         </Text>
       </View>
       <View style={styles.limitTrack}>

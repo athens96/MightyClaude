@@ -6,6 +6,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_CHUNK_BYTES,
 } from '@/api/types';
+import { resetLanguage } from '@/lib/i18n';
 import {
   CHUNK_RETRY_DELAYS_MS,
   MAX_CHUNK_ATTEMPTS,
@@ -20,6 +21,10 @@ import {
   type UploadProgress,
   type UploadTransport,
 } from '@/lib/uploads';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 function file(name: string, size: number, uri = `file:///${name}`): PickedFile {
   return { uri, name, size };

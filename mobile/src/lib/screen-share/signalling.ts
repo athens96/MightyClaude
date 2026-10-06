@@ -10,6 +10,7 @@ import {
   type ScreenMode,
   type ScreenQuality,
 } from '@/api/types';
+import { t } from '@/lib/i18n';
 
 /**
  * The screen-share signalling messages of docs/relay.md, as they travel inside the
@@ -289,7 +290,7 @@ export class ScreenSignalTooLarge extends Error {
   readonly bytes: number;
 
   constructor(bytes: number) {
-    super(`시그널링 메시지가 너무 큽니다 (${bytes} 바이트).`);
+    super(t('phone.screenShare.signalTooLarge', { bytes }));
     this.name = 'ScreenSignalTooLarge';
     this.bytes = bytes;
   }

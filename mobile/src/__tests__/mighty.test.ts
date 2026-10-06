@@ -5,6 +5,7 @@ import {
   type MobileBlock,
   type MobileMightyRun,
 } from '@/api/types';
+import { resetLanguage } from '@/lib/i18n';
 import {
   MAX_BLOCKS_PER_RUN,
   MAX_INPUT_PREVIEW,
@@ -24,6 +25,10 @@ import {
   runResult,
 } from '@/lib/mighty';
 import { panelOf } from '@/lib/styles';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 function block(overrides: Partial<MobileBlock> = {}): MobileBlock {
   return { id: 'b1', kind: 'agent', title: '', status: 'running', ...overrides };

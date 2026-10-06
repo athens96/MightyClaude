@@ -87,7 +87,7 @@ export function Composer({
     return (
       <View style={styles.bar}>
         <Text style={styles.terminalNote}>
-          로컬 터미널 창은 모바일에서 명령을 보낼 수 없습니다.
+          {t('phone.composer.terminalNote')}
         </Text>
       </View>
     );
@@ -97,7 +97,7 @@ export function Composer({
   const empty = text.trim().length === 0 && picked.length === 0;
   const blocked = disabled || tooLong || empty;
   // The host cannot fold files into a turn that is already open, so a request carrying
-  // attachments is never offered as "바로 전달": it queues, or it starts the pane.
+  // attachments is never offered as "send now": it queues, or it starts the pane.
   const canSteer = picked.length === 0;
 
   const submit = async (mode?: SubmitMode) => {
@@ -111,7 +111,7 @@ export function Composer({
   return (
     <View style={styles.bar}>
       <CommandList commands={matches} onSelect={pickCommand} />
-      {tooLong ? <Text style={styles.warning}>메시지가 32KiB를 넘었습니다.</Text> : null}
+      {tooLong ? <Text style={styles.warning}>{t('phone.composer.tooLong')}</Text> : null}
 
       {attachments && picked.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -133,7 +133,7 @@ export function Composer({
                       : formatBytes(file.size)}
                   </Text>
                   <Pressable
-                    accessibilityLabel={`${file.name} 빼기`}
+                    accessibilityLabel={t('phone.composer.removeAttachment', { name: file.name })}
                     accessibilityRole="button"
                     disabled={attachments.uploading}
                     hitSlop={8}
@@ -150,20 +150,20 @@ export function Composer({
 
       {attachments?.uploading ? (
         <View style={styles.uploadRow}>
-          <Text style={styles.hint}>첨부를 보내는 중…</Text>
-          <Button label="취소" tone="ghost" compact onPress={attachments.cancel} />
+          <Text style={styles.hint}>{t('phone.composer.uploading')}</Text>
+          <Button label={t('common.cancel')} tone="ghost" compact onPress={attachments.cancel} />
         </View>
       ) : running && picked.length > 0 ? (
-        <Text style={styles.hint}>첨부가 있는 요청은 대기열로 들어갑니다.</Text>
+        <Text style={styles.hint}>{t('phone.composer.attachmentsQueue')}</Text>
       ) : null}
 
       {running && submitModes ? (
         // While a run is going the message can join it or wait for the next turn; both
-        // ride above the field, so the field itself keeps only 중지.
+        // ride above the field, so the field itself keeps only Stop.
         <View style={styles.modeRow}>
           {canSteer ? (
             <Button
-              label="바로 전달"
+              label={t('phone.composer.steer')}
               tone="primary"
               compact
               busy={sending}
@@ -172,7 +172,7 @@ export function Composer({
             />
           ) : null}
           <Button
-            label="다음 요청"
+            label={t('graph.block.nextRequest')}
             tone={canSteer ? 'neutral' : 'primary'}
             compact
             busy={!canSteer && sending}
@@ -203,7 +203,7 @@ export function Composer({
             ref={inputRef}
             value={text}
             onChangeText={onChangeText}
-            placeholder="메시지를 입력하세요"
+            placeholder={t('phone.composer.placeholder')}
             placeholderTextColor={palette.textFaint}
             style={styles.input}
             multiline
@@ -252,9 +252,9 @@ export function Composer({
 
       {attachments ? (
         <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)}>
-          <Text style={styles.sheetTitle}>파일 첨부</Text>
+          <Text style={styles.sheetTitle}>{t('phone.composer.attach')}</Text>
           <Button
-            label="사진 선택"
+            label={t('phone.composer.pickPhotos')}
             tone="neutral"
             onPress={() => {
               setPickerOpen(false);
@@ -262,14 +262,14 @@ export function Composer({
             }}
           />
           <Button
-            label="파일 선택"
+            label={t('phone.composer.pickFiles')}
             tone="neutral"
             onPress={() => {
               setPickerOpen(false);
               void attachments.pickDocuments();
             }}
           />
-          <Button label="취소" tone="ghost" onPress={() => setPickerOpen(false)} />
+          <Button label={t('common.cancel')} tone="ghost" onPress={() => setPickerOpen(false)} />
         </Sheet>
       ) : null}
     </View>

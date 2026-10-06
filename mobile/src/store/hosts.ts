@@ -23,6 +23,7 @@ import {
   writeHostSecrets,
   type HostSecrets,
 } from '@/lib/host-secrets';
+import { t } from '@/lib/i18n';
 import { createKeyedMutex } from '@/lib/keyed-mutex';
 import { describeRelayTarget, type PairingPayload } from '@/lib/pairing';
 import { forgetControlKey } from '@/lib/screen-share/control-key';
@@ -137,12 +138,14 @@ export function credentialsFor(
 }
 
 /** Shown on a host whose stored secret is gone and that has to be paired again. */
-const REPAIR_DETAIL = '다시 페어링해야 합니다';
+function repairDetail(): string {
+  return t('phone.hosts.repairDetail');
+}
 
 /**
  * One pairing-key authentication at a time per host: the Mac answers a pairing key with
  * a device token exactly once, so a probe and a screen's tunnel racing each other would
- * mint two tokens and keep only the second (docs/relay.md "기기 토큰").
+ * mint two tokens and keep only the second (docs/relay.md, the device-token section).
  */
 const authGate = createKeyedMutex();
 /** Keeps two `auth_ok`s from writing a host's token over one another. */
@@ -230,11 +233,11 @@ export const useHostsStore = create<HostsState>((set, get) => ({
       }),
     );
     // A host whose secret is gone — released from the Mac, or its key replaced — stays
-    // on the list as "재페어링 필요" rather than disappearing without a word.
+    // on the list as "re-pairing required" rather than disappearing without a word.
     const status: Record<string, HostStatus> = {};
     for (const host of hosts) {
       if (!canAuthenticate({ pairingKey: keys[host.id], deviceToken: tokens[host.id] })) {
-        status[host.id] = { reachability: 'unauthorized', detail: REPAIR_DETAIL };
+        status[host.id] = { reachability: 'unauthorized', detail: repairDetail() };
       }
     }
     set({ hosts, keys, tokens, clientIds, status, clientId, loaded: true });
@@ -313,7 +316,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
         tokens,
         status: {
           ...prev.status,
-          [id]: { reachability: 'unauthorized', detail: detail ?? REPAIR_DETAIL },
+          [id]: { reachability: 'unauthorized', detail: detail ?? repairDetail() },
         },
       };
     });
@@ -348,7 +351,7 @@ export const useHostsStore = create<HostsState>((set, get) => ({
       set((prev) => ({
         status: {
           ...prev.status,
-          [id]: { reachability: 'unauthorized', detail: REPAIR_DETAIL },
+          [id]: { reachability: 'unauthorized', detail: repairDetail() },
         },
       }));
       return;

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { MAX_TITLE_LENGTH, type SettingOption } from '@/api/types';
 import { Button } from '@/components/ui';
+import { t } from '@/lib/i18n';
 import { monoText, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 /** Shared modal shell: dimmed backdrop, a centred white card, tap outside to dismiss. */
@@ -27,7 +28,7 @@ export function Sheet({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
-        accessibilityLabel="닫기"
+        accessibilityLabel={t('common.close')}
         accessibilityRole="button"
         style={styles.backdrop}
         onPress={onClose}
@@ -70,7 +71,7 @@ export function PickerSheet({
       <Text style={styles.title}>{title}</Text>
       {note ? <Text style={styles.note}>{note}</Text> : null}
       {options.length === 0 ? (
-        <Text style={styles.note}>선택할 수 있는 항목이 없습니다.</Text>
+        <Text style={styles.note}>{t('phone.picker.empty')}</Text>
       ) : (
         <ScrollView style={styles.optionList}>
           {options.map((option) => {
@@ -93,13 +94,13 @@ export function PickerSheet({
                   {option.label || option.id}
                 </Text>
                 {option.badge ? <Text style={styles.optionBadge}>{option.badge}</Text> : null}
-                {selected ? <Text style={styles.optionMark}>선택됨</Text> : null}
+                {selected ? <Text style={styles.optionMark}>{t('accessibility.selected')}</Text> : null}
               </Pressable>
             );
           })}
         </ScrollView>
       )}
-      <Button label="닫기" tone="ghost" onPress={onClose} />
+      <Button label={t('common.close')} tone="ghost" onPress={onClose} />
     </Sheet>
   );
 }
@@ -157,7 +158,7 @@ export function PromptDialog({
         {trimmed.length}/{MAX_TITLE_LENGTH}
       </Text>
       <View style={styles.actions}>
-        <Button label="취소" tone="ghost" style={styles.action} onPress={onCancel} />
+        <Button label={t('common.cancel')} tone="ghost" style={styles.action} onPress={onCancel} />
         <Button
           label={confirmLabel}
           tone="primary"
@@ -200,7 +201,7 @@ export function ConfirmDialog({
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.note}>{description}</Text>
       <View style={styles.actions}>
-        <Button label="취소" tone="ghost" style={styles.action} onPress={onCancel} />
+        <Button label={t('common.cancel')} tone="ghost" style={styles.action} onPress={onCancel} />
         <Button
           label={confirmLabel}
           tone={destructive ? 'danger' : 'primary'}
@@ -220,7 +221,7 @@ export interface SheetAction {
   description?: string;
 }
 
-/** Labelled actions with their help; used by "더 보기" on the guided panel. */
+/** Labelled actions with their help; used by "More" on the guided panel. */
 export function ActionListSheet({
   visible,
   title,
@@ -244,7 +245,7 @@ export function ActionListSheet({
       <Text style={styles.title}>{title}</Text>
       {note ? <Text style={styles.note}>{note}</Text> : null}
       {actions.length === 0 ? (
-        <Text style={styles.note}>지금 실행할 수 있는 것이 없습니다.</Text>
+        <Text style={styles.note}>{t('phone.actions.empty')}</Text>
       ) : (
         // A style catalogue carries up to a hundred actions, so the rows are recycled.
         <FlatList
@@ -272,7 +273,7 @@ export function ActionListSheet({
           )}
         />
       )}
-      <Button label="닫기" tone="ghost" onPress={onClose} />
+      <Button label={t('common.close')} tone="ghost" onPress={onClose} />
     </Sheet>
   );
 }
@@ -301,7 +302,7 @@ export function InfoSheet({
           </Text>
         ))}
       </ScrollView>
-      <Button label="닫기" tone="ghost" onPress={onClose} />
+      <Button label={t('common.close')} tone="ghost" onPress={onClose} />
     </Sheet>
   );
 }
@@ -327,7 +328,7 @@ export function MessageSheet({
           {message}
         </Text>
       </ScrollView>
-      <Button label="닫기" tone="ghost" onPress={onClose} />
+      <Button label={t('common.close')} tone="ghost" onPress={onClose} />
     </Sheet>
   );
 }

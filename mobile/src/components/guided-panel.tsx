@@ -134,7 +134,7 @@ export function GuidedPanel({
                 <Text selectable style={styles.command}>
                   {model.setup.installCommand}
                 </Text>
-                <Text style={styles.hint}>이 명령은 Mac에서 직접 실행하세요.</Text>
+                <Text style={styles.hint}>{t('phone.guided.runOnMac')}</Text>
               </>
             ) : null}
           </View>
@@ -190,7 +190,7 @@ export function GuidedPanel({
                   {/* The same mark a read-only action chip wears; the phone cannot open
                       the file either way, and the host says so per attachment (7.3). */}
                   {attachment.readOnly ? (
-                    <Text accessibilityLabel="읽기 전용" style={styles.attachmentMark}>
+                    <Text accessibilityLabel={t('styles.action.readOnly')} style={styles.attachmentMark}>
                       👁
                     </Text>
                   ) : null}
@@ -210,11 +210,11 @@ export function GuidedPanel({
               {/* A text beside a spinner only wraps once it may shrink; otherwise the row
                   runs off the panel and the sentence is cut where the screen ends. */}
               <Text lineBreakStrategyIOS="hangul-word" numberOfLines={3} style={[styles.hint, styles.busyText]}>
-                실행 중입니다. 끝나면 다음 행동이 나옵니다.
+                {t('phone.guided.running')}
               </Text>
             </View>
           ) : (
-            <Text style={styles.hint}>지금은 고를 행동이 없습니다. 아래에 적어 그대로 보내세요.</Text>
+            <Text style={styles.hint}>{t('phone.guided.noActions')}</Text>
           )
         ) : null}
 
@@ -239,7 +239,7 @@ export function GuidedPanel({
             ))}
             {model.rest.length > 0 ? (
               <Button
-                label="더 보기"
+                label={t('composer.more')}
                 tone="ghost"
                 compact
                 disabled={locked || busyActionId !== undefined}
@@ -258,8 +258,8 @@ export function GuidedPanel({
 
       <ActionListSheet
         visible={moreOpen}
-        title={`${panel.style.name} 행동`}
-        note="호스트가 이 실행 창에서 쓸 수 있다고 알려 준 행동입니다."
+        title={t('phone.guided.actionsTitle', { name: panel.style.name })}
+        note={t('phone.guided.actionsNote')}
         actions={model.rest.map((action) => ({
           id: action.id,
           label: action.glyph ? `${action.glyph} ${action.title}` : action.title,
@@ -380,11 +380,11 @@ function bottomLines(model: StyleViewModel, hasText: boolean): string[] {
     const names = model.takesText.map((action) => action.title).join(', ');
     lines.push(
       hasText
-        ? `${names}은(는) 입력창의 내용을 함께 보냅니다.`
-        : `${names}은(는) 입력창의 내용을 함께 보냅니다 (지금은 비어 있습니다).`,
+        ? t('phone.guided.takesText', { names })
+        : t('phone.guided.takesTextEmpty', { names }),
     );
   }
-  if (model.actions.length > 0) lines.push('행동을 길게 누르면 설명이 나옵니다.');
+  if (model.actions.length > 0) lines.push(t('phone.guided.longPressHint'));
   return lines;
 }
 
@@ -392,11 +392,11 @@ function bottomLines(model: StyleViewModel, hasText: boolean): string[] {
 function actionLines(action: StyleAction): string[] {
   const lines: string[] = [];
   if (action.help) lines.push(action.help);
-  if (action.scope) lines.push(`범위: ${action.scope}`);
-  if (action.flags.includes('userInvoked')) lines.push('사람만 부를 수 있는 행동');
-  if (action.flags.includes('readOnly')) lines.push('읽기 전용');
-  if (action.takesText) lines.push('입력창의 내용을 함께 보냅니다.');
-  if (action.requiresText) lines.push('입력창이 비어 있으면 누를 수 없습니다.');
+  if (action.scope) lines.push(t('styles.action.scope', { scope: action.scope }));
+  if (action.flags.includes('userInvoked')) lines.push(t('phone.guided.action.userInvoked'));
+  if (action.flags.includes('readOnly')) lines.push(t('styles.action.readOnly'));
+  if (action.takesText) lines.push(t('phone.guided.action.takesText'));
+  if (action.requiresText) lines.push(t('phone.guided.action.requiresText'));
   return lines;
 }
 

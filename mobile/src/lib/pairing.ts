@@ -1,4 +1,5 @@
 import { fromBase64, toBase64, KEY_LENGTH } from '@/api/relay/crypto';
+import { t } from '@/lib/i18n';
 
 export const PAIRING_SCHEME = 'mightyclaude://pair';
 export const PAIRING_VERSION = 2;
@@ -45,39 +46,45 @@ export function normalizeRelayUrl(raw: string): string | undefined {
  */
 export function parsePairingUrl(raw: string): PairingParseResult {
   const params = readParams(raw);
-  if (!params) return { ok: false, error: '페어링 주소 형식이 아닙니다.' };
+  if (!params) return { ok: false, error: t('phone.pair.error.badUrl') };
 
   const version = params.get('v');
   if (version !== String(PAIRING_VERSION)) {
-    return { ok: false, error: `지원하지 않는 페어링 버전입니다 (v=${version ?? '없음'}).` };
+    return {
+      ok: false,
+      error:
+        version === null
+          ? t('phone.pair.error.noVersion')
+          : t('phone.pair.error.badVersion', { version }),
+    };
   }
 
   const serverId = (params.get('sid') ?? '').trim();
-  if (!serverId) return { ok: false, error: '서버 ID가 없습니다.' };
+  if (!serverId) return { ok: false, error: t('phone.pair.error.noServerId') };
   if (!SERVER_ID_PATTERN.test(serverId)) {
-    return { ok: false, error: '서버 ID 형식이 올바르지 않습니다.' };
+    return { ok: false, error: t('phone.pair.error.badServerId') };
   }
 
   const relayRaw = (params.get('relay') ?? '').trim();
-  if (!relayRaw) return { ok: false, error: '릴레이 주소가 없습니다.' };
+  if (!relayRaw) return { ok: false, error: t('phone.pair.error.noRelay') };
   const relayUrl = normalizeRelayUrl(relayRaw);
-  if (!relayUrl) return { ok: false, error: `릴레이 주소가 올바르지 않습니다 (${relayRaw}).` };
+  if (!relayUrl) return { ok: false, error: t('phone.pair.error.badRelay', { relay: relayRaw }) };
 
   const publicKeyRaw = (params.get('pk') ?? '').trim();
-  if (!publicKeyRaw) return { ok: false, error: '호스트 공개키가 없습니다.' };
+  if (!publicKeyRaw) return { ok: false, error: t('phone.pair.error.noHostKey') };
   let hostPublicKeyB64: string;
   try {
     const bytes = fromBase64(publicKeyRaw);
     if (bytes.length !== KEY_LENGTH) {
-      return { ok: false, error: `호스트 공개키 길이가 올바르지 않습니다 (${bytes.length}B).` };
+      return { ok: false, error: t('phone.pair.error.badHostKeyLength', { length: bytes.length }) };
     }
     hostPublicKeyB64 = toBase64(bytes);
   } catch {
-    return { ok: false, error: '호스트 공개키를 해석할 수 없습니다.' };
+    return { ok: false, error: t('phone.pair.error.badHostKey') };
   }
 
   const pairingKey = (params.get('key') ?? '').trim();
-  if (!pairingKey) return { ok: false, error: '페어링 키가 없습니다.' };
+  if (!pairingKey) return { ok: false, error: t('phone.pair.error.noPairingKey') };
 
   const name = (params.get('name') ?? '').trim() || serverId;
   return { ok: true, value: { serverId, relayUrl, hostPublicKeyB64, pairingKey, name } };
@@ -162,7 +169,7 @@ export function relayTransportError(
   if (platform !== 'ios') return undefined;
   if (!/^ws:\/\//i.test(relayUrl.trim())) return undefined;
   if (isLocalRelayHost(relayUrl)) return undefined;
-  return 'iOS에서는 로컬 네트워크 밖의 릴레이에 ws://로 연결할 수 없습니다. Mac에서 릴레이 주소를 wss://로 바꾼 뒤 다시 페어링하세요.';
+  return t('phone.pair.error.iosCleartext');
 }
 
 /** Stable identity for a paired host: the relay `serverId`. */

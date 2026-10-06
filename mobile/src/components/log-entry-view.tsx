@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { LogActivity, LogEntry } from '@/api/types';
 import { AssistantMarkdown } from '@/components/assistant-markdown';
 import { ProviderMark } from '@/components/provider-mark';
+import { t } from '@/lib/i18n';
 import type { Tone } from '@/lib/status-tone';
 import {
   cardShadow,
@@ -56,14 +57,14 @@ function activityGlyph(tone: Tone): string {
   }
 }
 
-/** `840ms`, `1.4초`, `2분 5초` — the tool's own wall-clock time. */
+/** `840ms`, `1.4s`, `2m 5s` (in the app's language) — the tool's own wall-clock time. */
 export function formatDuration(durationMs: number): string {
   if (!Number.isFinite(durationMs) || durationMs < 0) return '';
   if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
   const seconds = durationMs / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}초`;
+  if (seconds < 60) return t('run.activity.durationSeconds', { seconds: seconds.toFixed(1) });
   const minutes = Math.floor(seconds / 60);
-  return `${minutes}분 ${Math.round(seconds % 60)}초`;
+  return t('run.activity.durationMinutesSeconds', { minutes, seconds: Math.round(seconds % 60) });
 }
 
 /**

@@ -17,6 +17,11 @@ import {
   toBase64Url,
   utf8Encode,
 } from '@/api/relay/crypto';
+import { resetLanguage } from '@/lib/i18n';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 /** Runs the docs/relay.md handshake between a client and a host in-process. */
 function handshake() {

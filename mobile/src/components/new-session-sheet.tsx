@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 import type { Provider, SessionKind } from '@/api/types';
 import { Button, Chip } from '@/components/ui';
+import { t } from '@/lib/i18n';
 import { kindLabel, providerIsBeta, providerLabel, radius, spacing, typeScale, useStyles, usePalette, type Palette } from '@/theme';
 
 const PROVIDERS: Provider[] = ['claude', 'codex', 'gemini'];
@@ -36,11 +37,13 @@ export function NewSessionSheet({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.backdrop}>
         <View style={styles.sheet}>
-          <Text style={styles.title}>새 창 · {workspaceName}</Text>
+          <Text style={styles.title}>
+            {t('phone.workspaces.newPane')} · {workspaceName}
+          </Text>
 
           {kinds.length > 1 ? (
             <>
-              <Text style={styles.label}>종류</Text>
+              <Text style={styles.label}>{t('phone.newPane.kind')}</Text>
               <View style={styles.chips}>
                 {kinds.map((value) => (
                   <Chip
@@ -57,7 +60,7 @@ export function NewSessionSheet({
 
           {chosenKind === 'claude' ? (
             <>
-              <Text style={styles.label}>프로바이더</Text>
+              <Text style={styles.label}>{t('phone.newPane.provider')}</Text>
               <View style={styles.chips}>
                 {PROVIDERS.map((value) => (
                   <Chip
@@ -74,9 +77,9 @@ export function NewSessionSheet({
           ) : null}
 
           <View style={styles.actions}>
-            <Button label="취소" tone="ghost" onPress={onCancel} style={styles.action} />
+            <Button label={t('common.cancel')} tone="ghost" onPress={onCancel} style={styles.action} />
             <Button
-              label="만들기"
+              label={t('phone.newPane.create')}
               tone="primary"
               busy={busy}
               style={styles.action}

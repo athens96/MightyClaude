@@ -341,11 +341,13 @@ function RunGroup({ run, index, initiallyOpen }: {
       {open ? (
         <View style={styles.blocks}>
           {run.blocks.length === 0 ? (
-            <Text style={styles.runCount}>아직 블록이 없습니다.</Text>
+            <Text style={styles.runCount}>{t('phone.blocks.none')}</Text>
           ) : (
             <>
               {run.omittedBlocks ? (
-                <Text style={styles.runCount}>이전 블록 {run.omittedBlocks}개 생략</Text>
+                <Text style={styles.runCount}>
+                  {t('phone.blocks.omitted', { count: run.omittedBlocks })}
+                </Text>
               ) : null}
               {run.blocks.map((block, position) => (
                 <BlockRow
@@ -409,7 +411,10 @@ export function MightyRunList({
       ListHeaderComponent={header}
       ListHeaderComponentStyle={headerStyle}
       ListEmptyComponent={
-        <EmptyState title="요청이 없습니다" description="메시지를 보내면 블록이 쌓입니다." />
+        <EmptyState
+          title={t('phone.blocks.empty.title')}
+          description={t('phone.blocks.empty.description')}
+        />
       }
       ListFooterComponent={footer}
     />

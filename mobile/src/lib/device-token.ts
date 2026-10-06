@@ -1,9 +1,11 @@
 import { toBase64Url } from '@/api/relay/crypto';
 import { randomBytes } from '@/api/relay/random';
+import { t } from '@/lib/i18n';
 
 /**
- * Device tokens (docs/relay.md, "기기 토큰"). The first connection authenticates with the
- * pairing key and this install's `clientId`; the host answers `auth_ok` with a token,
+ * Device tokens (docs/relay.md, the device-token section). The first connection
+ * authenticates with the pairing key and this install's `clientId`; the host answers
+ * `auth_ok` with a token,
  * once. From then on the token alone authenticates and the pairing key is forgotten, so
  * a Mac that releases this device can invalidate it without touching the others. A host
  * that never sends a token keeps working on the pairing key exactly as before.
@@ -77,7 +79,7 @@ export function afterAuthOk(
 }
 
 /**
- * The `auth_error.reason` vocabulary both sides share (docs/relay.md "기기 토큰").
+ * The `auth_error.reason` vocabulary both sides share (docs/relay.md, the device-token section).
  * `unknown` stands for a word this build has never heard of, including `malformed`'s
  * neighbours a later host may add.
  */
@@ -105,31 +107,37 @@ export interface AuthRejection {
 }
 
 /** Generic wording for everything that is neither final nor worth a special sentence. */
-const REFUSED_MESSAGE = '호스트가 인증을 거절했습니다. 잠시 후 다시 시도합니다.';
+const REFUSED_MESSAGE = 'phone.relay.failure.authRefused';
 
-const REJECTIONS: Record<AuthErrorReason, Omit<AuthRejection, 'reason'>> = {
-  'pairing-key': { final: true, retryWithNewClientId: false, message: '재페어링 필요' },
+/** `messageKey` is a locale key, read when the rejection is made. */
+type Rejection = Omit<AuthRejection, 'reason' | 'message'> & { messageKey: string };
+
+const REJECTIONS: Record<AuthErrorReason, Rejection> = {
+  'pairing-key': {
+    final: true,
+    retryWithNewClientId: false,
+    messageKey: 'phone.hosts.reachability.unauthorized',
+  },
   'device-revoked': {
     final: true,
     retryWithNewClientId: false,
-    message: '이 기기의 연결이 Mac에서 해제되었습니다. 다시 페어링하세요.',
+    messageKey: 'phone.relay.failure.deviceRevoked',
   },
   'device-conflict': {
     final: false,
     retryWithNewClientId: true,
-    message: '이 기기가 Mac에 이미 등록되어 있습니다. 잠시 후 다시 시도합니다.',
+    messageKey: 'phone.relay.failure.deviceConflict',
   },
   'device-limit': {
     final: false,
     retryWithNewClientId: false,
-    message:
-      'Mac의 기기 목록이 가득 찼거나 등록이 잠시 제한되었습니다. Mac 설정에서 쓰지 않는 기기를 해제한 뒤 다시 시도하세요.',
+    messageKey: 'phone.relay.failure.deviceLimit',
   },
   // This app always sends a `clientId`, so a host that refuses old apps is not talking
   // about us; it is just one more answer worth retrying.
-  'legacy-refused': { final: false, retryWithNewClientId: false, message: REFUSED_MESSAGE },
-  malformed: { final: false, retryWithNewClientId: false, message: REFUSED_MESSAGE },
-  unknown: { final: false, retryWithNewClientId: false, message: REFUSED_MESSAGE },
+  'legacy-refused': { final: false, retryWithNewClientId: false, messageKey: REFUSED_MESSAGE },
+  malformed: { final: false, retryWithNewClientId: false, messageKey: REFUSED_MESSAGE },
+  unknown: { final: false, retryWithNewClientId: false, messageKey: REFUSED_MESSAGE },
 };
 
 const KNOWN_REASONS: readonly string[] = Object.keys(REJECTIONS).filter(
@@ -142,7 +150,8 @@ export function authRejectionFor(reason: unknown): AuthRejection {
     typeof reason === 'string' && KNOWN_REASONS.includes(reason)
       ? (reason as AuthErrorReason)
       : 'unknown';
-  return { reason: name, ...REJECTIONS[name] };
+  const { messageKey, ...rejection } = REJECTIONS[name];
+  return { reason: name, ...rejection, message: t(messageKey) };
 }
 
 /** Reads the `deviceToken` out of an `auth_ok` envelope, if the host sent one. */

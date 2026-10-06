@@ -1,13 +1,15 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { MobileCommand } from '@/api/types';
+import { t } from '@/lib/i18n';
 import { radius, spacing, useStyles, type Palette } from '@/theme';
 
-const sourceLabels: Record<string, string> = {
-  app: '앱',
-  builtin: '기본',
-  project: '프로젝트',
-  user: '사용자',
-  plugin: '플러그인',
+/** Locale keys, read when a row is drawn. */
+const sourceLabelKeys: Record<string, string> = {
+  app: 'phone.commands.source.app',
+  builtin: 'phone.commands.source.builtin',
+  project: 'phone.commands.source.project',
+  user: 'phone.commands.source.user',
+  plugin: 'phone.commands.source.plugin',
 };
 
 /**
@@ -16,7 +18,8 @@ const sourceLabels: Record<string, string> = {
  * function, which `<Text>` would silently draw as nothing.
  */
 function sourceLabel(source: string): string {
-  return (Object.hasOwn(sourceLabels, source) ? sourceLabels[source] : undefined) ?? source;
+  const key = Object.hasOwn(sourceLabelKeys, source) ? sourceLabelKeys[source] : undefined;
+  return key !== undefined ? t(key) : source;
 }
 
 /** The "/" list above the composer: filtered host commands, one tap to pick one. */

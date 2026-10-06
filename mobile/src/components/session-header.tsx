@@ -10,7 +10,7 @@ import { statusWord } from '@/lib/status-glyph';
 import { toneOf } from '@/lib/status-tone';
 import { styleOptions } from '@/lib/styles';
 import {
-  AGENT_VIEW_MODES,
+  agentViewModes,
   optionLabel,
   spacing,
   toneColors,
@@ -32,7 +32,7 @@ export type SettingField =
 /** The host may leave an option list out; an absent list simply hides its chip. */
 export function optionsFor(settings: MobileSettings | undefined, field: SettingField): SettingOption[] {
   if (!settings) return [];
-  if (field === 'agentViewMode') return AGENT_VIEW_MODES;
+  if (field === 'agentViewMode') return agentViewModes();
   const options = settings.options as Partial<MobileSettings['options']> | undefined;
   if (field === 'styleId') return styleOptions(options?.styles);
   const list =
@@ -64,19 +64,24 @@ export function valueFor(settings: MobileSettings, field: SettingField): string 
   }
 }
 
-export const settingTitles: Record<SettingField, string> = {
-  model: '모델',
-  permissionMode: '권한 모드',
-  effort: '사고 강도',
-  agentViewMode: '보기 방식',
-  mightyStyle: 'Mighty 스타일',
-  styleId: 'Mighty 스타일',
+const settingTitleKeys: Record<SettingField, string> = {
+  model: 'composer.label.model',
+  permissionMode: 'remote.slashHint.permission',
+  effort: 'composer.effort.label',
+  agentViewMode: 'phone.session.setting.viewMode',
+  mightyStyle: 'phone.session.setting.mightyStyle',
+  styleId: 'phone.session.setting.mightyStyle',
 };
 
-/** `Mighty 스타일: gstack · 저장소에서 발견됨` — the badge follows the name everywhere. */
+/** What a setting is called on its chip and as its picker's title. */
+export function settingTitle(field: SettingField): string {
+  return t(settingTitleKeys[field]);
+}
+
+/** `Mighty style: gstack · Found in repository` — the badge follows the name everywhere. */
 function chipLabel(field: SettingField, options: SettingOption[], value: string): string {
   const badge = options.find((option) => option.id === value)?.badge;
-  return `${settingTitles[field]}: ${optionLabel(options, value)}${badge ? ` · ${badge}` : ''}`;
+  return `${settingTitle(field)}: ${optionLabel(options, value)}${badge ? ` · ${badge}` : ''}`;
 }
 
 /**

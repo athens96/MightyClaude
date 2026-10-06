@@ -12,6 +12,7 @@ import { appForeground } from '@/api/relay/foreground';
 import { LeasePool, type PoolIdentity } from '@/lib/connection-pool';
 import { clientDeviceName } from '@/lib/device';
 import type { DeviceAuthState } from '@/lib/device-token';
+import { t } from '@/lib/i18n';
 import { KEY_SEPARATOR } from '@/lib/keys';
 import {
   ENTRY_PAGE_SIZE,
@@ -115,12 +116,12 @@ export function needsRepair(error: unknown): boolean {
 
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.needsRepair) return '재페어링 필요';
+    if (error.needsRepair) return t('phone.hosts.reachability.unauthorized');
     return error.message;
   }
   if (error instanceof RelayError) return describeRelayFailure(error.failure);
   if (error instanceof Error) return error.message;
-  return '알 수 없는 오류';
+  return t('phone.error.unknown');
 }
 
 function clampWait(wait: number | undefined): number {
@@ -327,7 +328,7 @@ export function screenRejectReason(error: unknown): ScreenRejectReason | undefin
 
 class AbortedError extends Error {
   constructor() {
-    super('요청이 취소되었습니다.');
+    super(t('phone.error.cancelled'));
     this.name = 'AbortError';
   }
 }
@@ -367,7 +368,7 @@ export function createClient(channel: RelayChannel): MobileClient {
       );
     }
     if (response.body === null || response.body === undefined) {
-      throw new ApiError(response.status, '응답을 해석할 수 없습니다.');
+      throw new ApiError(response.status, t('phone.error.badResponse'));
     }
     return response.body as T;
   }
@@ -392,7 +393,7 @@ export function createClient(channel: RelayChannel): MobileClient {
 
     submit: (sessionId, text, options, signal) => {
       if (byteLength(text) > MAX_TEXT_BYTES) {
-        return Promise.reject(new ApiError(413, '메시지가 너무 깁니다 (최대 32KiB).'));
+        return Promise.reject(new ApiError(413, t('phone.error.textTooLong')));
       }
       // `mode` and `attachments` stay out of the body unless asked for, so older
       // hosts keep seeing exactly the request they saw before.
@@ -434,7 +435,7 @@ export function createClient(channel: RelayChannel): MobileClient {
     rename: (sessionId, title, signal) => {
       const trimmed = title.trim();
       if (trimmed.length === 0 || trimmed.length > MAX_TITLE_LENGTH) {
-        return Promise.reject(new ApiError(400, `이름은 1~${MAX_TITLE_LENGTH}자여야 합니다.`));
+        return Promise.reject(new ApiError(400, t('phone.error.badTitle', { max: MAX_TITLE_LENGTH })));
       }
       return request<OkResponse>(
         'POST',
@@ -477,7 +478,7 @@ export function createClient(channel: RelayChannel): MobileClient {
         Object.entries(patch).filter(([, value]) => value !== undefined),
       );
       if (Object.keys(body).length === 0) {
-        return Promise.reject(new ApiError(400, '변경할 설정이 없습니다.'));
+        return Promise.reject(new ApiError(400, t('phone.error.noSettingsChange')));
       }
       return request<OkResponse>(
         'POST',
@@ -507,11 +508,11 @@ export function createClient(channel: RelayChannel): MobileClient {
       const actionId = input.actionId.trim();
       const styleId = input.styleId.trim();
       if (actionId.length === 0 || styleId.length === 0) {
-        return Promise.reject(new ApiError(400, '실행할 스킬이 없습니다.'));
+        return Promise.reject(new ApiError(400, t('phone.error.noSkill')));
       }
       const text = input.text?.trim();
       if (text !== undefined && byteLength(text) > MAX_TEXT_BYTES) {
-        return Promise.reject(new ApiError(413, '메시지가 너무 깁니다 (최대 32KiB).'));
+        return Promise.reject(new ApiError(413, t('phone.error.textTooLong')));
       }
       // A host without the "style" capability only decodes `{style, skill}` and answers
       // 400 to anything else, so the body follows the host rather than the app: the new

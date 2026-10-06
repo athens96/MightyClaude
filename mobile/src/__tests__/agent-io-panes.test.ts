@@ -1,6 +1,11 @@
 import { isAgentIOPane, type MobileSessionSummary, type MobileState } from '@/api/types';
+import { resetLanguage } from '@/lib/i18n';
 import { groupSessionsByWorkspace, mergeState } from '@/lib/merge';
 import { kindLabel } from '@/theme';
+
+// These assertions read the Korean copy: pin it, whatever the machine's language.
+beforeAll(() => resetLanguage('ko'));
+afterAll(() => resetLanguage());
 
 function session(overrides: Partial<MobileSessionSummary>): MobileSessionSummary {
   return {
