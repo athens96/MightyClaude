@@ -49,10 +49,10 @@ struct LocalTerminalPane: View {
             } else if let failure = store.terminalErrors[session.id] {
                 VStack(spacing: 12) {
                     Text(failure).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("다시 시작") { Task { await store.ensureLocalTerminal(session.id) } }
+                    Button(L("terminal.restart")) { Task { await store.ensureLocalTerminal(session.id) } }
                 }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ProgressView("터미널 시작 중…").controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView(L("terminal.starting")).controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task { await store.ensureLocalTerminal(session.id) }
@@ -71,9 +71,9 @@ private struct LocalTerminalContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if terminal.exited || terminal.failure != nil {
                 HStack(spacing: 8) {
-                    Text(terminal.failure ?? "셸이 종료되었습니다.").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(terminal.failure ?? L("terminal.shellExited")).font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer(minLength: 4)
-                    Button("다시 시작", action: restart).controlSize(.small)
+                    Button(L("terminal.restart"), action: restart).controlSize(.small)
                 }.padding(10).background(Palette.subtle)
             }
             HStack(spacing: 7) {
@@ -182,10 +182,10 @@ struct LegacyTerminalHistory: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("이전 명령 실행 기록").font(.headline); Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text("명령 실행 창에 저장된 기록입니다. 대화형 터미널의 현재 내용은 터미널에서 선택해 복사할 수 있습니다.").font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack { Text(L("terminal.history.title")).font(.headline); Spacer(); Button(L("settings.closeButton")) { dismiss() }.keyboardShortcut(.cancelAction) }
+            Text(L("terminal.history.helpMac")).font(.system(size: 12)).foregroundStyle(.secondary)
             ScrollView {
-                Text(session.logs.isEmpty ? "저장된 이전 기록이 없습니다." : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
+                Text(session.logs.isEmpty ? L("terminal.history.empty") : session.logs.map { "[\($0.kind)] \($0.text)" }.joined(separator: "\n\n"))
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }.background(Palette.subtle, in: RoundedRectangle(cornerRadius: 8))
         }.padding(20).frame(width: 630, height: 450)

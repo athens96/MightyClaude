@@ -1,6 +1,6 @@
 // node --test scripts/tests/check-locales.test.mjs
-// 픽스처 트리와 임시 git 저장소로 check-locales.js를 검사한다.
-// 실제 locales나 소스를 건드리지 않는다.
+// Checks check-locales.js against fixture trees and throwaway git repositories.
+// It never touches the real locales or sources.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +20,7 @@ function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'locale-ck-'));
 }
 
-// WinUI csproj에 필요한 Content 연결이 포함된 최소 프로젝트 파일
+// The smallest WinUI csproj that carries the Content links check 3 looks for
 const CSPROJ = `<Project>
   <ItemGroup>
     <Content Include="../../../locales/ko.json" />
@@ -35,7 +35,24 @@ const CSPROJ = `<Project>
  * koJson / enJson 기본값은 빈 객체 — 키가 없으면 검사 1·2·4가 자동 통과.
  * 검사 3(사본 일치)이 통과하려면 macOS core·phone 사본도 원본과 같아야 한다.
  */
-function setup(dir, { koJson = {}, enJson = {}, zhJson = {}, jaJson = {}, files = {} } = {}) {
+// A budget roomy enough that no area can be over it; fitBudget then sets each area to its count.
+const ROOMY_BUDGET = {
+  areas: { 'macOS app': 100, 'macOS core': 100, 'Windows Core': 100, 'Windows WinUI': 100, phone: 100 },
+};
+const BUDGET_FILE = 'scripts/korean-literal-budget.json';
+
+/** Sets every area of the fixture's budget to the count the checker reports, so fixtures
+ *  about other checks meet the ratchet exactly (a budget above its count fails too). */
+function fitBudget(dir) {
+  fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(dir, BUDGET_FILE), JSON.stringify(ROOMY_BUDGET));
+  const report = run(['--root', dir]).stdout;
+  const areas = {};
+  for (const match of report.matchAll(/^ {2}(.+?) +(\d+)개 \/ 상한/gm)) areas[match[1]] = Number(match[2]);
+  fs.writeFileSync(path.join(dir, BUDGET_FILE), JSON.stringify({ areas }));
+}
+
+function setup(dir, { koJson = {}, enJson = {}, zhJson = {}, jaJson = {}, files = {}, budget = 'fit' } = {}) {
   const contents = {
     ko: JSON.stringify(koJson),
     en: JSON.stringify(enJson),
@@ -56,11 +73,17 @@ function setup(dir, { koJson = {}, enJson = {}, zhJson = {}, jaJson = {}, files 
     }
   }
 
+  if (budget && budget !== 'fit') {
+    fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(dir, BUDGET_FILE), JSON.stringify(budget));
+  }
+
   for (const [rel, content] of Object.entries(files)) {
     const abs = path.join(dir, rel);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, content);
   }
+  if (budget === 'fit') fitBudget(dir);
 }
 
 /** WinUI csproj가 필요한 픽스처 (검사 3 통과용) */
@@ -90,7 +113,7 @@ function gitCommit(g, message) {
   return g('rev-parse', 'HEAD');
 }
 
-// ── 검사 1: L("key")로 부른 없는 키가 실패한다 ─────────────────────────────────
+// ── Check 1: a missing key called with L("key") fails ─────────────────────────
 test('L("key")로 부른 없는 키가 실패한다', () => {
   const dir = tmpDir();
   try {
@@ -108,7 +131,7 @@ test('L("key")로 부른 없는 키가 실패한다', () => {
   }
 });
 
-// ── 검사 2: Locale.Get("key")로 부른 없는 키가 실패한다 ───────────────────────
+// ── Check 2: a missing key called with Locale.Get("key") fails ────────────────
 test('Locale.Get("key")로 부른 없는 키가 실패한다', () => {
   const dir = tmpDir();
   try {
@@ -127,7 +150,7 @@ test('Locale.Get("key")로 부른 없는 키가 실패한다', () => {
   }
 });
 
-// ── 검사 3: t("key")로 부른 없는 키가 실패한다 ────────────────────────────────
+// ── Check 3: a missing key called with t("key") fails ─────────────────────────
 test('t("key")로 부른 없는 키가 실패한다', () => {
   const dir = tmpDir();
   try {
@@ -145,7 +168,7 @@ test('t("key")로 부른 없는 키가 실패한다', () => {
   }
 });
 
-// ── 검사 4: 접촉된 Windows 파일에 한국어 리터럴이 있으면 실패한다 ───────────────
+// ── Check 4: a touched Windows file with a Korean literal fails ───────────────
 test('접촉된 Windows 파일에 한국어 리터럴이 있으면 실패한다', () => {
   const dir = tmpDir();
   try {
@@ -155,7 +178,7 @@ test('접촉된 Windows 파일에 한국어 리터럴이 있으면 실패한다'
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
-    // 베이스라인 이후 한국어 추가 (미커밋, unstaged)
+    // Korean added after the baseline (uncommitted, unstaged)
     fs.writeFileSync(
       path.join(dir, 'native/windows/MightyClaude.Core/MyClass.cs'),
       'string msg = "안녕하세요";\n',
@@ -169,18 +192,18 @@ test('접촉된 Windows 파일에 한국어 리터럴이 있으면 실패한다'
   }
 });
 
-// ── 검사 5: 접촉되지 않은 Windows 파일에 한국어가 있어도 통과한다 ────────────────
+// ── Check 5: an untouched Windows file with Korean passes ─────────────────────
 test('접촉되지 않은 Windows 파일에 한국어가 있어도 통과한다', () => {
   const dir = tmpDir();
   try {
-    // 베이스라인부터 한국어가 있는 파일
+    // A file that has had Korean since the baseline
     setupWindows(dir, {
       'native/windows/MightyClaude.Core/MyClass.cs': 'string msg = "안녕하세요";\n',
     });
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
-    // 베이스라인 이후 그 파일을 건드리지 않는다
+    // The file is not touched after the baseline
     const r = run(['--root', dir, '--touched-since', sha]);
     assert.equal(r.status, 0, `미접촉 파일은 통과해야 한다\nstderr: ${r.stderr}`);
   } finally {
@@ -188,7 +211,7 @@ test('접촉되지 않은 Windows 파일에 한국어가 있어도 통과한다'
   }
 });
 
-// ── 검사 6: 접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다 ─────────────
+// ── Check 6: a touched MainWindow.Smoke.cs with Korean passes ─────────────────
 test('접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다', () => {
   const dir = tmpDir();
   try {
@@ -198,11 +221,12 @@ test('접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다', () 
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
-    // 베이스라인 이후 Smoke.cs에 한국어 추가 (미커밋, unstaged)
+    // Korean added to Smoke.cs after the baseline (uncommitted, unstaged)
     fs.writeFileSync(
       path.join(dir, 'native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs'),
       'string msg = "안녕하세요";\n',
     );
+    fitBudget(dir); // the new literal is on the WinUI budget; this test is about the touched-file rule
 
     const r = run(['--root', dir, '--touched-since', sha]);
     assert.equal(r.status, 0, `Smoke.cs는 면제이므로 통과해야 한다\nstderr: ${r.stderr}`);
@@ -211,9 +235,9 @@ test('접촉된 MainWindow.Smoke.cs에 한국어가 있어도 통과한다', () 
   }
 });
 
-// ── 검사 7: 커밋 없이 staged만 있는 Korean 파일도 실패한다 (touched set 합집합 증명) ──
-// git diff --name-only 는 unstaged, git diff --name-only --cached 는 staged를 잡는다.
-// 이 검사는 staged(커밋 안 된 인덱스) 변경이 touched set에 포함됨을 증명한다.
+// ── Check 7: a staged, uncommitted Korean file fails too (the touched set is a union) ──
+// git diff --name-only catches unstaged changes and git diff --name-only --cached staged ones.
+// This proves a staged (uncommitted index) change is part of the touched set.
 test('staged 미커밋 Korean 파일이 실패한다 — touched set은 커밋과 미커밋의 합집합이다', () => {
   const dir = tmpDir();
   try {
@@ -223,7 +247,7 @@ test('staged 미커밋 Korean 파일이 실패한다 — touched set은 커밋�
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
-    // 베이스라인 이후 한국어 추가 — git add로 스테이지만 하고 커밋하지 않는다
+    // Korean added after the baseline, staged with git add but not committed
     fs.writeFileSync(
       path.join(dir, 'native/windows/MightyClaude.Core/MyClass.cs'),
       'string msg = "안녕하세요";\n',
@@ -240,21 +264,21 @@ test('staged 미커밋 Korean 파일이 실패한다 — touched set은 커밋�
   }
 });
 
-// ── 검사 8: --root는 git 질의를 픽스처로 제한한다 ────────────────────────────────
-// --root 없이 실행하면 현재 디렉터리(실제 저장소)의 git을 쓴다.
-// --root <픽스처>를 쓰면 모든 git -C ROOT 호출이 픽스처에 묶인다.
-// 실제 저장소 작업 트리가 더럽더라도 깨끗한 픽스처는 항상 통과한다.
+// ── Check 8: --root keeps the git queries inside the fixture ──────────────────
+// Without --root the checker uses the git of the current directory (the real repository).
+// With --root <fixture> every git -C ROOT call is bound to the fixture, so a clean
+// fixture passes however dirty the real working tree is.
 test('--root는 git 질의를 픽스처로 제한한다 — 실제 저장소가 더럽더라도 픽스처가 통과한다', () => {
   const dir = tmpDir();
   try {
-    // 픽스처에는 Korean 파일도 없고 없는 키도 없다
+    // The fixture has no Korean file and no missing key
     setupWindows(dir);
     const g = gitInit(dir);
     const sha = gitCommit(g, 'baseline');
 
-    // 실제 저장소(process.cwd())는 이 시점에 더럽거나 커밋이 있을 수 있다.
-    // --root <픽스처>로 실행하면 checker는 픽스처 내부만 걷고
-    // git -C <픽스처> 로 diff를 구하므로 실제 저장소 상태는 무관하다.
+    // The real repository (process.cwd()) may be dirty or have new commits by now.
+    // With --root <fixture> the checker walks only the fixture and asks
+    // git -C <fixture> for the diff, so the real repository does not matter.
     const r = run(['--root', dir, '--touched-since', sha]);
     assert.equal(
       r.status,
@@ -266,8 +290,8 @@ test('--root는 git 질의를 픽스처로 제한한다 — 실제 저장소가 
   }
 });
 
-// ── MESSAGE_OK 검사: 누락된 키 진단 메시지에 클라이언트명·파일경로·키·한글이 있다 ──────
-// L(), Locale.Get(), t() 세 호출 형식 각각에 대해 확인한다.
+// ── MESSAGE_OK: a missing-key message names the client, the file, the key, in Korean ──
+// Checked for each of the three call forms, L(), Locale.Get() and t().
 
 test('MESSAGE_OK — L()로 부른 없는 키: 진단에 클라이언트명·파일경로·키·한글이 있다', () => {
   const dir = tmpDir();
@@ -332,9 +356,10 @@ test('MESSAGE_OK — t()로 부른 없는 키: 진단에 클라이언트명·파
   }
 });
 
-// ── 검사 9: CRLF로 받은 docs/i18n.md도 --check를 통과한다 ─────────────────────
-// Windows 러너는 autocrlf로 저장소를 받는다. 보고서는 늘 LF로 만들므로 줄끝만
-// 달라진 사본을 어긋난 것으로 보면 CI가 이 한 가지로만 붉어진다.
+// ── Check 9: a docs/i18n.md checked out with CRLF passes --check ──────────────
+// The Windows runner checks the repository out with autocrlf. The report is always
+// written with LF, so treating a copy that differs only in line endings as out of
+// date would turn CI red for that alone.
 test('CRLF로 받은 docs/i18n.md도 --check를 통과한다', () => {
   const dir = tmpDir();
   try {
@@ -408,6 +433,209 @@ test('a translation copy that differs from the original fails', () => {
     const r = run(['--root', dir]);
     assert.notEqual(r.status, 0, 'a differing zh copy must fail');
     assert.match(r.stderr, /mobile\/src\/locales\/zh\.json이 locales\/zh\.json과 다릅니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── The Korean-literal budget (scripts/korean-literal-budget.json) ──────────────
+const APP = 'native/macos/Sources/MightyClaude';
+const ZERO_AREAS = { 'macOS app': 0, 'macOS core': 0, 'Windows Core': 0, 'Windows WinUI': 0, phone: 0 };
+const budgetFor = (macApp, extra = {}) => ({ areas: { ...ZERO_AREAS, 'macOS app': macApp }, ...extra });
+const readBudget = (dir) => JSON.parse(fs.readFileSync(path.join(dir, BUDGET_FILE), 'utf8'));
+
+test('an area over its budget fails', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { budget: budgetFor(1), files: { ...USED, [`${APP}/A.swift`]: 'let a = "하나"\nlet b = "둘"\n' }, koJson: KO, enJson: EN });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'two literals over a budget of one must fail');
+    assert.match(r.stderr, /macOS app: 한국어 하드코딩 문구가 2개로 상한 1개를 넘습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an area at its budget passes, and one under it fails until the budget is lowered', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { budget: budgetFor(1), files: { ...USED, [`${APP}/A.swift`]: 'let a = "하나"\n' }, koJson: KO, enJson: EN });
+    const exact = run(['--root', dir]);
+    assert.equal(exact.status, 0, `a count equal to its budget must pass\nstderr: ${exact.stderr}`);
+
+    fs.writeFileSync(path.join(dir, BUDGET_FILE), JSON.stringify(budgetFor(3)));
+    const stale = run(['--root', dir]);
+    assert.notEqual(stale.status, 0, 'a budget above its count must fail');
+    assert.match(stale.stderr, /macOS app: 한국어 하드코딩 문구가 1개로 상한 3개보다 적습니다\. .*--write-budget/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--write-budget lowers an area to its count', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { budget: budgetFor(3), files: { ...USED, [`${APP}/A.swift`]: 'let a = "하나"\n' }, koJson: KO, enJson: EN });
+    const r = run(['--root', dir, '--write-budget']);
+    assert.equal(r.status, 0, `--write-budget must pass\nstderr: ${r.stderr}`);
+    assert.equal(readBudget(dir).areas['macOS app'], 1);
+    assert.equal(readBudget(dir).areas.phone, 0, 'every area is lowered to its own count');
+    assert.equal(run(['--root', dir]).status, 0, 'the lowered budget must pass');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--write-budget never raises an area', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { budget: budgetFor(0), files: { ...USED, [`${APP}/A.swift`]: 'let a = "하나"\n' }, koJson: KO, enJson: EN });
+    const r = run(['--root', dir, '--write-budget']);
+    assert.notEqual(r.status, 0, 'a count over the budget must still fail');
+    assert.equal(readBudget(dir).areas['macOS app'], 0, 'the budget must not be raised');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a missing budget file fails', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { budget: null, files: USED, koJson: KO, enJson: EN });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'no budget must fail');
+    assert.match(r.stderr, /korean-literal-budget\.json이 없습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('exempt files are not counted, and an exemption that matches nothing fails', () => {
+  const dir = tmpDir();
+  try {
+    const exemptFiles = { [`${APP}/*Diagnostics.swift`]: 'smoke harness' };
+    setup(dir, { budget: budgetFor(0, { exemptFiles }), files: { ...USED, [`${APP}/GraphDiagnostics.swift`]: 'let a = "검증"\n' }, koJson: KO, enJson: EN });
+    const passed = run(['--root', dir]);
+    assert.equal(passed.status, 0, `an exempt file must not count\nstderr: ${passed.stderr}`);
+    assert.match(passed.stdout, /macOS app +0개 \/ 상한 +0 +\(예외 1개/);
+
+    fs.rmSync(path.join(dir, `${APP}/GraphDiagnostics.swift`));
+    const stale = run(['--root', dir]);
+    assert.notEqual(stale.status, 0, 'a stale exemption must fail');
+    assert.match(stale.stderr, /exemptFiles .*Diagnostics\.swift에 맞는 파일이 없습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an exempt region is not counted only in a file the budget lists', () => {
+  const dir = tmpDir();
+  const source = 'let ui = L("a.one")\n// i18n-exempt-begin: smoke fixture\nlet fixture = "검증"\n// i18n-exempt-end\n';
+  try {
+    setup(dir, {
+      budget: budgetFor(0, { exemptRegions: { [`${APP}/Store.swift`]: 'smoke' } }),
+      files: { ...USED, [`${APP}/Store.swift`]: source },
+      koJson: KO,
+      enJson: EN,
+    });
+    const passed = run(['--root', dir]);
+    assert.equal(passed.status, 0, `a listed region must not count\nstderr: ${passed.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const unlisted = tmpDir();
+  try {
+    setup(unlisted, { budget: budgetFor(5), files: { ...USED, [`${APP}/Store.swift`]: source }, koJson: KO, enJson: EN });
+    const r = run(['--root', unlisted]);
+    assert.notEqual(r.status, 0, 'a region in an unlisted file must fail');
+    assert.match(r.stderr, /Store\.swift에 i18n-exempt 표시가 있지만/);
+  } finally {
+    fs.rmSync(unlisted, { recursive: true, force: true });
+  }
+});
+
+test('an unclosed exempt region fails', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, {
+      budget: budgetFor(5, { exemptRegions: { [`${APP}/Store.swift`]: 'smoke' } }),
+      files: { ...USED, [`${APP}/Store.swift`]: '// i18n-exempt-begin: smoke\nlet fixture = "검증"\n' },
+      koJson: KO,
+      enJson: EN,
+    });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'an unclosed region must fail');
+    assert.match(r.stderr, /i18n-exempt-begin이 \/\/ i18n-exempt-end로 닫히지 않습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an allowed literal is not counted, and an allow entry that matches nothing fails', () => {
+  const dir = tmpDir();
+  try {
+    const allow = [{ file: `${APP}/Motion.swift`, literals: ['읽', '검색'], reason: 'matched against summaries' }];
+    setup(dir, {
+      budget: budgetFor(0, { allow }),
+      files: { ...USED, [`${APP}/Motion.swift`]: 'let words = ["read", "읽", "검색"]\n' },
+      koJson: KO,
+      enJson: EN,
+    });
+    const passed = run(['--root', dir]);
+    assert.equal(passed.status, 0, `allowed literals must not count\nstderr: ${passed.stderr}`);
+    assert.match(passed.stdout, /허용 2개/);
+
+    fs.writeFileSync(path.join(dir, `${APP}/Motion.swift`), 'let words = ["read", "읽"]\n');
+    const stale = run(['--root', dir]);
+    assert.notEqual(stale.status, 0, 'a stale allow entry must fail');
+    assert.match(stale.stderr, /allow 항목 "검색"이 .*Motion\.swift에 없습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── The last-resort count: Hangul the literal pattern cannot see ───────────────
+test('Hangul nested in an interpolation or a """ block counts toward its area', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, {
+      budget: budgetFor(0),
+      files: {
+        ...USED,
+        [`${APP}/Nested.swift`]: 'let a = "\\(flag ? "가" : "나")"\nlet b = """\n    블록 글\n    """\n',
+        'native/windows/MightyClaude.Core/Nested.cs': 'var c = $"{(flag ? "가" : "나")}";\n',
+      },
+      koJson: KO,
+      enJson: EN,
+    });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'nested Hangul must count');
+    assert.match(r.stderr, /macOS app: 한국어 하드코딩 문구가 3개로 상한 0개를 넘습니다/);
+    assert.match(r.stderr, /Windows Core: 한국어 하드코딩 문구가 2개로 상한 0개를 넘습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a C# verbatim string or raw block does not turn later comments into literals', () => {
+  const dir = tmpDir();
+  try {
+    const source = 'var path = @"C:\\temp\\";\n// 주석은 세지 않는다\nvar raw = """\n  {"a": "b"}\n  """;\n// 주석도 세지 않는다\n';
+    setup(dir, { budget: budgetFor(0), files: { ...USED, 'native/windows/MightyClaude.Core/Verbatim.cs': source }, koJson: KO, enJson: EN });
+    const r = run(['--root', dir]);
+    assert.equal(r.status, 0, `comments after a verbatim string must not count\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('every exempt glob that matches a file is credited', () => {
+  const dir = tmpDir();
+  try {
+    const exemptFiles = { [`${APP}/*Diagnostics.swift`]: 'smoke harness', [`${APP}/Graph*.swift`]: 'graph smoke' };
+    setup(dir, { budget: budgetFor(0, { exemptFiles }), files: { ...USED, [`${APP}/GraphDiagnostics.swift`]: 'let a = "검증"\n' }, koJson: KO, enJson: EN });
+    const r = run(['--root', dir]);
+    assert.equal(r.status, 0, `both globs match, so neither is stale\nstderr: ${r.stderr}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

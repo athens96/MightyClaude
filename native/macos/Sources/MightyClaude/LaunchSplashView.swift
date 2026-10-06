@@ -1,3 +1,4 @@
+import MightyCore
 import SwiftUI
 
 /// Uses the workspace's own window so startup never changes key-window or input ownership.
@@ -27,7 +28,7 @@ struct LaunchSplashView: View {
                     .foregroundStyle(.primary)
                     .padding(.bottom, 10)
 
-                Text("작업 공간을 준비하고 있어요")
+                Text(L("launch.preparing"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
 
@@ -35,7 +36,7 @@ struct LaunchSplashView: View {
                     .progressViewStyle(.circular)
                     .controlSize(.small)
                     .padding(.top, 28)
-                    .accessibilityLabel("작업 공간 불러오는 중")
+                    .accessibilityLabel(L("launch.loading"))
             }
             .padding(48)
         }

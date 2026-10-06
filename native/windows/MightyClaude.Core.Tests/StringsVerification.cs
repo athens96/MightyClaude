@@ -29,36 +29,31 @@ internal static class StringsVerification
         return expected;
     }
 
-    // The macOS literal every constant mirrors, by field name.
-    // SlashCommands.swift / SlashCommandPalette.swift
-    private static readonly Dictionary<string, string> SlashMacOS = new()
-    {
-        ["AppSource"] = "앱 기능",
-        ["ModelSource"] = "모델",
-        ["PermissionSource"] = "작업 권한",
-        ["UserSkillSource"] = "사용자 스킬",
-        ["ProjectSkillSource"] = "프로젝트 스킬",
-        ["UserCommandSource"] = "사용자 명령",
-        ["ProjectCommandSource"] = "프로젝트 명령",
-        ["CodexSkillSource"] = "Codex 스킬",
-        ["PaletteMove"] = "↑↓ 이동",
-        ["PaletteSelect"] = "Enter · Tab 선택",
-        ["PaletteDismiss"] = "Esc 닫기",
-        ["PaletteCountTemplate"] = "{count}개",
-        ["PaletteNoDescription"] = "설명 없음",
-        ["PaletteActionTooltip"] = "앱에서 바로 실행됩니다",
-        ["PaletteArgumentTooltip"] = "이어서 선택합니다",
-        ["PaletteCurrentSuffix"] = " · 현재",
-        // AppStore+SlashCommands.swift performSlashAction
-        ["NoteNewConversationRunning"] = "실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.",
-        ["NoteNewConversationNothingToResume"] = "이어갈 이전 대화가 없습니다. 다음 입력은 이미 새 대화로 시작합니다.",
-        ["NoteModelRunning"] = "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요.",
-        ["NoteModelAlreadyTemplate"] = "이미 {name} 모델입니다.",
-        ["NoteModelChangedTemplate"] = "모델을 {name}{particle} 바꿨습니다. 다음 요청부터 적용됩니다.",
-        ["NotePermissionRunning"] = "실행 중에는 작업 권한을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요.",
-        ["NotePermissionAlreadyTemplate"] = "이미 {label} 권한입니다.",
-        ["NotePermissionChangedTemplate"] = "작업 권한을 {label}{particle} 바꿨습니다. 다음 요청부터 적용됩니다.",
-    };
+    // The slash palette's fields and the shared keys macOS reads for the same copy.
+    // SlashCommands.swift / SlashCommandPalette.swift / AppStore+SlashCommands.swift
+    private static readonly Lazy<Dictionary<string, string>> SlashShared = new(() => FromShared(nameof(SlashCommandStrings),
+        ("AppSource", "slash.source.app"),
+        ("ModelSource", "composer.label.model"),
+        ("PermissionSource", "composer.label.permission"),
+        ("UserSkillSource", "slash.source.userSkill"),
+        ("ProjectSkillSource", "slash.source.projectSkill"),
+        ("UserCommandSource", "slash.source.userCommand"),
+        ("ProjectCommandSource", "slash.source.projectCommand"),
+        ("CodexSkillSource", "slash.source.codexSkill"),
+        ("PaletteMove", "slash.palette.move"),
+        ("PaletteSelect", "slash.palette.select"),
+        ("PaletteDismiss", "slash.palette.dismiss"),
+        ("PaletteCountTemplate", "slash.palette.count"),
+        ("PaletteNoDescription", "slash.palette.noDescription"),
+        ("PaletteActionTooltip", "slash.palette.actionHelp"),
+        ("PaletteArgumentTooltip", "slash.palette.argumentHelp"),
+        ("PaletteCurrentSuffix", "slash.currentSuffix"),
+        ("NoteNewConversationRunning", "slash.note.newConversationRunning"),
+        ("NoteNewConversationNothingToResume", "remote.error.nothingToResume"),
+        ("NoteModelRunning", "slash.note.modelRunning"),
+        ("NoteModelAlreadyTemplate", "slash.note.modelAlready"),
+        ("NotePermissionRunning", "slash.note.permissionRunning"),
+        ("NotePermissionAlreadyTemplate", "slash.note.permissionAlready")));
 
     // StatusLineView.swift / StatusLine.swift
     private static readonly Dictionary<string, string> StatusLineMacOS = new()
@@ -133,20 +128,20 @@ internal static class StringsVerification
     {
         void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
-        var slash = Constants(typeof(SlashCommandStrings));
+        var slash = StaticReadonlyStrings(typeof(SlashCommandStrings));
         var statusLine = Constants(typeof(StatusLineStrings));
-        Check(Validate(nameof(SlashCommandStrings), slash, SlashMacOS) is null, Validate(nameof(SlashCommandStrings), slash, SlashMacOS) ?? "");
+        Check(Validate(nameof(SlashCommandStrings), slash, SlashShared.Value, "locales/ko.json") is null, Validate(nameof(SlashCommandStrings), slash, SlashShared.Value, "locales/ko.json") ?? "");
         Check(Validate(nameof(StatusLineStrings), statusLine, StatusLineMacOS) is null, Validate(nameof(StatusLineStrings), statusLine, StatusLineMacOS) ?? "");
 
         // Each rule must reject its own failure, or a pass above would mean nothing.
         Dictionary<string, string> Broken(string field, string value) { var copy = new Dictionary<string, string>(slash) { [field] = value }; return copy; }
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(SlashCommandStrings), copy, SlashMacOS);
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(SlashCommandStrings), copy, SlashShared.Value, "locales/ko.json");
         Check(Bad(Broken("ModelSource", "")) is not null, "an empty value must fail");
         Check(Bad(Broken("ModelSource", SlashCommandStrings.AppSource)) is not null, "a duplicate value inside one class must fail");
         Check(Bad(Broken("PaletteCountTemplate", "{ count }개")) is not null, "a placeholder that is not {name} must fail");
         Check(Bad(Broken("PaletteCountTemplate", "{count개")) is not null, "an unclosed placeholder must fail");
-        Check(Bad(Broken("ModelSource", "Model")) is not null, "a value that differs from the macOS literal must fail");
-        Check(Bad(new Dictionary<string, string>(slash) { ["Extra"] = "새 문구" }) is not null, "a constant with no macOS literal must fail");
+        Check(Bad(Broken("ModelSource", "Model")) is not null, "a value that differs from the shared ko copy must fail");
+        Check(Bad(new Dictionary<string, string>(slash) { ["Extra"] = "새 문구" }) is not null, "a field with no shared key must fail");
         var missing = new Dictionary<string, string>(slash); missing.Remove("PaletteDismiss");
         Check(Bad(missing) is not null, "a missing literal must fail");
         return Task.CompletedTask;

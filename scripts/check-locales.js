@@ -1,36 +1,52 @@
 #!/usr/bin/env node
-// 용법: node scripts/check-locales.js                               # 검사하고 docs/i18n.md를 새로 쓴다
-//       node scripts/check-locales.js --check                       # 검사만 한다 (docs/i18n.md가 어긋나면 실패)
-//       node scripts/check-locales.js --root <dir>                  # 주어진 뿌리로 검사한다 (픽스처 테스트용)
-//       node scripts/check-locales.js --touched-since <sha>         # 기준 SHA 이후 접촉된 Windows 파일도 검사한다
+// Usage: node scripts/check-locales.js                               # check, and rewrite docs/i18n.md
+//        node scripts/check-locales.js --check                       # check only (fails when docs/i18n.md is out of date)
+//        node scripts/check-locales.js --root <dir>                  # check another root (fixture tests)
+//        node scripts/check-locales.js --touched-since <sha>         # also check the Windows files touched since <sha>
+//        node scripts/check-locales.js --write-budget                # lower the Korean-literal budget to today's counts
 //
-// locales/ko.json과 locales/en.json이 이 저장소의 단 하나의 원본이고, 세 클라이언트는
-// 그 사본을 담는다(docs/i18n.md). 이 검사는 plain node만 쓴다 — 의존성이 없다.
+// locales/ko.json and locales/en.json are the one source in this repository; the three
+// clients carry copies of them (docs/i18n.md). Plain node only, no dependencies.
 //
-//   1. ko와 en의 키 집합이 같다
-//   2. 키마다 자리표({name}) 집합이 같다
+//   1. ko and en have the same keys
+//   2. each key has the same placeholders ({name}) in both
 //   2b. Translations (zh, ja) only carry keys en has, with en's placeholders per key.
 //       Keys they still miss are counted, not failed (stage 2 of the four-language plan makes it strict).
-//   3. 클라이언트 사본이 원본과 바이트까지 같다
-//   4. 쓰이지 않는 키가 없다 — 모든 키는 적어도 한 클라이언트 소스에서 불린다
-//   5. 없는 키가 없다 — 클라이언트 소스가 부르는 모든 키가 원본에 있다
+//   3. each client copy is byte-identical to the original
+//   4. no unused keys: every key is called from at least one client source
+//   5. no missing keys: every key a client source calls is in the original
+//   6. the Korean-literal ratchet: the hard-coded Korean literals left in each client
+//      (area) must equal that area's count in scripts/korean-literal-budget.json. More is a
+//      new literal; fewer means the budget is stale and --write-budget must lower it, so the
+//      count can only go down.
 //
-// 그리고 클라이언트마다 남아 있는 한국어 하드코딩 문구의 수를 세어 보고서를 찍고
-// docs/i18n.md에 같은 내용을 쓴다. 검사 하나라도 깨지면 종료 코드가 0이 아니다.
-// 남은 문구가 몇 개든 그 자체는 실패가 아니다 — 세는 것이지 막는 것이 아니다.
+// The report prints the literals left per client and docs/i18n.md gets the same table.
+// Any broken check exits non-zero.
 //
-// --touched-since <sha>를 넘기면 그 SHA 이후 접촉된(커밋 또는 미커밋) Windows Core·WinUI
-// 소스 파일에 한국어 하드코딩 문구가 남아 있으면 실패한다.
-// MainWindow.Smoke.cs는 검사 진단용이므로 제외한다.
+// The budget file also says what is not counted, each with its reason:
+//   exemptFiles    path globs (`*` within one path segment) of whole files, such as GUI smoke code
+//   exemptRegions  files whose `// i18n-exempt-begin: <reason>` … `// i18n-exempt-end` regions
+//                  are not counted; a marker in any other file is an error
+//   allow          literals that must stay as written (they are matched against CLI output or
+//                  parsed back from saved data), per file, with the literal as it appears
+//                  between its quotes in the source
+// An exemption that no longer matches anything fails, so the list cannot go stale.
+// --write-budget lowers each area to its count and never raises one.
+//
+// With --touched-since <sha>, the Windows Core and WinUI source files touched since that
+// SHA (committed or not) must not keep hard-coded Korean literals.
+// MainWindow.Smoke.cs is a check diagnostic and is left out.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 
-// ── CLI 인수 파싱 ─────────────────────────────────────────────────────────────
+// ── Arguments ──────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
 const CHECK_ONLY = argv.includes('--check');
+const WRITE_BUDGET = argv.includes('--write-budget');
+const BUDGET = 'scripts/korean-literal-budget.json';
 
 const rootIdx = argv.indexOf('--root');
 const ROOT = rootIdx >= 0
@@ -44,12 +60,12 @@ const COMPLETE_LANGUAGES = ['ko', 'en'];
 const TRANSLATIONS = ['zh', 'ja'];
 const LANGUAGES = [...COMPLETE_LANGUAGES, ...TRANSLATIONS];
 const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
-// `t("key")` / `t('key')` (공통), `L("key")` (Swift), `Locale.Get("key")` (C#)
+// `t("key")` / `t('key')` (phone), `L("key")` (Swift), `Locale.Get("key")` (C#)
 const REFERENCE = /\b(?:t|L|Locale\.Get)\(\s*["']([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)["']/g;
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
-/// 다섯 클라이언트. `sources`는 문구를 세고 키 참조를 찾는 곳이고,
-/// `copies`는 원본과 바이트까지 같아야 하는 사본이다.
+/// The five clients (the budget's areas). `roots` is where literals are counted and key
+/// references are found; `copies` are the copies that must be byte-identical to the original.
 const CLIENTS = [
   {
     label: 'macOS app',
@@ -73,8 +89,8 @@ const CLIENTS = [
     label: 'Windows WinUI',
     roots: ['native/windows/MightyClaude.WinUI'],
     extensions: ['.cs', '.xaml'],
-    // WinUI는 사본을 두지 않고 저장소 뿌리의 파일 자체를 Content로 걸어 옮긴다.
-    // 사본이 없으니 어긋날 수도 없다 — 대신 그 연결이 살아 있는지를 본다.
+    // WinUI keeps no copy: it ships the root files themselves as Content. With no copy
+    // there is nothing to drift, so the check looks at that link instead.
     copies: [],
     linkedIn: 'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj',
   },
@@ -86,7 +102,7 @@ const CLIENTS = [
   },
 ];
 
-// 스타일 매니페스트와 styles/** 안의 글은 데이터다 — 옮기지 않으므로 세지도 않는다.
+// Text in style manifests and styles/** is data: it is not moved, so it is not counted.
 const SKIP_DIRECTORIES = new Set([
   'node_modules',
   '.build',
@@ -94,7 +110,7 @@ const SKIP_DIRECTORIES = new Set([
   'obj',
   'Resources',
   'locales',
-  // 테스트는 제품 화면이 아니다. 그 안의 문구는 남은 문구도, 키 참조도 아니다.
+  // Tests are not product UI: their literals are neither left-over copy nor key references.
   '__tests__',
   'Tests',
 ]);
@@ -127,9 +143,8 @@ function walk(relativeRoot, extensions, out) {
   return out;
 }
 
-/// 주석은 문구가 아니다. 이 저장소의 주석은 대부분 한국어라, 주석을 지우지 않으면
-/// 보고서가 숫자가 아니라 잡음이 된다. 문자열 안의 `//`는 주석이 아니므로
-/// 따옴표를 따라가며 지운다.
+/// Comments are not copy, and many comments here are Korean: left in, they would turn the
+/// report into noise. A `//` inside a string is not a comment, so quotes are followed.
 function stripComments(source) {
   let out = '';
   let index = 0;
@@ -145,6 +160,29 @@ function stripComments(source) {
       if (character === quote) quote = null;
       out += character;
       index += 1;
+      continue;
+    }
+    // A `"""` block (Swift, C# raw strings) runs to the next `"""`, whatever quotes it holds.
+    if (source.startsWith('"""', index)) {
+      const close = source.indexOf('"""', index + 3);
+      const end = close < 0 ? source.length : close + 3;
+      out += source.slice(index, end);
+      index = end;
+      continue;
+    }
+    // A C# verbatim string (@"…", @$"…") has no backslash escapes; "" is its quote.
+    if (character === '@' && (source[index + 1] === '"' || (source[index + 1] === '$' && source[index + 2] === '"'))) {
+      let end = source.indexOf('"', index) + 1;
+      while (end < source.length) {
+        if (source[end] === '"') {
+          if (source[end + 1] === '"') { end += 2; continue; }
+          end += 1;
+          break;
+        }
+        end += 1;
+      }
+      out += source.slice(index, end);
+      index = end;
       continue;
     }
     if (character === '"' || character === "'" || character === '`') {
@@ -172,8 +210,10 @@ function stripComments(source) {
   return out;
 }
 
-/// 남은 한국어 하드코딩 문구를 센다: 한글이 든 문자열 리터럴 하나가 하나,
-/// 그리고 JSX가 그대로 그리는 한글 글줄 하나가 하나.
+/// Counts the hard-coded Korean literals left: one per string literal that holds Hangul,
+/// one per line of Hangul text that JSX draws as it is, and, as a last resort, one per
+/// run of Hangul the literal pattern cannot see: text nested in an interpolation
+/// (Swift `"\(c ? "가" : "나")"`, C# `$"{(c ? "가" : "나")}"`) or inside a Swift `"""` block.
 const STRING_LITERAL = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
 const JSX_TEXT = /^[^<>{}]*$/;
 
@@ -184,14 +224,131 @@ function countLiterals(relative, source) {
     if (HANGUL.test(match)) count += 1;
   }
   if (relative.endsWith('.tsx')) {
-    // JSX 텍스트 노드는 따옴표가 없다. `>한글<` 사이에 놓인 글줄을 따로 센다.
+    // JSX text nodes have no quotes: count the lines of Hangul that sit between `>` and `<`.
     const withoutStrings = stripped.replace(STRING_LITERAL, '""');
     for (const line of withoutStrings.split('\n')) {
       const trimmed = line.trim();
       if (HANGUL.test(trimmed) && JSX_TEXT.test(trimmed)) count += 1;
     }
   }
+  // Whatever Hangul is left once every matched literal is blanked sits outside a literal
+  // the pattern recognised. Each quote-free run of it on a line counts once.
+  const residue = stripped.replace(STRING_LITERAL, '""');
+  for (const line of residue.split('\n')) {
+    if (!HANGUL.test(line)) continue;
+    if (relative.endsWith('.tsx') && JSX_TEXT.test(line.trim())) continue; // a JSX line, counted above
+    count += line.split(/["'`]/).filter((segment) => HANGUL.test(segment)).length;
+  }
   return count;
+}
+
+// ── The Korean-literal budget and its exemptions ──────────────────────────────
+const REGION_BEGIN = '// i18n-exempt-begin';
+const REGION_END = '// i18n-exempt-end';
+
+function loadBudget() {
+  if (!exists(BUDGET)) {
+    fail(`${BUDGET}이 없습니다. 한국어 하드코딩 문구의 상한이 필요합니다.`);
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readText(BUDGET));
+    if (parsed === null || typeof parsed !== 'object' || typeof parsed.areas !== 'object' || parsed.areas === null) {
+      fail(`${BUDGET}에 areas 객체가 없습니다.`);
+      return null;
+    }
+    return parsed;
+  } catch (caught) {
+    fail(`${BUDGET}을 JSON으로 읽지 못했습니다: ${caught.message}`);
+    return null;
+  }
+}
+
+const budget = loadBudget();
+const exemptGlobs = Object.entries(budget?.exemptFiles ?? {}).map(([glob, reason]) => ({
+  glob,
+  reason,
+  pattern: new RegExp('^' + glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*') + '$'),
+  matched: 0,
+}));
+const exemptRegionFiles = new Map(Object.entries(budget?.exemptRegions ?? {}).map(([file, reason]) => [file, { reason, regions: 0 }]));
+const allowEntries = (budget?.allow ?? []).map((entry) => ({
+  ...entry,
+  literals: Array.isArray(entry.literals) ? entry.literals : [entry.literal],
+  found: new Set(),
+}));
+for (const entry of allowEntries) {
+  if (!entry.file || !entry.reason || entry.literals.some((literal) => typeof literal !== 'string')) {
+    fail(`${BUDGET}의 allow 항목에는 file, literal(s), reason이 모두 있어야 합니다: ${JSON.stringify(entry)}`);
+  }
+}
+
+/// Splits a source into what is counted and what an exempt region holds. Markers are
+/// only honoured in files the budget lists under exemptRegions, and must pair up.
+function splitRegions(relative, source) {
+  if (!source.includes('i18n-exempt-')) return { counted: source, exempted: '' };
+  const listed = exemptRegionFiles.get(relative);
+  if (!listed) {
+    fail(`${relative}에 i18n-exempt 표시가 있지만 ${BUDGET}의 exemptRegions에 없습니다.`);
+    return { counted: source, exempted: '' };
+  }
+  let counted = '';
+  let exempted = '';
+  let rest = source;
+  for (;;) {
+    const begin = rest.indexOf(REGION_BEGIN);
+    const stray = rest.indexOf(REGION_END);
+    if (stray >= 0 && (begin < 0 || stray < begin)) {
+      fail(`${relative}의 ${REGION_END}에 짝이 되는 ${REGION_BEGIN}이 없습니다.`);
+      break;
+    }
+    if (begin < 0) break;
+    const lineEnd = rest.indexOf('\n', begin);
+    const marker = rest.slice(begin, lineEnd < 0 ? rest.length : lineEnd);
+    if (!/^\/\/ i18n-exempt-begin: \S/.test(marker)) {
+      fail(`${relative}의 ${REGION_BEGIN} 뒤에 ": <이유>"가 없습니다.`);
+    }
+    const end = rest.indexOf(REGION_END, begin + REGION_BEGIN.length);
+    if (end < 0) {
+      fail(`${relative}의 ${REGION_BEGIN}이 ${REGION_END}로 닫히지 않습니다.`);
+      break;
+    }
+    counted += rest.slice(0, begin);
+    // Keep the region's line breaks on the counted side so line numbers stay put.
+    const region = rest.slice(begin, end + REGION_END.length);
+    exempted += region + '\n';
+    counted += region.replace(/[^\n]/g, '');
+    rest = rest.slice(end + REGION_END.length);
+    listed.regions += 1;
+  }
+  return { counted: counted + rest, exempted };
+}
+
+/// The literals of one file, sorted into counted, exempt (a smoke file or region) and
+/// allowed (an allow-list entry for this file).
+function classifyLiterals(relative, source) {
+  // Every glob that matches is credited, so none of them looks stale while another covers the file.
+  const exemptBy = exemptGlobs.filter((entry) => entry.pattern.test(relative));
+  for (const entry of exemptBy) entry.matched += 1;
+  if (exemptBy.length > 0) {
+    return { counted: 0, exempt: countLiterals(relative, source), allowed: 0 };
+  }
+  const { counted: countedSource, exempted } = splitRegions(relative, source);
+  const exempt = exempted ? countLiterals(relative, exempted) : 0;
+  const entries = allowEntries.filter((entry) => entry.file === relative);
+  if (entries.length === 0) return { counted: countLiterals(relative, countedSource), exempt, allowed: 0 };
+  let allowed = 0;
+  let remaining = countedSource;
+  for (const match of stripComments(countedSource).match(STRING_LITERAL) ?? []) {
+    if (!HANGUL.test(match)) continue;
+    const inner = match.slice(1, -1);
+    const entry = entries.find((candidate) => candidate.literals.includes(inner));
+    if (!entry) continue;
+    entry.found.add(inner);
+    allowed += 1;
+    remaining = remaining.replace(match, '""');
+  }
+  return { counted: countLiterals(relative, remaining), exempt, allowed };
 }
 
 function placeholdersOf(value) {
@@ -216,7 +373,7 @@ function loadCatalogue(relative) {
   return parsed;
 }
 
-// ── 1. 원본 두 파일 ────────────────────────────────────────────────────────────
+// ── 1. The originals ──────────────────────────────────────────────────────────
 const catalogues = {};
 for (const language of LANGUAGES) {
   const relative = `locales/${language}.json`;
@@ -237,7 +394,7 @@ for (const key of enKeys) {
   if (!koKeys.includes(key)) fail(`ko.json에 ${key}가 없습니다.`);
 }
 
-// ── 2. 키마다 자리표 집합 ──────────────────────────────────────────────────────
+// ── 2. Placeholders per key ───────────────────────────────────────────────────
 for (const key of koKeys) {
   if (!enKeys.includes(key)) continue;
   const inKo = placeholdersOf(catalogues.ko[key]);
@@ -267,7 +424,7 @@ for (const language of TRANSLATIONS) {
   translationProgress.push({ language, translated: enKeys.length - missing, missing });
 }
 
-// ── 3. 클라이언트 사본이 원본과 같다 ──────────────────────────────────────────
+// ── 3. Client copies match the original ───────────────────────────────────────
 const originals = {};
 for (const language of LANGUAGES) {
   const relative = `locales/${language}.json`;
@@ -303,13 +460,15 @@ for (const client of CLIENTS) {
   }
 }
 
-// ── 4·5. 쓰이지 않는 키와 없는 키, 그리고 남은 문구 ───────────────────────────
+// ── 4·5. Unused and missing keys, and the literals left ───────────────────────
 const knownKeys = new Set(koKeys);
 const referenced = new Map(); // key -> Set<client label>
 const report = [];
 
 for (const client of CLIENTS) {
   let literals = 0;
+  let exempt = 0;
+  let allowed = 0;
   let files = 0;
   const keys = new Set();
   const calledFrom = new Map(); // key -> first file path that references it
@@ -317,14 +476,17 @@ for (const client of CLIENTS) {
     for (const relative of walk(root, client.extensions, [])) {
       const source = readText(relative);
       files += 1;
-      literals += countLiterals(relative, source);
+      const classified = classifyLiterals(relative, source);
+      literals += classified.counted;
+      exempt += classified.exempt;
+      allowed += classified.allowed;
       const stripped = stripComments(source);
       for (const match of stripped.matchAll(REFERENCE)) {
         keys.add(match[1]);
         if (!calledFrom.has(match[1])) calledFrom.set(match[1], relative);
       }
-      // 키를 표에 담아 간접으로 부르는 자리도 참조다: 내용이 키와 정확히 같은
-      // 문자열 리터럴을 쓰인 것으로 센다.
+      // A key kept in a table and looked up indirectly is a reference too: a string
+      // literal whose content is exactly a key counts as a use.
       for (const literal of stripped.match(STRING_LITERAL) ?? []) {
         const inner = literal.slice(1, -1);
         if (knownKeys.has(inner)) keys.add(inner);
@@ -340,7 +502,8 @@ for (const client of CLIENTS) {
       fail(`${client.label}: ${filePath}에서 부르는 ${key}가 locales/ko.json에 없습니다.`);
     }
   }
-  report.push({ label: client.label, literals, files, moved: keys.size });
+  const limit = budget?.areas?.[client.label];
+  report.push({ label: client.label, literals, exempt, allowed, files, moved: keys.size, budget: limit });
 }
 
 for (const key of koKeys) {
@@ -349,7 +512,48 @@ for (const key of koKeys) {
   }
 }
 
-// ── 접촉된 Windows 파일 검사 (--touched-since) ────────────────────────────────
+// ── 6. The Korean-literal budget ──────────────────────────────────────────────
+const staleAreas = [];
+if (budget) {
+  for (const entry of exemptGlobs) {
+    if (entry.matched === 0) fail(`${BUDGET}의 exemptFiles ${entry.glob}에 맞는 파일이 없습니다.`);
+    if (!entry.reason) fail(`${BUDGET}의 exemptFiles ${entry.glob}에 이유가 없습니다.`);
+  }
+  for (const [file, entry] of exemptRegionFiles) {
+    if (entry.regions === 0) fail(`${BUDGET}의 exemptRegions ${file}에 i18n-exempt 구역이 없습니다.`);
+    if (!entry.reason) fail(`${BUDGET}의 exemptRegions ${file}에 이유가 없습니다.`);
+  }
+  for (const entry of allowEntries) {
+    for (const literal of entry.literals) {
+      if (!entry.found.has(literal)) fail(`${BUDGET}의 allow 항목 "${literal}"이 ${entry.file}에 없습니다.`);
+    }
+  }
+  for (const label of Object.keys(budget.areas)) {
+    if (!CLIENTS.some((client) => client.label === label)) fail(`${BUDGET}의 areas에 모르는 영역 ${label}이 있습니다.`);
+  }
+  for (const row of report) {
+    if (typeof row.budget !== 'number') {
+      fail(`${BUDGET}의 areas에 ${row.label}의 상한이 없습니다.`);
+    } else if (row.literals > row.budget) {
+      fail(`${row.label}: 한국어 하드코딩 문구가 ${row.literals}개로 상한 ${row.budget}개를 넘습니다. L()/Locale.Get()/t() 키로 옮기세요.`);
+    } else if (row.literals < row.budget) {
+      staleAreas.push(row);
+    }
+  }
+  if (WRITE_BUDGET && failures.length === 0) {
+    const areas = Object.fromEntries(report.map((row) => [row.label, Math.min(row.budget, row.literals)]));
+    fs.writeFileSync(path.join(ROOT, BUDGET), JSON.stringify({ ...budget, areas }, null, 2) + '\n');
+    for (const row of report) row.budget = areas[row.label];
+    staleAreas.length = 0;
+    console.log(`${BUDGET}의 상한을 지금 수로 낮췄습니다.`);
+  }
+  // The ratchet stays tight: a budget above its count is stale, so the next move up is caught.
+  for (const row of staleAreas) {
+    fail(`${row.label}: 한국어 하드코딩 문구가 ${row.literals}개로 상한 ${row.budget}개보다 적습니다. node scripts/check-locales.js --write-budget을 돌려 상한을 낮추세요.`);
+  }
+}
+
+// ── Touched Windows files (--touched-since) ───────────────────────────────────
 if (TOUCHED_SINCE) {
   const SMOKE_EXEMPT = 'native/windows/MightyClaude.WinUI/MainWindow.Smoke.cs';
   const windowsClients = CLIENTS.filter(
@@ -400,15 +604,15 @@ if (TOUCHED_SINCE) {
   }
 }
 
-// ── 보고서 ─────────────────────────────────────────────────────────────────────
+// ── Report ─────────────────────────────────────────────────────────────────────
 const lines = [];
 lines.push('클라이언트별 남은 한국어 하드코딩 문구');
 lines.push('');
 const width = Math.max(...report.map((row) => row.label.length));
 for (const row of report) {
   lines.push(
-    `  ${row.label.padEnd(width)}  ${String(row.literals).padStart(5)}개  ` +
-      `(소스 ${row.files}개, 옮긴 키 ${row.moved}개)`,
+    `  ${row.label.padEnd(width)}  ${String(row.literals).padStart(5)}개 / 상한 ${String(row.budget ?? '-').padStart(4)}  ` +
+      `(예외 ${row.exempt}개, 허용 ${row.allowed}개, 소스 ${row.files}개, 옮긴 키 ${row.moved}개)`,
   );
 }
 lines.push('');
@@ -491,17 +695,49 @@ function documentation() {
   out.push('');
   out.push('## 클라이언트별 남은 한국어 하드코딩 문구');
   out.push('');
-  out.push('세는 것이지 막는 것이 아니다 — 수가 몇이든 검사는 통과한다.');
+  out.push('`scripts/korean-literal-budget.json`이 영역마다 상한을 둔다. 남은 문구가 상한을 넘으면 새 문구라서,');
+  out.push('상한보다 적으면 상한이 낡아서 검사가 실패한다. 상한은 `node scripts/check-locales.js --write-budget`으로');
+  out.push('낮추기만 한다. 아래 예외와 허용 문구는 세지 않는다.');
   out.push('');
-  out.push('| 클라이언트 | 남은 문구 | 소스 파일 | 옮긴 키 |');
-  out.push('| --- | --- | --- | --- |');
+  out.push('문자열 리터럴 하나가 하나다. 리터럴 패턴이 보지 못하는 한글, 곧 보간 안에 든 글(Swift');
+  out.push('`"\\(c ? "가" : "나")"`, C# `$"{(c ? "가" : "나")}"`)과 Swift `"""` 블록 안의 글도 따옴표 없는 덩어리마다');
+  out.push('하나로 센다. 2-1 단계에서 이 마지막 계산을 더하면서 다른 영역의 상한도 실제 수로 다시 맞췄다: macOS core 872→874,');
+  out.push('Windows WinUI 189→190, 전화기 202→219. Windows Core는 SlashCommandStrings가 공유 키로 옮겨 161→137로 내려갔다.');
+  out.push('');
+  out.push('| 클라이언트 | 남은 문구 | 상한 | 예외 | 허용 | 소스 파일 | 옮긴 키 |');
+  out.push('| --- | --- | --- | --- | --- | --- | --- |');
   for (const row of report) {
-    out.push(`| ${row.label} | ${row.literals} | ${row.files} | ${row.moved} |`);
+    out.push(`| ${row.label} | ${row.literals} | ${row.budget ?? '-'} | ${row.exempt} | ${row.allowed} | ${row.files} | ${row.moved} |`);
   }
-  out.push(`| **합계** | **${report.reduce((total, row) => total + row.literals, 0)}** | | **${koKeys.length}** |`);
+  out.push(`| **합계** | **${report.reduce((total, row) => total + row.literals, 0)}** | | | | | **${koKeys.length}** |`);
+  out.push('');
+  out.push('### 세지 않는 것');
+  out.push('');
+  out.push('| 대상 | 이유 |');
+  out.push('| --- | --- |');
+  for (const entry of exemptGlobs) out.push(`| \`${entry.glob}\` (파일 전체) | ${entry.reason.replace(/\|/g, '\\|')} |`);
+  for (const [file, entry] of exemptRegionFiles) out.push(`| \`${file}\`의 i18n-exempt 구역 | ${entry.reason.replace(/\|/g, '\\|')} |`);
+  out.push('');
+  out.push('### 그대로 두는 문구 (허용 목록)');
+  out.push('');
+  out.push('CLI 출력이나 저장된 데이터와 맞춰 보는 문자열이다. 옮기면 동작이 바뀐다.');
+  out.push('');
+  out.push('| 파일 | 문구 | 이유 |');
+  out.push('| --- | --- | --- |');
+  for (const entry of allowEntries) {
+    const shown = entry.literals.map((literal) => `\`${literal.replace(/\|/g, '\\|')}\``).join(', ');
+    out.push(`| \`${entry.file}\` | ${shown} | ${entry.reason.replace(/\|/g, '\\|')} |`);
+  }
+  out.push('');
+  out.push('## 호스트가 만드는 문구');
+  out.push('');
+  out.push('모바일 리모트에서 휴대폰이 보여 주는 호스트 오류(실행 창을 찾을 수 없음, 대기열이 가득 참 같은 것)는');
+  out.push('호스트(Mac 또는 Windows)가 자기 언어로 만들어 문장째 보낸다. 그래서 휴대폰의 언어가 아니라 호스트의');
+  out.push('언어를 따른다.');
   out.push('');
   out.push('## 남은 일');
   out.push('');
+  out.push('- 호스트 오류에 바뀌지 않는 오류 코드를 붙여 보내고, 휴대폰이 그 코드를 자기 언어로 옮긴다.');
   out.push('- 언어를 바꾸면 다음 실행 때 적용된다. 그 자리에서 다시 그리는 일은 하지 않았다.');
   out.push('- zh와 ja의 빠진 키를 번역하고, 그 뒤 번역도 키가 모두 있어야 통과하도록 검사를 엄격하게 한다.');
   out.push('- 번체 중국어(`zh-Hant`, `zh-TW`, `zh-HK`)는 지금 간체로 읽는다. 따로 둘지는 나중에 정한다.');
@@ -513,8 +749,8 @@ function documentation() {
 
 const DOC = 'docs/i18n.md';
 const generated = documentation();
-// Windows 검사기는 autocrlf로 받은 사본을 읽을 수 있다. 보고서는 늘 LF로 만들므로
-// 줄끝만 맞춘 뒤 견준다.
+// The Windows runner may read a copy checked out with autocrlf. The report is always
+// written with LF, so line endings are normalised before comparing.
 const current = exists(DOC) ? readText(DOC).replace(/\r\n/g, '\n') : null;
 if (CHECK_ONLY) {
   if (current !== generated) fail(`${DOC}가 생성한 내용과 다릅니다. \`node scripts/check-locales.js\`를 다시 돌리세요.`);

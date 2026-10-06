@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 struct NativeComposerEditor: NSViewRepresentable {
     @Binding var text: String
     var monospaced = false
-    var accessibilityLabel = "메시지"
+    var accessibilityLabel = L("composer.input.message")
     var accessibilityIdentifier = ""
     var onFocusChange: (Bool) -> Void = { _ in }
     var onPasteAttachments: ((NSPasteboard) -> Void)?

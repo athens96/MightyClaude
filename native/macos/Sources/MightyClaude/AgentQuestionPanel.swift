@@ -26,7 +26,7 @@ struct AgentQuestionPanel: View {
                         }
                         Spacer()
                         if progress.index > 0 { Button(L("phone.questionnaire.back")) { store.guidedBack(sessionId) }.buttonStyle(PaneCardButtonStyle()).disabled(busy) }
-                        Button("답하지 않기") { Task { await store.answerPermission(sessionId: sessionId, request: request, allow: false) } }.buttonStyle(PaneCardButtonStyle()).disabled(busy)
+                        Button(L("question.panel.skip")) { Task { await store.answerPermission(sessionId: sessionId, request: request, allow: false) } }.buttonStyle(PaneCardButtonStyle()).disabled(busy)
                     }
                     Text(current.question).font(.system(size: 13.5, weight: .bold)).foregroundStyle(Palette.ink).lineSpacing(3).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("agent-question-\(sessionId)")
@@ -54,9 +54,9 @@ struct AgentQuestionPanel: View {
                         }
                     }
                     HStack(spacing: 6) {
-                        Text(current.multiSelect ? "여러 개를 고른 뒤 Enter, 또는 아래에 직접 적어 Enter" : "하나를 고르거나 아래에 직접 적어 Enter").font(.system(size: 10.5)).foregroundStyle(Palette.ink2)
+                        Text(current.multiSelect ? L("question.panel.hintMultiple") : L("question.panel.hintSingle")).font(.system(size: 10.5)).foregroundStyle(Palette.ink2)
                         Spacer(minLength: 0)
-                        if current.multiSelect, !progress.selected.isEmpty { Button("선택 완료") { onPrepare(); store.guidedAnswer(sessionId, text: "") }.buttonStyle(PaneCardButtonStyle(prominent: true)).disabled(busy) }
+                        if current.multiSelect, !progress.selected.isEmpty { Button(L("question.panel.doneSelecting")) { onPrepare(); store.guidedAnswer(sessionId, text: "") }.buttonStyle(PaneCardButtonStyle(prominent: true)).disabled(busy) }
                         if busy { ProgressView().controlSize(.mini) }
                     }
                     if let error = store.permissionErrors[sessionId] { Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 10)).foregroundStyle(Palette.waitText) }

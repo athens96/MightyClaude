@@ -57,7 +57,7 @@ extension AppStore {
         updateSession(id) {
             $0.model = model
             $0.settings.effort = resolution.effort
-            $0.logs.append(LogEntry(kind: "system", text: "현재 CLI 환경의 모델 목록에 맞춰 선택을 갱신했습니다: \(session.model) → \(model), effort \(session.settings.effort) → \(resolution.effort). 이전 대화 기록은 유지됩니다."))
+            $0.logs.append(LogEntry(kind: "system", text: L("composer.model.catalogAdjusted", ["fromModel": session.model, "toModel": model, "fromEffort": session.settings.effort, "toEffort": resolution.effort])))
             $0.logs = TranscriptRetention.trimmed($0.logs)
         }
     }

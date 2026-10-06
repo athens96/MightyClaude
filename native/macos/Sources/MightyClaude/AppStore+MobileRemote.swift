@@ -110,7 +110,7 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         let (store, request) = try await MainActor.run { () -> (AppStore, ToolPermissionRequest) in
             let store = try self.store.orClosing()
             let request = try store.mobilePendingRequest(sessionId: sessionId, requestId: requestId, runId: runId)
-            guard request.canAnswerQuestions else { throw MightyError("이 요청은 선택형 질문이 아닙니다.") }
+            guard request.canAnswerQuestions else { throw MightyError(L("remote.error.notQuestionnaire")) }
             return (store, request)
         }
         await store.answerQuestionnaire(sessionId: sessionId, request: request, answers: answers)
@@ -177,7 +177,7 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
 
 private extension Optional where Wrapped == AppStore {
     func orClosing() throws -> AppStore {
-        guard let store = self else { throw MightyError("앱이 종료 중입니다.") }
+        guard let store = self else { throw MightyError(L("settings.cliUpdate.detailClosing")) }
         return store
     }
 }
@@ -552,13 +552,13 @@ extension AppStore {
     /// too — so a request with attachments queues and is told `queued`.
     func mobileSubmit(_ id: String, text: String, mode: String? = nil, attachments: [RunAttachment] = []) throws -> MobileSubmitOutcome {
         guard !ending, !closingSessions.contains(id), let session = mobilePane(id),
-              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
-        guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창에는 휴대폰에서 명령을 보낼 수 없습니다.") }
-        guard !text.isEmpty || !attachments.isEmpty else { throw MightyError("보낼 내용이 없습니다.") }
+              let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { throw MightyError(L("remote.error.paneNotFound")) }
+        guard !usesLocalTerminal(session) else { throw MightyError(L("remote.error.localTerminalInput")) }
+        guard !text.isEmpty || !attachments.isEmpty else { throw MightyError(L("remote.error.nothingToSend")) }
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MightyError(reason) }
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
-            guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError("대기열이 가득 찼습니다.") }
+            guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError(L("remote.error.queueFull")) }
             // The composer's rule (§1.17.4): a plan-mode style never steers into a
             // turn that only waits on background work; it queues and plans fresh.
             let plans = styleLaunchesInPlanMode(session)
@@ -569,11 +569,11 @@ extension AppStore {
             switch deferred.value {
             case .steering(let task): return .steering(task)
             case .queued: return .immediate(.queued)
-            case .refused: throw MightyError(deferred.failure ?? "대기열에 넣지 못했습니다.")
+            case .refused: throw MightyError(deferred.failure ?? L("remote.error.queueRefused"))
             }
         }
         let started = mobileCapturingError { start(id, session: session, workspace: workspace, input: text, attachments: attachments, restoringDraft: nil) }
-        guard started.value else { throw MightyError(started.failure ?? "실행을 시작하지 못했습니다.") }
+        guard started.value else { throw MightyError(started.failure ?? L("remote.error.startFailed")) }
         return .immediate(.started)
     }
 
@@ -586,8 +586,8 @@ extension AppStore {
         switch MobileRemoteSupport.guidedDecision(registry: styleRegistry, workspace: styleWorkspaceRef(session),
                                                   pane: guidedStyle(session), styleId: style, actionId: skill, text: text) {
         case .unknownStyle: throw MobileHostError.badRequest(MobileRemoteSupport.unknownStyleMessage)
-        case .otherPane(let styleId): throw MobileHostError.conflict("이 실행 창은 \(styleId) 스타일이 아닙니다.")
-        case .unknownAction: throw MobileHostError.badRequest("이 스타일에 없는 스킬입니다.")
+        case .otherPane(let styleId): throw MobileHostError.conflict(L("remote.error.otherStyle", ["style": styleId]))
+        case .unknownAction: throw MobileHostError.badRequest(L("remote.error.unknownSkill"))
         case .send(let prompt): return try mobileSubmit(id, text: prompt)
         }
     }
@@ -608,27 +608,27 @@ extension AppStore {
     /// Unknown is 404, "not from a phone" is 409.
     private func mobileCommandSession(_ id: String) throws -> RunSession {
         guard !ending, !closingSessions.contains(id), let session = mobilePane(id) else {
-            throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.")
+            throw MobileHostError.notFound(L("remote.error.paneNotFound"))
         }
-        guard !usesLocalTerminal(session) else { throw MobileHostError.conflict("로컬 터미널 창은 휴대폰에서 제어할 수 없습니다.") }
+        guard !usesLocalTerminal(session) else { throw MobileHostError.conflict(L("remote.error.localTerminalControl")) }
         return session
     }
     private func mobileAISession(_ id: String) throws -> RunSession {
         let session = try mobileCommandSession(id)
-        guard session.kind != "shell" else { throw MobileHostError.conflict("명령 창에는 실행 설정과 슬래시 명령이 없습니다.") }
+        guard session.kind != "shell" else { throw MobileHostError.conflict(L("remote.error.shellNoSettings")) }
         return session
     }
 
     func mobileRemoveQueued(_ id: String, itemId: String) throws {
         _ = try mobileCommandSession(id)
-        guard queuedInputs[id]?.contains(where: { $0.id == itemId }) == true else { throw MobileHostError.notFound("대기 중인 항목을 찾을 수 없습니다.") }
+        guard queuedInputs[id]?.contains(where: { $0.id == itemId }) == true else { throw MobileHostError.notFound(L("remote.error.queueItemNotFound")) }
         removeQueuedInput(id, itemId: itemId)
     }
 
     func mobileRunNextQueued(_ id: String) throws {
         let session = try mobileCommandSession(id)
-        guard !(queuedInputs[id] ?? []).isEmpty else { throw MobileHostError.conflict("대기 중인 요청이 없습니다.") }
-        guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict("실행이 끝난 뒤에 다음 요청을 시작할 수 있습니다.") }
+        guard !(queuedInputs[id] ?? []).isEmpty else { throw MobileHostError.conflict(L("remote.error.queueEmpty")) }
+        guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("remote.error.nextAfterRun")) }
         // Settling a blocked pane throws the whole queue away with only a log
         // line; the phone would be told "ok" and watch its requests vanish.
         if let reason = runBlockedReason(session, checkRuntime: false) { throw MobileHostError.conflict(reason) }
@@ -640,18 +640,18 @@ extension AppStore {
         if titleMode == "auto" {
             setSessionAutoTitle(id)
         } else {
-            guard renameSession(id, to: title) else { throw MobileHostError.badRequest("실행 창 이름이 올바르지 않습니다.") }
+            guard renameSession(id, to: title) else { throw MobileHostError.badRequest(L("remote.error.badTitle")) }
         }
     }
 
     func mobileClose(_ id: String) throws {
         _ = try mobileCommandSession(id)
-        guard !hasModal else { throw MobileHostError.conflict("Mac에서 열린 창을 닫은 뒤 다시 시도하세요.") }
+        guard !hasModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
         closeSession(id)
     }
 
     func mobileEntries(_ id: String, before: String, limit: Int) throws -> MobileEntriesPage {
-        guard let session = mobilePane(id) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
+        guard let session = mobilePane(id) else { throw MobileHostError.notFound(L("remote.error.paneNotFound")) }
         let page = MobileRemoteSupport.page(entries: session.logs, before: before, limit: limit)
         return MobileEntriesPage(entries: page.entries, hasMore: page.hasMore)
     }
@@ -665,14 +665,14 @@ extension AppStore {
         // What this sender was last told, read before a single mutation.
         let shown = mobileStyleId(session)
         try MobileRemoteSupport.validate(request, options: mobileSettingsOptions(session, model: request.model, agentViewMode: viewMode))
-        guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict("실행 중에는 설정을 바꿀 수 없습니다.") }
-        guard !hasModal else { throw MobileHostError.conflict("Mac에서 열린 창을 닫은 뒤 다시 시도하세요.") }
+        guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("phone.session.settingsLocked")) }
+        guard !hasModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
         // Everything is checked before the first mutation, so a POST that will
         // fail leaves the pane exactly as the phone last saw it.
         try mobileCheckApplicable(session, request: request)
         if let model = request.model, model != session.model {
             changeModel(id, to: model)
-            guard mobilePane(id)?.model == model else { throw MobileHostError.conflict("모델을 바꾸지 못했습니다.") }
+            guard mobilePane(id)?.model == model else { throw MobileHostError.conflict(L("remote.error.modelFailed")) }
         }
         if let mode = request.agentViewMode { try mobileApplyViewMode(id, mode: mode) }
         // `styleId` is the open field and wins outright; `mightyStyle` is then
@@ -688,25 +688,25 @@ extension AppStore {
     private func mobileCheckApplicable(_ session: RunSession, request: MobileSettingsRequest) throws {
         if let mode = request.agentViewMode, mobileViewMode(session) != mode,
            !(session.kind == "claude" && MightyGraphSupport.providers.contains(session.provider)) {
-            throw MobileHostError.conflict("이 실행 창은 Mighty 보기를 지원하지 않습니다.")
+            throw MobileHostError.conflict(L("remote.error.noMighty"))
         }
         let wanted = request.styleId ?? request.mightyStyle
         if let wanted, mobileStyleId(session) != wanted,
            !(session.kind == "claude" && session.provider == "claude") {
-            throw MobileHostError.conflict("이 실행 창에서는 이 스타일을 쓸 수 없습니다.")
+            throw MobileHostError.conflict(L("remote.error.styleUnavailable"))
         }
         if let mode = request.permissionMode, mode != session.settings.permissionMode,
            !permissionModes(for: session).contains(mode) {
-            throw MobileHostError.conflict("이 실행 환경이 선택한 권한 모드를 지원하는지 확인하지 못했습니다.")
+            throw MobileHostError.conflict(L("remote.error.permissionUnverified"))
         }
     }
 
     private func mobileApplyViewMode(_ id: String, mode: String) throws {
-        guard let session = mobilePane(id) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
+        guard let session = mobilePane(id) else { throw MobileHostError.notFound(L("remote.error.paneNotFound")) }
         guard mobileViewMode(session) != mode else { return }
         setAgentViewMode(id, mode: mode == MobileWire.plainViewMode ? "default" : "mighty")
         guard let updated = mobilePane(id), mobileViewMode(updated) == mode else {
-            throw MobileHostError.conflict("이 실행 창은 Mighty 보기를 지원하지 않습니다.")
+            throw MobileHostError.conflict(L("remote.error.noMighty"))
         }
     }
 
@@ -716,11 +716,11 @@ extension AppStore {
     /// Mighty view on must not be read as "throw the stored style away".
     private func mobileApplyStyleId(_ id: String, styleId: String, shown: String) throws {
         guard styleId != shown else { return }
-        guard let session = mobilePane(id) else { throw MobileHostError.notFound("실행 창을 찾을 수 없습니다.") }
+        guard let session = mobilePane(id) else { throw MobileHostError.notFound(L("remote.error.paneNotFound")) }
         guard mobileStyleId(session) != styleId else { return }
         setMightyStyle(id, style: styleId == MobileWire.cliStyle ? nil : styleId)
         guard let updated = mobilePane(id), mobileStyleId(updated) == styleId else {
-            throw MobileHostError.conflict("이 실행 창에서는 이 스타일을 쓸 수 없습니다.")
+            throw MobileHostError.conflict(L("remote.error.styleUnavailable"))
         }
     }
 
@@ -733,7 +733,7 @@ extension AppStore {
         let saved = mobileCapturingError { saveSettings(id, settings: settings) }
         let applied = mobilePane(id)?.settings
         guard applied?.effort == settings.effort, applied?.permissionMode == settings.permissionMode else {
-            throw MobileHostError.conflict(saved.failure ?? "실행 설정을 적용하지 못했습니다.")
+            throw MobileHostError.conflict(saved.failure ?? L("remote.error.settingsFailed"))
         }
     }
 
@@ -752,21 +752,21 @@ extension AppStore {
         case "help": return SlashCommandCatalog.helpText(provider: session.provider)
         case "usage": return MobileUsageText.text(usage: mobileUsage(session), model: modelLabel(for: session), elapsedSeconds: session.runTiming?.elapsed())
         case "clear":
-            guard !hasModal else { throw MobileHostError.conflict("Mac에서 열린 창을 닫은 뒤 다시 시도하세요.") }
-            guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict("실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.") }
-            guard session.resumeId != nil else { throw MobileHostError.conflict("이어갈 이전 대화가 없습니다. 다음 입력은 이미 새 대화로 시작합니다.") }
+            guard !hasModal else { throw MobileHostError.conflict(L("remote.error.closeMacWindow")) }
+            guard session.status != "running", !pendingRuns.contains(id) else { throw MobileHostError.conflict(L("slash.note.newConversationRunning")) }
+            guard session.resumeId != nil else { throw MobileHostError.conflict(L("remote.error.nothingToResume")) }
             // Not `performSlashAction`: that selects the pane, so a phone would
             // move the Mac user's focus. The checks above are its guards.
             resetConversation(id)
             return nil
-        default: throw MobileHostError.badRequest("지원하지 않는 명령입니다.")
+        default: throw MobileHostError.badRequest(L("remote.error.unsupportedCommand"))
         }
     }
 
     /// Stop, permission and question routes act on an existing, non-terminal pane.
     func mobileValidateCommand(_ id: String) throws {
-        guard !ending, !closingSessions.contains(id), let session = mobilePane(id) else { throw MightyError("실행 창을 찾을 수 없습니다.") }
-        guard !usesLocalTerminal(session) else { throw MightyError("로컬 터미널 창은 휴대폰에서 제어할 수 없습니다.") }
+        guard !ending, !closingSessions.contains(id), let session = mobilePane(id) else { throw MightyError(L("remote.error.paneNotFound")) }
+        guard !usesLocalTerminal(session) else { throw MightyError(L("remote.error.localTerminalControl")) }
     }
 
     /// The same test `stop` applies before it does anything: a run in motion,
@@ -778,25 +778,25 @@ extension AppStore {
     func mobilePendingRequest(sessionId: String, requestId: String, runId: String) throws -> ToolPermissionRequest {
         try mobileValidateCommand(sessionId)
         guard let request = toolPermissions[sessionId]?.first(where: { $0.id == requestId && $0.runId == runId && $0.state == "pending" }) else {
-            throw MightyError("대기 중인 권한 요청이 아닙니다. 이미 처리되었을 수 있습니다.")
+            throw MightyError(L("remote.error.notPendingPermission"))
         }
         return request
     }
 
     func mobileCheckPermissionOutcome(sessionId: String, requestId: String) throws {
         if toolPermissions[sessionId]?.contains(where: { $0.id == requestId && $0.state == "pending" }) == true {
-            throw MightyError(permissionErrors[sessionId] ?? "권한 응답을 전달하지 못했습니다.")
+            throw MightyError(permissionErrors[sessionId] ?? L("remote.error.permissionDelivery"))
         }
     }
 
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) throws -> String {
-        guard snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { throw MobileHostError.notFound("워크스페이스를 찾을 수 없습니다.") }
+        guard snapshot.workspaces.contains(where: { $0.id == workspaceId }) else { throw MobileHostError.notFound(L("remote.error.workspaceNotFound")) }
         // A command pane runs in the app's own terminal, which the phone
         // cannot drive; creating one would hand it a dead window.
-        guard kind != "shell" else { throw MobileHostError.conflict("명령 창은 휴대폰에서 쓸 수 없습니다.") }
-        guard !hasModal else { throw MightyError("Mac에서 열린 창을 닫은 뒤 다시 시도하세요.") }
+        guard kind != "shell" else { throw MobileHostError.conflict(L("remote.error.shellUnavailable")) }
+        guard !hasModal else { throw MightyError(L("remote.error.closeMacWindow")) }
         let created = mobileCapturingError { addSession(kind: kind, provider: provider, workspaceId: workspaceId) }
-        guard let id = created.value else { throw MightyError(created.failure ?? "실행 창을 만들지 못했습니다.") }
+        guard let id = created.value else { throw MightyError(created.failure ?? L("remote.error.createFailed")) }
         return id
     }
 }

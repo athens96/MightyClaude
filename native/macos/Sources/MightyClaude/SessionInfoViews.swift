@@ -29,10 +29,10 @@ struct SessionContextButton: View {
         }
         .buttonStyle(.plain)
         .disabled(store.hasModal && store.sessionInfoSessionID != sessionID)
-        .accessibilityLabel("세션 정보 · 컨텍스트 사용량")
+        .accessibilityLabel(L("composer.sessionInfo.buttonAccessibility"))
         .accessibilityValue(SessionUsagePresentation.percent(usage))
         .accessibilityIdentifier("context-\(sessionID)")
-        .help("컨텍스트 \(SessionUsagePresentation.percent(usage)) · 세션 정보")
+        .help(L("composer.sessionInfo.buttonHelp", ["percent": SessionUsagePresentation.percent(usage)]))
         .background(SessionInfoPopoverAnchor(store: store, sessionID: sessionID, presented: presented).id(sessionID).allowsHitTesting(false))
         .onDisappear { if store.sessionInfoSessionID == sessionID { store.sessionInfoSessionID = nil } }
     }
@@ -197,7 +197,7 @@ struct SessionInfoView: View {
             else {
                 VStack(spacing: 8) {
                     Image(systemName: "rectangle.slash").font(.title2).foregroundStyle(.secondary)
-                    Text("닫힌 실행 창입니다").font(.system(size: 13, weight: .medium))
+                    Text(L("composer.sessionInfo.closedPane")).font(.system(size: 13, weight: .medium))
                 }.frame(maxWidth: .infinity).padding(24)
             }
         }
@@ -232,7 +232,7 @@ struct SessionInfoView: View {
                     HStack(spacing: 11) {
                         SessionContextRing(usage: usage, size: 42)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("컨텍스트 사용량").font(.system(size: 12, weight: .semibold))
+                            Text(L("composer.sessionInfo.contextUsage")).font(.system(size: 12, weight: .semibold))
                             Text(SessionUsagePresentation.context(usage)).font(.system(size: 11)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -241,19 +241,19 @@ struct SessionInfoView: View {
                     .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("컨텍스트 사용량 \(SessionUsagePresentation.percent(usage)) · \(SessionUsagePresentation.context(usage))")
+                    .accessibilityLabel(L("composer.sessionInfo.contextAccessibility", ["percent": SessionUsagePresentation.percent(usage), "detail": SessionUsagePresentation.context(usage)]))
                     .accessibilityIdentifier("session-info-context-\(sessionID)")
 
-                    row(usage?.model == nil ? "선택 모델" : "사용 모델", usage?.model.map { ModelLabel.text($0) } ?? selectedModel, key: "model")
+                    row(usage?.model == nil ? L("composer.sessionInfo.selectedModel") : L("composer.sessionInfo.usedModel"), usage?.model.map { ModelLabel.text($0) } ?? selectedModel, key: "model")
                     if let timing = session.runTiming, timing.isValid {
                         HStack {
-                            Text("최근 요청 시간").foregroundStyle(.secondary)
+                            Text(L("composer.sessionInfo.latestRequestTime")).foregroundStyle(.secondary)
                             Spacer()
                             AgentElapsedView(timing: timing)
                         }.font(.system(size: 11))
                     }
                     if let workspace {
-                        row("워크스페이스", workspace.name, key: "workspace")
+                        row(L("composer.sessionInfo.workspace"), workspace.name, key: "workspace")
                         Text(workspace.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                             .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,42 +261,42 @@ struct SessionInfoView: View {
                     }
                     Divider()
                     if let usage, SessionUsagePresentation.hasTokens(usage) {
-                        Text("토큰 · \(SessionUsagePresentation.scope(usage.tokenScope))").font(.system(size: 11, weight: .semibold))
-                        if let count = usage.inputTokens { tokenRow("입력", count, key: "input") }
-                        if let count = usage.outputTokens { tokenRow("출력", count, key: "output") }
-                        if let count = usage.cacheReadTokens { tokenRow("캐시 읽기", count, key: "cache-read") }
-                        if let count = usage.cacheWriteTokens { tokenRow("캐시 쓰기", count, key: "cache-write") }
-                        if let count = usage.reasoningTokens { tokenRow("사고", count, key: "reasoning") }
-                        if let count = usage.totalTokens { tokenRow("전체", count, key: "total") }
+                        Text(L("composer.sessionInfo.tokenScope", ["scope": SessionUsagePresentation.scope(usage.tokenScope)])).font(.system(size: 11, weight: .semibold))
+                        if let count = usage.inputTokens { tokenRow(L("composer.sessionInfo.input"), count, key: "input") }
+                        if let count = usage.outputTokens { tokenRow(L("composer.sessionInfo.output"), count, key: "output") }
+                        if let count = usage.cacheReadTokens { tokenRow(L("composer.sessionInfo.cacheRead"), count, key: "cache-read") }
+                        if let count = usage.cacheWriteTokens { tokenRow(L("composer.sessionInfo.cacheWrite"), count, key: "cache-write") }
+                        if let count = usage.reasoningTokens { tokenRow(L("composer.sessionInfo.reasoning"), count, key: "reasoning") }
+                        if let count = usage.totalTokens { tokenRow(L("composer.sessionInfo.total"), count, key: "total") }
                         if usage.cacheReadTokens != nil || usage.cacheWriteTokens != nil || usage.reasoningTokens != nil {
-                            Text("캐시는 입력에, 사고 토큰은 출력에 포함됩니다.")
+                            Text(L("composer.sessionInfo.note"))
                                 .font(.system(size: 10)).foregroundStyle(.tertiary)
                         }
                     }
                     if let cost = usage?.costUSD, cost.isFinite, cost >= 0 {
-                        row("비용 (USD) · \(SessionUsagePresentation.scope(usage?.costScope))", cost.formatted(.currency(code: "USD").precision(.fractionLength(0...4))), key: "cost")
+                        row(L("composer.sessionInfo.costWithScope", ["scope": SessionUsagePresentation.scope(usage?.costScope)]), cost.formatted(.currency(code: "USD").precision(.fractionLength(0...4))), key: "cost")
                     }
                     if usage.map({ !SessionUsagePresentation.hasTokens($0) && $0.costUSD == nil && $0.contextUsedTokens == nil && $0.contextWindowTokens == nil }) ?? true {
-                        Text("아직 CLI가 사용량을 보고하지 않았습니다.").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L("composer.sessionInfo.noUsage")).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Button { showsIdentifiers.toggle() } label: {
                         HStack(spacing: 5) {
                             Image(systemName: showsIdentifiers ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold))
-                            Text("세션 ID").font(.system(size: 11))
+                            Text(L("composer.sessionInfo.sessionId")).font(.system(size: 11))
                             Spacer(minLength: 0)
                         }.contentShape(Rectangle()).accessibilityElement(children: .ignore)
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .accessibilityLabel("세션 ID").accessibilityValue(showsIdentifiers ? "펼침" : "접힘")
+                    .accessibilityLabel(L("composer.sessionInfo.sessionId")).accessibilityValue(showsIdentifiers ? L("accessibility.expanded") : L("accessibility.collapsed"))
                     .accessibilityIdentifier("session-info-identifiers-\(sessionID)")
                     if showsIdentifiers {
-                        row("Mighty Claude 세션 ID", session.id, key: "identity", monospaced: true)
-                        if let id = usage?.providerSessionId ?? session.resumeId { row("CLI 세션 ID", id, key: "cli-identity", monospaced: true) }
+                        row(L("composer.sessionInfo.mightySessionId"), session.id, key: "identity", monospaced: true)
+                        if let id = usage?.providerSessionId ?? session.resumeId { row(L("composer.sessionInfo.cliSessionId"), id, key: "cli-identity", monospaced: true) }
                     }
                     if let usage {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("\(ProviderOptions.label(session.provider)) CLI 보고값").help(usage.source)
-                            if let date = AgentRunTiming.parseTimestamp(usage.updatedAt) { Text("마지막 수신 \(date.formatted(date: .omitted, time: .standard))") }
+                            Text(L("composer.sessionInfo.reported", ["provider": ProviderOptions.label(session.provider)])).help(usage.source)
+                            if let date = AgentRunTiming.parseTimestamp(usage.updatedAt) { Text(L("composer.sessionInfo.lastReceived", ["time": date.formatted(date: .omitted, time: .standard)])) }
                         }.font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
@@ -353,13 +353,13 @@ enum SessionUsagePresentation {
     }
     static func tokens(_ count: Int) -> String { count.formatted(.number.grouping(.automatic)) }
     static func context(_ usage: SessionUsage?) -> String {
-        if let used = usage?.contextUsedTokens, let limit = usage?.contextWindowTokens { return "\(tokens(used)) / \(tokens(limit)) 토큰" }
-        if let used = usage?.contextUsedTokens { return "\(tokens(used)) 토큰 · 한도 미측정" }
-        if let limit = usage?.contextWindowTokens { return "한도 \(tokens(limit)) 토큰 · 사용량 미측정" }
-        return "아직 컨텍스트 사용량을 받지 못했습니다."
+        if let used = usage?.contextUsedTokens, let limit = usage?.contextWindowTokens { return L("composer.sessionInfo.contextTokens", ["used": tokens(used), "limit": tokens(limit)]) }
+        if let used = usage?.contextUsedTokens { return L("composer.sessionInfo.contextUsedOnly", ["tokens": tokens(used)]) }
+        if let limit = usage?.contextWindowTokens { return L("composer.sessionInfo.contextLimitOnly", ["tokens": tokens(limit)]) }
+        return L("composer.sessionInfo.contextUnavailable")
     }
     static func scope(_ value: String?) -> String {
-        switch value { case "run": "이번 실행"; case "session": "이 대화 누적"; case "response": "최근 응답"; default: "보고된 범위" }
+        switch value { case "run": L("composer.sessionInfo.scopeRun"); case "session": L("composer.sessionInfo.scopeSession"); case "response": L("composer.sessionInfo.scopeResponse"); default: L("composer.sessionInfo.scopeUnknown") }
     }
     static func hasTokens(_ usage: SessionUsage) -> Bool {
         [usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens, usage.reasoningTokens, usage.totalTokens].contains { $0 != nil }

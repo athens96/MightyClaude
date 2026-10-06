@@ -5,10 +5,10 @@ import MightyCore
 
 extension AppStore {
     func attachmentBlockedReason(_ id: String) -> String? {
-        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return "실행 창을 선택하세요." }
-        if session.kind == "shell" { return "명령 창에는 파일을 첨부할 수 없습니다. AI 실행 창을 사용하세요." }
+        guard let session = snapshot.sessions.first(where: { $0.id == id }) else { return L("composer.attachment.blockedNoPane") }
+        if session.kind == "shell" { return L("composer.attachment.blockedShell") }
         if !providerRuntime(session.provider, workspaceId: session.workspaceId).capabilities.attachments {
-            return "이 실행기는 첨부 파일을 지원하지 않습니다."
+            return L("composer.attachment.unsupported")
         }
         return nil
     }
@@ -17,9 +17,9 @@ extension AppStore {
         guard !hasModal, canEditAttachments(id) else { return }
         if let reason = attachmentBlockedReason(id) { attachmentErrors[id] = reason; return }
         let panel = NSOpenPanel()
-        panel.title = "파일 첨부"
-        panel.prompt = "첨부"
-        panel.message = "최대 8개 · 파일당 5 MiB · 합계 8 MiB"
+        panel.title = L("phone.composer.attach")
+        panel.prompt = L("composer.attachment.panelPrompt")
+        panel.message = L("composer.attachment.panelMessage")
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
@@ -67,20 +67,20 @@ extension AppStore {
         guard canEditAttachments(id) else { return }
         if let reason = attachmentBlockedReason(id) { attachmentErrors[id] = reason; return }
         let items = pasteboard.pasteboardItems ?? []
-        guard items.count <= AttachmentSupport.maximumCount else { attachmentErrors[id] = "파일은 최대 8개까지 첨부할 수 있습니다."; return }
+        guard items.count <= AttachmentSupport.maximumCount else { attachmentErrors[id] = L("composer.attachment.tooMany"); return }
         var providers: [NSItemProvider] = []
         for item in items {
             if let text = item.string(forType: .fileURL), let url = URL(string: text), url.isFileURL {
                 providers.append(NSItemProvider(item: url as NSURL, typeIdentifier: UTType.fileURL.identifier))
             } else if let type = ([NSPasteboard.PasteboardType.png, .tiff] + item.types).first(where: { item.types.contains($0) && UTType($0.rawValue)?.conforms(to: .image) == true }),
                       let data = item.data(forType: type) {
-                guard data.count <= AttachmentSupport.maximumFileBytes else { attachmentErrors[id] = "이미지 하나는 최대 5 MiB까지 첨부할 수 있습니다."; return }
+                guard data.count <= AttachmentSupport.maximumFileBytes else { attachmentErrors[id] = L("composer.attachment.imageTooLarge"); return }
                 let provider = NSItemProvider()
                 provider.registerDataRepresentation(forTypeIdentifier: type.rawValue, visibility: .ownProcess) { completion in completion(data, nil); return nil }
                 providers.append(provider)
             }
         }
-        guard !providers.isEmpty else { attachmentErrors[id] = "클립보드에 이미지 또는 파일이 없습니다. 텍스트는 입력창에 붙여넣으세요."; return }
+        guard !providers.isEmpty else { attachmentErrors[id] = L("composer.attachment.clipboardEmpty"); return }
         importAttachments(id, providers: providers)
     }
 
@@ -99,8 +99,8 @@ extension AppStore {
     private func importAttachmentBatch(_ id: String, count: Int, load: @escaping () async throws -> [RunAttachment]) {
         guard count > 0, canEditAttachments(id) else { return }
         if let reason = attachmentBlockedReason(id) { attachmentErrors[id] = reason; return }
-        guard !importingAttachments.contains(id) else { attachmentErrors[id] = "현재 파일을 읽은 후 추가하세요."; return }
-        guard count + (attachmentDrafts[id]?.count ?? 0) <= AttachmentSupport.maximumCount else { attachmentErrors[id] = "파일은 최대 8개까지 첨부할 수 있습니다."; return }
+        guard !importingAttachments.contains(id) else { attachmentErrors[id] = L("composer.attachment.stillReading"); return }
+        guard count + (attachmentDrafts[id]?.count ?? 0) <= AttachmentSupport.maximumCount else { attachmentErrors[id] = L("composer.attachment.tooMany"); return }
         selectSession(id)
         attachmentErrors.removeValue(forKey: id)
         importingAttachments.insert(id)

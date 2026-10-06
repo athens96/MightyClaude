@@ -29,11 +29,11 @@ struct SessionPaneView: View {
     private var blockedReason: String? {
         if let reason = store.runBlockedReason(session) { return reason }
         if session.kind != "shell" {
-            if !attachments.isEmpty, !runtime.capabilities.attachments { return "이 실행기는 첨부 파일을 지원하지 않습니다. 첨부를 제거하세요." }
-            if !runtime.capabilities.permissionModes.contains(session.settings.permissionMode) { return "이 실행기가 저장된 권한 모드를 지원하지 않습니다. 작업 권한을 다시 선택하세요." }
-            if session.settings.fastMode, !runtime.capabilities.fastMode { return "이 실행기는 Fast를 지원하지 않습니다. Fast를 끄고 실행하세요." }
-            if session.settings.webSearch != "default", !runtime.capabilities.webSearch { return "이 실행기는 웹 검색 설정을 지원하지 않습니다. 더보기에서 미지원 설정을 해제하세요." }
-            if session.settings.networkAccess, !runtime.capabilities.networkAccess { return "이 실행기는 Shell 네트워크 설정을 지원하지 않습니다. 더보기에서 미지원 설정을 해제하세요." }
+            if !attachments.isEmpty, !runtime.capabilities.attachments { return L("composer.blocked.attachmentsUnsupported") }
+            if !runtime.capabilities.permissionModes.contains(session.settings.permissionMode) { return L("composer.blocked.permissionUnsupported") }
+            if session.settings.fastMode, !runtime.capabilities.fastMode { return L("composer.blocked.fastUnsupported") }
+            if session.settings.webSearch != "default", !runtime.capabilities.webSearch { return L("composer.blocked.webSearchUnsupported") }
+            if session.settings.networkAccess, !runtime.capabilities.networkAccess { return L("composer.blocked.networkUnsupported") }
         }
         return nil
     }
@@ -51,7 +51,7 @@ struct SessionPaneView: View {
     private var style: RegisteredStyle? { store.guidedStyle(session) }
     /// A guided style: the composer answers the agent's questions itself.
     private var guided: Bool { style != nil }
-    private var styleHint: String { style?.manifest.subtitle ?? "자유 요청" }
+    private var styleHint: String { style?.manifest.subtitle ?? L("composer.style.free") }
     private var offersMightyStyle: Bool {
         session.kind == "claude" && session.provider == "claude" && session.agentViewMode == "mighty"
             && store.snapshot.workspaces.contains { $0.id == session.workspaceId }
@@ -95,9 +95,9 @@ struct SessionPaneView: View {
             // which lives here and not in the engine (§1.7).
             if !value.isEmpty { return value }
         }
-        if store.pendingRuns.contains(session.id), session.status != "running" { return "현재 CLI의 모델 설정을 확인하고 있습니다 · 다음 요청을 입력할 수 있습니다" }
-        if running { return steers ? "Enter: 다음 요청으로 대기 · ⌘Enter: 실행 중인 작업에 바로 전달" : "다음 요청을 입력하세요 · 현재 작업이 끝나면 이어서 실행됩니다" }
-        return session.kind == "shell" ? "명령을 입력하세요…" : "요청할 작업을 입력하세요…"
+        if store.pendingRuns.contains(session.id), session.status != "running" { return L("composer.placeholder.checkingModels") }
+        if running { return steers ? L("composer.placeholder.busyMac") : L("composer.placeholder.busyQueue") }
+        return session.kind == "shell" ? L("composer.placeholder.shell") : L("composer.placeholder.idle")
     }
     /// The draft while it is a `/name` being typed or a built-in's `/name arg`,
     /// or nil when the palette should be closed.
@@ -116,7 +116,7 @@ struct SessionPaneView: View {
     /// Present when a `statusLine` command produced something, or a
     /// workspace-level command is waiting to be allowed.
     /// Local Claude panes can show Claude's `statusLine`; the button flips
-    /// the same preference as Settings › 화면 for every pane at once.
+    /// the same preference as Settings › Display for every pane at once.
     private var showsStatusLineToggle: Bool {
         session.kind == "claude" && session.provider == "claude"
             && store.snapshot.workspaces.contains { $0.id == session.workspaceId }
@@ -128,8 +128,8 @@ struct SessionPaneView: View {
                 .foregroundStyle(on ? Palette.accent : Palette.ink2)
         }
         .buttonStyle(.plain)
-        .help(on ? "상태 줄 숨기기 · settings.json의 statusLine 출력을 입력창 아래에 보여주는 중" : "상태 줄 보이기 · settings.json의 statusLine 출력을 입력창 아래에 표시")
-        .accessibilityLabel("상태 줄").accessibilityValue(on ? "켜짐" : "꺼짐")
+        .help(on ? L("composer.statusLine.hide") : L("composer.statusLine.show"))
+        .accessibilityLabel(L("composer.statusLine.name")).accessibilityValue(on ? L("accessibility.on") : L("accessibility.off"))
         .accessibilityIdentifier("status-line-toggle-\(session.id)")
     }
     private var statusLine: AppStore.StatusLineState? {
@@ -194,7 +194,7 @@ struct SessionPaneView: View {
     }
 
     /// The pane's header: the shell keeps the slim ink bar; an agent pane gets one 34pt
-    /// line on the pane's own surface (status v2), the same in 기본 and 마이티.
+    /// line on the pane's own surface (status v2), the same in Default and Mighty.
     @ViewBuilder private var header: some View {
         if session.kind == "shell" {
             SlimPaneHeader(kind: SessionKind.shell, title: session.title,
@@ -217,7 +217,7 @@ struct SessionPaneView: View {
     }
 
     /// Glyph, title, a small status word in its ink, then the figures in mono, which
-    /// give way (faded at the right) before the title does; the 기본 | 마이티 switch and
+    /// give way (faded at the right) before the title does; the Default | Mighty switch and
     /// the pane's buttons stay at the right.
     private var agentHeader: some View {
         let card = headerCard
@@ -265,8 +265,8 @@ struct SessionPaneView: View {
     @ViewBuilder private var headerControls: some View {
         if session.kind == "claude", MightyGraphSupport.providers.contains(session.provider) {
             HStack(spacing: 2) {
-                agentModeButton("기본", mode: "default", symbol: "text.alignleft")
-                agentModeButton("마이티", mode: "mighty", symbol: "point.3.connected.trianglepath.dotted")
+                agentModeButton(L("graph.view.default"), mode: "default", symbol: "text.alignleft")
+                agentModeButton(L("graph.view.mighty"), mode: "mighty", symbol: "point.3.connected.trianglepath.dotted")
             }
             .padding(2).background(Palette.segmentTrack, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .fixedSize()
@@ -276,8 +276,8 @@ struct SessionPaneView: View {
                         .frame(width: 22, height: 24).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).disabled(store.hasModal)
-                .help("\(ProviderOptions.label(session.provider)) 플러그인 · 설치 목록 및 마켓플레이스")
-                .accessibilityLabel("\(ProviderOptions.label(session.provider)) 플러그인")
+                .help(L("pane.plugins.help", ["provider": ProviderOptions.label(session.provider)]))
+                .accessibilityLabel(L("plugins.titleTemplate", ["provider": ProviderOptions.label(session.provider)]))
                 .accessibilityIdentifier("mighty-plugins-\(session.id)")
             }
         }
@@ -294,29 +294,29 @@ struct SessionPaneView: View {
 
     private func paneMenu(ink: Color) -> some View {
         Menu {
-            Button("이름 변경…") { store.beginRenameSession(session.id) }.disabled(store.hasModal)
-            Button(store.activePaneLayoutMode == "focus" ? "이전 배치로 보기" : "집중 보기") { store.togglePaneFocus(session.id) }
+            Button(L("menu.rename")) { store.beginRenameSession(session.id) }.disabled(store.hasModal)
+            Button(store.activePaneLayoutMode == "focus" ? L("pane.menu.restoreLayout") : L("menu.focusPane")) { store.togglePaneFocus(session.id) }
             if localTerminal {
-                Button("이전 명령 실행 기록…") { store.terminalHistorySession = session }
+                Button(L("pane.menu.terminalHistory")) { store.terminalHistorySession = session }
             }
-            Button("실행 기록 복사") {
+            Button(L("pane.menu.copyLog")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(session.logs.map { "[\(role($0))] \($0.text)" }.joined(separator: "\n\n"), forType: .string)
             }.disabled(session.logs.isEmpty)
             if session.kind != "shell" {
-                Button("새 대화로 시작") { store.resetConversation(session.id) }.disabled(running || session.resumeId == nil)
+                Button(L("pane.menu.newConversation")) { store.resetConversation(session.id) }.disabled(running || session.resumeId == nil)
             }
             Divider()
-            Button("실행 창 닫기", role: .destructive) { store.closeSession(session.id) }
+            Button(L("menu.closePane"), role: .destructive) { store.closeSession(session.id) }
         } label: {
             Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
                 .frame(width: 22, height: 24).contentShape(Rectangle())
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-        .help("실행 창 메뉴").accessibilityLabel("실행 창 메뉴")
+        .help(L("pane.menu.accessibility")).accessibilityLabel(L("pane.menu.accessibility"))
     }
 
-    /// One side of the header's 기본 | 마이티 switch: the chosen side is a raised chip on
+    /// One side of the header's Default | Mighty switch: the chosen side is a raised chip on
     /// the quiet track, the other keeps the muted ink.
     private func agentModeButton(_ title: String, mode: String, symbol: String) -> some View {
         let selected = (session.agentViewMode ?? "default") == mode
@@ -333,14 +333,14 @@ struct SessionPaneView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(title) 모드")
-        .accessibilityValue(selected ? "선택됨" : "선택 안 됨")
+        .accessibilityLabel(L("graph.view.modeAccessibility", ["mode": title]))
+        .accessibilityValue(selected ? L("accessibility.selected") : L("accessibility.notSelected"))
         .accessibilityIdentifier("agent-mode-\(mode)-\(session.id)")
     }
 
     private func modelMenu(maximumTextWidth: CGFloat) -> some View {
         Menu {
-            Section("공급자") {
+            Section(L("composer.label.runner")) {
                 ForEach(ProviderOptions.ids, id: \.self) { provider in
                     Button { store.selectSession(session.id); store.changeProvider(session.id, to: provider) } label: {
                         if provider == session.provider { Label(ProviderOptions.betaTitle(provider, ProviderOptions.label(provider)), systemImage: "checkmark") }
@@ -348,10 +348,10 @@ struct SessionPaneView: View {
                     }
                 }
             }
-            Button(store.isRefreshingModels(for: session) ? "모델 목록 확인 중…" : "모델 목록 새로고침") {
+            Button(store.isRefreshingModels(for: session) ? L("composer.model.refreshing") : L("composer.model.refresh")) {
                 store.refreshModels(for: session.id, invalidate: true)
             }.disabled(store.isRefreshingModels(for: session))
-            Section("모델") {
+            Section(L("composer.label.model")) {
                 ForEach(models) { model in
                     Button {
                         store.selectSession(session.id)
@@ -367,7 +367,7 @@ struct SessionPaneView: View {
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
         .help("\(ProviderOptions.betaTitle(session.provider, ProviderOptions.label(session.provider))) · \(selectedModelName)")
-        .accessibilityLabel("모델 및 공급자").accessibilityValue("\(ProviderOptions.label(session.provider))\(ProviderOptions.isBeta(session.provider) ? ", " + L("badge.betaAccessibility") : ""), \(selectedModelName)")
+        .accessibilityLabel(L("composer.model.menuAccessibility")).accessibilityValue("\(ProviderOptions.label(session.provider))\(ProviderOptions.isBeta(session.provider) ? ", " + L("badge.betaAccessibility") : ""), \(selectedModelName)")
         .accessibilityIdentifier("composer-model-\(session.id)")
     }
 
@@ -387,9 +387,9 @@ struct SessionPaneView: View {
             ComposerPill(title: effortLabel(session.settings.effort), systemImage: "brain", chevron: true, maximumTextWidth: 48, compact: compact)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-        .accessibilityLabel("사고 강도").accessibilityValue(effortLabel(session.settings.effort))
+        .accessibilityLabel(L("composer.effort.label")).accessibilityValue(effortLabel(session.settings.effort))
         .accessibilityIdentifier("composer-effort-\(session.id)")
-        .help(effortLevels.isEmpty ? "이 모델에서 지원되는 강도를 확인하지 못해 Auto를 사용합니다." : "사고 강도 · 다음 요청에 적용")
+        .help(effortLevels.isEmpty ? L("composer.effort.unknownLevels") : L("composer.effort.help"))
         .disabled(running || (effortLevels.isEmpty && session.settings.effort == "default"))
     }
 
@@ -414,7 +414,7 @@ struct SessionPaneView: View {
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
         .help(permissionDescription(session.settings.permissionMode, provider: session.provider))
-        .accessibilityLabel("작업 권한").accessibilityValue(permissionModeMenuLabel(session.settings.permissionMode))
+        .accessibilityLabel(L("composer.label.permission")).accessibilityValue(permissionModeMenuLabel(session.settings.permissionMode))
         .accessibilityIdentifier("composer-permission-\(session.id)")
     }
 
@@ -423,8 +423,8 @@ struct SessionPaneView: View {
             ComposerPill(title: "Fast", systemImage: session.settings.fastMode ? "bolt.fill" : "bolt", active: session.settings.fastMode, compact: compact)
         }
         .buttonStyle(.plain).disabled(running || (!runtime.capabilities.fastMode && !session.settings.fastMode))
-        .help("Fast · 지원 모델·계정에서 사용 · 사용량 증가")
-        .accessibilityLabel("Codex Fast").accessibilityValue(session.settings.fastMode ? "켬" : "끔")
+        .help(L("composer.fast.help"))
+        .accessibilityLabel(L("composer.fast.accessibility")).accessibilityValue(session.settings.fastMode ? L("composer.fast.valueOn") : L("composer.fast.valueOff"))
         .accessibilityIdentifier("composer-fast-\(session.id)")
     }
 
@@ -433,7 +433,7 @@ struct SessionPaneView: View {
         return Button { store.selectSession(session.id); store.settingsSession = session } label: {
             ComposerPill(title: "", systemImage: "ellipsis", active: modified, compact: true)
         }
-        .buttonStyle(.plain).disabled(running).help("추가 실행 설정").accessibilityLabel("실행 설정")
+        .buttonStyle(.plain).disabled(running).help(L("composer.runSettings.help")).accessibilityLabel(L("settings.run.title"))
         .accessibilityIdentifier("composer-more-\(session.id)")
     }
 
@@ -443,25 +443,25 @@ struct SessionPaneView: View {
     private var overflowMenu: some View {
         Menu {
             if showsEffort {
-                Menu("사고 강도 · \(effortLabel(session.settings.effort))") { effortOptions }
+                Menu(L("composer.effort.menu", ["effort": effortLabel(session.settings.effort)])) { effortOptions }
                     .disabled(effortLevels.isEmpty && session.settings.effort == "default")
             }
-            Menu("작업 권한 · \(permissionModeMenuLabel(session.settings.permissionMode))") { permissionOptions }
+            Menu(L("composer.permission.menu", ["permission": permissionModeMenuLabel(session.settings.permissionMode)])) { permissionOptions }
             if showsFast {
                 Button { updateSettings { $0.fastMode.toggle() } } label: {
-                    Label(session.settings.fastMode ? "Fast 켜짐" : "Fast 끔", systemImage: session.settings.fastMode ? "checkmark" : "bolt")
+                    Label(session.settings.fastMode ? L("composer.fast.on") : L("composer.fast.off"), systemImage: session.settings.fastMode ? "checkmark" : "bolt")
                 }.disabled(!runtime.capabilities.fastMode && !session.settings.fastMode)
-                    .help("지원 모델·계정에서 사용 · 사용량 증가")
+                    .help(L("composer.fast.helpShort"))
             }
             Divider()
-            Button("추가 실행 설정…") { store.selectSession(session.id); store.settingsSession = session }
+            Button(L("composer.runSettings.more")) { store.selectSession(session.id); store.settingsSession = session }
         } label: {
             ComposerPill(title: "", systemImage: "slider.horizontal.3", active: session.settings.permissionMode == "fullAccess" || session.settings.fastMode, compact: true)
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).disabled(running)
-        .accessibilityLabel("실행 옵션").accessibilityValue("\(effortLabel(session.settings.effort)), \(permissionModeMenuLabel(session.settings.permissionMode))")
+        .accessibilityLabel(L("composer.runOptions.accessibility")).accessibilityValue("\(effortLabel(session.settings.effort)), \(permissionModeMenuLabel(session.settings.permissionMode))")
         .accessibilityIdentifier("composer-options-\(session.id)")
-        .help("사고 강도 · 작업 권한 · 추가 실행 설정")
+        .help(L("composer.runOptions.help"))
     }
 
     private func updateSettings(_ update: (inout RunSettings) -> Void) {
@@ -531,11 +531,11 @@ struct SessionPaneView: View {
                 else { ProviderIcon(provider: session.provider, size: 24, weight: .light) }
             }.foregroundStyle(Palette.accent.opacity(0.75)).padding(.bottom, 5)
             HStack(spacing: 8) {
-                Text(session.kind == "shell" ? "작업 폴더에서 명령 실행" : "\(ProviderOptions.label(session.provider))와 작업을 시작하세요")
+                Text(session.kind == "shell" ? L("pane.empty.shellTitle") : L("pane.empty.agentTitle", ["provider": ProviderOptions.label(session.provider)]))
                     .font(.system(size: 16, weight: .medium))
                 if session.kind != "shell" && ProviderOptions.isBeta(session.provider) { BetaBadge() }
             }
-            Text(session.kind == "shell" ? "명령마다 새 셸을 시작합니다. 대화형 프로그램과 비밀번호 입력은 지원하지 않습니다." : "프로젝트를 설명하거나, 수정할 내용을 입력하세요. 이 창의 대화는 다음 실행에서도 이어집니다.")
+            Text(session.kind == "shell" ? L("pane.empty.shellBody") : L("pane.empty.agentBody"))
                 .font(.system(size: 12)).foregroundStyle(Palette.ink2).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
     }
@@ -555,7 +555,7 @@ struct SessionPaneView: View {
                     GuidedApprovalStrip(name: pending.manifest.name, source: pending.source, sessionID: session.id) { openApproval(pending) }
                         .padding(.horizontal, 12)
                 } else if store.styleNeedsRechoosing(session) {
-                    Text("이 실행 창의 스타일이 바뀌었습니다 — 다시 고르세요")
+                    Text(L("composer.style.changed"))
                         .font(.system(size: 10)).foregroundStyle(Palette.waitText).padding(.horizontal, 12)
                         .accessibilityIdentifier("mighty-style-changed-\(session.id)")
                 }
@@ -596,10 +596,10 @@ struct SessionPaneView: View {
                         .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.accent).lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                         .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
-                        .accessibilityLabel("Enter로 보낼 명령: " + armedPrefix)
+                        .accessibilityLabel(L("composer.armedCommand", ["command": armedPrefix]))
                         .accessibilityIdentifier("mighty-enter-armed-\(session.id)")
                 }
-                NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? "실행할 명령" : "메시지", accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocusChanged($0) }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput, canSubmit: { canSend && !store.hasModal }, onSubmit: { submitComposer(command: $0) }, onNavigationKey: { key in paletteVisible && !store.hasModal ? handlePaletteKey(key) : false })
+                NativeComposerEditor(text: draft, monospaced: session.kind == "shell", accessibilityLabel: session.kind == "shell" ? L("composer.input.command") : L("composer.input.message"), accessibilityIdentifier: "composer-\(session.id)", onFocusChange: { composerFocusChanged($0) }, onPasteAttachments: { board in store.pasteAttachments(session.id, from: board) }, inputController: composerInput, canSubmit: { canSend && !store.hasModal }, onSubmit: { submitComposer(command: $0) }, onNavigationKey: { key in paletteVisible && !store.hasModal ? handlePaletteKey(key) : false })
                     .onChange(of: paletteDraft) { _, text in
                         paletteIndex = 0
                         if text != nil { store.refreshSlashCommands(for: session) }
@@ -608,11 +608,11 @@ struct SessionPaneView: View {
                     .background(TextEditorHeightReader(inputController: composerInput, height: $editorHeight, placeholder: composerPlaceholder).allowsHitTesting(false))
             }
                 .padding(.horizontal, 8).padding(.top, attachments.isEmpty && queued.isEmpty ? 9 : 0)
-                .help(running ? (steers ? "Enter: 현재 작업이 끝난 뒤 실행 · ⌘Enter: 실행 중인 Claude에 바로 전달 · Shift+Enter: 줄바꿈" : "Enter: 현재 작업이 끝난 뒤 실행 · Shift+Enter: 줄바꿈") : "Enter 또는 ⌘Enter로 전송 · Shift+Enter로 줄바꿈")
+                .help(running ? (steers ? L("composer.inputHelp.steer") : L("composer.inputHelp.queue")) : L("composer.inputHelp.idle"))
             if importingAttachments {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text("첨부 파일 읽는 중…").font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                    Text(L("composer.hint.attachmentsLoading")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 }.padding(.horizontal, 12)
             }
             if let attachmentError = store.attachmentErrors[session.id] {
@@ -620,7 +620,7 @@ struct SessionPaneView: View {
                     Image(systemName: "exclamationmark.circle").foregroundStyle(Palette.accent)
                     Text(attachmentError).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                     Button { store.attachmentErrors.removeValue(forKey: session.id) } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
-                        .buttonStyle(.plain).accessibilityLabel("첨부 안내 닫기")
+                        .buttonStyle(.plain).accessibilityLabel(L("composer.attachment.dismissError"))
                 }
                 .font(.system(size: 11)).foregroundStyle(Palette.ink2).padding(.horizontal, 12)
                 .accessibilityIdentifier("attachment-error-\(session.id)")
@@ -629,16 +629,16 @@ struct SessionPaneView: View {
                 HStack(alignment: .top, spacing: 7) {
                     Image(systemName: "keyboard.badge.ellipsis").foregroundStyle(problem.recoveryState == .reconnected ? Palette.doneText : Palette.waitText).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(problem.recoveryState == .reconnected ? "입력기 연결을 확인했습니다" : "입력기 연결 상태를 확인해 주세요").fontWeight(.medium)
+                        Text(problem.recoveryState == .reconnected ? L("inputRecovery.noticeReconnected") : L("inputRecovery.noticeCheck")).fontWeight(.medium)
                         Text(problem.recoveryState.message)
                             .foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
-                        if let file = problem.file { Text("진단 기록: " + file.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
+                        if let file = problem.file { Text(L("inputRecovery.diagnosticsFile", ["path": file.path])).font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1) }
                     }
                     Spacer(minLength: 4)
-                    Button("입력기 다시 연결") { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)
+                    Button(L("menu.reconnectInputMethod")) { store.reconnectInputMethod(editor: composerInput.editor) }.controlSize(.small)
                         .disabled(problem.recoveryState.isPending)
                     Button { store.dismissInputMethodProblem() } label: { Image(systemName: "xmark").font(.system(size: 9)).frame(width: 18, height: 16) }
-                        .buttonStyle(.plain).accessibilityLabel("입력기 안내 닫기")
+                        .buttonStyle(.plain).accessibilityLabel(L("inputRecovery.dismiss"))
                 }
                 .font(.system(size: 11)).lineSpacing(2).padding(.horizontal, 12)
                 .accessibilityIdentifier("input-method-problem-\(session.id)")
@@ -659,7 +659,7 @@ struct SessionPaneView: View {
                 HStack(alignment: .top, spacing: 7) {
                     Image(systemName: "info.circle").foregroundStyle(Palette.accent).padding(.top, 1)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("입력 가능 · 실행 준비 필요").fontWeight(.medium)
+                        Text(L("composer.blocked.title")).fontWeight(.medium)
                         Text(reason).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -752,12 +752,12 @@ struct SessionPaneView: View {
                     .fixedSize(horizontal: true, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text("명령 실행").font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    Text(L("composer.shell.title")).font(.system(size: 11)).foregroundStyle(Palette.ink2).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 HStack(alignment: .center, spacing: 6) {
                     if session.resumeId != nil {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(Palette.ink2).help("이전 대화를 이어갑니다.").accessibilityLabel("대화 이어짐")
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).frame(width: 16, height: 32).foregroundStyle(Palette.ink2).help(L("composer.resume.help")).accessibilityLabel(L("composer.resume.name"))
                     }
                     if session.kind != "shell" { SessionContextButton(sessionID: session.id) }
                     if showsStatusLineToggle { statusLineToggle }
@@ -773,8 +773,8 @@ struct SessionPaneView: View {
                                 .contentShape(RoundedRectangle(cornerRadius: compact ? 7 : 8, style: .continuous))
                         }
                         .buttonStyle(.plain).disabled(stopping)
-                        .help(stopping ? "중지하는 중…" : "작업 중지")
-                        .accessibilityLabel(stopping ? "중지하는 중" : "중지")
+                        .help(stopping ? L("composer.stop.stopping") : L("composer.stop.help"))
+                        .accessibilityLabel(stopping ? L("composer.stop.stoppingAccessibility") : L("phone.composer.stop"))
                         .accessibilityIdentifier("composer-stop-" + session.id)
                         .background(AccessibilityStateProbe(identifier: "composer-stop-" + session.id, enabled: !stopping))
                     }
@@ -785,8 +785,8 @@ struct SessionPaneView: View {
                                 .background(canSend ? Palette.run : Palette.track, in: Circle()).contentShape(Circle())
                         }
                         .buttonStyle(.plain).disabled(!canSend)
-                        .help(running ? (steers ? "다음 요청으로 대기 (Enter) · 실행 중인 Claude에 바로 전달하려면 ⌘Enter" : "현재 작업이 끝난 뒤 실행 (Enter)") : "보내기 (Enter 또는 ⌘Enter) · Shift+Enter로 줄바꿈")
-                        .accessibilityLabel(running ? "대기열에 추가" : "보내기")
+                        .help(running ? (steers ? L("queue.addOrSteerHintMac") : L("queue.addHint")) : L("composer.send.helpMac"))
+                        .accessibilityLabel(running ? L("queue.add") : L("composer.send.name"))
                         .accessibilityIdentifier("send-" + session.id)
                         .background(AccessibilityStateProbe(identifier: "send-" + session.id, enabled: canSend))
                     }
@@ -903,23 +903,23 @@ struct SessionPaneView: View {
 
     private var attachmentButton: some View {
         Menu {
-            Button("파일 선택…") { store.chooseAttachments(session.id) }
-            Button("이미지 또는 파일 붙여넣기") { store.pasteAttachments(session.id) }
+            Button(L("composer.attachment.choose")) { store.chooseAttachments(session.id) }
+            Button(L("composer.attachment.paste")) { store.pasteAttachments(session.id) }
             if !attachments.isEmpty {
                 Divider()
-                Button("첨부 모두 제거") { store.discardAttachments(session.id) }
+                Button(L("composer.attachment.removeAll")) { store.discardAttachments(session.id) }
             }
         } label: {
             ComposerPill(title: "", systemImage: "paperclip", compact: true)
         } primaryAction: { store.chooseAttachments(session.id) }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
         .disabled(importingAttachments || !runtime.capabilities.attachments)
-        .help(runtime.capabilities.attachments ? "파일 첨부 · 최대 8개, 파일당 5 MiB, 합계 8 MiB" : "이 실행기는 첨부 파일을 지원하지 않습니다.")
-        .accessibilityLabel("파일 첨부").accessibilityIdentifier("attach-\(session.id)")
+        .help(runtime.capabilities.attachments ? L("composer.attach.helpMac") : L("composer.attachment.unsupported"))
+        .accessibilityLabel(L("phone.composer.attach")).accessibilityIdentifier("attach-\(session.id)")
     }
 
     private func role(_ entry: LogEntry) -> String {
-        switch entry.kind { case "user": return "나"; case "assistant": return ProviderOptions.label(entry.provider ?? session.provider); case "output": return "출력"; case "error": return "오류"; default: return "시스템" }
+        switch entry.kind { case "user": return L("pane.log.roleUser"); case "assistant": return ProviderOptions.label(entry.provider ?? session.provider); case "output": return L("composer.sessionInfo.output"); case "error": return L("session.state.error"); default: return L("pane.log.roleSystem") }
     }
 }
 

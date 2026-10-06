@@ -9,14 +9,14 @@ struct AgentStatusControls: View {
             Button { companion.preferences.enabled.toggle() } label: {
                 Image(systemName: companion.preferences.enabled ? "pawprint.fill" : "pawprint")
                     .foregroundStyle(companion.preferences.enabled ? Palette.accent : .secondary)
-            }.buttonStyle(.plain).help(companion.preferences.enabled ? "펫 숨기기" : "펫 보기").accessibilityLabel("펫 표시 전환")
+            }.buttonStyle(.plain).help(companion.preferences.enabled ? L("menu.hidePet") : L("companion.status.showPet")).accessibilityLabel(L("companion.status.togglePet"))
             Button { companion.showsStatus.toggle() } label: {
                 HStack(spacing: 5) {
                     Image(systemName: companion.runningCount > 0 ? "waveform.path" : "circle.grid.2x2")
                     if companion.runningCount > 0 { Text("\(companion.runningCount)").monospacedDigit() }
                 }.padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Palette.subtle, in: Capsule())
-            }.buttonStyle(.plain).help("에이전트 상태").accessibilityLabel("에이전트 상태")
+            }.buttonStyle(.plain).help(L("companion.status.title")).accessibilityLabel(L("companion.status.title"))
                 .popover(isPresented: $companion.showsStatus, arrowEdge: .top) {
                     AgentStatusPopover(companion: companion)
                 }
@@ -29,12 +29,12 @@ struct AgentStatusPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("에이전트 상태").font(.system(size: 14, weight: .semibold))
+                Text(L("companion.status.title")).font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Text("\(companion.runningCount)개 작업 중").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(L("companion.status.busyCount", ["count": "\(companion.runningCount)"])).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if companion.agents.isEmpty {
-                Text("에이전트를 추가하면 현재 작업이 여기에 표시됩니다.").font(.system(size: 12)).foregroundStyle(.secondary).padding(.vertical, 18)
+                Text(L("companion.status.empty")).font(.system(size: 12)).foregroundStyle(.secondary).padding(.vertical, 18)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
@@ -56,13 +56,13 @@ struct AgentStatusPopover: View {
                                     }
                                     Image(systemName: "arrow.up.forward").font(.system(size: 9)).foregroundStyle(.tertiary)
                                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 10))
-                            }.buttonStyle(.plain).accessibilityLabel("\(agent.title), \(presenceLabel(agent.status)), 열기")
+                            }.buttonStyle(.plain).accessibilityLabel(L("companion.status.rowAccessibility", ["title": agent.title, "status": presenceLabel(agent.status)]))
                         }
                     }
                 }.frame(maxHeight: 330)
             }
             Divider()
-            Toggle("데스크톱 펫", isOn: $companion.preferences.enabled).toggleStyle(.switch).controlSize(.mini)
+            Toggle(L("companion.status.petSwitch"), isOn: $companion.preferences.enabled).toggleStyle(.switch).controlSize(.mini)
         }.padding(18).frame(width: 350)
     }
 }
@@ -70,32 +70,32 @@ struct AgentStatusPopover: View {
 struct CompanionSettingsSection: View {
     @ObservedObject var companion: AgentCompanion
     var body: some View {
-        Section("펫과 작업 알림") {
-            Toggle("데스크톱 펫 표시", isOn: $companion.preferences.enabled)
+        Section(L("companion.settings.sectionTitle")) {
+            Toggle(L("companion.settings.enabled"), isOn: $companion.preferences.enabled)
             HStack {
                 if let pet = companion.selectedPet, let image = pet.frames.first?.first {
                     Image(nsImage: image).resizable().scaledToFit().frame(width: 58, height: 64)
                 }
                 VStack(alignment: .leading, spacing: 7) {
-                    Picker("펫", selection: $companion.preferences.selectedPet) {
+                    Picker(L("companion.settings.pet"), selection: $companion.preferences.selectedPet) {
                         ForEach(companion.pets) { pet in Text(pet.name).tag(pet.id) }
                     }
                     HStack {
-                        Button("Codex 펫 가져오기…") { companion.importPet() }
-                        Button("새로고침") { companion.reloadPets() }
+                        Button(L("companion.settings.import")) { companion.importPet() }
+                        Button(L("companion.settings.reload")) { companion.reloadPets() }
                     }.controlSize(.small)
                 }
             }
-            Text("설치된 Codex 펫과 PNG/WebP 스프라이트를 사용할 수 있습니다. v1–v3의 기본 9개 동작을 재생합니다.")
+            Text(L("companion.settings.petsNote"))
                 .font(.system(size: 10)).foregroundStyle(.secondary)
-            Toggle("펫 말풍선에 요청과 현재 작업 표시", isOn: $companion.preferences.showsTask)
-            Toggle("펫 애니메이션 줄이기", isOn: $companion.preferences.reducedMotion)
-            Toggle("작업 완료 시 Mac 알림", isOn: $companion.preferences.notifications)
+            Toggle(L("companion.settings.task"), isOn: $companion.preferences.showsTask)
+            Toggle(L("companion.settings.motion"), isOn: $companion.preferences.reducedMotion)
+            Toggle(L("companion.settings.macNotifications"), isOn: $companion.preferences.notifications)
                 .onChange(of: companion.preferences.notifications) { _, enabled in Task { await companion.refreshNotificationStatus(request: enabled) } }
             HStack {
                 Text(companion.notificationStatus).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer()
-                Button("알림 설정") {
+                Button(L("windows.notifications.settingsButton")) {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
                 }.controlSize(.small)
             }
@@ -115,7 +115,7 @@ struct PresenceIndicator: View {
 }
 
 func presenceLabel(_ state: String) -> String {
-    state == "waiting" ? "대기 중" : Palette.status(state)
+    state == "waiting" ? L("graph.state.waiting") : Palette.status(state)
 }
 
 struct CompanionOverlayView: View {
@@ -139,7 +139,7 @@ struct CompanionOverlayView: View {
                         Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                     } else { Image(systemName: "pawprint.fill").resizable().scaledToFit().foregroundStyle(Palette.accent).padding(35) }
                 }.frame(width: 125, height: 135)
-            }.buttonStyle(.plain).accessibilityLabel(companion.preferences.showsTask && bubble.isVisible ? "작업 말풍선 숨기기" : "작업 말풍선 보기").accessibilityIdentifier("pet-toggle-bubble")
+            }.buttonStyle(.plain).accessibilityLabel(companion.preferences.showsTask && bubble.isVisible ? L("companion.bubble.hide") : L("companion.bubble.show")).accessibilityIdentifier("pet-toggle-bubble")
                 .background(CompanionPetInteraction(motion: motion, row: animationRow, onClick: toggleBubble).allowsHitTesting(false))
                 .contextMenu { Button(L("menu.hidePet")) { companion.preferences.enabled = false }; Button(L("menu.openAgent")) { companion.focus(companion.shown?.id) } }
         }.padding(8).frame(width: panelSize.width, height: panelSize.height, alignment: .bottom)
@@ -230,13 +230,13 @@ struct CompanionTaskBubble: View {
             }
             if let input = current.input, !input.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
-                    Text("요청").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, 2)
+                    Text(L("graph.timeline.kind.request")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, 2)
                     Text(input).font(.system(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Divider()
             }
             HStack(alignment: .top, spacing: 6) {
-                Text("작업").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, 2)
+                Text(L("transcript.tool.fallback")).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).padding(.top, 2)
                 Text(current.summary).font(.system(size: 11)).lineLimit(lines).frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
             }
@@ -245,9 +245,9 @@ struct CompanionTaskBubble: View {
     }
 
     static func spokenLabel(_ agent: AgentPresence, at date: Date) -> String {
-        let place = agent.workspace.isEmpty ? "" : agent.workspace + " 워크스페이스의 "
-        let elapsed = agent.timing.map { "실행 시간 " + $0.label(at: date) + ". " } ?? ""
-        return place + agent.title + " 열기. " + elapsed + "요청: " + (agent.input ?? "없음") + ". 작업: " + agent.summary
+        let place = agent.workspace.isEmpty ? "" : L("companion.spoken.place", ["workspace": agent.workspace])
+        let elapsed = agent.timing.map { L("companion.spoken.elapsed", ["time": $0.label(at: date)]) } ?? ""
+        return L("companion.spoken.open", ["place": place, "title": agent.title, "elapsed": elapsed, "input": agent.input ?? L("companion.spoken.noInput"), "summary": agent.summary])
     }
 }
 
@@ -260,7 +260,7 @@ struct CompanionPager: View {
 
     private func pager(_ position: Int, of count: Int) -> some View {
         HStack(spacing: 6) {
-            pageButton("chevron.left", offset: -1, label: "이전 에이전트")
+            pageButton("chevron.left", offset: -1, label: L("companion.pager.previous"))
             Spacer(minLength: 0)
             if count <= 8 {
                 HStack(spacing: 4) {
@@ -270,17 +270,17 @@ struct CompanionPager: View {
                 }.accessibilityHidden(true)
             }
             Text("\(position) / \(count)").font(.system(size: 9, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
-                .accessibilityLabel("작업 중인 에이전트 \(count)개 중 \(position)번째")
+                .accessibilityLabel(L("companion.pager.position", ["count": "\(count)", "position": "\(position)"]))
                 .accessibilityIdentifier("pet-page-label")
             if companion.hiddenApproval != nil {
                 Button { companion.showApprovalAgent() } label: {
                     Image(systemName: "hand.raised.fill").font(.system(size: 9)).foregroundStyle(Palette.waitText).frame(width: 16, height: 16).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).help("다른 에이전트가 승인을 기다립니다 · 눌러서 보기").accessibilityLabel("승인을 기다리는 에이전트 보기")
+                .buttonStyle(.plain).help(L("companion.pager.approvalHelp")).accessibilityLabel(L("companion.pager.approvalAccessibility"))
                 .accessibilityIdentifier("pet-page-approval")
             }
             Spacer(minLength: 0)
-            pageButton("chevron.right", offset: 1, label: "다음 에이전트")
+            pageButton("chevron.right", offset: 1, label: L("companion.pager.next"))
         }
     }
 
@@ -334,30 +334,30 @@ struct CompanionApprovalBubble: View {
             }
             if let error = companion.approvalError { Text(error).font(.system(size: 9)).foregroundStyle(Palette.errText).lineLimit(2) }
             HStack(spacing: 6) {
-                // Four buttons share 234pt while a questionnaire is up, so 열기 shrinks to its icon there.
+                // Four buttons share 234pt while a questionnaire is up, so "Open" shrinks to its icon there.
                 Button { companion.openApproval() } label: {
-                    if questionnaire == nil { Text("열기") } else { Image(systemName: "arrow.up.forward.app") }
+                    if questionnaire == nil { Text(L("companion.button.open")) } else { Image(systemName: "arrow.up.forward.app") }
                 }
-                .help("실행 창에서 열기").accessibilityLabel("실행 창에서 열기").accessibilityIdentifier("pet-approval-open")
+                .help(L("companion.button.openInPane")).accessibilityLabel(L("companion.button.openInPane")).accessibilityIdentifier("pet-approval-open")
                 Spacer(minLength: 0)
                 if companion.approvalBusy { ProgressView().controlSize(.mini) }
                 if let question, let questionnaire {
                     if companion.questionProgress.index > 0 {
-                        Button("이전") { companion.previousQuestion() }.accessibilityIdentifier("pet-question-back")
+                        Button(L("companion.question.back")) { companion.previousQuestion() }.accessibilityIdentifier("pet-question-back")
                     }
                     if companion.needsCommitButton(question, in: questionnaire) {
                         Button(Self.commitTitle(questionnaire, progress: companion.questionProgress)) { companion.commitQuestion() }
                             .buttonStyle(.borderedProminent).disabled(!companion.canCommit(question))
                             .accessibilityIdentifier("pet-question-next")
                     }
-                    Button("취소") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
+                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
                 } else if questionnaire == nil {
-                    Button("거부") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-deny")
-                    Button("이번만 허용") { companion.answerApproval(allow: true) }
+                    Button(L("permission.deny")) { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-deny")
+                    Button(L("permission.allowOnce")) { companion.answerApproval(allow: true) }
                         .buttonStyle(.borderedProminent).disabled(!approval.request.canAllow)
                         .accessibilityIdentifier("pet-approval-allow")
                 } else {
-                    Button("취소") { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
+                    Button(L("phone.questionnaire.cancel")) { companion.answerApproval(allow: false) }.accessibilityIdentifier("pet-approval-cancel")
                 }
             }.controlSize(.small).disabled(companion.approvalBusy)
             CompanionPager(companion: companion)
@@ -368,18 +368,18 @@ struct CompanionApprovalBubble: View {
         // The approval keeps its own height; its sides still set the shared width.
         .overlay(CompanionBubbleResizer(companion: companion, measuredHeight: nil, allowsHeight: false))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(approval.workspaceName.isEmpty ? "" : approval.workspaceName + " 워크스페이스의 ")\(approval.sessionTitle) 승인 요청: \(presentation.headline ?? approval.request.summary)")
+        .accessibilityLabel(L("companion.approval.accessibility", ["place": approval.workspaceName.isEmpty ? "" : L("companion.spoken.place", ["workspace": approval.workspaceName]), "title": approval.sessionTitle, "headline": presentation.headline ?? approval.request.summary]))
         .accessibilityIdentifier("pet-approval-bubble")
     }
 
-    /// "선택 요청 2/3" while stepping through several questions.
+    /// "Choice requested 2/3" while stepping through several questions.
     static func title(_ questionnaire: UserQuestionnaire?, progress: QuestionnaireProgress) -> String {
-        guard let questionnaire else { return "승인 요청" }
+        guard let questionnaire else { return L("companion.approval.title") }
         let total = questionnaire.questions.count
-        return total > 1 ? "선택 요청 \(progress.index + 1)/\(total)" : "선택 요청"
+        return total > 1 ? L("companion.question.titleProgress", ["current": "\(progress.index + 1)", "total": "\(total)"]) : L("phone.questionnaire.title")
     }
     static func commitTitle(_ questionnaire: UserQuestionnaire, progress: QuestionnaireProgress) -> String {
-        progress.index + 1 < questionnaire.questions.count ? "다음" : "보내기"
+        progress.index + 1 < questionnaire.questions.count ? L("companion.question.next") : L("composer.send.name")
     }
     /// Toggled picks for a multi-choice question; the recorded answer when the user came back to one.
     static func picked(_ label: String, question: UserQuestionnaire.Question, progress: QuestionnaireProgress) -> Bool {
@@ -407,7 +407,7 @@ private struct CompanionOptionRow: View {
             .background(picked ? Palette.accent.opacity(0.16) : Palette.subtle, in: RoundedRectangle(cornerRadius: 7))
             .contentShape(RoundedRectangle(cornerRadius: 7))
         }
-        .buttonStyle(.plain).accessibilityLabel(option.label).accessibilityValue(picked ? "선택됨" : "선택 안 됨")
+        .buttonStyle(.plain).accessibilityLabel(option.label).accessibilityValue(picked ? L("accessibility.selected") : L("accessibility.notSelected"))
     }
 }
 

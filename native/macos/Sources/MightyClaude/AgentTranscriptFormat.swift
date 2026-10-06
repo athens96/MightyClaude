@@ -384,7 +384,7 @@ enum AgentTranscriptFormat {
 
         func questionnaire(_ form: UserQuestionnaire) {
             for (index, question) in form.questions.enumerated() {
-                let title = "\(index + 1). \(question.header)  ·  \(question.multiSelect ? "복수 선택" : "하나 선택")"
+                let title = "\(index + 1). \(question.header)  ·  \(question.multiSelect ? L("transcript.question.multiple") : L("transcript.question.single"))"
                 paragraph(NSAttributedString(string: title), font: .systemFont(ofSize: 11, weight: .semibold), color: AgentTranscriptFormat.accent, spacing: 6,
                           box: box(background: AgentTranscriptFormat.accentWash, border: .clear))
                 paragraph(NSAttributedString(string: question.question), font: .systemFont(ofSize: 14, weight: .semibold), spacing: 10)

@@ -28,6 +28,9 @@ import AppKit
 import Carbon
 import Foundation
 
+/// Stands in for MightyCore's locale lookup, which this harness does not link.
+func L(_ key: String, _ subs: [String: String] = [:]) -> String { key }
+
 @MainActor final class ApplicationFixture: NSObject {
     var isActive = false
     var isHidden = false

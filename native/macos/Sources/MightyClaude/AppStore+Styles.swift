@@ -365,7 +365,7 @@ extension AppStore {
                 // The phone's Mighty payload carries this and it does not live
                 // in the snapshot, so the revision has to be nudged by hand.
                 self.mobileObserve()
-                // A press of 다시 확인 while a read was already in flight is a
+                // A press of "Recheck" while a read was already in flight is a
                 // request for a *fresh* answer, not for the one in flight.
                 if self.stylePrerequisiteAgain.remove(key) != nil {
                     self.loadStylePrerequisites(key, prerequisites: prerequisites, install: install)
@@ -458,7 +458,7 @@ extension AppStore {
     func startStyleInstall(_ style: RegisteredStyle, from session: RunSession) {
         guard let install = style.manifest.install else { return }
         guard let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }),
-              let id = addSession(kind: "shell", workspaceId: workspace.id) else { error = "설치 터미널을 열지 못했습니다."; return }
+              let id = addSession(kind: "shell", workspaceId: workspace.id) else { error = L("styles.install.terminalFailed"); return }
         updateSession(id) { $0.title = StyleChrome.installPaneTitle(install.paneTitle, styleName: style.manifest.name, source: style.source) }
         pendingTerminalInput[id] = TerminalInput(text: install.command, autoRun: false)
     }
@@ -524,7 +524,7 @@ extension AppStore {
                 guard let self, self.guidedProgress[sessionId]?.requestKey == progress.requestKey else { return }
                 // Keep what the user answered if the request is still pending (the send failed).
                 let stillPending = self.toolPermissions[sessionId]?.contains { $0.id == request.id && $0.runId == request.runId } == true
-                if stillPending { self.permissionErrors[sessionId] = self.permissionErrors[sessionId] ?? "답변을 전달하지 못했습니다. 다시 시도하세요." }
+                if stillPending { self.permissionErrors[sessionId] = self.permissionErrors[sessionId] ?? L("styles.guided.answerFailed") }
                 else { self.guidedProgress.removeValue(forKey: sessionId) }
             }
         }
@@ -593,7 +593,7 @@ extension AppStore {
             await self.rescanStyles().value
             // The registry now holds the approved bytes; the pane may move.
             guard let approved = self.styleRegistry.resolve(style.id), approved.hash == style.hash, StyleLaunchWiring.canBindRunWindow(to: approved) else {
-                self.error = self.error ?? "스타일을 허용하지 못했습니다: " + style.manifest.name
+                self.error = self.error ?? L("styles.approval.allowFailed", ["name": style.manifest.name])
                 return
             }
             then?(approved)
@@ -628,8 +628,8 @@ extension AppStore {
     static func styleTrustMessage(_ error: Error) -> String {
         switch error {
         case StyleTrustFailure.locked(let path): return StyleSettingsList.lockedMessage(path)
-        case StyleTrustFailure.full: return "신뢰 기록이 가득 찼습니다. 설정에서 오래된 항목을 지우세요."
-        default: return "신뢰 기록을 저장하지 못했습니다."
+        case StyleTrustFailure.full: return L("styles.trust.full")
+        default: return L("styles.trust.saveFailed")
         }
     }
 
@@ -640,7 +640,7 @@ extension AppStore {
     func readStyleCandidate(at url: URL) -> StyleCandidateOutcome {
         let opened = url.startAccessingSecurityScopedResource()
         defer { if opened { url.stopAccessingSecurityScopedResource() } }
-        guard let data = Self.boundedStyleData(url) else { return .refused("파일을 읽지 못했습니다: " + url.path) }
+        guard let data = Self.boundedStyleData(url) else { return .refused(L("styles.import.readFailed", ["path": url.path])) }
         do {
             let manifest = try StyleManifestDecoder.decode(data, source: .user)
             // The copy is named from the validated id and an id already taken
@@ -685,7 +685,7 @@ extension AppStore {
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
             return nil
         } catch {
-            return "스타일 파일을 저장하지 못했습니다: " + destination.path
+            return L("styles.import.saveFailed", ["path": destination.path])
         }
     }
 
@@ -695,14 +695,14 @@ extension AppStore {
         styleDiscovered.first { $0.url.path == style.path && $0.hash == style.hash }?.data
     }
 
-    /// Settings › 마이티 스타일 › 파일에서 스타일 등록…
+    /// Settings › Mighty styles › register a style from a file…
     func chooseStyleFile() -> URL? {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.prompt = "읽기"
-        panel.message = "마이티 스타일 매니페스트(.json)를 고르세요. 내용을 확인한 뒤에만 등록됩니다."
+        panel.prompt = L("styles.import.panelPrompt")
+        panel.message = L("styles.import.panelMessage")
         return panel.runModal() == .OK ? panel.url : nil
     }
 }

@@ -76,12 +76,12 @@ struct WorkspaceView: View {
                 focusSearchOnUnfold = false; searchFocused = true
             }
         }
-        .confirmationDialog("워크스페이스를 목록에서 제거할까요?", isPresented: Binding(get: { store.pendingRemoval != nil }, set: { if !$0 { store.pendingRemoval = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(L("workspace.remove.title"), isPresented: Binding(get: { store.pendingRemoval != nil }, set: { if !$0 { store.pendingRemoval = nil } }), titleVisibility: .visible) {
             if let workspace = store.pendingRemoval {
-                Button("목록에서 제거", role: .destructive) { store.removeWorkspace(workspace) }
-                Button("취소", role: .cancel) { store.pendingRemoval = nil }
+                Button(L("workspace.menu.remove"), role: .destructive) { store.removeWorkspace(workspace) }
+                Button(L("resume.cancel"), role: .cancel) { store.pendingRemoval = nil }
             }
-        } message: { Text("실행 중인 작업을 중지하고 앱의 실행 기록을 제거합니다. 프로젝트 폴더와 파일은 유지됩니다.") }
+        } message: { Text(L("workspace.remove.message")) }
     }
 
     /// Folded (⌃⌘S or the header's sidebar button) is `.detailOnly`: no icon rail, the
@@ -95,17 +95,17 @@ struct WorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.sidebarInk2)
-                TextField("워크스페이스 검색", text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
+                TextField(L("sidebar.searchPlaceholder"), text: $store.search).textFieldStyle(.plain).font(.system(size: 12))
                     .focused($searchFocused)
                     .onAppear { if focusSearchOnUnfold { searchFocused = true } }
-                    .accessibilityLabel("워크스페이스 검색")
+                    .accessibilityLabel(L("sidebar.searchPlaceholder"))
             }
             .padding(9).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.top, 10)
 
             dashboardEntry.padding(.horizontal, 9).padding(.top, 12)
 
             HStack {
-                Text("워크스페이스").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
+                Text(L("sidebar.workspacesHeader")).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.sidebarInk2)
                 Text("\(store.snapshot.workspaces.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.sidebarInk2)
                 Spacer()
             }
@@ -115,19 +115,19 @@ struct WorkspaceView: View {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(store.filteredWorkspaces) { workspace in workspaceRow(workspace) }
                     if store.filteredWorkspaces.isEmpty {
-                        Text(store.search.isEmpty ? "폴더를 열고 작업을 시작하세요." : "검색 결과가 없습니다.")
+                        Text(store.search.isEmpty ? L("dashboard.empty") : L("sidebar.noSearchResults"))
                             .font(.system(size: 12)).foregroundStyle(Palette.sidebarInk2).padding(16)
                     }
                 }
                 .padding(.horizontal, 9)
             }
 
-            // While a workspace is listed, a folder opens from its "창 추가" menu or ⌘O;
+            // While a workspace is listed, a folder opens from its "Add Pane" menu or ⌘O;
             // with none listed (none yet, or none matching the search) this is the
             // sidebar's way in.
             if store.filteredWorkspaces.isEmpty {
                 Button { store.openWorkspace() } label: {
-                    Label("폴더 열기", systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                    Label(L("sidebar.openFolder"), systemImage: "folder.badge.plus").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(10)
                 }
                 .buttonStyle(.plain).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 7)).padding(.horizontal, 14).padding(.bottom, 12)
             }
@@ -145,9 +145,9 @@ struct WorkspaceView: View {
                 }
                 Spacer()
                 Button { store.toggleTheme() } label: { Image(systemName: store.snapshot.theme == "dark" ? "sun.max" : "moon") }
-                    .buttonStyle(.plain).help("화면 테마 변경").accessibilityLabel("화면 테마 변경")
+                    .buttonStyle(.plain).help(L("sidebar.toggleTheme")).accessibilityLabel(L("sidebar.toggleTheme"))
                 Button { store.showSettings = true } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain).help("설정").accessibilityLabel("설정")
+                    .buttonStyle(.plain).help(L("settings.settingsWindowTitle")).accessibilityLabel(L("settings.settingsWindowTitle"))
             }.padding(16)
         }
         // A solid D surface over the split view's vibrancy, so the wallpaper never
@@ -163,7 +163,7 @@ struct WorkspaceView: View {
         }
     }
 
-    /// "작업 현황" at the top of the sidebar, with what waits on the user, what runs and
+    /// The dashboard entry at the top of the sidebar, with what waits on the user, what runs and
     /// what stopped on an error, as glyph counts.
     private var dashboardEntry: some View {
         let badges = WorkDashboard.badges(sessions: store.snapshot.sessions, permissions: store.toolPermissions)
@@ -217,8 +217,8 @@ struct WorkspaceView: View {
                     .frame(width: 18, height: 18).contentShape(Rectangle())
             }
             .buttonStyle(.plain).padding(.trailing, 6)
-            .help(expanded ? "실행 창 목록 접기" : "실행 창 목록 펼치기")
-            .accessibilityLabel(expanded ? "\(workspace.name) 실행 창 접기" : "\(workspace.name) 실행 창 펼치기")
+            .help(expanded ? L("workspace.list.collapseHelp") : L("workspace.list.expandHelp"))
+            .accessibilityLabel(expanded ? L("workspace.collapseAccessibility", ["workspace": workspace.name]) : L("workspace.expandAccessibility", ["workspace": workspace.name]))
             .accessibilityIdentifier("workspace-expand-\(workspace.id)")
             }
             .background(selected ? Palette.sidebarAccent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
@@ -243,7 +243,7 @@ struct WorkspaceView: View {
 
     /// A pane in the sidebar as a plain row on the sidebar surface: its status glyph,
     /// the title, and a muted line with the provider, the clock and the context. Only a
-    /// pane waiting on the user carries a word on the right ("질문 1").
+    /// pane waiting on the user carries a word on the right ("Question 1").
     private func paneRow(_ session: RunSession) -> some View {
         let card = WorkDashboard.card(session, permissions: store.toolPermissions[session.id])
         let active = !store.showsDashboard && session.id == store.snapshot.activeSessionId
@@ -295,7 +295,7 @@ struct WorkspaceView: View {
         }
     }
 
-    /// `[mark] Claude · 02:14 · 컨텍스트 41%`: the provider's mark, in its brand colour, goes
+    /// `[mark] Claude · 02:14 · Context 41%`: the provider's mark, in its brand colour, goes
     /// before its name; a pane that is not an agent's names its kind with no mark.
     private func paneMeta(_ card: WorkDashboard.Card, localTerminal: Bool, at date: Date) -> some View {
         let parts = WorkDashboard.sidebarMeta(card, now: date).compactMap { part -> Text? in
@@ -380,7 +380,7 @@ struct WorkspaceView: View {
         Group {
             if let workspace = store.activeWorkspace, let root = store.layoutForWorkspace(workspace.id) {
                 PaneDockView(root: root, workspaceId: workspace.id)
-            } else { ProgressView("창 배치 불러오는 중…").frame(maxWidth: .infinity, maxHeight: .infinity) }
+            } else { ProgressView(L("layout.loadingPanes")).frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
     }
 
@@ -388,40 +388,40 @@ struct WorkspaceView: View {
         VStack(spacing: 18) {
             Spacer()
             Image(systemName: "rectangle.split.2x1").font(.system(size: 50, weight: .ultraLight)).foregroundStyle(Palette.accent)
-            Text("하나의 프로젝트, 여러 실행 창").font(.system(size: 27, weight: .semibold))
-            Text("폴더를 열고 Claude, Codex, Gemini와 작업하세요.\n각 실행 창의 대화와 설정은 따로 유지됩니다.")
+            Text(L("layout.welcome.title")).font(.system(size: 27, weight: .semibold))
+            Text(L("layout.welcome.body"))
                 .font(.system(size: 14)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(5)
             HStack(spacing: 10) {
-                Button { store.openWorkspace() } label: { Label("프로젝트 폴더 열기", systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
+                Button { store.openWorkspace() } label: { Label(L("layout.welcome.openProject"), systemImage: "folder.badge.plus").padding(.horizontal, 10).padding(.vertical, 5) }.buttonStyle(.borderedProminent)
             }.padding(.top, 8)
-            Text("⌘O  폴더 열기   ·   ⌘N  실행 창 추가").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
+            Text(L("layout.welcome.shortcutsMac")).font(.system(size: 11)).foregroundStyle(.tertiary).padding(.top, 10)
             Spacer()
-            Text("로컬 CLI와 직접 연결되는 macOS 앱").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
+            Text(L("layout.welcome.footerMac")).font(.system(size: 11)).foregroundStyle(.tertiary).padding(.bottom, 25)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topLeading) { SidebarToggleButton().leadingPastTrafficLights(24).padding(.top, 14) }
     }
 
     private var emptyPanes: some View {
         ContentUnavailableView {
-            Label("실행 창을 추가하세요", systemImage: "square.stack.3d.up")
-        } description: { Text("AI 대화와 프로젝트 명령을 나란히 실행할 수 있습니다.") }
-        actions: { Button("새 Claude 실행 창") { store.addSession(kind: "claude") }.buttonStyle(.borderedProminent) }
+            Label(L("layout.empty.addPane"), systemImage: "square.stack.3d.up")
+        } description: { Text(L("layout.empty.addPaneDetail")) }
+        actions: { Button(L("menu.newClaudePane")) { store.addSession(kind: "claude") }.buttonStyle(.borderedProminent) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var statusBar: some View {
         HStack(spacing: 7) {
             Image(systemName: "desktopcomputer").font(.system(size: 10))
-            Text("이 Mac에서 실행")
+            Text(L("window.status.thisMac"))
             Spacer()
-            Text("\(store.activeSessions.count)개 실행 창")
+            Text(L("window.status.paneCount", ["count": "\(store.activeSessions.count)"]))
             Text("·").padding(.horizontal, 3)
-            Text("\(store.snapshot.sessions.filter { $0.status == "running" }.count)개 실행 중")
+            Text(L("window.status.runningCount", ["count": "\(store.snapshot.sessions.filter { $0.status == "running" }.count)"]))
             if let version = store.appUpdate.availability?.manifest.version, [.available, .ready].contains(store.appUpdate.phase) {
                 Button { store.showSettings = true } label: {
-                    Label("새 버전 \(version)", systemImage: "arrow.down.circle.fill").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
+                    Label(L("window.status.updateBadge", ["version": version]), systemImage: "arrow.down.circle.fill").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.accent)
                 }
-                .buttonStyle(.plain).help("설정에서 업데이트를 받거나 설치할 수 있습니다.").accessibilityIdentifier("app-update-badge")
+                .buttonStyle(.plain).help(L("window.status.updateBadgeHelp")).accessibilityIdentifier("app-update-badge")
             }
             Divider().frame(height: 12).padding(.horizontal, 4)
             StatusBarUsageView(controller: accountUsage)
@@ -435,7 +435,7 @@ struct WorkspaceView: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.waitText)
             Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("경고 닫기")
+            Button { store.resourceWarning = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.warning.dismiss"))
         }.padding([.vertical, .trailing], 12).leadingPastTrafficLights(12).background(Palette.waitSoft)
     }
 
@@ -443,7 +443,7 @@ struct WorkspaceView: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(Palette.errText)
             Text(message).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("오류 닫기")
+            Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel(L("window.error.dismiss"))
         }.padding([.vertical, .trailing], 12).leadingPastTrafficLights(12).background(Palette.errSoft)
     }
 }
@@ -484,7 +484,7 @@ extension View {
     func leadingPastTrafficLights(_ base: CGFloat) -> some View { modifier(TrafficLightClearance(base: base)) }
 }
 
-/// The "창 추가" menu's items, shared by the sidebar's last row and the dashboard's
+/// The "Add Pane" menu's items, shared by the sidebar's last row and the dashboard's
 /// workspace header: new agent panes (Claude and Codex then ask whether to continue
 /// an earlier session, `AppStore.addAgentPane`), a terminal, a browser tab, and
 /// another project folder.
@@ -495,7 +495,7 @@ struct WorkspaceAddMenuItems: View {
     var body: some View {
         ForEach(ProviderOptions.ids, id: \.self) { provider in
             Button { store.addAgentPane(provider: provider, workspaceId: workspace.id) } label: {
-                Label { Text(ProviderOptions.betaTitle(provider, "새 \(ProviderOptions.label(provider)) 실행 창")) } icon: {
+                Label { Text(ProviderOptions.betaTitle(provider, L("workspace.newAgentPane", ["provider": ProviderOptions.label(provider)]))) } icon: {
                     if let image = ProviderIconImage.image(provider: provider, pointSize: 12) { Image(nsImage: image) }
                     else { Image(systemName: Palette.symbol(provider)) }
                 }
@@ -527,7 +527,7 @@ struct WorkspaceAddMenuItems: View {
 
 /// Counts as glyphs (status v2): "? 1  ✻ 2  ! 1" in the sidebar — waiting on the user,
 /// running, stopped by an error. `long` is the workspace header's summary, which also
-/// counts what has settled and names each state: "? 1 응답 대기  ✻ 1 실행 중  ✓ 1 완료  ○ 1 준비".
+/// counts what has settled and names each state: "? 1 waiting  ✻ 1 running  ✓ 1 done  ○ 1 ready".
 /// A zero is left out.
 private struct StatusCounts: View {
     let badges: WorkDashboard.Badges

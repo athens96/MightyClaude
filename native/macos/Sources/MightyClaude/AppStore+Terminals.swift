@@ -29,7 +29,7 @@ extension AppStore {
                 self?.selectSession(id)
             }, closeRequested: { [weak self] in self?.closeSession(id) })
             terminal.initialInput = pendingTerminalInput.removeValue(forKey: id)
-            terminal.initialInputFailed = { [weak self] command in self?.error = "터미널에 명령을 입력하지 못했습니다. 직접 입력하세요: \(command)" }
+            terminal.initialInputFailed = { [weak self] command in self?.error = L("terminal.initialInputFailed", ["command": command]) }
             terminal.initialInputRefused = { [weak self] reason in self?.error = reason }
             localTerminals[id] = terminal
         } catch {

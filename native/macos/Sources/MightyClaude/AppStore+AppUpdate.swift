@@ -74,7 +74,7 @@ extension AppStore {
 
     func checkForAppUpdate() {
         guard !ending, !appUpdateBusy else { return }
-        guard let url = appUpdateManifestURL else { appUpdate.phase = .failed("업데이트 정보 주소가 설정되지 않았습니다. 설정에서 https 주소를 입력하세요."); return }
+        guard let url = appUpdateManifestURL else { appUpdate.phase = .failed(L("settings.appUpdate.errorNoManifestURL")); return }
         appUpdate.phase = .checking
         let version = appVersion
         let service = appUpdateService
@@ -135,14 +135,14 @@ extension AppStore {
     func installAppUpdateAndRelaunch() {
         guard !ending, case .ready = appUpdate.phase, let staged = appUpdate.stagedApp, let package = appUpdate.package else { return }
         guard let asset = appUpdate.availability?.manifest.macos else {
-            appUpdate.phase = .failed("설치할 패키지 정보를 찾을 수 없습니다."); return
+            appUpdate.phase = .failed(L("settings.appUpdate.errorNoPackage")); return
         }
         let destination = Bundle.main.bundleURL
         guard destination.pathExtension == "app", FileManager.default.isWritableFile(atPath: destination.deletingLastPathComponent().path) else {
-            appUpdate.phase = .failed("실행 중인 앱의 위치(\(destination.path))에 쓸 수 없어 교체할 수 없습니다."); return
+            appUpdate.phase = .failed(L("settings.appUpdate.errorNotWritable", ["path": destination.path])); return
         }
         do { try AppUpdateService.validate(app: staged, within: package.deletingLastPathComponent(), expectedBundleIdentifier: Self.appBundleIdentifier) }
-        catch { appUpdate.phase = .failed("설치 직전 확인에 실패했습니다: \(error.localizedDescription) 다시 다운로드하세요."); appUpdate.stagedApp = nil; return }
+        catch { appUpdate.phase = .failed(L("settings.appUpdate.errorPreflight", ["error": error.localizedDescription])); appUpdate.stagedApp = nil; return }
         appUpdate.phase = .installing
         let script = AppUpdateService.installScript(stagedApp: staged, destination: destination, pid: ProcessInfo.processInfo.processIdentifier)
         let service = appUpdateService
@@ -152,15 +152,15 @@ extension AppStore {
                 // Rule 4: re-verify the package on disk immediately before replacement.
                 if let size = asset.size {
                     let actual = (try? FileManager.default.attributesOfItem(atPath: package.path)[.size] as? Int) ?? -1
-                    if actual != size { throw MightyError("패키지 크기가 업데이트 정보와 다릅니다 — 다시 다운로드하세요.") }
+                    if actual != size { throw MightyError(L("settings.appUpdate.errorSizeMismatch")) }
                 }
                 if let sha256 = asset.sha256, try AppUpdateService.fileDigest(package) != sha256 {
-                    throw MightyError("패키지 SHA-256이 업데이트 정보와 다릅니다 — 다시 다운로드하세요.")
+                    throw MightyError(L("settings.appUpdate.errorDigestMismatch"))
                 }
                 try await service.launchInstaller(script: script, near: package)
                 await MainActor.run { NSApp.terminate(nil) }
             } catch {
-                await MainActor.run { store.owner?.appUpdate.phase = .failed("업데이트를 설치하지 못했습니다: \(error.localizedDescription)") }
+                await MainActor.run { store.owner?.appUpdate.phase = .failed(L("settings.appUpdate.errorInstall", ["error": error.localizedDescription])) }
             }
         }
     }

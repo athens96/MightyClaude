@@ -62,7 +62,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
         view.configuration = TerminalSurfaceOptions(backend: backend, fontSize: 12, workingDirectory: directory, envVars: environment, waitAfterCommand: false, resizeThrottleMilliseconds: 25)
         view.delegate = self
         view.controller = controller
-        view.setAccessibilityLabel("대화형 터미널")
+        view.setAccessibilityLabel(L("terminal.accessibility"))
         view.setAccessibilityIdentifier("terminal-\(id)")
     }
 
@@ -73,7 +73,7 @@ final class LocalTerminalSession: NSObject, ObservableObject, TerminalSurfaceTit
             startCheck = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(8))
                 guard !Task.isCancelled, let self, !self.disposed, self.surface == nil else { return }
-                self.failure = self.controller.lastConfigurationIssue ?? "터미널을 시작하지 못했습니다. 다시 시작하세요."
+                self.failure = self.controller.lastConfigurationIssue ?? L("terminal.startFailed")
                 self.statusChanged("error")
             }
         }

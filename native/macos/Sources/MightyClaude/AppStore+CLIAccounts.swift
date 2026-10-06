@@ -33,7 +33,7 @@ extension AppStore {
     /// Why the account cannot change right now, if anything is using it.
     func cliAccountBlockedReason(_ provider: String) -> String? {
         if snapshot.sessions.contains(where: { $0.kind == "claude" && $0.provider == provider && ($0.status == "running" || pendingRuns.contains($0.id)) }) {
-            return "\(ProviderOptions.label(provider)) 실행이 진행 중입니다. 끝난 뒤에 계정을 바꾸세요."
+            return L("settings.cliAccounts.blockedRunning", ["provider": ProviderOptions.label(provider)])
         }
         // A sign-in terminal opened from here replaces itself.
         return accountBusyReason(provider, ignoringTerminalLogin: true)
@@ -42,8 +42,8 @@ extension AppStore {
     func logoutCLI(_ provider: String, thenLogin option: CLILoginOption? = nil) {
         cliAccountMessages[provider] = nil
         if let reason = cliAccountBlockedReason(provider) { cliAccountMessages[provider] = reason; return }
-        guard cliAccounts[provider]?.canSignOut != false else { cliAccountMessages[provider] = cliAccounts[provider]?.detail ?? "이 로그인 방식은 앱에서 로그아웃할 수 없습니다."; return }
-        guard cliAccountBusy.insert(provider).inserted else { cliAccountMessages[provider] = "이미 처리 중입니다. 잠시 후 다시 시도하세요."; return }
+        guard cliAccounts[provider]?.canSignOut != false else { cliAccountMessages[provider] = cliAccounts[provider]?.detail ?? L("settings.cliAccounts.cannotSignOut"); return }
+        guard cliAccountBusy.insert(provider).inserted else { cliAccountMessages[provider] = L("settings.cliAccounts.busy"); return }
         endCLILogin(provider)
         let service = cliAccountService
         Task { [weak self] in
@@ -53,7 +53,7 @@ extension AppStore {
                 self.cliAccounts[provider] = status
                 self.cliAccountBusy.remove(provider)
                 self.invalidateLocalModels(provider: provider)
-                if status.loggedIn == true { self.cliAccountMessages[provider] = "로그아웃을 확인하지 못했습니다. 터미널에서 직접 로그아웃해 보세요." }
+                if status.loggedIn == true { self.cliAccountMessages[provider] = L("settings.cliAccounts.signOutUnconfirmed") }
                 else if let option { self.startCLILogin(provider, option: option) }
             }
         }
@@ -64,11 +64,11 @@ extension AppStore {
     func startCLILogin(_ provider: String, option: CLILoginOption = .account) {
         cliAccountMessages[provider] = nil
         if let reason = cliAccountBlockedReason(provider) { cliAccountMessages[provider] = reason; return }
-        guard !cliAccountBusy.contains(provider) else { cliAccountMessages[provider] = "이미 처리 중입니다. 잠시 후 다시 시도하세요."; return }
+        guard !cliAccountBusy.contains(provider) else { cliAccountMessages[provider] = L("settings.cliAccounts.busy"); return }
         guard let command = CLIAccountSupport.loginCommand(provider: provider, option: option) else { return }
         let workspace = activeWorkspace ?? snapshot.workspaces.first
-        guard let workspace else { cliAccountMessages[provider] = "로그인 터미널을 열 워크스페이스가 없습니다. 프로젝트 폴더를 먼저 여세요."; return }
-        guard snapshot.sessions.count < 128 else { cliAccountMessages[provider] = "실행 창이 너무 많아 로그인 터미널을 열 수 없습니다."; return }
+        guard let workspace else { cliAccountMessages[provider] = L("settings.cliAccounts.noWorkspace"); return }
+        guard snapshot.sessions.count < 128 else { cliAccountMessages[provider] = L("settings.cliAccounts.tooManyPanes"); return }
         // addSession refuses while a sheet is up, so Settings closes first and
         // comes back if the pane could not be added.
         let settingsWasOpen = showSettings
@@ -76,11 +76,11 @@ extension AppStore {
         selectWorkspace(workspace.id)
         guard let id = addSession(kind: "shell", workspaceId: workspace.id) else {
             showSettings = settingsWasOpen
-            cliAccountMessages[provider] = "로그인 터미널을 열지 못했습니다."
+            cliAccountMessages[provider] = L("settings.cliAccounts.terminalFailed")
             return
         }
         let settingUpBedrock = provider == "claude" && option == .bedrock
-        updateSession(id) { $0.title = settingUpBedrock ? "Claude Bedrock 설정" : "\(ProviderOptions.label(provider)) 로그인" }
+        updateSession(id) { $0.title = settingUpBedrock ? L("settings.cliAccounts.bedrockTerminalTitle") : L("loginRecovery.terminalTitle", ["provider": ProviderOptions.label(provider)]) }
         // The app wrote this command itself, so it is the one thing that still
         // presses Enter for the user (§1.5).
         pendingTerminalInput[id] = TerminalInput(text: command, autoRun: true)

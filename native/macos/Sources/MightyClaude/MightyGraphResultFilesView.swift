@@ -114,7 +114,7 @@ struct MightyGraphResultFilesView: View {
                             .background(Palette.raised, in: RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain).help(file.path)
-                        .accessibilityLabel("\(file.path) 열기")
+                        .accessibilityLabel(L("graph.resultFiles.openFile", ["path": file.path]))
                         .accessibilityIdentifier("mighty-result-file-\(nodeID)-\(file.path)")
                     }
                 }.padding(8).padding(.bottom, 16)

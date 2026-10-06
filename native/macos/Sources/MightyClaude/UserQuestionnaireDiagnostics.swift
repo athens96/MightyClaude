@@ -50,14 +50,14 @@ enum UserQuestionnaireDiagnostics {
             try check("initialNextDisabled", enabled(window, "questionnaire-next") == false)
             try check("cancelAvailable", enabled(window, "questionnaire-cancel") == true)
             try check("genericAllowButtonAbsent", find(window, "permission-allow-once") == nil)
-            // One question at a time: the second one, 이전 and the submit action are not on screen yet.
+            // One question at a time: the second one, "Back" and the submit action are not on screen yet.
             try check("onlyFirstQuestionShown", find(window, "questionnaire-question-0") != nil && find(window, "questionnaire-question-1") == nil)
             try check("firstStepHasNoBackOrSubmit", find(window, "questionnaire-back") == nil && find(window, "questionnaire-submit") == nil)
             try check("forwardDotBlockedUntilAnswered", enabled(window, "questionnaire-step-1") == false)
 
             try check("firstOptionAction", press(window, "questionnaire-option-0-0"))
             try await settle()
-            try check("firstOptionSelected", value(window, "questionnaire-option-0-0") == "선택됨")
+            try check("firstOptionSelected", value(window, "questionnaire-option-0-0") == L("accessibility.selected"))
             try check("answerEnablesNext", enabled(window, "questionnaire-next") == true)
             try check("nextAction", press(window, "questionnaire-next"))
             try await settle()
@@ -71,20 +71,20 @@ enum UserQuestionnaireDiagnostics {
 
             try check("backAction", press(window, "questionnaire-back"))
             try await settle()
-            try check("backKeepsEarlierPick", find(window, "questionnaire-question-0") != nil && value(window, "questionnaire-option-0-0") == "선택됨")
+            try check("backKeepsEarlierPick", find(window, "questionnaire-question-0") != nil && value(window, "questionnaire-option-0-0") == L("accessibility.selected"))
             try check("changeSingleOptionAction", press(window, "questionnaire-option-0-1"))
             try await settle()
-            try check("singleSelectionReplacesPrevious", value(window, "questionnaire-option-0-0") == "선택 안 됨" && value(window, "questionnaire-option-0-1") == "선택됨")
+            try check("singleSelectionReplacesPrevious", value(window, "questionnaire-option-0-0") == L("accessibility.notSelected") && value(window, "questionnaire-option-0-1") == L("accessibility.selected"))
             try check("customOptionAction", press(window, "questionnaire-custom-0"))
             try await settle()
-            try check("customSelectionClearsSingleOption", value(window, "questionnaire-option-0-1") == "선택 안 됨")
+            try check("customSelectionClearsSingleOption", value(window, "questionnaire-option-0-1") == L("accessibility.notSelected"))
             try check("blankCustomDisablesNext", enabled(window, "questionnaire-next") == false)
             try check("customEditorPresent", find(window, "questionnaire-custom-text-0") != nil)
             _ = press(window, "questionnaire-option-0-0")
             try await settle()
             _ = press(window, "questionnaire-next")
             try await settle()
-            try check("forwardKeepsLaterPick", value(window, "questionnaire-option-1-0") == "선택됨" && enabled(window, "questionnaire-submit") == true)
+            try check("forwardKeepsLaterPick", value(window, "questionnaire-option-1-0") == L("accessibility.selected") && enabled(window, "questionnaire-submit") == true)
             try check("dotJumpsBack", press(window, "questionnaire-step-0"))
             try await settle()
             try check("dotShowsFirstQuestion", find(window, "questionnaire-question-0") != nil && find(window, "questionnaire-next") != nil)
@@ -112,10 +112,10 @@ enum UserQuestionnaireDiagnostics {
             _ = press(window, "questionnaire-option-0-0")
             _ = press(window, "questionnaire-option-0-1")
             try await settle()
-            try check("multipleSelectionsRetained", value(window, "questionnaire-option-0-0") == "선택됨" && value(window, "questionnaire-option-0-1") == "선택됨")
+            try check("multipleSelectionsRetained", value(window, "questionnaire-option-0-0") == L("accessibility.selected") && value(window, "questionnaire-option-0-1") == L("accessibility.selected"))
             _ = press(window, "questionnaire-option-0-0")
             try await settle()
-            try check("multipleSelectionTogglesOff", value(window, "questionnaire-option-0-0") == "선택 안 됨" && value(window, "questionnaire-option-0-1") == "선택됨")
+            try check("multipleSelectionTogglesOff", value(window, "questionnaire-option-0-0") == L("accessibility.notSelected") && value(window, "questionnaire-option-0-1") == L("accessibility.selected"))
 
             let transcript = AgentTranscriptFormat.entry(LogEntry(kind: "assistant", text: fixtureJSON), provider: "claude", running: false, expanded: false).string
             try check("transcriptContainsQuestionsAndDescriptions", transcript.contains("지금 보고 계신 화면이 어느 구현인가요?") && transcript.contains("타이틀바 safe area") && transcript.contains("어떤 방식으로 고칠까요?"))
@@ -149,7 +149,7 @@ enum UserQuestionnaireDiagnostics {
             report["shortPaneActualWidth"] = shortHost.bounds.width
             report["shortPaneActualHeight"] = shortHost.bounds.height
             try check("shortPaneUsesRequestedSize", abs(shortHost.bounds.width - 360) < 1 && abs(shortHost.bounds.height - 290) < 1)
-            // A fresh request opens on its first question, whose primary action is 다음.
+            // A fresh request opens on its first question, whose primary action is "Next".
             let shortSubmit = frame(window, "questionnaire-next")
             let shortCancel = frame(window, "questionnaire-cancel")
             let stop = frame(window, "composer-stop-" + sessionID)

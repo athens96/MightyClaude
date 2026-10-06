@@ -171,7 +171,7 @@ final class AgentTranscriptCoordinator: NSObject, NSTextViewDelegate {
         editor.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor, .foregroundColor: NSColor.selectedTextColor]
         editor.setAccessibilityIdentifier("transcript-\(sessionId)")
-        editor.setAccessibilityLabel("실행 기록 · 드래그하여 여러 문단 선택")
+        editor.setAccessibilityLabel(L("transcript.editorAccessibility"))
         editor.delegate = self
         editor.onSelectionFinished = { [weak self] in self?.applyLatest() }
         let scroll = AgentTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))

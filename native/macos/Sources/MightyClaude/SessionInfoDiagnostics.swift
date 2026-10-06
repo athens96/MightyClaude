@@ -54,7 +54,7 @@ enum SessionInfoDiagnostics {
             guard let measuredPopup = popup(sessionID: measured.id),
                   node(measuredPopup, identifier: "session-info-context-\(measured.id)")?.text.contains("42%") == true,
                   node(measuredPopup, identifier: "session-info-model-\(measured.id)")?.text.contains("claude-sonnet-fixture") == true,
-                  node(measuredPopup, identifier: "session-info-cost-\(measured.id)")?.text.contains("이 대화 누적") == true else { throw MightyError("측정한 세션의 컨텍스트·모델·비용 범위가 표시되지 않았습니다.") }
+                  node(measuredPopup, identifier: "session-info-cost-\(measured.id)")?.text.contains(L("composer.sessionInfo.scopeSession")) == true else { throw MightyError("측정한 세션의 컨텍스트·모델·비용 범위가 표시되지 않았습니다.") }
             result["knownUsageVisible"] = true
             let knownHeight = try await settledHeight(of: measuredPopup, store: store)
             result["knownWindowHeight"] = knownHeight

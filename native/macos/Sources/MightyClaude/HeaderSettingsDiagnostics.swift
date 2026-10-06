@@ -48,7 +48,7 @@ extension AppStore {
         result["normalFrame"] = NSStringFromRect(normalFrame)
         result["headerScreenshot"] = try captureSmokeWindow(window, filename: "workspace-header.png").path
 
-        guard let settings = headerSmokeElement(window, label: "설정"), headerSmokePress(settings) else {
+        guard let settings = headerSmokeElement(window, label: L("settings.settingsWindowTitle")), headerSmokePress(settings) else {
             throw MightyError("사이드바 설정 버튼의 실제 동작을 실행하지 못했습니다.")
         }
         try await waitForSmoke(timeout: 3) { self.showSettings && window.attachedSheet != nil }
@@ -57,7 +57,7 @@ extension AppStore {
         result["settingsFrame"] = NSStringFromRect(sheet.frame)
         result["settingsGearOpensSheet"] = true
         result["settingsScreenshot"] = try captureSmokeWindow(sheet, filename: "settings.png").path
-        guard let close = headerSmokeElement(sheet, label: "닫기"), headerSmokePress(close) else { throw MightyError("설정 창 닫기 버튼을 실행하지 못했습니다.") }
+        guard let close = headerSmokeElement(sheet, label: L("settings.closeButton")), headerSmokePress(close) else { throw MightyError("설정 창 닫기 버튼을 실행하지 못했습니다.") }
         try await waitForSmoke(timeout: 3) { !self.showSettings && window.attachedSheet == nil }
         result["settingsClose"] = true
         result["passed"] = true

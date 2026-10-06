@@ -1,40 +1,39 @@
 namespace MightyClaude.Core;
 
-// Korean copy for slash-command palette, matching the macOS client literals exactly.
-// WinUI refers to these constants by name; no JSON loader or key table is created.
+// The slash-command palette's copy, read from the shared locale files with the
+// keys macOS reads (locales/*.json). WinUI refers to these fields by name.
 public static class SlashCommandStrings
 {
     // Source badges (SlashCommands.swift: appSource / modelSource / permissionSource)
-    public const string AppSource = "앱 기능";
-    public const string ModelSource = "모델";
-    public const string PermissionSource = "작업 권한";
+    public static readonly string AppSource = Locale.Get("slash.source.app");
+    public static readonly string ModelSource = Locale.Get("composer.label.model");
+    public static readonly string PermissionSource = Locale.Get("composer.label.permission");
 
     // Discovery badges (SlashCommands.swift: skills/commandFiles/pluginCommands)
-    public const string UserSkillSource = "사용자 스킬";
-    public const string ProjectSkillSource = "프로젝트 스킬";
-    public const string UserCommandSource = "사용자 명령";
-    public const string ProjectCommandSource = "프로젝트 명령";
-    public const string CodexSkillSource = "Codex 스킬";
+    public static readonly string UserSkillSource = Locale.Get("slash.source.userSkill");
+    public static readonly string ProjectSkillSource = Locale.Get("slash.source.projectSkill");
+    public static readonly string UserCommandSource = Locale.Get("slash.source.userCommand");
+    public static readonly string ProjectCommandSource = Locale.Get("slash.source.projectCommand");
+    public static readonly string CodexSkillSource = Locale.Get("slash.source.codexSkill");
 
     // Palette keyboard hints (SlashCommandPalette.swift)
-    public const string PaletteMove = "↑↓ 이동";
-    public const string PaletteSelect = "Enter · Tab 선택";
-    public const string PaletteDismiss = "Esc 닫기";
-    public const string PaletteCountTemplate = "{count}개";
-    public const string PaletteNoDescription = "설명 없음";
-    public const string PaletteActionTooltip = "앱에서 바로 실행됩니다";
-    public const string PaletteArgumentTooltip = "이어서 선택합니다";
-    public const string PaletteCurrentSuffix = " · 현재";
+    public static readonly string PaletteMove = Locale.Get("slash.palette.move");
+    public static readonly string PaletteSelect = Locale.Get("slash.palette.select");
+    public static readonly string PaletteDismiss = Locale.Get("slash.palette.dismiss");
+    public static readonly string PaletteCountTemplate = Locale.Get("slash.palette.count");
+    public static readonly string PaletteNoDescription = Locale.Get("slash.palette.noDescription");
+    public static readonly string PaletteActionTooltip = Locale.Get("slash.palette.actionHelp");
+    public static readonly string PaletteArgumentTooltip = Locale.Get("slash.palette.argumentHelp");
+    public static readonly string PaletteCurrentSuffix = Locale.Get("slash.currentSuffix");
 
     // What a built-in says in the pane's log (AppStore+SlashCommands.swift
     // performSlashAction). {name} / {label} is the chosen model or permission
-    // mode and {particle} the Korean 로/으로 KoreanParticle.Ro picks for it.
-    public const string NoteNewConversationRunning = "실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.";
-    public const string NoteNewConversationNothingToResume = "이어갈 이전 대화가 없습니다. 다음 입력은 이미 새 대화로 시작합니다.";
-    public const string NoteModelRunning = "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요.";
-    public const string NoteModelAlreadyTemplate = "이미 {name} 모델입니다.";
-    public const string NoteModelChangedTemplate = "모델을 {name}{particle} 바꿨습니다. 다음 요청부터 적용됩니다.";
-    public const string NotePermissionRunning = "실행 중에는 작업 권한을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요.";
-    public const string NotePermissionAlreadyTemplate = "이미 {label} 권한입니다.";
-    public const string NotePermissionChangedTemplate = "작업 권한을 {label}{particle} 바꿨습니다. 다음 요청부터 적용됩니다.";
+    // mode. The "changed" notes read slash.note.modelChanged and
+    // slash.note.permissionChanged through Locale.Get with their values, as macOS does.
+    public static readonly string NoteNewConversationRunning = Locale.Get("slash.note.newConversationRunning");
+    public static readonly string NoteNewConversationNothingToResume = Locale.Get("remote.error.nothingToResume");
+    public static readonly string NoteModelRunning = Locale.Get("slash.note.modelRunning");
+    public static readonly string NoteModelAlreadyTemplate = Locale.Get("slash.note.modelAlready");
+    public static readonly string NotePermissionRunning = Locale.Get("slash.note.permissionRunning");
+    public static readonly string NotePermissionAlreadyTemplate = Locale.Get("slash.note.permissionAlready");
 }
