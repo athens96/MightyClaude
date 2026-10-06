@@ -33,10 +33,15 @@ def main():
     environment["CLANG_MODULE_CACHE_PATH"] = str(fixture / "module-cache")
     environment["SWIFTPM_MODULECACHE_OVERRIDE"] = str(fixture / "module-cache")
     sources = repository / "native/macos/Sources/MightyClaude"
+    # Built without the MightyCore module: the main file stands in for its L() lookup.
+    copies = []
+    for name in ("InputSessionRecoveryCoordinator.swift", "InputSessionRecoveryDiagnostics.swift"):
+        copy = fixture / name
+        copy.write_text((sources / name).read_text().replace("import MightyCore\n", ""))
+        copies.append(str(copy))
     subprocess.run([
         "xcrun", "swiftc", "-parse-as-library",
-        str(sources / "InputSessionRecoveryCoordinator.swift"),
-        str(sources / "InputSessionRecoveryDiagnostics.swift"),
+        *copies,
         str(repository / "scripts/tests/input-session-recovery-main.swift"),
         "-o", str(executable),
     ], env=environment, check=True)

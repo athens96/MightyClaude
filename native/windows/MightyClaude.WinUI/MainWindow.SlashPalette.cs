@@ -267,7 +267,7 @@ public sealed partial class MainWindow
                     var name = ModelLabel.Selection(pane with { Model = model }, catalog);
                     if (pane.Model == model) { await SlashNote(SlashCommandStrings.NoteModelAlreadyTemplate.Replace("{name}", name)); break; }
                     await ChangeModel(model);
-                    await SlashNote(SlashCommandStrings.NoteModelChangedTemplate.Replace("{name}", name).Replace("{particle}", KoreanParticle.Ro(name)));
+                    await SlashNote(Locale.Get("slash.note.modelChanged", new Dictionary<string, string> { ["name"] = name }));
                     break;
                 }
                 case SlashCommandAction.SetPermission:
@@ -278,7 +278,7 @@ public sealed partial class MainWindow
                     if (pane.Settings.PermissionMode == mode) { await SlashNote(SlashCommandStrings.NotePermissionAlreadyTemplate.Replace("{label}", label)); break; }
                     await ChangeSettings(s => s with { PermissionMode = mode, NetworkAccess = pane.Provider == "codex" && mode is ("acceptEdits" or "onRequest") && s.NetworkAccess });
                     if (Session.Settings.PermissionMode == mode)
-                        await SlashNote(SlashCommandStrings.NotePermissionChangedTemplate.Replace("{label}", label).Replace("{particle}", KoreanParticle.Ro(label)));
+                        await SlashNote(Locale.Get("slash.note.permissionChanged", new Dictionary<string, string> { ["label"] = label }));
                     break;
                 }
                 // Actions without a Windows screen never reach here: SlashPalette

@@ -60,11 +60,11 @@ extension AppStore {
         switch argument {
         case .model:
             return modelOptions(for: session).map { option in
-                SlashCommand(invocation: command + " " + option.value, description: option.displayName + (option.value == session.model ? " · 현재" : ""), source: SlashCommandCatalog.modelSource, origin: .app, action: .setModel(option.value))
+                SlashCommand(invocation: command + " " + option.value, description: option.displayName + (option.value == session.model ? L("slash.currentSuffix") : ""), source: SlashCommandCatalog.modelSource, origin: .app, action: .setModel(option.value))
             }
         case .permission:
             return permissionModes(for: session).map { mode in
-                SlashCommand(invocation: command + " " + mode, description: permissionLabel(mode, provider: session.provider) + (mode == session.settings.permissionMode ? " · 현재" : ""),
+                SlashCommand(invocation: command + " " + mode, description: permissionLabel(mode, provider: session.provider) + (mode == session.settings.permissionMode ? L("slash.currentSuffix") : ""),
                              source: SlashCommandCatalog.permissionSource, origin: .app, action: .setPermission(mode))
             }
         }
@@ -78,40 +78,39 @@ extension AppStore {
         switch action {
         case .openPlugins:
             openPluginBrowser(sessionID: id)
-            if pluginBrowser == nil { slashNote(id, "지금은 플러그인 창을 열 수 없습니다. 워크스페이스 상태를 확인해 주세요.") }
+            if pluginBrowser == nil { slashNote(id, L("slash.note.pluginsUnavailable")) }
         case .newConversation:
-            if session.status == "running" || pendingRuns.contains(id) { slashNote(id, "실행이 끝난 뒤에 새 대화로 시작할 수 있습니다.") }
+            if session.status == "running" || pendingRuns.contains(id) { slashNote(id, L("slash.note.newConversationRunning")) }
             else { resetConversation(id) }
         case .showUsage: sessionInfoSessionID = id
         case .openSettings: showSettings = true
         case .rename: beginRenameSession(id)
         case .help: slashNote(id, SlashCommandCatalog.helpText(provider: session.provider))
         case .setModel(let model):
-            guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, "실행 중에는 모델을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
+            guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, L("slash.note.modelRunning")); return true }
             var chosen = session; chosen.model = model
             let name = modelLabel(for: chosen)
-            guard session.model != model else { slashNote(id, "이미 \(name) 모델입니다."); return true }
+            guard session.model != model else { slashNote(id, L("slash.note.modelAlready", ["name": name])); return true }
             changeModel(id, to: model)
-            slashNote(id, "모델을 \(name)\(koreanRo(name)) 바꿨습니다. 다음 요청부터 적용됩니다.")
+            slashNote(id, L("slash.note.modelChanged", ["name": name]))
         case .setPermission(let mode):
             let label = permissionLabel(mode, provider: session.provider)
-            guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, "실행 중에는 작업 권한을 바꿀 수 없습니다. 실행이 끝난 뒤 다시 고르세요."); return true }
-            guard session.settings.permissionMode != mode else { slashNote(id, "이미 \(label) 권한입니다."); return true }
+            guard session.status != "running", !pendingRuns.contains(id) else { slashNote(id, L("slash.note.permissionRunning")); return true }
+            guard session.settings.permissionMode != mode else { slashNote(id, L("slash.note.permissionAlready", ["label": label])); return true }
             var settings = session.settings
             settings.permissionMode = mode
             saveSettings(id, settings: settings) // sets `error` itself when the runtime rejects the mode
             if snapshot.sessions.first(where: { $0.id == id })?.settings.permissionMode == mode {
-                slashNote(id, "작업 권한을 \(label)\(koreanRo(label)) 바꿨습니다. 다음 요청부터 적용됩니다.")
+                slashNote(id, L("slash.note.permissionChanged", ["label": label]))
             }
         }
         return true
     }
 
-    private func koreanRo(_ word: String) -> String { KoreanParticle.ro(word) }
-
     /// `/model zzz` submitted with no matching choice.
     func noteSlashMismatch(sessionID id: String, command: String, argument: SlashArgument, query: String) {
-        slashNote(id, "'\(query.prefix(80))'에 맞는 \(argument == .model ? "모델이" : "작업 권한 모드가") 없습니다. /\(command) 뒤에서 목록 중 하나를 고르세요.")
+        let subs = ["query": String(query.prefix(80)), "command": command]
+        slashNote(id, argument == .model ? L("slash.note.noModelMatch", subs) : L("slash.note.noPermissionMatch", subs))
     }
 
     private func slashNote(_ id: String, _ text: String) {

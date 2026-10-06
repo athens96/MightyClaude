@@ -17,11 +17,11 @@ enum PaneDockZone: String, Equatable {
     var placement: String { self == .center ? "tab" : rawValue }
     var title: String {
         switch self {
-        case .center: return "탭으로 합치기"
-        case .left: return "왼쪽으로 분할"
-        case .right: return "오른쪽으로 분할"
-        case .top: return "위쪽으로 분할"
-        case .bottom: return "아래쪽으로 분할"
+        case .center: return L("layout.drop.merge")
+        case .left: return L("layout.drop.left")
+        case .right: return L("layout.drop.right")
+        case .top: return L("layout.drop.top")
+        case .bottom: return L("layout.drop.bottom")
         }
     }
 
@@ -145,8 +145,8 @@ private struct PaneDockSplit: View {
                 .onEnded { _ in resizeOrigin = nil })
             .onTapGesture(count: 2) { store.resizePaneSplit(node.id, ratio: 0.5) }
             .accessibilityElement()
-            .accessibilityLabel(horizontal ? "좌우 분할 비율" : "상하 분할 비율")
-            .accessibilityValue("\(Int(node.ratio * 100))퍼센트")
+            .accessibilityLabel(horizontal ? L("layout.divider.ratioHorizontal") : L("layout.divider.ratioVertical"))
+            .accessibilityValue(L("layout.divider.percent", ["value": "\(Int(node.ratio * 100))"]))
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: store.resizePaneSplit(node.id, ratio: node.ratio + 0.05)
@@ -155,7 +155,7 @@ private struct PaneDockSplit: View {
                 }
             }
             .accessibilityIdentifier("pane-divider-\(node.id)")
-            .help("끌어서 크기 조절 · 두 번 클릭해 균등 분할")
+            .help(L("layout.divider.tooltip"))
     }
 }
 
@@ -212,7 +212,7 @@ private struct PaneDockGroup: View {
         .background(Palette.subtle, in: UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11))
         .overlay(alignment: .bottom) { Rectangle().fill(sessions.contains(where: { $0.id == store.snapshot.activeSessionId }) ? Palette.accent.opacity(0.55) : Palette.border).frame(height: 1) }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("실행 창 탭 그룹").accessibilityIdentifier("pane-tab-strip-\(node.id)")
+        .accessibilityLabel(L("layout.tab.groupAccessibility")).accessibilityIdentifier("pane-tab-strip-\(node.id)")
     }
 
 }
@@ -253,14 +253,14 @@ private struct PaneDockTab: View {
             .allowsHitTesting(false).accessibilityHidden(true)
             .overlay { PaneDockTabHandle(store: store, sessionId: session.id, workspaceId: session.workspaceId, groupId: groupId, title: session.title, nextSessionId: nextSessionId) }
             Button { store.closeSession(session.id) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .medium)).frame(width: 20, height: 30).contentShape(Rectangle()) }
-                .buttonStyle(.plain).foregroundStyle(Palette.ink2).accessibilityLabel("\(session.title) 탭 닫기")
+                .buttonStyle(.plain).foregroundStyle(Palette.ink2).accessibilityLabel(L("layout.tab.closeTabAccessibility", ["title": session.title]))
         }
         .padding(.trailing, 2).frame(height: 30)
         .foregroundStyle(selected ? Palette.ink : Palette.ink2)
         .background(selected ? Palette.panel : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).stroke(selected ? Palette.border : Color.clear) }
         .contentShape(RoundedRectangle(cornerRadius: 6))
-        .help("\(session.title) · 끌어서 탭 순서 변경 또는 분할")
+        .help(L("layout.tab.dragTooltip", ["title": session.title]))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("pane-tab-\(session.id)")
     }

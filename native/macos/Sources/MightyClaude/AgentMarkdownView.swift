@@ -110,7 +110,7 @@ final class AgentMarkdownDocument: NSObject {
             // or load local files merely because the model mentioned them. The
             // target is kept for the transcript's own path rule.
             if let image = run.imageURL {
-                // An absolute local target is kept decoded (`/tmp/스크린샷 1.png`,
+                // An absolute local target is kept decoded (`/tmp/Screenshot 1.png`,
                 // not `/tmp/%EC…`); a relative one is decoded by the path rule.
                 result[run.range].imageSource = ReferenceLinkSupport.localPath(image).flatMap { $0.hasPrefix("/") ? $0 : nil } ?? image.absoluteString
                 result[run.range].link = nil
@@ -237,15 +237,15 @@ private struct AgentCodeBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(language?.split(separator: " ").first.map(String.init) ?? "코드").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
+                Text(language?.split(separator: " ").first.map(String.init) ?? L("markdown.code.fallbackLanguage")).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
                 Spacer(minLength: 10)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(code, forType: .string)
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                } label: { Label(copied ? "복사됨" : "복사", systemImage: copied ? "checkmark" : "doc.on.doc").font(.system(size: 10)) }
-                .buttonStyle(.plain).foregroundStyle(.secondary).help("코드 복사")
+                } label: { Label(copied ? L("markdown.code.copied") : L("pane.copyButton"), systemImage: copied ? "checkmark" : "doc.on.doc").font(.system(size: 10)) }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help(L("markdown.code.copyHelp"))
             }.padding(.horizontal, 12).padding(.vertical, 8).background(Palette.subtle)
             Divider()
             ScrollView(.horizontal) {
@@ -258,7 +258,7 @@ private struct AgentCodeBlock: View {
         .background(Palette.canvas.opacity(0.65), in: RoundedRectangle(cornerRadius: 9))
         .overlay { RoundedRectangle(cornerRadius: 9).stroke(Palette.border) }
         .clipShape(RoundedRectangle(cornerRadius: 9))
-        .accessibilityLabel(language.map { "\($0) 코드" } ?? "코드 블록")
+        .accessibilityLabel(language.map { L("markdown.code.accessibility", ["language": $0]) } ?? L("markdown.code.blockAccessibility"))
     }
 }
 
@@ -288,7 +288,7 @@ private struct AgentMarkdownTable: View {
             .overlay { RoundedRectangle(cornerRadius: 7).stroke(Palette.border) }
             .clipShape(RoundedRectangle(cornerRadius: 7))
         }
-        .accessibilityLabel("표")
+        .accessibilityLabel(L("markdown.table.accessibility"))
     }
 
     private func alignment(_ value: PresentationIntent.TableColumn.Alignment) -> Alignment {
@@ -304,6 +304,7 @@ private struct AgentMarkdownTable: View {
     }
 }
 
+// i18n-exempt-begin: the GUI smoke's Markdown fixture, not UI.
 enum AgentMarkdownDiagnostics {
     static let fixture = """
     # 작업을 정리했어요
@@ -343,3 +344,4 @@ enum AgentMarkdownDiagnostics {
         ]
     }
 }
+// i18n-exempt-end

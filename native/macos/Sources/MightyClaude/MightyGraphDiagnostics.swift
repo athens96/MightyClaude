@@ -109,10 +109,10 @@ enum MightyGraphDiagnostics {
             report["screenshot"] = try store.captureSmokeWindow(window, filename: "mighty-graph.png").path
             guard let expand = node(window, identifier: "mighty-expand-\(mainID)") else { throw MightyError("그래프 카드 확장 버튼이 없습니다.") }
             press(expand)
-            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-expand-\(mainID)")).contains("접기") }
+            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.collapse") }
             report["nativeCardExpansion"] = true
             if let collapse = node(window, identifier: "mighty-expand-\(mainID)") { press(collapse) }
-            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-expand-\(mainID)")).contains("더 보기") }
+            try await store.waitForSmoke(timeout: 3) { label(node(window, identifier: "mighty-expand-\(mainID)")) == L("graph.block.expand") }
             report["nativeCardCollapse"] = true
             guard let zoom = node(window, identifier: "mighty-zoom-out-graph-fixture") else { throw MightyError("그래프 축소 버튼이 없습니다.") }
             let zoomAnchor = CGPoint(x: (canvas.viewportSize.width / 2 - canvas.panOffset.x) / canvas.zoom,

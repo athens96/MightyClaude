@@ -1,8 +1,8 @@
 import SwiftUI
 import MightyCore
 
-/// One question at a time: 다음 moves on once the current one is answered,
-/// 이전 goes back with the earlier picks intact. Selection is a local draft;
+/// One question at a time: "Next" moves on once the current one is answered,
+/// "Back" goes back with the earlier picks intact. Selection is a local draft;
 /// only the explicit submit on the last question sends an answer.
 struct UserQuestionnaireCard: View {
     @EnvironmentObject private var store: AppStore
@@ -41,11 +41,11 @@ struct UserQuestionnaireCard: View {
 
     private var progressText: String {
         let total = questionnaire.questions.count
-        return total > 1 ? L("phone.questionnaire.progress", ["current": "\(currentStep + 1)", "total": "\(total)"]) : "질문 1개"
+        return total > 1 ? L("phone.questionnaire.progress", ["current": "\(currentStep + 1)", "total": "\(total)"]) : L("questionnaire.oneQuestion")
     }
     private func dotState(_ index: Int) -> String {
-        if index == currentStep { return "현재 질문" }
-        return answered(index) ? "답변함" : "답변 안 함"
+        if index == currentStep { return L("questionnaire.dot.current") }
+        return answered(index) ? L("questionnaire.dot.answered") : L("questionnaire.dot.unanswered")
     }
     /// Back is always allowed; forward only over questions that already have an answer.
     private func canJump(to index: Int) -> Bool { index <= currentStep || (0..<index).allSatisfy(answered) }
@@ -60,7 +60,7 @@ struct UserQuestionnaireCard: View {
                 Text(L("phone.questionnaire.title")).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink)
                 Text(progressText)
                     .foregroundStyle(Palette.ink2).monospacedDigit()
-                    .accessibilityLabel("질문 \(questionnaire.questions.count)개 중 \(currentStep + 1)번째, \(answeredCount)개 답변함")
+                    .accessibilityLabel(L("questionnaire.progressAccessibility", ["total": "\(questionnaire.questions.count)", "current": "\(currentStep + 1)", "answered": "\(answeredCount)"]))
                     .accessibilityIdentifier("questionnaire-progress")
                 if questionnaire.questions.count > 1 { stepDots }
                 Spacer(minLength: 0)
@@ -86,7 +86,7 @@ struct UserQuestionnaireCard: View {
             .accessibilityIdentifier("questionnaire-viewport")
 
             if !canAnswer {
-                Text("이 요청에는 답변을 보낼 수 없습니다. 요청을 취소하고 새 작업에서 다시 시도하세요.")
+                Text(L("questionnaire.cannotAnswer"))
                     .font(.system(size: 10)).foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -197,7 +197,7 @@ struct UserQuestionnaireCard: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("질문 \(index + 1): \(question.header)")
+        .accessibilityLabel(L("questionnaire.questionAccessibility", ["index": "\(index + 1)", "header": question.header]))
         .accessibilityIdentifier("questionnaire-question-\(index)")
     }
 
@@ -226,7 +226,7 @@ struct UserQuestionnaireCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-        .accessibilityValue(selected ? "선택됨" : "선택 안 됨")
+        .accessibilityValue(selected ? L("accessibility.selected") : L("accessibility.notSelected"))
         .accessibilityHint(description ?? L("phone.questionnaire.customHint"))
         .accessibilityIdentifier(identifier)
     }

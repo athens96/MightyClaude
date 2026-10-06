@@ -11,7 +11,7 @@ struct WorkspaceTitlebarRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> WorkspaceTitlebarView { WorkspaceTitlebarView() }
     func updateNSView(_ view: WorkspaceTitlebarView, context: Context) {
         view.enabled = enabled; view.rename = rename
-        view.toolTip = "끌어서 창 이동 · 두 번 클릭해 확대/복원"
+        view.toolTip = L("window.titlebar.help")
         view.setAccessibilityIdentifier("workspace-titlebar-drag")
         view.setAccessibilityElement(false)
     }

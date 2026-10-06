@@ -67,13 +67,13 @@ final class AppStore: ObservableObject {
     var mobileTracking = MobileRemoteTracking()
     var mobileSubscriptions = Set<AnyCancellable>()
     var mobileRetryTask: Task<Void, Never>?
-    /// Settings → 구성 요소 (AppStore+Components.swift).
+    /// Settings → Components (AppStore+Components.swift).
     @Published var components: [ComponentStatus] = []
     @Published var componentsRefreshing = false
     @Published var componentAction: String?
     @Published var componentMessage: String?
     @Published var componentMessageIsError = false
-    /// Settings → 구성 요소 → 내 작업 도구 모음 (AppStore+Toolkit.swift).
+    /// Settings → Components → my toolkit (AppStore+Toolkit.swift).
     @Published var toolkitEntries: [ToolkitEntry] = []
     @Published var toolkitFileError: String?
     @Published var toolkitApprovals: [String: ToolkitApproval] = [:]
@@ -211,13 +211,13 @@ final class AppStore: ObservableObject {
     @Published var settingsSession: RunSession?
     @Published var sessionInfoSessionID: String?
     @Published var pendingRemoval: Workspace?
-    /// The "창 추가" agent step that is open: "새로 시작" or "이어가기", then the
+    /// The "Add Pane" agent step that is open: "Start New" or "Continue…", then the
     /// session picker for that agent.
     @Published var resumePicker: ResumePickerRequest?
-    /// The look-up "창 추가" runs before asking about an agent's earlier sessions;
+    /// The look-up "Add Pane" runs before asking about an agent's earlier sessions;
     /// the token tells its answer from a cancelled one's.
     var addPaneProbe: (token: UUID, task: Task<Void, Never>)?
-    /// The window shows "작업 현황" instead of the active workspace. Not saved: a
+    /// The window shows the dashboard instead of the active workspace. Not saved: a
     /// relaunch opens on the workspace, and choosing any workspace or pane leaves it.
     @Published var showsDashboard = false {
         didSet { if showsDashboard != oldValue { cancelAddPaneProbe() } }
@@ -229,7 +229,7 @@ final class AppStore: ObservableObject {
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
     @Published var permissionResponses = Set<String>()
     @Published var permissionErrors: [String: String] = [:]
-    /// A plan opened like a document (the plan card's 펼치기, a history block).
+    /// A plan opened like a document (the plan card's expand button, a history block).
     @Published var planDocument: PlanDocument?
 
     let dataDirectory: URL
@@ -328,7 +328,7 @@ final class AppStore: ObservableObject {
         // Before anything can touch the lazy runners, which capture the server location once.
         startAgentIO()
         do { snapshot = try await repository.load(); preparePaneLayouts(); canSave = true }
-        catch { self.error = "상태를 불러오지 못했습니다. 기존 파일을 보호하기 위해 저장을 중단했습니다. \(error.localizedDescription)" }
+        catch { self.error = L("store.error.loadFailed", ["error": error.localizedDescription]) }
         guard !ending, !Task.isCancelled else { loading = false; return }
         isLoaded = true
         checkResourceHealth()
@@ -354,7 +354,7 @@ final class AppStore: ObservableObject {
                 guard !Task.isCancelled, let self else { break }
                 if self.canSave, !self.ending, self.snapshot.sessions.contains(where: { $0.kind != "shell" && $0.status == "running" }) {
                     do { try await self.flush() }
-                    catch { if !self.ending { self.error = "실행 시간을 저장하지 못했습니다: \(error.localizedDescription)" } }
+                    catch { if !self.ending { self.error = L("store.error.timingSaveFailed", ["error": error.localizedDescription]) } }
                 }
             }
         }
@@ -381,7 +381,7 @@ final class AppStore: ObservableObject {
         guard !missing.isEmpty else { return }
         for r in missing { ResourceHealthChecker.logWarning(r) }
         let names = missing.map { $0.resource }.joined(separator: ", ")
-        resourceWarning = "[Mighty Claude] 리소스를 찾지 못했습니다: \(names) — 앱 재설치가 필요할 수 있습니다."
+        resourceWarning = L("store.error.resourcesMissing", ["names": names])
     }
 
     var canManageCLIUpdates: Bool { isLoaded && !ending }
@@ -437,19 +437,19 @@ final class AppStore: ObservableObject {
     @Published var smokeProvidersTreatedAvailable: Set<String> = []
 
     func runBlockedReason(_ session: RunSession, checkRuntime: Bool = true) -> String? {
-        guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return "워크스페이스를 선택하세요." }
+        guard snapshot.workspaces.contains(where: { $0.id == session.workspaceId }) else { return L("run.blocked.selectWorkspace") }
         // A background update queues sends instead (`backgroundUpdateHolds`).
         if session.kind != "shell", updatingCLI == session.provider, !automaticUpdateRunning {
-            return "\(ProviderOptions.label(session.provider)) CLI를 업데이트하고 있습니다. 완료 후 전송하세요."
+            return L("run.blocked.updatingCLI", ["provider": ProviderOptions.label(session.provider)])
         }
         if session.kind != "shell", ["claude", "codex"].contains(session.provider), isManagingPlugins {
-            return "플러그인을 변경하고 있습니다. 완료 후 전송하세요."
+            return L("run.blocked.changingPlugins")
         }
         if session.kind != "shell", checkRuntime {
             let provider = providerRuntime(session.provider, workspaceId: session.workspaceId)
-            if !provider.available, !smokeProvidersTreatedAvailable.contains(session.provider) { return provider.detail.isEmpty ? "\(provider.name) CLI를 설치하고 로그인하세요." : provider.detail }
-            if session.settings.permissionMode == "auto", !provider.capabilities.permissionModes.contains("auto") { return "이 실행 환경의 Auto mode 지원을 확인하지 못했습니다. CLI를 업데이트하거나 다른 권한을 선택하세요." }
-            if session.settings.permissionMode == "onRequest", !provider.capabilities.permissionModes.contains("onRequest") { return "승인 요청을 사용하려면 Codex CLI 0.153.4 이상으로 업데이트하세요." }
+            if !provider.available, !smokeProvidersTreatedAvailable.contains(session.provider) { return provider.detail.isEmpty ? L("run.blocked.installCLI", ["name": provider.name]) : provider.detail }
+            if session.settings.permissionMode == "auto", !provider.capabilities.permissionModes.contains("auto") { return L("composer.hint.autoModeUnverified") }
+            if session.settings.permissionMode == "onRequest", !provider.capabilities.permissionModes.contains("onRequest") { return L("run.blocked.onRequestNeedsUpdate") }
         }
         return nil
     }
@@ -457,8 +457,8 @@ final class AppStore: ObservableObject {
     func openWorkspace() {
         guard !hasModal else { return }
         let panel = NSOpenPanel()
-        panel.title = "프로젝트 폴더 열기"
-        panel.prompt = "워크스페이스 열기"
+        panel.title = L("layout.welcome.openProject")
+        panel.prompt = L("workspace.openPanel.prompt")
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
@@ -517,10 +517,10 @@ final class AppStore: ObservableObject {
     @discardableResult
     func addSession(kind: String, provider: String = "claude", targetGroupId: String? = nil, placement: String = "tab", workspaceId: String? = nil) -> String? {
         guard !hasModal, let workspace = workspaceId.flatMap({ id in snapshot.workspaces.first { $0.id == id } }) ?? activeWorkspace else { return nil }
-        // A pane started any other way (⌘N, the phone) answers "창 추가"'s pending look-up.
+        // A pane started any other way (⌘N, the phone) answers "Add Pane"'s pending look-up.
         cancelAddPaneProbe()
-        guard snapshot.sessions.count < 128 else { error = "실행 창은 최대 128개까지 만들 수 있습니다."; return nil }
-        let name = kind == "shell" ? "터미널" : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
+        guard snapshot.sessions.count < 128 else { error = L("workspace.paneLimit"); return nil }
+        let name = kind == "shell" ? L("agentTerminal.terminalPane.title") : kind == "browser" ? L("browser.tab.title") : ProviderOptions.label(provider)
         var session = RunSession(workspaceId: workspace.id, title: name, kind: kind, provider: provider)
         if kind == "browser" { session.workspaceProfileKey = workspace.id }
         // Start from the most recently used pane of the same provider.
@@ -529,7 +529,7 @@ final class AppStore: ObservableObject {
         let previousGroup = targetGroupId ?? snapshot.activeSessionId.flatMap { layoutForWorkspace(workspace.id)?.group(containing: $0)?.id }
         let previousMode = paneLayoutMode(workspace.id)
         guard let next = PaneLayouts.inserting(root: layoutForWorkspace(workspace.id), sessionId: session.id, targetGroupId: previousGroup, placement: placement), next.group(containing: session.id) != nil else {
-            error = "실행 창을 추가할 그룹이 없거나 분할 한도에 도달했습니다."; return nil
+            error = L("workspace.noGroupForPane"); return nil
         }
         snapshot.sessions.append(session)
         savePaneLayout(next, workspaceId: workspace.id)
@@ -637,7 +637,7 @@ final class AppStore: ObservableObject {
             $0.settings = RunSettings()
             $0.resumeId = nil
             $0.sessionUsage = nil
-            $0.logs.append(LogEntry(kind: "system", text: "\(ProviderOptions.label(provider))로 전환했습니다. 다음 입력은 새 대화로 시작합니다."))
+            $0.logs.append(LogEntry(kind: "system", text: L("pane.log.switchedProvider", ["provider": ProviderOptions.label(provider)])))
             $0.logs = TranscriptRetention.trimmed($0.logs)
         }
         refreshModels(for: id, invalidate: true)
@@ -661,7 +661,7 @@ final class AppStore: ObservableObject {
         guard let session = snapshot.sessions.first(where: { $0.id == id }), session.status != "running", !pendingRuns.contains(id) else { return }
         if settings.permissionMode != session.settings.permissionMode,
            !providerRuntime(session.provider, workspaceId: session.workspaceId).capabilities.permissionModes.contains(settings.permissionMode) {
-            error = "이 실행 환경이 선택한 권한 모드를 지원하는지 확인하지 못했습니다."; return
+            error = L("remote.error.permissionUnverified"); return
         }
         updateSession(id) { $0.settings = ProviderOptions.normalizedSettings(provider: $0.provider, settings: settings) }
     }
@@ -672,7 +672,7 @@ final class AppStore: ObservableObject {
             guard $0.status != "running" else { return }
             $0.resumeId = nil
             $0.sessionUsage = nil
-            $0.logs.append(LogEntry(kind: "system", text: "다음 입력은 새 대화로 시작합니다. 이전 실행 기록은 유지됩니다."))
+            $0.logs.append(LogEntry(kind: "system", text: L("composer.newConversationNote")))
         }
         refreshModels(for: id, invalidate: true)
     }
@@ -682,7 +682,7 @@ final class AppStore: ObservableObject {
     func submit(_ id: String, steering: Bool = false) {
         guard !ending, !closingSessions.contains(id), !importingAttachments.contains(id), let session = snapshot.sessions.first(where: { $0.id == id }),
               let workspace = snapshot.workspaces.first(where: { $0.id == session.workspaceId }) else { return }
-        guard !usesLocalTerminal(session) else { error = "로컬 터미널 안에 명령을 직접 입력하세요."; return }
+        guard !usesLocalTerminal(session) else { error = L("composer.localTerminalInput"); return }
         let originalDraft = drafts[id] ?? ""
         let input = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = attachmentDrafts[id] ?? []
@@ -719,7 +719,7 @@ final class AppStore: ObservableObject {
 
     @discardableResult
     func deferInput(_ id: String, session: RunSession, workspace: Workspace, item: QueuedInput, steering: Bool = true) -> DeferOutcome {
-        guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = "대기열에는 최대 \(QueuedInput.maximumItems)개까지 넣을 수 있습니다."; return .refused }
+        guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { error = L("queue.fullCount", ["count": "\(QueuedInput.maximumItems)"]); return .refused }
         drafts[id] = ""
         let submittedIds = Set(item.attachments.map(\.id))
         attachmentDrafts[id]?.removeAll { submittedIds.contains($0.id) }
@@ -796,23 +796,23 @@ final class AppStore: ObservableObject {
             if backgroundUpdateHolds(session) { heldForUpdate.insert(id); return }
             if let reason = runBlockedReason(session) {
                 queuedInputs.removeValue(forKey: id)
-                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청 \(queue.count)개를 실행할 수 없어 취소했습니다. \(reason)")) }
+                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.cancelledUnrunnable", ["count": "\(queue.count)", "reason": reason]))) }
                 return
             }
             queuedInputs[id] = queue.count > 1 ? Array(queue.dropFirst()) : nil
             if !start(id, session: session, workspace: workspace, input: next.text, attachments: next.attachments, restoringDraft: nil, queued: next) {
                 // Validation refused it; keep the item so nothing typed is lost.
                 queuedInputs[id, default: []].insert(next, at: 0)
-                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "대기 중인 요청을 실행하지 못해 대기열에 남겨 두었습니다. \(error ?? "")")) }
+                updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.keptAfterFailure", ["error": error ?? ""]))) }
             }
         case "stopped":
             // Stopped while the turn was over and only background work ran:
             // what waited for that work runs now instead of being thrown away.
             if queueKeptOnStop.remove(id) != nil { settleQueue(id, status: "completed"); return }
             queuedInputs.removeValue(forKey: id)
-            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "실행을 중지해 대기 중인 요청 \(queue.count)개를 취소했습니다.")) }
+            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.cancelledOnStop", ["count": "\(queue.count)"]))) }
         case "error":
-            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: "실행 오류로 대기 중인 요청 \(queue.count)개를 보류합니다. 대기열의 실행 버튼으로 이어갈 수 있습니다.")) }
+            updateSession(id) { $0.logs.append(LogEntry(kind: "system", text: L("queue.log.heldAfterError", ["count": "\(queue.count)"]))) }
         default: break
         }
     }
@@ -821,7 +821,7 @@ final class AppStore: ObservableObject {
     /// `queued` is the queue item being started: its recorded launch decision wins.
     func start(_ id: String, session: RunSession, workspace: Workspace, input: String, attachments: [RunAttachment], restoringDraft: String?, queued: QueuedInput? = nil) -> Bool {
         if claudeModelResetInProgress, session.provider == "claude", session.kind != "shell" {
-            error = "Claude 모델 목록을 다시 불러오는 중입니다. 완료 후 다시 실행하세요."
+            error = L("composer.model.reloadingClaude")
             return false
         }
         guard !ending, !closingSessions.contains(id), !pendingRuns.contains(id), session.status != "running" else { return false }
@@ -1060,12 +1060,12 @@ final class AppStore: ObservableObject {
             do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
             guard let self, !Task.isCancelled else { return }
             do { try await self.repository.save(self.snapshot) }
-            catch { if !Task.isCancelled { self.error = "상태를 저장하지 못했습니다: \(error.localizedDescription)" } }
+            catch { if !Task.isCancelled { self.error = L("store.error.saveFailed", ["error": error.localizedDescription]) } }
         }
     }
 
     func flush() async throws {
-        guard canSave else { throw MightyError("상태를 불러오지 못해 저장할 수 없습니다. 앱을 다시 시작하기 전에 저장 파일을 확인하세요.") }
+        guard canSave else { throw MightyError(L("store.error.cannotSaveUnloaded")) }
         saveTask?.cancel()
         await saveTask?.value
         saveTask = nil
@@ -1135,6 +1135,7 @@ final class AppStore: ObservableObject {
         catch { NSLog("MightyClaude save failed: %@", error.localizedDescription) }
     }
 
+    // i18n-exempt-begin: the GUI smoke (--smoke-test) and its fixtures; it writes smoke-result.json, not UI.
     private func runSmokeTest() async {
         guard arguments.contains("--profile") else { error = "스모크 테스트에는 --profile 임시 폴더가 필요합니다."; return }
         var result: [String: Any] = ["native": true, "passed": false]
@@ -1230,7 +1231,7 @@ final class AppStore: ObservableObject {
                 } else { throw MightyError("Codex 추가 설정 팝오버가 표시되지 않았습니다.") }
                 settingsSession = nil
             }
-            // The read-only 리셋권 rows, rendered from an injected service with a
+            // The read-only limit-reset rows, rendered from an injected service with a
             // fixture clock and a fake transport (GET only). A second instance is
             // never launched on a developer Mac, so this run is observed from the
             // macOS CI smoke artifact, exactly as Windows records it under the
@@ -1614,4 +1615,5 @@ final class AppStore: ObservableObject {
         }
         return find(element, depth: 0)
     }
+    // i18n-exempt-end
 }

@@ -14,14 +14,14 @@ struct StatusLineView: View {
         VStack(alignment: .leading, spacing: 2) {
             if let untrusted = state.untrusted {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("\(untrusted.source)에 statusLine 명령이 있습니다. 이 워크스페이스에서 실행할까요?", systemImage: "terminal")
+                    Label(L("statusLine.untrustedPrompt", ["source": untrusted.source]), systemImage: "terminal")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Text(untrusted.command).font(.system(size: 11, design: .monospaced)).lineLimit(3).textSelection(.enabled)
                         .padding(6).frame(maxWidth: .infinity, alignment: .leading).background(Palette.subtle, in: RoundedRectangle(cornerRadius: 6))
                     HStack(spacing: 8) {
-                        Button("이 워크스페이스에서 허용") { onTrust(untrusted) }.controlSize(.small).accessibilityIdentifier("status-line-trust-\(sessionID)")
-                        Button("지금은 안 함") { onDismiss() }.controlSize(.small)
-                        Text("저장소가 바꾼 명령은 다시 묻습니다.").font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Button(L("statusLine.trust")) { onTrust(untrusted) }.controlSize(.small).accessibilityIdentifier("status-line-trust-\(sessionID)")
+                        Button(L("statusLine.notNow")) { onDismiss() }.controlSize(.small)
+                        Text(L("statusLine.reaskNote")).font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
                 .padding(.bottom, 4)
@@ -43,7 +43,7 @@ struct StatusLineView: View {
         .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 8)
         .help((state.config.map { "statusLine · " + $0.source + " · " + $0.command } ?? "statusLine") + (state.updatedAt.map { " · " + $0.formatted(date: .omitted, time: .standard) } ?? ""))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("상태 줄")
+        .accessibilityLabel(L("composer.statusLine.name"))
         .accessibilityValue(state.result?.plainText ?? "")
         .accessibilityIdentifier("status-line-\(sessionID)")
     }

@@ -31,7 +31,7 @@ struct CompanionApproval: Equatable, Identifiable {
     let request: ToolPermissionRequest
     var id: String { sessionId + "|" + request.runId + "|" + request.id }
     var presentation: ToolPermissionPresentation { ToolPermissionPresentation.make(toolName: request.toolName, inputJSON: request.inputJSON) }
-    /// Answered from the bubble one question at a time. The bubble has no 직접 입력
+    /// Answered from the bubble one question at a time. The bubble has no "Write your own answer"
     /// row (the pet never takes the keyboard), so a typed answer still needs the pane.
     var quickQuestionnaire: UserQuestionnaire? {
         guard request.canAnswerQuestions, let questionnaire = request.questionnaire, !questionnaire.questions.isEmpty,
@@ -59,7 +59,7 @@ final class AgentCompanion: ObservableObject {
     @Published private(set) var agents: [AgentPresence] = []
     @Published private(set) var pets: [CompanionPet] = []
     @Published var message: String?
-    @Published var notificationStatus = "확인 중"
+    @Published var notificationStatus = L("settings.components.statusChecking")
     @Published var showsStatus = false
     @Published private(set) var approval: CompanionApproval?
     @Published private(set) var approvalBusy = false
@@ -165,7 +165,7 @@ final class AgentCompanion: ObservableObject {
             let state = live && activity?.state == "waiting" ? "waiting" : session.status
             let text: String
             if live, let activity, !activity.summary.isEmpty { text = activity.summary }
-            else { text = state == "completed" ? "작업을 완료했어요" : state == "error" ? "작업에 문제가 생겼어요" : state == "stopped" ? "작업을 중지했어요" : live ? "작업을 시작하고 있어요" : "새 작업을 기다리고 있어요" }
+            else { text = state == "completed" ? L("companion.status.completed") : state == "error" ? L("companion.status.error") : state == "stopped" ? L("companion.status.stopped") : live ? L("companion.status.running") : L("companion.status.idle") }
             return AgentPresence(id: session.id, title: session.title,
                 workspace: snapshot.workspaces.first { $0.id == session.workspaceId }?.name ?? "",
                 provider: session.provider, status: state, summary: text,
@@ -253,7 +253,7 @@ final class AgentCompanion: ObservableObject {
         Task { await store.answerPermission(sessionId: approval.sessionId, request: approval.request, allow: allow) }
     }
     /// A single-choice tap records the answer and moves on; a multi-choice tap toggles.
-    /// Nothing is sent from a tap when there are several questions: the last one waits for 보내기.
+    /// Nothing is sent from a tap when there are several questions: the last one waits for "Send".
     func chooseOption(_ label: String) {
         guard let approval, !approvalBusy, let questionnaire = approval.quickQuestionnaire else { return }
         var progress = questionProgress
@@ -261,7 +261,7 @@ final class AgentCompanion: ObservableObject {
         progressByRequest[approval.id] = progress
         if questionnaire.questions.count == 1 { send(step, approval: approval) }
     }
-    /// 다음 / 보내기: needed under a multi-choice question and on the last of several questions.
+    /// "Next" / "Send": needed under a multi-choice question and on the last of several questions.
     func needsCommitButton(_ question: UserQuestionnaire.Question, in questionnaire: UserQuestionnaire) -> Bool {
         question.multiSelect || (questionnaire.questions.count > 1 && questionProgress.index + 1 == questionnaire.questions.count)
     }
@@ -305,7 +305,7 @@ final class AgentCompanion: ObservableObject {
     func reloadPets() {
         CompanionPet.clearCache()
         pets = CompanionPet.loadAvailable(dataDirectory: store?.dataDirectory)
-        if selectedPet == nil { message = "펫 이미지를 불러오지 못했습니다." }
+        if selectedPet == nil { message = L("companion.error.loadFailed") }
     }
 
     func importPet() {
@@ -314,27 +314,27 @@ final class AgentCompanion: ObservableObject {
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.message = "Codex 펫 폴더, pet.json 또는 PNG/WebP 스프라이트를 선택하세요."
+        panel.message = L("companion.import.panelMessage")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let pet = try CompanionPet.install(from: url, into: directory.appendingPathComponent("pets"))
             reloadPets()
             preferences.selectedPet = pet.id
             preferences.enabled = true
-            message = "\(pet.name) 펫을 적용했습니다."
+            message = L("companion.import.applied", ["name": pet.name])
         } catch { message = error.localizedDescription }
     }
 
     func refreshNotificationStatus(request: Bool = false) async {
-        guard !testMode else { notificationStatus = "검증 모드"; return }
+        guard !testMode else { notificationStatus = L("windows.notifications.statusVerificationMode"); return }
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         if request && settings.authorizationStatus == .notDetermined {
             do { _ = try await center.requestAuthorization(options: [.alert, .sound]) }
-            catch { message = "알림 권한을 확인하지 못했습니다: \(error.localizedDescription)" }
+            catch { message = L("companion.notifications.permissionFailed", ["error": error.localizedDescription]) }
         }
         let current = await center.notificationSettings()
-        notificationStatus = current.authorizationStatus == .authorized ? "허용됨" : current.authorizationStatus == .denied ? "시스템 설정에서 알림을 허용하세요" : "권한 필요"
+        notificationStatus = current.authorizationStatus == .authorized ? L("windows.notifications.statusAllowed") : current.authorizationStatus == .denied ? L("windows.notifications.statusDenied") : L("windows.notifications.statusNeedPermission")
     }
 
     func shutdown() { stopped = true; overlay?.close(); overlay = nil; notifications = nil }
@@ -346,7 +346,7 @@ final class AgentCompanion: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(preferences).write(to: url, options: .atomic)
-        } catch { message = "펫 설정을 저장하지 못했습니다: \(error.localizedDescription)" }
+        } catch { message = L("companion.error.saveFailed", ["error": error.localizedDescription]) }
     }
     private func updateOverlay() {
         overlay?.setVisible(preferences.enabled && !stopped)
@@ -392,8 +392,8 @@ final class CompletionNotifications: NSObject, UNUserNotificationCenterDelegate 
             let center = UNUserNotificationCenter.current()
             guard (await center.notificationSettings()).authorizationStatus == .authorized else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Mighty Claude · 작업 완료"
-            content.body = "\(title)의 작업이 완료되었습니다."
+            content.title = L("companion.notification.title")
+            content.body = L("windows.notifications.notificationBodyTemplate", ["title": title])
             content.sound = .default
             content.userInfo = ["sessionID": sessionID]
             try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))

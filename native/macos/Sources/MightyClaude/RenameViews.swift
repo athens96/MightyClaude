@@ -21,7 +21,7 @@ struct RenameSheet: View {
         _name = ViewState(initialValue: target.initialName)
     }
 
-    private var heading: String { target.kind == .workspace ? "워크스페이스 이름 변경" : "실행 창 이름 변경" }
+    private var heading: String { target.kind == .workspace ? L("pane.rename.workspaceTitle") : L("pane.rename.paneTitle") }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var hasControlCharacters: Bool { trimmedName.unicodeScalars.contains { $0.properties.generalCategory == .control } }
     private var validName: Bool { !trimmedName.isEmpty && trimmedName.count <= 120 && !hasControlCharacters }
@@ -29,18 +29,18 @@ struct RenameSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(heading).font(.headline)
-            TextField("이름", text: $name)
+            TextField(L("pane.rename.namePlaceholder"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFocused)
                 .onSubmit { save() }
                 .accessibilityIdentifier("rename-name-field")
-            Text(target.kind == .workspace ? "앱에 표시되는 이름만 바뀌며 폴더 이름과 경로는 유지됩니다." : "사이드바와 탭에 같은 이름이 표시됩니다.")
+            Text(target.kind == .workspace ? L("pane.rename.workspaceNote") : L("pane.rename.paneNote"))
                 .font(.caption).foregroundStyle(.secondary)
             if trimmedName.count > 120 {
-                Text("이름은 120자 이내로 입력하세요.").font(.caption).foregroundStyle(Palette.errText)
+                Text(L("pane.rename.tooLong")).font(.caption).foregroundStyle(Palette.errText)
             }
             if hasControlCharacters {
-                Text("이름은 줄바꿈 없이 입력하세요.").font(.caption).foregroundStyle(Palette.errText)
+                Text(L("pane.rename.noNewlines")).font(.caption).foregroundStyle(Palette.errText)
             }
             if let saveError { Text(saveError).font(.caption).foregroundStyle(Palette.errText) }
             HStack {
@@ -49,8 +49,8 @@ struct RenameSheet: View {
                         .accessibilityIdentifier("rename-automatic")
                 }
                 Spacer()
-                Button("취소") { store.renameTarget = nil }.keyboardShortcut(.cancelAction)
-                Button("저장") { save() }
+                Button(L("resume.cancel")) { store.renameTarget = nil }.keyboardShortcut(.cancelAction)
+                Button(L("pane.rename.save")) { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!validName)
                     .accessibilityIdentifier("rename-save")
@@ -68,7 +68,7 @@ struct RenameSheet: View {
             ? store.renameWorkspace(target.targetID, to: trimmedName)
             : store.renameSession(target.targetID, to: trimmedName)
         if saved { store.renameTarget = nil }
-        else { saveError = "대상을 찾을 수 없습니다. 창을 닫고 다시 시도하세요." }
+        else { saveError = L("pane.rename.targetMissing") }
     }
 
     private func setAutomatic() {

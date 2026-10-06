@@ -84,7 +84,7 @@ extension AppStore {
             drafts[session.id] = "격리 검증: 실행하지 않는 요청"
             let originalDraft = drafts[session.id]
             let blocked = runBlockedReason(session)
-            try require(blocked?.contains("업데이트") == true, "업데이트 중 새 작업 차단 사유가 없습니다.")
+            try require(blocked?.contains(L("run.blocked.updatingCLI", ["provider": ProviderOptions.label(session.provider)])) == true, "업데이트 중 새 작업 차단 사유가 없습니다.")
             error = nil
             submit(session.id)
             try require(error == blocked && drafts[session.id] == originalDraft && snapshot.sessions.first(where: { $0.id == session.id })?.status == "idle" && snapshot.sessions.first(where: { $0.id == session.id })?.logs.isEmpty == true, "업데이트 중 요청이 실행되거나 초안이 소실되었습니다.")

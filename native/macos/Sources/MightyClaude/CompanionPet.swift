@@ -86,29 +86,29 @@ struct CompanionPet: Identifiable {
         var declaredVersion: Int?
         if manifest.pathExtension.lowercased() == "json" {
             let size = try manifest.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size > 0, size <= 65_536 else { throw MightyError("펫 설명 파일은 64 KiB 이하여야 합니다.") }
+            guard size > 0, size <= 65_536 else { throw MightyError(L("companion.error.descriptionTooLarge")) }
             guard let json = try JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any],
-                  let path = json["spritesheetPath"] as? String, !path.isEmpty, !path.hasPrefix("/") else { throw MightyError("pet.json에 올바른 spritesheetPath가 필요합니다.") }
+                  let path = json["spritesheetPath"] as? String, !path.isEmpty, !path.hasPrefix("/") else { throw MightyError(L("companion.error.spritesheetPath")) }
             let root = manifest.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
             source = root.appendingPathComponent(path).resolvingSymlinksInPath().standardizedFileURL
-            guard source.path.hasPrefix(root.path + "/") else { throw MightyError("펫 이미지는 선택한 펫 폴더 안에 있어야 합니다.") }
+            guard source.path.hasPrefix(root.path + "/") else { throw MightyError(L("companion.error.outsideFolder")) }
             name = String((json["displayName"] as? String ?? name).prefix(80))
             declaredVersion = json["spriteVersionNumber"] as? Int
         }
-        guard ["png", "webp"].contains(source.pathExtension.lowercased()) else { throw MightyError("PNG 또는 WebP 펫 이미지를 선택하세요.") }
+        guard ["png", "webp"].contains(source.pathExtension.lowercased()) else { throw MightyError(L("companion.error.format")) }
         let size = try source.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard size.isRegularFile == true, let bytes = size.fileSize, bytes > 0, bytes <= 20 * 1024 * 1024 else { throw MightyError("펫 이미지는 20 MiB 이하의 일반 파일이어야 합니다.") }
+        guard size.isRegularFile == true, let bytes = size.fileSize, bytes > 0, bytes <= 20 * 1024 * 1024 else { throw MightyError(L("companion.error.fileTooLarge")) }
         let data = try Data(contentsOf: source, options: .mappedIfSafe)
         guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width == 1536, [1872, 2288, 2496].contains(height) else { throw MightyError("Codex 펫 크기는 1536×1872, 1536×2288 또는 1536×2496이어야 합니다.") }
+              width == 1536, [1872, 2288, 2496].contains(height) else { throw MightyError(L("companion.error.size")) }
         if let declaredVersion {
-            guard [1: 1872, 2: 2288, 3: 2496][declaredVersion] == height else { throw MightyError("펫 버전과 이미지 크기가 일치하지 않습니다.") }
+            guard [1: 1872, 2: 2288, 3: 2496][declaredVersion] == height else { throw MightyError(L("companion.error.versionMismatch")) }
         }
         guard let sheet = CGImageSourceCreateImageAtIndex(imageSource, 0, nil),
-              [.first, .last, .premultipliedFirst, .premultipliedLast].contains(sheet.alphaInfo) else { throw MightyError("투명 배경이 있는 펫 이미지가 필요합니다.") }
+              [.first, .last, .premultipliedFirst, .premultipliedLast].contains(sheet.alphaInfo) else { throw MightyError(L("companion.error.transparency")) }
         return CompanionPet(id: id, name: name, pixelWidth: width, pixelHeight: height, source: source)
     }
     static func install(from source: URL, into directory: URL) throws -> CompanionPet {

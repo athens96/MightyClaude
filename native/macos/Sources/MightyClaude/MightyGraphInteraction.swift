@@ -94,7 +94,7 @@ final class MightyGraphViewportHost<Content: View>: NSView {
         hosting.sizingOptions = []; overlayHost.sizingOptions = []
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("마이티 그래프")
+        setAccessibilityLabel(L("graph.accessibility"))
         wantsLayer = true; layer?.masksToBounds = true
         addSubview(hosting); addSubview(probe); addSubview(overlayHost)
         probe.graphRoot = hosting; probe.setAccessibilityElement(false)

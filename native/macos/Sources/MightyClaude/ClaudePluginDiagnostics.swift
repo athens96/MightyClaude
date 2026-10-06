@@ -127,7 +127,7 @@ enum ClaudePluginDiagnostics {
             let draft = store.drafts[session.id]
             let blocked = store.runBlockedReason(store.snapshot.sessions[index])
             store.error = nil; store.submit(session.id)
-            try require(blocked?.contains("플러그인") == true && store.error == blocked && store.drafts[session.id] == draft && store.attachmentDrafts[session.id] == [attachment] && store.snapshot.sessions[index].logs.isEmpty, "설치 중 요청이 실행되거나 초안·첨부가 소실되었습니다.")
+            try require(blocked == L("run.blocked.changingPlugins") && store.error == blocked && store.drafts[session.id] == draft && store.attachmentDrafts[session.id] == [attachment] && store.snapshot.sessions[index].logs.isEmpty, "설치 중 요청이 실행되거나 초안·첨부가 소실되었습니다.")
             store.snapshot.sessions[index].model = "default"; store.error = nil
             result["newRunBlockedAndDraftPreserved"] = true
             browserWindow.orderOut(nil); composerWindow.makeKeyAndOrderFront(nil)
@@ -238,7 +238,7 @@ enum ClaudePluginDiagnostics {
             store.isManagingPlugins = true
             let codexRunBlocked = store.runBlockedReason(codexSession)
             store.isManagingPlugins = false
-            try require(codexRunBlocked?.contains("플러그인") == true, "플러그인 변경 중 Codex 실행이 차단되지 않았습니다.")
+            try require(codexRunBlocked == L("run.blocked.changingPlugins"), "플러그인 변경 중 Codex 실행이 차단되지 않았습니다.")
             result["codexRunAndMutationGuards"] = true
             await codexModel.shutdown()
             result["passed"] = true

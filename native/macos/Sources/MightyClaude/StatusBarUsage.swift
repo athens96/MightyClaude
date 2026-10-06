@@ -67,11 +67,11 @@ final class AccountUsageStatusController: ObservableObject {
             guard !windows.isEmpty, let date = Self.date(clean.rateLimitsUpdatedAt),
                   date > (Self.date(snapshots[session.provider]?.fetchedAt) ?? .distantPast) else { continue }
             let stale = Date().timeIntervalSince(date) > 300
-            // A session's rate_limit_event carries no 리셋권 data, so the rows
+            // A session's rate_limit_event carries no limit-reset data, so the rows
             // the service read stay exactly as they were.
             snapshots[session.provider] = AccountUsageSnapshot(provider: session.provider, windows: windows,
                 resets: snapshots[session.provider]?.resets ?? [], fetchedAt: clean.rateLimitsUpdatedAt,
-                status: stale ? "stale" : "available", detail: stale ? "세션에서 마지막으로 받은 계정 한도입니다." : "실행 중인 세션에서 받은 계정 한도입니다.")
+                status: stale ? "stale" : "available", detail: stale ? L("windows.accountUsage.detailSessionReportedStale") : L("windows.accountUsage.detailSessionReported"))
         }
         if !added.isEmpty, !testing { refresh() }
     }
@@ -112,7 +112,7 @@ final class AccountUsageStatusController: ObservableObject {
     }
 
     /// Reads through the injected service and publishes the result, so the
-    /// popover's 리셋권 rows render from exactly what that service returned.
+    /// popover's limit-reset rows render from exactly what that service returned.
     func loadUsageResetRowsForSmoke() async -> AccountUsageSnapshot {
         let snapshot = await service.read(provider: "claude", force: true)
         if !providers.contains("claude") { providers.append("claude") }
@@ -163,8 +163,8 @@ struct StatusBarUsageView: View {
                     ForEach(controller.providers, id: \.self) { provider in chip(provider) }
                 }
             }
-            .buttonStyle(.plain).help("계정 사용 한도 · 클릭해 상세 보기")
-            .accessibilityLabel("계정 사용 한도").accessibilityIdentifier("statusbar-usage")
+            .buttonStyle(.plain).help(L("windows.accountUsage.chipsTooltip"))
+            .accessibilityLabel(L("windows.accountUsage.title")).accessibilityIdentifier("statusbar-usage")
             .popover(isPresented: $showsDetails, arrowEdge: .bottom) { StatusBarUsageDetails(controller: controller) }
             Divider().frame(height: 12).padding(.horizontal, 4)
         }
@@ -180,11 +180,11 @@ struct StatusBarUsageView: View {
                         .foregroundStyle(window.usedPercent >= 90 ? Palette.waitText : Color.secondary)
                 }
             } else if usage?.status == "permission" {
-                Text("Keychain 허용 필요").foregroundStyle(Palette.waitText)
+                Text(L("usage.keychain.needed")).foregroundStyle(Palette.waitText)
             } else if provider == "claude", !controller.claudeKeychainEnabled {
-                Text("실행 후 표시").foregroundStyle(.secondary)
+                Text(L("windows.accountUsage.chipBeforeFirstRun")).foregroundStyle(.secondary)
             } else {
-                Text(controller.refreshing ? "확인 중" : "—").foregroundStyle(.secondary)
+                Text(controller.refreshing ? L("windows.accountUsage.chipChecking") : "—").foregroundStyle(.secondary)
             }
         }
         .font(.system(size: 10)).padding(.horizontal, 7).padding(.vertical, 3)
@@ -200,7 +200,12 @@ struct StatusBarUsageView: View {
         return Array(ranked.prefix(2))
     }
     private static func rank(_ kind: String) -> Int {
-        switch RateLimitWindowLabel.label(kind) { case "세션": return 0; case "주간": return 1; default: return 2 }
+        // Ranked by what the window is, not by its label in the current language.
+        switch RateLimitWindowLabel.label(kind) {
+        case RateLimitWindowLabel.label("session"): return 0
+        case RateLimitWindowLabel.label("weekly"): return 1
+        default: return 2
+        }
     }
 }
 
@@ -210,26 +215,26 @@ struct StatusBarUsageDetails: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("계정 사용 한도", systemImage: "chart.pie").font(.system(size: 13, weight: .semibold))
+                Label(L("windows.accountUsage.title"), systemImage: "chart.pie").font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button { controller.refresh(force: true, interactive: true) } label: {
                     if controller.refreshing { ProgressView().controlSize(.mini) } else { Image(systemName: "arrow.clockwise") }
                 }
                 .buttonStyle(.plain).disabled(controller.refreshing)
-                .help("계정 한도 다시 확인").accessibilityLabel("계정 한도 새로고침")
+                .help(L("windows.accountUsage.refreshTooltip")).accessibilityLabel(L("windows.accountUsage.refreshAccessibilityLabel"))
             }
             ForEach(controller.providers, id: \.self) { provider in card(provider) }
             if controller.providers.contains("claude") {
                 Toggle(isOn: $controller.claudeKeychainEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Claude 한도를 Keychain으로 직접 조회").font(.system(size: 11))
-                        Text("끄면 Keychain 승인창이 열리지 않습니다. Claude 실행 때 CLI가 보고하는 한도만 표시합니다.").font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(L("usage.keychain.toggle")).font(.system(size: 11))
+                        Text(L("usage.keychain.toggleDescription")).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .toggleStyle(.switch).controlSize(.mini)
                 .accessibilityIdentifier("statusbar-usage-keychain-toggle")
             }
-            Text("계정 한도는 같은 계정을 사용하는 앱·세션에서 공유됩니다. 자동 조회는 Keychain 승인창을 띄우지 않습니다.")
+            Text(L("usage.sharedNoteMac"))
                 .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(16).frame(width: 320)
@@ -252,13 +257,13 @@ struct StatusBarUsageDetails: View {
                 ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Text(StatusBarUsageView.windowLabel(window.kind) + (window.windowMinutes.map { $0 == 300 ? " (5시간)" : $0 == 10080 ? " (7일)" : "" } ?? ""))
+                            Text(StatusBarUsageView.windowLabel(window.kind) + (window.windowMinutes.map { $0 == 300 ? L("windows.accountUsage.windowFiveHourSuffix") : $0 == 10080 ? L("windows.accountUsage.windowSevenDaySuffix") : "" } ?? ""))
                             Spacer()
-                            Text(StatusBarUsageView.percent(window.usedPercent) + " 사용").monospacedDigit()
+                            Text(L("usage.usedSuffix", ["percent": StatusBarUsageView.percent(window.usedPercent)])).monospacedDigit()
                         }.font(.system(size: 11))
                         ProgressView(value: min(1, max(0, window.usedPercent / 100))).tint(window.usedPercent >= 90 ? Palette.waitText : Palette.accent)
                         if let reset = window.resetsAt, let date = AccountUsageStatusController.date(reset) {
-                            Text("초기화 \(date.formatted(date: .abbreviated, time: .shortened))").font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text(L("windows.accountUsage.resetTemplate", ["date": date.formatted(date: .abbreviated, time: .shortened)])).font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -266,26 +271,26 @@ struct StatusBarUsageDetails: View {
                     Text(usage.detail).font(.system(size: 10)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if usage.status == "permission" {
-                    Button { controller.refresh(force: true, interactive: true) } label: { Label("Keychain 접근 허용하고 조회", systemImage: "key") }
+                    Button { controller.refresh(force: true, interactive: true) } label: { Label(L("usage.keychain.allowAndCheck"), systemImage: "key") }
                         .controlSize(.small).disabled(controller.refreshing)
                         .accessibilityIdentifier("statusbar-usage-keychain-\(provider)")
                 }
                 resetSection(provider: provider, usage: usage)
                 if let fetched = usage.fetchedAt, let date = AccountUsageStatusController.date(fetched) {
-                    Text("\(["error", "stale"].contains(usage.status) ? "마지막 확인값 · " : "")\(date.formatted(date: .omitted, time: .shortened)) 확인")
+                    Text((["error", "stale"].contains(usage.status) ? L("windows.accountUsage.lastKnownPrefix") : "") + L("windows.accountUsage.checkedAtTemplate", ["time": date.formatted(date: .omitted, time: .shortened)]))
                         .font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
             } else if provider == "claude", !controller.claudeKeychainEnabled {
-                Text("Claude를 한 번 실행하면 CLI가 보고한 세션·주간 한도가 여기에 표시됩니다.").font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(L("windows.accountUsage.claudeBeforeFirstRunNote")).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(controller.refreshing ? "계정 사용 한도를 확인하고 있습니다…" : "아직 확인하지 않았습니다.").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(controller.refreshing ? L("windows.accountUsage.cardChecking") : L("windows.accountUsage.cardNotCheckedYet")).font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.subtle, in: RoundedRectangle(cornerRadius: 9))
     }
 
-    /// The read-only 리셋권 rows. There is no reset button and no claim: the
+    /// The read-only limit-reset rows. There is no reset button and no claim: the
     /// only action is the link, and it is live in every one of the seven states.
     @ViewBuilder
     private func resetSection(provider: String, usage: AccountUsageSnapshot?) -> some View {

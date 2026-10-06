@@ -31,7 +31,7 @@ struct AgentLogEntryView: View {
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Palette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
             .padding(.vertical, 6)
-            .accessibilityLabel("보낸 메시지")
+            .accessibilityLabel(L("transcript.sentMessage"))
         } else if entry.kind == "output" {
             ScrollView(.horizontal) {
                 Text(entry.text).font(.system(size: 11, design: .monospaced)).lineSpacing(3).textSelection(.enabled)
@@ -67,11 +67,11 @@ struct AgentActivityRow: View {
     private var monospace: Bool { ["command", "read", "edit"].contains(activity.kind) }
     private var stateDescription: String {
         switch activity.state {
-        case "running": return sessionRunning ? "진행 중" : "실행 종료"
-        case "waiting": return sessionRunning ? "대기 중" : "실행 종료"
-        case "error": return "실패"
-        case "stopped": return "중지됨"
-        default: return "완료"
+        case "running": return sessionRunning ? L("transcript.tool.running") : L("transcript.tool.runEnded")
+        case "waiting": return sessionRunning ? L("transcript.tool.waiting") : L("transcript.tool.runEnded")
+        case "error": return L("transcript.tool.failed")
+        case "stopped": return L("session.state.stopped")
+        default: return L("session.state.completed")
         }
     }
 
@@ -81,18 +81,18 @@ struct AgentActivityRow: View {
                 Image(systemName: Self.symbol(activity.kind))
                     .font(.system(size: 11, weight: .medium)).frame(width: 15, height: 17)
                     .foregroundStyle(activity.state == "error" ? Palette.errText : animating ? Palette.accent : Color.secondary)
-                Text(activity.summary.isEmpty ? activity.toolName ?? "작업" : activity.summary)
+                Text(activity.summary.isEmpty ? activity.toolName ?? L("transcript.tool.fallback") : activity.summary)
                     .font(.system(size: 12, design: monospace ? .monospaced : .default))
                     .lineSpacing(3).lineLimit(expanded ? nil : 2).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if animating { AgentRunningIndicator().padding(.top, 2) }
-                else if sessionRunning && activity.state == "waiting" { Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(Palette.accent).help("대기 중") }
-                else if activity.state == "error" { Text("실패").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.errText) }
+                else if sessionRunning && activity.state == "waiting" { Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(Palette.accent).help(L("transcript.tool.waiting")) }
+                else if activity.state == "error" { Text(L("transcript.tool.failed")).font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.errText) }
                 if hasDetails {
                     Button { expanded.toggle() } label: {
                         Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .medium)).frame(width: 18, height: 18)
                     }.buttonStyle(.plain).foregroundStyle(.secondary)
-                        .accessibilityLabel(expanded ? "작업 상세 접기" : "작업 상세 보기")
+                        .accessibilityLabel(expanded ? L("transcript.tool.collapseDetail") : L("transcript.tool.expandDetail"))
                 }
             }
             if expanded, let output = activity.output, !output.isEmpty {
@@ -138,6 +138,6 @@ struct AgentRunningIndicator: View {
             else { ProgressView().controlSize(.mini).progressViewStyle(.circular).tint(Palette.accent) }
         }
         .frame(width: 12, height: 12)
-        .accessibilityLabel("에이전트 실행 중")
+        .accessibilityLabel(L("transcript.runningIndicator"))
     }
 }

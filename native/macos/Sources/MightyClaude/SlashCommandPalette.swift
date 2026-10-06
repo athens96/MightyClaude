@@ -31,11 +31,11 @@ struct SlashCommandPalette: View {
             }
             Divider()
             HStack(spacing: 10) {
-                Text("↑↓ 이동").font(.system(size: 10)).foregroundStyle(.secondary)
-                Text("Enter · Tab 선택").font(.system(size: 10)).foregroundStyle(.secondary)
-                Text("Esc 닫기").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("slash.palette.move")).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("slash.palette.select")).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(L("slash.palette.dismiss")).font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(commands.count)개").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text(L("slash.palette.count", ["count": "\(commands.count)"])).font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 12).padding(.vertical, 5)
         }
@@ -49,7 +49,7 @@ struct SlashCommandPalette: View {
             Text("/" + command.invocation).font(.system(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
                 .foregroundStyle(highlighted ? Palette.onAccent : .primary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(command.description.isEmpty ? "설명 없음" : command.description).font(.system(size: 11)).lineLimit(1)
+                Text(command.description.isEmpty ? L("slash.palette.noDescription") : command.description).font(.system(size: 11)).lineLimit(1)
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.9) : .secondary)
                 Text(command.source).font(.system(size: 9, weight: .medium))
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.75) : Color.secondary.opacity(0.7))
@@ -58,11 +58,11 @@ struct SlashCommandPalette: View {
             if command.action != nil {
                 Image(systemName: "arrow.turn.down.left").font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.75) : Color.secondary.opacity(0.7))
-                    .help("앱에서 바로 실행됩니다")
+                    .help(L("slash.palette.actionHelp"))
             } else if command.argument != nil {
                 Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(highlighted ? Palette.onAccent.opacity(0.75) : Color.secondary.opacity(0.7))
-                    .help("이어서 선택합니다")
+                    .help(L("slash.palette.argumentHelp"))
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 6)

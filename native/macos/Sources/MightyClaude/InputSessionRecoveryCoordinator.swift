@@ -1,4 +1,5 @@
 import AppKit
+import MightyCore
 
 @MainActor
 protocol InputSessionRecoveryInputTransaction: AnyObject {
@@ -21,16 +22,16 @@ final class InputSessionRecoveryCoordinator {
         var isPending: Bool { self == .activating || self == .verifying }
         var message: String {
             switch self {
-            case .idle: "입력기 다시 연결을 누르면 현재 입력창의 앱·창·입력 연결을 확인합니다."
-            case .activating: "앱과 입력창이 실제로 활성화되기를 기다리고 있습니다."
-            case .verifying: "입력창을 다시 연결하고 macOS 입력 컨텍스트를 확인하고 있습니다."
-            case .reconnected: "앱·창·입력 컨텍스트 연결을 확인했습니다. 한글 입력을 다시 시도해 주세요."
-            case .cancelled: "포커스나 실행 창이 바뀌어 재연결을 취소했습니다. 사용할 입력창에서 다시 시도해 주세요."
-            case .failed(.noEditableTarget): "현재 보이는 입력창을 찾지 못했습니다. 사용할 입력창을 클릭한 뒤 다시 시도해 주세요."
-            case .failed(.activationUnavailable): "macOS가 앱을 활성화하지 않았습니다. 앱을 완전히 종료(⌘Q)한 뒤 다시 열어 주세요."
-            case .failed(.windowUnavailable): "입력창의 키 윈도우 연결을 확인하지 못했습니다. 앱을 완전히 종료(⌘Q)한 뒤 다시 열어 주세요."
-            case .failed(.inputContextUnavailable): "창은 활성화됐지만 macOS 입력 연결을 확인하지 못했습니다. 앱을 완전히 종료(⌘Q)한 뒤 다시 열어 주세요."
-            case .failed(.responderRejected): "창이 입력창의 포커스를 받아들이지 않았습니다. 입력창을 클릭한 뒤 다시 시도해 주세요."
+            case .idle: L("inputRecovery.idle")
+            case .activating: L("inputRecovery.activating")
+            case .verifying: L("inputRecovery.verifying")
+            case .reconnected: L("inputRecovery.reconnected")
+            case .cancelled: L("inputRecovery.cancelled")
+            case .failed(.noEditableTarget): L("inputRecovery.noEditableTarget")
+            case .failed(.activationUnavailable): L("inputRecovery.activationUnavailable")
+            case .failed(.windowUnavailable): L("inputRecovery.windowUnavailable")
+            case .failed(.inputContextUnavailable): L("inputRecovery.inputContextUnavailable")
+            case .failed(.responderRejected): L("inputRecovery.responderRejected")
             }
         }
     }

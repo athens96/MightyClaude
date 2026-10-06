@@ -151,7 +151,7 @@ extension AppStore {
             let malicious = dataDirectory.appendingPathComponent("invalid-pet.json")
             try Data("{\"spritesheetPath\":\"../outside.webp\"}".utf8).write(to: malicious)
             do { _ = try CompanionPet.load(from: malicious, id: "invalid"); throw MightyError("Unsafe path accepted") }
-            catch { guard error.localizedDescription.contains("폴더 안") else { throw error } }
+            catch { guard error.localizedDescription == L("companion.error.outsideFolder") else { throw error } }
             result["petPathTraversalRejected"] = true
             let previous = companion.preferences
             companion.preferences.showsTask = false
@@ -223,7 +223,7 @@ extension AppStore {
             try await waitForSmoke(timeout: 2) { self.timingViewExists(panel, identifier: "pet-task-bubble") }
             result["restoredTimingScreenshot"] = try captureSmokeWindow(panel, filename: "agent-restored-time.png").path
             guard let petClock = freshCompanion.current?.timing, petClock.finishedAt != nil else { throw MightyError("Restored pet clock missing") }
-            let expectedClock = "실행 시간 " + petClock.label()
+            let expectedClock = L("companion.spoken.elapsed", ["time": petClock.label()]).trimmingCharacters(in: .whitespaces)
             result["restoredPetExpectedClock"] = expectedClock
             try await waitForSmoke(timeout: 2) { self.timingViewExists(panel, identifier: "pet-task-bubble", containing: expectedClock) }
             result["restoredPetTimerVisible"] = true

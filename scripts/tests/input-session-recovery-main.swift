@@ -1,6 +1,9 @@
 import AppKit
 import Foundation
 
+/// Stands in for MightyCore's locale lookup, which this harness does not link.
+func L(_ key: String, _ subs: [String: String] = [:]) -> String { key }
+
 @main
 struct InputSessionRecoveryMain {
     @MainActor

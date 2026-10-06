@@ -11,7 +11,7 @@ struct AgentElapsedView: View {
 
     /// What the clock measures: a rebuilt estimate, a request still going, or a finished one.
     static func help(_ timing: AgentRunTiming) -> String {
-        timing.isApproximate ? "마지막 요청과 응답·활동 또는 저장 시각으로 복원한 추정 시간입니다. 앱이 종료된 동안의 시간은 포함하지 않습니다." : timing.finishedAt == nil ? "이번 요청의 경과 시간 · 승인 대기 포함" : "이번 요청의 실행 시간"
+        timing.isApproximate ? L("pane.hero.elapsed.approximate") : timing.finishedAt == nil ? L("pane.hero.elapsed.running") : L("pane.hero.elapsed.finished")
     }
 
     private func label(at date: Date) -> some View {
@@ -19,6 +19,6 @@ struct AgentElapsedView: View {
             .font(.system(size: 10, design: .monospaced)).monospacedDigit()
             .foregroundStyle(.secondary).fixedSize()
             .help(Self.help(timing))
-            .accessibilityLabel("\(timing.finishedAt == nil ? "진행 시간" : "실행 시간") \(timing.label(at: date))")
+            .accessibilityLabel(L(timing.finishedAt == nil ? "pane.elapsed.runningAccessibility" : "pane.elapsed.finishedAccessibility", ["time": timing.label(at: date)]))
     }
 }

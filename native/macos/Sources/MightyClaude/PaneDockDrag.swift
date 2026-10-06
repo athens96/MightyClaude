@@ -157,7 +157,7 @@ struct PaneDockTabHandle: NSViewRepresentable {
     func updateNSView(_ view: PaneDockTabHandleView, context: Context) {
         view.store = store; view.sessionId = sessionId; view.workspaceId = workspaceId; view.groupId = groupId; view.nextSessionId = nextSessionId
         view.setAccessibilityElement(true); view.setAccessibilityRole(.button); view.setAccessibilityLabel(title)
-        view.setAccessibilityHelp("선택하거나 끌어서 탭을 합치고 가장자리에서 분할합니다.")
+        view.setAccessibilityHelp(L("layout.tab.dragHelp"))
         view.setAccessibilityIdentifier("pane-tab-drag-" + sessionId)
         PaneDockDragCoordinator.shared.register(view)
     }

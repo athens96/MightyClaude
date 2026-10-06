@@ -55,7 +55,7 @@ private struct ToolPermissionCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 PaneWaitBadge(systemImage: "hand.raised.fill")
-                Text("\(presentation.title) · 승인 요청").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
+                Text(L("permission.bar.title", ["title": presentation.title])).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.ink).lineLimit(1)
                 Text(request.toolName).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Palette.ink2).lineLimit(1)
                 Spacer(minLength: 0)
                 if count > 1 { Text(L("phone.questionnaire.waiting", ["count": "\(count)"])).foregroundStyle(Palette.ink2) }
@@ -84,27 +84,27 @@ private struct ToolPermissionCard: View {
                     if presentation.fields.isEmpty, presentation.headline == nil {
                         Text(request.summary).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                     }
-                    if let path = request.blockedPath, !path.isEmpty { Text("접근 경로: \(path)").font(.system(size: 10)) }
+                    if let path = request.blockedPath, !path.isEmpty { Text(L("permission.bar.blockedPath", ["path": path])).font(.system(size: 10)) }
                     if let reason = request.reason, !reason.isEmpty { Text(reason).font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true) }
-                    DisclosureGroup("원본 JSON", isExpanded: $showsJSON) {
+                    DisclosureGroup(L("styles.approval.raw"), isExpanded: $showsJSON) {
                         Text(request.inputJSON).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
                     }.font(.system(size: 10)).accessibilityIdentifier("permission-json")
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 4)
             }.frame(maxHeight: 180)
             if !request.canAllow {
-                Text("이 요청은 현재 승인 화면에서 허용할 수 없습니다. 거부하거나 실행을 중지하세요.")
+                Text(L("permission.bar.cannotAllow"))
                     .font(.system(size: 10)).foregroundStyle(Palette.ink2).fixedSize(horizontal: false, vertical: true)
             }
             if let error = store.permissionErrors[sessionId] {
                 Text(error).font(.system(size: 10)).foregroundStyle(Palette.errText).lineLimit(2)
             }
             HStack(spacing: 8) {
-                Text("이 요청에만 적용").font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                Text(L("permission.bar.thisRequestOnly")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 Spacer(minLength: 0)
                 if busy { ProgressView().controlSize(.mini) }
-                Button("거부") { answer(false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("permission-deny")
-                Button("이번만 허용") { answer(true) }
+                Button(L("permission.deny")) { answer(false) }.buttonStyle(PaneCardButtonStyle()).accessibilityIdentifier("permission-deny")
+                Button(L("permission.allowOnce")) { answer(true) }
                     .buttonStyle(PaneCardButtonStyle(prominent: true)).disabled(!request.canAllow)
                     .accessibilityIdentifier("permission-allow-once")
             }.disabled(busy)

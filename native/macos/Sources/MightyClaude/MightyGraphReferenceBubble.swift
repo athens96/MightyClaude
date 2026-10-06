@@ -66,7 +66,7 @@ struct MightyGraphReferenceBubble: View {
         .onExitCommand(perform: onClose)
         .task(id: reference) { content = await Self.load(reference) }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("참조 말풍선 · \(reference.title)")
+        .accessibilityLabel(L("reference.bubbleAccessibility", ["title": reference.title]))
         .accessibilityIdentifier("mighty-reference-bubble-\(sessionID)")
     }
 
@@ -76,9 +76,9 @@ struct MightyGraphReferenceBubble: View {
             .frame(width: 22, height: 22)
             .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
             .padding(2)
-            .help("드래그하여 말풍선 크기 조절 · 두 번 클릭해 기본 크기")
+            .help(L("reference.resizeHelp"))
             .allowsHitTesting(false)
-            .accessibilityLabel("말풍선 크기 조절")
+            .accessibilityLabel(L("reference.resizeAccessibility"))
             .accessibilityIdentifier("mighty-reference-resize-\(sessionID)")
     }
 
@@ -86,21 +86,21 @@ struct MightyGraphReferenceBubble: View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(Palette.accent)
             VStack(alignment: .leading, spacing: 1) {
-                Text(reference.title + (reference.line.map { " · 줄 \($0)" } ?? "")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(reference.line.map { L("reference.line", ["title": reference.title, "line": "\($0)"]) } ?? reference.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Text(reference.path).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(reference.path)
             }
             Spacer(minLength: 4)
             Button(action: onFlip) { Image(systemName: onLeft ? "rectangle.righthalf.inset.filled.arrow.right" : "rectangle.lefthalf.inset.filled.arrow.left") }
-                .help(onLeft ? "오른쪽에 표시" : "왼쪽에 표시").accessibilityLabel(onLeft ? "말풍선을 오른쪽으로" : "말풍선을 왼쪽으로")
+                .help(onLeft ? L("reference.flipRight") : L("reference.flipLeft")).accessibilityLabel(onLeft ? L("reference.moveRight") : L("reference.moveLeft"))
                 .accessibilityIdentifier("mighty-reference-flip-\(sessionID)")
             if let url = reference.url {
                 Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: { Image(systemName: "folder") }
-                    .help("Finder에서 보기").accessibilityLabel("Finder에서 보기")
+                    .help(L("menu.showInFinder")).accessibilityLabel(L("menu.showInFinder"))
                 Button { NSWorkspace.shared.open(url) } label: { Image(systemName: "arrow.up.forward.app") }
-                    .help("기본 앱으로 열기").accessibilityLabel("기본 앱으로 열기")
+                    .help(L("reference.openExternal")).accessibilityLabel(L("reference.openExternal"))
             }
             Button(action: onClose) { Image(systemName: "xmark") }
-                .help("닫기 (Esc)").accessibilityLabel("말풍선 닫기")
+                .help(L("reference.closeHelp")).accessibilityLabel(L("reference.closeAccessibility"))
                 .accessibilityIdentifier("mighty-reference-close-\(sessionID)")
         }
         .buttonStyle(.plain).font(.system(size: 12))
@@ -133,11 +133,11 @@ struct MightyGraphReferenceBubble: View {
         case .html(let url):
             MightyLocalWebPreview(url: url)
         case .tooLarge:
-            notice("2 MiB보다 큰 파일은 미리 보지 않습니다.", detail: "기본 앱으로 열어 확인하세요.")
+            notice(L("reference.tooLarge"), detail: L("reference.openInDefaultApp"))
         case .unreadable:
-            notice("텍스트로 표시할 수 없는 파일입니다.", detail: "기본 앱으로 열어 확인하세요.")
+            notice(L("reference.notText"), detail: L("reference.openInDefaultApp"))
         case .missing:
-            notice("워크스페이스 안에서 찾을 수 없는 파일입니다.", detail: "경로가 프로젝트 폴더 밖이거나 파일이 없습니다.")
+            notice(L("reference.missing"), detail: L("reference.missingDetail"))
         }
     }
 

@@ -34,7 +34,7 @@ struct MightyGraphView: View {
     var retainedStart = 0
     var history: SessionHistoryState? = nil
     var onLoadOlder: () -> Void = {}
-    /// "다이어그램 | 타임라인", saved per pane (`RunSession.graphViewMode`).
+    /// "Diagram | Timeline", saved per pane (`RunSession.graphViewMode`).
     var viewMode: MightyGraphViewMode = .diagram
     var onViewMode: (MightyGraphViewMode) -> Void = { _ in }
     /// The pane's pending plan (`PlanCardSupport.pendingPlan`) and its answered
@@ -85,11 +85,11 @@ struct MightyGraphView: View {
     /// Kept out of the view body: long concatenations of conditionals are
     /// slow for older type checkers.
     static func headerSummary(runs: Int, agents: Int, tasks: Int, steers: Int, compactions: Int, questions: Int = 0, tokens: GraphTokenUsage) -> String {
-        var parts = ["요청 \(runs)", "하위 에이전트 \(agents)"]
-        if questions > 0 { parts.append("질문 \(questions)") }
-        if tasks > 0 { parts.append("백그라운드 작업 \(tasks)") }
-        if steers > 0 { parts.append("중간 요청 \(steers)") }
-        if compactions > 0 { parts.append("컨텍스트 정리 \(compactions)") }
+        var parts = [L("graph.header.requests", ["n": "\(runs)"]), L("graph.header.agents", ["n": "\(agents)"])]
+        if questions > 0 { parts.append(L("graph.header.questions", ["n": "\(questions)"])) }
+        if tasks > 0 { parts.append(L("graph.header.tasks", ["n": "\(tasks)"])) }
+        if steers > 0 { parts.append(L("graph.header.steers", ["n": "\(steers)"])) }
+        if compactions > 0 { parts.append(L("graph.header.compactions", ["n": "\(compactions)"])) }
         if !tokens.isEmpty { parts.append(tokens.summary) }
         return parts.joined(separator: " · ")
     }
@@ -194,16 +194,16 @@ struct MightyGraphView: View {
                 if let styleSource, let badge = StyleChrome.sourceBadge(styleSource) { SourceBadge(text: badge) }
                 Text(summary)
                     .font(.system(size: 10)).foregroundStyle(Palette.ink2).lineLimit(1)
-                    .help(tokens.isEmpty ? "" : "이 실행 창의 모든 요청 합계 · " + tokens.detail)
+                    .help(tokens.isEmpty ? "" : L("graph.header.totalHelp", ["detail": tokens.detail]))
                 Spacer(minLength: 8)
                 if viewMode == .diagram {
                     Group {
                         Button { zoom = max(0.5, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
-                            .disabled(zoom <= 0.5).help("축소").accessibilityIdentifier("mighty-zoom-out-\(sessionID)")
+                            .disabled(zoom <= 0.5).help(L("graph.zoom.out")).accessibilityIdentifier("mighty-zoom-out-\(sessionID)")
                         Button { zoom = 1 } label: { Text("\(Int((zoom * 100).rounded()))%").monospacedDigit().frame(width: 38) }
-                            .help("실제 크기").accessibilityIdentifier("mighty-zoom-reset-\(sessionID)")
+                            .help(L("graph.zoom.reset")).accessibilityIdentifier("mighty-zoom-reset-\(sessionID)")
                         Button { zoom = min(1.5, zoom + 0.1) } label: { Image(systemName: "plus.magnifyingglass") }
-                            .disabled(zoom >= 1.5).help("확대").accessibilityIdentifier("mighty-zoom-in-\(sessionID)")
+                            .disabled(zoom >= 1.5).help(L("graph.zoom.in")).accessibilityIdentifier("mighty-zoom-in-\(sessionID)")
                     }
                     .foregroundStyle(Palette.ink2)
                 }
@@ -427,9 +427,9 @@ struct MightyGraphView: View {
         case .draft:
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label(runs.isEmpty ? "첫 요청" : "다음 요청", systemImage: "square.and.pencil").font(.system(size: 12, weight: .semibold))
+                    Label(runs.isEmpty ? L("graph.block.firstRequest") : L("graph.block.nextRequest"), systemImage: "square.and.pencil").font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(draft.isEmpty ? "입력 대기" : "작성 중").font(.system(size: 11)).foregroundStyle(Palette.ink2)
+                    Text(draft.isEmpty ? L("graph.state.draftIdle") : L("graph.state.draftTyping")).font(.system(size: 11)).foregroundStyle(Palette.ink2)
                 }
                 // A native selectable view, not Text(...).textSelection: the
                 // canvas monitor hands first responder back to itself for every
@@ -465,9 +465,9 @@ struct MightyGraphView: View {
             let failed = ["error", "failed"].contains(run.status)
             let stopped = ["stopped", "cancelled", "interrupted"].contains(run.status)
             let status = failed ? "error" : stopped ? "stopped" : "completed"
-            transcriptCard(node, title: failed ? "요청 실패" : stopped ? "요청 중단" : "최종 결과", icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
+            transcriptCard(node, title: failed ? L("graph.block.resultError") : stopped ? L("graph.block.resultStopped") : L("graph.block.result"), icon: failed ? "exclamationmark.triangle" : stopped ? "stop.circle" : "checkmark.seal",
                            status: status, input: "", entries: run.resultEntries, tint: Palette.text(status),
-                           usage: run.totalUsage, usageLabel: "요청 전체 합계", resultFilesRunID: run.status == "completed" ? run.id : nil,
+                           usage: run.totalUsage, usageLabel: L("graph.block.totalUsageLabel"), resultFilesRunID: run.status == "completed" ? run.id : nil,
                            headerFill: Palette.heroFill(DesignTone(status: status)),
                            onContentHeight: node.id == MightyGraphLayout.latestResultID(runs: runs) ? { resultMeasured(node.id, $0) } : nil)
         case .resultFiles(let index):
@@ -502,7 +502,7 @@ struct MightyGraphView: View {
     /// `headerFill` paints the header as a strip (the result card's outcome colour) with
     /// white words on it; the other blocks keep a plain header on the white card.
     private func transcriptCard(_ node: MightyGraphLayout.Node, title: String, titleProvider: String? = nil, icon: String, status: String, input: String, entries: [LogEntry], tint: Color,
-                                usage: GraphTokenUsage? = nil, usageLabel: String = "이 블록", resultFilesRunID: String? = nil,
+                                usage: GraphTokenUsage? = nil, usageLabel: String = L("graph.block.blockUsageLabel"), resultFilesRunID: String? = nil,
                                 records: [GraphResponseRecord] = [], nodeModelLabel: String? = nil,
                                 childBlocks: [String: GraphChildBlock] = [:], fromRecord: Bool = false, headerFill: Color? = nil,
                                 onContentHeight: ((CGFloat) -> Void)? = nil) -> some View {
@@ -546,8 +546,8 @@ struct MightyGraphView: View {
                         }
                         .foregroundStyle(onStrip ? Palette.onStatus : resultFiles.selectedRunID == resultFilesRunID ? Palette.accent : Palette.ink2)
                     }
-                    .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? "파일 목록 닫기" : "결과에 나온 파일 보기")
-                    .accessibilityLabel("결과 파일 \(resultFiles.files(for: resultFilesRunID).count)개 · 목록 토글")
+                    .buttonStyle(.plain).help(resultFiles.selectedRunID == resultFilesRunID ? L("graph.resultFiles.closeButton") : L("graph.resultFiles.openButton"))
+                    .accessibilityLabel(L("graph.resultFiles.countLabel", ["count": "\(resultFiles.files(for: resultFilesRunID).count)"]))
                     .accessibilityIdentifier("mighty-result-files-toggle-\(node.id)")
                 }
                 let isLatestResult = node.id == MightyGraphLayout.latestResultID(runs: runs)
@@ -570,8 +570,8 @@ struct MightyGraphView: View {
                         onSaveBlockSize(node.id, nil)
                         if !expanded.insert(node.id).inserted { expanded.remove(node.id) }
                     } label: { Image(systemName: expanded.contains(node.id) ? "rectangle.compress.vertical" : "rectangle.expand.vertical") }
-                        .buttonStyle(.plain).foregroundStyle(quiet).help(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
-                        .accessibilityLabel(expanded.contains(node.id) ? "내용 접기" : "내용 더 보기")
+                        .buttonStyle(.plain).foregroundStyle(quiet).help(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
+                        .accessibilityLabel(expanded.contains(node.id) ? L("graph.block.collapse") : L("graph.block.expand"))
                         .accessibilityIdentifier("mighty-expand-\(node.id)")
                 }
             }.padding(.horizontal, 12).frame(height: Self.blockHeaderHeight)
@@ -584,7 +584,7 @@ struct MightyGraphView: View {
                 Divider().overlay(Palette.border)
             }
             if content.isEmpty {
-                Text(MightyGraphLayout.terminal(status) ? "별도의 응답 내용이 없습니다." : "에이전트 응답을 기다리고 있습니다…")
+                Text(MightyGraphLayout.terminal(status) ? L("graph.block.noResponse") : L("graph.block.waitingResponse"))
                     .font(.system(size: 12)).foregroundStyle(Palette.ink2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(15)
             } else {
@@ -651,7 +651,7 @@ struct MightyGraphView: View {
     }
 
     private func blockScrollLabel(_ id: String, ink: Color) -> some View {
-        Text("블록 스크롤").font(.system(size: 9, weight: .medium)).foregroundStyle(ink)
+        Text(L("graph.block.scrolling")).font(.system(size: 9, weight: .medium)).foregroundStyle(ink)
             .lineLimit(1).fixedSize().accessibilityIdentifier("mighty-block-scroll-" + id)
     }
 
@@ -745,7 +745,7 @@ struct MightyGraphView: View {
         }
     }
 
-    /// "요청 N · Claude", its status, the request itself and "블록 n개 · 끝남 m".
+    /// "Request N · Claude", its status, the request itself and the block and finished counts.
     private func timelineHeader(_ group: MightyTimeline.Group, run: MightyGraphRun, open: Bool) -> some View {
         let title = StyleChrome.requestTitle(prefix: styleTitles.prefix(run.input), ordinal: group.ordinal,
                                              providerLabel: ProviderOptions.label(provider))
@@ -962,11 +962,11 @@ private struct MightyGraphCanvas<Card: View, Edges: View>: View {
                                     .frame(width: 22, height: 22)
                                     .background(Palette.panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 5))
                                     .padding(2)
-                                    .help("드래그하여 블록 크기 조절 · 우클릭하여 크기 초기화")
-                                    .accessibilityLabel("블록 크기 조절")
+                                    .help(L("graph.block.resizeHelp"))
+                                    .accessibilityLabel(L("graph.block.resizeAccessibility"))
                                     .accessibilityIdentifier("mighty-resize-" + node.id)
                                     .contextMenu {
-                                        Button("기본 크기로 되돌리기") { onResetSize(node.id) }
+                                        Button(L("graph.block.resetSize")) { onResetSize(node.id) }
                                     }
                             }
                         }
@@ -1063,7 +1063,7 @@ private struct MightyGraphInputPreview: View {
         // lookups in MightyGraphDiagnostics land on the element that carries
         // the request text as its value.
         MightyGraphSelectableText(text: input, width: max(1, width - 16), fontSize: 11, identifier: identifier,
-                                  accessibilityLabel: "요청 내용", onHeight: { height in
+                                  accessibilityLabel: L("graph.block.promptAccessibility"), onHeight: { height in
             if height.isFinite, height > 0, abs(measuredHeight - height) > 0.5 { measuredHeight = ceil(height) }
         })
         .frame(width: width, height: min(64, max(14, measuredHeight)))
@@ -1080,10 +1080,10 @@ private struct MightyGraphDraftPreview: View {
     let identifier: String
     @ViewState private var measuredHeight: CGFloat = 16
     var body: some View {
-        MightyGraphSelectableText(text: draft.isEmpty ? "아래 입력창에서 요청을 작성하세요." : draft,
+        MightyGraphSelectableText(text: draft.isEmpty ? L("graph.block.draftHint") : draft,
                                   width: width, fontSize: 12, secondary: draft.isEmpty, maximumLines: 4,
                                   identifier: identifier,
-                                  accessibilityLabel: draft.isEmpty ? "다음 요청 입력 대기" : nil,
+                                  accessibilityLabel: draft.isEmpty ? L("graph.block.draftAccessibility") : nil,
                                   onHeight: { height in
             if height.isFinite, height > 0, abs(measuredHeight - height) > 0.5 { measuredHeight = ceil(height) }
         })

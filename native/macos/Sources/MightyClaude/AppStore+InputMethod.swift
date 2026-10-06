@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MightyCore
 
 extension AppStore {
     /// The coordinator can retain a weak, validated target even when AppKit has
@@ -19,6 +20,6 @@ extension AppStore {
         let editor = InputSessionRecoveryCoordinator.shared.resolveEditor()
         if let file = InputMethodMonitor.shared.writeDiagnostics(editor: editor, reason: "manual") {
             NSWorkspace.shared.selectFile(file.path, inFileViewerRootedAtPath: file.deletingLastPathComponent().path)
-        } else { error = "진단 파일을 저장하지 못했습니다." }
+        } else { error = L("menu.saveInputDiagnosticsFailed") }
     }
 }

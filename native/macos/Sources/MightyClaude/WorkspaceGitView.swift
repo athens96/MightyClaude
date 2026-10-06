@@ -48,9 +48,9 @@ struct WorkspaceGitBadge: View {
         .padding(.horizontal, 7).padding(.vertical, 3)
         .background(Palette.subtle, in: Capsule())
         .frame(maxWidth: 260)
-        .help("Git · \(info.label) · \(info.isDirty ? "커밋하지 않은 변경 있음" : "작업 트리 깨끗함")\n↑↓는 로컬에 기록된 upstream 기준입니다.")
+        .help(L("git.help", ["label": info.label, "state": info.isDirty ? L("git.dirty") : L("git.clean")]))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Git \(info.label), \(info.isDirty ? "변경 있음" : "변경 없음")")
+        .accessibilityLabel(L("git.accessibility", ["label": info.label, "state": info.isDirty ? L("git.dirty") : L("git.clean")]))
         .accessibilityIdentifier("workspace-git-info")
     }
 }

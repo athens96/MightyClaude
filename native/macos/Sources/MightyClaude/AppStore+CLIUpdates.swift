@@ -102,7 +102,7 @@ extension AppStore {
                 let busy = defers ? !self.readyForBackgroundUpdate(provider) : self.localCLIIsRunning(provider) || changingAccount
                 if busy {
                     if defers { self.cliAutoUpdateSchedule.skippedBusy(provider) }
-                    let detail = defers ? L("settings.cliUpdate.detailDeferred") : changingAccount ? L("loginRecovery.busy") : "이 CLI로 작업 중입니다. 작업 완료 후 다시 업데이트하세요."
+                    let detail = defers ? L("settings.cliUpdate.detailDeferred") : changingAccount ? L("loginRecovery.busy") : L("settings.cliUpdate.detailInUse")
                     self.cliUpdateResults[provider] = CLIUpdateResult(provider: provider, status: "skipped", beforeVersion: nil, afterVersion: nil, method: "unknown", detail: detail, output: "")
                     continue
                 }
