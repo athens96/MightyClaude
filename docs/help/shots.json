@@ -19,8 +19,8 @@
       "section": "getting-started",
       "screen": "welcome",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The first window of a new profile, before any folder is open."
     },
@@ -29,8 +29,8 @@
       "section": "layout",
       "screen": "overview",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "my-app with four panes in a grid."
     },
@@ -39,8 +39,8 @@
       "section": "layout",
       "screen": "sidebar-collapsed",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -48,8 +48,8 @@
       "section": "layout",
       "screen": "dashboard",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -57,8 +57,8 @@
       "section": "layout",
       "screen": "resume-choice",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "Add Pane → Claude, when this folder has earlier sessions."
     },
@@ -67,8 +67,8 @@
       "section": "layout",
       "screen": "resume-list",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -76,8 +76,8 @@
       "section": "agent-pane",
       "screen": "agent-basic",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The Codex pane in the default view."
     },
@@ -86,8 +86,8 @@
       "section": "agent-pane",
       "screen": "agent-mighty",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The Mighty diagram: a finished request and one waiting on background work."
     },
@@ -96,8 +96,8 @@
       "section": "agent-pane",
       "screen": "agent-mighty-overview",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The same diagram zoomed out."
     },
@@ -106,8 +106,8 @@
       "section": "agent-pane",
       "screen": "agent-timeline",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -115,8 +115,8 @@
       "section": "agent-pane",
       "screen": "result-card",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "A finished request's result card with its changed files."
     },
@@ -125,8 +125,8 @@
       "section": "agent-pane",
       "screen": "composer",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "A typed draft in the composer."
     },
@@ -135,8 +135,8 @@
       "section": "agent-pane",
       "screen": "composer-settings",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The pane's run settings popover."
     },
@@ -145,8 +145,8 @@
       "section": "agent-pane",
       "screen": "session-info",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The context ring's session details."
     },
@@ -155,8 +155,8 @@
       "section": "styles",
       "screen": "plan-card",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "Plan mode: the plan card waiting for an answer."
     },
@@ -165,8 +165,8 @@
       "section": "styles",
       "screen": "plan-document",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The plan opened as a document."
     },
@@ -175,8 +175,8 @@
       "section": "approvals",
       "screen": "question-card",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -184,8 +184,8 @@
       "section": "approvals",
       "screen": "permission-card",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -193,8 +193,8 @@
       "section": "approvals",
       "screen": "background-work",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "The turn is over while background work runs."
     },
@@ -203,8 +203,8 @@
       "section": "terminal-files-browser",
       "screen": "terminal-pane",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -212,8 +212,8 @@
       "section": "terminal-files-browser",
       "screen": "files-pane",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -221,8 +221,8 @@
       "section": "settings",
       "screen": "settings-general",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -230,8 +230,8 @@
       "section": "settings",
       "screen": "settings-models",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -239,8 +239,8 @@
       "section": "settings",
       "screen": "settings-styles",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -248,8 +248,8 @@
       "section": "settings",
       "screen": "settings-tools",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -257,8 +257,8 @@
       "section": "settings",
       "screen": "settings-cli",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -266,8 +266,8 @@
       "section": "settings",
       "screen": "settings-companion",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -275,8 +275,8 @@
       "section": "settings",
       "screen": "settings-about",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       }
     },
     {
@@ -290,8 +290,8 @@
       "section": "phone",
       "screen": "settings-mobile",
       "window": {
-        "width": 1360,
-        "height": 860
+        "width": 1440,
+        "height": 900
       },
       "note": "Settings → Mobile remote, where a phone is paired."
     }

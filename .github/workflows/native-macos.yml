@@ -100,9 +100,12 @@ jobs:
             case "$lang" in zh) tag=zh-Hans ;; *) tag="$lang" ;; esac
             profile="$RUNNER_TEMP/mighty-help-$lang"
             rm -rf "$profile"
+            # The demo folders go in the runner's throwaway home, so the pictures show
+            # ~/Projects/my-app rather than the runner's temp folder.
             echo "::group::Help capture ($lang)"
             # perl's alarm bounds one launch, so a stuck language cannot use up the step.
-            if ! perl -e 'alarm shift; exec @ARGV' 420 "$APP" --help-capture --smoke-exit --profile "$profile" -language "$lang" -AppleLanguages "($tag)"; then
+            if ! perl -e 'alarm shift; exec @ARGV' 420 "$APP" --help-capture --smoke-exit --profile "$profile" \
+                --help-workspaces "$HOME/Projects" -language "$lang" -AppleLanguages "($tag)"; then
               echo "::error title=Help capture ($lang)::the app exited non-zero or timed out"
               status=1
             fi
