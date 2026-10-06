@@ -15,7 +15,8 @@ public static class MightyGraphCamera
         Math.Max(trailing + Margin, RequestWidth + Margin * 2) - OriginX(leading);
 
     public const string PendingNodeID = "pending-input";
-    public static bool IsAuxiliary(string nodeID) => nodeID == PendingNodeID || nodeID == MightyGraphLayout.HistoryNodeID || nodeID.EndsWith(":result-files", StringComparison.Ordinal);
+    public static bool IsAuxiliary(string nodeID) => nodeID == PendingNodeID || nodeID == MightyGraphLayout.HistoryNodeID || nodeID.EndsWith(":result-files", StringComparison.Ordinal)
+        || nodeID.Contains(":" + MightyGraphLayout.PlanRecordSuffix, StringComparison.Ordinal);
 
     /// <summary>
     /// The camera shows the top of the diagram (the history block, or the first

@@ -191,8 +191,10 @@ public sealed partial class MainWindow
         {
             var pending = toolPermissions.Where(p => p.State == "pending").ToList();
             RenderGuidedStyle();
-            if (pending.Count == 0) { HideQuestionnaire(); permissionShown = null; toolPermissionHost.Visibility = Visibility.Collapsed; return; }
+            if (pending.Count == 0) { HideQuestionnaire(); HidePlanDock(); NotePlanShown(null); permissionShown = null; toolPermissionHost.Visibility = Visibility.Collapsed; return; }
             var current = pending[0];
+            // Claude's plan (ExitPlanMode) has its own card, docked here or in the diagram (MainWindow.PlanCard.cs).
+            if (TryRenderPlan(current, pending.Count)) return;
             if (TryRenderQuestionnaire(current, pending.Count, preserveQuestionnaire)) return;
             var b = owner.brushes; var ink = b.Brush(DesignToken.Ink);
             var pres = ToolPermissionPresentation.Make(current.ToolName, current.InputJson);

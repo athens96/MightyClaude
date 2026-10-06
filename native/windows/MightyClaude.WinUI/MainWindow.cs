@@ -765,9 +765,9 @@ public sealed partial class MainWindow : Window
         {
             // A files pane runs nothing: it draws its tree and preview instead (MainWindow.Files.cs).
             if (FilePaneKind.IsFilePane(Session.Kind)) { EnsureFilesView(); RethemeFilesMarkdown(); return; }
-            RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); FitReferencePreview();
+            RefreshTerminalTheme(); RethemeMightyTranscripts(owner.service.Snapshot.Theme == "light"); RethemePlanViews(); FitReferencePreview();
             var pane = Session; updating = true; var runtime = owner.Runtime(pane.Provider); var catalog = runtime?.ModelCatalog ?? ProviderCatalog.Fallback(pane.Provider);
-            var state = owner.service.Snapshot; RefreshHeaderStatus(pane, state.Theme != "light"); output.Update(pane, state.Theme == "light", owner.pictures, state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path); RefreshEmptyOutput(pane); RefreshElapsed(pane);
+            var state = owner.service.Snapshot; RefreshHeaderStatus(pane, state.Theme != "light"); output.Update(pane, state.Theme == "light", owner.pictures, state.Workspaces.FirstOrDefault(w => w.Id == pane.WorkspaceId)?.Path); RefreshEmptyOutput(pane); RefreshElapsed(pane); RefreshPlanHistory(pane); RedecidePlanPlace();
             // Do not rewrite or recreate the editor during output/metadata refreshes.
             if (!draftLoaded) { input.Text = pane.Draft; draftLoaded = true; RefreshPalette(input.Text); }
             RefreshMenus(pane, catalog);

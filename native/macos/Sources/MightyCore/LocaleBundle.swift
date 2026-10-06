@@ -10,11 +10,14 @@ public enum AppLanguage: String, CaseIterable {
 /// time. nil follows the preference.
 public enum LocaleOverride {
     @TaskLocal public static var language: AppLanguage?
+    /// The defaults the language preference is read from for the current task
+    /// only (a test's private suite); nil reads `UserDefaults.standard`.
+    @TaskLocal public static var defaults: UserDefaults?
 }
 
 private func resolvedLanguage() -> String {
     if let forced = LocaleOverride.language, forced != .system { return forced.rawValue }
-    let pref = UserDefaults.standard.string(forKey: "language") ?? ""
+    let pref = (LocaleOverride.defaults ?? .standard).string(forKey: "language") ?? ""
     switch AppLanguage(rawValue: pref) ?? .system {
     case .ko: return "ko"
     case .en: return "en"

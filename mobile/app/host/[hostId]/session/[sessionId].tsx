@@ -27,6 +27,7 @@ import {
   type MobileCommand,
   type MobilePermission,
   type MobileSessionDetail,
+  type PlanDecisionKind,
   type QuestionAnswers,
   type SettingsPatch,
   type SubmitMode,
@@ -37,6 +38,7 @@ import { GuidedPanel } from '@/components/guided-panel';
 import { MightyRunList } from '@/components/mighty-blocks';
 import { NextActionChips } from '@/components/next-action-chips';
 import { PermissionCard } from '@/components/permission-card';
+import { PlanCard } from '@/components/plan-card';
 import { QuestionnaireCard } from '@/components/questionnaire-card';
 import { QueuedList } from '@/components/queued-list';
 import {
@@ -66,6 +68,7 @@ import {
   retainDropped,
 } from '@/lib/history';
 import { t } from '@/lib/i18n';
+import { answeredToast, isPlanRequest, pendingPlan, planAnswerBody } from '@/lib/plan';
 import { PREPEND_HOLD_MS, blocksProgressKey, entriesProgressKey, keyboardEvents } from '@/lib/follow';
 import { defaultView, normalizeMighty } from '@/lib/mighty';
 import { fillDraft, latestNextActions } from '@/lib/next-actions';
@@ -500,6 +503,27 @@ export default function SessionScreen() {
     [client, poll, sessionId, settle],
   );
 
+  /** One of the plan card's four answers; the plan leaves the screen once the host took it. */
+  const answerPlan = useCallback(
+    async (requestId: string, runId: string, decision: PlanDecisionKind, feedback?: string) => {
+      if (!client || !sessionId || decidingRef.current) return;
+      decidingRef.current = true;
+      setDeciding(true);
+      try {
+        await client.answerPlan(sessionId, planAnswerBody({ id: requestId, runId }, decision, feedback));
+        settle(requestKey({ id: requestId, runId }));
+        showToast(answeredToast(decision), 'success');
+        poll.refresh();
+      } catch (error) {
+        showToast(describeError(error), 'error');
+      } finally {
+        decidingRef.current = false;
+        setDeciding(false);
+      }
+    },
+    [client, poll, sessionId, settle],
+  );
+
   const answer = useCallback(
     async (requestId: string, runId: string, answers: QuestionAnswers) => {
       if (!client || !sessionId || decidingRef.current) return;
@@ -748,6 +772,12 @@ export default function SessionScreen() {
   }, [detail?.permissions]);
   const questionRequest = questionRequests[0];
   const questionPending = questionRequest !== undefined;
+  // Claude's plan (ExitPlanMode) docks the same way, with its own four answers.
+  const planRequest = useMemo(
+    () => pendingPlan(detail?.permissions.filter((permission) => !settledRequests.has(requestKey(permission))) ?? []),
+    [detail?.permissions, settledRequests],
+  );
+  const planPending = planRequest !== undefined;
   // With the keyboard up (typing a "직접 입력" answer) the body gets less room, so the
   // transcript above keeps a strip of its own.
   const questionBodyHeight = Math.round(Math.min(320, windowHeight * (keyboardShown ? 0.22 : 0.4)));
@@ -878,7 +908,7 @@ export default function SessionScreen() {
   const footerNode = detail ? (
     <View style={styles.footer}>
       {detail.permissions
-        .filter((permission) => permission.questionnaire === undefined)
+        .filter((permission) => permission.questionnaire === undefined && !isPlanRequest(permission))
         .map((permission) => (
           <PermissionCard
             key={permission.id}
@@ -1011,7 +1041,16 @@ export default function SessionScreen() {
             onAnswer={(answers) => void answer(questionRequest.id, questionRequest.runId, answers)}
           />
         ) : null}
-        {!questionPending && panel ? (
+        {!questionPending && planRequest ? (
+          <PlanCard
+            key={requestKey(planRequest)}
+            permission={planRequest}
+            busy={deciding}
+            maxBodyHeight={questionBodyHeight}
+            onAnswer={(decision, feedback) => void answerPlan(planRequest.id, planRequest.runId, decision, feedback)}
+          />
+        ) : null}
+        {!questionPending && !planPending && panel ? (
           <GuidedPanel
             panel={panel}
             hasText={text.trim().length > 0}

@@ -13151,6 +13151,184 @@
           "usage" : null
         }
       ]
+    },
+    {
+      "draft" : "",
+      "expanded" : [
+
+      ],
+      "expected" : {
+        "edges" : [
+          {
+            "joins" : true,
+            "source" : "2:p1:request",
+            "target" : "2:p1:result"
+          },
+          {
+            "joins" : true,
+            "source" : "2:p1:result",
+            "target" : "2:p2:request"
+          },
+          {
+            "joins" : false,
+            "source" : "2:p2:request",
+            "target" : "2:p2:agent:ag1"
+          },
+          {
+            "joins" : true,
+            "source" : "2:p2:agent:ag1",
+            "target" : "2:p2:plan"
+          }
+        ],
+        "fittedResultID" : null,
+        "nodes" : [
+          {
+            "frame" : {
+              "h" : 280,
+              "w" : 500,
+              "x" : 24,
+              "y" : 24
+            },
+            "id" : "2:p1:request",
+            "kind" : "request"
+          },
+          {
+            "frame" : {
+              "h" : 200,
+              "w" : 500,
+              "x" : 24,
+              "y" : 356
+            },
+            "id" : "2:p1:result",
+            "kind" : "result"
+          },
+          {
+            "frame" : {
+              "h" : 280,
+              "w" : 500,
+              "x" : 24,
+              "y" : 608
+            },
+            "id" : "2:p2:request",
+            "kind" : "request"
+          },
+          {
+            "frame" : {
+              "h" : 240,
+              "w" : 360,
+              "x" : 94,
+              "y" : 940
+            },
+            "id" : "2:p2:agent:ag1",
+            "kind" : "agent"
+          },
+          {
+            "frame" : {
+              "h" : 520,
+              "w" : 640,
+              "x" : -46,
+              "y" : 1232
+            },
+            "id" : "2:p2:plan",
+            "kind" : "plan"
+          },
+          {
+            "frame" : {
+              "h" : 104,
+              "w" : 320,
+              "x" : 540,
+              "y" : 24
+            },
+            "id" : "2:p1:plan-record:plan-a",
+            "kind" : "planRecord"
+          },
+          {
+            "frame" : {
+              "h" : 104,
+              "w" : 320,
+              "x" : 540,
+              "y" : 608
+            },
+            "id" : "2:p2:plan-record:plan-b",
+            "kind" : "planRecord"
+          }
+        ],
+        "originX" : -70,
+        "size" : {
+          "h" : 1776,
+          "w" : 954
+        }
+      },
+      "name" : "pending-plan-takes-the-result-place",
+      "planRecords" : [
+        {
+          "recordID" : "plan-a",
+          "runID" : "p1"
+        },
+        {
+          "recordID" : "plan-b",
+          "runID" : "p2"
+        }
+      ],
+      "planRunID" : "p2",
+      "running" : true,
+      "runs" : [
+        {
+          "agents" : [
+
+          ],
+          "configuredModel" : null,
+          "finalOutput" : "Done",
+          "id" : "p1",
+          "input" : "Request",
+          "nodeModelLabel" : null,
+          "provider" : null,
+          "responseRecords" : null,
+          "resultEntries" : [
+
+          ],
+          "rootEntries" : [
+
+          ],
+          "sourceRunID" : null,
+          "status" : "completed",
+          "usage" : null
+        },
+        {
+          "agents" : [
+            {
+              "activityGeneration" : null,
+              "entries" : [
+
+              ],
+              "id" : "ag1",
+              "input" : "Work",
+              "kind" : null,
+              "parentID" : null,
+              "responseRecords" : null,
+              "status" : "running",
+              "title" : "Agent ag1",
+              "usage" : null
+            }
+          ],
+          "configuredModel" : null,
+          "finalOutput" : null,
+          "id" : "p2",
+          "input" : "Request",
+          "nodeModelLabel" : null,
+          "provider" : null,
+          "responseRecords" : null,
+          "resultEntries" : [
+
+          ],
+          "rootEntries" : [
+
+          ],
+          "sourceRunID" : null,
+          "status" : "running",
+          "usage" : null
+        }
+      ]
     }
   ],
   "mods" : [

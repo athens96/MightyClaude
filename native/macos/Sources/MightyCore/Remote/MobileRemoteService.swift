@@ -22,6 +22,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
     func mobileStop(sessionId: String) async throws -> Bool
     func mobilePermission(sessionId: String, requestId: String, runId: String, allow: Bool) async throws
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws
+    /// Answers a pending Claude plan the way the desktop plan card does.
+    func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String
     func mobileRemoveQueued(sessionId: String, itemId: String) async throws
     func mobileRunNextQueued(sessionId: String) async throws
@@ -41,6 +43,8 @@ public protocol MobileHostDelegate: AnyObject, Sendable {
 public extension MobileHostDelegate {
     /// No drawing: an svg preview is `unsupported` ("undecodable").
     var mobileSVGRasterizer: MobileWorkspaceFiles.SVGRasterizer? { nil }
+    /// A host without plan cards has nothing to answer.
+    func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws { throw MightyError(L("plan.error.notPlan")) }
 }
 
 /// A routed reply: HTTP-like status plus a JSON body.
@@ -951,6 +955,16 @@ public actor MobileRemoteService {
                     let request = try decode(body, as: MobileQuestionAnswers.self)
                     guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId), request.answers.count <= 16 else { throw Failure(400, "답변 형식이 올바르지 않습니다.") }
                     do { try await delegate.mobileAnswers(sessionId: id, requestId: request.requestId, runId: request.runId, answers: request.answers) }
+                    catch let failure as MightyError { throw Failure(409, failure.message) }
+                    return reply(200, MobileOK())
+                case "plan":
+                    let request = try decode(body, as: MobilePlanAnswer.self)
+                    guard CoreValidation.identifier(request.requestId), CoreValidation.identifier(request.runId) else { throw Failure(400, L("plan.error.invalidRequest")) }
+                    guard let decision = request.planDecision else { throw Failure(400, L("plan.error.invalidDecision")) }
+                    if case .revise(let feedback) = decision {
+                        do { _ = try ClaudePlanMode.validatedFeedback(feedback) } catch let failure as MightyError { throw Failure(400, failure.message) }
+                    }
+                    do { try await delegate.mobilePlan(sessionId: id, requestId: request.requestId, runId: request.runId, decision: decision) }
                     catch let failure as MightyError { throw Failure(409, failure.message) }
                     return reply(200, MobileOK())
                 case "rename":

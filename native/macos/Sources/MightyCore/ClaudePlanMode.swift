@@ -85,9 +85,12 @@ public struct PlanRecord: Codable, Sendable, Equatable, Identifiable {
     public var decidedAt: String
     public var outcome: PlanOutcome
     public var feedback: String?
-    public init(id: String, runId: String, plan: String, planTruncated: Bool? = nil, receivedAt: String, decidedAt: String, outcome: PlanOutcome, feedback: String? = nil) {
+    /// The id of the diagram request the plan belongs to (`MightyGraphRun.sourceRunID`),
+    /// so its history block attaches beside that request.
+    public var graphRunId: String?
+    public init(id: String, runId: String, plan: String, planTruncated: Bool? = nil, receivedAt: String, decidedAt: String, outcome: PlanOutcome, feedback: String? = nil, graphRunId: String? = nil) {
         self.id = id; self.runId = runId; self.plan = plan; self.planTruncated = planTruncated
-        self.receivedAt = receivedAt; self.decidedAt = decidedAt; self.outcome = outcome; self.feedback = feedback
+        self.receivedAt = receivedAt; self.decidedAt = decidedAt; self.outcome = outcome; self.feedback = feedback; self.graphRunId = graphRunId
     }
 }
 
@@ -210,7 +213,11 @@ public enum ClaudePlanMode {
 
     public static func normalizedHistory(_ history: [PlanRecord]?) -> [PlanRecord]? {
         guard let history else { return nil }
-        let list = history.filter { CoreValidation.identifier($0.id) && !$0.plan.isEmpty && AgentRunTiming.parseTimestamp($0.decidedAt) != nil }.map(bounded)
+        let list = history.filter { CoreValidation.identifier($0.id) && !$0.plan.isEmpty && AgentRunTiming.parseTimestamp($0.decidedAt) != nil }.map { record -> PlanRecord in
+            var value = bounded(record)
+            if let id = value.graphRunId, !CoreValidation.identifier(id) { value.graphRunId = nil }
+            return value
+        }
         return list.isEmpty ? nil : budgeted(Array(list.suffix(maximumHistory)))
     }
 

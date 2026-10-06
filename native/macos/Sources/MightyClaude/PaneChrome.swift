@@ -144,23 +144,26 @@ struct PaneSlimHeader: View {
 /// quiet one cancels or goes back.
 struct PaneCardButtonStyle: ButtonStyle {
     var prominent = false
+    /// The card's one primary choice, on the accent (a plan's 승인하고 실행).
+    var accent = false
 
     func makeBody(configuration: Configuration) -> some View {
-        CardButton(configuration: configuration, prominent: prominent)
+        CardButton(configuration: configuration, prominent: prominent || accent, accent: accent)
     }
 
     private struct CardButton: View {
         let configuration: ButtonStyleConfiguration
         let prominent: Bool
+        var accent = false
         @Environment(\.isEnabled) private var enabled
 
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             configuration.label
                 .font(.system(size: 12, weight: .bold)).lineLimit(1)
-                .foregroundStyle(prominent ? Palette.panel : Palette.ink)
+                .foregroundStyle(accent ? Palette.onAccent : prominent ? Palette.panel : Palette.ink)
                 .padding(.horizontal, 13).frame(minHeight: 28)
-                .background(prominent ? Palette.ink : Palette.raised, in: shape)
+                .background(accent ? Palette.accent : prominent ? Palette.ink : Palette.raised, in: shape)
                 .overlay { if !prominent { shape.strokeBorder(Palette.border, lineWidth: 1) } }
                 .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
                 .contentShape(shape)

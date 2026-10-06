@@ -320,6 +320,28 @@ task running, or after 120 s of silence once the last task ended; the CLI's own
 background-wait ceiling is left at its default. Stopping the pane still ends the
 whole process group.
 
+The desktop plan card (Mac `PlanApprovalCard`, Windows `MainWindow.PlanCard.cs`)
+and the phone's `PlanCard` read `PlanCardSupport` (both Cores): the first pending
+`canAnswerPlan` request is the card; the Mighty diagram draws it as a `plan` node
+where its unfinished request's result will go (else it docks above the composer),
+and an empty or over-long change request is refused before it is sent (an
+over-long one says `plan.error.feedbackTooLong` as soon as it is typed). The
+diagram node is in the shared layout vectors (`graph-vectors.json`
+`pending-plan-takes-the-result-place`).
+
+Plan history follows one rule on both desktops: in the Mighty diagram each
+`PlanRecord` is a `planRecord` block attached beside the request whose graph run
+it names (`PlanRecord.graphRunId`, the run's `MightyGraphRun.sourceRunID`, set by
+the runner: the activity id on macOS, the graph tracker's id on Windows, where
+`runId` is the pane's id); a record whose run is not drawn has no block. Outside
+the diagram (the default view and the timeline) the records show as one folded
+strip above the composer (`PlanCardSupport.showsHistoryStrip`).
+
+The phone receives the plan as `MobilePermission.plan` (+ `receivedAt`) and
+answers with `POST /m1/sessions/{id}/plan` (`docs/mobile-remote.md`). The plan is
+also the permission's one field (label "계획"/"Plan"), so a phone that does not
+know `plan` still shows the text it is asked to approve.
+
 The fixture holds request recognition, exact response bodies, checklist frames
 and background-event sequences; `ClaudePlanModeTests` (Swift) and
 `ClaudePlanModeVerification` (Windows Core) both read it.

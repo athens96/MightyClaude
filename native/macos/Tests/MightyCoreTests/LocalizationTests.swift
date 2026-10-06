@@ -2,14 +2,19 @@ import Foundation
 import Testing
 @testable import MightyCore
 
-// Tests modify shared global state (UserDefaults + locale cache) so must run serially.
-@Suite(.serialized)
+/// The preference path is read from a private defaults suite for each test's
+/// own task (`LocaleOverride.defaults`), never from `UserDefaults.standard`,
+/// so suites that read `L()` at the same time are never switched under them.
 struct LocalizationTests {
 
-    private func setLanguage(_ lang: String?) {
-        if let lang { UserDefaults.standard.set(lang, forKey: "language") }
-        else { UserDefaults.standard.removeObject(forKey: "language") }
-        resetLocaleCache()
+    /// Runs `body` with the "language" preference set to `lang` (nil: unset)
+    /// in a private suite that only this task reads.
+    private func withLanguage(_ lang: String?, _ body: () throws -> Void) rethrows {
+        let name = "mighty-locale-tests-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        if let lang { defaults.set(lang, forKey: "language") }
+        try LocaleOverride.$defaults.withValue(defaults) { try body() }
     }
 
     @Test func appLanguageEnumCoversExpectedCases() {
@@ -21,38 +26,38 @@ struct LocalizationTests {
     }
 
     @Test func lookupKoreanReturnsKoreanValue() {
-        setLanguage("ko")
-        defer { setLanguage(nil) }
-        #expect(L("guidedPanel.cancelButton") == "취소")
-        #expect(L("guidedPanel.installButton") == "설치")
+        withLanguage("ko") {
+            #expect(L("guidedPanel.cancelButton") == "취소")
+            #expect(L("guidedPanel.installButton") == "설치")
+        }
     }
 
     @Test func lookupEnglishReturnsEnglishValue() {
-        setLanguage("en")
-        defer { setLanguage(nil) }
-        #expect(L("guidedPanel.cancelButton") == "Cancel")
-        #expect(L("guidedPanel.installButton") == "Install")
+        withLanguage("en") {
+            #expect(L("guidedPanel.cancelButton") == "Cancel")
+            #expect(L("guidedPanel.installButton") == "Install")
+        }
     }
 
     @Test func missingKeyInBothCatalogsReturnsKeyItself() {
-        setLanguage("en")
-        defer { setLanguage(nil) }
-        let key = "completely.unknown.key"
-        #expect(L(key) == key)
+        withLanguage("en") {
+            let key = "completely.unknown.key"
+            #expect(L(key) == key)
+        }
     }
 
     @Test func placeholderSubstitutionKorean() {
-        setLanguage("ko")
-        defer { setLanguage(nil) }
-        let result = L("settings.appUpdate.availableTemplate", ["version": "1.2.3"])
-        #expect(result == "새 버전 1.2.3 이 있습니다.")
+        withLanguage("ko") {
+            let result = L("settings.appUpdate.availableTemplate", ["version": "1.2.3"])
+            #expect(result == "새 버전 1.2.3 이 있습니다.")
+        }
     }
 
     @Test func placeholderSubstitutionEnglish() {
-        setLanguage("en")
-        defer { setLanguage(nil) }
-        let result = L("settings.appUpdate.availableTemplate", ["version": "1.2.3"])
-        #expect(result == "Version 1.2.3 is available.")
+        withLanguage("en") {
+            let result = L("settings.appUpdate.availableTemplate", ["version": "1.2.3"])
+            #expect(result == "Version 1.2.3 is available.")
+        }
     }
 
     @Test func settingsDisplayKeysExistInBothCatalogs() {
@@ -64,10 +69,10 @@ struct LocalizationTests {
             "settings.display.languageEnglish",
         ]
         for lang in ["ko", "en"] {
-            setLanguage(lang)
-            defer { setLanguage(nil) }
-            for key in keys {
-                #expect(L(key) != key, "\(lang): key '\(key)' missing from catalog")
+            withLanguage(lang) {
+                for key in keys {
+                    #expect(L(key) != key, "\(lang): key '\(key)' missing from catalog")
+                }
             }
         }
     }
@@ -81,10 +86,10 @@ struct LocalizationTests {
             "guidedPanel.recheckButton",
         ]
         for lang in ["ko", "en"] {
-            setLanguage(lang)
-            defer { setLanguage(nil) }
-            for key in keys {
-                #expect(L(key) != key, "\(lang): key '\(key)' missing from catalog")
+            withLanguage(lang) {
+                for key in keys {
+                    #expect(L(key) != key, "\(lang): key '\(key)' missing from catalog")
+                }
             }
         }
     }
@@ -100,29 +105,28 @@ struct LocalizationTests {
             "permission.other.default",
         ]
         for lang in ["ko", "en"] {
-            setLanguage(lang)
-            defer { setLanguage(nil) }
-            for key in keys {
-                #expect(L(key) != key, "\(lang): key '\(key)' missing from catalog")
+            withLanguage(lang) {
+                for key in keys {
+                    #expect(L(key) != key, "\(lang): key '\(key)' missing from catalog")
+                }
             }
         }
     }
 
     @Test func templatePlaceholdersAreSubstituted() {
-        setLanguage("ko")
-        defer { setLanguage(nil) }
-        let result = L("graph.header.agents", ["n": "3"])
-        #expect(result == "하위 에이전트 3")
-        #expect(!result.contains("{n}"))
+        withLanguage("ko") {
+            let result = L("graph.header.agents", ["n": "3"])
+            #expect(result == "하위 에이전트 3")
+            #expect(!result.contains("{n}"))
+        }
     }
 
     @Test func resetCacheClearsLoadedCatalogs() {
-        setLanguage("ko")
-        defer { setLanguage(nil) }
-        let first = L("guidedPanel.cancelButton")
-        resetLocaleCache()
-        setLanguage("ko")
-        let second = L("guidedPanel.cancelButton")
-        #expect(first == second)
+        withLanguage("ko") {
+            let first = L("guidedPanel.cancelButton")
+            resetLocaleCache()
+            let second = L("guidedPanel.cancelButton")
+            #expect(first == second)
+        }
     }
 }

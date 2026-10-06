@@ -226,6 +226,8 @@ final class AppStore: ObservableObject {
     @Published var toolPermissions: [String: [ToolPermissionRequest]] = [:]
     @Published var permissionResponses = Set<String>()
     @Published var permissionErrors: [String: String] = [:]
+    /// A plan opened like a document (the plan card's 펼치기, a history block).
+    @Published var planDocument: PlanDocument?
 
     let dataDirectory: URL
     let repository: StateRepository
@@ -311,7 +313,7 @@ final class AppStore: ObservableObject {
         let needle = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return snapshot.workspaces.filter { needle.isEmpty || $0.name.localizedCaseInsensitiveContains(needle) || $0.path.localizedCaseInsensitiveContains(needle) }
     }
-    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil }
+    var hasModal: Bool { showSettings || renameTarget != nil || settingsSession != nil || sessionInfoSessionID != nil || pendingRemoval != nil || attachmentPanelSession != nil || terminalHistorySession != nil || pluginBrowser != nil || resumePicker != nil || planDocument != nil }
 
     func canEditAttachments(_ id: String) -> Bool {
         !ending && !closingSessions.contains(id) && snapshot.sessions.contains { $0.id == id }
@@ -1006,6 +1008,30 @@ final class AppStore: ObservableObject {
             toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
         } catch {
             if !ending, toolPermissions[sessionId]?.first.map({ $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true {
+                permissionErrors[sessionId] = error.localizedDescription
+            }
+        }
+    }
+
+    /// Answers the pane's pending plan (ExitPlanMode). An empty change request
+    /// is refused here, before anything is sent, and the card stays answerable.
+    func answerPlan(sessionId: String, request: ToolPermissionRequest, decision: PlanDecision) async {
+        let key = permissionResponseKey(sessionId: sessionId, request: request)
+        guard !ending, !closingSessions.contains(sessionId), !permissionResponses.contains(key),
+              request.canAnswerPlan,
+              snapshot.sessions.first(where: { $0.id == sessionId })?.status == "running",
+              toolPermissions[sessionId]?.contains(where: { $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true else { return }
+        if case .revise(let feedback) = decision {
+            do { _ = try ClaudePlanMode.validatedFeedback(feedback) } catch { permissionErrors[sessionId] = error.localizedDescription; return }
+        }
+        permissionResponses.insert(key)
+        permissionErrors.removeValue(forKey: sessionId)
+        defer { permissionResponses.remove(key) }
+        do {
+            try await runner.answerPlan(sessionId: sessionId, runId: request.runId, requestId: request.id, decision: decision)
+            toolPermissions[sessionId]?.removeAll { $0.id == request.id && $0.runId == request.runId }
+        } catch {
+            if !ending, toolPermissions[sessionId]?.contains(where: { $0.id == request.id && $0.runId == request.runId && $0.state == "pending" }) == true {
                 permissionErrors[sessionId] = error.localizedDescription
             }
         }

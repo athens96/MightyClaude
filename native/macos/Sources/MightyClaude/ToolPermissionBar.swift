@@ -9,16 +9,25 @@ struct ToolPermissionBar: View {
 
     /// In a guided style the composer itself shows the agent's questions,
     /// and the style's own listed tools are approved without a card.
+    /// A plan the Mighty diagram draws in its flow is not docked here too.
     private var visibleRequests: [ToolPermissionRequest] {
-        guard let session = store.snapshot.sessions.first(where: { $0.id == sessionId }), store.usesGuidedStyle(session) else { return store.toolPermissions[sessionId] ?? [] }
-        return store.guidedVisibleRequests(sessionId)
+        guard let session = store.snapshot.sessions.first(where: { $0.id == sessionId }) else { return store.toolPermissions[sessionId] ?? [] }
+        let requests = store.usesGuidedStyle(session) ? store.guidedVisibleRequests(sessionId) : store.toolPermissions[sessionId] ?? []
+        guard let plan = PlanCardSupport.pendingPlan(requests) else { return requests }
+        let showsDiagram = session.kind == "claude" && MightyGraphSupport.providers.contains(session.provider)
+            && session.agentViewMode == "mighty" && session.mightyViewMode == .diagram
+        guard PlanCardSupport.diagramPlanRunID(plan, showsDiagram: showsDiagram, runs: session.mightyGraphRuns) != nil else { return requests }
+        return requests.filter { $0.id != plan.id || $0.runId != plan.runId }
     }
 
     @ViewBuilder var body: some View {
         let requests = visibleRequests
         if let request = requests.first {
             Group {
-                if let questionnaire = request.questionnaire {
+                if request.canAnswerPlan, request.plan != nil {
+                    PlanApprovalCard(sessionId: sessionId, request: request, count: requests.count)
+                        .layoutPriority(1)
+                } else if let questionnaire = request.questionnaire {
                     UserQuestionnaireCard(sessionId: sessionId, request: request,
                                           questionnaire: questionnaire,
                                           count: requests.count)

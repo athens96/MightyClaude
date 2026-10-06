@@ -141,6 +141,33 @@ public sealed class MobileDesktopRouter : IDisposable
                         }
                         Changed(); return Reply(OK());
                     }
+                    if (operation == "plan")
+                    {
+                        // One of the plan card's four answers (macOS MobilePlanAnswer).
+                        var value = Object(body); var requestId = Required(value, "requestId"); var runId = Required(value, "runId");
+                        if (!Wire.Identifier(requestId) || !Wire.Identifier(runId)) throw new MobileRequestException(400, Locale.Get("plan.error.invalidRequest"));
+                        var feedback = value.TryGetProperty("feedback", out var text) && text.ValueKind == JsonValueKind.String ? text.GetString() : null;
+                        PlanDecision decision = (value.TryGetProperty("decision", out var kind) && kind.ValueKind == JsonValueKind.String ? kind.GetString() : null) switch
+                        {
+                            "approveAutoEdit" => PlanDecision.ApproveAutoEdit,
+                            "approveConfirmEach" => PlanDecision.ApproveConfirmEach,
+                            "revise" => PlanDecision.Revise(feedback ?? ""),
+                            "cancel" => PlanDecision.Cancel,
+                            _ => throw new MobileRequestException(400, Locale.Get("plan.error.invalidDecision")),
+                        };
+                        if (decision.Kind == "revise")
+                        {
+                            try { ClaudePlanMode.ValidatedFeedback(feedback); }
+                            catch (ArgumentException ex) { throw new MobileRequestException(400, ex.Message); }
+                        }
+                        var pending = Pending(pane.Id).FirstOrDefault(p => p.Id == requestId && p.RunId == runId);
+                        if (pending is null || !service.IsSessionRunning(pane.Id)) throw new MobileRequestException(409, "Request is no longer pending.");
+                        if (!pending.CanAnswerPlan) throw new MobileRequestException(409, Locale.Get("plan.error.notPlan"));
+                        token.ThrowIfCancellationRequested();
+                        try { service.AnswerPlan(pane.Id, requestId, decision); }
+                        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { throw new MobileRequestException(409, ex.Message); }
+                        Changed(); return Reply(OK());
+                    }
                     if (operation == "uploads")
                     {
                         var value = Object(body); if (!value.TryGetProperty("size", out var size) || !size.TryGetInt32(out var count)) throw new MobileRequestException(400, "Invalid size.");
@@ -198,7 +225,9 @@ public sealed class MobileDesktopRouter : IDisposable
     {
         var detail = extra(pane); var usage = pane.SessionUsage;
         return new { protocol = 1, revision = Revision, session = Summary(pane), entries = pane.Logs.TakeLast(80).ToArray(), hasOlder = pane.Logs.Count > 80,
-            permissions = Pending(pane.Id).Select(p => new { p.Id, p.RunId, p.ToolName, title = p.ToolName, headline = p.Reason, fields = new[] { new { label = "Input", value = p.InputJson } }, p.Summary, p.CanAllow, questionnaire = p.CanAnswerQuestions ? UserQuestionnaire.Parse(p.InputJson) : null }).ToArray(), queued = detail.Queued,
+            permissions = Pending(pane.Id).Select(p => p.CanAnswerPlan && p.Plan is { } plan
+                ? (object)new { p.Id, p.RunId, p.ToolName, title = Locale.Get("plan.card.title"), headline = (string?)null, fields = new[] { new { label = Locale.Get("plan.card.title"), value = plan } }, p.Summary, p.CanAllow, questionnaire = (UserQuestionnaire?)null, plan, receivedAt = p.ReceivedAt }
+                : new { p.Id, p.RunId, p.ToolName, title = p.ToolName, headline = p.Reason, fields = new[] { new { label = "Input", value = p.InputJson } }, p.Summary, p.CanAllow, questionnaire = p.CanAnswerQuestions ? UserQuestionnaire.Parse(p.InputJson) : null }).ToArray(), queued = detail.Queued,
             usage = usage is null ? null : new { usage.Model, usage.ContextUsedTokens, usage.ContextWindowTokens, usage.ContextPercent, usage.TotalTokens, usage.CostUSD }, elapsedSeconds = pane.RunTiming?.Elapsed(), settings = detail.Settings, mighty = detail.Mighty, statusLine = detail.StatusLine,
             rateLimits = usage?.RateLimits?.Select(r => new { label = r.Kind, usedPercent = r.PercentUsed, r.ResetsAt }) };
     }

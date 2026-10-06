@@ -2,7 +2,7 @@
 
 The Windows app now hosts the same encrypted relay v1 and `/m1` protocol as the macOS app (`docs/relay.md`, `docs/mobile-remote.md`). Enable **Settings → Mobile remote**, apply a relay address, then scan the pairing QR or copy the pairing link into the phone app. The default relay is the same as macOS. No inbound PC port is opened.
 
-The Windows host supports state and transcript history, queued or steering submissions, one-call tool approvals, questionnaires, pane creation/rename/close, model/permission/effort settings, approved guided styles, commands, chunked attachments, and workspace file browsing. Terminal and browser panes remain desktop-only for execution. A capability is advertised only when its routing is installed; screen sharing additionally requires the Windows capture/WebRTC engine.
+The Windows host supports state and transcript history, queued or steering submissions, one-call tool approvals, questionnaires, Claude plan approvals (`plan` in the permission, `POST …/plan`), pane creation/rename/close, model/permission/effort settings, approved guided styles, commands, chunked attachments, and workspace file browsing. Terminal and browser panes remain desktop-only for execution. A capability is advertised only when its routing is installed; screen sharing additionally requires the Windows capture/WebRTC engine.
 
 Implementation:
 

@@ -56,6 +56,13 @@ internal static class Verification
                     case "control_request":
                         Console.WriteLine(JsonSerializer.Serialize(new { type = "control_response", response = new { subtype = "success", request_id = root.Text("request_id"), response = new { } } }, Wire.Json));
                         break;
+                    case "user" when line.Contains("background stop fixture", StringComparison.Ordinal):
+                        // The turn ends while a background shell still runs; only a stop ends the process.
+                        await File.WriteAllTextAsync(record + ".pid", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"sh1\",\"description\":\"npm run dev\",\"task_type\":\"local_bash\"}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"started\"}");
+                        while (await Console.In.ReadLineAsync() is not null) { }
+                        return;
                     case "user":
                         // A plan-mode prompt ends planning with ExitPlanMode (ClaudePlanModeVerification).
                         planFixture = line.Contains("plan fixture", StringComparison.Ordinal);
@@ -431,6 +438,9 @@ internal static class Verification
         await Test("plan mode approval sets the pane mode and keeps a bounded history", ClaudePlanModeVerification.PaneKeepsThePlanModeAndHistory);
         await Test("plan mode state round-trips and old snapshots still load", ClaudePlanModeVerification.SavedStateRoundTripsAndOldSnapshotsLoad);
         await Test("plan mode runner answers a fake CLI's plan and reports its checklist and background work", ClaudePlanModeVerification.RunnerAnswersAPlanAndReportsProgress);
+        await Test("plan mode stopping a pane waiting on background work ends everything", ClaudePlanModeVerification.StoppingAPaneWaitingOnBackgroundWorkEndsEverything);
+        await Test("plan card helpers pick the plan, place it and read its outcome", PlanCardVerification.Helpers);
+        await Test("plan card takes the result's place in the diagram", PlanCardVerification.LayoutPlacesThePlanCard);
         await Test("plan mode approval never lowers the pane's own mode", ClaudePlanModeVerification.ApprovalNeverLowersThePaneMode);
         await Test("plan mode per-run override launches in plan and is never saved", ClaudePlanModeVerification.PerRunPlanOverride);
         await Test("plan mode history keeps new plans whole within its budget", ClaudePlanModeVerification.HistoryKeepsNewPlansWholeWithinItsBudget);

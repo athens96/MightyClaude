@@ -60,6 +60,7 @@ public enum MightyGraphCamera {
     public static func isAuxiliary(nodeID: String) -> Bool {
         nodeID == pendingNodeID || nodeID == MightyGraphLayout.historyNodeID || nodeID.hasSuffix(":result-files") || nodeID.contains(":" + MightyGraphLayout.executionSuffix)
             || nodeID.contains(":" + MightyGraphLayout.imagesSuffix)
+            || nodeID.contains(":" + MightyGraphLayout.planRecordSuffix)
     }
 
     /// Above its byte budget the live history drops its OLDEST runs, so every

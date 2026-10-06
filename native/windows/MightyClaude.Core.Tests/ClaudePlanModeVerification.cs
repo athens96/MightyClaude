@@ -311,6 +311,8 @@ internal static class ClaudePlanModeVerification
                 var answer = JsonDocument.Parse(await File.ReadAllTextAsync(record + ".decision")).RootElement.GetProperty("response").GetProperty("response");
                 Check(seen[0] is { CanAnswerPlan: true, CanAllow: false, Plan: "# Plan\n1. Do it" }, "the plan reached the host as a plan");
                 Check(all.Where(e => e.Type == "plan").Select(e => e.Plan!.Outcome).SequenceEqual([decision.Outcome]), "the answer is recorded once");
+                var graphRun = all.LastOrDefault(e => e.Type == "graph_run")?.GraphRun;
+                Check(graphRun is not null && all.Single(e => e.Type == "plan").Plan!.GraphRunId == graphRun.SourceRunID, "the record names its request's graph run");
                 Check(all.Last(e => e.Type == "status").Status == final, "the run ends " + final);
                 if (decision == PlanDecision.Cancel)
                 {
@@ -329,6 +331,43 @@ internal static class ClaudePlanModeVerification
             }
         }
         finally { try { Directory.Delete(directory, true); } catch (IOException) { } }
+    }
+
+    internal static async Task StoppingAPaneWaitingOnBackgroundWorkEndsEverything()
+    {
+        var directory = Verification.Temp();
+        try
+        {
+            var workspace = new Workspace { Path = directory };
+            var plugin = Path.Combine(directory, "plugin"); Directory.CreateDirectory(Path.Combine(plugin, ".claude-plugin"));
+            await File.WriteAllTextAsync(Path.Combine(plugin, ".claude-plugin", "plugin.json"), "{}");
+            var record = Path.Combine(directory, "stop");
+            await using var catalog = new ProviderCatalog((_, _) => Task.FromResult<CliCommand?>(Verification.Self("--fake-cli", "claude", record)));
+            var events = new List<RunEvent>();
+            RunEvent[] Snapshot() { lock (events) return [.. events]; }
+            var manager = new RunManager(_ => Task.FromResult(workspace), catalog, plugin, ev => { lock (events) events.Add(ev); }, _ => { });
+            await using (manager)
+            {
+                await manager.StartAsync(new("stop-pane", workspace.Id, "claude", "background stop fixture", []));
+                await Verification.Until(() => Snapshot().Any(e => e.Background?.WaitingOnBackground == true), 20000);
+                Check(manager.IsRunning("stop-pane"), "the run waits for its background shell");
+                await manager.StopAsync("stop-pane");
+                await Verification.Until(() => !manager.IsRunning("stop-pane"), 20000);
+            }
+            var all = Snapshot();
+            Check(all.Last(e => e.Type == "status").Status == "stopped", "the stopped pane ends stopped");
+            Check(all.Last(e => e.Type == "background").Background!.Tasks[0].Status == "unknown", "the task that never reported an end is unknown");
+            var pid = int.Parse(await File.ReadAllTextAsync(record + ".pid"), System.Globalization.CultureInfo.InvariantCulture);
+            static bool Gone(int id)
+            {
+                try { using var process = System.Diagnostics.Process.GetProcessById(id); return process.HasExited; }
+                catch (ArgumentException) { return true; }
+                catch (InvalidOperationException) { return true; }
+            }
+            await Verification.Until(() => Gone(pid), 10000);
+            Check(Gone(pid), "the CLI process is gone");
+        }
+        finally { try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
 
     private static void Reject(Action action)

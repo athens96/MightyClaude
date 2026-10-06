@@ -50,7 +50,10 @@ public sealed partial class MainWindow
             var pane = Session;
             // The same request validation applies before consuming a draft even though it runs later.
             _ = new StartRunRequest(pane.Id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
-            var steered = steering && files.Length == 0 && pane.Provider == "claude" && !starting && await owner.service.TrySteerAsync(id, text);
+            // A turn that is over but still running background agents takes new input in the same process
+            // (M/AppStore.swift submit); the queue is the fallback.
+            var joins = steering || pane.BackgroundWork?.WaitingOnBackground == true;
+            var steered = joins && files.Length == 0 && pane.Provider == "claude" && !starting && await owner.service.TrySteerAsync(id, text);
             if (!QueuePaneAlive) return true;
             if (!steered) queuedInputs.Add(text, files);
             var consumed = files.Select(file => file.Id).ToHashSet(); pendingAttachments.RemoveAll(file => consumed.Contains(file.Id)); RefreshAttachments();

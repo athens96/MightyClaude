@@ -62,6 +62,9 @@ public sealed partial class MainWindow
         private readonly Dictionary<string, AgentTranscript> graphTranscripts = [];
         private bool graphDeferredDraw;
         private readonly Dictionary<string, Border> graphCards = [];
+        /// <summary>The pending plan's block in the diagram, and the plan the camera last went to.</summary>
+        private string? graphPlanNodeId, graphAimedPlanKey;
+
         private sealed class GraphCardView
         {
             internal required Border Card;
@@ -386,6 +389,9 @@ public sealed partial class MainWindow
             else if (mighty) DrawGraph(pane);
             // Hidden, the diagram watches nothing: a result that finishes meanwhile is not revealed.
             else { graphReveal = new(); graphRunProgress = null; graphRevealPendingId = null; }
+            // The view changed: a waiting plan is docked or drawn by the same rule, and answered plans show
+            // as the strip only outside the diagram (MainWindow.PlanCard.cs).
+            RedecidePlanPlace(); RefreshPlanHistory(Session);
             UpdateActivityTimer();
         }
 
@@ -435,8 +441,13 @@ public sealed partial class MainWindow
             // tall as its measured content; a drag in progress shows its own size.
             var latestResultId = MightyGraphLayout.LatestResultID(runs);
             double? resultContentHeight = graphLiveResultSize is null && latestResultId is not null && graphResultHeights.TryGetValue(latestResultId, out var measured) ? measured : null;
+            // A plan waiting for an answer is drawn where the request's result will go (MainWindow.PlanCard.cs).
+            var planRunId = PlanCardSupport.DiagramPlanRunID(PendingPlan, true, runs);
+            // Answered plans hang beside the requests they belong to.
             var layout = MightyGraphViewModel.CanvasLayout(runs, pane.Draft, pane.Status == "running", graphExpanded, graphResultFilesRunId, viewport,
-                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight, pane.GraphBlockSizes);
+                graphZoom, graphLiveResultSize ?? pane.GraphResultSize, older.Count, ShowsHistoryBlock(pane, retained), resultContentHeight, pane.GraphBlockSizes, planRunId,
+                PlanCardSupport.DiagramRecords(pane.PlanHistory, runs));
+            graphPlanNodeId = planRunId is null ? null : MightyGraphBlockSize.NodeId(planRunId, MightyGraphLayout.PlanSuffix);
             graphLayout = layout; graphLatestResultId = MightyGraphLayout.LatestResultID(runs);
             TraceGraphSmoke($"layout:nodes={layout.Nodes.Count}:size={layout.Size.W:F2}x{layout.Size.H:F2}");
             var catalog = owner.Runtime(pane.Provider)?.ModelCatalog?.Models;
@@ -617,6 +628,17 @@ public sealed partial class MainWindow
                 graphPan.X = place.X; graphPan.Y = place.Y;
                 return;
             }
+            // A plan that just arrived is what the user reads next: its top at the top of the canvas.
+            var planKey = graphPlanNodeId is { } planNode ? planNode + "|" + PendingPlan?.Id : null;
+            if (planKey is not null && planKey != graphAimedPlanKey && frames.TryGetValue(graphPlanNodeId!, out var planFrame))
+            {
+                graphAimedPlanKey = planKey; graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
+                CancelResultReveal();
+                var aim = MightyGraphCamera.CameraOffset(planFrame, size, graphZoom, alignTop: true);
+                graphPan.X = aim.X; graphPan.Y = aim.Y;
+                return;
+            }
+            graphAimedPlanKey = planKey;
             if (newestRunId == graphAimedRunId && latestResultId == graphAimedResultId) return;
             var newResult = latestResultId is not null && latestResultId != graphAimedResultId;
             graphAimedRunId = newestRunId; graphAimedResultId = latestResultId;
@@ -655,14 +677,15 @@ public sealed partial class MainWindow
             {
                 var card = new Border
                 {
-                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Block), BorderThickness = new Thickness(block.Kind == "draft" ? 0 : DesignMetrics.Stroke.Line),
-                    BorderBrush = b.Brush(DesignToken.Line), Background = b.Brush(DesignToken.Card), Tag = block.Id,
+                    CornerRadius = new CornerRadius(DesignMetrics.Radius.Block), BorderThickness = new Thickness(block.Kind is "draft" or "plan" ? 0 : DesignMetrics.Stroke.Line),
+                    // The plan card brings its own amber-edged card (MainWindow.PlanCard.cs).
+                    BorderBrush = b.Brush(DesignToken.Line), Background = block.Kind == "plan" ? b.Transparent : b.Brush(DesignToken.Card), Tag = block.Id,
                 };
                 view = new GraphCardView { Card = card }; graphCardViews[block.Id] = view;
                 AutomationProperties.SetAutomationId(card, "mighty-node-" + block.Id);
                 card.PointerPressed += (_, args) => { SelectGraphBlock(block.Id); graphViewport?.Focus(FocusState.Pointer); args.Handled = true; };
                 if (block.Kind == "draft") BuildDraftCard(view, block.Id);
-                else if (block.Kind != "resultFiles") BuildBlockBody(view, block.Id);
+                else if (block.Kind is not ("resultFiles" or "plan" or "planRecord")) BuildBlockBody(view, block.Id);
             }
             // Frame is deliberately excluded. Resizing or camera movement must
             // never tear down a RichEditBox while native text services load it.
@@ -679,6 +702,7 @@ public sealed partial class MainWindow
                 // theme change through RethemeMightyTranscripts, so a toggle rebuilds nothing. No selection
                 // either: it shows through parts already in the card (ApplyGraphSelectionStyle).
                 StyleSymbol = look.Symbol, StyleTint = look.Tint, Language = Locale.LanguagePreference,
+                Plan = block.Kind == "plan" ? PlanBlockKey : block.Kind == "planRecord" ? PlanRecordBlockKey(block) : "",
             }, Wire.Json);
             if (view.Fingerprint == fingerprint)
             {
@@ -688,6 +712,18 @@ public sealed partial class MainWindow
             view.Fingerprint = fingerprint;
             AutomationProperties.SetName(view.Card, block.Title);
             if (block.Kind == "resultFiles") { view.Card.Child = BuildResultFilesPanel(block, files); return view.Card; }
+            if (block.Kind == "plan")
+            {
+                // The same card for the whole wait: its plan document is never rebuilt (MainWindow.PlanCard.cs).
+                if (PendingPlan is { } plan)
+                {
+                    var planCard = PlanCard(plan, PendingCount, inDiagram: true);
+                    if (!ReferenceEquals(view.Card.Child, planCard)) { Detach(planCard); view.Card.Child = planCard; }
+                }
+                else view.Card.Child = null;
+                return view.Card;
+            }
+            if (block.Kind == "planRecord") { view.Card.Child = BuildPlanRecordBlock(block); return view.Card; }
             if (block.Kind == "draft")
             {
                 // The draft itself, or the hint in the quiet ink while there is none (M/MightyGraphView.swift:1054-1055).

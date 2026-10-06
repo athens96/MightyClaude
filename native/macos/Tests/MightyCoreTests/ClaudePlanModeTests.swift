@@ -156,14 +156,16 @@ struct ClaudePlanModeTests {
     }
 
     @Test func aPlanTooLongToShowIsSentBackForAShorterOne() throws {
-        let writes = PlanBox<[Data]>([]), displays = PlanBox<[ToolPermissionRequest]>([]), records = PlanBox<[PlanRecord]>([]), warnings = PlanBox<[String]>([])
-        let channel = channel(writes: writes, displays: displays, records: records, warnings: warnings)
-        channel.receive(try JSONSerialization.data(withJSONObject: ["type": "control_request", "request_id": "big", "request": ["subtype": "can_use_tool", "tool_name": "ExitPlanMode", "tool_use_id": "toolu_big", "input": ["plan": String(repeating: "x", count: 70_000)]]]))
-        let body = try response(try #require(writes.value.last))
-        #expect(body["behavior"] as? String == "deny" && body["message"] as? String == ClaudePlanMode.tooLongMessage)
-        #expect(displays.value.isEmpty && warnings.value == [L("plan.warning.tooLong")])
-        // It is still kept, as a cancelled plan with a bounded copy of its text.
-        #expect(records.value.count == 1 && records.value[0].outcome == .cancelled && records.value[0].planTruncated == true)
+        try LocaleOverride.$language.withValue(.ko) {
+            let writes = PlanBox<[Data]>([]), displays = PlanBox<[ToolPermissionRequest]>([]), records = PlanBox<[PlanRecord]>([]), warnings = PlanBox<[String]>([])
+            let channel = channel(writes: writes, displays: displays, records: records, warnings: warnings)
+            channel.receive(try JSONSerialization.data(withJSONObject: ["type": "control_request", "request_id": "big", "request": ["subtype": "can_use_tool", "tool_name": "ExitPlanMode", "tool_use_id": "toolu_big", "input": ["plan": String(repeating: "x", count: 70_000)]]]))
+            let body = try response(try #require(writes.value.last))
+            #expect(body["behavior"] as? String == "deny" && body["message"] as? String == ClaudePlanMode.tooLongMessage)
+            #expect(displays.value.isEmpty && warnings.value == [L("plan.warning.tooLong")])
+            // It is still kept, as a cancelled plan with a bounded copy of its text.
+            #expect(records.value.count == 1 && records.value[0].outcome == .cancelled && records.value[0].planTruncated == true)
+        }
     }
 
     @Test func everyFixtureChecklistIsTrackedAsCommitted() throws {
