@@ -291,10 +291,16 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
     /// Titling mode: "auto" follows the latest user request; "fixed" keeps the manually set name.
     /// A nil value (older sessions) decodes as "auto".
     public var titleMode: String?
+    /// Answered Claude plans, newest last (`ClaudePlanMode.maximumHistory`).
+    public var planHistory: [PlanRecord]?
+    /// The main agent's latest checklist (TodoWrite or task tools).
+    public var todoProgress: TodoProgress?
+    /// The latest run's background tasks.
+    public var backgroundWork: BackgroundWork?
     public init(id: String = UUID().uuidString, workspaceId: String, title: String, kind: String = "claude", provider: String = "claude", model: String = "default", settings: RunSettings = .init(), status: String = "idle", logs: [LogEntry] = [], resumeId: String? = nil, createdAt: String = mightyTimestamp(), runTiming: AgentRunTiming? = nil, sessionUsage: SessionUsage? = nil) {
         self.id = id; self.workspaceId = workspaceId; self.title = title; self.kind = kind; self.provider = provider; self.model = model; self.settings = settings; self.status = status; self.logs = logs; self.resumeId = resumeId; self.createdAt = createdAt; self.runTiming = runTiming; self.sessionUsage = sessionUsage
     }
-    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode }
+    enum CodingKeys: String, CodingKey { case id, workspaceId, title, kind, provider, model, settings, status, logs, resumeId, createdAt, runTiming, sessionUsage, agentViewMode, mightyStyle, mightyStyleHash, mightyStyleSince, graphRuns, graphBlockSizes, graphResultSize, graphViewMode, workspaceProfileKey, ownerSessionId, titleMode, planHistory, todoProgress, backgroundWork }
     /// How the pane's Mighty view draws its requests; the diagram unless the timeline was chosen.
     public var mightyViewMode: MightyGraphViewMode { graphViewMode ?? .diagram }
     /// Full text of the most recent user log entry that would update the automatic title,
@@ -341,6 +347,10 @@ public struct RunSession: Codable, Sendable, Equatable, Identifiable {
         workspaceProfileKey = try? c.decodeIfPresent(String.self, forKey: .workspaceProfileKey)
         ownerSessionId = try? c.decodeIfPresent(String.self, forKey: .ownerSessionId)
         titleMode = try? c.decodeIfPresent(String.self, forKey: .titleMode)
+        // Optional plan-mode state; damage must not discard the conversation.
+        planHistory = (try? c.decodeIfPresent([LossyDecoded<PlanRecord>].self, forKey: .planHistory))?.compactMap(\.value)
+        todoProgress = try? c.decodeIfPresent(TodoProgress.self, forKey: .todoProgress)
+        backgroundWork = try? c.decodeIfPresent(BackgroundWork.self, forKey: .backgroundWork)
     }
 }
 
@@ -417,6 +427,12 @@ public struct StartRunRequest: Codable, Sendable, Equatable {
     public var registeredModels: [RegisteredModelEntry]
     /// The Settings phase models the run starts with; not persisted.
     public var phaseModels = PhaseModelConfig()
+    /// This request alone starts in this permission mode instead of the pane's
+    /// stored one: a guided plan style starts each new request in `plan`. Only
+    /// `plan`, only Claude; not persisted, never taken from the phone.
+    public var permissionModeOverride: String?
+    /// The pane's saved checklist, which a resumed Claude run continues.
+    public var todoProgress: TodoProgress?
     public init(sessionId: String, workspaceId: String, kind: String = "claude", input: String, model: String = "default", provider: String = "claude", settings: RunSettings = .init(), resumeId: String? = nil, attachments: [RunAttachment] = [], registeredModels: [RegisteredModelEntry] = []) {
         self.sessionId = sessionId; self.workspaceId = workspaceId; self.kind = kind; self.input = input; self.model = model; self.provider = provider; self.settings = settings; self.resumeId = resumeId; self.attachments = attachments; self.registeredModels = registeredModels
     }
@@ -451,11 +467,18 @@ public struct RunEvent: Codable, Sendable, Equatable {
     public var graph: ExecutionGraphNode?
     /// Why a run ended in `error`, when the CLI said so: "auth" is a lost sign-in.
     public var reason: String?
-    public init(sessionId: String, type: String, entry: LogEntry? = nil, status: String? = nil, resumeId: String? = nil, activity: AgentActivity? = nil, permission: ToolPermissionRequest? = nil, usage: SessionUsage? = nil, graph: ExecutionGraphNode? = nil, reason: String? = nil) {
+    /// `plan`: an answered (or withdrawn) ExitPlanMode request.
+    public var plan: PlanRecord?
+    /// `todos`: the main agent's checklist after a change.
+    public var todos: TodoProgress?
+    /// `background`: the run's background tasks after a change.
+    public var background: BackgroundWork?
+    public init(sessionId: String, type: String, entry: LogEntry? = nil, status: String? = nil, resumeId: String? = nil, activity: AgentActivity? = nil, permission: ToolPermissionRequest? = nil, usage: SessionUsage? = nil, graph: ExecutionGraphNode? = nil, reason: String? = nil,
+                plan: PlanRecord? = nil, todos: TodoProgress? = nil, background: BackgroundWork? = nil) {
         self.sessionId = sessionId; self.type = type; self.entry = entry; self.status = status; self.resumeId = resumeId; self.activity = activity; self.permission = permission; self.usage = usage
-        self.graph = graph; self.reason = reason
+        self.graph = graph; self.reason = reason; self.plan = plan; self.todos = todos; self.background = background
     }
-    enum CodingKeys: String, CodingKey { case sessionId, type, entry, status, resumeId, activity, permission, usage, graph, reason }
+    enum CodingKeys: String, CodingKey { case sessionId, type, entry, status, resumeId, activity, permission, usage, graph, reason, plan, todos, background }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessionId = try c.decode(String.self, forKey: .sessionId); type = try c.decode(String.self, forKey: .type)
@@ -465,6 +488,9 @@ public struct RunEvent: Codable, Sendable, Equatable {
         usage = try? c.decodeIfPresent(SessionUsage.self, forKey: .usage)
         graph = try? c.decodeIfPresent(ExecutionGraphNode.self, forKey: .graph)
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+        plan = try? c.decodeIfPresent(PlanRecord.self, forKey: .plan)
+        todos = try? c.decodeIfPresent(TodoProgress.self, forKey: .todos)
+        background = try? c.decodeIfPresent(BackgroundWork.self, forKey: .background)
     }
 }
 
@@ -596,6 +622,7 @@ public enum CoreValidation {
         let s = request.settings
         guard (["default"] + ProviderOptions.efforts).contains(s.effort), ["manual", "plan", "acceptEdits", "auto", "onRequest", "fullAccess"].contains(s.permissionMode), ProviderOptions.webSearchModes.contains(s.webSearch), s.maxTurns == nil || (1...1000).contains(s.maxTurns!), s.maxBudgetUsd == nil || (s.maxBudgetUsd!.isFinite && s.maxBudgetUsd! > 0 && s.maxBudgetUsd! <= 10_000) else { throw MightyError("실행 설정이 올바르지 않습니다.") }
         if s.permissionMode == "auto", request.kind != "claude" || request.provider != "claude" { throw MightyError("Auto mode는 Claude 실행 창에서만 사용할 수 있습니다.") }
+        if let mode = request.permissionModeOverride, mode != "plan" || request.kind != "claude" || request.provider != "claude" { throw MightyError(L("plan.error.overrideClaudeOnly")) }
         if s.permissionMode == "onRequest", request.kind != "claude" || request.provider != "codex" { throw MightyError("승인 요청은 Codex 실행 창에서만 사용할 수 있습니다.") }
         if request.kind == "shell", s.fastMode || s.webSearch != "default" || s.networkAccess { throw MightyError("명령 창은 AI 실행 설정을 지원하지 않습니다.") }
         if request.kind == "claude" {
@@ -608,7 +635,7 @@ public enum CoreValidation {
     public static func validateCapabilities(_ request: StartRunRequest, capabilities caps: ProviderCapabilities) throws {
         let s = request.settings
         guard caps.attachments || request.attachments.isEmpty else { throw MightyError("이 실행기가 첨부 파일을 지원하지 않습니다.") }
-        guard caps.permissionModes.contains(s.permissionMode), caps.effort || s.effort == "default", caps.maxTurns || s.maxTurns == nil, caps.maxBudgetUsd || s.maxBudgetUsd == nil, caps.fastMode || !s.fastMode, caps.webSearch || s.webSearch == "default", caps.networkAccess || !s.networkAccess, !s.networkAccess || (request.provider == "codex" && ["acceptEdits", "onRequest"].contains(s.permissionMode)), caps.resume || request.resumeId == nil else { throw MightyError("선택한 실행기가 이 실행 설정을 지원하지 않습니다. 실행 설정을 확인해 주세요.") }
+        guard caps.permissionModes.contains(s.permissionMode), request.permissionModeOverride.map(caps.permissionModes.contains) ?? true, caps.effort || s.effort == "default", caps.maxTurns || s.maxTurns == nil, caps.maxBudgetUsd || s.maxBudgetUsd == nil, caps.fastMode || !s.fastMode, caps.webSearch || s.webSearch == "default", caps.networkAccess || !s.networkAccess, !s.networkAccess || (request.provider == "codex" && ["acceptEdits", "onRequest"].contains(s.permissionMode)), caps.resume || request.resumeId == nil else { throw MightyError("선택한 실행기가 이 실행 설정을 지원하지 않습니다. 실행 설정을 확인해 주세요.") }
     }
     public static func isOfficialClaudeModel(_ value: String) -> Bool {
         ProviderOptions.fallbackCatalog("claude").models.contains { $0.value == value } || value.range(of: "^(?:(?:opus|sonnet|fable)\\[1m\\]|claude-(?:(?:opus|sonnet|haiku|fable)-[0-9]+(?:[-.][0-9]+)*|[0-9]+(?:-[0-9]+)*-(?:opus|sonnet|haiku|fable)(?:-[0-9]+)*)(?:\\[1m\\])?)$", options: .regularExpression) != nil

@@ -236,6 +236,11 @@ public actor StateRepository {
                 if restoring || session.status != "running" { session.runTiming?.interrupt() }
                 else { session.runTiming?.observe(at: date) }
             }
+            if session.kind == SessionKind.claude && session.provider == "claude" {
+                session.planHistory = ClaudePlanMode.normalizedHistory(session.planHistory)
+                session.todoProgress = TodoProgress.normalized(session.todoProgress)
+                session.backgroundWork = BackgroundWork.normalized(session.backgroundWork, restoring: restoring || session.status != "running")
+            } else { session.planHistory = nil; session.todoProgress = nil; session.backgroundWork = nil }
             // Migration: retitle automatic agent panes from their most recent user request.
             // A nil titleMode (saved before this feature) is treated as "auto".
             if restoring && session.kind == SessionKind.claude {

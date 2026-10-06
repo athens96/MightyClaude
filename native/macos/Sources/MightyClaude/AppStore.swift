@@ -686,7 +686,10 @@ final class AppStore: ObservableObject {
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
             if held { heldForUpdate.insert(id) }
-            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: steering && !held)
+            // A turn that is over but still running background agents takes new
+            // input in the same process; the queue is the fallback.
+            let joins = steering || session.backgroundWork?.waitingOnBackground == true
+            deferInput(id, session: session, workspace: workspace, item: QueuedInput(text: input, attachments: attachments), steering: joins && !held)
             return
         }
         start(id, session: session, workspace: workspace, input: input, attachments: attachments, restoringDraft: originalDraft)
@@ -850,6 +853,8 @@ final class AppStore: ObservableObject {
                 if let reason = runBlockedReason(current) { throw MightyError(reason) }
                 let registered = providerRegisteredModels(current.provider)
                 var request = StartRunRequest(sessionId: id, workspaceId: workspace.id, kind: current.kind, input: input, model: current.model, provider: current.provider, settings: current.settings, resumeId: current.resumeId, attachments: attachments, registeredModels: registered)
+                // A resumed conversation continues its checklist (task tools keep their ids).
+                if current.resumeId != nil { request.todoProgress = current.todoProgress }
                 try CoreValidation.validate(request)
                 if current.kind != "shell" {
                     let provider = providerRuntime(current.provider, workspaceId: workspace.id)
@@ -910,6 +915,7 @@ final class AppStore: ObservableObject {
             session.recordRunTiming(event, at: receivedAt)
             session.recordSessionUsage(event)
             session.recordGraph(event)
+            session.recordPlanMode(event)
             switch event.type {
             case "log":
                 guard let entry = event.entry else { return }

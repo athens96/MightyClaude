@@ -436,6 +436,20 @@ private final class ManagedProcess {
     /// run; see `ChildOutputBudget`.
     let outputBudget = ChildOutputBudget(limit: 4 * 1_048_576)
     var receivedClaudeResult = false
+    /// The user cancelled a plan: the run ends `stopped` however the CLI ends it.
+    var planCancelled = false
+    /// stdin and the approval channel are closed: the CLI may exit now. While
+    /// the request's own result is in but background tasks still run, both
+    /// stay open, so the follow-up turns can still ask and new input can join.
+    var inputClosed = false
+    var lastOutputAt = Date()
+    var inputWatchdog: Task<Void, Never>?
+    /// Close input once the request answered and no background task runs.
+    func settleInput() {
+        guard receivedClaudeResult, !inputClosed, permissions != nil, parser?.backgroundRunning != true else { return }
+        inputClosed = true; inputWatchdog?.cancel(); inputWatchdog = nil
+        permissions?.cancelAll(); permissionInitializationTask?.cancel(); child?.closeInput()
+    }
     var permissionInitializationTask: Task<Void, Never>?
     var attachments: AttachmentPreparation?
     var task: Task<Void, Never>?
@@ -474,8 +488,12 @@ public actor ProcessRunner {
     private let imageCache: AgentImageCache?
     /// Live children, signalled without this actor; see `LiveRunRegistry`.
     private let liveRuns: LiveRunRegistry
+    /// After the last background task ends, how long a silent CLI may keep
+    /// stdin before the runner closes it (a follow-up turn's own result or
+    /// `session_state_changed: idle` normally closes it first).
+    private let backgroundIdleClose: Double
 
-    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.onEvent = onEvent }
+    public init(providerService: ProviderService, pluginDirectory: URL, paneMCPServer: PaneMCPServerLocation? = nil, paneMCPBindings: PaneMCPBindingRegistry = PaneMCPBindingRegistry(), imageCache: AgentImageCache? = nil, liveRuns: LiveRunRegistry = LiveRunRegistry(), backgroundIdleClose: Double = 120, onEvent: @escaping @Sendable (RunEvent) -> Void) { self.providerService = providerService; self.pluginDirectory = pluginDirectory; self.paneMCPServer = paneMCPServer; self.paneMCPBindings = paneMCPBindings; self.imageCache = imageCache; self.liveRuns = liveRuns; self.backgroundIdleClose = backgroundIdleClose; self.onEvent = onEvent }
 
     /// Ends the pane's child right away, without waiting for this actor; the
     /// run's bookkeeping still needs `stop(id:)`. False when nothing ran.
@@ -554,12 +572,16 @@ public actor ProcessRunner {
                 }
                 if request.provider == "claude", request.settings.effort != "default" { environment["CLAUDE_CODE_EFFORT_LEVEL"] = request.settings.effort }
                 if interactivePermissions {
+                    // The CLI's authoritative "turn over, no background agent left" signal.
+                    environment["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
                     run.permissions = ClaudePermissionChannel(runId: run.activityId, prompt: standardInput,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
                         emit: { [weak run, onEvent] permission in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "permission", permission: permission)) },
                         activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
                         warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
-                        fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() })
+                        fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
+                        plan: { [weak run, onEvent] record in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "plan", plan: record)) },
+                        paneMode: request.settings.permissionMode)
                 }
                 run.parser = CLIStreamParser(provider: request.provider,
                     log: { [weak self, weak run] kind, text in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: kind, text: text) },
@@ -572,8 +594,9 @@ public actor ProcessRunner {
                         run.receivedClaudeResult = true
                         // The editor starts a separate process for each turn.
                         // EOF only after its real result keeps approval replies
-                        // possible while allowing one-shot shutdown afterwards.
-                        run.permissions?.cancelAll(); run.permissionInitializationTask?.cancel(); run.child?.closeInput()
+                        // possible while allowing one-shot shutdown afterwards;
+                        // background tasks still running keep it open longer.
+                        run.settleInput()
                     }, usage: { [weak run, onEvent] usage in
                         guard let run, !run.finished else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "usage", usage: usage))
@@ -587,7 +610,14 @@ public actor ProcessRunner {
                     imageEntry: { [weak run, onEvent] entry in
                         guard let run, !run.finalized else { return }
                         onEvent(RunEvent(sessionId: run.request.sessionId, type: "log", entry: entry))
-                    })
+                    }, todos: { [weak run, onEvent] progress in
+                        guard let run, !run.finalized else { return }
+                        onEvent(RunEvent(sessionId: run.request.sessionId, type: "todos", todos: progress))
+                    }, background: { [weak self, weak run, onEvent] work in
+                        guard let run, !run.finalized else { return }
+                        onEvent(RunEvent(sessionId: run.request.sessionId, type: "background", background: work))
+                        if run.receivedClaudeResult, !run.inputClosed, run.permissions != nil, work.running.isEmpty { Task { await self?.armInputWatchdog(run) } }
+                    }, savedTodos: request.todoProgress, settled: { [weak run] in run?.settleInput() })
                 if codexApprovals {
                     run.codexPermissions = CodexApprovalChannel(runId: run.activityId, request: request, workspacePath: workspace.path, attachments: attachments,
                         write: { [weak run] data in guard let run, !run.stopping, !run.finished else { return }; run.child?.write(data) },
@@ -678,8 +708,11 @@ public actor ProcessRunner {
     /// received) reports false so the caller queues the text instead.
     public func steer(sessionId: String, text: String) -> Bool {
         guard let run = runs[sessionId], !run.finished, !run.stopping, !shuttingDown, run.request.provider == "claude",
-              let permissions = run.permissions, permissions.initialized, !permissions.failed, !run.receivedClaudeResult,
+              let permissions = run.permissions, permissions.initialized, !permissions.failed, !run.inputClosed,
               let child = run.child, child.inputIsOpen, let data = try? ProviderInput.claudeUserMessage(text) else { return false }
+        // After the request's result this starts a new turn in the same process
+        // (it stays open while background tasks run).
+        run.lastOutputAt = Date()
         child.write(data)
         run.parser?.steer(id: UUID().uuidString, text: text)
         return true
@@ -695,6 +728,38 @@ public actor ProcessRunner {
         if let permissions = run.permissions { try permissions.respond(requestId: requestId, allow: allow) }
         else if let permissions = run.codexPermissions { try permissions.respond(requestId: requestId, allow: allow) }
         else { throw MightyError("이 실행은 대화형 승인을 지원하지 않습니다.") }
+    }
+    /// Answers one pending ExitPlanMode request in exactly one local run.
+    public func answerPlan(sessionId: String, runId: String, requestId: String, decision: PlanDecision) async throws {
+        guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
+              !run.stopping, !run.finished, !run.inputClosed, let permissions = run.permissions, run.child?.inputIsOpen == true else {
+            throw MightyError(L("plan.error.settled"))
+        }
+        // Marked before the reply is written, so an exit racing it still ends stopped.
+        let cancelling = decision == .cancel
+        if cancelling { run.planCancelled = true; run.parser?.suppressInterruptedResult() }
+        do { try permissions.answerPlan(requestId: requestId, decision: decision) }
+        catch { if cancelling { run.planCancelled = false; run.parser?.suppressInterruptedResult(false) }; throw error }
+    }
+    /// Closes input once the CLI has been silent for `backgroundIdleClose`
+    /// after its last background task ended.
+    private func armInputWatchdog(_ run: ManagedProcess) {
+        guard !run.inputClosed, !run.finished else { return }
+        run.inputWatchdog?.cancel()
+        let idle = backgroundIdleClose
+        run.inputWatchdog = Task { [weak self, weak run] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(Int(max(50, min(1_000, idle * 250)))))
+                guard let self, let run, !Task.isCancelled else { return }
+                if await self.inputIdle(run, after: idle) { return }
+            }
+        }
+    }
+    private func inputIdle(_ run: ManagedProcess, after idle: Double) -> Bool {
+        guard !run.inputClosed, !run.finished else { return true }
+        guard Date().timeIntervalSince(run.lastOutputAt) >= idle else { return false }
+        run.settleInput()
+        return true
     }
     public func answerUserQuestions(sessionId: String, runId: String, requestId: String, answers: [String: UserQuestionAnswer]) async throws {
         guard !shuttingDown, let run = runs[sessionId], run.activityId == runId,
@@ -752,6 +817,7 @@ public actor ProcessRunner {
     /// Lines `AgentOutputLines` cut and parsed off the actor.
     private func receive(_ items: [AgentOutputLines.Item], run: ManagedProcess) {
         guard !run.finished else { return }
+        run.lastOutputAt = Date()
         for item in items {
             if let channel = run.codexPermissions {
                 switch item {
@@ -828,9 +894,9 @@ public actor ProcessRunner {
         run.finished = true; run.parser?.flush(); emitLog(run, kind: "output", text: run.outputDecoder.flush()); let errorTail = run.errorDecoder.flush(); run.parser?.receiveStderr(errorTail); run.parser?.finishStderr(); emitLog(run, kind: "output", text: errorTail)
         // The run still ends by its exit code; only the stray writer's rest is lost.
         if run.child?.outputAbandoned == true, !run.stopping, !shuttingDown { emitLog(run, kind: "system", text: L("run.notice.outputAbandoned")) }
-        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel()
+        run.permissions?.cancelAll(); run.codexPermissions?.cancelAll(); run.permissionInitializationTask?.cancel(); run.inputWatchdog?.cancel()
         let incompletePermissionRun = run.permissions != nil && (run.permissions?.initialized != true || !run.receivedClaudeResult)
-        if incompletePermissionRun, !run.stopping, !shuttingDown, run.permissions?.failed != true {
+        if incompletePermissionRun, !run.stopping, !shuttingDown, !run.planCancelled, run.permissions?.failed != true {
             emitLog(run, kind: "error", text: "Claude가 승인 채널 초기화 또는 응답 결과를 전달하기 전에 종료되었습니다.")
         }
         let incompleteCodexRun = run.codexPermissions != nil && (run.codexPermissions?.initialized != true || run.codexPermissions?.turnCompleted != true)
@@ -839,7 +905,7 @@ public actor ProcessRunner {
         }
         if let bridge = run.bridge, await bridge.receivedCount == 0, !run.stopping { emitLog(run, kind: "system", text: "Mods 이벤트를 받지 못했습니다. CLI 출력만 표시하며 관리자 정책과 function hooks 설정을 확인해 주세요.") }
         await run.bridge?.stop()
-        let status = run.stopping || shuttingDown ? "stopped" : code == 0 && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
+        let status = run.stopping || shuttingDown || run.planCancelled ? "stopped" : code == 0 && run.parser?.failed != true && run.permissions?.failed != true && run.codexPermissions?.failed != true && !incompletePermissionRun && !incompleteCodexRun ? "completed" : "error"
         if let watcher = run.codexSessions {
             // Stop the poll task, wait for a read in flight, then read what is
             // left once. No pause first: an exited Codex writes nothing more.
@@ -849,6 +915,7 @@ public actor ProcessRunner {
         }
         run.parser?.finishActivities(stopped: status == "stopped")
         run.parser?.finishGraph(state: status)
+        run.parser?.finishBackground()
         run.attachments?.cleanup(); run.attachments = nil
         if run.request.kind == "claude" {
             let summary = status == "completed" ? "응답 완료" : status == "stopped" ? "실행 중지" : "실행 오류"

@@ -1,0 +1,847 @@
+{
+  "planRequests": [
+    {
+      "name": "plan with the fields the CLI injects from its plan file",
+      "request": {
+        "type": "control_request",
+        "request_id": "req-plan-1",
+        "request": {
+          "subtype": "can_use_tool",
+          "tool_name": "ExitPlanMode",
+          "display_name": "Exit plan mode",
+          "input": {
+            "plan": "# 계획\n\n1. 파서를 추가합니다\n2. Test it",
+            "planFilePath": "/Users/me/.claude/plans/quiet-river.md"
+          },
+          "tool_use_id": "toolu_plan_1",
+          "requires_user_interaction": true
+        }
+      },
+      "expected": {
+        "canAnswerPlan": true,
+        "canAllow": false,
+        "plan": "# 계획\n\n1. 파서를 추가합니다\n2. Test it"
+      }
+    },
+    {
+      "name": "blank plan cannot be answered as a plan",
+      "request": {
+        "type": "control_request",
+        "request_id": "req-plan-2",
+        "request": {
+          "subtype": "can_use_tool",
+          "tool_name": "ExitPlanMode",
+          "input": {
+            "plan": "  \n "
+          },
+          "tool_use_id": "toolu_plan_2",
+          "requires_user_interaction": true
+        }
+      },
+      "expected": {
+        "canAnswerPlan": false,
+        "canAllow": false,
+        "plan": null
+      }
+    },
+    {
+      "name": "another tool is never a plan",
+      "request": {
+        "type": "control_request",
+        "request_id": "req-plan-3",
+        "request": {
+          "subtype": "can_use_tool",
+          "tool_name": "Bash",
+          "input": {
+            "command": "ls",
+            "plan": "not a plan"
+          },
+          "tool_use_id": "toolu_plan_3"
+        }
+      },
+      "expected": {
+        "canAnswerPlan": false,
+        "canAllow": true,
+        "plan": null
+      }
+    }
+  ],
+  "planResponses": [
+    {
+      "name": "approve with auto-edit switches a plan pane's session to acceptEdits",
+      "decision": "approveAutoEdit",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "acceptEdits",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      },
+      "paneMode": "plan"
+    },
+    {
+      "name": "approve with confirm-each switches a plan pane's session to default",
+      "decision": "approveConfirmEach",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "default",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      },
+      "paneMode": "plan"
+    },
+    {
+      "name": "approve with auto-edit from a manual pane takes the button",
+      "decision": "approveAutoEdit",
+      "paneMode": "manual",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "acceptEdits",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "approve with confirm-each from a manual pane returns to default",
+      "decision": "approveConfirmEach",
+      "paneMode": "manual",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "default",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "approve with confirm-each never lowers an accept-edits pane",
+      "decision": "approveConfirmEach",
+      "paneMode": "acceptEdits",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "acceptEdits",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "approve from an auto pane returns to auto",
+      "decision": "approveAutoEdit",
+      "paneMode": "auto",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "auto",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "approve from a full-access pane returns to bypassPermissions",
+      "decision": "approveConfirmEach",
+      "paneMode": "fullAccess",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "allow",
+        "updatedInput": {},
+        "updatedPermissions": [
+          {
+            "type": "setMode",
+            "mode": "bypassPermissions",
+            "destination": "session"
+          }
+        ],
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "revise sends the trimmed feedback as the denial",
+      "decision": "revise",
+      "feedback": "  2단계를 둘로 나눠 주세요.\nKeep tests first.  ",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "deny",
+        "message": "The user reviewed your plan and wants changes before any code is written. Stay in plan mode, revise the plan, and call ExitPlanMode again. The user said:\n2단계를 둘로 나눠 주세요.\nKeep tests first.",
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "cancel denies and interrupts the turn",
+      "decision": "cancel",
+      "toolUseId": "toolu_plan_1",
+      "expected": {
+        "behavior": "deny",
+        "message": "The user cancelled this plan in Mighty Claude. Do not make any changes; stop and wait for the user's next request.",
+        "interrupt": true,
+        "toolUseID": "toolu_plan_1"
+      }
+    },
+    {
+      "name": "blank revise feedback is refused",
+      "decision": "revise",
+      "feedback": " \n\t ",
+      "toolUseId": "toolu_plan_1",
+      "error": true
+    }
+  ],
+  "todos": [
+    {
+      "name": "TodoWrite replaces the whole list",
+      "frames": [
+        {
+          "type": "assistant",
+          "parent_tool_use_id": null,
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_todo_1",
+                "name": "TodoWrite",
+                "input": {
+                  "todos": [
+                    {
+                      "content": "Add the parser",
+                      "status": "completed",
+                      "activeForm": "Adding the parser"
+                    },
+                    {
+                      "content": "Write tests",
+                      "status": "in_progress",
+                      "activeForm": "Writing tests"
+                    },
+                    {
+                      "content": "Update docs",
+                      "status": "pending",
+                      "activeForm": "Updating docs"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "parent_tool_use_id": null,
+          "message": {
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_todo_1",
+                "content": "Todos have been modified successfully."
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "total": 3,
+        "completed": 1,
+        "current": "Writing tests",
+        "items": [
+          {
+            "content": "Add the parser",
+            "activeForm": "Adding the parser",
+            "status": "completed"
+          },
+          {
+            "content": "Write tests",
+            "activeForm": "Writing tests",
+            "status": "in_progress"
+          },
+          {
+            "content": "Update docs",
+            "activeForm": "Updating docs",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a sub-agent's TodoWrite does not touch the main checklist",
+      "frames": [
+        {
+          "type": "assistant",
+          "parent_tool_use_id": null,
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_todo_2",
+                "name": "TodoWrite",
+                "input": {
+                  "todos": [
+                    {
+                      "content": "Main step",
+                      "status": "in_progress"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "parent_tool_use_id": "toolu_agent_1",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_todo_3",
+                "name": "TodoWrite",
+                "input": {
+                  "todos": [
+                    {
+                      "content": "Child step",
+                      "status": "completed"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "total": 1,
+        "completed": 0,
+        "current": "Main step",
+        "items": [
+          {
+            "content": "Main step",
+            "status": "in_progress"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TaskCreate and TaskUpdate build the list the way the CLI does, aliases included",
+      "frames": [
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_tc_1",
+                "name": "TaskCreate",
+                "input": {
+                  "subject": "Read the code",
+                  "description": "Find the parser",
+                  "activeForm": "Reading the code"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tc_2",
+                "name": "TaskCreate",
+                "input": {
+                  "title": "Change it",
+                  "description": "Edit"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tc_3",
+                "name": "TaskCreate",
+                "input": {
+                  "subject": "Throwaway",
+                  "description": "x"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tc_4",
+                "name": "TaskCreate",
+                "input": {
+                  "subject": "Will fail",
+                  "description": "x"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "tool_use_result": {
+            "task": {
+              "id": "1",
+              "subject": "Read the code"
+            }
+          },
+          "message": {
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_tc_1",
+                "content": "Task #1 created successfully: Read the code"
+              }
+            ]
+          }
+        },
+        {
+          "type": "user",
+          "message": {
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_tc_2",
+                "content": "Task #2 created successfully: Change it"
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_tc_3",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Task #3 created successfully: Throwaway"
+                  }
+                ]
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "toolu_tc_4",
+                "is_error": true,
+                "content": "<tool_use_error>failed</tool_use_error>"
+              }
+            ]
+          }
+        },
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_tu_1",
+                "name": "TaskUpdate",
+                "input": {
+                  "taskId": "1",
+                  "status": "completed"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tu_2",
+                "name": "TaskUpdate",
+                "input": {
+                  "task_id": "2",
+                  "status": "in_progress",
+                  "active_form": "Changing it"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tu_3",
+                "name": "TaskUpdate",
+                "input": {
+                  "id": "3",
+                  "status": "deleted"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tu_4",
+                "name": "TaskUpdate",
+                "input": {
+                  "taskId": "9",
+                  "subject": "Found later",
+                  "status": "pending"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "total": 3,
+        "completed": 1,
+        "current": "Changing it",
+        "items": [
+          {
+            "id": "1",
+            "content": "Read the code",
+            "activeForm": "Reading the code",
+            "status": "completed"
+          },
+          {
+            "id": "2",
+            "content": "Change it",
+            "activeForm": "Changing it",
+            "status": "in_progress"
+          },
+          {
+            "id": "9",
+            "content": "Found later",
+            "activeForm": "Found later",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a resumed run continues the pane's saved task list",
+      "saved": [
+        {
+          "id": "1",
+          "content": "Old step",
+          "status": "in_progress"
+        },
+        {
+          "id": "2",
+          "content": "Next step",
+          "activeForm": "Doing next",
+          "status": "pending"
+        }
+      ],
+      "frames": [
+        {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "id": "toolu_tu_9",
+                "name": "TaskUpdate",
+                "input": {
+                  "taskId": "1",
+                  "status": "completed"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "toolu_tu_10",
+                "name": "TaskUpdate",
+                "input": {
+                  "taskId": "2",
+                  "status": "in_progress"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "total": 2,
+        "completed": 1,
+        "current": "Doing next",
+        "items": [
+          {
+            "id": "1",
+            "content": "Old step",
+            "status": "completed"
+          },
+          {
+            "id": "2",
+            "content": "Next step",
+            "activeForm": "Doing next",
+            "status": "in_progress"
+          }
+        ]
+      }
+    }
+  ],
+  "background": [
+    {
+      "name": "a background agent and a background shell end with notifications after the turn",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "a1b2c3",
+          "tool_use_id": "toolu_bg_agent",
+          "description": "Review the diff",
+          "subagent_type": "code-reviewer",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "bsh7",
+          "tool_use_id": "toolu_bg_shell",
+          "description": "npm test --watch",
+          "is_backgrounded": true,
+          "task_type": "local_bash"
+        },
+        {
+          "type": "system",
+          "subtype": "task_progress",
+          "task_id": "a1b2c3",
+          "tool_use_id": "toolu_bg_agent",
+          "description": "Reviewing the diff",
+          "usage": {
+            "total_tokens": 1200,
+            "tool_uses": 3,
+            "duration_ms": 5000
+          },
+          "last_tool_name": "Read"
+        },
+        {
+          "step": "turnEnded"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "bsh7",
+          "tool_use_id": "toolu_bg_shell",
+          "status": "stopped",
+          "output_file": "/tmp/bsh7.output",
+          "summary": "npm test --watch"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "a1b2c3",
+          "tool_use_id": "toolu_bg_agent",
+          "status": "completed",
+          "output_file": "",
+          "summary": "No blocking issues found."
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "a1b2c3",
+          "status": "failed",
+          "summary": "late repeat"
+        }
+      ],
+      "expected": {
+        "turnEnded": true,
+        "tasks": [
+          {
+            "id": "a1b2c3",
+            "toolUseId": "toolu_bg_agent",
+            "kind": "agent",
+            "description": "Reviewing the diff",
+            "status": "completed",
+            "summary": "No blocking issues found.",
+            "ended": true
+          },
+          {
+            "id": "bsh7",
+            "toolUseId": "toolu_bg_shell",
+            "kind": "shell",
+            "description": "npm test --watch",
+            "status": "stopped",
+            "summary": "npm test --watch",
+            "ended": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "a foreground agent appears only once it is moved to the background",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "fg1",
+          "tool_use_id": "toolu_fg",
+          "description": "Explore the repo",
+          "is_backgrounded": false,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "fg2",
+          "tool_use_id": "toolu_fg2",
+          "description": "Blocking helper",
+          "is_backgrounded": false,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "fg2",
+          "status": "completed",
+          "summary": "done in the foreground"
+        },
+        {
+          "type": "system",
+          "subtype": "task_updated",
+          "task_id": "fg1",
+          "patch": {
+            "is_backgrounded": true
+          }
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "mon1",
+          "description": "watch logs",
+          "task_type": "monitor_ws",
+          "ambient": true
+        },
+        {
+          "step": "finish"
+        }
+      ],
+      "expected": {
+        "turnEnded": false,
+        "tasks": [
+          {
+            "id": "fg1",
+            "toolUseId": "toolu_fg",
+            "kind": "agent",
+            "description": "Explore the repo",
+            "status": "unknown",
+            "ended": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "task_updated settles a task and the level signal adds one whose start was missed",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "w1",
+          "description": "Nightly workflow",
+          "task_type": "local_workflow"
+        },
+        {
+          "type": "system",
+          "subtype": "task_updated",
+          "task_id": "w1",
+          "patch": {
+            "status": "failed",
+            "error": "step 2 crashed"
+          }
+        },
+        {
+          "type": "system",
+          "subtype": "background_tasks_changed",
+          "tasks": [
+            {
+              "task_id": "late9",
+              "task_type": "local_bash",
+              "description": "tail -f server.log"
+            },
+            {
+              "task_id": "amb",
+              "task_type": "monitor_ws",
+              "description": "ambient",
+              "ambient": true
+            }
+          ]
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "w1",
+          "status": "completed",
+          "summary": "ignored after failure"
+        }
+      ],
+      "expected": {
+        "turnEnded": false,
+        "tasks": [
+          {
+            "id": "w1",
+            "kind": "agent",
+            "description": "Nightly workflow",
+            "status": "failed",
+            "summary": "step 2 crashed",
+            "ended": true
+          },
+          {
+            "id": "late9",
+            "kind": "shell",
+            "description": "tail -f server.log",
+            "status": "running",
+            "ended": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "the level signal can list a task before its own start, which then fills it in",
+      "steps": [
+        {
+          "type": "system",
+          "subtype": "background_tasks_changed",
+          "tasks": [
+            {
+              "task_id": "lv1",
+              "description": "Audit"
+            }
+          ]
+        },
+        {
+          "type": "system",
+          "subtype": "task_started",
+          "task_id": "lv1",
+          "tool_use_id": "toolu_lv1",
+          "description": "Audit deps",
+          "is_backgrounded": true,
+          "task_type": "local_agent"
+        },
+        {
+          "type": "system",
+          "subtype": "task_notification",
+          "task_id": "lv1",
+          "tool_use_id": "toolu_lv1",
+          "status": "completed",
+          "summary": "ok"
+        }
+      ],
+      "expected": {
+        "turnEnded": false,
+        "tasks": [
+          {
+            "id": "lv1",
+            "toolUseId": "toolu_lv1",
+            "kind": "agent",
+            "description": "Audit",
+            "status": "completed",
+            "summary": "ok",
+            "ended": true
+          }
+        ]
+      }
+    }
+  ]
+}

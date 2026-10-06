@@ -106,10 +106,15 @@ public sealed record RunSession
     // "auto" (or absent) while an agent pane's title follows its latest request,
     // "fixed" once renamed (macOS RunSession.titleMode, docs/windows-parity.md).
     [JsonPropertyName("titleMode")] public string? TitleMode { get; init; }
+    // Claude plan mode (ClaudePlanMode.cs, macOS RunSession.planHistory/todoProgress/backgroundWork).
+    // Damage in any of them loads as nothing instead of failing the snapshot.
+    [JsonPropertyName("planHistory"), JsonConverter(typeof(LenientListConverter<PlanRecord>))] public List<PlanRecord>? PlanHistory { get; init; }
+    [JsonPropertyName("todoProgress"), JsonConverter(typeof(LenientJsonConverter<TodoProgress>))] public TodoProgress? TodoProgress { get; init; }
+    [JsonPropertyName("backgroundWork"), JsonConverter(typeof(LenientJsonConverter<BackgroundWork>))] public BackgroundWork? BackgroundWork { get; init; }
 
     internal RunSession Apply(RunEvent ev)
     {
-        var value = this; var timing = RunTiming;
+        var value = ClaudePlanMode.Record(this, ev); var timing = RunTiming;
         if (Kind != "shell")
         {
             if (ev.Type == "status" && ev.Status == "running") timing = timing is null || timing.FinishedAt is not null ? AgentRunTiming.Begin() : timing.Observe();
@@ -275,6 +280,11 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
     [JsonIgnore] public IReadOnlyList<string>? StyleAutoAllow { get; init; }
     // Captured from local application settings at acceptance, never supplied by remote JSON.
     [JsonIgnore] public PhaseModelsSnapshot? PhaseModels { get; init; }
+    // This request alone starts in this permission mode instead of the pane's stored one: a guided plan style
+    // starts each new request in plan. Only plan, only Claude; never persisted or taken from remote JSON.
+    [JsonIgnore] public string? PermissionModeOverride { get; init; }
+    // The pane's saved checklist, which a resumed Claude run continues.
+    [JsonIgnore] public TodoProgress? TodoProgress { get; init; }
     private readonly IReadOnlyList<RunAttachment>? attachments = Attachments;
     public IReadOnlyList<RunAttachment>? Attachments { get => attachments is { Count: > 0 } ? attachments : null; init => attachments = value; }
     public IReadOnlyList<RegisteredModelEntry> RegisteredModels { get; init; } = RegisteredModels ?? [];
@@ -288,6 +298,7 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         if (settings.Effort != "default" && !Wire.Efforts.Contains(settings.Effort) || settings.PermissionMode is not ("manual" or "plan" or "onRequest" or "acceptEdits" or "auto" or "fullAccess") || settings.MaxTurns is < 1 or > 1000 || settings.MaxBudgetUsd is double budget && (!double.IsFinite(budget) || budget <= 0 || budget > 10000) || settings.WebSearch is not ("default" or "disabled" or "cached" or "live")) throw new ArgumentException(Locale.Get("wire.startRun.invalidSettings"));
         if (settings.PermissionMode == "onRequest" && (Provider != "codex" || Kind != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (settings.PermissionMode == "auto" && (Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("wire.startRun.autoModeClaudeOnly"));
+        if (PermissionModeOverride is { } mode && (mode != "plan" || Kind != "claude" || Provider != "claude")) throw new ArgumentException(Locale.Get("plan.error.overrideClaudeOnly"));
         if ((Provider != "codex" || Kind != "claude") && (settings.FastMode || settings.WebSearch != "default" || settings.NetworkAccess) || settings.NetworkAccess && settings.PermissionMode is not ("acceptEdits" or "onRequest")) throw new ArgumentException(Locale.Get("wire.startRun.codexOnlyFeatures"));
         if (Kind == "claude" && (Provider != "claude" && (settings.MaxTurns is not null || settings.MaxBudgetUsd is not null) || Provider == "codex" && settings.PermissionMode == "plan" || Provider == "gemini" && settings.Effort != "default" || Provider == "claude" && Model.Contains("haiku", StringComparison.OrdinalIgnoreCase) && settings.Effort != "default")) throw new ArgumentException(Locale.Get("wire.startRun.unsupportedSettings"));
         if (StyleAutoAllow is { Count: > 0 } grants && (Provider != "claude" || Kind != "claude" || grants.Count > 32 || grants.Any(g => !StyleRunPermissions.ValidWireName(g))))
@@ -295,11 +306,14 @@ public sealed record StartRunRequest(string SessionId, string WorkspaceId, strin
         return this with { Settings = settings, Attachments = files, StyleAutoAllow = StyleAutoAllow is { Count: > 0 } validGrants ? Array.AsReadOnly(validGrants.ToArray()) : null };
     }
 }
-public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null, string? Reason = null)
+/// <param name="Plan">"plan": an answered (or withdrawn) ExitPlanMode request.</param>
+/// <param name="Todos">"todos": the main agent's checklist after a change.</param>
+/// <param name="Background">"background": the run's background tasks after a change.</param>
+public sealed record RunEvent(string SessionId, string Type, LogEntry? Entry = null, string? Status = null, string? ResumeId = null, AgentActivity? Activity = null, SessionUsage? Usage = null, ToolPermissionRequest? Permission = null, MightyGraphRun? GraphRun = null, string? Reason = null, PlanRecord? Plan = null, TodoProgress? Todos = null, BackgroundWork? Background = null)
 {
     public static RunEvent Log(string id, string kind, string text, string? provider = null) => new(id, "log", new(Wire.Id(), kind, ActivitySupport.Clean(text, kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768), Wire.Now(), provider));
     public static RunEvent State(string id, string state, string? reason = null) => new(id, "status", Status: state, Reason: reason);
-    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id));
+    public bool Valid() => Wire.Identifier(SessionId) && (Type == "status" && Status is "idle" or "running" or "completed" or "error" or "stopped" || Type == "resume" && Wire.Identifier(ResumeId) || Type == "log" && Entry is not null && Wire.Identifier(Entry.Id) && LogEntry.Stored.Contains(Entry.Kind) && (Entry.Kind != "image" || AgentImageSupport.Normalized(Entry.Images) is not null) && Entry.Text is not null && System.Text.Encoding.UTF8.GetByteCount(Entry.Text) <= (Entry.Kind == "assistant" ? ActivitySupport.MaximumMessageBytes : 32768) || Type == "activity" && ActivitySupport.Normalize(Activity) is not null || Type == "usage" || Type == "graph_run" && GraphRun is not null && Wire.Identifier(GraphRun.Id) || Type == "plan" && Plan is not null && Wire.Identifier(Plan.Id) && PlanOutcome.All.Contains(Plan.Outcome) || Type == "todos" && Todos is not null || Type == "background" && Background is not null);
 }
 public sealed record ModelOption(string Value, string DisplayName, string Description, string? ResolvedModel = null, bool? SupportsEffort = null, string[]? SupportedEffortLevels = null);
 public sealed record ModelCatalog(string Source, List<ModelOption> Models, string Detail);

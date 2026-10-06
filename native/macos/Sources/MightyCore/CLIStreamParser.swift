@@ -47,10 +47,28 @@ public final class CLIStreamParser {
     private var imageLimitNoted = false
     /// Pictures the line being consumed carried, prepared off the actor.
     private var preparedImages: AgentPreparedImages = [:]
+    /// Claude's execution checklist and background tasks (`ClaudePlanMode.swift`).
+    private let todos: ((TodoProgress) -> Void)?
+    private let background: ((BackgroundWork) -> Void)?
+    private let todoTracker: TodoProgressTracker
+    private let backgroundTracker: BackgroundTaskTracker
+    /// A point where the CLI may have nothing left to do after the request's
+    /// result: a task notification's own result, or `session_state_changed: idle`.
+    private let settled: (() -> Void)?
+    /// A plan the user cancelled interrupts the turn; that interruption is not a failure.
+    private var interruptedResultExpected = false
+    /// A background task the CLI reported as started is still running.
+    public var backgroundRunning: Bool { !backgroundTracker.work.running.isEmpty }
+    func suppressInterruptedResult(_ value: Bool = true) { interruptedResultExpected = value }
 
     public init(provider: String, log: @escaping (String, String) -> Void, resume: @escaping (String) -> Void, activityNamespace: String = UUID().uuidString, activity: ((AgentActivity) -> Void)? = nil, control: ((Data) -> Void)? = nil, result: (() -> Void)? = nil, activityClock: (() -> TimeInterval)? = nil, usage: ((SessionUsage) -> Void)? = nil, graph: ((ExecutionGraphNode) -> Void)? = nil, graphInput: String? = nil, configuredModel: String? = nil,
-                images: AgentImageCache? = nil, imageRoot: URL? = nil, imageEntry: ((LogEntry) -> Void)? = nil, maximumLineBytes: Int = CLIStreamParser.maximumLineBytes) {
+                images: AgentImageCache? = nil, imageRoot: URL? = nil, imageEntry: ((LogEntry) -> Void)? = nil, maximumLineBytes: Int = CLIStreamParser.maximumLineBytes,
+                todos: ((TodoProgress) -> Void)? = nil, background: ((BackgroundWork) -> Void)? = nil, backgroundClock: @escaping () -> Date = Date.init,
+                savedTodos: TodoProgress? = nil, settled: (() -> Void)? = nil) {
         self.provider = provider; self.log = log; self.resume = resume
+        self.todos = provider == "claude" ? todos : nil; self.background = provider == "claude" ? background : nil
+        todoTracker = TodoProgressTracker(progress: savedTodos); self.settled = settled
+        backgroundTracker = BackgroundTaskTracker(clock: backgroundClock)
         self.imageCache = images; self.imageRoot = imageRoot; self.imageEntry = imageEntry; self.maximumLineBytes = maximumLineBytes
         lines = LineSplitter(maximumLineBytes: maximumLineBytes)
         self.activityNamespace = activityNamespace; self.activity = activity; self.control = control; self.result = result
@@ -303,6 +321,8 @@ public final class CLIStreamParser {
     /// Called once after draining stdout and settling tools, before the runner
     /// publishes its terminal status. Child turns never invoke this themselves.
     public func finishGraph(state: String) { graphTracker?.finish(state: state) }
+    /// The process ended: a background task the CLI never reported ending is `unknown`.
+    public func finishBackground() { if let background, let work = backgroundTracker.finish() { background(work) } }
     /// The Codex root thread once `thread.started` named it.
     var codexRootThread: String? { graphTracker?.codexRootThread }
     /// Subagents read from Codex's own session records.
@@ -343,6 +363,8 @@ public final class CLIStreamParser {
         let claudeChild = provider == "claude" && ExecutionGraphTracker.parentToolID(value) != nil
         if !claudeChild { usageTracker.consume(value) }
         graphTracker?.consume(value)
+        if let todos, let progress = todoTracker.consume(value) { todos(progress) }
+        if let background, let work = backgroundTracker.consume(value) { background(work) }
         switch provider {
         case "claude":
             if ["control_request", "control_response", "control_cancel_request"].contains(type) {
@@ -352,6 +374,8 @@ public final class CLIStreamParser {
             if !claudeChild { resumeIfValid(value["session_id"]) }
             if type == "system", value["subtype"] as? String == "permission_denied" {
                 tool(id: value["tool_use_id"] as? String, name: value["tool_name"] as? String, state: "error", output: errorText(value["message"], fallback: "Claude 권한 규칙 또는 선택한 모드에서 거부했습니다."))
+            } else if type == "system", value["subtype"] as? String == "session_state_changed" {
+                if value["state"] as? String == "idle" { settled?() }
             } else if type == "system", value["subtype"] as? String == "compact_boundary" {
                 if !claudeChild { log("system", ContextCompaction.title + " · " + ContextCompaction.claudeSummary(value["compact_metadata"])) }
             } else if type == "assistant", let message = value["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
@@ -374,12 +398,15 @@ public final class CLIStreamParser {
             } else if type == "result" {
                 guard !claudeChild else { return }
                 // Not this request's result: see `ClaudeStream.isNotificationResult`.
-                guard !ClaudeStream.isNotificationResult(value) else { return }
-                if value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error") {
+                guard !ClaudeStream.isNotificationResult(value) else { settled?(); return }
+                if interruptedResultExpected, value["subtype"] as? String == "error_during_execution" {
+                    // The user cancelled the plan; the CLI reports its own interruption.
+                } else if value["is_error"] as? Bool == true || (value["subtype"] as? String ?? "").hasPrefix("error") {
                     failed = true
                     let errors = (value["errors"] as? [String])?.joined(separator: "\n")
                     log("error", errors?.isEmpty == false ? errors! : errorText(value["result"], fallback: "Claude 실행 중 오류가 발생했습니다."))
                 } else if !assistantSeen, let text = value["result"] as? String { emitUnique(text, id: "result") }
+                if let background, let work = backgroundTracker.turnEnded() { background(work) }
                 turn("Claude 응답 마무리 중")
                 result?()
             }

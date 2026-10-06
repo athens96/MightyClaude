@@ -14,15 +14,22 @@ public struct ToolPermissionRequest: Codable, Sendable, Equatable, Identifiable 
     public var state: String
     public var canAllow: Bool
     public var canAnswerQuestions: Bool
+    /// An ExitPlanMode request the plan answers (`answerPlan`) can settle.
+    public var canAnswerPlan: Bool
+    /// ISO 8601, when the run's channel received the request.
+    public var receivedAt: String?
     public var questionnaire: UserQuestionnaire? { toolName == "AskUserQuestion" ? UserQuestionnaire.parse(inputJSON: inputJSON) : nil }
+    /// The Markdown plan of an ExitPlanMode request.
+    public var plan: String? { toolName == ClaudePlanMode.toolName ? ClaudePlanMode.plan(inputJSON: inputJSON) : nil }
 
-    public init(id: String, runId: String, toolUseId: String, toolName: String, inputJSON: String, summary: String, reason: String? = nil, blockedPath: String? = nil, state: String = "pending", canAllow: Bool = true, canAnswerQuestions: Bool = false) {
+    public init(id: String, runId: String, toolUseId: String, toolName: String, inputJSON: String, summary: String, reason: String? = nil, blockedPath: String? = nil, state: String = "pending", canAllow: Bool = true, canAnswerQuestions: Bool = false, canAnswerPlan: Bool = false, receivedAt: String? = nil) {
         self.id = id; self.runId = runId; self.toolUseId = toolUseId
         self.toolName = toolName; self.inputJSON = inputJSON; self.summary = summary
         self.reason = reason; self.blockedPath = blockedPath; self.state = state; self.canAllow = canAllow; self.canAnswerQuestions = canAnswerQuestions
+        self.canAnswerPlan = canAnswerPlan; self.receivedAt = receivedAt
     }
     private enum CodingKeys: String, CodingKey {
-        case id, runId, toolUseId, toolName, inputJSON, summary, reason, blockedPath, state, canAllow, canAnswerQuestions
+        case id, runId, toolUseId, toolName, inputJSON, summary, reason, blockedPath, state, canAllow, canAnswerQuestions, canAnswerPlan, receivedAt
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -32,13 +39,16 @@ public struct ToolPermissionRequest: Codable, Sendable, Equatable, Identifiable 
         reason = try c.decodeIfPresent(String.self, forKey: .reason); blockedPath = try c.decodeIfPresent(String.self, forKey: .blockedPath)
         state = try c.decode(String.self, forKey: .state); canAllow = try c.decode(Bool.self, forKey: .canAllow)
         canAnswerQuestions = try c.decodeIfPresent(Bool.self, forKey: .canAnswerQuestions) ?? false
+        canAnswerPlan = try c.decodeIfPresent(Bool.self, forKey: .canAnswerPlan) ?? false
+        receivedAt = try c.decodeIfPresent(String.self, forKey: .receivedAt)
     }
 
 }
 
 /// Claude Code's supported SDK stdio protocol. Only `can_use_tool` asks reach
 /// this surface: the CLI evaluates configured denies and modes before asking.
-/// No settings updates, persistent rules or mode changes are ever returned.
+/// No settings updates or persistent rules are ever returned; the only mode
+/// change is the session-only `setMode` of an approved plan (`answerPlan`).
 /// All methods run on the owning ProcessRunner actor (or synchronously in tests).
 final class ClaudePermissionChannel {
     static let maximumInputBytes = 65_536
@@ -52,15 +62,23 @@ final class ClaudePermissionChannel {
     private let activity: (ToolPermissionRequest, String) -> Void
     private let warning: (String) -> Void
     private let fail: (String) -> Void
+    private let planRecorded: (PlanRecord) -> Void
+    private let clock: () -> Date
+    /// The pane's stored permission mode, which an approved plan never goes below.
+    private let paneMode: String
     private var pending: [String: Pending] = [:]
     private var seen = Set<String>()
     private var closed = false
     private(set) var initialized = false
     private(set) var failed = false
 
-    init(runId: String, prompt: Data, write: @escaping (Data) -> Void, emit: @escaping (ToolPermissionRequest) -> Void, activity: @escaping (ToolPermissionRequest, String) -> Void, warning: @escaping (String) -> Void, fail: @escaping (String) -> Void) {
+    /// `plan` receives every settled ExitPlanMode request: answered, or
+    /// cancelled because the CLI withdrew it or the run ended.
+    init(runId: String, prompt: Data, write: @escaping (Data) -> Void, emit: @escaping (ToolPermissionRequest) -> Void, activity: @escaping (ToolPermissionRequest, String) -> Void, warning: @escaping (String) -> Void, fail: @escaping (String) -> Void,
+         plan: @escaping (PlanRecord) -> Void = { _ in }, clock: @escaping () -> Date = Date.init, paneMode: String = "plan") {
         self.runId = runId; self.prompt = prompt; self.write = write; self.emit = emit
         self.activity = activity; self.warning = warning; self.fail = fail
+        self.planRecorded = plan; self.clock = clock; self.paneMode = paneMode
     }
 
     func start() {
@@ -110,6 +128,12 @@ final class ClaudePermissionChannel {
         }
         guard pending.count < Self.maximumPending else { deny(id, toolUseId: toolUseId, message: "Too many pending permission requests."); warning("대기 중인 도구 승인 요청이 16개를 넘어 추가 요청을 거부했습니다."); return }
         guard let display = try? Self.inputDisplay(input), display.utf8.count <= Self.maximumInputBytes else {
+            if toolName == ClaudePlanMode.toolName {
+                // A plan the card cannot show whole is never approvable; Claude is asked for a shorter one.
+                deny(id, toolUseId: toolUseId, message: ClaudePlanMode.tooLongMessage); warning(L("plan.warning.tooLong"))
+                if let plan = ClaudePlanMode.plan(input: input) { recordCancelled(id, plan: plan, receivedAt: nil) }
+                return
+            }
             deny(id, toolUseId: toolUseId, message: "Tool input exceeds the host's complete-display limit; permission denied.")
             warning("도구 인자가 64 KiB 표시 제한을 넘어 승인하지 않았습니다. 전체 내용을 표시할 수 없는 요청은 허용하지 않습니다."); return
         }
@@ -118,13 +142,15 @@ final class ClaudePermissionChannel {
         let originalPath = request["blocked_path"] as? String
         let completeMetadata = details.utf8.count <= 8_192 && (originalPath?.utf8.count ?? 0) <= 8_192
         let canAnswerQuestions = toolName == "AskUserQuestion" && completeMetadata && UserQuestionnaire.parse(inputJSON: display) != nil
+        let canAnswerPlan = toolName == ClaudePlanMode.toolName && completeMetadata && ClaudePlanMode.plan(input: input) != nil
         var reason = ActivitySupport.clean(details, maximumBytes: 8_192)
-        if interaction && !canAnswerQuestions { reason += (reason.isEmpty ? "" : "\n\n") + "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다." }
+        if interaction && !canAnswerQuestions && !canAnswerPlan { reason += (reason.isEmpty ? "" : "\n\n") + "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다." }
         if !completeMetadata { reason += "\n\n승인 설명이 표시 한도를 넘어 허용할 수 없습니다." }
         let value = ToolPermissionRequest(id: id, runId: runId, toolUseId: toolUseId,
             toolName: ActivitySupport.clean(toolName, maximumBytes: 256, singleLine: true), inputJSON: display,
             summary: ActivitySupport.summary(tool: toolName, input: input), reason: reason.isEmpty ? nil : reason,
-            blockedPath: originalPath.map { ActivitySupport.clean($0, maximumBytes: 8_192) }, canAllow: !interaction && completeMetadata, canAnswerQuestions: canAnswerQuestions)
+            blockedPath: originalPath.map { ActivitySupport.clean($0, maximumBytes: 8_192) }, canAllow: !interaction && completeMetadata, canAnswerQuestions: canAnswerQuestions,
+            canAnswerPlan: canAnswerPlan, receivedAt: ClaudePlanMode.timestamp(clock()))
         pending[id] = Pending(display: value, input: input)
         activity(value, "waiting"); emit(value)
     }
@@ -139,6 +165,8 @@ final class ClaudePermissionChannel {
         else { deny(requestId, toolUseId: request.display.toolUseId, message: "The user denied this tool request in Mighty Claude.") }
         var display = request.display; display.state = allow ? "allowed" : "denied"
         activity(display, allow ? "running" : "error"); emit(display)
+        // A plan denied from a card that cannot answer plans is still kept.
+        if !allow, display.canAnswerPlan, let plan = ClaudePlanMode.plan(input: request.input) { recordCancelled(requestId, plan: plan, receivedAt: display.receivedAt) }
     }
 
     func answerQuestions(requestId: String, answers: [String: UserQuestionAnswer]) throws {
@@ -159,14 +187,38 @@ final class ClaudePermissionChannel {
         activity(display, "running"); emit(display)
     }
 
+    /// Answers one pending ExitPlanMode request. An approval switches the
+    /// CLI session's mode; revise sends the feedback back as the denial.
+    @discardableResult func answerPlan(requestId: String, decision: PlanDecision) throws -> PlanRecord {
+        guard !closed, let request = pending[requestId] else { throw MightyError(L("plan.error.settled")) }
+        guard request.display.canAnswerPlan, let plan = ClaudePlanMode.plan(input: request.input) else { throw MightyError(L("plan.error.notPlan")) }
+        // Validate first; an empty revise leaves the plan answerable.
+        let response = try ClaudePlanMode.response(for: decision, toolUseId: request.display.toolUseId, paneMode: paneMode)
+        pending.removeValue(forKey: requestId)
+        success(requestId, result: response)
+        let approved = decision.outcome.paneMode != nil
+        var display = request.display; display.state = approved ? "allowed" : "denied"
+        activity(display, approved ? "running" : "error"); emit(display)
+        let record = ClaudePlanMode.record(requestId: requestId, runId: runId, plan: plan, receivedAt: request.display.receivedAt ?? ClaudePlanMode.timestamp(clock()),
+                                           decidedAt: ClaudePlanMode.timestamp(clock()), decision: decision)
+        planRecorded(record)
+        return record
+    }
+
     func cancelAll() {
         guard !closed else { return }; closed = true
         for id in Array(pending.keys) { settle(id, state: "cancelled", activityState: "stopped") }
     }
 
     private func settle(_ id: String, state: String, activityState: String) {
-        guard var value = pending.removeValue(forKey: id)?.display else { return }
+        guard let request = pending.removeValue(forKey: id) else { return }
+        var value = request.display
         value.state = state; activity(value, activityState); emit(value)
+        if value.canAnswerPlan, let plan = ClaudePlanMode.plan(input: request.input) { recordCancelled(id, plan: plan, receivedAt: value.receivedAt) }
+    }
+    private func recordCancelled(_ id: String, plan: String, receivedAt: String?) {
+        let now = ClaudePlanMode.timestamp(clock())
+        planRecorded(ClaudePlanMode.record(requestId: id, runId: runId, plan: plan, receivedAt: receivedAt ?? now, decidedAt: now, decision: .cancel))
     }
     private func failClosed(_ message: String) { failed = true; cancelAll(); fail(message) }
     private func success(_ id: String, result: [String: Any]) { send(["type": "control_response", "response": ["subtype": "success", "request_id": id, "response": result]]) }

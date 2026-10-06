@@ -207,7 +207,8 @@ public actor ProviderService {
         let phaseModels = phaseModels ?? request.phaseModels
         switch request.provider {
         case "claude":
-            let mode = s.permissionMode == "fullAccess" ? "bypassPermissions" : s.permissionMode
+            let launched = request.permissionModeOverride ?? s.permissionMode
+            let mode = launched == "fullAccess" ? "bypassPermissions" : launched
             var args = ["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", allowPermissionPrompts ? "host" : "none", "--plugin-dir", pluginDirectory.path, "--permission-mode", mode]
             if allowPermissionPrompts { args += ["--input-format", "stream-json", "--permission-prompt-tool", "stdio"] }
             // Session-level model selection wins over phase-level config.
