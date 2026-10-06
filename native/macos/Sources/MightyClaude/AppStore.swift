@@ -969,6 +969,24 @@ final class AppStore: ObservableObject {
 
     func toggleSidebar() { setSidebarCollapsed(!sidebarCollapsed) }
 
+    /// Where the sidebar border's drag left it (`SidebarResizeHandle`): a width is saved, a fold
+    /// folds the sidebar and keeps the saved width, so unfolding brings back the one it had.
+    func applySidebarDrag(_ result: SidebarFold.DragResult) {
+        switch result {
+        case .fold: setSidebarCollapsed(true)
+        case .width(let width):
+            if let width = SidebarFold.widthToSave(dragged: width, saved: snapshot.sidebarWidth) { snapshot.sidebarWidth = width }
+        }
+    }
+
+    /// A double-click on the sidebar border: back to the default width.
+    func resetSidebarWidth() { applySidebarDrag(.width(SidebarFold.defaultWidth)) }
+
+    /// The sidebar border's accessibility increment (+) or decrement (−); it never folds.
+    func stepSidebarWidth(_ direction: Double) {
+        applySidebarDrag(.width(SidebarFold.clamp(snapshot.sidebarWidth + direction * SidebarFold.step)))
+    }
+
     func receivePermissionEvent(_ event: RunEvent) {
         guard !ending else { return }
         if event.type == "status", let status = event.status, ["running", "completed", "error", "stopped"].contains(status) {
@@ -1241,8 +1259,10 @@ final class AppStore: ObservableObject {
             // same usageReset key.
             let usageReset = await AccountUsageStatusController.runUsageResetSmoke()
             result["usageReset"] = usageReset
+            let sidebarResize = await runSidebarResizeSmoke(window: window)
+            result["sidebarResize"] = sidebarResize
             result["passed"] = completedCorrectly && settingsRestored && window != nil
-                && (usageReset["passed"] as? Bool == true)
+                && (usageReset["passed"] as? Bool == true) && (sidebarResize["passed"] as? Bool == true)
             result["status"] = snapshot.sessions.first { $0.id == sessionId }?.status ?? "missing"
         } catch {
             result["error"] = error.localizedDescription
@@ -1254,6 +1274,53 @@ final class AppStore: ObservableObject {
             try data.write(to: dataDirectory.appendingPathComponent("smoke-result.json"), options: .atomic)
         } catch { self.error = "스모크 결과 저장 실패: \(error.localizedDescription)" }
         if arguments.contains("--smoke-exit") { NSApp.terminate(nil) }
+    }
+
+    /// The sidebar border through the calls `SidebarResizeHandle` makes (no mouse): the handle is in the
+    /// window, a drag's width is applied and saved, a drag past the fold threshold folds and keeps the
+    /// saved width, and a double-click puts back the default. The width and the fold are restored after.
+    private func runSidebarResizeSmoke(window: NSWindow?) async -> [String: Any] {
+        let originalWidth = snapshot.sidebarWidth, originalCollapsed = sidebarCollapsed
+        var result: [String: Any] = ["passed": false]
+        func savedState() async throws -> AppSnapshot {
+            try await flush()
+            return try await StateRepository(directory: dataDirectory, legacyStateURL: nil).load()
+        }
+        do {
+            setSidebarCollapsed(false)
+            resetSidebarWidth()
+            try await Task.sleep(for: .milliseconds(300))
+            var tree: [[String: Any]] = []
+            let handlePresent = window.flatMap { smokeAccessibilityElement($0, identifier: "sidebar-resize", tree: &tree) } != nil
+            result["handlePresent"] = handlePresent
+
+            let start = snapshot.sidebarWidth
+            applySidebarDrag(SidebarFold.drag(startWidth: start, translation: 60))
+            let widened = try await savedState()
+            let widthSaved = snapshot.sidebarWidth == start + 60 && widened.sidebarWidth == start + 60
+            applySidebarDrag(SidebarFold.drag(startWidth: snapshot.sidebarWidth, translation: 1_000))
+            let clamped = snapshot.sidebarWidth == SidebarFold.maximumWidth
+            result["widthSaved"] = widthSaved; result["clampedToMaximum"] = clamped
+
+            let beforeFold = snapshot.sidebarWidth
+            applySidebarDrag(SidebarFold.drag(startWidth: beforeFold, translation: SidebarFold.foldThreshold - beforeFold - 1))
+            let folded = try await savedState()
+            let foldKeptWidth = sidebarCollapsed && folded.sidebarCollapsed == true && snapshot.sidebarWidth == beforeFold && folded.sidebarWidth == beforeFold
+            result["foldByDrag"] = foldKeptWidth
+
+            setSidebarCollapsed(false)
+            resetSidebarWidth()
+            let reset = try await savedState()
+            let resetToDefault = snapshot.sidebarWidth == SidebarFold.defaultWidth && reset.sidebarWidth == SidebarFold.defaultWidth
+            result["doubleClickReset"] = resetToDefault
+
+            result["passed"] = handlePresent && widthSaved && clamped && foldKeptWidth && resetToDefault
+        } catch { result["error"] = error.localizedDescription }
+        snapshot.sidebarWidth = originalWidth
+        setSidebarCollapsed(originalCollapsed)
+        do { try await flush() } catch { result["restoreError"] = error.localizedDescription }
+        result["restored"] = snapshot.sidebarWidth == originalWidth && sidebarCollapsed == originalCollapsed
+        return result
     }
 
     func waitForSmoke(timeout: TimeInterval, predicate: () -> Bool) async throws {

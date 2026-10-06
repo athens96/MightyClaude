@@ -1649,6 +1649,8 @@
   "sidebar.resize": "调整侧边栏大小",
   "sidebar.collapse": "收起侧边栏",
   "sidebar.expand": "展开侧边栏",
+  "sidebar.resizeValue": "{value} 点",
+  "sidebar.resizeTooltip": "拖动以调整宽度 · 双击恢复默认宽度 · 拖到底即可隐藏",
   "terminal.accessibility": "交互式终端",
   "terminal.exited": "Shell 已退出（{code}）。",
   "terminal.failed": "无法启动终端。",

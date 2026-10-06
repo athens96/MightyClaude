@@ -105,10 +105,12 @@ public static class DesignMetrics
     /// <summary>Layout sizes (doc §4 "layout sizes").</summary>
     public static class Layout
     {
-        /// <summary>Sidebar width bounds and default (M/WorkspaceView.swift:14, 129, 532).</summary>
+        /// <summary>Sidebar width bounds and default (M/Models.swift SidebarFold).</summary>
         public const double SidebarMin = 210;
         public const double SidebarDefault = 252;
         public const double SidebarMax = 360;
+        /// <summary>A sidebar grip drag that would leave the sidebar narrower than this folds it away (M/Models.swift SidebarFold.foldThreshold).</summary>
+        public const double SidebarFoldThreshold = 150;
         /// <summary>The pane dock's outer inset (M/PaneDockView.swift:62-63).</summary>
         public const double DockInset = 16;
         /// <summary>Header heights: pane header, tab strip, diagram block head, file preview head.</summary>

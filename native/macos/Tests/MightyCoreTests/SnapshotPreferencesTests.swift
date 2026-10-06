@@ -83,19 +83,57 @@ struct SnapshotPreferencesTests {
             #expect(restored.sidebarCollapsed == collapsed)
             #expect(restored.sidebarWidth == 310)
         }
-        // The measured width is saved only while open and clear of the minimum a closing drag passes through.
-        #expect(SidebarFold.widthToSave(measured: 280, saved: 252, collapsed: false) == 280)
-        #expect(SidebarFold.widthToSave(measured: 280, saved: 252, collapsed: true) == nil)
-        #expect(SidebarFold.widthToSave(measured: SidebarFold.minimumWidth, saved: 300, collapsed: false) == nil)
-        #expect(SidebarFold.widthToSave(measured: SidebarFold.minimumWidth + 1, saved: 300, collapsed: false) == nil)
-        #expect(SidebarFold.widthToSave(measured: 0, saved: 300, collapsed: false) == nil)
-        #expect(SidebarFold.widthToSave(measured: 300.5, saved: 300, collapsed: false) == nil)
+        // A drag's width is saved inside the bounds, and not for a move of a point or less.
+        #expect(SidebarFold.widthToSave(dragged: 280, saved: 252) == 280)
+        #expect(SidebarFold.widthToSave(dragged: 300.5, saved: 300) == nil)
+        #expect(SidebarFold.widthToSave(dragged: 500, saved: 300) == SidebarFold.maximumWidth)
+        #expect(SidebarFold.widthToSave(dragged: 180, saved: 300) == SidebarFold.minimumWidth)
+        #expect(SidebarFold.widthToSave(dragged: 180, saved: SidebarFold.minimumWidth) == nil)
         // Only a JSON boolean counts; anything else reads as open.
         var object = try #require(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
         for invalid: Any in [1, "true", NSNull()] {
             object["sidebarCollapsed"] = invalid
             #expect(StateRepository.decodeSnapshot(try JSONSerialization.data(withJSONObject: object)).sidebarCollapsed == nil)
         }
+    }
+
+    @Test func sidebarWidthNormalizesIntoTheContractBounds() throws {
+        func normalized(_ width: Double) -> Double { StateRepository.normalize(AppSnapshot(sidebarWidth: width), restoring: false).sidebarWidth }
+        #expect(normalized(205) == 210)
+        #expect(normalized(200) == 210)
+        #expect(normalized(380) == 360)
+        #expect(normalized(400) == 360)
+        #expect(normalized(300) == 300)
+        #expect(normalized(.nan) == 252)
+        #expect(normalized(.infinity) == 252)
+        // A state without the field starts at the default.
+        #expect(StateRepository.decodeSnapshot(Data(#"{"version":1,"workspaces":[],"sessions":[]}"#.utf8)).sidebarWidth == SidebarFold.defaultWidth)
+        #expect(AppSnapshot().sidebarWidth == SidebarFold.defaultWidth)
+        // The bounds and the fold threshold are the design contract's, which Windows reads too.
+        let layout = try #require((try DesignTokenParityTests.load()["metrics"] as? [String: Any])?["layout"] as? [String: Double])
+        #expect(layout["sidebarMin"] == SidebarFold.minimumWidth)
+        #expect(layout["sidebarDefault"] == SidebarFold.defaultWidth)
+        #expect(layout["sidebarMax"] == SidebarFold.maximumWidth)
+        #expect(layout["sidebarFoldThreshold"] == SidebarFold.foldThreshold)
+    }
+
+    @Test func sidebarBorderDragClampsOrFolds() {
+        // Inside the bounds the border follows the pointer from where the drag began.
+        #expect(SidebarFold.drag(startWidth: 252, translation: 40) == .width(292))
+        #expect(SidebarFold.drag(startWidth: 300, translation: -30) == .width(270))
+        // Past the bounds it stops at them.
+        #expect(SidebarFold.drag(startWidth: 300, translation: 200) == .width(SidebarFold.maximumWidth))
+        #expect(SidebarFold.drag(startWidth: 252, translation: -60) == .width(SidebarFold.minimumWidth))
+        // Narrower than the fold threshold folds; the threshold itself still stays open at the minimum.
+        #expect(SidebarFold.foldThreshold < SidebarFold.minimumWidth)
+        #expect(SidebarFold.drag(startWidth: 252, translation: SidebarFold.foldThreshold - 252) == .width(SidebarFold.minimumWidth))
+        #expect(SidebarFold.drag(startWidth: 252, translation: SidebarFold.foldThreshold - 252 - 0.5) == .fold)
+        #expect(SidebarFold.drag(startWidth: 360, translation: -360) == .fold)
+        // The double-click width and the clamp.
+        #expect(SidebarFold.defaultWidth == 252)
+        #expect(SidebarFold.clamp(SidebarFold.defaultWidth) == 252)
+        #expect(SidebarFold.clamp(-.infinity) == SidebarFold.defaultWidth)
+        #expect(SidebarFold.clamp(SidebarFold.minimumWidth - SidebarFold.step) == SidebarFold.minimumWidth)
     }
 
     @Test func numberedTitleStrippingOnlyTouchesGeneratedNames() {

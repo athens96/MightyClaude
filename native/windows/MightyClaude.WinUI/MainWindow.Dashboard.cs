@@ -72,15 +72,15 @@ public sealed partial class MainWindow
         // Opacity 0 keeps the hit area and hides the stock grey Thumb bar (and with it the focus rect),
         // so the divider itself turns accent while the grip is hovered, dragged or keyboard-focused.
         var grip = new Thumb { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Opacity = 0, IsTabStop = true };
-        AutomationProperties.SetName(grip, Locale.Get("sidebar.resize")); AutomationProperties.SetAutomationId(grip, "sidebar-resize");
+        AutomationProperties.SetName(grip, Locale.Get("sidebar.resize")); AutomationProperties.SetAutomationId(grip, "sidebar-resize"); ToolTipService.SetToolTip(grip, Locale.Get("sidebar.resizeTooltip"));
         var gripHost = sidebarGripHost = new ResizeCursorHost(grip, horizontal: true) { Width = 8, HorizontalAlignment = HorizontalAlignment.Right, Visibility = sidebarSurface.Visibility };
         Grid.SetRowSpan(gripHost, 3); root.Children.Add(gripHost);
         var gripHovered = false;
         void ShowGrip() => sidebarSurface.BorderBrush = gripHovered || grip.IsDragging || grip.FocusState == FocusState.Keyboard ? brushes.Brush(DesignToken.Accent) : SidebarEdge;
         grip.PointerEntered += (_, _) => { gripHovered = true; ShowGrip(); }; grip.PointerExited += (_, _) => { gripHovered = false; ShowGrip(); };
         grip.GotFocus += (_, _) => ShowGrip(); grip.LostFocus += (_, _) => ShowGrip(); grip.DragCompleted += (_, _) => ShowGrip();
-        grip.DragDelta += (_, args) => root.ColumnDefinitions[0].Width = new(Math.Clamp(root.ColumnDefinitions[0].Width.Value + args.HorizontalChange, DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax));
-        grip.DragCompleted += async (_, args) => { var width = args.Canceled ? service.Snapshot.SidebarWidth : root.ColumnDefinitions[0].Width.Value; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width })); root.ColumnDefinitions[0].Width = new(width); };
+        grip.DragDelta += async (_, args) => await SidebarGripDragged(args.HorizontalChange);
+        grip.DragCompleted += async (_, args) => await SidebarGripReleased(args.Canceled);
         grip.DoubleTapped += async (_, args) => { args.Handled = true; await Act(() => service.UpdateAsync(s => s with { SidebarWidth = DesignMetrics.Layout.SidebarDefault })); root.ColumnDefinitions[0].Width = new(DesignMetrics.Layout.SidebarDefault); };
         grip.KeyDown += async (_, args) =>
         {
@@ -89,6 +89,32 @@ public sealed partial class MainWindow
             await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width })); root.ColumnDefinitions[0].Width = new(width);
         };
     }
+    /// <summary>
+    /// The sidebar grip moved <paramref name="change"/> past where the column ends now (M/WorkspaceView.swift
+    /// SidebarResizeHandle): the column follows inside its bounds, and a width under the fold threshold folds
+    /// the sidebar instead. A drag saves only when it is let go, so the saved width is still the one from
+    /// before the drag, and unfolding brings that back. The sidebar fold smoke drives this too.
+    /// </summary>
+    private Task SidebarGripDragged(double change)
+    {
+        // The surface hides with the fold at once (ApplySidebarCollapsed); reading it spares a snapshot copy per pointer move.
+        if (sidebarSurface.Visibility == Visibility.Collapsed) return Task.CompletedTask;
+        var column = root.ColumnDefinitions[0];
+        var proposed = column.Width.Value + change;
+        if (proposed < DesignMetrics.Layout.SidebarFoldThreshold) return Act(() => SetSidebarCollapsed(true));
+        column.Width = new(Math.Clamp(proposed, DesignMetrics.Layout.SidebarMin, DesignMetrics.Layout.SidebarMax));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The sidebar grip let go: the width it reached is saved, a canceled drag goes back to the saved one, and after a fold by drag nothing is saved.</summary>
+    private async Task SidebarGripReleased(bool canceled)
+    {
+        if (service.Snapshot.SidebarCollapsed) return;
+        var width = canceled ? service.Snapshot.SidebarWidth : root.ColumnDefinitions[0].Width.Value;
+        await Act(() => service.UpdateAsync(s => s with { SidebarWidth = width }));
+        root.ColumnDefinitions[0].Width = new(width);
+    }
+
     private WorkDashboard.Attention DashboardAttention(string id) => views.TryGetValue(id, out var pane) ? pane.DashboardAttention : new();
     private void HideDashboard() { showsDashboard = false; RefreshDashboardEntry(); StopDashboardGit(); dashboardFingerprint = null; if (dashboard is not null) dashboard.Visibility = Visibility.Collapsed; panes.Visibility = Visibility.Visible; RefreshWorkspaceHeader(); }
     /// <summary>The dashboard rows' marks with the pane each draws, redrawn for the theme on every render (the content is kept).</summary>

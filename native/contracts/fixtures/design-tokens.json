@@ -378,6 +378,7 @@
       "sidebarMin": 210,
       "sidebarDefault": 252,
       "sidebarMax": 360,
+      "sidebarFoldThreshold": 150,
       "dockInset": 16,
       "paneHeader": 34,
       "tabStrip": 38,

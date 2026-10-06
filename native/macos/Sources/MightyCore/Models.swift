@@ -390,7 +390,7 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     /// A run that lost its Claude/Codex sign-in starts the sign-in by itself.
     /// nil (older state) means on, the default.
     public var autoLoginCLIs: Bool?
-    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = 252, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil) {
+    public init(version: Int = 1, workspaces: [Workspace] = [], sessions: [RunSession] = [], activeWorkspaceId: String? = nil, activeSessionId: String? = nil, layout: String = "grid", theme: String = "dark", sidebarWidth: Double = SidebarFold.defaultWidth, paneLayouts: [String: PaneLayoutNode]? = nil, paneLayoutModes: [String: String]? = nil, paneLayoutActiveSessionIds: [String: String]? = nil, autoUpdateCLIs: Bool? = nil, expandedWorkspaceIds: [String]? = nil, mobileRemote: MobileRemoteSettings? = nil, modelDefaults: ModelDefaultsConfig? = nil, phaseModels: PhaseModelHardcodedConfig? = nil, autoUpdatePlugins: Bool? = nil, sidebarCollapsed: Bool? = nil, autoLoginCLIs: Bool? = nil) {
         self.autoUpdatePlugins = autoUpdatePlugins
         self.sidebarCollapsed = sidebarCollapsed
         self.autoLoginCLIs = autoLoginCLIs
@@ -403,17 +403,42 @@ public struct AppSnapshot: Codable, Sendable, Equatable {
     }
 }
 
-/// What the sidebar's measured width may change while it is dragged or folded.
+/// The sidebar's width rules: its bounds, the border drag that resizes or folds it, and what is saved.
+/// The numbers are the design contract's `metrics.layout` (`sidebarMin`, `sidebarDefault`,
+/// `sidebarMax`, `sidebarFoldThreshold`), which Windows reads as `DesignMetrics.Layout`.
 public enum SidebarFold {
-    /// The split view's narrowest open sidebar.
+    /// The narrowest open sidebar.
     public static let minimumWidth: Double = 210
+    /// A fresh sidebar's width, and the one a double-click on its border puts back.
+    public static let defaultWidth: Double = 252
+    /// The widest sidebar.
+    public static let maximumWidth: Double = 360
+    /// A border drag that would leave the sidebar narrower than this folds it away instead.
+    public static let foldThreshold: Double = 150
+    /// One accessibility increment or decrement of the border.
+    public static let step: Double = 10
 
-    /// The width to save for a measured sidebar, or nil to keep the saved one: never while folded,
-    /// never within a point of the minimum (a drag that closes the sidebar passes through it, and the
-    /// fold must not leave that behind), and never for a move of a point or less.
-    public static func widthToSave(measured: Double, saved: Double, collapsed: Bool) -> Double? {
-        guard !collapsed, measured > minimumWidth + 1, abs(saved - measured) > 1 else { return nil }
-        return measured
+    /// Where a border drag leaves the sidebar: open at a width inside the bounds, or folded.
+    public enum DragResult: Equatable, Sendable {
+        case width(Double)
+        case fold
+    }
+
+    /// A width inside the bounds; anything not finite is the default.
+    public static func clamp(_ width: Double) -> Double {
+        width.isFinite ? min(maximumWidth, max(minimumWidth, width)) : defaultWidth
+    }
+
+    /// The border dragged `translation` points (leading is negative) from a sidebar `startWidth` wide.
+    public static func drag(startWidth: Double, translation: Double) -> DragResult {
+        let proposed = startWidth + translation
+        return proposed < foldThreshold ? .fold : .width(clamp(proposed))
+    }
+
+    /// The width to save once a drag ends, or nil to keep the saved one: never for a move of a point or less.
+    public static func widthToSave(dragged: Double, saved: Double) -> Double? {
+        let width = clamp(dragged)
+        return abs(saved - width) > 1 ? width : nil
     }
 }
 
