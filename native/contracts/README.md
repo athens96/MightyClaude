@@ -118,12 +118,13 @@ that sandbox restriction; it is not a default. Claude maps `fullAccess` to
 `bypassPermissions`, and Gemini maps it to `yolo`. Their `manual` modes retain CLI
 permission rules and do not promise a read-only filesystem sandbox.
 
-The macOS local Claude runner explicitly opts into the SDK stdio approval
-channel. Ephemeral `permission` events carry the run/request/tool IDs and complete
+The local Claude runners (macOS, and Windows where the app shows the approval
+bar) explicitly opt into the SDK stdio approval channel. Ephemeral `permission` events carry the run/request/tool IDs and complete
 bounded input for an allow-once or deny response. These requests are not saved in
 workspace state. The runner defaults this channel off; metadata probes continue
 using `--permission-prompts none`.
-No persistent permission rule is created by an app approval.
+No persistent permission rule is created by an app approval; the only mode change
+an answer carries is the session-only `setMode` of an approved plan (below).
 
 Claude `auto` maps directly to `--permission-mode auto`, retaining the local
 stdio approval channel. Runtime advertisements include it only after discovery
@@ -198,9 +199,10 @@ capacity. Codex/Gemini cumulative result counters replace prior snapshots and do
 not imply current context size or a context percentage. Quota observations retain
 their separate `rateLimitsUpdatedAt`; ordinary output does not make them fresh.
 
-Windows does not advertise graph or permission-response support. Its Claude runner retains
-`--permission-prompts none`; interactive allow-once approval remains local macOS
-functionality, and saved permission settings never imply blanket approval.
+Windows Core launches Claude with `--permission-prompts host --permission-prompt-tool stdio`
+only when the local approval bar is present (`RunManager`'s `permissionRequested`);
+headless paths, such as metadata probes, keep `--permission-prompts none`. Saved
+permission settings never imply blanket approval.
 
 Snapshots also retain optional `paneLayoutModes` and `paneLayoutActiveSessionIds`
 dictionaries, keyed by workspace ID, so each workspace keeps its display mode
@@ -255,6 +257,72 @@ breadcrumbs plus made-up edge cases (NFD `또는`, trailing NEL/BOM, a combining
 mark after ` or `, CRLF, U+3000, a blank code span); `NextActionsTests` (Swift)
 `NextActionsVerification` (Windows Core) and `next-actions.test.ts` (jest) all
 read it and must agree with every case.
+
+## Claude plan mode (`fixtures/claude-plan-mode.json`)
+
+Claude Code ends plan mode with an `ExitPlanMode` `can_use_tool` request on the
+stdio approval channel; its `input` carries the Markdown `plan` (and
+`planFilePath`), both injected by the CLI from its plan file. The request keeps
+`canAllow: false` (the CLI marks it `requires_user_interaction`) and gains
+`canAnswerPlan` and `receivedAt`; `PlanApprovalRequest` is the typed view of a
+pending one. Its four answers are `control_response` bodies checked against the
+2.1.289 bundle's SDK permission-result schema:
+
+- approve (auto-edit / confirm-each): `{behavior: "allow", updatedInput: {},
+  updatedPermissions: [{type: "setMode", mode, destination: "session"}],
+  toolUseID}`, as the CLI's own "Yes" choices send it (an empty `updatedInput`
+  keeps the model's input; an echoed `plan` would count as a plan the user
+  edited). `mode` is the button's (`acceptEdits` / `default`) for a pane stored in
+  `plan`; for a pane stored in another mode (Claude planned on its own) it never
+  goes below that mode's CLI form: manual `default` < `acceptEdits` < `auto` <
+  fullAccess `bypassPermissions`. `destination: "session"` is never written to
+  settings files.
+- revise: `{behavior: "deny", message: "<fixed English lead-in>\n<feedback>",
+  toolUseID}`; Claude stays in plan mode and calls ExitPlanMode again.
+- cancel: `{behavior: "deny", message, interrupt: true, toolUseID}`; the run
+  ends `stopped`.
+
+A plan whose input passes the 64 KiB display bound is denied with a request for
+a shorter plan. Every settled plan (answered, denied from a generic card, too
+long, withdrawn by the CLI or still open when the run ends; all but answers count
+as cancelled) becomes a `PlanRecord` event (`type: "plan"`), sent after the reply
+is written. Panes keep the last 10 in `RunSession.planHistory` (plan text up to
+32 KiB, feedback up to 4 KiB, and 96 KiB in total: newest records stay whole,
+older ones keep their first 8 lines and are marked `planTruncated`; a damaged
+saved record is dropped alone). An approval sets the pane's own
+`settings.permissionMode` to `acceptEdits` or `manual` only when the pane was
+stored in `plan`. `StartRunRequest.permissionModeOverride` (`plan` only, Claude
+only, never saved or taken from the phone) starts one request in plan mode
+without touching the stored mode, for a guided plan style.
+
+`type: "todos"` carries `TodoProgress` (saved as `RunSession.todoProgress`):
+the main agent's TodoWrite list, or the same list built from TaskCreate (id from
+`tool_use_result.task.id` or the `Task #N created` text) and successful
+TaskUpdate calls (the CLI's own reader: input aliases, updates applied as called,
+an unknown id added with its subject or id). A resumed run continues the pane's
+saved list. Sub-agent frames are ignored.
+
+`type: "background"` carries `BackgroundWork` (saved as
+`RunSession.backgroundWork`, cleared when a run starts): tasks from the CLI's
+`system` events `task_started`, `task_updated`, `task_progress`,
+`task_notification` and `background_tasks_changed`, with `turnEnded` once the
+request's own `result` arrived (`waitingOnBackground`: turn done, tasks still
+running). Foreground tasks (`is_backgrounded: false`) and `ambient` ones stay out
+until moved to the background; a `task_started` arriving after the level event
+fills in the tool id and kind. A task still running when the process ends, or
+when a saved state is restored, is `unknown`.
+
+While such tasks run after the request's result, the runner keeps stdin and the
+approval channel open (with `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1`), so
+follow-up turns can still ask and new input joins the same process. It closes
+input at the next top-level `result` or `session_state_changed: idle` with no
+task running, or after 120 s of silence once the last task ended; the CLI's own
+background-wait ceiling is left at its default. Stopping the pane still ends the
+whole process group.
+
+The fixture holds request recognition, exact response bodies, checklist frames
+and background-event sequences; `ClaudePlanModeTests` (Swift) and
+`ClaudePlanModeVerification` (Windows Core) both read it.
 
 ## Model labels (`fixtures/model-labels.json`)
 

@@ -34,7 +34,17 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         internal readonly string ActivityId = Wire.Id();
         internal int ActivityBytes;
         internal volatile bool Finalizing, Finished;
+        // The user cancelled a plan: the run ends stopped however the CLI ends it.
+        internal volatile bool PlanCancelled;
+        // stdin and the approval channel close only once the request's own result is in and no background
+        // task runs, so follow-up turns can still ask and new input can join (macOS ManagedProcess.settleInput).
+        internal volatile bool TurnResultSeen;
+        internal long LastOutputTicks = Environment.TickCount64;
+        internal readonly object InputGate = new();
+        internal OutputParser? Parser;
     }
+    /// <summary>After the last background task ends, how long a silent CLI may keep stdin before the runner closes it.</summary>
+    public TimeSpan BackgroundIdleClose { get; set; } = TimeSpan.FromSeconds(120);
     public Func<StartRunRequest, Workspace, AgentIOBinding?>? AgentIOBindingFactory { get; set; }
     private readonly ConcurrentDictionary<string, Run> runs = [];
     private readonly object lifecycle = new();
@@ -94,6 +104,22 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         if (request.Kind != "shell" && MightyGraphSupport.Providers.Contains(request.Provider))
             tracker = new ExecutionGraphTracker(Wire.Id(), request.Input, request.Provider, PhaseModelPreferences.EffectiveModel(request), _ => Interlocked.Exchange(ref graphDirty, 1));
         run.Tracker = tracker;
+        // Claude's execution checklist and background tasks (ClaudePlanMode.cs).
+        var planGate = new object();
+        var todoTracker = new TodoProgressTracker(request.TodoProgress);
+        run.Parser = parser;
+        var backgroundTracker = new BackgroundTaskTracker();
+        void ReadPlanMode(System.Text.Json.JsonElement frame)
+        {
+            lock (planGate)
+            {
+                if (run.Finished) return;
+                if (todoTracker.Consume(frame) is { } progress) emit(new(request.SessionId, "todos", Todos: progress));
+                if (backgroundTracker.Consume(frame) is { } work) emit(new(request.SessionId, "background", Background: work));
+                if (frame.Text("type") == "result" && !ClaudeStream.IsNotificationResult(frame) && MetadataJson.Property(frame, "parent_tool_use_id").ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null
+                    && backgroundTracker.TurnEnded() is { } ended) emit(new(request.SessionId, "background", Background: ended));
+            }
+        }
         void ReadChildren(bool closing)
         {
             if (watcherDisabled || tracker is null || request.Provider != "codex" || codexHome is null) return;
@@ -115,6 +141,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
         void Finish(string state)
         {
             run.Finalizing = true; graphCancel.Cancel();
+            // The process ended: a background task the CLI never reported ending is unknown.
+            if (request.Provider == "claude" && request.Kind != "shell") lock (planGate) if (!run.Finished && backgroundTracker.Finish() is { } final) emit(new(request.SessionId, "background", Background: final));
             lock (graphGate)
             {
                 parser.Flush(); parser.FinishActivities(state == "stopped");
@@ -185,6 +213,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                 // Host prompts over stdio only where the approval bar exists.
                 interactive = permissionRequested is not null && request.Provider == "claude";
                 if (interactive) ProviderInput.HostPrompts(providerArguments);
+                // The CLI's authoritative "turn over, no background agent left" signal.
+                if (interactive) environment["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1";
                 arguments = command.Prefix.Concat(providerArguments);
             }
             token.ThrowIfCancellationRequested();
@@ -200,8 +230,12 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     value => { if (!run.Finished) permissionRequested!(value); },
                     (value, state) => parser.PermissionActivity(value, state),
                     message => Log(run, "system", message),
-                    message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); });
+                    message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); },
+                    record => { if (!run.Finished) emit(new(request.SessionId, "plan", Plan: record)); },
+                    paneMode: request.Settings!.PermissionMode);
             }
+            bool BackgroundRunning() { lock (planGate) return backgroundTracker.Work.Running.Count > 0; }
+            void SettleInput() { if (run.TurnResultSeen && !BackgroundRunning()) CloseChannel(run, child); }
             void Consume(string line)
             {
                 line = run.PaneBinding?.Redact(line) ?? line;
@@ -211,6 +245,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     tracker?.Consume(frame);
                     if (request.Provider == "claude")
                     {
+                        ReadPlanMode(frame);
                         if (frame.Text("type") == "result") run.AuthenticationFailure = CliAuthFailure.Claude(frame);
                         else if (CliAuthFailure.Claude(frame)) run.AuthenticationFailure = true;
                     }
@@ -255,9 +290,14 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     else if (CliAuthFailure.GeminiSucceeded(line)) run.AuthenticationFailure = false;
                 }
                 Consume(line);
-                // One-shot shutdown: EOF only after the CLI's own turn result,
-                // so an approval reply is still possible while the turn runs.
-                if (run.Permissions is not null && ClaudeStream.IsTurnResult(line)) CloseChannel(run, child);
+                // One-shot shutdown: EOF only after the CLI's own turn result, so an approval reply is still
+                // possible while the turn runs; background tasks still running keep it open longer.
+                Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64);
+                if (run.Permissions is not null && ClaudeStream.IsSettlePoint(line))
+                {
+                    if (ClaudeStream.IsTurnResult(line)) run.TurnResultSeen = true;
+                    SettleInput();
+                }
             }, token);
             var error = PumpAsync(child.Error, 1024 * 1024, line =>
             {
@@ -268,6 +308,21 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             if (interactive || codexApprovals)
             {
                 run.Permissions?.Start(); run.CodexPermissions?.Start();
+                if (interactive) _ = Task.Run(async () =>
+                {
+                    // Closes input once the CLI is silent for BackgroundIdleClose after its last background task ended
+                    // (a follow-up turn's own result or `session_state_changed: idle` normally closes it first).
+                    var idle = BackgroundIdleClose.TotalMilliseconds;
+                    try
+                    {
+                        while (run.Permissions is not null && !run.Finished && !token.IsCancellationRequested)
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(Math.Clamp(idle / 4, 50, 1000)), token);
+                            if (run.TurnResultSeen && !BackgroundRunning() && Environment.TickCount64 - Interlocked.Read(ref run.LastOutputTicks) >= idle) { CloseChannel(run, child); return; }
+                        }
+                    }
+                    catch (OperationCanceledException) { }
+                }, CancellationToken.None);
                 _ = Task.Delay(TimeSpan.FromSeconds(15), token).ContinueWith(delay =>
                 {
                     if (delay.IsCanceled || run.Finished) return;
@@ -286,7 +341,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
             run.CodexPermissions?.Flush();
             CloseChannel(run, child);
             if (mod is { Received: 0 }) Log(run, "system", Locale.Get("run.warning.noModEvents"));
-            Finish(code == 0 && !parser.Failed && !run.ProtocolFailed && (!codexApprovals || run.CodexPermissions?.TurnCompleted == true) ? "completed" : "error");
+            Finish(run.PlanCancelled ? "stopped" : code == 0 && !parser.Failed && !run.ProtocolFailed && (!codexApprovals || run.CodexPermissions?.TurnCompleted == true) ? "completed" : "error");
         }
         catch (OperationCanceledException ex) { startFailure = ex; Finish(run.ProtocolFailed ? "error" : "stopped"); }
         catch (Exception ex) { startFailure = ex; Log(run, "error", ex.Message); Finish(run.Cancel.IsCancellationRequested && !run.ProtocolFailed ? "stopped" : "error"); }
@@ -308,9 +363,12 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     /// <summary>Settles every waiting request and sends the CLI end-of-input.</summary>
     private static void CloseChannel(Run run, ChildProcess child)
     {
-        if (run.Permissions is null) return;
-        run.Permissions.CancelAll(); run.Permissions = null;
-        try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { }
+        lock (run.InputGate)
+        {
+            if (run.Permissions is null) return;
+            run.Permissions.CancelAll(); run.Permissions = null;
+            try { child.Input.Close(); } catch (IOException) { } catch (ObjectDisposedException) { }
+        }
     }
     /// <summary>이번만 허용 / 거부 for one waiting request of one run. Nothing else is ever returned.</summary>
     public void RespondToToolPermission(string sessionId, string requestId, bool allow)
@@ -323,7 +381,19 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
     public Task<bool> TrySteerAsync(string sessionId, string text)
     {
         if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel) return Task.FromResult(false);
-        try { var accepted = channel.TrySteer(text); if (accepted) run.Tracker?.Steer(Wire.Id(), text); return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
+        // After the request's result this starts a new turn in the same process (it stays open while background tasks run).
+        try { var accepted = channel.TrySteer(text); if (accepted) { Interlocked.Exchange(ref run.LastOutputTicks, Environment.TickCount64); run.Tracker?.Steer(Wire.Id(), text); } return Task.FromResult(accepted); } catch (IOException) { return Task.FromResult(false); } catch (ObjectDisposedException) { return Task.FromResult(false); }
+    }
+    /// <summary>Answers one pending ExitPlanMode request of one run (ClaudePlanMode.Response).</summary>
+    public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision)
+    {
+        if (!runs.TryGetValue(sessionId, out var run) || run.Finalizing || run.Finished || run.Cancel.IsCancellationRequested || run.Request.Provider != "claude" || run.Permissions is not { } channel)
+            throw new InvalidOperationException(Locale.Get("plan.error.settled"));
+        // Marked before the reply is written, so an exit racing it still ends stopped.
+        var cancelling = decision.Kind == PlanDecision.Cancel.Kind;
+        if (cancelling) { run.PlanCancelled = true; if (run.Parser is { } parser) parser.SuppressInterruptedResult = true; }
+        try { return channel.AnswerPlan(requestId, decision); }
+        catch { if (cancelling) { run.PlanCancelled = false; if (run.Parser is { } parser) parser.SuppressInterruptedResult = false; } throw; }
     }
     public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
     {

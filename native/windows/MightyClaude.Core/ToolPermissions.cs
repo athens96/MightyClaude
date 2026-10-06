@@ -7,15 +7,24 @@ namespace MightyClaude.Core;
 
 /// Ephemeral, single-call consent. Never persisted in a snapshot. The original
 /// input stays inside the run's channel.
+/// <param name="CanAnswerPlan">An ExitPlanMode request AnswerPlan can settle.</param>
+/// <param name="ReceivedAt">ISO 8601, when the run's channel received the request.</param>
 public sealed record ToolPermissionRequest(
     string Id, string RunId, string ToolUseId, string ToolName,
     string InputJson, string Summary,
     string? Reason = null, string? BlockedPath = null,
-    string State = "pending", bool CanAllow = true, bool CanAnswerQuestions = false);
+    string State = "pending", bool CanAllow = true, bool CanAnswerQuestions = false,
+    bool CanAnswerPlan = false, string? ReceivedAt = null)
+{
+    /// <summary>The Markdown plan of an ExitPlanMode request.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? Plan => ToolName == ClaudePlanMode.ToolName ? ClaudePlanMode.Plan(InputJson) : null;
+}
 
 /// Claude Code's supported SDK stdio control protocol. Only can_use_tool asks
 /// reach this surface: the CLI evaluates configured denies and modes before asking.
-/// No settings updates, persistent rules or mode changes are ever returned.
+/// No settings updates or persistent rules are ever returned; the only mode
+/// change is the session-only setMode of an approved plan (AnswerPlan).
 /// A shared lock serializes parser events, UI responses and stream writes.
 public sealed class ClaudePermissionChannel
 {
@@ -37,18 +46,26 @@ public sealed class ClaudePermissionChannel
     private readonly Action<ToolPermissionRequest, string> activity;
     private readonly Action<string> warning;
     private readonly Action<string> fail;
+    private readonly Action<PlanRecord> planRecorded;
+    private readonly Func<DateTimeOffset> clock;
+    // The pane's stored permission mode, which an approved plan never goes below.
+    private readonly string paneMode;
     private readonly Dictionary<string, Pending> pending = [];
     private readonly List<string> pendingOrder = [];
     private readonly HashSet<string> seen = [];
     private bool closed;
 
+    /// <param name="plan">Receives every settled ExitPlanMode request: answered, or cancelled because the CLI withdrew it or the run ended.</param>
     public ClaudePermissionChannel(string runId, string prompt, Action<string> write,
         Action<ToolPermissionRequest> emit, Action<ToolPermissionRequest, string> activity,
-        Action<string> warning, Action<string> fail)
+        Action<string> warning, Action<string> fail,
+        Action<PlanRecord>? plan = null, Func<DateTimeOffset>? clock = null, string paneMode = "plan")
     {
+        this.paneMode = paneMode;
         RunId = runId; this.prompt = prompt; this.write = write;
         this.emit = emit; this.activity = activity;
         this.warning = warning; this.fail = fail;
+        planRecorded = plan ?? (_ => { }); this.clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
     public void Start()
@@ -136,7 +153,16 @@ public sealed class ClaudePermissionChannel
 
         var displayJson = InputDisplay(inputEl);
         if (Encoding.UTF8.GetByteCount(displayJson) > MaximumInputBytes)
-        { Deny(id!, toolUseId!, "Tool input exceeds the host's complete-display limit; permission denied."); warning(ToolPermissionStrings.DeniedOversizedInput); return; }
+        {
+            // A plan the card cannot show whole is never approvable; Claude is asked for a shorter one.
+            if (toolName == ClaudePlanMode.ToolName)
+            {
+                Deny(id!, toolUseId!, ClaudePlanMode.TooLongMessage); warning(Locale.Get("plan.warning.tooLong"));
+                if (ClaudePlanMode.Plan(inputEl) is { } tooLong) RecordCancelled(id!, tooLong, null);
+                return;
+            }
+            Deny(id!, toolUseId!, "Tool input exceeds the host's complete-display limit; permission denied."); warning(ToolPermissionStrings.DeniedOversizedInput); return;
+        }
 
         var interaction = (req.TryGetProperty("requires_user_interaction", out var ri) && ri.ValueKind == JsonValueKind.True) || toolName == "AskUserQuestion";
         var details = new[] { req.Text("title"), req.Text("description"), req.Text("decision_reason") }.Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToArray();
@@ -144,9 +170,10 @@ public sealed class ClaudePermissionChannel
         var originalPath = req.Text("blocked_path");
         var completeMetadata = Encoding.UTF8.GetByteCount(detailText) <= 8192 && Encoding.UTF8.GetByteCount(originalPath ?? "") <= 8192;
         var canAnswerQuestions = completeMetadata && toolName == "AskUserQuestion" && UserQuestionnaire.Parse(displayJson) is not null;
+        var canAnswerPlan = completeMetadata && toolName == ClaudePlanMode.ToolName && ClaudePlanMode.Plan(inputEl) is not null;
 
         var reason = ActivitySupport.Clean(detailText, 8192);
-        if (interaction && !canAnswerQuestions) reason += (reason.Length == 0 ? "" : "\n\n") + ToolPermissionStrings.NeedsSeparateInputScreen;
+        if (interaction && !canAnswerQuestions && !canAnswerPlan) reason += (reason.Length == 0 ? "" : "\n\n") + ToolPermissionStrings.NeedsSeparateInputScreen;
         if (!completeMetadata) reason += (reason.Length == 0 ? "" : "\n\n") + ToolPermissionStrings.MetadataTooLarge;
 
         var storedInput = inputEl.Clone();
@@ -158,7 +185,9 @@ public sealed class ClaudePermissionChannel
             Reason: reason.Length == 0 ? null : reason,
             BlockedPath: originalPath is null ? null : ActivitySupport.Clean(originalPath, 8192),
             CanAllow: !interaction && completeMetadata,
-            CanAnswerQuestions: canAnswerQuestions);
+            CanAnswerQuestions: canAnswerQuestions,
+            CanAnswerPlan: canAnswerPlan,
+            ReceivedAt: ClaudePlanMode.Timestamp(clock()));
         pending[id!] = new Pending(value, storedInput);
         pendingOrder.Add(id!);
         activity(value, "waiting"); emit(value);
@@ -177,6 +206,31 @@ public sealed class ClaudePermissionChannel
             pending.Remove(requestId); pendingOrder.Remove(requestId);
             var display = request.Display with { State = allow ? "allowed" : "denied" };
             activity(display, allow ? "running" : "error"); emit(display);
+            // A plan denied from a card that cannot answer plans is still kept.
+            if (!allow && display.CanAnswerPlan && ClaudePlanMode.Plan(request.Input) is { } plan) RecordCancelled(requestId, plan, display.ReceivedAt);
+        }
+    }
+
+    /// <summary>
+    /// Answers one pending ExitPlanMode request. An approval switches the CLI session's mode;
+    /// revise sends the feedback back as the denial.
+    /// </summary>
+    public PlanRecord AnswerPlan(string requestId, PlanDecision decision)
+    {
+        lock (sync)
+        {
+            if (closed || !pending.TryGetValue(requestId, out var request)) throw new InvalidOperationException(Locale.Get("plan.error.settled"));
+            if (!request.Display.CanAnswerPlan || ClaudePlanMode.Plan(request.Input) is not { } plan) throw new InvalidOperationException(Locale.Get("plan.error.notPlan"));
+            // Validation precedes settlement: an empty revise leaves this exact plan answerable.
+            var response = ClaudePlanMode.Response(decision, request.Display.ToolUseId, paneMode);
+            SendSuccess(requestId, response);
+            pending.Remove(requestId); pendingOrder.Remove(requestId);
+            var approved = PlanOutcome.PaneMode(decision.Outcome) is not null;
+            var display = request.Display with { State = approved ? "allowed" : "denied" };
+            activity(display, approved ? "running" : "error"); emit(display);
+            var record = ClaudePlanMode.Record(requestId, RunId, plan, request.Display.ReceivedAt ?? ClaudePlanMode.Timestamp(clock()), ClaudePlanMode.Timestamp(clock()), decision);
+            planRecorded(record);
+            return record;
         }
     }
 
@@ -225,6 +279,12 @@ public sealed class ClaudePermissionChannel
         pendingOrder.Remove(id);
         var display = p.Display with { State = state };
         activity(display, activityState); emit(display);
+        if (display.CanAnswerPlan && ClaudePlanMode.Plan(p.Input) is { } plan) RecordCancelled(id, plan, display.ReceivedAt);
+    }
+    private void RecordCancelled(string id, string plan, string? receivedAt)
+    {
+        var now = ClaudePlanMode.Timestamp(clock());
+        planRecorded(ClaudePlanMode.Record(id, RunId, plan, receivedAt ?? now, now, PlanDecision.Cancel));
     }
 
     private void FailClosed(string message) { Failed = true; CancelAll(); fail(message); }

@@ -46,6 +46,7 @@ internal static class Verification
         // ask to use one tool once the prompt frame arrives, record the answer.
         if (args.Contains("--permission-prompt-tool"))
         {
+            var planFixture = false;
             while (await Console.In.ReadLineAsync() is { } line)
             {
                 await File.AppendAllTextAsync(record + ".input", line + "\n");
@@ -56,11 +57,42 @@ internal static class Verification
                         Console.WriteLine(JsonSerializer.Serialize(new { type = "control_response", response = new { subtype = "success", request_id = root.Text("request_id"), response = new { } } }, Wire.Json));
                         break;
                     case "user":
-                        Console.WriteLine("{\"type\":\"control_request\",\"request_id\":\"ask-1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Read\",\"tool_use_id\":\"tool-ask-1\",\"input\":{\"file_path\":\"~/.claude/CLAUDE.md\"},\"blocked_path\":\"~/.claude/CLAUDE.md\"}}");
+                        // A plan-mode prompt ends planning with ExitPlanMode (ClaudePlanModeVerification).
+                        planFixture = line.Contains("plan fixture", StringComparison.Ordinal);
+                        Console.WriteLine(planFixture
+                            ? "{\"type\":\"control_request\",\"request_id\":\"plan-1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"ExitPlanMode\",\"tool_use_id\":\"toolu_plan\",\"input\":{\"plan\":\"# Plan\\n1. Do it\",\"planFilePath\":\"/tmp/plan.md\"},\"requires_user_interaction\":true}}"
+                            : "{\"type\":\"control_request\",\"request_id\":\"ask-1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Read\",\"tool_use_id\":\"tool-ask-1\",\"input\":{\"file_path\":\"~/.claude/CLAUDE.md\"},\"blocked_path\":\"~/.claude/CLAUDE.md\"}}");
                         break;
                     case "control_response":
                         await File.WriteAllTextAsync(record + ".decision", line);
+                        if (planFixture)
+                        {
+                            await File.WriteAllTextAsync(record + ".env", Environment.GetEnvironmentVariable("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS") ?? "");
+                            if (line.Contains("\"interrupt\":true", StringComparison.Ordinal))
+                            {
+                                Console.WriteLine("{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"errors\":[\"[Request interrupted by user]\"]}");
+                                while (await Console.In.ReadLineAsync() is not null) { }
+                                return;
+                            }
+                            Console.WriteLine("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_todo\",\"name\":\"TodoWrite\",\"input\":{\"todos\":[{\"content\":\"Do it\",\"status\":\"in_progress\",\"activeForm\":\"Doing it\"}]}}]}}");
+                            Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"description\":\"Review\",\"is_backgrounded\":true,\"task_type\":\"local_agent\"}");
+                        }
                         Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"fixture\",\"session_id\":\"fixture\"}");
+                        if (!planFixture) return;
+                        if (File.Exists(record + ".quiet"))
+                        {
+                            // The agent ends without a follow-up turn or an idle event.
+                            Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bg1\",\"status\":\"completed\",\"summary\":\"quiet\"}");
+                            while (await Console.In.ReadLineAsync() is not null) { }
+                            return;
+                        }
+                        // stdin stays open while the background agent runs: new input joins this process.
+                        var follow = await Console.In.ReadLineAsync();
+                        if (follow is null) { Environment.Exit(24); return; }
+                        await File.WriteAllTextAsync(record + ".follow", follow);
+                        Console.WriteLine("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"bg1\",\"tool_use_id\":\"toolu_bg\",\"status\":\"completed\",\"summary\":\"All good\"}");
+                        Console.WriteLine("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"noted\",\"origin\":{\"kind\":\"task-notification\"}}");
+                        while (await Console.In.ReadLineAsync() is { } extra) await File.AppendAllTextAsync(record + ".extra", extra + "\n");
                         return;
                 }
             }
@@ -391,6 +423,17 @@ internal static class Verification
         await Test("slash filter", SlashCommandVerification.Filter);
         await Test("next actions match every shared Mac and phone vector", NextActionsVerification.SharedContract);
         await Test("next actions invalidate old replies and preserve drafts", NextActionsVerification.LatestReplyAndDraftSafety);
+        await Test("plan mode requests match every shared Mac vector", ClaudePlanModeVerification.SharedRequests);
+        await Test("plan mode answers match every shared Mac vector", ClaudePlanModeVerification.SharedResponses);
+        await Test("plan mode answers settle once and keep every plan", ClaudePlanModeVerification.ChannelAnswersOnceAndKeepsEveryPlan);
+        await Test("plan mode checklists match every shared Mac vector", ClaudePlanModeVerification.SharedChecklists);
+        await Test("plan mode background tasks match every shared Mac vector", ClaudePlanModeVerification.SharedBackgroundRuns);
+        await Test("plan mode approval sets the pane mode and keeps a bounded history", ClaudePlanModeVerification.PaneKeepsThePlanModeAndHistory);
+        await Test("plan mode state round-trips and old snapshots still load", ClaudePlanModeVerification.SavedStateRoundTripsAndOldSnapshotsLoad);
+        await Test("plan mode runner answers a fake CLI's plan and reports its checklist and background work", ClaudePlanModeVerification.RunnerAnswersAPlanAndReportsProgress);
+        await Test("plan mode approval never lowers the pane's own mode", ClaudePlanModeVerification.ApprovalNeverLowersThePaneMode);
+        await Test("plan mode per-run override launches in plan and is never saved", ClaudePlanModeVerification.PerRunPlanOverride);
+        await Test("plan mode history keeps new plans whole within its budget", ClaudePlanModeVerification.HistoryKeepsNewPlansWholeWithinItsBudget);
         await Test("slash frontmatter", SlashCommandVerification.Frontmatter);
         await Test("slash discovery from temp home and workspace", SlashCommandVerification.Discovery);
         await Test("slash 400 cap", SlashCommandVerification.CapAt400);

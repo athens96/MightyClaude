@@ -226,7 +226,7 @@ public sealed class ProviderCatalog(Func<string, CancellationToken, Task<CliComm
         phaseModels = PhaseModelPreferences.Normalize(phaseModels ?? request.PhaseModels);
         if (request.Provider == "claude")
         {
-            args.AddRange(["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", "none", "--permission-mode", settings.PermissionMode == "fullAccess" ? "bypassPermissions" : settings.PermissionMode, "--plugin-dir", pluginDirectory]);
+            args.AddRange(["--print", "--verbose", "--output-format", "stream-json", "--permission-prompts", "none", "--permission-mode", (request.PermissionModeOverride ?? settings.PermissionMode) is "fullAccess" ? "bypassPermissions" : request.PermissionModeOverride ?? settings.PermissionMode, "--plugin-dir", pluginDirectory]);
             if (request.StyleAutoAllow is { Count: > 0 } styleTools)
                 args.AddRange(["--allowedTools", string.Join(",", styleTools)]);
             // Build a single --settings env JSON merging effort + phase model aliases.

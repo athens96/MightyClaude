@@ -30,6 +30,8 @@ public sealed class OutputParser
     private int storedImages;
     private bool imageLimitNoted;
     public bool Failed { get; private set; }
+    /// <summary>A plan the user cancelled interrupts the turn; that interruption is not a failure.</summary>
+    public bool SuppressInterruptedResult { get; set; }
     /// <summary>The workspace folder a picture named only by path must lie in (with the temporary folder).</summary>
     public string? ImageRoot { get; set; }
     /// <param name="images">Where pictures the agent shows are written; without it they are left out as before.</param>
@@ -199,7 +201,8 @@ public sealed class OutputParser
                 if (type == "system" && root.Text("subtype") == "permission_denied") Tool(root.Text("tool_use_id"), "error", root.Text("tool_name"), output: Error(MetadataJson.Property(root, "message"), Locale.Get("run.tool.permissionDenied")));
                 if (type == "result" && !child && !ClaudeStream.IsNotificationResult(root))
                 {
-                    if (MetadataJson.Flag(root, "is_error") || root.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true)
+                    if (SuppressInterruptedResult && root.Text("subtype") == "error_during_execution") { }
+                    else if (MetadataJson.Flag(root, "is_error") || root.Text("subtype")?.StartsWith("error", StringComparison.Ordinal) == true)
                     { Failed = true; log("error", root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array ? string.Join('\n', errors.EnumerateArray().Select(e => Error(e, Locale.Get("run.activity.error")))) : root.Text("result") ?? Locale.Get("run.error.providerRun", new Dictionary<string, string> { ["name"] = "Claude" })); }
                     else if (!assistantSeen) Assistant(root.Text("result") ?? "");
                     Turn(Locale.Get("run.turn.finishing", new Dictionary<string, string> { ["name"] = "Claude" }));
@@ -270,6 +273,20 @@ public static class ClaudeStream
     // before it even reads the new request. It is not the request's result: OutputParser and
     // SessionUsageTracker must not treat it as the turn ending.
     public static bool IsNotificationResult(JsonElement value) => value.Text("type") == "result" && MetadataJson.Property(value, "origin").Text("kind") == "task-notification";
+    /// <summary>
+    /// A point where the CLI may have nothing left to do once the request answered: any top-level result (the
+    /// request's own or a task notification's) or `session_state_changed: idle`.
+    /// </summary>
+    public static bool IsSettlePoint(string line)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(line); var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || MetadataJson.Property(root, "parent_tool_use_id").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null)) return false;
+            return root.Text("type") == "result" || root.Text("type") == "system" && root.Text("subtype") == "session_state_changed" && root.Text("state") == "idle";
+        }
+        catch (JsonException) { return false; }
+    }
     /// <summary>The CLI's own end-of-turn result — not a background task notification, not a sub-agent.</summary>
     public static bool IsTurnResult(string line)
     {

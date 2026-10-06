@@ -47,6 +47,8 @@ public sealed class DesktopService : IAsyncDisposable
     }
     public void AnswerQuestionnaire(string sessionId, string requestId, IReadOnlyDictionary<string, UserQuestionAnswer> answers)
         => local.AnswerQuestionnaire(sessionId, requestId, answers);
+    /// <summary>Answers one pending ExitPlanMode request (approve auto-edit / confirm-each, revise, cancel).</summary>
+    public PlanRecord AnswerPlan(string sessionId, string requestId, PlanDecision decision) => local.AnswerPlan(sessionId, requestId, decision);
     public async Task InitializeAsync() { var loaded = await store.LoadAsync(); lock (sync) snapshot = loaded; }
     private Task<Workspace> ResolveLocal(string id)
     {
@@ -110,7 +112,8 @@ public sealed class DesktopService : IAsyncDisposable
             ObjectDisposedException.ThrowIf(closing, this);
             if (!snapshot.Workspaces.Any(w => w.Id == request.WorkspaceId)) throw new ArgumentException(Locale.Get("run.error.workspaceNotRegistered"));
             if (!snapshot.Sessions.Any(s => s.Id == request.SessionId && s.WorkspaceId == request.WorkspaceId && s.Kind == request.Kind)) throw new ArgumentException(Locale.Get("run.error.sessionNotInWorkspace"));
-            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels) };
+            // A resumed conversation continues its checklist (task tools keep their ids).
+            request = request with { PhaseModels = PhaseModelPreferences.Normalize(snapshot.PhaseModels), TodoProgress = request.ResumeId is null ? null : snapshot.Sessions.First(s => s.Id == request.SessionId).TodoProgress };
             route = new();
             if (!routes.TryAdd(request.SessionId, route)) throw new InvalidOperationException(Locale.Get("run.error.alreadyRunning"));
             snapshot = snapshot with { Sessions = snapshot.Sessions.Select(s => s.Id == request.SessionId ? PaneTitle.Requested(s, request.Input) with { SessionUsage = request.ResumeId is null || s.Provider != request.Provider ? null : s.SessionUsage, Provider = request.Provider, CurrentActivity = null, RunTiming = request.Kind == "shell" ? null : AgentRunTiming.Begin() } : s).ToList() };
