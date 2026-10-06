@@ -16,28 +16,6 @@ namespace MightyClaude.WinUI;
 public sealed partial class MainWindow
 {
     private Func<StartRunRequest, Task>? smokeStart;
-    private Task StartFromComposer(StartRunRequest request) =>
-        AutomaticLoginOf(request.Provider) is { } login ? StartAfterAutomaticLogin(request, login.Task) : StartAdmitted(request);
-    /// <summary>
-    /// A send while the provider's automatic sign-in runs cancels it (holding the next automatic start for the
-    /// cooldown) and goes ahead once its process is gone. The checks and the start below stay one synchronous step.
-    /// </summary>
-    private async Task StartAfterAutomaticLogin(StartRunRequest request, Task login)
-    {
-        CancelBackgroundLogin(request.Provider); RefreshLoginCards();
-        try { await login.WaitAsync(TimeSpan.FromSeconds(10)); } catch (TimeoutException) { }
-        await StartAdmitted(request);
-    }
-    private Task StartAdmitted(StartRunRequest request)
-    {
-        // Gemini's terminal sign-in changes nothing in the background, so its sends go ahead.
-        if (loginJobs.GetValueOrDefault(request.Provider) is { Terminal: false }) throw new InvalidOperationException(Locale.Get("loginRecovery.busySignIn", new Dictionary<string, string> { ["provider"] = ProviderCatalog.Name(request.Provider) }));
-        if (loginBusy.GetValueOrDefault(request.Provider) is { Terminal: false } || accountChanges.ContainsKey(request.Provider)) throw new InvalidOperationException(Locale.Get("loginRecovery.busy"));
-        if (automaticUpdateRunning && automaticallyUpdatingProvider == request.Provider) throw new InvalidOperationException(Locale.Get("loginRecovery.updating"));
-        if (ManualMutationBlockReason(new RunSession { Kind = request.Kind, Provider = request.Provider }) is { } block) throw new InvalidOperationException(block);
-        return options.SmokeTest ? smokeStart?.Invoke(request) ?? throw new InvalidOperationException("스모크 모드에서는 실제 CLI를 실행하지 않습니다.") : service.StartAsync(request);
-    }
-
     private async Task RunUISmoke()
     {
         var result = new Dictionary<string, object?> { ["passed"] = false, ["aiRequestSent"] = false, ["clipboardUsed"] = false, ["physicalIMEAndPointerTested"] = false };
@@ -217,8 +195,8 @@ public sealed partial class MainWindow
             Func<Task>? restoreMightyDesign = null;
             try
             {
-                // 디자인 토큰 1단계: 두 테마 모두 창 배경이 공유 page 브러시이고 픽스처의 hex이며,
-                // 토글 전에 받은 브러시가 같은 인스턴스로 새 테마 색이 된다(같은 실행 창 재사용).
+                // Design tokens stage 1: in both themes the window background is the shared page brush with the fixture's hex,
+                // and a brush taken before the toggle turns into the new theme's colour as the same instance (the same pane is reused).
                 await service.UpdateAsync(s => s with { Theme = "light" }); Render();
                 Checkpoint("designTokens", "running");
                 RequireDesignTokensInTheme(accentProbe);
@@ -312,11 +290,11 @@ public sealed partial class MainWindow
             foreach (var extra in SettingsNavigation.Available.SelectMany(tab => SettingsGroups(tab.Id)).Where(box => settingsSectionsForLeak.All(slot => slot.Title != box.Title)))
                 settingsPanelForLeak.Children.Add(BuildSectionContainer(extra.Title, extra.Build(), extra.Beta));
             CollectVisibleStrings(settingsPanelForLeak, leakStrings);
-            // 페이즈별 모델 칸의 ComboBox 머리글과 항목은 화면 나무에 바로 보이지 않으므로 따로 넣는다.
+            // The phase-model section's ComboBox headers and items are not in the visual tree directly, so they are added on their own.
             leakStrings.AddRange(PhaseModelSectionTexts(BuildPhaseModelsSection(new(), PhaseModelSection.SmokeFixtureTools)));
-            // 구성 요소 칸은 임시 toolkit.json과 실행 결과 표까지 채운 모습으로 넣는다.
+            // The components section goes in as it looks with a temporary toolkit.json and its run result table filled in.
             leakStrings.AddRange(componentsLeakStrings);
-            // mighty 그래프 캔버스의 글자도 로케일 키 누수 검사에 넣는다.
+            // The mighty graph canvas's text goes into the locale-key leak check too.
             leakStrings.AddRange(mightyLeakStrings);
             leakStrings.AddRange(browserLeakStrings);
             leakStrings.AddRange(filesLeakStrings);
@@ -336,16 +314,16 @@ public sealed partial class MainWindow
             try { result["screenshot"] = await CaptureSmoke(Path.Combine(directory, "smoke-window.png")); } catch (Exception capture) { result["captureError"] = capture.Message; }
         }
         await File.WriteAllTextAsync(Path.Combine(directory, "smoke-result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
-        // 실패한 실행의 기록은 그 실패의 것이다. 정리하는 동안 뒤따라 나는 예외가 이 기록을 덮어쓰지 못하게 한다.
+        // A failed run's record belongs to that failure. An exception thrown while cleaning up must not overwrite it.
         if (!passed) options.KeepFailureRecord();
         await FinishSmoke(passed);
     }
-    // 브라우저 창 스모크: 임시 --profile 안에서 실제 WebView2로 임시 폴더의 로컬 페이지
-    // 둘을 가상 호스트(https://mighty-smoke.invalid/)로 탐색하고, 뒤로 가기와 window.open() 차단, 워크스페이스별 프로필 폴더를
-    // 확인한다. 망은 건드리지 않는다. 런타임이 없는 실행기는 실패로 본다.
+    // Browser pane smoke: inside the temporary --profile, a real WebView2 browses two local pages in a temporary folder
+    // through a virtual host (https://mighty-smoke.invalid/), and back navigation, window.open() blocking and the per-workspace profile folder
+    // are checked. The network is never touched. A runner without the runtime counts as a failure.
     private async Task<Dictionary<string, object?>> RunBrowserPaneSmoke(Workspace workspace, List<string> leakStrings)
     {
-        // 이 스모크 한 번만 설정을 켠 것으로 본다.
+        // The setting counts as on for this one smoke only.
         ForceBrowserEngineForSmoke();
 
         await AddBrowserPane();
@@ -363,12 +341,12 @@ public sealed partial class MainWindow
         // The slim bar and the toolbar on screen (the page itself is not part of a XAML capture), for the parity review.
         root.UpdateLayout(); await CaptureSmoke(Path.Combine(options.ProfileDirectory!, "smoke-chrome-browser.png"));
 
-        // 프로필 폴더는 임시 --profile 아래의 상태 폴더 안에 있어야 한다.
+        // The profile folder must sit in the state folder under the temporary --profile.
         var profile = BrowserProfile.ProfileFolder(StateDirectory, session.WorkspaceProfileKey ?? session.WorkspaceId);
         var profileUnderTemp = profile.StartsWith(StateDirectory, StringComparison.OrdinalIgnoreCase)
             && profile.Contains(session.WorkspaceId, StringComparison.Ordinal);
 
-        // 주소줄·단추 문구와 런타임 없음 알림·꺼짐 알림도 로케일 키 누수 검사에 넣는다.
+        // The address bar and button text and the no-runtime and turned-off notices go into the locale-key leak check too.
         leakStrings.AddRange(view.BrowserVisibleStrings());
         CollectVisibleStrings(BuildBrowserMissingNotice(), leakStrings);
         CollectVisibleStrings(BuildBrowserDisabledNotice(), leakStrings);
@@ -384,9 +362,9 @@ public sealed partial class MainWindow
         };
     }
 
-    // 페이즈별 모델 칸을 붙박이 도구 값으로 짓는다. 실제 사용자의 ~/.config나
-    // ~/.ouroboros는 읽지도 쓰지도 않는다. 네 페이즈 줄과 네 도구 묶음이 있어야 하고,
-    // 매인 손잡이들이 다른 실행 줄은 혼합으로 보여야 한다.
+    // Builds the phase-model section from fixed tool values. It neither reads nor writes the real user's ~/.config or
+    // ~/.ouroboros. There must be four phase rows and four tool groups, and
+    // a run row whose pinned handles differ must show as mixed.
     private bool RunPhaseModelsSectionSmoke()
     {
         var panel = BuildPhaseModelsSection(new PhaseModelsSnapshot { ClaudeMain = "fixture-main", CodexSubagentEffort = "xhigh" }, PhaseModelSection.SmokeFixtureTools);
@@ -404,11 +382,11 @@ public sealed partial class MainWindow
         return true;
     }
 
-    // 구성 요소 칸을 임시 폴더의 toolkit.json으로 짓는다. 픽스처에는 plugin·npm·winget
-    // (이 PC 항목)과 brew·repoScript(macOS 전용 항목)가 하나씩 있다. 목록에는 이 PC
-    // 항목만 보이고, 설치 계획은 가짜 실행기로만 돌리며(실제 프로세스 없음), 저장이
-    // 일어난 뒤에도 macOS 전용 두 객체가 파일에 그대로 남아야 한다. 실제 사용자
-    // 파일은 읽지도 쓰지도 않는다.
+    // Builds the components section from a toolkit.json in a temporary folder. The fixture has one each of plugin, npm and winget
+    // (items for this PC) and brew and repoScript (macOS-only items). The list shows only this PC's
+    // items, the install plan runs only through a fake executor (no real process), and after a save
+    // both macOS-only objects must still be in the file unchanged. The real user's
+    // files are neither read nor written.
     private const string ComponentsSmokeFixture = """
         {
           "version": 1,
@@ -435,7 +413,7 @@ public sealed partial class MainWindow
             File.WriteAllText(toolkitPath, ComponentsSmokeFixture);
             var store = new ToolkitStore(folder);
             toolkitStore = store;
-            // 승인은 파일을 다시 쓴다 — 이 저장 뒤에도 macOS 전용 객체가 남아야 한다.
+            // Approving rewrites the file: the macOS-only objects must survive this save too.
             foreach (var id in ComponentsSmokeVisible) store.Approve(id);
 
             // The CLI rows and the toolkit are two boxes of the tab now, as on the Mac; both are built here.
@@ -480,7 +458,7 @@ public sealed partial class MainWindow
             Require(runs.Single(run => run.EntryId == "smoke-winget").RunVerdict == ToolkitRunItem.Verdict.Installed,
                 "winget 항목이 다시 조사한 결과 설치됨으로 보이지 않습니다.");
 
-            // 설치 결과 표까지 채운 칸의 글자가 로케일 키 누수 검사에 들어간다.
+            // The section's text, with the install result table filled in, goes into the locale-key leak check.
             CollectVisibleStrings(panel, leakStrings);
             CollectVisibleStrings(toolkit, leakStrings);
 
@@ -502,9 +480,9 @@ public sealed partial class MainWindow
         }
     }
 
-    // 설치 명령을 기록만 하는 가짜 실행기. 프로세스를 띄우지 않는다. winget 명령은
-    // 임시 LocalAppData의 WinGet\Links에 실행 파일을 만들어, 다시 조사하는 단계가
-    // 파일만 보고 설치됨을 판정하는지 확인하게 한다.
+    // A fake executor that only records install commands; it starts no process. A winget command
+    // creates an executable in the temporary LocalAppData's WinGet\Links, so the re-inspection step
+    // is checked to judge "installed" from the file alone.
     private sealed class SmokeToolkitExecutor(string localAppData) : IToolkitRunnerExecutor
     {
         public List<IReadOnlyList<string>> Commands { get; } = [];
@@ -550,8 +528,8 @@ public sealed partial class MainWindow
                 tooLongDisablesSave = !dialog.IsPrimaryButtonEnabled;
                 tooLongShowsCaption = errors.Children.OfType<TextBlock>().Any(t => t.Text == RenameStrings.ErrorTooLong);
                 // Line break: a single-line WinUI TextBox drops \r and \n before the Text property
-                // changes, so the break never reaches the name and the 줄바꿈 caption cannot appear
-                // from the field. Prove both halves: the break never survives, and 저장 and the caption
+                // changes, so the break never reaches the name and the line-break caption cannot appear
+                // from the field. Prove both halves: the break never survives, and Save and the caption
                 // still agree with RenameSupport for whatever the control kept. The caption and the
                 // control-character rule themselves stay proven by the `rename …` checks in Core.Tests.
                 field.Text = "hello\rworld";
@@ -593,7 +571,7 @@ public sealed partial class MainWindow
             Require(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).Title == "변경된 이름", "취소 후 이름이 바뀌었습니다.");
             checks["cancelPreservesName"] = true;
 
-            // Auto-titles: the rename fixed the title, so a new request leaves it alone; 자동 hands it back
+            // Auto-titles: the rename fixed the title, so a new request leaves it alone; Automatic hands it back
             // to the latest request (40 characters), and hovering the sidebar title shows the request whole.
             Require(service.Snapshot.Sessions.First(s => s.Id == fixtureSession.Id).TitleMode == PaneTitle.Fixed, "이름을 바꾼 창의 제목이 고정되지 않았습니다.");
             var offersAutomatic = false;
@@ -620,7 +598,7 @@ public sealed partial class MainWindow
         return checks;
     }
 
-    /// Drives the 리셋권 smoke through the shared Core entry point: an injected
+    /// Drives the usage-reset smoke through the shared Core entry point: an injected
     /// fixture clock and a fake transport (GET only), so the rows render from
     /// fixture data irrespective of the direct-lookup switch. Asserts
     /// fakeTransportPostCount is 0, the available and unknown states rendered,
@@ -739,10 +717,10 @@ public sealed partial class MainWindow
         try { await service.DisposeAsync(); } catch (Exception ex) { options.WriteStartupFailure(ex); passed = false; }
         Environment.ExitCode = passed ? 0 : 1; canClose = true; Close(); Application.Current.Exit();
     }
-    // 파일 창 스모크 (docs/file-pane.md): 임시 워크스페이스에 Markdown·Swift·PNG 픽스처를 두고
-    // Ctrl+Shift+E와 같은 길(OpenFilePane)로 실제 창을 연다. 루트 목록과 잡음 폴더 접힘, 폴더 펼치기,
-    // 세 미리보기(렌더링한 Markdown, 줄 여섯 개의 UTF-8 소스, 40×30 PNG)를 확인하고, 다시 열면 같은
-    // 창으로 가는지, 상태 파일에 쓰이지 않는지 본다. 픽스처 밖의 파일은 읽지 않고 AI 요청도 없다.
+    // Files pane smoke (docs/file-pane.md): Markdown, Swift and PNG fixtures in a temporary workspace, and the real pane
+    // opened the way Ctrl+Shift+E does (OpenFilePane). It checks the root list, collapsed noise folders, expanding a folder,
+    // the three previews (rendered Markdown, six lines of UTF-8 source, a 40×30 PNG), that opening again goes to the same
+    // pane and that nothing is written to the state file. No file outside the fixture is read and no AI request is made.
     private async Task<Dictionary<string, object?>> RunFilesPaneSmoke(Workspace workspace, List<string> leakStrings)
     {
         var previousMode = LayoutMode(service.Snapshot, workspace.Id);
@@ -832,15 +810,15 @@ public sealed partial class MainWindow
 
     /// Drives the real Mighty view: the pane's GraphRuns are produced by feeding
     /// claudeStream cases from native/contracts/graph-vectors.json through the
-    /// stage 4a ExecutionGraphTracker, the pane is switched to 마이티, the canvas
+    /// stage 4a ExecutionGraphTracker, the pane is switched to Mighty, the canvas
     /// is rendered, and the drawn blocks, edges, kinds, result files and zoom
-    /// range are reported. Switching back to 기본 must leave the draft alone.
+    /// range are reported. Switching back to Default must leave the draft alone.
     private async Task<Dictionary<string, object?>> RunMightyGraphSmoke(PaneView pane, Workspace workspace, List<string> leakStrings)
     {
         var runs = MightyGraphVectorRuns();
         Require(runs.Count >= 3, "mighty 스모크: 벡터에서 만든 실행이 너무 적습니다: " + runs.Count);
 
-        // A real file inside the smoke workspace so the 결과에 나온 파일 panel has
+        // A real file inside the smoke workspace so the result-files panel has
         // something to list; nothing outside the workspace is ever resolved.
         var notesDirectory = Path.Combine(workspace.Path, "docs");
         Directory.CreateDirectory(notesDirectory);
@@ -1011,7 +989,7 @@ public sealed partial class MainWindow
     /// The Mighty result box fits the agent pane (macOS 1d5a0db): with a saved
     /// size larger than a narrow pane the newest result card is drawn inside
     /// the pane, and once the pane is wide again it is back at the saved size;
-    /// zoomed in it still stays inside; 창에 맞추기 clears the saved size.
+    /// zoomed in it still stays inside; Fit to Pane clears the saved size.
     /// Every expected size is Core's own rule for the viewport actually drawn.
     private async Task<Dictionary<string, object?>> RunResultFitSmoke(PaneView pane)
     {
@@ -1217,12 +1195,12 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// Session history and resume (macOS b393741, c5e04e5) in the real window, on a
-    /// fixture Claude record in a temporary home: 창 추가 → Claude asks 새로 시작 /
-    /// 이어가기…, the list shows the folder's one typed session with the nested
+    /// fixture Claude record in a temporary home: Add Pane → Claude asks Start New /
+    /// Continue…, the list shows the folder's one typed session with the nested
     /// Ouroboros run hidden, picking it adds a pane that resumes it (titled after
     /// its first request, remembered in known-sessions.json), the Mighty view loads
     /// the latest ten requests from the record at once and the next ten from the
-    /// history block without moving the cards already drawn, and a second 창 추가
+    /// history block without moving the cards already drawn, and a second Add Pane
     /// no longer offers the session the pane holds. Every pane it adds is closed again.
     /// </summary>
     private async Task<Dictionary<string, object?>> RunSessionHistorySmoke(Workspace workspace, Workspace other)
@@ -1328,10 +1306,10 @@ public sealed partial class MainWindow
     }
     /// <summary>
     /// Smoke key <c>addPaneMenu</c> (macOS WorkspaceView.swift <c>WorkspaceAddMenuItems</c>):
-    /// the real 창 추가 menu ends with 프로젝트 폴더 열기… after a separator, showing Ctrl+O;
+    /// the real Add Pane menu ends with Open Project Folder… after a separator, showing Ctrl+O;
     /// the sidebar open-folder button hides while a workspace is listed and shows for a
     /// search that lists none; Ctrl+O and Ctrl+N are registered; and Gemini from the menu
-    /// and Ctrl+N add their panes without asking 새로 시작 / 이어가기. Every pane it adds
+    /// and Ctrl+N add their panes without asking Start New / Continue…. Every pane it adds
     /// is closed again.
     /// </summary>
     private async Task<Dictionary<string, object?>> RunAddPaneMenuSmoke(Workspace workspace, Workspace other)
@@ -1372,7 +1350,7 @@ public sealed partial class MainWindow
             await AddPaneFromShortcut();
             Require(!asked && service.Snapshot.Sessions.Count == count + 2 && service.Snapshot.Sessions[^1] is { Kind: "claude", Provider: AddPaneMenu.NewPaneShortcutProvider, ResumeId: null }, "Ctrl+N이 묻지 않고 곧바로 Claude 창을 만들지 않았습니다.");
             checks["ctrlNStartsAtOnce"] = true;
-            // 새 창은 활성 창이 있는 탭 그룹에 붙고, 다른 그룹이 보여 주던 탭은 그대로다 (M/AppStore.swift:520).
+            // A new pane joins the tab group of the active pane; the tab another group was showing stays as it was (M/AppStore.swift:520).
             string a = Wire.Id(), b = Wire.Id(), c = Wire.Id(), z = Wire.Id(), space = Wire.Id();
             RunSession Fixture(string id) => new() { Id = id, WorkspaceId = space };
             var tree = new PaneLayoutNode { Kind = "split", Axis = "horizontal", Children = [new() { SessionIds = [a, b, c], SelectedSessionId = b }, new() { SessionIds = [z], SelectedSessionId = z }] };
@@ -1407,15 +1385,15 @@ public sealed partial class MainWindow
 
     private sealed partial class PaneView
     {
-        // 브라우저 창을 실제 WebView2로 몰아 본다. 두 페이지는 임시 폴더의 HTML 파일이고,
-        // SetVirtualHostNameToFolderMapping으로 https://mighty-smoke.invalid/ 아래에 비춘다.
-        // .invalid는 실제 사이트가 쓸 수 없는 이름이고 매핑은 DNS를 거치지 않으므로 망은
-        // 건드리지 않으면서, data: 주소와 달리 엔진이 진짜 세션 기록을 남기는 https 페이지다.
-        // 탐색은 주소줄과 같은 길(NavigateBrowser)로, 뒤로 가기는 앱의 뒤로 단추와 같은 길로
-        // 부른다. 각 단계는 그 탐색의 NavigationCompleted를 기다린 뒤 앱이 BrowserHistory에
-        // 적은 주소를 BrowserHistory와 같은 Uri 비교로 확인한다. 마지막으로 첫 페이지의 스크립트가
-        // window.open()을 부르면 NewWindowRequested가 와서 Handled로 끝나야 하고 새 창은
-        // 없어야 한다. 실패하면 기록된 주소와 본 탐색 사건을 메시지에 싣는다.
+        // Drives the browser pane with a real WebView2. The two pages are HTML files in a temporary folder,
+        // mapped under https://mighty-smoke.invalid/ with SetVirtualHostNameToFolderMapping.
+        // No real site can use a .invalid name and the mapping skips DNS, so the network is
+        // never touched, yet unlike data: addresses these are https pages the engine keeps a real session history for.
+        // Browsing goes the way the address bar does (NavigateBrowser) and going back the way the app's back button does.
+        // Each step waits for that navigation's NavigationCompleted, then checks the address the app wrote to
+        // BrowserHistory with the same Uri comparison BrowserHistory uses. Finally the first page's script
+        // calls window.open(): NewWindowRequested must arrive and end Handled, and no new window may
+        // appear. A failure carries the recorded addresses and the navigation events seen.
         internal async Task<(bool Navigated, bool BackWorked, bool PopupBlocked)> DriveBrowserSmokeAsync()
         {
             const string host = "mighty-smoke.invalid";
@@ -1439,16 +1417,16 @@ public sealed partial class MainWindow
             core.NavigationCompleted += (_, a) => events.Add($"completed#{a.NavigationId} ok={a.IsSuccess} status={a.WebErrorStatus}");
             core.ProcessFailed += (_, a) => events.Add($"processFailed {a.ProcessFailedKind}");
             var popupRequests = new List<(bool UserInitiated, bool Handled, string Uri)>();
-            // 앱의 처리기가 먼저 등록돼 있으므로 여기서는 앱이 Handled로 끝냈는지를 본다.
+            // The app's handler is registered first, so this only looks at whether the app ended it Handled.
             core.NewWindowRequested += (_, a) => popupRequests.Add((a.IsUserInitiated, a.Handled, a.Uri));
 
             string Diagnose(string step) =>
                 $"{step}: 기록된 주소={browserHistory?.Current?.OriginalString ?? "(없음)"}, 엔진 주소={core.Source}, "
                 + $"엔진 뒤로={core.CanGoBack}, 엔진 앞으로={core.CanGoForward}, 사건=[{string.Join(" | ", events)}]";
 
-            // 앱이 기록에 쓰는 것과 같은 엔진 NavigationCompleted를 기다린다. 이어서 할 일은
-            // 사건 처리가 모두 끝난 뒤에 돌므로(RunContinuationsAsynchronously), 그때는 앱이
-            // 이미 BrowserHistory에 주소를 적은 뒤다.
+            // Waits for the same engine NavigationCompleted the app records from. What follows runs
+            // after every event handler has finished (RunContinuationsAsynchronously), so by then the app
+            // has already written the address to BrowserHistory.
             async Task NavigateAndWait(string step, Action start, Uri expected)
             {
                 var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1476,8 +1454,8 @@ public sealed partial class MainWindow
                 await NavigateAndWait("뒤로 가기", BrowserGoBack, first);
                 var backWorked = browserHistory?.State(false) is { CanGoForward: true } && core.CanGoForward;
 
-                // 첫 페이지에 실린 스크립트가 window.open()을 부른다. 함수가 있다는 것은 첫 페이지가
-                // 로컬 폴더에서 실제로 읽혀 살아 있다는 뜻이기도 하다.
+                // The script on the first page calls window.open(). That the function exists also means the first page
+                // was really read from the local folder and is alive.
                 var opened = await core.ExecuteScriptAsync("typeof mightyOpenPopup === 'function' ? mightyOpenPopup() : 'missing'");
                 Require(opened == "\"opened\"", "첫 페이지의 window.open() 스크립트가 돌지 않았습니다: " + opened + " " + Diagnose("팝업"));
                 var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -1502,7 +1480,7 @@ public sealed partial class MainWindow
             composingInput = true; var nativeInput = input; Refresh(); Require(ReferenceEquals(input, nativeInput) && input.Text == "한글 첫 입력", "상태 갱신이 조합 중인 입력 컨트롤을 변경했습니다."); composingInput = false;
             input.Text = ""; Container.UpdateLayout(); await Task.Delay(40); var singleHeight = input.ActualHeight;
             input.Text = "첫째 줄\n둘째 줄\n셋째 줄\n" + string.Concat(Enumerable.Repeat("자동 줄바꿈 ", 30)); Container.UpdateLayout();
-            // 한 줄은 20, 여섯 줄에서 멈춘다 (M/NativeComposerEditor.swift:32-33, M/SessionPaneView.swift:579).
+            // One line is 20; it stops at six lines (M/NativeComposerEditor.swift:32-33, M/SessionPaneView.swift:579).
             Require(Math.Abs(singleHeight - ComposerLine) < .6 && input.MaxHeight == ComposerLine + 5 * ComposerLineStep, $"입력창 한 줄 높이는 {ComposerLine}, 최대 여섯 줄이어야 합니다: {singleHeight:F1}, 최대 {input.MaxHeight:F1}");
             await WaitUI(() => input.ActualHeight > singleHeight && input.ActualHeight <= input.MaxHeight + .6);
             input.Text = ""; Container.UpdateLayout(); await WaitUI(() => input.ActualHeight <= singleHeight + 1);
@@ -1519,11 +1497,11 @@ public sealed partial class MainWindow
             var centers = controls.Select(c => c.TransformToVisual(Container).TransformPoint(new(0, 0)).Y + c.ActualHeight / 2).ToArray();
             Require(controls.Contains(context) && controls.Contains(sendHost) && controls.Contains(statusLineToggle), "입력창 도구 줄에 컨텍스트 링, 상태줄 토글, 전송 버튼이 모두 있어야 합니다.");
             Require(controls.All(c => Math.Abs(c.ActualHeight - 32) < 1 && c.TransformToVisual(Container).TransformPoint(new(c.ActualWidth, 0)).X <= Container.ActualWidth + 1) && centers.Max() - centers.Min() < 1, "좁은 입력창의 버튼이 한 줄 안에 맞지 않습니다.");
-            // 좁은 패널은 모델 필과 옵션 메뉴 하나로 접힌다 (M/ComposerControls.swift:48-55, M/SessionPaneView.swift:713-720); 필은 오른쪽 묶음 밑으로 들어가지 않는다.
+            // A narrow panel folds into the model pill and one options menu (M/ComposerControls.swift:48-55, M/SessionPaneView.swift:713-720); pills never go under the right-hand cluster.
             var pillsEnd = selectors.TransformToVisual(toolbar).TransformPoint(new(selectors.ActualWidth, 0)).X; var clusterStart = toolbarActions.TransformToVisual(toolbar).TransformPoint(new(0, 0)).X;
             Require(toolbarStyle == ToolbarStyle.Overflow && options.Visibility == Visibility.Visible && more.Visibility == Visibility.Collapsed && permission.Visibility == Visibility.Collapsed && effort.Visibility == Visibility.Collapsed && pillsEnd <= clusterStart + .5,
                 $"좁은 입력창은 첨부, 모델, 옵션 메뉴만 보여야 합니다: {toolbarStyle}, 필 끝 {pillsEnd:F1}, 오른쪽 묶음 시작 {clusterStart:F1}");
-            // 세 단계의 경계는 Mac의 식 그대로다: 필 = 글자(상한) + 16 + 14 + 5 (+ 12 chevron), 전체 = 64 + 모델(155) + 권한(90) + 강도(48) + 간격, 축약 = 32 x (개수 - 1) + 모델(90) + 간격.
+            // The three steps' boundaries are the Mac's formula: pill = words (capped) + 16 + 14 + 5 (+ 12 chevron), full = 64 + model(155) + permission(90) + effort(48) + spacing, compact = 32 x (count - 1) + model(90) + spacing.
             double Words(string text, double cap) => Math.Min(PillTextWidth(text), cap);
             var fullWidth = 64 + (Words("Opus 4.7", 155) + 47) + (Words("Auto mode", 90) + 47) + (Words("High", 48) + 47) + 4 * 6; var compactWidth = 32 * 4 + (Words("Opus 4.7", 90) + 47) + 4 * 6;
             Require(StyleFor(fullWidth + 4, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Full && StyleFor(fullWidth + 3, "Opus 4.7", "High", "Auto mode", false) == ToolbarStyle.Compact

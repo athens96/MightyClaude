@@ -73,12 +73,14 @@ public sealed partial class MainWindow
                 var reply = new LogEntry("next-actions-fixture", "assistant", "◆ done → next: `ooo run` or Review", Wire.Now());
                 await Change(p => p with { Status = "completed", Logs = [reply] }); Refresh();
                 await WaitUI(() => nextActionsHost.IsLoaded && nextActionsHost.ActualHeight > 0 && nextActionsHost.Children.OfType<Button>().Count() == 2);
+                // i18n-exempt-begin: RunNextActionsSmoke (--smoke-test) draft fixture: Korean input the next action must keep.
                 input.Text = "\uD55C\uAE00 draft"; await WaitUI(() => Session.Draft == input.Text);
                 var button = nextActionsHost.Children.OfType<Button>().First(); await WaitUI(() => button.IsLoaded && button.ActualWidth > 0);
                 await SettleDesktopCapture(owner.root);
                 await owner.CaptureSmoke(Path.Combine(owner.options.ProfileDirectory!, "smoke-next-actions.png"));
                 ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
                 await WaitUI(() => Session.Draft.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n') == "\uD55C\uAE00 draft\nooo run");
+                // i18n-exempt-end
                 Require(sendCount == 0 && ReferenceEquals(input, VisualChildren(Container).OfType<TextBox>().First(control => ReferenceEquals(control, input))), "Next action must only fill the existing native editor.");
                 Require(input.SelectionStart == input.Text.Length, "Next action must place caret after preserved draft.");
                 await Change(p => p with { Status = "running" }); Refresh(); Require(nextActionsHost.Visibility == Visibility.Collapsed, "Suggestions must hide while running.");

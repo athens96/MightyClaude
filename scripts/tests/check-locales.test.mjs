@@ -694,3 +694,55 @@ test('a touched Windows file passes when its Korean is allowed or its file is ex
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('Hangul spelled as a Unicode escape counts like Hangul typed out, in C#, Swift and TypeScript', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, {
+      budget: { areas: ROOMY_BUDGET.areas },
+      files: {
+        ...USED,
+        // Counted: \uXXXX (C#), \u{XXXX} (Swift), both forms in TypeScript, and a run of escapes in one literal.
+        'native/windows/MightyClaude.Core/Escaped.cs': 'var a = "\\uD55C\\uAE00";\nvar b = "plain \\uAC00 text";\n',
+        [`${APP}/Escaped.swift`]: 'let a = "\\u{D55C}\\u{AE00}"\n',
+        'mobile/src/escaped.ts': "const a = '\\uAC00';\nconst b = `\\u{AC00}`;\n",
+        // Not counted: an escaped backslash before u, and escapes outside Hangul (é, a surrogate range).
+        'native/windows/MightyClaude.WinUI/Plain.cs': 'var a = "\\\\uAC00";\nvar b = "caf\\u00e9";\nvar c = "[\\uD800-\\uDBFF]";\n',
+      },
+      koJson: KO,
+      enJson: EN,
+    });
+    const report = run(['--root', dir]).stdout;
+    const count = (label) => Number(report.match(new RegExp(`^ {2}${label} +(\\d+)개`, 'm'))[1]);
+    assert.equal(count('Windows Core'), 2, report);
+    assert.equal(count('macOS app'), 1, report);
+    assert.equal(count('phone'), 2, report);
+    assert.equal(count('Windows WinUI'), 0, report);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an allow entry names an escaped literal decoded, and a stale one still fails', () => {
+  const dir = tmpDir();
+  try {
+    const marker = 'native/windows/MightyClaude.Core/Marker.cs';
+    const allow = [{ file: marker, literal: '첨부: ', reason: 'saved-data marker' }];
+    setup(dir, {
+      budget: { areas: ZERO_AREAS, allow },
+      files: { ...USED, [marker]: 'const string Marker = "\\uCCA8\\uBD80: ";\n' },
+      koJson: KO,
+      enJson: EN,
+    });
+    const passed = run(['--root', dir]);
+    assert.equal(passed.status, 0, `the decoded allow entry must match the escaped literal\nstderr: ${passed.stderr}`);
+    assert.match(passed.stdout, /Windows Core +0개 .*허용 1개/);
+
+    fs.writeFileSync(path.join(dir, marker), 'const string Marker = "\\uCCA8: ";\n');
+    const stale = run(['--root', dir]);
+    assert.notEqual(stale.status, 0, 'a changed escaped literal is a new literal and leaves the allow entry stale');
+    assert.match(stale.stderr, /allow 항목 "첨부: "이 .*Marker\.cs에 없습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
