@@ -66,7 +66,7 @@ try {
         if ($transcriptActions.$key -ne $true) { throw "Windows transcript action smoke failed: transcriptActions.$key" }
     }
     $styles = $result.styles
-    if ($null -eq $styles -or [int]$styles.bundledCount -ne 3 -or [int]$styles.guidedActions -lt 1) {
+    if ($null -eq $styles -or [int]$styles.bundledCount -ne 4 -or [int]$styles.guidedActions -lt 1) {
         throw 'Windows style smoke did not load the bundled registry and guided actions.'
     }
     foreach ($key in @('picker', 'fullApprovalContents', 'localRunPermissionSnapshot')) {
