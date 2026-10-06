@@ -8,7 +8,7 @@
 // locales/ko.json and locales/en.json are the one source in this repository; the three
 // clients carry copies of them (docs/i18n.md). Plain node only, no dependencies.
 //
-//   1. ko and en have the same keys
+//   1. ko and en have the same keys (and every other complete language has exactly en's keys)
 //   2. each key has the same placeholders ({name}) in both
 //   2b. Translations (zh, ja) only carry keys en has, with en's placeholders per key.
 //       Keys they still miss are counted, not failed (stage 2 of the four-language plan makes it strict).
@@ -59,8 +59,16 @@ const ROOT = rootIdx >= 0
 const touchedSinceIdx = argv.indexOf('--touched-since');
 const TOUCHED_SINCE = touchedSinceIdx >= 0 ? argv[touchedSinceIdx + 1] : null;
 // Complete languages carry every key; translations may miss some, which then read English.
-const COMPLETE_LANGUAGES = ['ko', 'en'];
-const TRANSLATIONS = ['zh', 'ja'];
+// scripts/locale-languages.json says which is which ({"complete": [...], "translations": [...]});
+// without it ko and en are complete and zh and ja are translations.
+const LANGUAGE_CONFIG = (() => {
+  const file = path.join(ROOT, 'scripts/locale-languages.json');
+  if (!fs.existsSync(file)) return { complete: ['ko', 'en'], translations: ['zh', 'ja'] };
+  const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return { complete: value.complete ?? ['ko', 'en'], translations: value.translations ?? [] };
+})();
+const COMPLETE_LANGUAGES = LANGUAGE_CONFIG.complete;
+const TRANSLATIONS = LANGUAGE_CONFIG.translations;
 const LANGUAGES = [...COMPLETE_LANGUAGES, ...TRANSLATIONS];
 const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)\}/g;
 // `t("key")` / `t('key')` (phone), `L("key")` (Swift), `Locale.Get("key")` (C#)
@@ -426,6 +434,25 @@ for (const key of koKeys) {
   const inEn = placeholdersOf(catalogues.en[key]);
   if (inKo.join(',') !== inEn.join(',')) {
     fail(`${key}의 자리표가 다릅니다: ko {${inKo.join(', ')}} / en {${inEn.join(', ')}}`);
+  }
+}
+
+// ── 2a. Other complete languages: exactly en's keys, with en's placeholders ────
+for (const language of COMPLETE_LANGUAGES.filter((language) => language !== 'ko' && language !== 'en')) {
+  const catalogue = catalogues[language] ?? {};
+  for (const key of enKeys) {
+    if (!(key in catalogue)) fail(`${language}.json에 ${key}가 없습니다.`);
+  }
+  for (const key of Object.keys(catalogue).sort()) {
+    if (!enKeys.includes(key)) {
+      fail(`${language}.json의 ${key}가 en.json에 없습니다.`);
+      continue;
+    }
+    const inLanguage = placeholdersOf(catalogue[key]);
+    const inEn = placeholdersOf(catalogues.en[key]);
+    if (inLanguage.join(',') !== inEn.join(',')) {
+      fail(`${key}의 자리표가 다릅니다: ${language} {${inLanguage.join(', ')}} / en {${inEn.join(', ')}}`);
+    }
   }
 }
 
