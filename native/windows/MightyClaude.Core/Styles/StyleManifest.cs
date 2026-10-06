@@ -139,8 +139,8 @@ public static class StyleManifestDecoder
     {
         var r=new Reader(root,"");var schema=r.Take("schema");if(schema is null)Fail("E_SCHEMA_MISSING");if(Integer(schema,"schema")!=1)Fail("E_SCHEMA_VERSION");
         Id(r.S("id",1,40));r.S("name",1,40,false);r.S("summary",1,240);r.S("subtitle",1,80);
-        var p=new Reader(r.Take("placeholders"),"placeholders");p.S("idle",0,120);p.S("answering",0,120);p.O("initial",0,120);p.O("running",0,120);p.End();
-        p=new Reader(r.Take("guidance"),"guidance");foreach(var k in new[]{"start","next","running"})Guidance(p.O(k,0,160),p.At(k));p.End();
+        var p=new Reader(r.Take("placeholders"),"placeholders");p.S("idle",0,120);p.S("answering",0,120);p.O("initial",0,120);p.O("running",0,120);PhaseLines(p.Take("phases"),p.At("phases"),120);p.End();
+        p=new Reader(r.Take("guidance"),"guidance");var lines=new List<(string? Text,string Path)>();foreach(var k in new[]{"start","next","running"})lines.Add((p.O(k,0,160),p.At(k)));lines.AddRange(PhaseLines(p.Take("phases"),p.At("phases"),160));p.End();foreach(var line in lines)Guidance(line.Text,line.Path);
         p=new Reader(r.Take("prerequisites"),"prerequisites");Known(p.S("mode",1,16),["all","any"],"E_UNKNOWN_RULE");var report=p.O("report",1,16);if(report!=null)Known(report,["first","all"],"E_UNKNOWN_RULE");
         int index=0;
         foreach(var e in Array(p.Take("probes"),p.At("probes"),16))
@@ -172,8 +172,18 @@ public static class StyleManifestDecoder
         index=0;foreach(var e in Array(r.Take("autoAllow"),"autoAllow",32)){p=new Reader(e,$"autoAllow[{index++}]");p.O("server",1,64);p.S("tool",1,64);p.End();}
         p=new Reader(r.Take("presentation"),"presentation");Presentation(p);p.End();
         if(r.Take("job") is {} job){p=new Reader(job,"job");foreach(var key in new[]{"open","close"}){index=0;foreach(var e in Array(p.Take(key),p.At(key),32)){var q=new Reader(e,$"job.{key}[{index++}]");q.S("tool",1,64);var a=q.O("contains",1,400);var b=q.O("notContains",1,400);q.End();if(a!=null&&b!=null)Fail("E_JOB_MATCHER_LITERAL",q.Path);}}foreach(var e in OptionalArray(p.Take("whileOpen"),p.At("whileOpen"),100))Str(e,p.At("whileOpen"),1,64);Guidance(p.O("guidance",0,160),p.At("guidance"));p.End();}
-        if(r.Take("stateSources") is {} state){p=new Reader(state,"stateSources");index=0;foreach(var e in OptionalArray(p.Take("files"),p.At("files"),8)){var q=new Reader(e,$"stateSources.files[{index++}]");var path=q.S("path",1,400);Known(q.S("parser",1,40),["markdownChecklist","json"],"E_STATE_PARSER");Known(q.S("widget",1,40),["progressBar","list","label"],"E_STATE_WIDGET");q.End();if(!SafeRelativePath(path))Fail("E_STATE_PATH_ESCAPE",path);}index=0;foreach(var e in OptionalArray(p.Take("runEvents"),p.At("runEvents"),8)){var q=new Reader(e,$"stateSources.runEvents[{index++}]");Known(q.S("event",1,40),["subagent.start","subagent.finish","tool.call"],"E_STATE_RUN_EVENT");Known(q.S("aggregate",1,40),["count","lastValue"],"E_STATE_AGGREGATE");Known(q.S("widget",1,40),["progressBar","list","label"],"E_STATE_WIDGET");q.End();}p.End();}
+        if(r.Take("stateSources") is {} state){p=new Reader(state,"stateSources");index=0;foreach(var e in OptionalArray(p.Take("files"),p.At("files"),8)){var q=new Reader(e,$"stateSources.files[{index++}]");var path=q.S("path",1,400);Known(q.S("parser",1,40),["markdownChecklist","json"],"E_STATE_PARSER");Known(q.S("widget",1,40),["progressBar","list","label"],"E_STATE_WIDGET");q.End();if(!SafeRelativePath(path))Fail("E_STATE_PATH_ESCAPE",path);}index=0;foreach(var e in OptionalArray(p.Take("runEvents"),p.At("runEvents"),8)){var q=new Reader(e,$"stateSources.runEvents[{index++}]");Known(q.S("event",1,40),["subagent.start","subagent.finish","tool.call"],"E_STATE_RUN_EVENT");Known(q.S("aggregate",1,40),["count","lastValue"],"E_STATE_AGGREGATE");Known(q.S("widget",1,40),["progressBar","list","label"],"E_STATE_WIDGET");q.End();}index=0;foreach(var e in OptionalArray(p.Take("runState"),p.At("runState"),4)){var q=new Reader(e,$"stateSources.runState[{index++}]");var source=q.S("source",1,40);var widget=q.S("widget",1,40);q.End();Known(source,["todos","background"],"E_STATE_RUN_STATE");Known(widget,source=="todos"?["progressBar","list","label"]:["taskList","label","progressBar"],"E_STATE_WIDGET");}p.End();}
+        // §1.17 (v6): every new request in the style starts in this permission mode (closed: plan).
+        if(r.Take("launch") is {} launch){p=new Reader(launch,"launch");var mode=p.S("permissionMode",1,32);p.End();Known(mode,["plan"],"E_UNKNOWN_RULE","launch.permissionMode");}
         r.End();
+    }
+    /// <summary>§1.17 (v6): <c>{ "&lt;phase id&gt;": { "idle"?, "running"? } }</c>; the keys are checked against the phases in Validate.</summary>
+    private static List<(string? Text,string Path)> PhaseLines(JsonElement? value,string path,int max)
+    {
+        var lines=new List<(string?,string)>();if(value is null)return lines;
+        if(value.Value.ValueKind!=JsonValueKind.Object)Fail("E_TYPE",path);var entries=value.Value.EnumerateObject().ToArray();if(entries.Length>16)Fail("E_LIMIT",path);
+        foreach(var entry in entries.OrderBy(e=>e.Name,StringComparer.Ordinal)){var r=new Reader(entry.Value,path+"."+entry.Name);lines.Add((r.O("idle",0,max),r.At("idle")));lines.Add((r.O("running",0,max),r.At("running")));r.End();}
+        return lines;
     }
     private static void Rules(JsonElement? value)
     {
@@ -181,11 +191,12 @@ public static class StyleManifestDecoder
         foreach(var name in new[]{"start","phase","next","enter","recommend","initialGroup"})
         {
             var p=new Reader(r.Take(name),r.At(name));var kind=p.S("kind",1,32);
-            var allowed=name switch{"start"=>new[]{"none","actions"},"phase"=>["none","lastRecognisedAction"],"next"=>["byGroup","byPhase"],"enter"=>["verbatim","rewriteBareDraftTo"],"recommend"=>["none","capability"],_=>["fixed","capabilityState"]};Known(kind,allowed,"E_UNKNOWN_RULE",p.Path);
+            var allowed=name switch{"start"=>new[]{"none","actions"},"phase"=>["none","lastRecognisedAction","planState"],"next"=>["byGroup","byPhase"],"enter"=>["verbatim","rewriteBareDraftTo"],"recommend"=>["none","capability"],_=>["fixed","capabilityState"]};Known(kind,allowed,"E_UNKNOWN_RULE",p.Path);
             switch(kind)
             {
                 case "actions":p.S("phase",1,40);foreach(var e in Array(p.Take("actions"),p.At("actions"),100,1))Str(e,p.At("actions"),1,64);p.O("resetTitle",1,24);break;
                 case "lastRecognisedAction":p.S("default",1,40);int i=0;foreach(var e in OptionalArray(p.Take("stateOverrides"),p.At("stateOverrides"),16)){var q=new Reader(e,p.At($"stateOverrides[{i++}]"));Integer(q.Take("sourceIndex"),q.At("sourceIndex"));Known(q.S("condition",1,32),["fileExists","allChecked"],"E_UNKNOWN_RULE");q.S("phase",1,40);q.End();}break;
+                case "planState":Map(p.Take("map"),p.At("map"),false);break;
                 case "byPhase":Map(p.Take("map"),p.At("map"),true);break;
                 case "rewriteBareDraftTo":p.S("action",1,64);p.S("phase",1,40);break;
                 case "capability":case "capabilityState":p.S("capability",1,64);Map(p.Take("map"),p.At("map"),false);if(kind=="capability")p.O("group",1,40);break;
@@ -212,7 +223,17 @@ public static class StyleManifestDecoder
         foreach(var a in m.Actions){var recognised=StyleEvaluator.RecognisedName(m,a.Prompt(""));if(recognised is null||recognised!=a.Id&&recognised!=a.Match)Fail("E_PROMPT_RECOGNITION",a.Id);}
         if(StyleManifest.Bool(m.Root.GetProperty("recognition"),"lowercase"))foreach(var a in StyleManifest.Items(m.Root,"aliases"))if(S(a,"name")!=S(a,"name")!.ToLowerInvariant())Fail("E_PROMPT_RECOGNITION",S(a,"name")!);
         var start=m.Rules.GetProperty("start");if(S(start,"kind")=="actions"){if(!phases.Contains(S(start,"phase")!))Fail("E_START_PHASE",S(start,"phase")!);foreach(var a in StyleManifest.Strings(start,"actions"))Ref(a,actions,"rules.start.actions");}
-        var phase=m.Rules.GetProperty("phase");if(S(phase,"kind")=="none"){if(phases.Count>0)Fail("E_PHASE_RULE_NONE");}else{Ref(S(phase,"default"),phases,"rules.phase.default");foreach(var o in StyleManifest.Items(phase,"stateOverrides")){var n=o.GetProperty("sourceIndex").GetDouble();var count=m.Root.TryGetProperty("stateSources",out var state)?StyleManifest.Items(state,"files").Length:0;if(n<0||n>=count)Fail("E_UNKNOWN_REFERENCE","rules.phase.stateOverrides.sourceIndex");Ref(S(o,"phase"),phases,"rules.phase.stateOverrides.phase");}}
+        var phase=m.Rules.GetProperty("phase");if(S(phase,"kind")=="none"){if(phases.Count>0)Fail("E_PHASE_RULE_NONE");}
+        else if(S(phase,"kind")=="planState")
+        {
+            // §1.17 (v6): every stage, nothing but the stages, each to a phase that exists.
+            var map=phase.GetProperty("map");var pairs=map.EnumerateObject().OrderBy(p=>p.Name,StringComparer.Ordinal).ToArray();
+            foreach(var pair in pairs)if(!StyleStateEngine.PlanStages.Contains(pair.Name))Fail("E_UNKNOWN_REFERENCE","rules.phase.map: "+pair.Name);
+            foreach(var stage in StyleStateEngine.PlanStages)if(!map.TryGetProperty(stage,out _))Fail("E_RULE_INCOMPLETE",stage);
+            foreach(var pair in pairs)Ref(pair.Value.GetString(),phases,"rules.phase.map."+pair.Name);
+        }
+        else{Ref(S(phase,"default"),phases,"rules.phase.default");foreach(var o in StyleManifest.Items(phase,"stateOverrides")){var n=o.GetProperty("sourceIndex").GetDouble();var count=m.Root.TryGetProperty("stateSources",out var state)?StyleManifest.Items(state,"files").Length:0;if(n<0||n>=count)Fail("E_UNKNOWN_REFERENCE","rules.phase.stateOverrides.sourceIndex");Ref(S(o,"phase"),phases,"rules.phase.stateOverrides.phase");}}
+        foreach(var key in new[]{"placeholders","guidance"})if(m.Root.GetProperty(key).TryGetProperty("phases",out var own))foreach(var pair in own.EnumerateObject().OrderBy(p=>p.Name,StringComparer.Ordinal))Ref(pair.Name,phases,key+".phases");
         var next=m.Rules.GetProperty("next");if(S(next,"kind")=="byPhase"){var map=next.GetProperty("map");foreach(var p in phases)if(!map.TryGetProperty(p,out _))Fail("E_RULE_INCOMPLETE",p);foreach(var pair in map.EnumerateObject()){Ref(pair.Name,phases,"rules.next.map");foreach(var a in pair.Value.EnumerateArray())Ref(a.GetString(),actions,"rules.next.map");}}
         var enter=m.Rules.GetProperty("enter");if(S(enter,"kind")=="verbatim"){if(m.Root.GetProperty("placeholders").TryGetProperty("initial",out _))Fail("E_PLACEHOLDER_INITIAL");}else{var action=S(enter,"action");Ref(action,actions,"rules.enter.action");if(!m.Actions.First(a=>a.Id==action).TakesText)Fail("E_ENTER_ACTION_TEXT",action!);Ref(S(enter,"phase"),phases,"rules.enter.phase");}
         foreach(var name in new[]{"recommend","initialGroup"}){var rule=m.Rules.GetProperty(name);Ref(S(rule,"group"),groups,"rules."+name+".group");if(rule.TryGetProperty("map",out var map))foreach(var pair in map.EnumerateObject())Ref(pair.Value.GetString(),name=="recommend"?actions:groups,"rules."+name+".map");}

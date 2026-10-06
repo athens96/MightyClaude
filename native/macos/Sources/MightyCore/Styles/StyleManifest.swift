@@ -30,6 +30,10 @@ public enum StyleLimits {
     /// §1.16: closed state-source arrays.
     public static let maximumStateFileSources = 8
     public static let maximumStateRunEventSources = 8
+    /// §1.17 (v6): run-state sources read the pane's own plan-mode state.
+    public static let maximumStateRunStateSources = 4
+    /// §1.17 (v6): a task-list widget shows at most this many tasks.
+    public static let maximumTaskListItems = 8
 }
 
 /// One refusal: the frozen code and the Korean line both surfaces show.
@@ -170,6 +174,8 @@ public enum StyleErrors {
     public static func stateAggregate(_ value: String) -> StyleManifestError { code("E_STATE_AGGREGATE", "알 수 없는 집계 방법입니다: \(StyleText.safe(value)).") }
     public static func statePathEscape(_ value: String) -> StyleManifestError { code("E_STATE_PATH_ESCAPE", "경로가 워크스페이스를 벗어납니다: \(StyleText.safe(value)).") }
     public static func stateRunEvent(_ value: String) -> StyleManifestError { code("E_STATE_RUN_EVENT", "알 수 없는 실행 이벤트입니다: \(StyleText.safe(value)).") }
+    /// §1.17 (v6).
+    public static func stateRunState(_ value: String) -> StyleManifestError { code("E_STATE_RUN_STATE", "알 수 없는 실행 상태 소스입니다: \(StyleText.safe(value)).") }
 }
 
 /// The frozen code list of §2, read off the values `StyleErrors` actually
@@ -195,6 +201,7 @@ public enum StyleErrorCodes {
         StyleErrors.idCollision("", .user),
         StyleErrors.stateParser(""), StyleErrors.stateWidget(""), StyleErrors.stateAggregate(""),
         StyleErrors.statePathEscape(""), StyleErrors.stateRunEvent(""),
+        StyleErrors.stateRunState(""),
     ]
     public static let all: Set<String> = Set(produced.map(\.code))
 }
@@ -311,14 +318,28 @@ public struct StyleRecognition: Sendable, Equatable {
 public struct StylePlaceholders: Sendable, Equatable {
     public var idle, answering: String
     public var initial, running: String?
-    public init(idle: String, answering: String, initial: String? = nil, running: String? = nil) {
-        self.idle = idle; self.answering = answering; self.initial = initial; self.running = running
+    /// §1.17 (v6): a phase's own composer lines, keyed by phase id. A present
+    /// line wins over `idle`, `running` and `initial`; a question still wins.
+    public var phases: [String: StylePhaseLines]
+    public init(idle: String, answering: String, initial: String? = nil, running: String? = nil, phases: [String: StylePhaseLines] = [:]) {
+        self.idle = idle; self.answering = answering; self.initial = initial; self.running = running; self.phases = phases
     }
+}
+
+/// §1.17 (v6): one phase's own line, while idle and while running — a
+/// composer placeholder or a guidance line.
+public struct StylePhaseLines: Sendable, Equatable {
+    public var idle, running: String?
+    public init(idle: String? = nil, running: String? = nil) { self.idle = idle; self.running = running }
 }
 
 public struct StyleGuidance: Sendable, Equatable {
     public var start, next, running: String?
-    public init(start: String? = nil, next: String? = nil, running: String? = nil) { self.start = start; self.next = next; self.running = running }
+    /// §1.17 (v6): keyed by phase id; a present line wins over start/next/running.
+    public var phases: [String: StylePhaseLines]
+    public init(start: String? = nil, next: String? = nil, running: String? = nil, phases: [String: StylePhaseLines] = [:]) {
+        self.start = start; self.next = next; self.running = running; self.phases = phases
+    }
 }
 
 public struct StyleInstall: Sendable, Equatable {
@@ -406,9 +427,23 @@ public struct StyleFileSourceState: Sendable, Equatable, Hashable {
     public init(exists: Bool, allChecked: Bool) { self.exists = exists; self.allChecked = allChecked }
 }
 
+/// §1.17 (v6): where a pane stands in Claude's plan mode (closed). Read from
+/// the pane's own plan answers and its pending ExitPlanMode request.
+public enum StylePlanStage: String, Sendable, Equatable, Hashable, CaseIterable, Codable {
+    /// A request is being planned: no plan asked yet, or one was sent back or cancelled.
+    case planning
+    /// A plan waits for the user's answer.
+    case awaitingApproval
+    /// The latest request's plan was approved; it runs or has run.
+    case executing
+}
+
 public enum StylePhaseRule: Sendable, Equatable {
     case none
     case lastRecognisedAction(default: String, stateOverrides: [StylePhaseStateOverride])
+    /// §1.17 (v6): the phase is the one mapped to the pane's plan stage;
+    /// every stage is mapped. Request history does not move it.
+    case planState(map: [String: String])
 }
 public enum StyleStartRule: Sendable, Equatable { case none, actions(phase: String, actions: [String], resetTitle: String?) }
 public enum StyleNextRule: Sendable, Equatable { case byPhase([String: [String]]), byGroup }
@@ -460,8 +495,9 @@ public enum StyleStateParser: String, Sendable, Equatable, CaseIterable { case m
 /// §1.16: the two aggregates a run-event state source may name (closed).
 public enum StyleStateAggregate: String, Sendable, Equatable, CaseIterable { case count, lastValue }
 
-/// §1.16: the three widget kinds any state source may map to (closed).
-public enum StyleStateWidget: String, Sendable, Equatable, CaseIterable { case progressBar, list, label }
+/// §1.16: the widget kinds a state source may map to (closed). `taskList`
+/// (v6) belongs to the `background` run-state source alone (§1.17).
+public enum StyleStateWidget: String, Sendable, Equatable, CaseIterable { case progressBar, list, label, taskList }
 
 /// §1.16: the run-event types a manifest may declare (closed).
 public enum StyleStateRunEvent: String, Sendable, Equatable, CaseIterable {
@@ -490,13 +526,49 @@ public struct StyleStateRunEventSource: Sendable, Equatable {
     }
 }
 
+/// §1.17 (v6): the pane state a run-state source reads (closed).
+public enum StyleRunStateKind: String, Sendable, Equatable, CaseIterable {
+    /// The main agent's checklist (TodoWrite or the task tools) while a plan runs.
+    case todos
+    /// Work the CLI keeps running beside the turn (background agents and shells).
+    case background
+
+    /// The widgets each source can be drawn as.
+    public var widgets: Set<StyleStateWidget> {
+        switch self {
+        case .todos: return [.progressBar, .list, .label]
+        case .background: return [.taskList, .label, .progressBar]
+        }
+    }
+}
+
+/// §1.17 (v6): a run-state source: the pane's plan-mode state mapped to one widget.
+public struct StyleStateRunStateSource: Sendable, Equatable {
+    public var source: StyleRunStateKind
+    public var widget: StyleStateWidget
+    public init(source: StyleRunStateKind, widget: StyleStateWidget) { self.source = source; self.widget = widget }
+}
+
 /// §1.16: the optional top-level `stateSources` block.
 public struct StyleStateSources: Sendable, Equatable {
     public var files: [StyleStateFileSource]
     public var runEvents: [StyleStateRunEventSource]
-    public init(files: [StyleStateFileSource] = [], runEvents: [StyleStateRunEventSource] = []) {
-        self.files = files; self.runEvents = runEvents
+    /// §1.17 (v6).
+    public var runState: [StyleStateRunStateSource]
+    public init(files: [StyleStateFileSource] = [], runEvents: [StyleStateRunEventSource] = [], runState: [StyleStateRunStateSource] = []) {
+        self.files = files; self.runEvents = runEvents; self.runState = runState
     }
+}
+
+/// §1.17 (v6): how a request typed in the style starts (closed).
+public enum StyleLaunchPermissionMode: String, Sendable, Equatable, CaseIterable { case plan }
+
+/// §1.17 (v6): the optional top-level `launch` block. Every new request of a
+/// pane in this style starts in this permission mode; the pane's own stored
+/// mode is not changed, and steering into a running turn is not a new request.
+public struct StyleLaunch: Sendable, Equatable {
+    public var permissionMode: StyleLaunchPermissionMode
+    public init(permissionMode: StyleLaunchPermissionMode) { self.permissionMode = permissionMode }
 }
 
 public struct StyleManifest: Sendable, Equatable {
@@ -517,16 +589,27 @@ public struct StyleManifest: Sendable, Equatable {
     public var presentation: StylePresentation
     public var job: StyleJobDeclaration?
     public var stateSources: StyleStateSources?
+    /// §1.17 (v6).
+    public var launch: StyleLaunch?
     public init(schema: Int, id: String, name: String, summary: String, subtitle: String, placeholders: StylePlaceholders,
                 guidance: StyleGuidance, prerequisites: StylePrerequisites, install: StyleInstall?, phases: [StylePhase],
                 groups: [StyleGroup], actions: [StyleAction], aliases: [StyleAlias], recognition: StyleRecognition,
                 rules: StyleRules, capabilities: [String], autoAllow: [StyleAutoAllowEntry], presentation: StylePresentation,
-                job: StyleJobDeclaration? = nil, stateSources: StyleStateSources? = nil) {
+                job: StyleJobDeclaration? = nil, stateSources: StyleStateSources? = nil, launch: StyleLaunch? = nil) {
         self.schema = schema; self.id = id; self.name = name; self.summary = summary; self.subtitle = subtitle
         self.placeholders = placeholders; self.guidance = guidance; self.prerequisites = prerequisites; self.install = install
         self.phases = phases; self.groups = groups; self.actions = actions; self.aliases = aliases
         self.recognition = recognition; self.rules = rules; self.capabilities = capabilities
         self.autoAllow = autoAllow; self.presentation = presentation; self.job = job; self.stateSources = stateSources
+        self.launch = launch
+    }
+
+    /// §1.17: the style reads the pane's plan stage — for its phase rule or
+    /// for a run-state source. Other styles never compute it, so their
+    /// readings (and the phone digests made of them) stay as they were.
+    public var readsPlanState: Bool {
+        if case .planState = rules.phase { return true }
+        return !(stateSources?.runState.isEmpty ?? true)
     }
 
     public func action(_ id: String) -> StyleAction? { actions.first { $0.id == id } }

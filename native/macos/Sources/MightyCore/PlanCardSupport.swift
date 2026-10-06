@@ -50,6 +50,35 @@ public enum PlanCardSupport {
         return L("plan.background.status", ["count": "\(work.running.count)"])
     }
 
+    /// The pane's background tasks as the plan style's task list draws them
+    /// (§1.17): running first, at most `StyleLimits.maximumTaskListItems`.
+    public static func backgroundTasks(_ work: BackgroundWork?) -> [StyleWidgetPresentation.Task] {
+        guard let work, !work.tasks.isEmpty else { return [] }
+        let widget = StyleStateEngine.runState(StyleStateRunStateSource(source: .background, widget: .taskList),
+                                               input: StyleRunStateInput(planStage: .planning, background: work))
+        guard case .taskList(let items)? = StyleWidgetPresentation.make(widget) else { return [] }
+        return items
+    }
+
+    /// The expandable background list outside a style: in any view while the
+    /// turn is over and background work runs, and in the Mighty view whenever
+    /// background work runs. A style that draws its own task list keeps it.
+    public static func showsBackgroundStrip(_ work: BackgroundWork?, mighty: Bool, styleDrawsTasks: Bool) -> Bool {
+        guard !styleDrawsTasks, let work, !work.running.isEmpty else { return false }
+        return work.waitingOnBackground || mighty
+    }
+
+    /// The strip's folded line: the header's "turn done" word while waiting,
+    /// else how many still run.
+    public static func backgroundSummary(_ work: BackgroundWork) -> String {
+        backgroundStatus(work) ?? L("styles.state.backgroundRunning", ["count": "\(work.running.count)"])
+    }
+
+    /// Whether a style draws a background task list of its own (§1.17).
+    public static func styleDrawsTasks(_ manifest: StyleManifest?) -> Bool {
+        manifest?.stateSources?.runState.contains { $0.source == .background && $0.widget == .taskList } ?? false
+    }
+
     /// "HH:mm" in the given zone for an ISO 8601 time; the input when unreadable.
     public static func timeText(_ iso: String, timeZone: TimeZone = .current) -> String {
         guard let date = AgentRunTiming.parseTimestamp(iso) else { return iso }

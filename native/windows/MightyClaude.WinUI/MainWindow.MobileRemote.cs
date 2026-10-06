@@ -291,7 +291,7 @@ public sealed partial class MainWindow
         switch (request.Action)
         {
             case "submit": return await pane.MobileSubmit(body.Text("text") ?? "", body.Text("mode"), request.Attachments ?? [], token);
-            case "stop": var running = service.IsSessionRunning(request.SessionId); pane.MobileCancelQueue(); await service.StopAsync(request.SessionId); return running;
+            case "stop": var running = service.IsSessionRunning(request.SessionId); pane.MobileStopQueue(); await service.StopAsync(request.SessionId); return running;
             case "queue-remove": pane.MobileQueueRemove(body.Text("id") ?? ""); return null;
             case "queue-next": return await pane.MobileRunNext(token);
             case "rename": if (body.Text("titleMode") == "auto") await service.SetSessionAutoTitleAsync(request.SessionId); else await service.RenameSessionAsync(request.SessionId, body.Text("title")!.Trim()); Render(); return null;
@@ -322,6 +322,12 @@ public sealed partial class MainWindow
         internal RunSession MobileSession => Session;
         internal void MobileQueueRemove(string itemId) { if (!queuedInputs.Remove(itemId)) throw new MobileRequestException(404, "Queued request not found."); RenderQueuedInputs(); RefreshComposerState(); }
         private bool MobileBusy => starting || queueStarting || Session.Status == "running" || owner.service.IsSessionRunning(id) || owner.BackgroundUpdateHolds(Session);
+        /// <summary>The phone's stop: the queue is cancelled, unless the turn was over and only background work ran (M/AppStore.swift stop).</summary>
+        internal void MobileStopQueue()
+        {
+            queueKeptOnStop = BackgroundQueuePolicy.StopKeepsQueue(Session.BackgroundWork);
+            if (!queueKeptOnStop) MobileCancelQueue(); else { composerSubmissionVersion++; queueDrainTimer.Stop(); }
+        }
         internal void MobileCancelQueue() { composerSubmissionVersion++; queueDrainTimer.Stop(); queuedInputs.Clear(); RenderQueuedInputs(); RefreshComposerState(); }
         internal async Task<string> MobileSubmit(string text, string? mode, IReadOnlyList<RunAttachment> files, CancellationToken token, bool prepared = false, string? queueId = null)
         {
@@ -330,13 +336,17 @@ public sealed partial class MainWindow
             var request = new StartRunRequest(id, pane.WorkspaceId, pane.Kind, text, RegisteredModelsFor(pane.Provider, Workspace, owner.service.Snapshot), pane.Model, pane.Provider, pane.Settings, pane.ResumeId, files).Validate();
             if (MobileBusy)
             {
-                if (mode != "queue" && files.Count == 0 && pane.Provider == "claude" && await owner.service.TrySteerAsync(id, text)) return "steered";
-                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
+                // The composer's rule (§1.17.4): a plan-mode style never steers into a turn that only waits on background work.
+                var plans = LaunchesInPlanMode;
+                if (BackgroundQueuePolicy.PhoneSteers(mode, pane.BackgroundWork, plans) && files.Count == 0 && pane.Provider == "claude" && await owner.service.TrySteerAsync(id, text)) return "steered";
+                token.ThrowIfCancellationRequested(); queuedInputs.Add(text, files, BackgroundQueuePolicy.QueuedOverride(plans)); RenderQueuedInputs(); RefreshComposerState(); if (!MobileBusy) queueDrainTimer.Start(); return "queued";
             }
             var submission = ++composerSubmissionVersion; starting = true; RefreshComposerState();
             try
             {
                 var submitted = prepared ? text : await PrepareStyleSubmission(text, files.Count > 0); request = await PrepareStyleRunRequest(request with { Input = submitted });
+                // A queued item keeps the launch decision made when it was queued (§1.17.4).
+                if (queueId is not null && queuedInputs.Items.FirstOrDefault(q => q.Id == queueId) is { } queuedItem) request = request with { PermissionModeOverride = queuedItem.PermissionModeOverride };
                 token.ThrowIfCancellationRequested(); if (!QueuePaneAlive || submission != composerSubmissionVersion || queueId is not null && !queuedInputs.Items.Any(q => q.Id == queueId)) throw new OperationCanceledException(); await owner.StartFromComposer(request); return "started";
             }
             finally { starting = false; if (QueuePaneAlive) Refresh(); }
@@ -369,7 +379,7 @@ public sealed partial class MainWindow
                 actions = style.Manifest.Actions.Select(a => new { a.Id, a.Title, a.Help, a.Icon, a.Glyph, a.Scope, a.TakesText, a.RequiresText, flags = a.Flags ?? [], prominent = next.FirstOrDefault() == a.Id }),
                 next, recommended = style.Evaluator.RecommendedAction(styleCapabilities), attachments = styleCapabilityFiles.Select(file => new { id = StyleText.Safe(Path.GetFileName(file.Path),120), title = file.Title, detail = file.Detail, readOnly = file.ReadOnly }),
                 setup = new { ready = stylePrerequisites?.Ready ?? false, missing = stylePrerequisites?.Missing ?? [], hint = stylePrerequisites?.Hint, installCommand = stylePrerequisites?.InstallCommand },
-                guidance = style.Evaluator.Guidance(phase, MobileBusy, job), presentation = new { headerTitle = style.Manifest.Name + (phase is null ? "" : " · " + phase.Title), source = style.Source, icon = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"icon"), tint = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"tint") }, widgets = styleReading?.Widgets
+                guidance = style.Evaluator.Guidance(phase, MobileBusy, job), presentation = new { headerTitle = style.Manifest.Name + (phase is null ? "" : " · " + phase.Title), source = style.Source, icon = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"icon"), tint = StyleManifest.Text(style.Manifest.Root.GetProperty("presentation"),"tint") }, widgets = LiveStyleReading(style).Widgets is {Count:>0} live ? live.Select(StylePresentation.Payload).ToArray() : null
             };
         }
         internal async Task MobileSettings(JsonElement value, CancellationToken token)

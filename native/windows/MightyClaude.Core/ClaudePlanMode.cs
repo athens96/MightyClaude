@@ -74,8 +74,10 @@ public sealed record PlanApprovalRequest(string SessionId, string RunId, string 
 /// <summary>
 /// One answered plan in the pane's history. <c>GraphRunId</c> is the id of the diagram request the plan
 /// belongs to (<c>MightyGraphRun.SourceRunID</c>), so its history block attaches beside that request.
+/// <c>LaunchOverride</c> is "plan" when a plan-mode style started the run in plan mode (docs/mighty-styles.md
+/// §1.17.4): its approval then leaves the pane's stored mode alone.
 /// </summary>
-public sealed record PlanRecord(string Id, string RunId, string Plan, string ReceivedAt, string DecidedAt, string Outcome, string? Feedback = null, bool? PlanTruncated = null, string? GraphRunId = null);
+public sealed record PlanRecord(string Id, string RunId, string Plan, string ReceivedAt, string DecidedAt, string Outcome, string? Feedback = null, bool? PlanTruncated = null, string? GraphRunId = null, string? LaunchOverride = null);
 
 public static class ClaudePlanMode
 {
@@ -174,7 +176,7 @@ public static class ClaudePlanMode
     {
         if (history is null) return null;
         var list = history.Where(r => r is not null && Wire.Identifier(r.Id) && !string.IsNullOrEmpty(r.Plan) && PlanOutcome.All.Contains(r.Outcome) && AgentRunTiming.Parse(r.DecidedAt) is not null)
-            .Select(r => Bounded(r with { RunId = r.RunId ?? "", ReceivedAt = r.ReceivedAt ?? r.DecidedAt, GraphRunId = Wire.Identifier(r.GraphRunId) ? r.GraphRunId : null })).TakeLast(MaximumHistory).ToList();
+            .Select(r => Bounded(r with { RunId = r.RunId ?? "", ReceivedAt = r.ReceivedAt ?? r.DecidedAt, GraphRunId = Wire.Identifier(r.GraphRunId) ? r.GraphRunId : null, LaunchOverride = r.LaunchOverride == "plan" ? "plan" : null })).TakeLast(MaximumHistory).ToList();
         return list.Count == 0 ? null : Budgeted(list);
     }
 
@@ -190,8 +192,9 @@ public static class ClaudePlanMode
             "plan" when ev.Plan is { } record => session with
             {
                 PlanHistory = Appending(record, session.PlanHistory),
-                // Only a pane the user put in plan mode takes the approved mode; one Claude moved into planning by itself keeps its own.
-                Settings = session.Settings.PermissionMode == "plan" && PlanOutcome.PaneMode(record.Outcome) is { } mode ? session.Settings with { PermissionMode = mode } : session.Settings,
+                // Only a pane the user put in plan mode takes the approved mode; one Claude moved into planning by itself keeps its own,
+                // and so does a run a plan-mode style started in plan mode (§1.17.4), even in a pane stored in plan.
+                Settings = session.Settings.PermissionMode == "plan" && record.LaunchOverride is null && PlanOutcome.PaneMode(record.Outcome) is { } mode ? session.Settings with { PermissionMode = mode } : session.Settings,
             },
             "todos" => session with { TodoProgress = TodoProgress.Normalized(ev.Todos) },
             "background" => session with { BackgroundWork = BackgroundWork.Normalized(ev.Background, false) },

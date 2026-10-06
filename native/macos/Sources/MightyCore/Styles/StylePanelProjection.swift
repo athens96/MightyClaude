@@ -46,13 +46,30 @@ public struct StylePanel: Codable, Sendable, Equatable {
         public var icon: String?
         public var tint: StyleTint?
     }
-    /// §1.16: one computed widget value, matching the three closed kinds.
+    /// §1.17 (v6): one background task as a `taskList` widget carries it. The
+    /// times are the pane's own ISO 8601 stamps, so each surface works out
+    /// the elapsed time against its own clock.
+    public struct TaskItem: Codable, Sendable, Equatable, Hashable {
+        public var text: String
+        /// `agent`, `shell` or `other`.
+        public var kind: String
+        /// `running`, `completed`, `failed`, `stopped` or `unknown`.
+        public var status: String
+        public var startedAt: String
+        public var endedAt: String?
+        public init(text: String, kind: String, status: String, startedAt: String, endedAt: String? = nil) {
+            self.text = text; self.kind = kind; self.status = status; self.startedAt = startedAt; self.endedAt = endedAt
+        }
+    }
+    /// §1.16: one computed widget value, matching the closed kinds.
     /// A bar's `value` is the completed count and `total` the whole count;
     /// a bar with no total (from run events) is a bare count.
     public enum Widget: Codable, Sendable, Equatable, Hashable {
         case progressBar(value: Int, total: Int?)
         case list(items: [String])
         case label(text: String)
+        /// §1.17 (v6): background tasks.
+        case taskList(items: [TaskItem])
 
         enum CodingKeys: String, CodingKey { case kind, value, total, items, text }
         public init(from decoder: Decoder) throws {
@@ -67,6 +84,8 @@ public struct StylePanel: Codable, Sendable, Equatable {
                 self = .list(items: try c.decode([String].self, forKey: .items))
             case "label":
                 self = .label(text: try c.decode(String.self, forKey: .text))
+            case "taskList":
+                self = .taskList(items: try c.decode([TaskItem].self, forKey: .items))
             default:
                 throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown widget kind: \(kind)")
             }
@@ -81,6 +100,8 @@ public struct StylePanel: Codable, Sendable, Equatable {
                 try c.encode("list", forKey: .kind); try c.encode(items, forKey: .items)
             case .label(let text):
                 try c.encode("label", forKey: .kind); try c.encode(text, forKey: .text)
+            case .taskList(let items):
+                try c.encode("taskList", forKey: .kind); try c.encode(items, forKey: .items)
             }
         }
     }
@@ -110,7 +131,7 @@ public enum StylePanelProjection {
         let manifest = style.manifest
         let evaluator = style.evaluator
         // §1.16: the same state the Mac pane's phase bar reads.
-        let phase = evaluator.currentPhase(prompts: prompts, fileSourceStates: state.fileSourceStates)
+        let phase = evaluator.currentPhase(prompts: prompts, fileSourceStates: state.fileSourceStates, planStage: state.planStage)
         let jobOpen = session.map { evaluator.isJobOpen(session: $0) } ?? false
         let ordered = manifest.orderedPhases
         let selected = selectedGroupId.flatMap { manifest.group($0) } ?? evaluator.initialGroup(capabilityStates: capabilityStates)

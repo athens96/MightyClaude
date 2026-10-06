@@ -1,0 +1,32 @@
+# 준비 중인 고정(mighty-style-engine-v6)의 엔진 파일 목록 — docs/mighty-styles.md §8.3.
+#
+# v6 태그가 없는 동안 scripts/check-style-freeze.sh와 .github/workflows/style-freeze.yml은
+# 검사를 건너뛰지 않고 previous-tag(v5)로 돈다. 그때 v5 이후 바뀌어도 되는 고정 경로는
+# 아래에 정확히 적힌 경로뿐이고, v5의 번들 매니페스트·골든·코퍼스는 바이트 그대로여야
+# 한다(새 파일만 더할 수 있다).
+#
+# 사용자가 정할 때 v6 태그를 걸면(§8.3의 모양: 엔진 커밋 P 위에 styles/FREEZE 하나만 더한
+# 커밋 T) 이 파일은 지운다 — 태그 이후에는 v6이 그대로 고정하므로 예외 목록이 필요 없다.
+# 이 목록에 경로를 더하는 것은 엔진을 바꾸겠다는 선언이며 리뷰에서 그렇게 읽는다.
+previous-tag: mighty-style-engine-v5
+.github/workflows/style-freeze.yml
+docs/mighty-styles.md
+mobile/src/__tests__/styles-claude-plan.test.ts
+mobile/src/lib/styles.ts
+native/macos/Sources/MightyCore/Resources/Styles/claude-plan.json
+native/macos/Sources/MightyCore/Styles/StyleEvaluator.swift
+native/macos/Sources/MightyCore/Styles/StyleManifest.swift
+native/macos/Sources/MightyCore/Styles/StyleManifestDecoder.swift
+native/macos/Sources/MightyCore/Styles/StyleManifestValidator.swift
+native/macos/Sources/MightyCore/Styles/StylePanelProjection.swift
+native/macos/Sources/MightyCore/Styles/StyleStateEngine.swift
+native/macos/Sources/MightyCore/Styles/StyleSurfaces.swift
+native/macos/Sources/MightyCore/Styles/StyleWidgetPresentation.swift
+native/macos/Tests/MightyCoreTests/StyleGoldenContractTests.swift
+native/macos/Tests/MightyCoreTests/StyleGoldenSupport.swift
+native/macos/Tests/MightyCoreTests/StyleManifestTests.swift
+native/macos/Tests/MightyCoreTests/StyleRegistryTests.swift
+native/macos/Tests/MightyCoreTests/StylesBundledTests.swift
+native/macos/Tests/MightyCoreTests/StylesClaudePlanTests.swift
+native/macos/Tests/MightyCoreTests/SuperpowersStyleTests.swift
+scripts/check-style-freeze.sh

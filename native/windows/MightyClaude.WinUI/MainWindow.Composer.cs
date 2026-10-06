@@ -426,7 +426,10 @@ public sealed partial class MainWindow
             // The pane's answered plans, folded to one line over the permission and plan cards (MainWindow.PlanCard.cs).
             planHistoryHost = new StackPanel { Margin = new Thickness(12, 6, 12, 0), Visibility = Visibility.Collapsed };
             AutomationProperties.SetAutomationId(planHistoryHost, "plan-history-host-" + id);
-            foreach (var part in new FrameworkElement[] { nextActionsHost, planHistoryHost, toolPermissionHost, agentWebPromptScroll, cardHost }) region.Children.Add(part);
+            // Background agents still running, folded to one line under the plans (MainWindow.BackgroundWork.cs).
+            backgroundHost = new StackPanel { Margin = new Thickness(12, 6, 12, 0), Visibility = Visibility.Collapsed };
+            AutomationProperties.SetAutomationId(backgroundHost, "background-work-host-" + id);
+            foreach (var part in new FrameworkElement[] { nextActionsHost, planHistoryHost, backgroundHost, toolPermissionHost, agentWebPromptScroll, cardHost }) region.Children.Add(part);
             var scroll = new ScrollViewer
             {
                 Content = region, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto,

@@ -120,6 +120,24 @@ public enum StyleManifestValidator {
                     throw StyleErrors.unknownReference(opath + ".phase", override.phase)
                 }
             }
+        case .planState(let map):
+            // §1.17 (v6): every stage is mapped, to a phase that exists, and
+            // nothing but the closed stage names is.
+            for key in map.keys.sorted() where StylePlanStage(rawValue: key) == nil {
+                throw StyleErrors.unknownReference("rules.phase.map", key)
+            }
+            for stage in StylePlanStage.allCases where map[stage.rawValue] == nil { throw StyleErrors.ruleIncomplete(stage.rawValue) }
+            for key in map.keys.sorted() where !phaseIds.contains(map[key]!) {
+                throw StyleErrors.unknownReference("rules.phase.map." + key, map[key]!)
+            }
+        }
+
+        // §1.17 (v6): a phase's own placeholder and guidance name real phases.
+        for key in manifest.placeholders.phases.keys.sorted() where !phaseIds.contains(key) {
+            throw StyleErrors.unknownReference("placeholders.phases", key)
+        }
+        for key in manifest.guidance.phases.keys.sorted() where !phaseIds.contains(key) {
+            throw StyleErrors.unknownReference("guidance.phases", key)
         }
 
         switch manifest.rules.next {

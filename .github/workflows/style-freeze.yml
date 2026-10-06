@@ -16,8 +16,13 @@ jobs:
       - name: The frozen style engine is unchanged since the tag
         run: |
           set -euo pipefail
-          if git rev-parse -q --verify refs/tags/mighty-style-engine-v5 >/dev/null; then
+          if git rev-parse -q --verify refs/tags/mighty-style-engine-v6 >/dev/null; then
             bash scripts/check-style-freeze.sh
           else
-            echo "mighty-style-engine-v5 태그가 아직 없어 고정 검사를 건너뜁니다."
+            # v6 is still being prepared: v5 keeps guarding everything except the
+            # engine files styles/STYLE_FREEZE_PENDING declares, and v5's bundled
+            # manifests, goldens and corpus stay byte-locked (new files only).
+            echo "mighty-style-engine-v6 태그가 아직 없어 v5와 styles/STYLE_FREEZE_PENDING으로 검사합니다."
+            bash scripts/check-style-freeze.sh mighty-style-engine-v5 --pending styles/STYLE_FREEZE_PENDING
+            git diff --exit-code --diff-filter=MDR mighty-style-engine-v5 HEAD -- native/macos/Sources/MightyCore/Resources/Styles styles/golden styles/conformance
           fi

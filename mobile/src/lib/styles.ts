@@ -12,8 +12,10 @@ import type {
   StyleGroup,
   StylePanel,
   StylePhase,
+  StyleTaskItem,
   StyleWidget,
 } from '@/api/types';
+import { t } from '@/lib/i18n';
 
 /**
  * The Mighty style engine, seen from the phone. The host projects whichever manifest a
@@ -34,6 +36,8 @@ export const MAX_STYLE_ATTACHMENTS = 24;
 export const MAX_SETUP_MISSING = 16;
 /** A list widget draws at most this many lines, on the Mac too (§1.16.4). */
 export const MAX_WIDGET_LIST_ITEMS = 8;
+/** A task list shows at most this many tasks, on the Mac too (§1.17). */
+export const MAX_TASK_LIST_ITEMS = 8;
 
 /** The two marks an action chip draws; a flag outside this set is dropped, not guessed. */
 export const ACTION_FLAGS = ['userInvoked', 'readOnly'] as const;
@@ -381,10 +385,78 @@ function parseWidgets(raw: unknown): StyleWidget[] {
       // widget per declared source as on the Mac, and draws nothing.
       if (typeof entry.text !== 'string') continue;
       out.push({ kind: 'label', text: inlineText(entry.text, 200) });
+    } else if (kind === 'taskList') {
+      // §1.17: background tasks. A task without a start time cannot say how long it ran
+      // and is dropped; an unknown kind or status reads as the closed fallback.
+      const items = Array.isArray(entry.items)
+        ? (entry.items as unknown[]).map(parseTask).filter((task): task is StyleTaskItem => task !== undefined)
+        : [];
+      out.push({ kind: 'taskList', items: items.slice(0, MAX_TASK_LIST_ITEMS) });
     }
     // Unknown kinds are dropped, not guessed (closed vocabulary §1.16).
   }
   return out;
+}
+
+const TASK_KINDS = ['agent', 'shell'] as const;
+const TASK_STATUSES = ['running', 'completed', 'failed', 'stopped'] as const;
+
+/**
+ * Milliseconds for an ISO 8601 stamp, or NaN. A Windows host writes .NET's round-trip
+ * format, seven fractional digits (`…:00.1234567+00:00`), which not every JavaScript
+ * engine's `Date.parse` accepts, so the fraction is cut to milliseconds first.
+ */
+export function parseTimestamp(value: string): number {
+  return Date.parse(value.replace(/(\.\d{3})\d+/, '$1'));
+}
+
+function parseTask(raw: unknown): StyleTaskItem | undefined {
+  if (!isRecord(raw)) return undefined;
+  const startedAt = inlineText(raw.startedAt, 40);
+  if (!startedAt || isNaN(parseTimestamp(startedAt))) return undefined;
+  const kind = (TASK_KINDS as readonly string[]).includes(raw.kind as string) ? (raw.kind as StyleTaskItem['kind']) : 'other';
+  const status = (TASK_STATUSES as readonly string[]).includes(raw.status as string)
+    ? (raw.status as StyleTaskItem['status'])
+    : 'unknown';
+  const task: StyleTaskItem = { text: inlineText(raw.text, 200), kind, status, startedAt };
+  const endedAt = inlineText(raw.endedAt, 40);
+  if (endedAt && !isNaN(parseTimestamp(endedAt))) task.endedAt = endedAt;
+  return task;
+}
+
+/** `45초`, `3분 12초`, `1시간 2분` (as the Mac's `StyleWidgetPresentation.elapsed`); a clock that went back reads as 0. */
+export function elapsedText(fromMs: number, toMs: number): string {
+  const seconds = Math.max(0, Math.floor((toMs - fromMs) / 1000));
+  if (seconds < 60) return t('styles.state.elapsedSeconds', { seconds });
+  if (seconds < 3600) return t('styles.state.elapsedMinutes', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
+  return t('styles.state.elapsedHours', { hours: Math.floor(seconds / 3600), minutes: Math.floor((seconds % 3600) / 60) });
+}
+
+function taskKindTitle(kind: StyleTaskItem['kind']): string {
+  if (kind === 'agent') return t('styles.state.taskKind.agent');
+  if (kind === 'shell') return t('styles.state.taskKind.shell');
+  return t('styles.state.taskKind.other');
+}
+
+function taskStatusTitle(status: StyleTaskItem['status']): string {
+  if (status === 'running') return t('styles.state.taskStatus.running');
+  if (status === 'completed') return t('styles.state.taskStatus.completed');
+  if (status === 'failed') return t('styles.state.taskStatus.failed');
+  if (status === 'stopped') return t('styles.state.taskStatus.stopped');
+  return t('styles.state.taskStatus.unknown');
+}
+
+/**
+ * One task row as both platforms draw it: the description (or the kind when it has
+ * none) and `kind · status · elapsed`, the elapsed time running to now while the task
+ * runs and to its end once it ended.
+ */
+export function taskRowDisplay(task: StyleTaskItem, nowMs: number): { text: string; detail: string; running: boolean } {
+  const kind = taskKindTitle(task.kind);
+  const running = task.status === 'running';
+  const end = running ? nowMs : task.endedAt ? parseTimestamp(task.endedAt) : nowMs;
+  const detail = [kind, taskStatusTitle(task.status), elapsedText(parseTimestamp(task.startedAt), end)].join(' · ');
+  return { text: task.text || kind, detail, running };
 }
 
 /** A non-negative whole number, or undefined for anything else. */
@@ -758,7 +830,11 @@ export function styleViewModel(panel: StylePanel, selectedGroupId?: string): Sty
     attachments: panel.attachments,
     takesText: shown.filter((action) => action.takesText),
     widgets: (panel.widgets ?? []).filter((widget) =>
-      widget.kind === 'progressBar' ? true : widget.kind === 'list' ? widget.items.length > 0 : widget.text.length > 0,
+      widget.kind === 'progressBar'
+        ? true
+        : widget.kind === 'list' || widget.kind === 'taskList'
+          ? widget.items.length > 0
+          : widget.text.length > 0,
     ),
   };
   const badge = sourceBadge(panel.presentation.source);

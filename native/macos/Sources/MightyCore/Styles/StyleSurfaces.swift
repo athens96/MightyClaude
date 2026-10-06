@@ -310,9 +310,16 @@ public enum StyleApprovalCard {
         sections.append(StyleApprovalSection(id: "enter", title: "Enter 규칙", lines: enterLines(manifest), monospaced: true, foldable: false))
         // What the engine will read in the workspace and the run log, and how
         // that moves the phase, exactly as declared (§1.16.6).
-        if let sources = manifest.stateSources {
+        if manifest.stateSources != nil || manifest.readsPlanState {
             sections.append(StyleApprovalSection(id: "state", title: L("styles.approval.stateTitle"),
-                                                 lines: stateLines(sources, rule: manifest.rules.phase), monospaced: true, foldable: false))
+                                                 lines: stateLines(manifest.stateSources ?? StyleStateSources(), rule: manifest.rules.phase),
+                                                 monospaced: true, foldable: false))
+        }
+        // §1.17 (v6): how every new request starts, never folded.
+        if let launch = manifest.launch {
+            sections.append(StyleApprovalSection(id: "launch", title: L("styles.approval.launchTitle"),
+                                                 lines: [L("styles.approval.launchPlan", ["mode": launch.permissionMode.rawValue])],
+                                                 monospaced: false, foldable: false))
         }
         sections.append(StyleApprovalSection(id: "identity", title: "스타일",
                                              lines: ["이름 " + manifest.name, "id " + manifest.id, manifest.summary, manifest.subtitle],
@@ -354,6 +361,15 @@ public enum StyleApprovalCard {
                                                                  "condition": override.condition.rawValue]))
             }
         }
+        // §1.17 (v6): the pane's plan-mode state, then the stages that move the phase.
+        lines += sources.runState.map {
+            L("styles.approval.stateRunState", ["source": $0.source.rawValue, "widget": $0.widget.rawValue])
+        }
+        if case .planState(let map) = rule {
+            for stage in StylePlanStage.allCases {
+                lines.append(L("styles.approval.statePlanStage", ["phase": map[stage.rawValue] ?? "", "stage": stage.rawValue]))
+            }
+        }
         return lines
     }
 
@@ -384,6 +400,7 @@ public enum StyleApprovalCard {
         switch manifest.rules.phase {
         case .none: lines.append("단계 " + StyleChrome.separator + " 단계 개념이 없습니다.")
         case .lastRecognisedAction(let fallback, _): lines.append("단계 " + StyleChrome.separator + " 마지막으로 인식된 행동, 없으면 " + fallback)
+        case .planState: lines.append(L("styles.approval.rulePlanState"))
         }
         switch manifest.rules.next {
         case .byPhase(let map):
@@ -435,6 +452,23 @@ public enum StyleApprovalCard {
         lines.append("입력창(답변) " + StyleChrome.separator + " " + manifest.placeholders.answering)
         for (label, value) in [("시작", manifest.guidance.start), ("다음", manifest.guidance.next), ("실행 중", manifest.guidance.running)] {
             if let value, !value.isEmpty { lines.append("안내(" + label + ") " + StyleChrome.separator + " " + value) }
+        }
+        // §1.17 (v6): each phase's own lines, in phase order.
+        for phase in manifest.orderedPhases {
+            let placeholder = manifest.placeholders.phases[phase.id]
+            if let text = placeholder?.idle {
+                lines.append(L("styles.approval.phasePlaceholderIdle", ["phase": phase.id]) + " " + StyleChrome.separator + " " + text)
+            }
+            if let text = placeholder?.running {
+                lines.append(L("styles.approval.phasePlaceholderRunning", ["phase": phase.id]) + " " + StyleChrome.separator + " " + text)
+            }
+            let own = manifest.guidance.phases[phase.id]
+            if let value = own?.idle, !value.isEmpty {
+                lines.append(L("styles.approval.phaseGuidanceIdle", ["phase": phase.id]) + " " + StyleChrome.separator + " " + value)
+            }
+            if let value = own?.running, !value.isEmpty {
+                lines.append(L("styles.approval.phaseGuidanceRunning", ["phase": phase.id]) + " " + StyleChrome.separator + " " + value)
+            }
         }
         return lines
     }

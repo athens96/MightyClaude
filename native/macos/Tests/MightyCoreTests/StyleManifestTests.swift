@@ -79,6 +79,8 @@ struct StyleManifestTests {
         cases.append(("E_STATE_AGGREGATE", f.data(f.flat, [:], extra: [("stateSources", "{\"runEvents\":[{\"event\":\"subagent.start\",\"aggregate\":\"sum\",\"widget\":\"label\"}]}")])))
         cases.append(("E_STATE_PATH_ESCAPE", f.data(f.flat, [:], extra: [("stateSources", "{\"files\":[{\"path\":\"../outside.md\",\"parser\":\"markdownChecklist\",\"widget\":\"label\"}]}")])))
         cases.append(("E_STATE_RUN_EVENT", f.data(f.flat, [:], extra: [("stateSources", "{\"runEvents\":[{\"event\":\"network.request\",\"aggregate\":\"count\",\"widget\":\"label\"}]}")])))
+        // §1.17 (v6)
+        cases.append(("E_STATE_RUN_STATE", f.data(f.flat, [:], extra: [("stateSources", "{\"runState\":[{\"source\":\"transcript\",\"widget\":\"label\"}]}")])))
 
         for (code, data) in cases {
             #expect(StyleFixtures.code(data) == code, "\(code) 픽스처가 다른 코드를 냈습니다: \(StyleFixtures.code(data) ?? "통과")")
@@ -91,7 +93,7 @@ struct StyleManifestTests {
         // The count comes from the production enum, not from this list: a new
         // code with no fixture has to fail here, and a literal cannot say so.
         #expect(Set(cases.map(\.0) + ["E_ID_COLLISION"]) == StyleErrorCodes.all)
-        #expect(StyleErrorCodes.all.count == 53)
+        #expect(StyleErrorCodes.all.count == 54)
     }
 
     private let unknownRule = "{\"start\":{\"kind\":\"sideways\"},\"phase\":{\"kind\":\"none\"},\"next\":{\"kind\":\"byGroup\"},\"enter\":{\"kind\":\"verbatim\"},\"recommend\":{\"kind\":\"none\"},\"initialGroup\":{\"kind\":\"fixed\",\"group\":\"g\"}}"

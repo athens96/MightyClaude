@@ -65,6 +65,21 @@ public static class PlanCardSupport
             ? Locale.Get("plan.background.status", new Dictionary<string, string> { ["count"] = work.Running.Count.ToString(CultureInfo.InvariantCulture) })
             : null;
 
+    /// <summary>The pane's background tasks as the plan style's task list draws them (§1.17): running first, at most eight.</summary>
+    public static IReadOnlyList<StylePresentation.TaskRow> BackgroundTasks(BackgroundWork? work) =>
+        work is { Tasks.Count: > 0 } ? StylePresentation.Tasks(StyleStateEngine.RunState("background", "taskList", "planning", null, work)) : [];
+
+    /// <summary>
+    /// The expandable background list outside a style (M/PlanCardSupport.swift showsBackgroundStrip): in any view while
+    /// the turn is over and background work runs, and in the Mighty view whenever it runs — unless the style draws its own.
+    /// </summary>
+    public static bool ShowsBackgroundStrip(BackgroundWork? work, bool mighty, bool styleDrawsTasks) =>
+        !styleDrawsTasks && work is not null && work.Running.Count > 0 && (work.WaitingOnBackground || mighty);
+
+    /// <summary>The strip's folded line: the header's "turn done" word while waiting, else how many still run.</summary>
+    public static string BackgroundSummary(BackgroundWork work) =>
+        BackgroundStatus(work) ?? Locale.Get("styles.state.backgroundRunning", new Dictionary<string, string> { ["count"] = work.Running.Count.ToString(CultureInfo.InvariantCulture) });
+
     /// <summary>"HH:mm" in the given zone (local when null) for an ISO 8601 time; the input when unreadable.</summary>
     public static string TimeText(string iso, TimeZoneInfo? zone = null)
     {

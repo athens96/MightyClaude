@@ -60,7 +60,8 @@ struct SessionPaneView: View {
         guard let style else { return nil }
         if guidedSelection.startingNew, case .actions(let start, _, _) = style.manifest.rules.start { return style.manifest.phase(start) }
         // §1.16: history plus the pane's state sources, as the phone panel reads them.
-        return style.evaluator.currentPhase(session: session, fileSourceStates: store.styleFileStates(style, for: session))
+        return style.evaluator.currentPhase(session: session, fileSourceStates: store.styleFileStates(style, for: session),
+                                            planStage: store.stylePlanStage(style, for: session))
     }
     /// The precedence sweep of §1.10, built once per render rather than three
     /// times per visible request block — and only for a pane that really runs
@@ -158,6 +159,13 @@ struct SessionPaneView: View {
                 if PlanCardSupport.showsHistoryStrip(mightyDiagram: showsMightyGraph && session.mightyViewMode == .diagram),
                    session.kind == "claude", let plans = session.planHistory, !plans.isEmpty {
                     PlanHistoryStrip(sessionId: session.id, records: plans)
+                }
+                // Background agents still running: in any view once the turn is
+                // over, and in the Mighty view all along — unless the pane's style
+                // draws its own task list.
+                if session.kind == "claude", let work = session.backgroundWork,
+                   PlanCardSupport.showsBackgroundStrip(work, mighty: showsMightyGraph, styleDrawsTasks: PlanCardSupport.styleDrawsTasks(style?.manifest)) {
+                    BackgroundWorkStrip(sessionId: session.id, work: work)
                 }
                 ToolPermissionBar(sessionId: session.id)
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
@@ -570,7 +578,9 @@ struct SessionPaneView: View {
             }
             if !queued.isEmpty {
                 QueuedInputsView(sessionID: session.id, items: queued, running: running || store.hasModal,
-                                 onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) })
+                                 onRemove: { store.removeQueuedInput(session.id, itemId: $0) }, onRunNext: { store.runNextQueuedInput(session.id) },
+                                 notice: BackgroundQueuePolicy.waitsOnBackground(work: session.backgroundWork, launchesInPlan: store.styleLaunchesInPlanMode(session),
+                                                                                 queued: queued.count) ? L("queue.waitingOnBackground.mac") : nil)
                     .padding(.horizontal, 10).padding(.top, attachments.isEmpty ? 10 : 6)
             }
             if paletteVisible {

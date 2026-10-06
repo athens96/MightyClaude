@@ -210,12 +210,23 @@ public enum StyleManifestDecoder {
         let presentation = try self.presentation(reader.take("presentation"))
         let job = try self.job(reader.take("job"))
         let stateSources = try self.stateSources(reader.take("stateSources"))
+        let launch = try self.launch(reader.take("launch"))
         try reader.finish()
         return StyleManifest(schema: 1, id: id, name: name, summary: summary, subtitle: subtitle, placeholders: placeholders,
                              guidance: guidance, prerequisites: prerequisites, install: install, phases: phases, groups: groups,
                              actions: actions, aliases: aliases, recognition: recognition, rules: rules,
                              capabilities: capabilities, autoAllow: autoAllow, presentation: presentation, job: job,
-                             stateSources: stateSources)
+                             stateSources: stateSources, launch: launch)
+    }
+
+    /// §1.17 (v6): `{ "permissionMode": "plan" }`, a closed set of one.
+    private static func launch(_ value: Any?) throws -> StyleLaunch? {
+        guard let value else { return nil }
+        var reader = try Reader(value, at: "launch")
+        let raw = try string(reader.take("permissionMode"), at: "launch.permissionMode", range: 1...32)
+        try reader.finish()
+        guard let mode = StyleLaunchPermissionMode(rawValue: raw) else { throw StyleErrors.unknownRule("launch.permissionMode", raw) }
+        return StyleLaunch(permissionMode: mode)
     }
 
     private static func placeholders(_ value: Any?) throws -> StylePlaceholders {
@@ -225,8 +236,27 @@ public enum StyleManifestDecoder {
         let answering = try string(reader.take("answering"), at: "placeholders.answering", range: 0...120)
         let initial = try optionalString(reader.take("initial"), at: "placeholders.initial", range: 0...120)
         let running = try optionalString(reader.take("running"), at: "placeholders.running", range: 0...120)
+        let phases = try phaseLines(reader.take("phases"), at: "placeholders.phases", range: 0...120)
         try reader.finish()
-        return StylePlaceholders(idle: idle, answering: answering, initial: initial, running: running)
+        return StylePlaceholders(idle: idle, answering: answering, initial: initial, running: running, phases: phases)
+    }
+
+    /// §1.17 (v6): `{ "<phase id>": { "idle"?, "running"? } }`. Whether each
+    /// key names a phase is step ④'s question (`E_UNKNOWN_REFERENCE`).
+    private static func phaseLines(_ value: Any?, at path: String, range: ClosedRange<Int>) throws -> [String: StylePhaseLines] {
+        guard let value else { return [:] }
+        guard let raw = value as? [String: Any] else { throw StyleErrors.type(path) }
+        guard raw.count <= StyleLimits.maximumPhases else { throw StyleErrors.limit(path, StyleLimits.maximumPhases) }
+        var map: [String: StylePhaseLines] = [:]
+        for key in raw.keys.sorted() {
+            let entryPath = path + "." + key
+            var entry = try Reader(raw[key]!, at: entryPath)
+            let idle = try optionalString(entry.take("idle"), at: entryPath + ".idle", range: range)
+            let running = try optionalString(entry.take("running"), at: entryPath + ".running", range: range)
+            try entry.finish()
+            map[key] = StylePhaseLines(idle: idle, running: running)
+        }
+        return map
     }
 
     private static func guidance(_ value: Any?) throws -> StyleGuidance {
@@ -235,12 +265,18 @@ public enum StyleManifestDecoder {
         let start = try optionalString(reader.take("start"), at: "guidance.start", range: 0...160)
         let next = try optionalString(reader.take("next"), at: "guidance.next", range: 0...160)
         let running = try optionalString(reader.take("running"), at: "guidance.running", range: 0...160)
+        // §1.17 (v6): `{ "<phase id>": { "idle"?, "running"? } }`.
+        let phases = try phaseLines(reader.take("phases"), at: "guidance.phases", range: 0...160)
+        var lines: [(String, String?)] = [("guidance.start", start), ("guidance.next", next), ("guidance.running", running)]
+        for key in phases.keys.sorted() {
+            lines += [("guidance.phases." + key + ".idle", phases[key]?.idle), ("guidance.phases." + key + ".running", phases[key]?.running)]
+        }
         try reader.finish()
-        for (path, text) in [("guidance.start", start), ("guidance.next", next), ("guidance.running", running)] {
+        for (path, text) in lines {
             guard let text else { continue }
             guard StyleGuidanceTemplate.isValid(text) else { throw StyleErrors.promptPlaceholder(path) }
         }
-        return StyleGuidance(start: start, next: next, running: running)
+        return StyleGuidance(start: start, next: next, running: running, phases: phases)
     }
 
     private static func probeName(_ value: String) throws -> String {
@@ -484,6 +520,8 @@ public enum StyleManifestDecoder {
                                  maximum: StyleLimits.maximumStateFileSources)
         let rawRunEvents = try array(reader.take("runEvents") ?? [Any](), at: "stateSources.runEvents",
                                      maximum: StyleLimits.maximumStateRunEventSources)
+        let rawRunState = try array(reader.take("runState") ?? [Any](), at: "stateSources.runState",
+                                    maximum: StyleLimits.maximumStateRunStateSources)
         try reader.finish()
         var files: [StyleStateFileSource] = []
         for (index, item) in rawFiles.enumerated() {
@@ -494,7 +532,7 @@ public enum StyleManifestDecoder {
             let rawWidget = try string(r.take("widget"), at: path + ".widget", range: 1...40)
             try r.finish()
             guard StyleStateParser(rawValue: rawParser) != nil else { throw StyleErrors.stateParser(rawParser) }
-            guard StyleStateWidget(rawValue: rawWidget) != nil else { throw StyleErrors.stateWidget(rawWidget) }
+            guard let widget = StyleStateWidget(rawValue: rawWidget), widget != .taskList else { throw StyleErrors.stateWidget(rawWidget) }
             try statePathBoundaryCheck(rawPath, at: path + ".path")
             files.append(StyleStateFileSource(path: rawPath, parser: StyleStateParser(rawValue: rawParser)!,
                                               widget: StyleStateWidget(rawValue: rawWidget)!))
@@ -509,12 +547,25 @@ public enum StyleManifestDecoder {
             try r.finish()
             guard StyleStateRunEvent(rawValue: rawEvent) != nil else { throw StyleErrors.stateRunEvent(rawEvent) }
             guard StyleStateAggregate(rawValue: rawAggregate) != nil else { throw StyleErrors.stateAggregate(rawAggregate) }
-            guard StyleStateWidget(rawValue: rawWidget) != nil else { throw StyleErrors.stateWidget(rawWidget) }
+            guard let widget = StyleStateWidget(rawValue: rawWidget), widget != .taskList else { throw StyleErrors.stateWidget(rawWidget) }
             runEvents.append(StyleStateRunEventSource(event: StyleStateRunEvent(rawValue: rawEvent)!,
                                                       aggregate: StyleStateAggregate(rawValue: rawAggregate)!,
                                                       widget: StyleStateWidget(rawValue: rawWidget)!))
         }
-        return StyleStateSources(files: files, runEvents: runEvents)
+        // §1.17 (v6): the pane's plan-mode state, each source drawn only as
+        // one of the widgets that source can be.
+        var runState: [StyleStateRunStateSource] = []
+        for (index, item) in rawRunState.enumerated() {
+            let path = "stateSources.runState[\(index)]"
+            var r = try Reader(item, at: path)
+            let rawSource = try string(r.take("source"), at: path + ".source", range: 1...40)
+            let rawWidget = try string(r.take("widget"), at: path + ".widget", range: 1...40)
+            try r.finish()
+            guard let source = StyleRunStateKind(rawValue: rawSource) else { throw StyleErrors.stateRunState(rawSource) }
+            guard let widget = StyleStateWidget(rawValue: rawWidget), source.widgets.contains(widget) else { throw StyleErrors.stateWidget(rawWidget) }
+            runState.append(StyleStateRunStateSource(source: source, widget: widget))
+        }
+        return StyleStateSources(files: files, runEvents: runEvents, runState: runState)
     }
 
     /// §1.16: workspace-relative paths only. Absolute paths and any `..`
@@ -580,6 +631,12 @@ public enum StyleManifestDecoder {
             }
             try reader.finish()
             return .lastRecognisedAction(default: fallback, stateOverrides: overrides)
+        case "planState":
+            // §1.17 (v6): plan stage → phase id; completeness and the
+            // references are step ④'s.
+            let map = try stateMap(reader.take("map"), at: "rules.phase.map")
+            try reader.finish()
+            return .planState(map: map)
         default: throw StyleErrors.unknownRule("rules.phase", kind)
         }
     }

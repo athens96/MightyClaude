@@ -214,6 +214,9 @@ struct GuidedPanel: View {
             }
         case .label(let text):
             Text(verbatim: text).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        case .taskList(let items):
+            // §1.17: the pane's background agents and shells, with their elapsed time.
+            BackgroundTaskRows(tasks: items)
         }
     }
 

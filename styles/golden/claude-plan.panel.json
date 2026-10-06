@@ -1,0 +1,857 @@
+{
+  "afterFirstAction" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    }
+  },
+  "capabilityOpen" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "DESIGN.local.md",
+        "readOnly" : true,
+        "title" : "DESIGN"
+      },
+      {
+        "detail" : "0.1.0-golden · full",
+        "id" : "RETRO.local.md",
+        "readOnly" : true,
+        "title" : "RETRO"
+      }
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    }
+  },
+  "empty" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    }
+  },
+  "firstGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    }
+  },
+  "lastGroup" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    }
+  },
+  "notReady" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : false
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    }
+  },
+  "planStageAwaitingApproval" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : false,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "계획을 검토하고 승인하세요 · 수정 요청이나 취소도 할 수 있습니다",
+    "next" : [
+
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "approve",
+      "index" : 1,
+      "title" : "승인"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 승인",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "widgets" : [
+      {
+        "kind" : "progressBar",
+        "total" : 0,
+        "value" : 0
+      },
+      {
+        "kind" : "label",
+        "text" : ""
+      },
+      {
+        "kind" : "label",
+        "text" : "턴 완료 · 백그라운드 1개 실행 중"
+      },
+      {
+        "items" : [
+          {
+            "kind" : "agent",
+            "startedAt" : "2026-10-06T01:00:00.000Z",
+            "status" : "running",
+            "text" : "review the diff"
+          },
+          {
+            "endedAt" : "2026-10-06T01:01:10.000Z",
+            "kind" : "shell",
+            "startedAt" : "2026-10-06T01:00:05.000Z",
+            "status" : "completed",
+            "text" : "npm test"
+          }
+        ],
+        "kind" : "taskList"
+      }
+    ]
+  },
+  "planStageExecuting" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "실행을 마쳤습니다. 새 계획을 세우거나 검증을 요청하세요.",
+    "next" : [
+      "new-plan",
+      "verify"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "execute",
+      "index" : 2,
+      "title" : "실행"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 실행",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "widgets" : [
+      {
+        "kind" : "progressBar",
+        "total" : 7,
+        "value" : 3
+      },
+      {
+        "kind" : "label",
+        "text" : "진행 중: doing step 4"
+      },
+      {
+        "kind" : "label",
+        "text" : "턴 완료 · 백그라운드 1개 실행 중"
+      },
+      {
+        "items" : [
+          {
+            "kind" : "agent",
+            "startedAt" : "2026-10-06T01:00:00.000Z",
+            "status" : "running",
+            "text" : "review the diff"
+          },
+          {
+            "endedAt" : "2026-10-06T01:01:10.000Z",
+            "kind" : "shell",
+            "startedAt" : "2026-10-06T01:00:05.000Z",
+            "status" : "completed",
+            "text" : "npm test"
+          }
+        ],
+        "kind" : "taskList"
+      }
+    ]
+  },
+  "planStagePlanning" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next" : [
+      "new-plan"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "plan",
+      "index" : 0,
+      "title" : "계획"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 계획",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "widgets" : [
+      {
+        "kind" : "progressBar",
+        "total" : 0,
+        "value" : 0
+      },
+      {
+        "kind" : "label",
+        "text" : ""
+      },
+      {
+        "kind" : "label",
+        "text" : "턴 완료 · 백그라운드 1개 실행 중"
+      },
+      {
+        "items" : [
+          {
+            "kind" : "agent",
+            "startedAt" : "2026-10-06T01:00:00.000Z",
+            "status" : "running",
+            "text" : "review the diff"
+          },
+          {
+            "endedAt" : "2026-10-06T01:01:10.000Z",
+            "kind" : "shell",
+            "startedAt" : "2026-10-06T01:00:05.000Z",
+            "status" : "completed",
+            "text" : "npm test"
+          }
+        ],
+        "kind" : "taskList"
+      }
+    ]
+  },
+  "withState" : {
+    "actions" : [
+      {
+        "flags" : [
+
+        ],
+        "help" : "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+        "icon" : "doc.text",
+        "id" : "new-plan",
+        "prominent" : true,
+        "requiresText" : true,
+        "takesText" : true,
+        "title" : "새 계획"
+      },
+      {
+        "flags" : [
+
+        ],
+        "help" : "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+        "icon" : "checkmark.seal",
+        "id" : "verify",
+        "prominent" : false,
+        "requiresText" : false,
+        "takesText" : false,
+        "title" : "검증 요청"
+      }
+    ],
+    "attachments" : [
+
+    ],
+    "groups" : [
+      {
+        "actions" : [
+          "new-plan",
+          "verify"
+        ],
+        "id" : "plan",
+        "selected" : true,
+        "title" : "계획"
+      }
+    ],
+    "guidance" : "실행을 마쳤습니다. 새 계획을 세우거나 검증을 요청하세요.",
+    "next" : [
+      "new-plan",
+      "verify"
+    ],
+    "phase" : {
+      "count" : 3,
+      "id" : "execute",
+      "index" : 2,
+      "title" : "실행"
+    },
+    "presentation" : {
+      "headerTitle" : "클러드 플랜 · 실행",
+      "icon" : "map",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "setup" : {
+      "missing" : [
+
+      ],
+      "ready" : true
+    },
+    "style" : {
+      "icon" : "map",
+      "id" : "claude-plan",
+      "name" : "클러드 플랜",
+      "source" : "bundled",
+      "tint" : "indigo"
+    },
+    "widgets" : [
+      {
+        "kind" : "progressBar",
+        "total" : 7,
+        "value" : 3
+      },
+      {
+        "kind" : "label",
+        "text" : "진행 중: doing step 4"
+      },
+      {
+        "kind" : "label",
+        "text" : "턴 완료 · 백그라운드 1개 실행 중"
+      },
+      {
+        "items" : [
+          {
+            "kind" : "agent",
+            "startedAt" : "2026-10-06T01:00:00.000Z",
+            "status" : "running",
+            "text" : "review the diff"
+          },
+          {
+            "endedAt" : "2026-10-06T01:01:10.000Z",
+            "kind" : "shell",
+            "startedAt" : "2026-10-06T01:00:05.000Z",
+            "status" : "completed",
+            "text" : "npm test"
+          }
+        ],
+        "kind" : "taskList"
+      }
+    ]
+  }
+}

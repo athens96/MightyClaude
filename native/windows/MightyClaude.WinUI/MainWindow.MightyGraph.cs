@@ -391,7 +391,7 @@ public sealed partial class MainWindow
             else { graphReveal = new(); graphRunProgress = null; graphRevealPendingId = null; }
             // The view changed: a waiting plan is docked or drawn by the same rule, and answered plans show
             // as the strip only outside the diagram (MainWindow.PlanCard.cs).
-            RedecidePlanPlace(); RefreshPlanHistory(Session);
+            RedecidePlanPlace(); RefreshPlanHistory(Session); RefreshBackgroundWork(Session);
             UpdateActivityTimer();
         }
 

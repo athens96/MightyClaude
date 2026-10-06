@@ -93,8 +93,8 @@ struct MobileRemoteExtensionTests {
         #expect(mighty && !plain && !codex)
         // `options.styles` is the open list: the CLI plus what may be run.
         let options = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
-        #expect(options.map(\.id) == ["cli", "ouroboros", "paperthin", "superpowers"])
-        #expect(options.map(\.label) == ["cli", "Ouroboros", "Paperthin", "Superpowers"])
+        #expect(options.map(\.id) == ["cli", "claude-plan", "ouroboros", "paperthin", "superpowers"])
+        #expect(options.map(\.label) == ["cli", "클러드 플랜", "Ouroboros", "Paperthin", "Superpowers"])
         #expect(options[0].source == nil && options[1].source == .bundled)
         #expect(MobileRemoteSupport.styleOptions([]).map(\.id) == ["cli"])
 
@@ -1160,8 +1160,8 @@ struct MobileRemoteExtensionTests {
 
     @Test func settingsCarryTheOpenStyleListAndAcceptOnlyItsMembers() throws {
         let styles = MobileRemoteSupport.styleOptions(BundledStyles.shared.styles())
-        #expect(styles.map(\.id) == ["cli", "ouroboros", "paperthin", "superpowers"])
-        #expect(styles[1].label == "Ouroboros" && styles[1].source == .bundled && styles[0].source == nil)
+        #expect(styles.map(\.id) == ["cli", "claude-plan", "ouroboros", "paperthin", "superpowers"])
+        #expect(styles[2].label == "Ouroboros" && styles[2].source == .bundled && styles[0].source == nil)
         let options = MobileSettingsOptions(models: [MobileOption(id: "default", label: "기본")],
                                             permissionModes: [MobileOption(id: "default", label: "기본")],
                                             mightyStyles: MobileWire.mightyStyles.map { MobileOption(id: $0, label: $0) },

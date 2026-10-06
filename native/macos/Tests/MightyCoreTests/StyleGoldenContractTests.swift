@@ -52,7 +52,29 @@ struct StyleGoldenContractTests {
         #expect(withState.widgets == [.progressBar(value: 3, total: 7), .label(text: "서브에이전트 2회 시작")])
         #expect(withState.phase?.id == "execute")
         #expect(StyleGolden.projection(for: StyleFixtures.bundled("paperthin")).withState == nil)
+        #expect(projection.planStages == nil)
         try StyleGolden.check(projection, id: "superpowers")
+    }
+
+    /// §1.17 (v6): the plan-mode style records its panel at every plan stage
+    /// and, executing, the checklist bar with its current step and the
+    /// background work — the same file the phone lane reads.
+    @Test func theClaudePlanStyleRecordsEveryPlanStage() throws {
+        let style = StyleFixtures.bundled("claude-plan")
+        let projection = StyleGolden.projection(for: style)
+        let stages = try #require(projection.planStages)
+        #expect(stages[.planning]?.phase?.id == "plan")
+        #expect(stages[.awaitingApproval]?.phase?.id == "approve" && stages[.awaitingApproval]?.next == [])
+        #expect(stages[.executing]?.phase?.id == "execute")
+        // A new plan does not show the last one's progress.
+        #expect(stages[.planning]?.widgets?.first == .progressBar(value: 0, total: 0))
+        let withState = try #require(projection.withState)
+        #expect(withState.phase?.id == "execute")
+        #expect(withState.widgets?.prefix(3) == [.progressBar(value: 3, total: 7), .label(text: "진행 중: doing step 4"),
+                                                 .label(text: "턴 완료 · 백그라운드 1개 실행 중")])
+        #expect(withState.next == ["new-plan", "verify"])
+        #expect(projection.empty.phase?.id == "plan" && projection.empty.next == ["new-plan"])
+        try StyleGolden.check(projection, id: "claude-plan")
     }
 
     @Test func theGoldenSerialisationRulesAreFixed() throws {

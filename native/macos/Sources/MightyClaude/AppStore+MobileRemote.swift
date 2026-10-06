@@ -457,7 +457,7 @@ extension AppStore {
         else { prompts = session.logs.filter { $0.kind == "user" }.map(\.text) }
         // §1.16: what the state sources read moves the phase and the widgets.
         let state = styleState(style, for: session)
-        hasher.combine(style.evaluator.currentPhase(prompts: prompts, fileSourceStates: state.fileSourceStates)?.id)
+        hasher.combine(style.evaluator.currentPhase(prompts: prompts, fileSourceStates: state.fileSourceStates, planStage: state.planStage)?.id)
         hasher.combine(state)
         // A sequence's chips disappear while it runs, and its guidance line
         // changes with it (§6.1).
@@ -559,9 +559,13 @@ extension AppStore {
         let held = backgroundUpdateHolds(session)
         if session.status == "running" || pendingRuns.contains(id) || held {
             guard (queuedInputs[id]?.count ?? 0) < QueuedInput.maximumItems else { throw MightyError("대기열이 가득 찼습니다.") }
-            let item = QueuedInput(text: text, attachments: attachments)
+            // The composer's rule (§1.17.4): a plan-mode style never steers into a
+            // turn that only waits on background work; it queues and plans fresh.
+            let plans = styleLaunchesInPlanMode(session)
+            let item = QueuedInput(text: text, attachments: attachments, permissionModeOverride: BackgroundQueuePolicy.queuedOverride(launchesInPlan: plans))
             if held { heldForUpdate.insert(id) }
-            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, steering: mode != "queue" && !held) }
+            let steers = BackgroundQueuePolicy.phoneSteers(mode: mode, work: session.backgroundWork, launchesInPlan: plans)
+            let deferred = mobileCapturingError { deferInput(id, session: session, workspace: workspace, item: item, steering: steers && !held) }
             switch deferred.value {
             case .steering(let task): return .steering(task)
             case .queued: return .immediate(.queued)

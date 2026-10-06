@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "id": "claude-plan",
+  "name": "클러드 플랜",
+  "summary": "계획을 세우고 승인한 뒤 실행합니다. 이 스타일로 보내는 요청은 모두 Claude의 계획 모드로 시작합니다.",
+  "subtitle": "계획 → 승인 → 실행",
+  "placeholders": {
+    "idle": "무엇을 계획할까요?",
+    "answering": "직접 답하려면 여기에 적고 Enter…",
+    "phases": {
+      "plan": {
+        "idle": "무엇을 계획할까요?",
+        "running": "Claude가 계획을 세우는 중입니다 · 덧붙일 말을 적을 수 있습니다"
+      },
+      "approve": {
+        "running": "계획을 검토하고 승인하세요 · 바꿀 점은 계획 카드의 수정 요청에 적습니다"
+      },
+      "execute": {
+        "idle": "다음에 계획할 일을 적으세요…",
+        "running": "다음 요청은 이 실행이 끝난 뒤 계획부터 시작합니다"
+      }
+    }
+  },
+  "guidance": {
+    "start": "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+    "next": "{phase} 단계가 끝났습니다. 새 계획을 세우거나 검증을 요청하세요.",
+    "running": "{phase} 진행 중",
+    "phases": {
+      "plan": {
+        "idle": "무엇을 계획할까요? 요청을 적으면 Claude가 코드를 바꾸기 전에 계획부터 세웁니다.",
+        "running": "Claude가 계획을 세우는 중입니다 · 질문이 오면 여기에 표시됩니다"
+      },
+      "approve": {
+        "running": "계획을 검토하고 승인하세요 · 수정 요청이나 취소도 할 수 있습니다"
+      },
+      "execute": {
+        "idle": "실행을 마쳤습니다. 새 계획을 세우거나 검증을 요청하세요.",
+        "running": "승인한 계획대로 실행 중입니다"
+      }
+    }
+  },
+  "prerequisites": {
+    "mode": "all",
+    "probes": []
+  },
+  "phases": [
+    { "id": "plan",    "title": "계획", "order": 0 },
+    { "id": "approve", "title": "승인", "order": 1 },
+    { "id": "execute", "title": "실행", "order": 2 }
+  ],
+  "groups": [
+    {
+      "id": "plan",
+      "title": "계획",
+      "actions": ["new-plan", "verify"]
+    }
+  ],
+  "actions": [
+    {
+      "id": "new-plan",
+      "title": "새 계획",
+      "help": "적은 요청을 계획 모드로 보냅니다. Claude가 코드를 바꾸기 전에 계획부터 세웁니다",
+      "prompt": "[계획] {text}",
+      "takesText": true,
+      "requiresText": true,
+      "foldText": "trimOnly",
+      "match": "계획]",
+      "phase": "plan",
+      "icon": "doc.text"
+    },
+    {
+      "id": "verify",
+      "title": "검증 요청",
+      "help": "방금 한 작업을 Claude가 다시 확인하게 합니다. 검증도 계획 → 승인 → 실행으로 진행합니다",
+      "prompt": "[검증] 방금 승인한 계획대로 한 작업을 검증해 주세요. 바뀐 파일을 다시 읽고, 관련 테스트와 빌드를 실행해 결과를 확인한 뒤, 계획과 다른 점이나 남은 문제를 정리해 보고해 주세요.",
+      "takesText": false,
+      "match": "검증]",
+      "icon": "checkmark.seal",
+      "requestTitle": "검증"
+    }
+  ],
+  "aliases": [],
+  "recognition": { "prefixes": ["["], "lowercase": true },
+  "rules": {
+    "start": { "kind": "actions", "phase": "plan", "actions": ["new-plan"] },
+    "phase": {
+      "kind": "planState",
+      "map": { "planning": "plan", "awaitingApproval": "approve", "executing": "execute" }
+    },
+    "next": {
+      "kind": "byPhase",
+      "map": {
+        "plan":    ["new-plan"],
+        "approve": [],
+        "execute": ["new-plan", "verify"]
+      }
+    },
+    "enter": { "kind": "verbatim" },
+    "recommend": { "kind": "none" },
+    "initialGroup": { "kind": "fixed", "group": "plan" }
+  },
+  "capabilities": [],
+  "autoAllow": [],
+  "presentation": { "icon": "map", "tint": "indigo" },
+  "stateSources": {
+    "runState": [
+      { "source": "todos",      "widget": "progressBar" },
+      { "source": "todos",      "widget": "label" },
+      { "source": "background", "widget": "label" },
+      { "source": "background", "widget": "taskList" }
+    ]
+  },
+  "launch": { "permissionMode": "plan" }
+}

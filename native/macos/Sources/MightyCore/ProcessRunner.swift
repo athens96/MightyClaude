@@ -584,6 +584,8 @@ public actor ProcessRunner {
                             guard let run else { return }
                             // The run's graph carries this id as its sourceRunID.
                             var value = record; value.graphRunId = run.activityId
+                            // A per-run plan launch: the approval leaves the pane's stored mode alone.
+                            value.launchOverride = request.permissionModeOverride
                             onEvent(RunEvent(sessionId: run.request.sessionId, type: "plan", plan: value))
                         },
                         paneMode: request.settings.permissionMode)

@@ -10,6 +10,8 @@ struct QueuedInputsView: View {
     let running: Bool
     let onRemove: (String) -> Void
     let onRunNext: () -> Void
+    /// Why the queue waits beyond the current turn: its background work (§1.17.4).
+    var notice: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -22,6 +24,10 @@ struct QueuedInputsView: View {
                         .buttonStyle(.plain).foregroundStyle(Palette.accent)
                         .help("대기 중인 첫 요청을 지금 실행").accessibilityIdentifier("queue-run-\(sessionID)")
                 }
+            }
+            if let notice {
+                Text(verbatim: notice).font(.system(size: 10)).foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("queue-background-\(sessionID)")
             }
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 HStack(alignment: .top, spacing: 7) {

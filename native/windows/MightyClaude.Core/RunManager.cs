@@ -232,7 +232,7 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     message => Log(run, "system", message),
                     message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); },
                     // The request's graph carries the tracker's id: the plan's history block attaches beside it.
-                    record => { if (!run.Finished) emit(new(request.SessionId, "plan", Plan: tracker is null ? record : record with { GraphRunId = tracker.RunID })); },
+                    record => { if (!run.Finished) emit(new(request.SessionId, "plan", Plan: (tracker is null ? record : record with { GraphRunId = tracker.RunID }) with { LaunchOverride = request.PermissionModeOverride })); },
                     paneMode: request.Settings!.PermissionMode);
             }
             bool BackgroundRunning() { lock (planGate) return backgroundTracker.Work.Running.Count > 0; }
