@@ -18,7 +18,8 @@ internal static class ClaudePlanStyleVerification
         finally { Directory.Delete(root, true); }
     }
 
-    private static string ManifestText(RegisteredStyle style) => Encoding.UTF8.GetString(style.Bytes.Span);
+    // A Windows checkout may turn the manifest's line ends into CRLF; the edits below are written with LF.
+    private static string ManifestText(RegisteredStyle style) => Encoding.UTF8.GetString(style.Bytes.Span).Replace("\r\n", "\n", StringComparison.Ordinal);
 
     private static string? Code(string text)
     {
