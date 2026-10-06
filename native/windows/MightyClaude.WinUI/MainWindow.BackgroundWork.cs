@@ -97,7 +97,11 @@ public sealed partial class MainWindow
         /// <summary>The opened strip's task rows are on screen.</summary>
         internal bool BackgroundRowsLoadedForSmoke => FindById<StackPanel>(backgroundHost, "background-tasks-" + id) is { IsLoaded: true };
 
-        /// <summary>Gives the pane background work whose turn is over and opens the strip, for the palette walk; the design restore puts it back.</summary>
+        /// <summary>
+        /// Gives the pane background work whose turn is over and opens the strip, for the palette walk; the design
+        /// restore puts it back. The pane runs meanwhile, as a real one does while its process waits on that work
+        /// (the store keeps a task running only while its pane runs).
+        /// </summary>
         internal async Task OpenBackgroundStripForSmoke()
         {
             backgroundOpen = true;
@@ -105,7 +109,7 @@ public sealed partial class MainWindow
                 new BackgroundTask("palette-bg-1", "agent", "palette background agent", Wire.Now()),
                 new BackgroundTask("palette-bg-2", "shell", "palette background shell", Wire.Now(), "failed", EndedAt: Wire.Now()),
             ], TurnEnded: true);
-            await Change(p => p with { BackgroundWork = work }); Refresh();
+            await Change(p => p with { Status = "running", BackgroundWork = work }); Refresh();
         }
 
         private static string TaskDetail(StylePresentation.TaskRow task, DateTimeOffset now) =>
