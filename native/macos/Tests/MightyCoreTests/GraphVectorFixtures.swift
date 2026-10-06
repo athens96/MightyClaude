@@ -19,7 +19,7 @@ enum GraphVectors {
     /// Groups in the file and the minimum number of cases each must carry.
     static let minimumCounts: [(group: String, minimum: Int)] = [
         ("claudeStream", 6), ("codexStream", 4), ("mods", 3), ("bounds", 3),
-        ("layout", 8), ("camera", 6), ("capsule", 8), ("resultFiles", 4),
+        ("layout", 10), ("camera", 6), ("capsule", 8), ("resultFiles", 4),
     ]
 
     /// Entries fed in as input carry this fixed timestamp so nothing in an
@@ -157,6 +157,8 @@ enum GraphVectors {
         case .images: return "images"
         case .draft: return "draft"
         case .history: return "history"
+        case .plan: return "plan"
+        case .planRecord: return "planRecord"
         }
     }
 
@@ -211,7 +213,11 @@ enum GraphVectors {
                                             blockSizes: [:],
                                             resultFilesRunID: str(value["resultFilesRunID"]),
                                             viewport: sizeIn(value["viewport"]),
-                                            sharedResultSize: nil)
+                                            sharedResultSize: nil,
+                                            planRunID: str(value["planRunID"]),
+                                            planRecords: (value["planRecords"] as? [[String: Any]] ?? []).map {
+                                                MightyGraphLayout.PlanRecordBlock(runID: $0["runID"] as? String ?? "", recordID: $0["recordID"] as? String ?? "")
+                                            })
         return ["nodes": layout.nodes.map { ["id": $0.id, "kind": contentKind($0.content), "frame": rectJSON($0.frame)] },
                 "edges": layout.edges.map { ["source": $0.source, "target": $0.target, "joins": $0.joins] },
                 "size": ["w": Double(layout.size.width), "h": Double(layout.size.height)],

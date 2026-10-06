@@ -25,7 +25,7 @@ internal static class GraphVectorVerification
     private static readonly (string Group, int Minimum)[] MinimumCounts =
     [
         ("claudeStream", 6), ("codexStream", 4), ("mods", 3), ("bounds", 3),
-        ("layout", 8), ("camera", 6), ("capsule", 8), ("resultFiles", 4),
+        ("layout", 10), ("camera", 6), ("capsule", 8), ("resultFiles", 4),
     ];
     /// Entries fed in as input carry this fixed timestamp so nothing in an
     /// expectation depends on the clock.
@@ -258,7 +258,9 @@ internal static class GraphVectorVerification
         var layout = MightyGraphLayout.Make(
             Items(Field(value, "runs")).Select(RunIn).ToList(), value.Text("draft") ?? "", Flag(value, "running"),
             Strings(Field(value, "expanded")).ToHashSet(), value.Text("resultFilesRunID"),
-            viewport.ValueKind == JsonValueKind.Object ? (Double(viewport, "w") ?? 0, Double(viewport, "h") ?? 0) : null);
+            viewport.ValueKind == JsonValueKind.Object ? (Double(viewport, "w") ?? 0, Double(viewport, "h") ?? 0) : null,
+            planRunID: value.Text("planRunID"),
+            planRecords: Items(Field(value, "planRecords")).Select(r => (r.Text("runID") ?? "", r.Text("recordID") ?? "")).ToList());
         return Map(
             ("nodes", layout.Nodes.Select(n => (object)Map(("id", n.Id), ("kind", n.Kind), ("frame", RectJson(n.Frame)))).ToList()),
             ("edges", layout.Edges.Select(e => (object)Map(("source", e.Source), ("target", e.Target), ("joins", e.Joins))).ToList()),

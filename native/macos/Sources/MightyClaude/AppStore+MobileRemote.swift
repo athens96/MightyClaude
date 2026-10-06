@@ -116,6 +116,16 @@ final class MobileRemoteBridge: MobileHostDelegate, @unchecked Sendable {
         await store.answerQuestionnaire(sessionId: sessionId, request: request, answers: answers)
         try await MainActor.run { try store.mobileCheckPermissionOutcome(sessionId: sessionId, requestId: requestId) }
     }
+    func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws {
+        let (store, request) = try await MainActor.run { () -> (AppStore, ToolPermissionRequest) in
+            let store = try self.store.orClosing()
+            let request = try store.mobilePendingRequest(sessionId: sessionId, requestId: requestId, runId: runId)
+            guard request.canAnswerPlan else { throw MightyError(L("plan.error.notPlan")) }
+            return (store, request)
+        }
+        await store.answerPlan(sessionId: sessionId, request: request, decision: decision)
+        try await MainActor.run { try store.mobileCheckPermissionOutcome(sessionId: sessionId, requestId: requestId) }
+    }
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String {
         try await MainActor.run { try store.orClosing().mobileCreateSession(workspaceId: workspaceId, kind: kind, provider: provider) }
     }

@@ -79,8 +79,10 @@ public static class MightyGraphViewModel
         int retainedStart = 0,
         bool history = false,
         double? resultContentHeight = null,
-        IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null)
-        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight, blockSizes: blockSizes);
+        IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null,
+        string? planRunID = null,
+        IReadOnlyList<(string RunID, string RecordID)>? planRecords = null)
+        => MightyGraphLayout.Make(graphRuns, draft, running, expanded, resultFilesRunID, viewport, zoom: zoom, sharedResultSize: sharedResultSize, retainedStart: retainedStart, history: history, resultContentHeight: resultContentHeight, blockSizes: blockSizes, planRunID: planRunID, planRecords: planRecords);
 
     // ── block capsule ─────────────────────────────────────────────────────────
 
@@ -203,7 +205,8 @@ public sealed record MightyGraphBlock(
     string Indicator,
     string? ResultFilesRunId,
     string Outline = MightyGraphActivity.None,
-    string Status = "");
+    string Status = "",
+    string? RecordId = null);
 
 public static class MightyGraphBlockModel
 {
@@ -313,6 +316,12 @@ public static class MightyGraphBlockModel
                         Help(run.TotalUsage, [], Locale.Get("graph.block.totalUsageLabel"), catalog),
                         "none", run.Status == "completed" ? run.Id : null, Status: ResultState(run.Status)));
                     break;
+                case "plan" when run is not null:
+                    blocks.Add(new(node.Id, "plan", node.Frame, Locale.Get("plan.card.title"), StateLabel("waiting"), "", [], null, "", "none", null, Status: "waiting"));
+                    break;
+                case "planRecord" when run is not null && agentId is not null:
+                    blocks.Add(new(node.Id, "planRecord", node.Frame, Locale.Get("plan.card.title"), "", "", [], null, "", "none", null, RecordId: agentId));
+                    break;
                 case "resultFiles" when run is not null:
                     blocks.Add(new(node.Id, "resultFiles", node.Frame, Locale.Get("graph.resultFiles.title"),
                         "", "", [], null, "", "none", run.Id));
@@ -336,6 +345,10 @@ public static class MightyGraphBlockModel
             if (node.Id == MightyGraphLayout.NodeID(run, "request") && node.Kind == "request") return (i, null);
             if (node.Id == MightyGraphLayout.NodeID(run, "result") && node.Kind == "result") return (i, null);
             if (node.Id == MightyGraphLayout.NodeID(run, "result-files") && node.Kind == "resultFiles") return (i, null);
+            if (node.Id == MightyGraphLayout.NodeID(run, MightyGraphLayout.PlanSuffix) && node.Kind == "plan") return (i, null);
+            // An answered plan's block: its record id in the agent slot.
+            if (node.Kind == "planRecord" && node.Id.StartsWith(MightyGraphLayout.NodeID(run, MightyGraphLayout.PlanRecordSuffix), StringComparison.Ordinal))
+                return (i, node.Id[MightyGraphLayout.NodeID(run, MightyGraphLayout.PlanRecordSuffix).Length..]);
             if (node.Kind != "agent") continue;
             foreach (var agent in run.Agents)
                 if (node.Id == MightyGraphLayout.NodeID(run, "agent:" + agent.Id)) return (i, agent.Id);

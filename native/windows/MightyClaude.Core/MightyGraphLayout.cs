@@ -31,6 +31,15 @@ public sealed class MightyGraphLayout
     public const string HistoryNodeID = "history-top";
     public const double HistoryWidth = 380;
     public const double HistoryHeight = 44;
+    /// <summary>A run's pending plan approval, in the flow where its result will go (macOS planSuffix).</summary>
+    public const string PlanSuffix = "plan";
+    public const double PlanWidth = 640;
+    public const double PlanHeight = 520;
+    /// <summary>An answered plan's block, attached beside its request (macOS planRecordSuffix).</summary>
+    public const string PlanRecordSuffix = "plan-record:";
+    public const double PlanRecordWidth = 320;
+    public static double PlanRecordHeight(bool expanded) => expanded ? 420 : 104;
+    private const double AttachmentGap = 16;
 
     public static bool Terminal(string state) =>
         state is "completed" or "error" or "failed" or "stopped" or "cancelled" or "interrupted";
@@ -177,7 +186,9 @@ public sealed class MightyGraphLayout
         int retainedStart = 0,
         bool history = false,
         double? resultContentHeight = null,
-        IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null)
+        IReadOnlyDictionary<string, GraphBlockSize>? blockSizes = null,
+        string? planRunID = null,
+        IReadOnlyList<(string RunID, string RecordID)>? planRecords = null)
     {
         var latestResultID = LatestResultID(runs);
         var filesPanelOpenForLatest = FilesPanelOpen(runs, resultFilesRunID);
@@ -291,6 +302,22 @@ public sealed class MightyGraphLayout
                     x += branch.Width + SiblingGap;
                 }
             }
+            // A plan waiting for an answer goes where the result will: the run
+            // is still going, so nothing is below it yet.
+            if (run.Id == planRunID && !Finished(run))
+            {
+                var planID = NodeID(run, PlanSuffix);
+                var planSize = Size(planID, PlanWidth, PlanHeight);
+                if (planSize.W > tree.Width)
+                {
+                    tree.Offset((planSize.W - tree.Width) / 2, 0);
+                    tree.Width = planSize.W;
+                }
+                tree.Nodes.Add(new Node(planID, "plan", new((tree.Width - planSize.W) / 2, tree.Height + RowGap, planSize.W, planSize.H)));
+                tree.Edges.AddRange(tree.Leaves.Select(l => new Edge(l, planID, true)));
+                tree.Leaves = [planID];
+                tree.Height += RowGap + planSize.H;
+            }
             if (Finished(run))
             {
                 var height = resultSize.H;
@@ -365,6 +392,27 @@ public sealed class MightyGraphLayout
                     layout.Size = (Math.Max(layout.Size.W, frame.MaxX + 24 - layout.OriginX), layout.Size.H);
                 }
             }
+        }
+        // Answered plans hang off their request's top, stacked, right of every card they would share rows
+        // with: attachments, nothing already placed moves (macOS MightyGraphLayout planRecords).
+        var nextY = new Dictionary<int, double>();
+        foreach (var (runID, recordID) in planRecords ?? [])
+        {
+            var runIndex = -1;
+            for (var i = 0; i < runs.Count; i++) if (runs[i].Id == runID) { runIndex = i; break; }
+            if (runIndex < 0) continue;
+            var request = layout.Nodes.FirstOrDefault(n => n.Kind == "request" && n.Id == NodeID(runs[runIndex], "request"));
+            if (request is null) continue;
+            var id = NodeID(runs[runIndex], PlanRecordSuffix + recordID);
+            if (layout.Nodes.Any(n => n.Id == id)) continue;
+            var top = nextY.TryGetValue(runIndex, out var stacked) ? stacked : request.Frame.Y;
+            var height = PlanRecordHeight(expanded.Contains(id));
+            var sharing = layout.Nodes.Where(n => n.Frame.Y < top + height && n.Frame.MaxY > top).Select(n => n.Frame.MaxX).ToList();
+            var right = sharing.Count > 0 ? sharing.Max() : request.Frame.MaxX;
+            var frame = new GraphRect(Math.Max(right, request.Frame.MaxX) + AttachmentGap, top, PlanRecordWidth, height);
+            layout.Nodes.Add(new Node(id, "planRecord", frame));
+            layout.Size = (Math.Max(layout.Size.W, frame.MaxX + 24 - layout.OriginX), Math.Max(layout.Size.H, frame.MaxY + 24 - layout.OriginY));
+            nextY[runIndex] = frame.MaxY + AttachmentGap;
         }
         layout.FittedResultID = FittedResultId(runs, viewport, hasSharedResultSize);
         layout.ResultLimit = resultLimit;

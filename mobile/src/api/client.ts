@@ -34,6 +34,7 @@ import {
   type MobileState,
   type OkResponse,
   type Provider,
+  type PlanDecisionKind,
   type QuestionAnswers,
   type SessionKind,
   type SettingsPatch,
@@ -270,6 +271,12 @@ export interface MobileClient {
   answer(
     sessionId: string,
     input: { requestId: string; runId: string; answers: QuestionAnswers },
+    signal?: AbortSignal,
+  ): Promise<OkResponse>;
+  /** Answers a pending Claude plan; `feedback` goes with `revise` only. */
+  answerPlan(
+    sessionId: string,
+    input: { requestId: string; runId: string; decision: PlanDecisionKind; feedback?: string },
     signal?: AbortSignal,
   ): Promise<OkResponse>;
   createSession(
@@ -571,6 +578,14 @@ export function createClient(channel: RelayChannel): MobileClient {
       request<OkResponse>(
         'POST',
         `/m1/sessions/${encodeURIComponent(sessionId)}/answers`,
+        input,
+        signal,
+      ),
+
+    answerPlan: (sessionId, input, signal) =>
+      request<OkResponse>(
+        'POST',
+        `/m1/sessions/${encodeURIComponent(sessionId)}/plan`,
         input,
         signal,
       ),

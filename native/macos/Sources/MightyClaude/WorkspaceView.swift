@@ -52,6 +52,7 @@ struct WorkspaceView: View {
             }
             .environmentObject(store)
         }
+        .sheet(item: $store.planDocument) { PlanDocumentSheet(document: $0) { store.planDocument = nil } }
         .sheet(item: $store.pluginBrowser) { browser in
             ClaudePluginView(model: browser, onClose: { store.pluginBrowser = nil })
                 .interactiveDismissDisabled(browser.isMutating)

@@ -94,6 +94,16 @@ private final class FakeMobileHost: MobileHostDelegate, @unchecked Sendable {
     func mobileAnswers(sessionId: String, requestId: String, runId: String, answers: [String: UserQuestionAnswer]) async throws {
         lock.lock(); commands.append("answers:\(requestId):\(answers.keys.sorted().joined(separator: ","))"); lock.unlock()
     }
+    func mobilePlan(sessionId: String, requestId: String, runId: String, decision: PlanDecision) async throws {
+        let text: String
+        switch decision {
+        case .approveAutoEdit: text = "auto"
+        case .approveConfirmEach: text = "confirm"
+        case .revise(let feedback): text = "revise=" + feedback
+        case .cancel: text = "cancel"
+        }
+        lock.lock(); commands.append("plan:\(requestId):\(runId):\(text)"); lock.unlock()
+    }
     func mobileCreateSession(workspaceId: String, kind: String, provider: String) async throws -> String {
         lock.lock(); defer { lock.unlock() }
         if kind == "shell" { throw MobileHostError.conflict("명령 창은 휴대폰에서 쓸 수 없습니다.") }
@@ -238,6 +248,50 @@ struct MobileRemoteTests {
         #expect(try await call(service, "POST", "/m1/nothing").0 == 404)
         #expect(try await call(service, "GET", "http://evil/m1/info").0 == 400)
         #expect(host.recorded() == ["submit:session-1:테스트 추가해줘", "stop:session-1", "perm:perm-1:run-1:true", "answers:ask-1:어느 쪽?", "create:workspace-1:claude:codex"])
+    }
+
+    @Test func planRouteValidatesAndForwardsTheFourAnswers() async throws {
+        try await LocaleOverride.$language.withValue(.ko) {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("mobile-remote-" + UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let service = MobileRemoteService(dataDirectory: directory, hostName: "Test Mac", appVersion: "9.9.9")
+            let host = FakeMobileHost()
+            await service.attach(host)
+            let path = "/m1/sessions/session-1/plan"
+            for decision in ["approveAutoEdit", "approveConfirmEach", "cancel"] {
+                #expect(try await call(service, "POST", path, body: ["requestId": "plan-1", "runId": "run-1", "decision": decision]).0 == 200)
+            }
+            let revised = try await call(service, "POST", path, body: ["requestId": "plan-1", "runId": "run-1", "decision": "revise", "feedback": "  테스트 먼저  "])
+            #expect(revised.0 == 200 && revised.1["ok"] as? Bool == true)
+            // An empty change request, an unknown decision or a bad id never reaches the pane.
+            let empty = try await call(service, "POST", path, body: ["requestId": "plan-1", "runId": "run-1", "decision": "revise", "feedback": " \n "])
+            #expect(empty.0 == 400 && empty.1["error"] as? String == L("plan.error.emptyFeedback"))
+            #expect(try await call(service, "POST", path, body: ["requestId": "plan-1", "runId": "run-1", "decision": "revise"]).0 == 400)
+            let unknown = try await call(service, "POST", path, body: ["requestId": "plan-1", "runId": "run-1", "decision": "allow"])
+            #expect(unknown.0 == 400 && unknown.1["error"] as? String == L("plan.error.invalidDecision"))
+            let badID = try await call(service, "POST", path, body: ["requestId": "../x", "runId": "run-1", "decision": "cancel"])
+            #expect(badID.0 == 400 && badID.1["error"] as? String == L("plan.error.invalidRequest"))
+            #expect(host.recorded() == ["plan:plan-1:run-1:auto", "plan:plan-1:run-1:confirm", "plan:plan-1:run-1:cancel", "plan:plan-1:run-1:revise=  테스트 먼저  "])
+        }
+    }
+
+    @Test func aPlanRequestReachesThePhoneWithItsTextOnce() throws {
+        try LocaleOverride.$language.withValue(.ko) {
+            let plan = "# 계획\n\n1. 테스트\n2. 구현"
+            let input = String(decoding: try JSONSerialization.data(withJSONObject: ["plan": plan, "planFilePath": "/tmp/p.md"]), as: UTF8.self)
+            let request = ToolPermissionRequest(id: "plan-1", runId: "run-1", toolUseId: "tool-1", toolName: "ExitPlanMode", inputJSON: input, summary: "plan",
+                                                canAllow: false, canAnswerPlan: true, receivedAt: "2027-01-15T08:00:00.000Z")
+            let mobile = MobilePermission(request: request)
+            #expect(mobile.plan == plan && mobile.receivedAt == "2027-01-15T08:00:00.000Z" && !mobile.canAllow)
+        // An older phone that knows no `plan` still reads it from the one field.
+        #expect(mobile.fields == [MobilePermissionField(label: L("plan.card.title"), value: plan)])
+            #expect(mobile.title == L("plan.card.title") && mobile.questionnaire == nil)
+            let other = MobilePermission(request: ToolPermissionRequest(id: "p", runId: "r", toolUseId: "t", toolName: "Bash", inputJSON: #"{"command":"ls"}"#, summary: "ls"))
+            #expect(other.plan == nil && other.receivedAt == nil)
+            // An older phone ignores the new keys; an older host's permission decodes without them.
+            let legacy = try JSONDecoder().decode(MobilePermission.self, from: Data(#"{"id":"p","runId":"r","toolName":"Bash","title":"t","fields":[],"summary":"s","canAllow":true}"#.utf8))
+            #expect(legacy.plan == nil)
+        }
     }
 
     private func service(_ host: FakeMobileHost) async -> (MobileRemoteService, URL) {

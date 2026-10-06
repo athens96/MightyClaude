@@ -99,6 +99,12 @@ internal static class MobileRemoteVerification
             var history = Json((await Route("GET", "/m1/sessions/pane/entries?before=last&limit=1")).Body); Check(history.GetProperty("entries")[0].Text("id") == "first", "history pagination matches contract");
             Check((await Route("GET", "/m1/state?wait=11")).Status == 400, "unbounded poll rejected");
             Check((await Route("POST", "/m1/sessions/pane/permission", new { requestId = "stale", runId = "pane", allow = true })).Status == 409, "stale permissions fail closed");
+            Check((await Route("POST", "/m1/sessions/pane/plan", new { requestId = "stale", runId = "pane", decision = "approveAutoEdit" })).Status == 409, "a stale plan answer fails closed");
+            var unknown = await Route("POST", "/m1/sessions/pane/plan", new { requestId = "stale", runId = "pane", decision = "allow" });
+            Check(unknown.Status == 400 && Json(unknown.Body).Text("error") == Locale.Get("plan.error.invalidDecision"), "an unknown plan decision is refused");
+            var badId = await Route("POST", "/m1/sessions/pane/plan", new { requestId = "../x", runId = "pane", decision = "cancel" });
+            Check(badId.Status == 400 && Json(badId.Body).Text("error") == Locale.Get("plan.error.invalidRequest"), "a malformed plan request id is refused");
+            Check((await Route("POST", "/m1/sessions/pane/plan", new { requestId = "stale", runId = "pane", decision = "revise", feedback = " \n " })).Status == 400, "an empty change request never reaches the pane");
             Check((await Route("POST", "/m1/sessions/pane/submit", new { text = "hello", mode = "invented" })).Status == 400 && actions.Count == 0, "invalid submit mode never reaches composer");
             Check((await Route("POST", "/m1/sessions/pane/submit", new { text = "한글 request", mode = "queue" })).Status == 202 && actions.Single().Body.Text("text") == "한글 request", "valid submit routes complete UTF-8 text");
             Check((await Route("POST", $"/m1/workspaces/{workspace.Id}/sessions", new { kind = "shell" })).Status == 409, "phone cannot start local terminal");

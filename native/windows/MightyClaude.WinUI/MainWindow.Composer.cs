@@ -423,7 +423,10 @@ public sealed partial class MainWindow
             cardHost.Children.Add(composerCard); cardHost.Children.Add(composerRing);
             AutomationProperties.SetAutomationId(composerCard, "composer-card-" + id);
             var region = new StackPanel();
-            foreach (var part in new FrameworkElement[] { nextActionsHost, toolPermissionHost, agentWebPromptScroll, cardHost }) region.Children.Add(part);
+            // The pane's answered plans, folded to one line over the permission and plan cards (MainWindow.PlanCard.cs).
+            planHistoryHost = new StackPanel { Margin = new Thickness(12, 6, 12, 0), Visibility = Visibility.Collapsed };
+            AutomationProperties.SetAutomationId(planHistoryHost, "plan-history-host-" + id);
+            foreach (var part in new FrameworkElement[] { nextActionsHost, planHistoryHost, toolPermissionHost, agentWebPromptScroll, cardHost }) region.Children.Add(part);
             var scroll = new ScrollViewer
             {
                 Content = region, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollMode = ScrollMode.Auto,

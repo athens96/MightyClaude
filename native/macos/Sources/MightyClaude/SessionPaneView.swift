@@ -153,6 +153,12 @@ struct SessionPaneView: View {
                     NextActionButtons(sessionID: session.id, entryID: next.entryId, actions: next.actions) { fillComposer($0) }
                         .disabled(store.hasModal)
                 }
+                // The diagram keeps answered plans beside their requests; the default
+                // view and the timeline show them as this strip.
+                if PlanCardSupport.showsHistoryStrip(mightyDiagram: showsMightyGraph && session.mightyViewMode == .diagram),
+                   session.kind == "claude", let plans = session.planHistory, !plans.isEmpty {
+                    PlanHistoryStrip(sessionId: session.id, records: plans)
+                }
                 ToolPermissionBar(sessionId: session.id)
                 if let request = store.webOpenRequests.first(where: { $0.agentPaneId == session.id }) {
                     WebOpenChoicePanel(request: request).id(request.id)
@@ -219,7 +225,8 @@ struct SessionPaneView: View {
                 .help(session.titleTooltip ?? session.title)
                 .accessibilityAddTraits(.isHeader)
                 .layoutPriority(1)
-            Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : Palette.word(card.tone))
+            // A turn that is over while its background agents still run says so.
+            Text(card.attention.total > 0 ? L("phone.card.attention", ["count": "\(card.attention.total)"]) : (session.status == "running" ? PlanCardSupport.backgroundStatus(session.backgroundWork) : nil) ?? Palette.word(card.tone))
                 .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Palette.text(card.tone)).lineLimit(1).fixedSize()
                 .accessibilityIdentifier("pane-status-\(session.id)")
             Group {
@@ -481,7 +488,17 @@ struct SessionPaneView: View {
                     retainedStart: history.runs.count, history: retained.isEmpty && session.resumeId == nil ? nil : history,
                     onLoadOlder: { store.loadOlderGraphHistory(session.id) },
                     viewMode: session.mightyViewMode,
-                    onViewMode: { store.setGraphViewMode(session.id, mode: $0) }) {
+                    onViewMode: { store.setGraphViewMode(session.id, mode: $0) },
+                    planRequest: PlanCardSupport.pendingPlan(store.toolPermissions[session.id]),
+                    planHistory: session.planHistory ?? [],
+                    planCard: { [store] request in
+                        AnyView(PlanApprovalCard(sessionId: session.id, request: request,
+                                                 count: (store.toolPermissions[session.id] ?? []).filter { $0.state == "pending" }.count,
+                                                 inDiagram: true).environmentObject(store))
+                    },
+                    planRecordCard: { [store] record, expanded, toggle in
+                        AnyView(PlanRecordView(record: record, expanded: expanded, onToggle: toggle, inDiagram: true).environmentObject(store))
+                    }) {
                         store.selectSession(session.id)
                     }
             } else if session.logs.isEmpty {

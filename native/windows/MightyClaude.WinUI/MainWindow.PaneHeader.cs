@@ -262,6 +262,8 @@ public sealed partial class MainWindow
         {
             if (slimHeader || figuresHost is null) return;
             if (PendingRequests is var pending and > 0) label.Text = Locale.Get("phone.card.attention", new Dictionary<string, string> { ["count"] = pending.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            // The turn is over while its background agents still run (M/SessionPaneView.swift agentHeader).
+            else if (pane.Status == "running" && PlanCardSupport.BackgroundStatus(pane.BackgroundWork) is { } waiting) label.Text = waiting;
             RefreshHeaderFigures(pane);
             if (pluginButton is not null)
             {

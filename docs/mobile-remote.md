@@ -23,6 +23,7 @@ PC에서 실행 중인 Mighty Claude에 휴대폰으로 접속해 워크스페�
 | POST | `/m1/sessions/{id}/stop` | | `{ protocol, stopped }` — 실행 중인 요청이 없어 멈출 것이 없었으면 `stopped: false` |
 | POST | `/m1/sessions/{id}/permission` | `{ requestId, runId, allow }` | `{ protocol, ok: true }` |
 | POST | `/m1/sessions/{id}/answers` | `{ requestId, runId, answers: { "<질문 문장>": { selectedOptions, customText? } } }` | `{ protocol, ok: true }` |
+| POST | `/m1/sessions/{id}/plan` | `{ requestId, runId, decision: "approveAutoEdit" \| "approveConfirmEach" \| "revise" \| "cancel", feedback? }` | `{ protocol, ok: true }` — Claude 계획(ExitPlanMode) 카드의 네 답. `feedback`은 `revise`에만 쓰며 앞뒤 공백을 뺀 뒤 비어 있거나 16 KiB를 넘으면 400(`plan.error.emptyFeedback` / `plan.error.feedbackTooLong` 문구). 모르는 `decision` 400(`plan.error.invalidDecision`), 형식이 틀린 `requestId`·`runId` 400(`plan.error.invalidRequest`), 이미 끝났거나 계획이 아닌 요청 409 |
 | POST | `/m1/workspaces/{id}/sessions` | `{ kind: "claude" \| "shell", provider?: "claude" \| "codex" \| "gemini" }` | 201 `{ protocol, sessionId }` |
 
 ```
@@ -66,7 +67,9 @@ LogEntry { id, kind: "user" | "assistant" | "system" | "output" | "error", text,
            activity?: { id, kind, state, summary, toolName?, output? } }
 MobilePermission {
   id, runId, toolName, title, headline?, fields: [{ label, value }], summary, canAllow,
-  questionnaire?: { questions: [{ header, question, multiSelect, options: [{ label, description }] }] }
+  questionnaire?: { questions: [{ header, question, multiSelect, options: [{ label, description }] }] },
+  plan?: string,        // Claude 계획 승인(ExitPlanMode)의 Markdown. 있으면 title은 "계획", fields는 같은 계획 하나({ label: "계획", value: plan } — plan을 모르는 옛 폰용); 답은 POST …/plan
+  receivedAt?: string   // 계획 승인에만, 호스트가 요청을 받은 ISO 8601 시각
 }
 ```
 

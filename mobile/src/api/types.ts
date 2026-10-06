@@ -218,7 +218,14 @@ export interface MobilePermission {
   summary: string;
   canAllow: boolean;
   questionnaire?: Questionnaire;
+  /** The Markdown plan of a Claude plan approval (ExitPlanMode), answered with `answerPlan`. */
+  plan?: string;
+  /** ISO 8601, when the host received the request (plan approvals only). */
+  receivedAt?: string;
 }
+
+/** The plan card's four answers (`POST /m1/sessions/{id}/plan`). */
+export type PlanDecisionKind = 'approveAutoEdit' | 'approveConfirmEach' | 'revise' | 'cancel';
 
 export interface QueuedItem {
   id: string;

@@ -231,7 +231,8 @@ public sealed class RunManager(Func<string, Task<Workspace>> resolveWorkspace, P
                     (value, state) => parser.PermissionActivity(value, state),
                     message => Log(run, "system", message),
                     message => { run.ProtocolFailed = true; Log(run, "error", message); run.Cancel.Cancel(); },
-                    record => { if (!run.Finished) emit(new(request.SessionId, "plan", Plan: record)); },
+                    // The request's graph carries the tracker's id: the plan's history block attaches beside it.
+                    record => { if (!run.Finished) emit(new(request.SessionId, "plan", Plan: tracker is null ? record : record with { GraphRunId = tracker.RunID })); },
                     paneMode: request.Settings!.PermissionMode);
             }
             bool BackgroundRunning() { lock (planGate) return backgroundTracker.Work.Running.Count > 0; }

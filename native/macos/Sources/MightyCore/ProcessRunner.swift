@@ -580,7 +580,12 @@ public actor ProcessRunner {
                         activity: { [weak run] permission, state in run?.parser?.permissionActivity(permission, state: state) },
                         warning: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "system", text: message) },
                         fail: { [weak self, weak run] message in guard let self, let run else { return }; self.emitLogSynchronously(run, kind: "error", text: message); run.child?.stop() },
-                        plan: { [weak run, onEvent] record in guard let run else { return }; onEvent(RunEvent(sessionId: run.request.sessionId, type: "plan", plan: record)) },
+                        plan: { [weak run, onEvent] record in
+                            guard let run else { return }
+                            // The run's graph carries this id as its sourceRunID.
+                            var value = record; value.graphRunId = run.activityId
+                            onEvent(RunEvent(sessionId: run.request.sessionId, type: "plan", plan: value))
+                        },
                         paneMode: request.settings.permissionMode)
                 }
                 run.parser = CLIStreamParser(provider: request.provider,

@@ -117,6 +117,9 @@ public sealed partial class MainWindow
             Checkpoint("toolPermission", "running");
             result["toolPermission"] = await pane.RunToolPermissionSmoke();
             Checkpoint("toolPermission", "passed");
+            Checkpoint("planCard", "running");
+            result["planCard"] = await pane.RunPlanCardSmoke();
+            Checkpoint("planCard", "passed");
             Checkpoint("transcriptActions", "running");
             result["transcriptActions"] = await pane.Transcript.RunActionsSmoke();
             Checkpoint("transcriptActions", "passed");

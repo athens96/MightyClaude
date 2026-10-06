@@ -37,6 +37,13 @@ struct MightyGraphView: View {
     /// "다이어그램 | 타임라인", saved per pane (`RunSession.graphViewMode`).
     var viewMode: MightyGraphViewMode = .diagram
     var onViewMode: (MightyGraphViewMode) -> Void = { _ in }
+    /// The pane's pending plan (`PlanCardSupport.pendingPlan`) and its answered
+    /// plans. The cards come from the pane: the canvas hosts its own views, so
+    /// they bring the store with them.
+    var planRequest: ToolPermissionRequest? = nil
+    var planHistory: [PlanRecord] = []
+    var planCard: (ToolPermissionRequest) -> AnyView = { _ in AnyView(EmptyView()) }
+    var planRecordCard: (PlanRecord, Bool, @escaping () -> Void) -> AnyView = { _, _, _ in AnyView(EmptyView()) }
     let onFocus: () -> Void
     @ViewState private var resized: [String: MightyGraphBlockSize] = [:]
     /// The newest result's size only while its drag is in progress; the saved
@@ -107,8 +114,12 @@ struct MightyGraphView: View {
               resultContentHeight: latestResultContentHeight,
               executions: links.map { MightyGraphLayout.Execution(runID: $0.runID, key: $0.key) },
               galleries: MightyGraphImages.galleries(runs: runs, root: workspaceRoot, fixed: olderCount),
-              retainedStart: pinnedStart, history: history != nil)
+              retainedStart: pinnedStart, history: history != nil,
+              planRunID: planRunID, planRecords: PlanCardSupport.diagramRecords(planHistory, runs: runs))
     }
+    /// The diagram request the pending plan card goes under, nil when it is docked.
+    private var planRunID: String? { PlanCardSupport.diagramPlanRunID(planRequest, showsDiagram: viewMode == .diagram, runs: runs) }
+    private var planNodeID: String? { planRunID.map { MightyGraphBlockSize.nodeID(runID: $0, suffix: MightyGraphLayout.planSuffix) } }
     private var olderCount: Int { min(max(0, retainedStart), runs.count) }
     /// The newest result card's content — its header strip and its measured
     /// answer — once known. A drag in progress shows exactly the dragged size.
@@ -247,6 +258,12 @@ struct MightyGraphView: View {
                         }
                     }
                 }
+                // A plan waiting for an answer is what the user has to read next.
+                .onChange(of: planNodeID) { _, id in
+                    guard let id else { return }
+                    reveal.cancel()
+                    scrollTarget = MightyGraphScrollTarget(token: "plan:" + id + ":" + (planRequest?.id ?? ""), nodeID: id, alignTop: true)
+                }
                 .onChange(of: zoom) { _, _ in if reveal.holdingID != nil { reveal.cancel() } }
                 .onChange(of: draft.isEmpty) { wasEmpty, isEmpty in
                     if reveal.holdingID != nil { reveal.draftChanged(wasEmpty: wasEmpty, isEmpty: isEmpty) }
@@ -275,7 +292,13 @@ struct MightyGraphView: View {
         }
         // A resumed pane (or one switched to this view) with nothing on screen
         // yet shows its session's latest requests.
-        .onAppear { if runs.isEmpty, history?.phase == .idle { onLoadOlder() } }
+        .onAppear {
+            if runs.isEmpty, history?.phase == .idle { onLoadOlder() }
+            // A plan already waiting when the diagram is shown is what to read first.
+            if let id = planNodeID {
+                scrollTarget = MightyGraphScrollTarget(token: "plan:" + id + ":" + (planRequest?.id ?? ""), nodeID: id, alignTop: true)
+            }
+        }
         // Cancelled when the graph leaves the screen or the pane closes.
         .task(id: ouroborosRequest) { await ouroboros.run(ouroborosRequest) }
     }
@@ -457,6 +480,12 @@ struct MightyGraphView: View {
                                   onOpen: onFocus)
         case .history:
             historyCard(width: node.frame.width, height: node.frame.height)
+        case .plan:
+            if let planRequest { planCard(planRequest) }
+        case .planRecord(_, let recordID):
+            if let record = planHistory.last(where: { $0.id == recordID }) {
+                planRecordCard(record, expanded.contains(node.id)) { if !expanded.insert(node.id).inserted { expanded.remove(node.id) } }
+            }
         case .execution(_, let key):
             if let link = executions[key] {
                 MightyGraphOuroborosCard(nodeID: node.id, link: link, snapshot: ouroboros.snapshots[key], expanded: expanded.contains(node.id),

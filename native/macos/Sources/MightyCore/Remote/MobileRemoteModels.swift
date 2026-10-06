@@ -213,16 +213,26 @@ public struct MobilePermission: Codable, Sendable, Equatable, Identifiable {
     public var summary: String
     public var canAllow: Bool
     public var questionnaire: UserQuestionnaire?
-    public init(id: String, runId: String, toolName: String, title: String, headline: String? = nil, fields: [MobilePermissionField] = [], summary: String, canAllow: Bool, questionnaire: UserQuestionnaire? = nil) {
+    /// The Markdown plan of a Claude plan approval (`canAnswerPlan`), answered
+    /// with `POST …/plan`; absent for any other request (and from older hosts).
+    public var plan: String?
+    /// ISO 8601, when the host received the request.
+    public var receivedAt: String?
+    public init(id: String, runId: String, toolName: String, title: String, headline: String? = nil, fields: [MobilePermissionField] = [], summary: String, canAllow: Bool, questionnaire: UserQuestionnaire? = nil, plan: String? = nil, receivedAt: String? = nil) {
         self.id = id; self.runId = runId; self.toolName = toolName; self.title = title; self.headline = headline; self.fields = fields
-        self.summary = summary; self.canAllow = canAllow; self.questionnaire = questionnaire
+        self.summary = summary; self.canAllow = canAllow; self.questionnaire = questionnaire; self.plan = plan; self.receivedAt = receivedAt
     }
     /// The structured card the desktop shows, so both surfaces read alike.
+    /// A plan carries its text as `plan`, and once more as its one field so a
+    /// phone that does not know plans still shows what it is asked about.
     public init(request: ToolPermissionRequest) {
         let presentation = ToolPermissionPresentation.make(toolName: request.toolName, inputJSON: request.inputJSON)
-        self.init(id: request.id, runId: request.runId, toolName: request.toolName, title: presentation.title, headline: presentation.headline,
-                  fields: presentation.fields.map { MobilePermissionField(label: $0.label, value: $0.value) }, summary: request.summary,
-                  canAllow: request.canAllow, questionnaire: request.canAnswerQuestions ? request.questionnaire : nil)
+        let plan = request.canAnswerPlan ? request.plan : nil
+        self.init(id: request.id, runId: request.runId, toolName: request.toolName, title: plan != nil ? L("plan.card.title") : presentation.title,
+                  headline: plan != nil ? nil : presentation.headline,
+                  fields: plan.map { [MobilePermissionField(label: L("plan.card.title"), value: $0)] } ?? presentation.fields.map { MobilePermissionField(label: $0.label, value: $0.value) }, summary: request.summary,
+                  canAllow: request.canAllow, questionnaire: request.canAnswerQuestions ? request.questionnaire : nil,
+                  plan: plan, receivedAt: plan != nil ? request.receivedAt : nil)
     }
 }
 
@@ -592,6 +602,28 @@ public struct MobilePermissionAnswer: Codable, Sendable {
     public var runId: String
     public var allow: Bool
     public init(requestId: String, runId: String, allow: Bool) { self.requestId = requestId; self.runId = runId; self.allow = allow }
+}
+/// `POST /m1/sessions/{id}/plan`: one of the plan card's four answers.
+public struct MobilePlanAnswer: Codable, Sendable {
+    public var requestId: String
+    public var runId: String
+    /// `approveAutoEdit`, `approveConfirmEach`, `revise` or `cancel`.
+    public var decision: String
+    /// The change request, for `revise` only.
+    public var feedback: String?
+    public init(requestId: String, runId: String, decision: String, feedback: String? = nil) {
+        self.requestId = requestId; self.runId = runId; self.decision = decision; self.feedback = feedback
+    }
+    /// nil for an unknown decision. Feedback is checked when it is sent.
+    public var planDecision: PlanDecision? {
+        switch decision {
+        case "approveAutoEdit": return .approveAutoEdit
+        case "approveConfirmEach": return .approveConfirmEach
+        case "revise": return .revise(feedback: feedback ?? "")
+        case "cancel": return .cancel
+        default: return nil
+        }
+    }
 }
 public struct MobileQuestionAnswers: Codable, Sendable {
     public var requestId: String
