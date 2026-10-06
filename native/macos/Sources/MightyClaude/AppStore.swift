@@ -266,8 +266,9 @@ final class AppStore: ObservableObject {
     var terminalStarts = Set<String>()
     let paneDragToken = UUID().uuidString
     private let arguments = ProcessInfo.processInfo.arguments
-    /// Smoke profiles must not run the user's own status line command.
-    var smokeTesting: Bool { arguments.contains { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") } }
+    /// Smoke profiles (and the help capture's demo profile) must not run the user's own
+    /// status line command, update anything or check for an app update.
+    var smokeTesting: Bool { arguments.contains { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") } || helpCapturing }
 
     /// Per-pane MCP tokens, shared by the runners and the agent IO socket.
     let paneBindings = PaneMCPBindingRegistry()
@@ -341,8 +342,9 @@ final class AppStore: ObservableObject {
         InputMethodMonitor.shared.onRecovered = { [weak self] in self?.inputMethodProblem = nil }
         loading = false
         Task {
-            await refreshRuntime()
-            if !arguments.contains(where: { $0.hasPrefix("--") && $0.hasSuffix("smoke-test") }) { beginAutomaticCLIUpdatesIfNeeded() }
+            // The help capture shows its demo CLIs and never asks the real ones.
+            if !helpCapturing { await refreshRuntime() }
+            if !smokeTesting { beginAutomaticCLIUpdatesIfNeeded() }
             checkForAppUpdateAutomatically()
         }
         configureMobileRemote()
@@ -358,7 +360,8 @@ final class AppStore: ObservableObject {
                 }
             }
         }
-        if arguments.contains("--plugin-smoke-test") { Task { await runPluginSmokeTest() } }
+        if helpCapturing { Task { await HelpCapture.run(store: self) } }
+        else if arguments.contains("--plugin-smoke-test") { Task { await runPluginSmokeTest() } }
         else if arguments.contains("--browser-smoke-test") { Task { await runBrowserSmokeTest() } }
         else if arguments.contains("--cli-update-smoke-test") { Task { await runCLIUpdateSmokeTest() } }
         else if arguments.contains("--question-smoke-test") { Task { await runQuestionnaireSmokeTest() } }

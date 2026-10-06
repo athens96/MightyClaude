@@ -8,7 +8,8 @@ extension AppStore {
     }
 
     func refreshModels(for sessionID: String, force: Bool = true, invalidate: Bool = false) {
-        guard !ending, let session = snapshot.sessions.first(where: { $0.id == sessionID }), let key = localModelContext(for: session) else { return }
+        // The help capture's demo CLIs have no process to ask for models.
+        guard !ending, !helpCapturing, let session = snapshot.sessions.first(where: { $0.id == sessionID }), let key = localModelContext(for: session) else { return }
         let task = localModels.request(key, force: force, invalidate: invalidate)
         modelRefreshRevision &+= 1
         Task { [weak self] in

@@ -10,6 +10,8 @@ extension AppStore {
     static let cliLoginPollLimit: TimeInterval = 10 * 60
 
     func refreshCLIAccounts(_ providers: [String] = ProviderOptions.ids) {
+        // The help capture shows the demo profile's accounts; no CLI is asked.
+        guard !helpCapturing else { return }
         for provider in providers where cliAccountRefreshing.insert(provider).inserted {
             invalidateLocalModels(provider: provider)
             let service = cliAccountService

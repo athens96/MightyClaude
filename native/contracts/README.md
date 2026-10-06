@@ -406,3 +406,19 @@ compares instead of writing.
 Display text in the expectations is the Korean copy. The Windows port takes that
 text from `locales/ko.json` / `en.json` and compares against these vectors with
 the `ko` locale selected.
+
+## Help capture demo profile (`fixtures/demo-profile.json`)
+
+The demo state the macOS `--help-capture` mode loads to take the help site's
+pictures (`docs/help/shots.json` lists the screens; CI runs the capture once per
+language). Everything in it is fictional: two workspaces (`my-app`, `docs-site`)
+created under the capture's profile folder, their files, and panes whose runs
+are the CLIs' own stream lines (`frames`: Claude stream-json, Codex exec JSONL).
+`HelpDemoReplay` (`MightyCore/HelpCapture.swift`) replays them through
+`CLIStreamParser` and the Claude permission channel, so the diagram, plan,
+question and permission cards, checklist and background work are what a real
+run produces. A JSON object whose keys are only language codes is one
+user-visible string and carries all four languages; program output stays as the
+program prints it. Both files are copied byte-identically into
+`MightyCore/Resources/Help/` for the app bundle; `HelpCaptureTests` checks the
+copies, the four languages and the replayed state.

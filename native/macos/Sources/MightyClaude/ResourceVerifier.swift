@@ -13,6 +13,7 @@ enum ResourceVerifier {
         let catalogs = AppLanguage.allCases.filter { $0 != .system }
             .map { ResourceHealthChecker.checkCatalog($0.rawValue, allowEmpty: !$0.isComplete) }
         let checks: [ResourceCheckResult] = catalogs + [ResourceHealthChecker.checkDefaultPet()]
+            + HelpCaptureResources.files.map(ResourceHealthChecker.checkHelpFile)
         var allFound = true
         for result in checks {
             if result.found {

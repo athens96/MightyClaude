@@ -12,7 +12,8 @@ extension AppStore {
             let provider = runtime?.providers?.first { $0.id == id } ?? ProviderOptions.fallbackRuntime(id)
             rows.append(providerRow(provider))
         }
-        for plugin in ComponentCatalog.requiredPlugins {
+        // Plugin rows ask the CLI; the help capture's demo CLIs have none to ask.
+        for plugin in ComponentCatalog.requiredPlugins where !helpCapturing {
             guard let provider = runtime?.providers?.first(where: { $0.id == plugin.provider }), provider.available else { continue }
             rows.append(await requiredPluginRow(plugin))
         }

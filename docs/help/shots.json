@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "note": "The screens the help site shows, taken by `MightyClaude --help-capture --smoke-exit --profile <dir> -language <ko|en|zh|ja>` with the demo profile (native/contracts/fixtures/demo-profile.json). Each shot is written to <profile>/help-shots/<lang>/<id>-<theme>.png for every theme it lists (light and dark when it lists none). `screen` must be one the capture knows (HelpScreen in MightyCore); an unknown one stops the run. `window` is the main window's content size during the shot. The bundled copy is native/macos/Sources/MightyCore/Resources/Help/shots.json and must stay byte-identical.",
+  "sections": [
+    "getting-started",
+    "layout",
+    "agent-pane",
+    "styles",
+    "approvals",
+    "terminal-files-browser",
+    "settings",
+    "phone",
+    "windows",
+    "faq"
+  ],
+  "shots": [
+    {
+      "id": "welcome",
+      "section": "getting-started",
+      "screen": "welcome",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The first window of a new profile, before any folder is open."
+    },
+    {
+      "id": "overview",
+      "section": "layout",
+      "screen": "overview",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "my-app with four panes in a grid."
+    },
+    {
+      "id": "sidebar-collapsed",
+      "section": "layout",
+      "screen": "sidebar-collapsed",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "dashboard",
+      "section": "layout",
+      "screen": "dashboard",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "resume-choice",
+      "section": "layout",
+      "screen": "resume-choice",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "Add Pane → Claude, when this folder has earlier sessions."
+    },
+    {
+      "id": "resume-list",
+      "section": "layout",
+      "screen": "resume-list",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "agent-basic",
+      "section": "agent-pane",
+      "screen": "agent-basic",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The Codex pane in the default view."
+    },
+    {
+      "id": "agent-mighty",
+      "section": "agent-pane",
+      "screen": "agent-mighty",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The Mighty diagram: a finished request and one waiting on background work."
+    },
+    {
+      "id": "agent-mighty-overview",
+      "section": "agent-pane",
+      "screen": "agent-mighty-overview",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The same diagram zoomed out."
+    },
+    {
+      "id": "agent-timeline",
+      "section": "agent-pane",
+      "screen": "agent-timeline",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "result-card",
+      "section": "agent-pane",
+      "screen": "result-card",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "A finished request's result card with its changed files."
+    },
+    {
+      "id": "composer",
+      "section": "agent-pane",
+      "screen": "composer",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "A typed draft in the composer."
+    },
+    {
+      "id": "composer-settings",
+      "section": "agent-pane",
+      "screen": "composer-settings",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The pane's run settings popover."
+    },
+    {
+      "id": "session-info",
+      "section": "agent-pane",
+      "screen": "session-info",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The context ring's session details."
+    },
+    {
+      "id": "plan-card",
+      "section": "styles",
+      "screen": "plan-card",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "Plan mode: the plan card waiting for an answer."
+    },
+    {
+      "id": "plan-document",
+      "section": "styles",
+      "screen": "plan-document",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The plan opened as a document."
+    },
+    {
+      "id": "question-card",
+      "section": "approvals",
+      "screen": "question-card",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "permission-card",
+      "section": "approvals",
+      "screen": "permission-card",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "background-work",
+      "section": "approvals",
+      "screen": "background-work",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "The turn is over while background work runs."
+    },
+    {
+      "id": "terminal-pane",
+      "section": "terminal-files-browser",
+      "screen": "terminal-pane",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "files-pane",
+      "section": "terminal-files-browser",
+      "screen": "files-pane",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-general",
+      "section": "settings",
+      "screen": "settings-general",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-models",
+      "section": "settings",
+      "screen": "settings-models",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-styles",
+      "section": "settings",
+      "screen": "settings-styles",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-tools",
+      "section": "settings",
+      "screen": "settings-tools",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-cli",
+      "section": "settings",
+      "screen": "settings-cli",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-companion",
+      "section": "settings",
+      "screen": "settings-companion",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "settings-about",
+      "section": "settings",
+      "screen": "settings-about",
+      "window": {
+        "width": 1360,
+        "height": 860
+      }
+    },
+    {
+      "id": "companion-pet",
+      "section": "settings",
+      "screen": "companion-pet",
+      "note": "The pet window, outside the main window."
+    },
+    {
+      "id": "settings-mobile",
+      "section": "phone",
+      "screen": "settings-mobile",
+      "window": {
+        "width": 1360,
+        "height": 860
+      },
+      "note": "Settings → Mobile remote, where a phone is paired."
+    }
+  ]
+}
