@@ -479,7 +479,7 @@ final class AgentTranscriptTextView: SelectableTextView {
         let visibleHeight = clip?.bounds.height ?? 0
         let follow = previous.value.length == 0 || (ranges.allSatisfy { $0.length == 0 }
             && TranscriptViewport.isFollowing(originY: origin.y, visibleHeight: visibleHeight, documentHeight: bounds.height))
-        let topIndex = characterIndexForInsertion(at: NSPoint(x: textContainerInset.width + 2, y: origin.y + 2))
+        let topIndex = layoutIndex(at: NSPoint(x: textContainerInset.width + 2, y: origin.y + 2))
         let top = previous.anchor(at: topIndex)
         let offset = origin.y - lineY(at: topIndex)
 
@@ -568,6 +568,17 @@ final class AgentTranscriptTextView: SelectableTextView {
             self.reportedContentHeight = height
             callback(height)
         }
+    }
+
+    /// The character under a point of this view, read from the layout alone. It runs while
+    /// SwiftUI updates the view, where `characterIndexForInsertion(at:)` must not be used: that
+    /// one hit-tests the window, re-enters the SwiftUI graph mid-update and hangs the app while
+    /// AttributeGraph logs the cycle.
+    private func layoutIndex(at point: NSPoint) -> Int {
+        guard let manager = layoutManager, let container = textContainer, manager.numberOfGlyphs > 0, document.value.length > 0 else { return 0 }
+        let inContainer = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyph = manager.glyphIndex(for: inContainer, in: container)
+        return min(manager.characterIndexForGlyph(at: glyph), document.value.length)
     }
 
     private func lineY(at index: Int) -> CGFloat {
