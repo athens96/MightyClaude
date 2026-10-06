@@ -97,9 +97,9 @@
       "screen": "agent-mighty-overview",
       "window": {
         "width": 1440,
-        "height": 900
+        "height": 1500
       },
-      "note": "The same diagram zoomed out."
+      "note": "The whole diagram, in a taller window."
     },
     {
       "id": "agent-timeline",
