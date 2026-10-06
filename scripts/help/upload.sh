@@ -80,14 +80,14 @@ count=0
 # 1. pictures and any other non-page files
 while IFS= read -r -d '' file; do
   put "$file" "$PREFIX/${file#./}"; count=$((count + 1))
-done < <(find . -type f ! -name '*.html' ! -name '.*' -print0 | sort -z)
+done < <(find . -path '*/.*' -prune -o -type f ! -name '*.html' -print0 | sort -z)
 # 2. language pages, each also at its folder key
 while IFS= read -r -d '' file; do
   rel="${file#./}"
   put "$file" "$PREFIX/$rel"
   put "$file" "$PREFIX/$(dirname "$rel")/"
   count=$((count + 2))
-done < <(find . -mindepth 2 -type f -name '*.html' -print0 | sort -z)
+done < <(find . -mindepth 2 -path '*/.*' -prune -o -type f -name '*.html' -print0 | sort -z)
 # 3. the root redirect last
 put "index.html" "$PREFIX/index.html"
 put "index.html" "$PREFIX/"
