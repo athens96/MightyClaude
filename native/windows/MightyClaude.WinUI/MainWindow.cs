@@ -106,7 +106,7 @@ public sealed partial class MainWindow : Window
         statusBar.Child = BuildStatusBar(); ApplyChromeText(); Grid.SetRow(statusBar, 2); Grid.SetColumn(statusBar, 1); root.Children.Add(statusBar); Content = root;
         AppWindow.Closing += async (_, args) => { if (canClose) return; args.Cancel = true; if (closing) return; closing = true; ShutdownCompanion(); settingsWindow?.Close(); foreach (var pane in views.Values) { pane.CloseReferencePreview(); pane.CloseBrowserView(); } clock.Stop(); StopWorkspaceGit(); root.IsHitTestVisible = false; try { await ShutdownAutomaticUpdates(); await coordinator.ShutdownAsync(); await ShutdownAppUpdateAsync(); await ShutdownAccountUsageAsync(); await ShutdownLoginRecovery(); await ShutdownStatusLines(); await CloseTerminalsAsync(); await ShutdownAgentIO(); await ShutdownMobileRemote(); await service.DisposeAsync(); canClose = true; Close(); } catch (Exception ex) { error.Text = Locale.Get("window.error.shutdownFailed", new Dictionary<string, string> { ["reason"] = ex.Message }); root.IsHitTestVisible = true; closing = false; } };
         clock.Tick += (_, _) => RefreshRunningIndicators(); clock.Start();
-        InitFilePane(); InitAddPaneShortcuts();
+        InitFilePane(); InitAddPaneShortcuts(); InitHelpShortcut();
         ShowLaunchSplash(); InitParityShortcuts(); InitWorkspaceGit(); InitDashboard();
         _ = Initialize();
     }
@@ -139,7 +139,7 @@ public sealed partial class MainWindow : Window
             item.Content = Locale.Get((string)item.Tag switch { "grid" => "layout.mode.grid", "columns" => "layout.mode.columns", "focus" => "layout.mode.focus", "tabs" => "layout.mode.tabs", _ => "layout.mode.custom" });
         addFolderLabel.Text = Locale.Get("sidebar.openFolder"); AutomationProperties.SetName(addFolderButton, addFolderLabel.Text);
         sessionsHeader.Text = Locale.Get("sidebar.workspacesHeader");
-        RefreshSidebarThemeButton(); RefreshSidebarToggles();
+        RefreshSidebarThemeButton(); RefreshSidebarHelpButton(); RefreshSidebarToggles();
         AutomationProperties.SetName(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         ToolTipService.SetToolTip(settingsButton, Locale.Get("settings.settingsWindowTitle"));
         if (errorBannerDismiss is { } dismiss) { AutomationProperties.SetName(dismiss, Locale.Get("window.error.dismiss")); ToolTipService.SetToolTip(dismiss, Locale.Get("window.error.dismiss")); }

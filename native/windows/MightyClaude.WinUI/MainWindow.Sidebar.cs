@@ -111,7 +111,8 @@ public sealed partial class MainWindow
     /// <summary>
     /// The footer under a full-width <c>line</c> (M/WorkspaceView.swift:108-120): the app icon 20,
     /// 9 from "Mighty Claude" 12pt semibold with the app's 베타 capsule right after it, then the
-    /// theme and settings symbols, plain; the current app version sits below the name in muted 10pt mono.
+    /// help, theme and settings symbols, plain; the current app version sits below the name in muted 10pt mono.
+    /// Help is Windows' own (the Mac's is in its Help menu), set the same pitch before the theme symbol.
     /// </summary>
     private FrameworkElement BuildSidebarFooter()
     {
@@ -120,7 +121,7 @@ public sealed partial class MainWindow
         var footer = sidebarFooter = new Grid { Padding = new Thickness(16), BorderThickness = new Thickness(0, DesignMetrics.Stroke.Line, 0, 0), BorderBrush = Separator };
         AutomationProperties.SetAutomationId(footer, "sidebar-footer");
         footer.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         // Left-aligned, so the name takes only its own width and the capsule stays right after it while the name still trims.
         var brand = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, RowSpacing = 2 };
         brand.RowDefinitions.Add(new() { Height = GridLength.Auto }); brand.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -136,21 +137,23 @@ public sealed partial class MainWindow
         brandBeta.Foreground = brushes.Brush(DesignToken.StopText);
         var beta = sidebarFooterBeta = new Border { Child = brandBeta, CornerRadius = new CornerRadius(7), Background = brushes.Brush(DesignToken.StopSoft), Padding = new Thickness(5, 1, 5, 1), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(beta, 2); brand.Children.Add(beta); footer.Children.Add(brand);
-        var theme = BuildSidebarThemeButton(); Grid.SetColumn(theme, 1); footer.Children.Add(theme);
+        var help = BuildSidebarHelpButton(); Grid.SetColumn(help, 1); footer.Children.Add(help);
+        var theme = BuildSidebarThemeButton(); Grid.SetColumn(theme, 2); footer.Children.Add(theme);
         settingsButton.Content = new FontIcon { Glyph = "", FontSize = SidebarFooterGlyph };
         AutomationProperties.SetAutomationId(settingsButton, "sidebar-settings");
         // The Mac's two symbols are plain 13pt images. Each button keeps a hit area around its symbol,
         // reaching into the padding and a little over its neighbour, so the symbols land where the
         // Mac's do, centered beside the name and version.
         const double inset = (SidebarFooterButton - SidebarFooterGlyph) / 2, overhang = (SidebarFooterButton - 20) / 2;
-        foreach (var button in new[] { theme, settingsButton })
+        foreach (var button in new[] { help, theme, settingsButton })
         {
             button.Width = SidebarFooterButton; button.Height = SidebarFooterButton; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new Thickness(0);
             button.Foreground = brushes.Brush(DesignToken.Ink); PlainSidebarButton(button, brushes.Transparent, brushes.Subtle, radius: DesignMetrics.Radius.Search);
         }
-        theme.Margin = new Thickness(18 - inset, -overhang, 0, -overhang);
+        help.Margin = new Thickness(18 - inset, -overhang, 0, -overhang);
+        theme.Margin = new Thickness(SidebarFooterPitch - SidebarFooterButton, -overhang, 0, -overhang);
         settingsButton.Margin = new Thickness(SidebarFooterPitch - SidebarFooterButton, -overhang, SidebarFooterGearCentre - SidebarFooterButton / 2, -overhang);
-        Grid.SetColumn(settingsButton, 2); footer.Children.Add(settingsButton);
+        Grid.SetColumn(settingsButton, 3); footer.Children.Add(settingsButton);
         return footer;
     }
 

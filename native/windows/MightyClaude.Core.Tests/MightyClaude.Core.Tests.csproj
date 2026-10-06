@@ -11,6 +11,7 @@
     <EmbeddedResource Include="../../contracts/fixtures/next-actions.json" LogicalName="MightyClaude.Core.Tests.NextActions.json" />
     <EmbeddedResource Include="../../contracts/fixtures/claude-plan-mode.json" LogicalName="MightyClaude.Core.Tests.ClaudePlanMode.json" />
     <EmbeddedResource Include="../../contracts/fixtures/design-tokens.json" LogicalName="MightyClaude.Core.Tests.DesignTokens.json" />
+    <EmbeddedResource Include="../../contracts/fixtures/help-site.json" LogicalName="MightyClaude.Core.Tests.HelpSite.json" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../../styles/conformance/**/*.json" LogicalName="MightyClaude.Core.Tests.Styles.%(RecursiveDir)%(Filename)%(Extension)" />

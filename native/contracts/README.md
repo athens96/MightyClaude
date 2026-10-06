@@ -365,6 +365,18 @@ own name and add the resolved model after ` · `. `[1m]` adds ` (1M)`; a Bedrock
 catalogue-only names (`ModelUsageFormat` with `versioned: false`); the Mac views
 pass `versioned: true`. Windows does not apply these labels yet.
 
+## Help site (`fixtures/help-site.json`)
+
+Every app opens the user guide `scripts/help/build.mjs` publishes at
+`<base>/<lang>/`, where `<lang>` is the app's resolved display language (`ko`,
+`en`, `zh` or `ja`, never the raw "system" preference). The Mac opens it from
+Help → Mighty Claude 도움말 (⌘?) and Settings → 앱 정보, Windows from the
+sidebar footer's help symbol and F1, the phone from the hosts tab. The fixture is
+`{base, cases: [{language, url}]}`; `HelpSiteTests` (Swift),
+`HelpSiteVerification` (Windows Core) and `help-site.test.ts` (jest) all read it.
+Builders: `MightyCore/HelpSite.swift`, `MightyClaude.Core/HelpSite.cs`,
+`mobile/src/lib/help-site.ts`.
+
 ## Execution graph vectors (`graph-vectors.json`)
 
 `graph-vectors.json` is the shared execution-graph contract: one file that both

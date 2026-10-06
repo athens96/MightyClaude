@@ -175,6 +175,11 @@ public func L(_ key: String, _ subs: [String: String] = [:]) -> String {
     fill(localeTemplate(key, in: catalogs(for: resolvedLanguage())), subs)
 }
 
+public extension AppLanguage {
+    /// The language L() reads now: the saved choice, or the one "system" resolves to (never `.system`).
+    static var current: AppLanguage { resolvedLanguage() }
+}
+
 /// Clears cached catalogs and the cached system language so the next call to L()
 /// re-reads them. Call on app launch after the language preference changes.
 public func resetLocaleCache() {

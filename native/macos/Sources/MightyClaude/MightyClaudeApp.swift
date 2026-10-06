@@ -86,6 +86,11 @@ struct MightyClaudeApp: App {
                     .keyboardShortcut(",", modifiers: .command)
                     .disabled(!store.isLoaded || store.hasModal)
             }
+            // Help menu: the user guide in the app's language, on the standard ⌘?.
+            CommandGroup(replacing: .help) {
+                Button(L("menu.help")) { NSWorkspace.shared.open(HelpSite.current) }
+                    .keyboardShortcut("?", modifiers: .command)
+            }
         }
     }
 }

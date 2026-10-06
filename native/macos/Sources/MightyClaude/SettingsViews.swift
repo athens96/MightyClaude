@@ -311,6 +311,9 @@ struct AppSettingsView: View {
             Section(L("settings.appInfo.sectionTitle")) {
                 LabeledContent(L("settings.appInfo.versionLabel"), value: store.runtime?.appVersion ?? "0.2.0")
                 Text(L("settings.appInfo.runtimeNote")).font(.system(size: 11)).foregroundStyle(.secondary)
+                LabeledContent(L("menu.help")) {
+                    Button(L("settings.appInfo.openHelpButton")) { NSWorkspace.shared.open(HelpSite.current) }
+                }
                 LabeledContent(L("settings.appInfo.stateLocationLabel")) {
                     Button(L("settings.appInfo.openFinderButton")) { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: store.dataDirectory.path) }
                 }
