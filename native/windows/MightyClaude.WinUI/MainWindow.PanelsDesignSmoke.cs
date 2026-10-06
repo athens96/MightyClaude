@@ -379,6 +379,17 @@ public sealed partial class MainWindow
         RequireBrush(chosen, e => ((Border)((ToggleButton)e).Content).Background, DesignToken.Accent, "the chosen theme segment", key: key);
         RequireBrush(chosen, e => ((TextBlock)((Border)((ToggleButton)e).Content).Child).Foreground, DesignToken.OnAccent, "the chosen theme segment's words", key: key);
         RequireBrush(unchosen, e => ((TextBlock)((Border)((ToggleButton)e).Content).Child).Foreground, DesignToken.Ink, "the other theme segment's words", key: key);
+        // The language picker offers System and the four languages, each language named in its own language.
+        var languagePicker = (Grid)Part("settings-language");
+        var languageSegments = languagePicker.Children.OfType<ToggleButton>().ToList();
+        Require(languageSegments.Count == Locale.PickerChoices.Count, $"{key} ({theme}): the language picker must offer {Locale.PickerChoices.Count} choices; got {languageSegments.Count}");
+        foreach (var (value, labelKey) in Locale.PickerChoices)
+        {
+            var label = ((TextBlock)((Border)((ToggleButton)Part("settings-language-" + value)).Content).Child).Text;
+            Require(label == Locale.Get(labelKey), $"{key} ({theme}): the language picker's {value} segment must read {Locale.Get(labelKey)}; got {label}");
+        }
+        foreach (var (value, name) in new[] { ("en", "English"), ("zh", "简体中文"), ("ja", "日本語") })
+            Require(Locale.Get(Locale.PickerChoices.Single(choice => choice.Value == value).LabelKey) == name, $"{key} ({theme}): the {value} choice must be named {name} in every language");
         // A switch is the Mac's 26×15 capsule with a 13pt knob, accent when on (M/SettingsViews.swift:232-239).
         var toggle = (ToggleButton)Part("settings-status-line"); var capsule = (Grid)toggle.Content; var knob = capsule.Children.OfType<Microsoft.UI.Xaml.Shapes.Ellipse>().Single();
         Require(toggle.Width == SettingsSwitchWidth && toggle.Height == SettingsSwitchHeight && knob.Width == SettingsSwitchKnob && capsule.CornerRadius == new CornerRadius(SettingsSwitchHeight / 2),

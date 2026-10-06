@@ -56,7 +56,7 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Mighty Claude</string>
 <key>CFBundleIdentifier</key><string>dev.mightyclaude.native</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
-<key>CFBundleLocalizations</key><array><string>ko</string><string>en</string></array>
+<key>CFBundleLocalizations</key><array><string>ko</string><string>en</string><string>zh-Hans</string><string>ja</string></array>
 <key>CFBundleExecutable</key><string>MightyClaude</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>MightyClaude.icns</string>
@@ -72,7 +72,7 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 PLIST
 # The languages the app speaks, so AppKit draws its own menus (the app menu,
 # Edit, Window, Help) in the user's language instead of the fallback English.
-for language in ko en; do
+for language in ko en zh-Hans ja; do
   mkdir -p "$APP_PATH/Contents/Resources/$language.lproj"
   printf '"CFBundleDisplayName" = "Mighty Claude";\n' > "$APP_PATH/Contents/Resources/$language.lproj/InfoPlist.strings"
 done

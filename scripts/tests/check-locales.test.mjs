@@ -25,6 +25,8 @@ const CSPROJ = `<Project>
   <ItemGroup>
     <Content Include="../../../locales/ko.json" />
     <Content Include="../../../locales/en.json" />
+    <Content Include="../../../locales/zh.json" />
+    <Content Include="../../../locales/ja.json" />
   </ItemGroup>
 </Project>`;
 
@@ -33,27 +35,26 @@ const CSPROJ = `<Project>
  * koJson / enJson 기본값은 빈 객체 — 키가 없으면 검사 1·2·4가 자동 통과.
  * 검사 3(사본 일치)이 통과하려면 macOS core·phone 사본도 원본과 같아야 한다.
  */
-function setup(dir, { koJson = {}, enJson = {}, files = {} } = {}) {
-  const koContent = JSON.stringify(koJson);
-  const enContent = JSON.stringify(enJson);
+function setup(dir, { koJson = {}, enJson = {}, zhJson = {}, jaJson = {}, files = {} } = {}) {
+  const contents = {
+    ko: JSON.stringify(koJson),
+    en: JSON.stringify(enJson),
+    zh: JSON.stringify(zhJson),
+    ja: JSON.stringify(jaJson),
+  };
 
-  // 원본
-  fs.mkdirSync(path.join(dir, 'locales'), { recursive: true });
+  // The originals, then the macOS core and phone copies (check 3), all four languages.
   fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'locales', 'ko.json'), koContent);
-  fs.writeFileSync(path.join(dir, 'locales', 'en.json'), enContent);
-
-  // macOS core 사본 (검사 3)
-  const macLocDir = path.join(dir, 'native/macos/Sources/MightyCore/Resources/Locales');
-  fs.mkdirSync(macLocDir, { recursive: true });
-  fs.writeFileSync(path.join(macLocDir, 'ko.json'), koContent);
-  fs.writeFileSync(path.join(macLocDir, 'en.json'), enContent);
-
-  // phone 사본 (검사 3)
-  const phoneLocDir = path.join(dir, 'mobile/src/locales');
-  fs.mkdirSync(phoneLocDir, { recursive: true });
-  fs.writeFileSync(path.join(phoneLocDir, 'ko.json'), koContent);
-  fs.writeFileSync(path.join(phoneLocDir, 'en.json'), enContent);
+  for (const directory of [
+    'locales',
+    'native/macos/Sources/MightyCore/Resources/Locales',
+    'mobile/src/locales',
+  ]) {
+    fs.mkdirSync(path.join(dir, directory), { recursive: true });
+    for (const [language, content] of Object.entries(contents)) {
+      fs.writeFileSync(path.join(dir, directory, `${language}.json`), content);
+    }
+  }
 
   for (const [rel, content] of Object.entries(files)) {
     const abs = path.join(dir, rel);
@@ -348,6 +349,65 @@ test('CRLF로 받은 docs/i18n.md도 --check를 통과한다', () => {
 
     const r = run(['--root', dir, '--check']);
     assert.equal(r.status, 0, `CRLF 사본은 통과해야 한다\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ── Translations (zh, ja): a subset of en's keys with en's placeholders ──────────
+// Keys used by a client source so check 4 (unused keys) passes.
+const USED = {
+  'native/macos/Sources/MightyClaude/View.swift': 'L("a.one")\nL("a.two")\n',
+  'native/windows/MightyClaude.WinUI/MightyClaude.WinUI.csproj': CSPROJ,
+};
+const KO = { 'a.one': '하나 {n}', 'a.two': '둘' };
+const EN = { 'a.one': 'One {n}', 'a.two': 'Two' };
+
+test('a translation that misses keys passes and the missing keys are counted', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { koJson: KO, enJson: EN, zhJson: { 'a.one': '一 {n}' }, files: USED });
+    const r = run(['--root', dir]);
+    assert.equal(r.status, 0, `missing translation keys must not fail\nstderr: ${r.stderr}`);
+    assert.match(r.stdout, /zh {2}번역 1개, 빠진 키 1개/);
+    assert.match(r.stdout, /ja {2}번역 0개, 빠진 키 2개/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a translation key that en has not got fails', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { koJson: KO, enJson: EN, jaJson: { 'a.three': '三' }, files: USED });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'a key en has not got must fail');
+    assert.match(r.stderr, /ja\.json의 a\.three/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a translation whose placeholders differ from en fails', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { koJson: KO, enJson: EN, zhJson: { 'a.one': '一 {count}' }, files: USED });
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'a placeholder mismatch must fail');
+    assert.match(r.stderr, /a\.one의 자리표가 다릅니다: zh \{count\} \/ en \{n\}/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a translation copy that differs from the original fails', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { koJson: KO, enJson: EN, files: USED });
+    fs.writeFileSync(path.join(dir, 'mobile/src/locales/zh.json'), '{"a.two":"二"}');
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'a differing zh copy must fail');
+    assert.match(r.stderr, /mobile\/src\/locales\/zh\.json이 locales\/zh\.json과 다릅니다/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

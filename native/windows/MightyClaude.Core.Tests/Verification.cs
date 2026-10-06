@@ -681,6 +681,12 @@ internal static class Verification
         await Test("locale key absent from both catalogs returns the key itself", LocalizationVerification.MissingKeyInChosenLanguageFallsBackToKorean);
         await Test("locale placeholders are substituted when subs supplied", LocalizationVerification.PlaceholdersAreSubstituted);
         await Test("locale language picker keys exist with expected values", LocalizationVerification.LanguagePickerLocaleKeysExist);
+        await Test("locale system language maps each OS language tag", LocalizationVerification.SystemLanguageMapsEachOSLanguageTag);
+        await Test("locale system language takes the first supported preferred language", LocalizationVerification.SystemLanguageTakesTheFirstSupportedPreferredLanguage);
+        await Test("locale lookup falls back to English then Korean", LocalizationVerification.LookupOrderFallsBackToEnglishThenKorean);
+        await Test("locale system passes over a language whose catalogue has no keys", LocalizationVerification.SystemPassesOverALanguageWhoseCatalogueHasNoKeys);
+        await Test("locale system checks the display language first", LocalizationVerification.SystemChecksTheDisplayLanguageFirst);
+        await Test("locale language picker offers four languages", LocalizationVerification.LanguagePickerOffersFourLanguages);
         await Test("locale language preference defaults to system and persists through Normalize", LocalizationVerification.LanguagePreferencePersistsInSnapshot);
         await Test("cli account strings match macOS", StringsVerification.CliAccountStringsMatchMacOS);
         await Test("cli account claude and codex statuses expose account labels only", CliAccountVerification.ClaudeAndCodexStatusesExposeAccountLabelsOnly);

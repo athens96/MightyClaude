@@ -3,16 +3,16 @@ import MightyCore
 
 /// Handles `--verify-resources`. Called before CEF, NSApplication, or any other
 /// initialisation so the binary can be invoked headlessly by build and install
-/// scripts. Exits 0 with VERIFY_RESOURCES_OK when all three resources resolve,
+/// scripts. Exits 0 with VERIFY_RESOURCES_OK when every catalog and the pet resolve,
 /// exits non-zero otherwise.
 enum ResourceVerifier {
     static func run() -> Never {
         var err = StderrStream()
-        let checks: [ResourceCheckResult] = [
-            ResourceHealthChecker.checkCatalog("ko"),
-            ResourceHealthChecker.checkCatalog("en"),
-            ResourceHealthChecker.checkDefaultPet(),
-        ]
+        // Every language's catalog must exist and parse as a JSON object; a complete
+        // language's must also hold keys, while a translation may still be empty.
+        let catalogs = AppLanguage.allCases.filter { $0 != .system }
+            .map { ResourceHealthChecker.checkCatalog($0.rawValue, allowEmpty: !$0.isComplete) }
+        let checks: [ResourceCheckResult] = catalogs + [ResourceHealthChecker.checkDefaultPet()]
         var allFound = true
         for result in checks {
             if result.found {

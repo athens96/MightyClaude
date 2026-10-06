@@ -9,6 +9,8 @@
   <ItemGroup>
     <EmbeddedResource Include="../../../locales/ko.json" LogicalName="MightyClaude.Core.Locales.ko.json" />
     <EmbeddedResource Include="../../../locales/en.json" LogicalName="MightyClaude.Core.Locales.en.json" />
+    <EmbeddedResource Include="../../../locales/zh.json" LogicalName="MightyClaude.Core.Locales.zh.json" />
+    <EmbeddedResource Include="../../../locales/ja.json" LogicalName="MightyClaude.Core.Locales.ja.json" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../macos/Sources/MightyCore/Resources/Styles/*.json" LogicalName="MightyClaude.Core.Styles.%(Filename)%(Extension)" />

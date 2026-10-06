@@ -100,6 +100,124 @@ internal static class LocalizationVerification
         return Task.CompletedTask;
     }
 
+    // Runs body with the preference "system", the given display language and further preferred
+    // languages, then restores all three.
+    private static void WithSystemLanguages(string display, IReadOnlyList<string> preferred, Action body)
+    {
+        var (savedDisplay, savedPreferred) = (Locale.DisplayLanguage, Locale.PreferredLanguages);
+        Locale.DisplayLanguage = () => display;
+        Locale.PreferredLanguages = () => preferred;
+        try { WithPreference("system", body); }
+        finally { Locale.DisplayLanguage = savedDisplay; Locale.PreferredLanguages = savedPreferred; }
+    }
+
+    private static string SectionTitle() => Locale.Get("settings.display.sectionTitle");
+
+    // An OS language tag maps to zh, ja, ko or en by its primary subtag; Traditional Chinese reads zh for now.
+    internal static Task SystemLanguageMapsEachOSLanguageTag()
+    {
+        foreach (var (tag, want) in new[]
+        {
+            ("zh-Hans", "zh"), ("zh-Hans-CN", "zh"), ("zh-TW", "zh"), ("zh-Hant-HK", "zh"), ("zh-HK", "zh"),
+            ("ja-JP", "ja"), ("ko-KR", "ko"), ("ko_KR", "ko"), ("en-GB", "en"), ("fr-FR", "en"), ("kok-IN", "en"),
+        })
+        {
+            var got = Locale.ResolvedSystem([tag]);
+            Check(got == want, $"system language for {tag} must be {want}, got: {got}");
+        }
+        Check(Locale.ResolvedSystem([]) == "en", "an empty preferred list must read en");
+        Check(Locale.LanguageForTag("fr-FR") is null, "fr-FR must not be a supported language");
+        return Task.CompletedTask;
+    }
+
+    // The first preferred language the app has wins; English when none is.
+    internal static Task SystemLanguageTakesTheFirstSupportedPreferredLanguage()
+    {
+        Check(Locale.ResolvedSystem(["ko-KR", "en-US", "zh-Hans-CN"]) == "ko", "ko, en, zh must read ko");
+        Check(Locale.ResolvedSystem(["en-US", "ko-KR", "zh-Hans-CN"]) == "en", "en, ko, zh must read en");
+        Check(Locale.ResolvedSystem(["zh-Hans-CN", "ko-KR", "en-US"]) == "zh", "zh, ko, en must read zh");
+        Check(Locale.ResolvedSystem(["fr-FR", "de-DE", "ja-JP", "ko-KR"]) == "ja", "fr, de, ja, ko must read ja");
+        Check(Locale.ResolvedSystem(["fr-FR", "de-DE"]) == "en", "fr, de must read en");
+        WithSystemLanguages("fr-FR", ["fr-FR", "ko-KR"], () =>
+            Check(SectionTitle() == "화면", "system with fr, ko must read Korean, got: " + SectionTitle()));
+        WithSystemLanguages("fr-FR", ["fr-FR"], () =>
+            Check(SectionTitle() == "Display", "system with fr alone must read English, got: " + SectionTitle()));
+        return Task.CompletedTask;
+    }
+
+    // A language whose catalogue has no keys yet is passed over for the next preferred one.
+    internal static Task SystemPassesOverALanguageWhoseCatalogueHasNoKeys()
+    {
+        bool HasKeys(string language) => language is not ("zh" or "ja");
+        Check(Locale.ResolvedSystem(["ja-JP", "ko-KR"], HasKeys) == "ko", "ja (no keys), ko must read ko");
+        Check(Locale.ResolvedSystem(["zh-Hans-CN", "ja-JP", "en-US", "ko-KR"], HasKeys) == "en", "zh, ja (no keys), en, ko must read en");
+        Check(Locale.ResolvedSystem(["zh-Hans-CN", "fr-FR"], HasKeys) == "en", "zh (no keys), fr must read en");
+        Check(Locale.ResolvedSystem(["ja-JP", "ko-KR"], _ => true) == "ja", "ja with keys must read ja");
+        // The bundled catalogues: holds before and after the translations land.
+        var jaHasKeys = Locale.Catalogue("ja").Count > 0;
+        WithSystemLanguages("ja-JP", ["ja-JP", "ko-KR"], () =>
+            Check(jaHasKeys ? SectionTitle() == Locale.Catalogue("ja")["settings.display.sectionTitle"] : SectionTitle() == "화면",
+                "system with ja, ko must read ja when it has keys, else Korean; got: " + SectionTitle()));
+        // Choosing ja itself still reads it, English where it has no value — never Korean.
+        WithPreference("ja", () => Check(SectionTitle() != "화면", "a chosen ja must not read Korean, got: " + SectionTitle()));
+        return Task.CompletedTask;
+    }
+
+    // "System" checks the Windows display language before the further preferred languages.
+    internal static Task SystemChecksTheDisplayLanguageFirst()
+    {
+        WithSystemLanguages("ko-KR", ["en-US", "ko-KR"], () =>
+            Check(SectionTitle() == "화면", "a Korean display language must read Korean before the list, got: " + SectionTitle()));
+        WithSystemLanguages("en-US", ["ko-KR"], () =>
+            Check(SectionTitle() == "Display", "an English display language must read English before the list, got: " + SectionTitle()));
+        WithSystemLanguages("fr-FR", ["fr-FR", "ko-KR"], () =>
+            Check(SectionTitle() == "화면", "an unsupported display language must fall to the list, got: " + SectionTitle()));
+        var jaHasKeys = Locale.Catalogue("ja").Count > 0;
+        if (!jaHasKeys)
+            WithSystemLanguages("ja-JP", ["ko-KR"], () =>
+                Check(SectionTitle() == "화면", "a display language with no keys must fall to the list, got: " + SectionTitle()));
+        return Task.CompletedTask;
+    }
+
+    // ko and en keep their own lookup order; a translation falls back to en, then ko.
+    internal static Task LookupOrderFallsBackToEnglishThenKorean()
+    {
+        Check(Locale.LookupOrder("ko").SequenceEqual(["ko"]), "ko must read ko alone");
+        Check(Locale.LookupOrder("en").SequenceEqual(["en", "ko"]), "en must read en, then ko");
+        Check(Locale.LookupOrder("zh").SequenceEqual(["zh", "en", "ko"]), "zh must read zh, then en, then ko");
+        Check(Locale.LookupOrder("ja").SequenceEqual(["ja", "en", "ko"]), "ja must read ja, then en, then ko");
+        foreach (var language in new[] { "zh", "ja" })
+            WithPreference(language, () =>
+            {
+                var zhOrJa = Locale.Catalogue(language);
+                var key = "settings.display.sectionTitle";
+                var want = zhOrJa.TryGetValue(key, out var own) ? own : Locale.Catalogue("en")[key];
+                Check(Locale.Get(key) == want, $"{language}: {key} must read {want}, got: {Locale.Get(key)}");
+                var filled = Locale.Get("settings.appUpdate.availableTemplate", new Dictionary<string, string> { ["version"] = "3.0" });
+                Check(filled.Contains("3.0") && !filled.Contains("{version}"), $"{language}: placeholders must be filled, got: {filled}");
+                Check(Locale.Get("test.nonexistent.key.xyz") == "test.nonexistent.key.xyz", $"{language}: a key no catalogue has must return itself");
+            });
+        return Task.CompletedTask;
+    }
+
+    // The picker offers System and the four languages, each language named in its own language.
+    internal static Task LanguagePickerOffersFourLanguages()
+    {
+        Check(Locale.PickerChoices.Select(choice => choice.Value).SequenceEqual(["system", "ko", "en", "zh", "ja"]),
+            "picker values must be system, ko, en, zh, ja");
+        foreach (var language in Locale.Languages)
+            WithPreference(language, () =>
+            {
+                string Label(string value) => Locale.Get(Locale.PickerChoices.Single(choice => choice.Value == value).LabelKey);
+                Check(Label("ko") == Locale.Catalogue("ko")["settings.display.languageKorean"], language + ": the ko choice must keep its own name");
+                Check(Label("en") == "English", language + ": the en choice must be English");
+                Check(Label("zh") == "简体中文", language + ": the zh choice must be 简体中文");
+                Check(Label("ja") == "日本語", language + ": the ja choice must be 日本語");
+                Check(Label("system") != "settings.display.languageSystem", language + ": the system label must resolve");
+            });
+        return Task.CompletedTask;
+    }
+
     // Exact locale keys in visible strings are returned; non-key dotted text is ignored.
     internal static Task LocaleKeyLeakDetectorFlagsExactKeys()
     {
@@ -194,6 +312,12 @@ internal static class LocalizationVerification
         var normalizedEn = StateStore.Normalize(withEn, false);
         Check(normalizedEn.LanguagePreference == "en",
             "Normalize must preserve en, got: " + normalizedEn.LanguagePreference);
+
+        foreach (var language in new[] { "zh", "ja" })
+        {
+            var kept = StateStore.Normalize(defaults with { LanguagePreference = language }, false);
+            Check(kept.LanguagePreference == language, $"Normalize must preserve {language}, got: " + kept.LanguagePreference);
+        }
 
         var withUnknown = defaults with { LanguagePreference = "fr" };
         var normalizedUnknown = StateStore.Normalize(withUnknown, false);

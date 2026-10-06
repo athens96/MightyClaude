@@ -255,7 +255,7 @@ public sealed record AppSnapshot
     public string? AppUpdateLastCheckedAt { get; init; }
     // User-entered manifest URL override (ignored when the build has a built-in URL).
     public string? AppUpdateManifestUrlOverride { get; init; }
-    // "system", "ko", or "en". Applied at next app start via Locale.LanguagePreference.
+    // "system", "ko", "en", "zh" or "ja". Applied at next app start via Locale.LanguagePreference.
     public string LanguagePreference { get; init; } = "system";
     public string SettingsPane { get; init; } = "general";
     public Dictionary<string, string>? AgentWebOpenChoices { get; init; }
