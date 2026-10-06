@@ -60,6 +60,8 @@ public sealed partial class MainWindow
                 var opening = ShowCategorizedSettingsAsync();
                 await WaitUI(() => settingsWindow?.Content is FrameworkElement element && element.XamlRoot is not null && element.ActualWidth > 0);
                 var frame = (FrameworkElement)settingsWindow!.Content;
+                Require(root.Language == ExpectedWindowLanguage() && frame.Language == ExpectedWindowLanguage(),
+                    $"the main window and settings roots must carry the language tag {ExpectedWindowLanguage()} for {Locale.ChosenLanguage()}; got {root.Language} and {frame.Language}");
                 var navigation = VisualChildren(frame).OfType<ListView>().Single(view => AutomationProperties.GetAutomationId(view) == "settings-navigation");
                 Require(navigation.Items.Count == SettingsNavigation.Available.Count && navigation.Items.Count == 8, "all macOS settings categories must be visible");
                 foreach (var item in navigation.Items.OfType<ListViewItem>())
@@ -99,7 +101,7 @@ public sealed partial class MainWindow
                 settingsWindow.Close(); await opening;
             }
             await CheckDashboardActions(first, original.Workspaces.Last());
-            return new() { ["nativeSidebarChrome"] = true, ["phaseModelsControlsPersist"] = true, ["dashboardRetainsPane"] = true, ["clockPreservesDashboardControls"] = true, ["dashboardWorkspaceActions"] = true, ["dashboardProviderMarks"] = true, ["settingsLoadedBeforeCapture"] = true, ["allSettingsCategories"] = categoryCount == 16, ["bothThemes"] = true, ["screenshots"] = captures };
+            return new() { ["nativeSidebarChrome"] = true, ["phaseModelsControlsPersist"] = true, ["dashboardRetainsPane"] = true, ["clockPreservesDashboardControls"] = true, ["dashboardWorkspaceActions"] = true, ["dashboardProviderMarks"] = true, ["settingsLoadedBeforeCapture"] = true, ["windowLanguage"] = ExpectedWindowLanguage(), ["allSettingsCategories"] = categoryCount == 16, ["bothThemes"] = true, ["screenshots"] = captures };
         }
         finally
         {
@@ -141,6 +143,7 @@ public sealed partial class MainWindow
             var fits = frame.XamlRoot.Size;
             Require(AutomationProperties.GetAutomationId(sheet!) == "style-approval-sheet" && OwnResource(sheet!, "ContentDialogMinWidth") is double width && width == SheetFit(StyleApprovalWidth, fits.Width) && OwnResource(sheet!, "ContentDialogMaxHeight") is double height && height == SheetFit(StyleApprovalHeight, fits.Height),
                 $"the style approval sheet must be {StyleApprovalWidth}×{StyleApprovalHeight}, or as much of that as the {fits.Width}×{fits.Height} window leaves; got {OwnResource(sheet!, "ContentDialogMinWidth")}×{OwnResource(sheet!, "ContentDialogMaxHeight")}");
+            Require(sheet!.Language == ExpectedWindowLanguage(), $"the style approval sheet must carry the language tag {ExpectedWindowLanguage()}; got {sheet.Language}");
             var parts = SettingsElements((FrameworkElement)sheet!.Content).ToList();
             string[] Ids(string prefix) => parts.Select(AutomationProperties.GetAutomationId).Where(id => id.StartsWith(prefix, StringComparison.Ordinal)).ToArray();
             Require(Ids("style-approval-autoAllow").Length == 1 && Ids("style-approval-raw").Length == 1 && Ids("style-approval-dismiss").Length == 1 && Ids("style-approval-allow").Length == 0,
@@ -152,6 +155,8 @@ public sealed partial class MainWindow
         }
         finally { sheet!.Hide(); await showing; }
     }
+    /// <summary>The tag every window root and sheet must carry for the chosen language, written out here rather than read from <see cref="WindowLanguage"/>.</summary>
+    private static string ExpectedWindowLanguage() => Locale.ChosenLanguage() switch { "ko" => "ko-KR", "en" => "en-US", "zh" => "zh-Hans", "ja" => "ja-JP", var other => "no tag for " + other };
     private static async Task SettleDesktopCapture(FrameworkElement frame)
     {
         frame.UpdateLayout();

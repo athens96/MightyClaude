@@ -83,7 +83,7 @@ public sealed partial class MainWindow
             // for account/reset confirmations (WinUI forbids nested dialogs).
             // The Mac's 800x700 sheet (M/SettingsViews.swift:186-201): the heading, the 200-wide list on the sidebar
             // surface, a 1pt rule, the grouped form on the sheet's own surface, and the close row under them.
-            var frame = new Grid { RequestedTheme = root.RequestedTheme, Background = WindowBackground(), KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden };
+            var frame = new Grid { RequestedTheme = root.RequestedTheme, Language = WindowLanguage(), Background = WindowBackground(), KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden };
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });
             frame.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
             frame.RowDefinitions.Add(new() { Height = GridLength.Auto });

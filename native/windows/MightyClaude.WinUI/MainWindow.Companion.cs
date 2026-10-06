@@ -244,7 +244,7 @@ public sealed partial class MainWindow
     /// </summary>
     private Grid CompanionWindowFrame(UIElement body) => new()
     {
-        RequestedTheme = root.RequestedTheme, Background = WindowBackground(), Padding = new Thickness(16),
+        RequestedTheme = root.RequestedTheme, Language = WindowLanguage(), Background = WindowBackground(), Padding = new Thickness(16),
         Children = { new Border { Child = body, CornerRadius = new CornerRadius(DesignMetrics.Radius.Composer), BorderThickness = new Thickness(DesignMetrics.Stroke.Active), BorderBrush = brushes.Brush(DesignToken.Wait), Background = brushes.Brush(DesignToken.Card), Padding = new Thickness(14) } },
     };
     /// <summary>A button of those windows, as on the pane's question and permission cards (M/PaneChrome.swift:145-169): 12 bold, 28 high at radius 9; the answer in ink behind the card's colour, the others on the raised card with a line.</summary>
