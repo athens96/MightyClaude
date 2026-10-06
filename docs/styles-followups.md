@@ -2,7 +2,7 @@
 
 docs/mighty-styles.md 10장의 사본이다. 고정된 어휘로 **지금도 표현되지 않는다고 이미 아는 것들**이며, 이번 범위 밖이고 확장은 `schema: 2`로 간다. 고정 태그 이후에도 고칠 수 있는 문서다(§8.3).
 
-고정 기준(v6 — 2026-10-06): 태그 `mighty-style-engine-v6` = `a773d36`, FREEZE = `c01cb7a`. Claude 계획 모드 읽기(docs/mighty-styles.md §1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜"을 더한 고정이다. 준비하는 동안 쓰던 `styles/STYLE_FREEZE_PENDING`은 `c01cb7a`에서 지웠고, 적합성 코퍼스 README의 오류 코드 수(54개, 코퍼스 52개)도 그때 고쳤다. 검사는 `.github/workflows/style-freeze.yml`이 돌린다.
+고정 기준(v6 — 2026-10-06): 태그 `mighty-style-engine-v6` = `a773d36`, FREEZE = `c01cb7a`. Claude 계획 모드 읽기(docs/mighty-styles.md §1.17: `planState` 단계 규칙, `stateSources.runState`, `taskList` 위젯, `launch`, 단계별 입력창 문구·안내), 오류 코드 `E_STATE_RUN_STATE`, 번들 "클러드 플랜"을 더한 고정이다. 준비하는 동안 쓰던 `styles/STYLE_FREEZE_PENDING`은 `c01cb7a`에서 지웠고, 적합성 코퍼스 README의 오류 코드 수(54개, 코퍼스 52개)도 그때 고쳤다. 검사는 `.github/workflows/style-freeze.yml`이 돌린다. 고정된 계약 문서(docs/mighty-styles.md §8.2)의 v6 줄에는 준비할 때 쓴 "(준비 중)"이 그대로 남아 있다 — 그 v6이 2026-10-06에 이 두 커밋으로 고정된 것이다(고정 파일이라 v6 안에서는 고치지 않는다).
 
 고정 기준(이전, v5): 태그 `mighty-style-engine-v5` = `5833008`, FREEZE = `ac62171`(2026-09-29). 처음에는 `6879a10`(FREEZE = `fdef75a`)에 걸었으나, 같은 날 고정 규칙을 허용 목록(매니페스트만 허용)에서 금지 목록(엔진·오라클 테스트·폰 렌더러·계약·검사만 고정)으로 바꾸면서 그 규칙을 담은 `ac62171` 위로 태그를 옮겼다(§8.3). 엔진 코드는 `fdef75a`와 같다. 그보다 앞선 첫 준비 `39a6c5c`(FREEZE = `668fd21`)는 쓰지 않았다. 검사는 `.github/workflows/style-freeze.yml`이 돌린다.
 
