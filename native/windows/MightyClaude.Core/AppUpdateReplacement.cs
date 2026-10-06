@@ -175,11 +175,11 @@ public static class AppUpdateReplacement
     public static async Task<string?> VerifyBeforeSwapAsync(
         string packagePath, string expectedSha256, CancellationToken cancellation = default)
     {
-        if (!File.Exists(packagePath)) return "교체 직전 확인할 패키지 파일이 없어 설치를 중단합니다.";
+        if (!File.Exists(packagePath)) return Locale.Get("appUpdate.error.packageMissingBeforeSwap");
         var digest = await AppUpdateService.Sha256Async(packagePath, cancellation);
         return string.Equals(digest, expectedSha256, StringComparison.OrdinalIgnoreCase)
             ? null
-            : "교체 직전 패키지 SHA-256 재검증에 실패해 설치를 중단합니다.";
+            : Locale.Get("appUpdate.error.packageRecheckFailed");
     }
 
     /// Waits for the app process to exit, bounded. Returns false on timeout.
@@ -219,17 +219,17 @@ public static class AppUpdateReplacement
         var doCopy = copier ?? CopyDirectory;
         var moves = new List<AppUpdateMove>();
         if (!plan.IsValid)
-            return new(false, false, "설치 계획이 올바르지 않아 설치하지 않습니다.", moves, false, false);
+            return new(false, false, Locale.Get("appUpdate.error.planInvalid"), moves, false, false);
 
         if (!await waitForExit(cancellation))
-            return new(false, false, "앱이 종료되지 않아 업데이트를 건너뜁니다.", moves, false, false);
+            return new(false, false, Locale.Get("appUpdate.error.appStillRunning"), moves, false, false);
 
         // The package is verified again right here, not when it was downloaded.
         if (await VerifyBeforeSwapAsync(plan.PackagePath, plan.Sha256, cancellation) is { } refusal)
             return new(false, false, refusal, moves, false, false);
 
         if (!Directory.Exists(plan.StagedDirectory))
-            return new(false, false, "설치할 새 앱 폴더가 없습니다.", moves, false, false);
+            return new(false, false, Locale.Get("appUpdate.error.stagedFolderMissing"), moves, false, false);
 
         var backupTaken = false;
         var installed = false;
@@ -245,7 +245,7 @@ public static class AppUpdateReplacement
             // cannot move the directory it is running from.
             doCopy(plan.StagedDirectory, plan.InstallDirectory);
             if (!VerifyInstallTree(plan.InstallDirectory))
-                throw new InvalidOperationException("교체된 설치 폴더에 실행 파일이 없습니다.");
+                throw new InvalidOperationException(Locale.Get("appUpdate.error.installedExecutableMissing"));
             moves.Add(Plan(plan)[1]);
             installed = true;
 
@@ -290,6 +290,6 @@ public static class AppUpdateReplacement
             try { await startApp(plan.NewExecutable); started = true; }
             catch (Exception) { started = false; }
         }
-        return new(false, restored, "업데이트에 실패해 이전 버전으로 되돌렸습니다: " + reason, moves, started, false);
+        return new(false, restored, Locale.Get("appUpdate.error.rolledBack", new Dictionary<string, string> { ["reason"] = reason }), moves, started, false);
     }
 }

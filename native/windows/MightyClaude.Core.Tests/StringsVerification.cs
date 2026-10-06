@@ -55,21 +55,31 @@ internal static class StringsVerification
         ("NotePermissionRunning", "slash.note.permissionRunning"),
         ("NotePermissionAlreadyTemplate", "slash.note.permissionAlready")));
 
-    // StatusLineView.swift / StatusLine.swift
-    private static readonly Dictionary<string, string> StatusLineMacOS = new()
+    // StatusLineView.swift / StatusLine.swift: the keys macOS reads for the same copy.
+    private static readonly Lazy<Dictionary<string, string>> StatusLineShared = new(() => FromShared(nameof(StatusLineStrings),
+        ("TrustPromptTemplate", "statusLine.untrustedPrompt"),
+        ("TrustAllow", "statusLine.trust"),
+        ("TrustDeny", "statusLine.notNow"),
+        ("TrustNote", "statusLine.reaskNote"),
+        ("AccessibilityLabel", "composer.statusLine.name"),
+        ("ErrorStartTemplate", "statusLine.error.start"),
+        ("ErrorTimeout", "statusLine.error.timeout"),
+        ("ErrorExitTemplate", "statusLine.error.exitCode")));
+
+    // The StatusLineConfig.Source names stay as macOS StatusLine.swift writes them in every
+    // language: the saved trust fingerprint hashes this text. Each shows through its key.
+    private static readonly Dictionary<string, string> StatusLineSources = new()
     {
-        ["TrustPromptTemplate"] = "{source}에 statusLine 명령이 있습니다. 이 워크스페이스에서 실행할까요?",
-        ["TrustAllow"] = "이 워크스페이스에서 허용",
-        ["TrustDeny"] = "지금은 안 함",
-        ["TrustNote"] = "저장소가 바꾼 명령은 다시 묻습니다.",
-        ["AccessibilityLabel"] = "상태 줄",
-        ["ErrorStartTemplate"] = "명령을 시작하지 못했습니다: {reason}",
-        ["ErrorTimeout"] = "상태 줄 명령이 제한 시간 안에 끝나지 않았습니다.",
-        ["ErrorExitTemplate"] = "상태 줄 명령이 종료 코드 {code}로 끝났습니다.",
         ["SourceWorkspaceLocal"] = "프로젝트 로컬 설정",
         ["SourceWorkspace"] = "프로젝트 설정",
         ["SourceUser"] = "사용자 설정",
     };
+    private static readonly (string Field, string Key)[] StatusLineSourceKeys =
+    [
+        ("SourceWorkspaceLocal", "statusLine.source.projectLocal"),
+        ("SourceWorkspace", "statusLine.source.project"),
+        ("SourceUser", "statusLine.source.user"),
+    ];
 
     /// Returns the reason the class fails, or null when the copy matches the
     /// source of truth. `source` names it: the macOS literal for the classes that
@@ -129,9 +139,13 @@ internal static class StringsVerification
         void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 
         var slash = StaticReadonlyStrings(typeof(SlashCommandStrings));
-        var statusLine = Constants(typeof(StatusLineStrings));
+        var statusLine = LocalizedProperties(typeof(StatusLineStrings));
+        var sources = Constants(typeof(StatusLineStrings));
         Check(Validate(nameof(SlashCommandStrings), slash, SlashShared.Value, "locales/ko.json") is null, Validate(nameof(SlashCommandStrings), slash, SlashShared.Value, "locales/ko.json") ?? "");
-        Check(Validate(nameof(StatusLineStrings), statusLine, StatusLineMacOS) is null, Validate(nameof(StatusLineStrings), statusLine, StatusLineMacOS) ?? "");
+        Check(Validate(nameof(StatusLineStrings), statusLine, StatusLineShared.Value, "locales/ko.json") is null, Validate(nameof(StatusLineStrings), statusLine, StatusLineShared.Value, "locales/ko.json") ?? "");
+        Check(Validate(nameof(StatusLineStrings), sources, StatusLineSources) is null, Validate(nameof(StatusLineStrings), sources, StatusLineSources) ?? "");
+        foreach (var (field, key) in StatusLineSourceKeys)
+            Check(StatusLineStrings.SourceLabel(sources[field]) == Locale.Get(key), "StatusLineStrings.SourceLabel(" + field + ") must read " + key);
 
         // Each rule must reject its own failure, or a pass above would mean nothing.
         Dictionary<string, string> Broken(string field, string value) { var copy = new Dictionary<string, string>(slash) { [field] = value }; return copy; }
@@ -147,68 +161,67 @@ internal static class StringsVerification
         return Task.CompletedTask;
     }
 
-    // ToolPermissionBar.swift / ToolPermissions.swift / ToolPermissionPresentation.swift
-    private static readonly Dictionary<string, string> ToolPermissionMacOS = new()
-    {
-        ["BarTitleTemplate"] = "{title} · 승인 요청",
-        ["BarWaitingCountTemplate"] = "{count}개 대기",
-        ["BarPathTemplate"] = "접근 경로: {path}",
-        ["BarRawJson"] = "원본 JSON",
-        ["BarOnceOnlyNote"] = "이 요청에만 적용",
-        ["BarCannotAllowHere"] = "이 요청은 현재 승인 화면에서 허용할 수 없습니다. 거부하거나 실행을 중지하세요.",
-        ["ButtonDeny"] = "거부",
-        ["ButtonAllowOnce"] = "이번만 허용",
-        ["InitializeTimedOut"] = "Claude 승인 채널 초기화 시간이 초과되었습니다.",
-        ["InitializeFailed"] = "Claude 승인 채널을 초기화하지 못했습니다.",
-        ["MalformedControlRequest"] = "Claude 제어 요청 형식이 올바르지 않습니다.",
-        ["TooManyRequestsInRun"] = "한 실행의 Claude 승인 요청 수 제한을 초과했습니다.",
-        ["UnsupportedDialog"] = "현재 앱에서 표시할 수 없는 Claude 대화상자 요청입니다. 실행을 중지할 수 있습니다.",
-        ["DeclinedElicitation"] = "현재 앱에서 지원하지 않는 MCP 입력 요청을 거부했습니다.",
-        ["DeniedMalformedRequest"] = "형식이 올바르지 않은 도구 승인 요청을 거부했습니다.",
-        ["DeniedTooManyPending"] = "대기 중인 도구 승인 요청이 16개를 넘어 추가 요청을 거부했습니다.",
-        ["DeniedOversizedInput"] = "도구 인자가 64 KiB 표시 제한을 넘어 승인하지 않았습니다. 전체 내용을 표시할 수 없는 요청은 허용하지 않습니다.",
-        ["NeedsSeparateInputScreen"] = "이 도구에는 별도의 입력 화면이 필요합니다. 현재 앱에서는 한 번 허용할 수 없으며 거부하거나 실행을 중지할 수 있습니다.",
-        ["MetadataTooLarge"] = "승인 설명이 표시 한도를 넘어 허용할 수 없습니다.",
-        ["AlreadySettled"] = "이미 처리되었거나 종료된 승인 요청입니다.",
-        ["CannotAllow"] = "이 요청에는 별도의 입력 화면이 필요하거나 전체 내용을 표시할 수 없어 허용할 수 없습니다.",
-        ["TitleBash"] = "명령 실행",
-        ["TitleRead"] = "파일 읽기",
-        ["TitleEdit"] = "파일 수정",
-        ["TitleWrite"] = "파일 쓰기",
-        ["TitleNotebookEdit"] = "노트북 수정",
-        ["TitleGlob"] = "파일 찾기",
-        ["TitleGrep"] = "내용 검색",
-        ["TitleWebFetch"] = "웹 페이지 가져오기",
-        ["TitleWebSearch"] = "웹 검색",
-        ["TitleAgent"] = "하위 에이전트 실행",
-        ["TitleTool"] = "도구 실행",
-        ["TitleMcpTemplate"] = "MCP 도구 · {server}",
-        ["FieldCommand"] = "명령",
-        ["FieldTimeoutMs"] = "제한 시간(ms)",
-        ["FieldBackground"] = "백그라운드 실행",
-        ["FieldFile"] = "파일",
-        ["FieldOffset"] = "시작 줄",
-        ["FieldLimit"] = "줄 수",
-        ["FieldOldString"] = "바꿀 내용",
-        ["FieldNewString"] = "새 내용",
-        ["FieldReplaceAll"] = "모두 바꾸기",
-        ["FieldEdits"] = "편집 목록",
-        ["FieldContent"] = "내용",
-        ["FieldNotebook"] = "노트북",
-        ["FieldCell"] = "셀",
-        ["FieldEditMode"] = "편집 방식",
-        ["FieldPattern"] = "패턴",
-        ["FieldPath"] = "경로",
-        ["FieldGlob"] = "파일 필터",
-        ["FieldUrl"] = "주소",
-        ["FieldQuestion"] = "질문",
-        ["FieldQuery"] = "검색어",
-        ["FieldSubagentType"] = "에이전트 종류",
-        ["FieldModel"] = "모델",
-        ["FieldInstruction"] = "지시",
-        ["BooleanYes"] = "예",
-        ["BooleanNo"] = "아니요",
-    };
+    // ToolPermissionBar.swift / ToolPermissions.swift / ToolPermissionPresentation.swift:
+    // the keys macOS reads for the approval bar, the channel notices and the titles and labels.
+    private static readonly Lazy<Dictionary<string, string>> ToolPermissionShared = new(() => FromShared(nameof(ToolPermissionStrings),
+        ("BarTitleTemplate", "permission.bar.title"),
+        ("BarWaitingCountTemplate", "phone.questionnaire.waiting"),
+        ("BarPathTemplate", "permission.bar.blockedPath"),
+        ("BarRawJson", "styles.approval.raw"),
+        ("BarOnceOnlyNote", "permission.bar.thisRequestOnly"),
+        ("BarCannotAllowHere", "permission.bar.cannotAllow"),
+        ("ButtonDeny", "permission.deny"),
+        ("ButtonAllowOnce", "permission.allowOnce"),
+        ("InitializeTimedOut", "claude.channel.initTimeout"),
+        ("InitializeFailed", "claude.channel.initFailed"),
+        ("MalformedControlRequest", "claude.channel.badRequest"),
+        ("TooManyRequestsInRun", "claude.channel.tooManyRequests"),
+        ("UnsupportedDialog", "claude.channel.dialogUnsupported"),
+        ("DeclinedElicitation", "claude.channel.elicitationDeclined"),
+        ("DeniedMalformedRequest", "claude.channel.badToolRequest"),
+        ("DeniedTooManyPending", "claude.channel.tooManyPending"),
+        ("DeniedOversizedInput", "claude.channel.inputTooLarge"),
+        ("NeedsSeparateInputScreen", "claude.channel.needsInteraction"),
+        ("MetadataTooLarge", "claude.channel.metadataTooLarge"),
+        ("AlreadySettled", "permission.error.requestGone"),
+        ("CannotAllow", "claude.channel.cannotAllow"),
+        ("TitleBash", "permission.tool.bash"),
+        ("TitleRead", "permission.tool.read"),
+        ("TitleEdit", "permission.tool.edit"),
+        ("TitleWrite", "permission.tool.write"),
+        ("TitleNotebookEdit", "permission.tool.notebook"),
+        ("TitleGlob", "permission.tool.glob"),
+        ("TitleGrep", "permission.tool.grep"),
+        ("TitleWebFetch", "permission.tool.webFetch"),
+        ("TitleWebSearch", "permission.tool.webSearch"),
+        ("TitleAgent", "permission.tool.agent"),
+        ("TitleTool", "permission.tool.tool"),
+        ("TitleMcpTemplate", "permission.tool.mcp"),
+        ("FieldCommand", "permission.field.command"),
+        ("FieldTimeoutMs", "permission.field.timeout"),
+        ("FieldBackground", "permission.field.runInBackground"),
+        ("FieldFile", "permission.field.file"),
+        ("FieldOffset", "permission.field.offset"),
+        ("FieldLimit", "permission.field.limit"),
+        ("FieldOldString", "permission.field.oldString"),
+        ("FieldNewString", "permission.field.newString"),
+        ("FieldReplaceAll", "permission.field.replaceAll"),
+        ("FieldEdits", "permission.field.edits"),
+        ("FieldContent", "permission.field.content"),
+        ("FieldNotebook", "permission.field.notebook"),
+        ("FieldCell", "permission.field.cell"),
+        ("FieldEditMode", "permission.field.editMode"),
+        ("FieldPattern", "permission.field.pattern"),
+        ("FieldPath", "permission.field.path"),
+        ("FieldGlob", "permission.field.glob"),
+        ("FieldUrl", "permission.field.url"),
+        ("FieldQuestion", "permission.field.prompt"),
+        ("FieldQuery", "permission.field.query"),
+        ("FieldSubagentType", "permission.field.subagentType"),
+        ("FieldModel", "permission.field.model"),
+        ("FieldInstruction", "permission.field.instructions"),
+        ("BooleanYes", "permission.value.yes"),
+        ("BooleanNo", "permission.value.no")));
 
     // AgentCompanion.swift CompletionNotifications.send / AgentCompanionViews.swift.
     // ToggleLabel uses the Windows value here because the OS-bound substitution
@@ -411,12 +424,12 @@ internal static class StringsVerification
     /// The approval bar copy is the macOS copy, and nothing else is typed anywhere.
     internal static Task ToolPermissionsMatchMacOS()
     {
-        var actual = Constants(typeof(ToolPermissionStrings));
-        var reason = Validate(nameof(ToolPermissionStrings), actual, ToolPermissionMacOS);
+        var actual = LocalizedProperties(typeof(ToolPermissionStrings));
+        var reason = Validate(nameof(ToolPermissionStrings), actual, ToolPermissionShared.Value, "locales/ko.json");
         if (reason is not null) throw new InvalidOperationException(reason);
 
         // The same rules must still reject their own failures on this class.
-        string? Bad(Dictionary<string, string> copy) => Validate(nameof(ToolPermissionStrings), copy, ToolPermissionMacOS);
+        string? Bad(Dictionary<string, string> copy) => Validate(nameof(ToolPermissionStrings), copy, ToolPermissionShared.Value, "locales/ko.json");
         Dictionary<string, string> Broken(string field, string value) => new(actual) { [field] = value };
         if (Bad(Broken("ButtonAllowOnce", "Allow once")) is null) throw new InvalidOperationException("English copy must fail");
         if (Bad(Broken("BarWaitingCountTemplate", "{ count }개 대기")) is null) throw new InvalidOperationException("a placeholder that is not {name} must fail");

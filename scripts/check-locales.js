@@ -34,7 +34,8 @@
 // --write-budget lowers each area to its count and never raises one.
 //
 // With --touched-since <sha>, the Windows Core and WinUI source files touched since that
-// SHA (committed or not) must not keep hard-coded Korean literals.
+// SHA (committed or not) must not keep hard-coded Korean literals the budget counts: the
+// budget's exempt files and regions and allowed literals stay out, as they do in the ratchet.
 // MainWindow.Smoke.cs is a check diagnostic and is left out.
 
 import fs from 'node:fs';
@@ -286,11 +287,13 @@ for (const entry of allowEntries) {
 
 /// Splits a source into what is counted and what an exempt region holds. Markers are
 /// only honoured in files the budget lists under exemptRegions, and must pair up.
-function splitRegions(relative, source) {
+/// With `record` false (a second look at a file) nothing is credited and nothing fails again.
+function splitRegions(relative, source, record = true) {
+  const failHere = record ? fail : () => {};
   if (!source.includes('i18n-exempt-')) return { counted: source, exempted: '' };
   const listed = exemptRegionFiles.get(relative);
   if (!listed) {
-    fail(`${relative}에 i18n-exempt 표시가 있지만 ${BUDGET}의 exemptRegions에 없습니다.`);
+    failHere(`${relative}에 i18n-exempt 표시가 있지만 ${BUDGET}의 exemptRegions에 없습니다.`);
     return { counted: source, exempted: '' };
   }
   let counted = '';
@@ -300,18 +303,18 @@ function splitRegions(relative, source) {
     const begin = rest.indexOf(REGION_BEGIN);
     const stray = rest.indexOf(REGION_END);
     if (stray >= 0 && (begin < 0 || stray < begin)) {
-      fail(`${relative}의 ${REGION_END}에 짝이 되는 ${REGION_BEGIN}이 없습니다.`);
+      failHere(`${relative}의 ${REGION_END}에 짝이 되는 ${REGION_BEGIN}이 없습니다.`);
       break;
     }
     if (begin < 0) break;
     const lineEnd = rest.indexOf('\n', begin);
     const marker = rest.slice(begin, lineEnd < 0 ? rest.length : lineEnd);
     if (!/^\/\/ i18n-exempt-begin: \S/.test(marker)) {
-      fail(`${relative}의 ${REGION_BEGIN} 뒤에 ": <이유>"가 없습니다.`);
+      failHere(`${relative}의 ${REGION_BEGIN} 뒤에 ": <이유>"가 없습니다.`);
     }
     const end = rest.indexOf(REGION_END, begin + REGION_BEGIN.length);
     if (end < 0) {
-      fail(`${relative}의 ${REGION_BEGIN}이 ${REGION_END}로 닫히지 않습니다.`);
+      failHere(`${relative}의 ${REGION_BEGIN}이 ${REGION_END}로 닫히지 않습니다.`);
       break;
     }
     counted += rest.slice(0, begin);
@@ -320,23 +323,24 @@ function splitRegions(relative, source) {
     exempted += region + '\n';
     counted += region.replace(/[^\n]/g, '');
     rest = rest.slice(end + REGION_END.length);
-    listed.regions += 1;
+    if (record) listed.regions += 1;
   }
   return { counted: counted + rest, exempted };
 }
 
 /// The literals of one file, sorted into counted, exempt (a smoke file or region) and
-/// allowed (an allow-list entry for this file).
-function classifyLiterals(relative, source) {
+/// allowed (an allow-list entry for this file). `record` false classifies without crediting
+/// the exemptions and allow entries, for a second look at a file (--touched-since).
+function classifyLiterals(relative, source, record = true) {
   // Every glob that matches is credited, so none of them looks stale while another covers the file.
   const exemptBy = exemptGlobs.filter((entry) => entry.pattern.test(relative));
-  for (const entry of exemptBy) entry.matched += 1;
+  if (record) for (const entry of exemptBy) entry.matched += 1;
   if (exemptBy.length > 0) {
     const exempt = countLiterals(relative, source);
-    if (exempt > 0) for (const entry of exemptBy) entry.files.push({ relative, count: exempt });
+    if (record && exempt > 0) for (const entry of exemptBy) entry.files.push({ relative, count: exempt });
     return { counted: 0, exempt, allowed: 0 };
   }
-  const { counted: countedSource, exempted } = splitRegions(relative, source);
+  const { counted: countedSource, exempted } = splitRegions(relative, source, record);
   const exempt = exempted ? countLiterals(relative, exempted) : 0;
   const entries = allowEntries.filter((entry) => entry.file === relative);
   if (entries.length === 0) return { counted: countLiterals(relative, countedSource), exempt, allowed: 0 };
@@ -348,7 +352,7 @@ function classifyLiterals(relative, source) {
     const inner = match.slice(1, -1);
     const entry = entries.find((candidate) => candidate.literals.includes(inner));
     if (!entry) continue;
-    entry.found.add(inner);
+    if (record) entry.found.add(inner);
     allowed += 1;
     remaining = remaining.replace(match, '""');
   }
@@ -596,8 +600,8 @@ if (TOUCHED_SINCE) {
       for (const relative of walk(root, client.extensions, [])) {
         if (relative === SMOKE_EXEMPT) continue;
         if (!touchedSet.has(relative)) continue;
-        const source = readText(relative);
-        const count = countLiterals(relative, source);
+        // What the budget counts: exempt smoke files and regions and allowed literals stay out.
+        const count = classifyLiterals(relative, readText(relative), false).counted;
         if (count > 0) {
           fail(
             `${client.label}: ${relative}에 한국어 하드코딩 문구가 ${count}개 남아 있습니다.`,

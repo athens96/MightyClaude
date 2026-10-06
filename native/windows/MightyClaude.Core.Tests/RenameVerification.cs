@@ -227,10 +227,12 @@ internal static class RenameVerification
 
     internal static Task renameStringsMatchMacOS()
     {
+        // RenameStrings reads the shared locale keys; the checks run with Korean pinned, so each
+        // value must still be the macOS Korean copy.
         var actual = typeof(RenameStrings)
-            .GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-            .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
+            .GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(p => p.PropertyType == typeof(string))
+            .ToDictionary(p => p.Name, p => (string)p.GetValue(null)!);
 
         if (ValidateStrings(actual) is { } reason) throw new InvalidOperationException(reason);
 

@@ -167,6 +167,8 @@ public static class AnsiText
 // A discovered status line config from Claude settings.
 public sealed record StatusLineConfig(string Command, int Padding, string Source, bool FromWorkspace, string? OutputStyle = null, bool? ThinkingEnabled = null)
 {
+    /// The source as the screen names it, in the app language; Source itself feeds the fingerprint.
+    public string SourceLabel => StatusLineStrings.SourceLabel(Source);
     // SHA-256(source + newline + command) as 64-char lowercase hex — matches macOS fingerprint.
     public string Fingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Source + "\n" + Command))).ToLowerInvariant();
 }
@@ -466,14 +468,14 @@ public static class StatusLineSupport
             string? errorText = null;
             if (timedOut) errorText = StatusLineStrings.ErrorTimeout;
             else if (exitCode != 0)
-                errorText = StatusLineStrings.ErrorExitTemplate.Replace("{code}", exitCode.ToString());
+                errorText = StatusLineStrings.ErrorExitTemplate.Replace("{status}", exitCode.ToString());
 
             var lines = ParseLines(output);
             return new StatusLineResult(lines, errorText, exitCode, timedOut);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellation.IsCancellationRequested)
         {
-            return new StatusLineResult([], StatusLineStrings.ErrorStartTemplate.Replace("{reason}", ex.Message), -1, false);
+            return new StatusLineResult([], StatusLineStrings.ErrorStartTemplate.Replace("{error}", ex.Message), -1, false);
         }
         finally
         {

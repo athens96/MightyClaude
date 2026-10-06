@@ -658,3 +658,39 @@ test('every exempt glob that matches a file is credited', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a touched Windows file passes when its Korean is allowed or its file is exempt, and fails on any other literal', () => {
+  const dir = tmpDir();
+  try {
+    const CORE = 'native/windows/MightyClaude.Core';
+    const WINUI = 'native/windows/MightyClaude.WinUI';
+    const extra = {
+      allow: [{ file: `${CORE}/Names.cs`, literal: '사용자 설정', reason: 'a saved fingerprint input' }],
+      exemptFiles: { [`${WINUI}/MainWindow.OtherSmoke.cs`]: 'smoke fixtures' },
+    };
+    setup(dir, {
+      budget: { areas: ZERO_AREAS, ...extra },
+      files: {
+        [`${WINUI}/MightyClaude.WinUI.csproj`]: CSPROJ,
+        [`${CORE}/Names.cs`]: 'const string Source = "사용자 설정";\n',
+        [`${WINUI}/MainWindow.OtherSmoke.cs`]: 'string sample = "한글 입력";\n',
+      },
+    });
+    const g = gitInit(dir);
+    const sha = gitCommit(g, 'baseline');
+
+    // Both files are touched after the baseline but keep only what the budget leaves out.
+    fs.appendFileSync(path.join(dir, `${CORE}/Names.cs`), '// touched\n');
+    fs.appendFileSync(path.join(dir, `${WINUI}/MainWindow.OtherSmoke.cs`), 'string more = "두 번째";\n');
+    const passed = run(['--root', dir, '--touched-since', sha]);
+    assert.equal(passed.status, 0, `allowed and exempt Korean must not fail a touched file\nstderr: ${passed.stderr}`);
+
+    // A literal the allow entry does not name still fails the touched file (and the ratchet).
+    fs.appendFileSync(path.join(dir, `${CORE}/Names.cs`), 'string label = "프로젝트 설정";\n');
+    const failed = run(['--root', dir, '--touched-since', sha]);
+    assert.notEqual(failed.status, 0, 'an unlisted literal in a touched file must fail');
+    assert.match(failed.stderr, /Windows Core: native\/windows\/MightyClaude\.Core\/Names\.cs에 한국어 하드코딩 문구가 1개 남아 있습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

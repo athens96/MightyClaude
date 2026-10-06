@@ -12,7 +12,7 @@ public sealed record RunAttachment(string Id, string Name, string MediaType, [pr
 // directly so '+' does not expand sixfold and defeat the negotiated body limit.
 public sealed class AttachmentBase64Converter : JsonConverter<string>
 {
-    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.GetString() ?? throw new JsonException("첨부 데이터가 없습니다.");
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.GetString() ?? throw new JsonException(Locale.Get("attachments.error.missingData"));
     public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) => writer.WriteStringValue(JsonEncodedText.Encode(value, System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping));
 }
 
@@ -27,7 +27,7 @@ public static class AttachmentSupport
 
     public static RunAttachment Make(string name, byte[] data)
     {
-        if (data.Length > MaximumFileBytes) throw new ArgumentException("파일 하나는 5MiB 이하여야 합니다.");
+        if (data.Length > MaximumFileBytes) throw new ArgumentException(Locale.Get("attachments.error.fileTooLarge"));
         var basename = name.Replace('\\', '/').Split('/').LastOrDefault() ?? "attachment";
         basename = new string(basename.Where(c => !char.IsControl(c)).ToArray()).Trim();
         if (basename.Length > 180) { basename = basename[..180]; if (char.IsHighSurrogate(basename[^1])) basename = basename[..^1]; }
@@ -46,26 +46,27 @@ public static class AttachmentSupport
     }
     public static byte[] Decode(RunAttachment attachment)
     {
-        if (attachment is null || !Wire.Identifier(attachment.Id) || attachment.Name is not { Length: > 0 and <= 180 } || attachment.Name is "." or ".." || attachment.Name.Any(c => c is '/' or '\\' || char.IsControl(c)) || !MediaTypes.Contains(attachment.MediaType) || attachment.DataBase64 is null || attachment.DataBase64.Length > ((MaximumFileBytes + 2) / 3) * 4) throw new ArgumentException("첨부 파일의 형식이나 크기가 올바르지 않습니다.");
+        if (attachment is null || !Wire.Identifier(attachment.Id) || attachment.Name is not { Length: > 0 and <= 180 } || attachment.Name is "." or ".." || attachment.Name.Any(c => c is '/' or '\\' || char.IsControl(c)) || !MediaTypes.Contains(attachment.MediaType) || attachment.DataBase64 is null || attachment.DataBase64.Length > ((MaximumFileBytes + 2) / 3) * 4) throw new ArgumentException(Locale.Get("attachments.error.invalid"));
         byte[] bytes;
-        try { bytes = Convert.FromBase64String(attachment.DataBase64); } catch (FormatException) { throw new ArgumentException("첨부 파일의 데이터가 올바르지 않습니다."); }
-        if (bytes.Length > MaximumFileBytes || Convert.ToBase64String(bytes) != attachment.DataBase64) throw new ArgumentException("첨부 파일의 데이터나 크기가 올바르지 않습니다.");
-        if (DetectMediaType(bytes) != attachment.MediaType) throw new ArgumentException("파일 형식과 첨부 데이터가 일치하지 않습니다.");
+        try { bytes = Convert.FromBase64String(attachment.DataBase64); } catch (FormatException) { throw new ArgumentException(Locale.Get("attachments.error.invalid")); }
+        if (bytes.Length > MaximumFileBytes || Convert.ToBase64String(bytes) != attachment.DataBase64) throw new ArgumentException(Locale.Get("attachments.error.invalid"));
+        if (DetectMediaType(bytes) != attachment.MediaType) throw new ArgumentException(Locale.Get("attachments.error.typeMismatch"));
         return bytes;
     }
     public static IReadOnlyList<RunAttachment>? Validate(IReadOnlyList<RunAttachment>? attachments)
     {
         if (attachments is null || attachments.Count == 0) return null;
-        if (attachments.Count > MaximumCount) throw new ArgumentException("첨부 파일은 최대 8개까지 가능합니다.");
+        if (attachments.Count > MaximumCount) throw new ArgumentException(Locale.Get("attachments.error.tooMany"));
         var copied = attachments.ToArray(); var ids = new HashSet<string>(); long total = 0;
         foreach (var attachment in copied)
         {
             total += Decode(attachment).Length;
-            if (!ids.Add(attachment.Id) || total > MaximumTotalBytes) throw new ArgumentException("첨부 ID는 고유해야 하며 전체 크기는 8MiB 이하여야 합니다.");
+            if (!ids.Add(attachment.Id)) throw new ArgumentException(Locale.Get("attachments.error.tooMany"));
+            if (total > MaximumTotalBytes) throw new ArgumentException(Locale.Get("attachments.error.totalTooLarge"));
         }
         return Array.AsReadOnly(copied);
     }
-    public static string Summary(IReadOnlyList<RunAttachment>? attachments) => attachments is not { Count: > 0 } ? "" : "첨부: " + string.Join(", ", attachments.Select(a => $"{Wire.Clean(a.Name, 180)} ({DecodedLength(a):N0} bytes)"));
+    public static string Summary(IReadOnlyList<RunAttachment>? attachments) => attachments is not { Count: > 0 } ? "" : PaneTitle.AttachmentMarker + string.Join(", ", attachments.Select(a => $"{Wire.Clean(a.Name, 180)} ({DecodedLength(a):N0} bytes)"));
     public static int DecodedLength(RunAttachment attachment) => attachment.DataBase64.Length / 4 * 3 - (attachment.DataBase64.EndsWith("==", StringComparison.Ordinal) ? 2 : attachment.DataBase64.EndsWith('=') ? 1 : 0);
     internal static string Extension(RunAttachment attachment)
     {
@@ -83,7 +84,7 @@ public sealed class StagedAttachments : IAsyncDisposable
     private StagedAttachments(string directory, IReadOnlyList<(RunAttachment, string)> files) { DirectoryPath = directory; Files = files; }
     public static async Task<StagedAttachments> CreateAsync(IReadOnlyList<RunAttachment> attachments, CancellationToken token = default)
     {
-        var validated = AttachmentSupport.Validate(attachments) ?? throw new ArgumentException("첨부 파일이 없습니다.");
+        var validated = AttachmentSupport.Validate(attachments) ?? throw new ArgumentException(Locale.Get("attachments.error.none"));
         var directory = Directory.CreateTempSubdirectory("mighty-attachments-"); var files = new List<(RunAttachment, string)>();
         try
         {
@@ -108,12 +109,13 @@ public sealed class StagedAttachments : IAsyncDisposable
     }
     public string InputFor(StartRunRequest request)
     {
-        var prompt = string.IsNullOrWhiteSpace(request.Input) ? "첨부 파일을 확인해 주세요." : request.Input;
+        var prompt = string.IsNullOrWhiteSpace(request.Input) ? Locale.Get("attachments.prompt.default") : request.Input;
         var generic = Files.Where(f => request.Provider != "claude" || !f.Attachment.MediaType.StartsWith("image/", StringComparison.Ordinal) && f.Attachment.MediaType != "application/pdf").ToArray();
         if (generic.Length > 0)
         {
             var references = generic.Select(f => request.Provider == "gemini" ? (OperatingSystem.IsWindows() ? "@\"" + f.Path + "\"" : "@" + EscapeGeminiPath(f.Path)) + "\n" + JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + JsonSerializer.Serialize(f.Path, Wire.Json) : JsonSerializer.Serialize(f.Attachment.Name, Wire.Json) + ": " + JsonSerializer.Serialize(f.Path, Wire.Json));
-            prompt += "\n\n첨부 파일 (이번 실행에만 제공된 사본):\n" + string.Join("\n", references);
+            // Model input, not UI: one fixed English line in every app language, as the macOS reference line is.
+            prompt += "\n\nAttached files (copies provided for this run only):\n" + string.Join("\n", references);
         }
         if (request.Provider != "claude") return prompt;
         var content = new List<object> { new { type = "text", text = prompt } };
