@@ -746,3 +746,16 @@ test('an allow entry names an escaped literal decoded, and a stale one still fai
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a language listed as complete in scripts/locale-languages.json must carry every key', () => {
+  const dir = tmpDir();
+  try {
+    setup(dir, { koJson: KO, enJson: EN, zhJson: { 'a.one': '一 {n}' }, jaJson: { 'a.one': '一 {n}', 'a.two': '二' }, files: USED });
+    fs.writeFileSync(path.join(dir, 'scripts/locale-languages.json'), JSON.stringify({ complete: ['ko', 'en', 'zh', 'ja'], translations: [] }));
+    const r = run(['--root', dir]);
+    assert.notEqual(r.status, 0, 'a complete language missing a key must fail');
+    assert.match(r.stderr + r.stdout, /a\.two/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1086,7 +1086,7 @@
   "settings.phaseModels.knob.codexReview": "Review model",
   "settings.phaseModels.knob.codexSubagent": "Subagent default",
   "settings.phaseModels.latestTemplate": "{name} · latest",
-  "settings.phaseModels.mixed": "혼합",
+  "settings.phaseModels.mixed": "Mixed",
   "settings.phaseModels.omcAgentDefault": "{agent} (default: {model})",
   "settings.phaseModels.paneModel": "Chosen per pane",
   "settings.phaseModels.phase.execution": "Execution",
