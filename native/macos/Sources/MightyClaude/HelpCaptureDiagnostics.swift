@@ -280,6 +280,7 @@ enum HelpCapture {
         // A screen that changed a pane's view puts it back, even when it failed half-way.
         for pane in demo.profile.panes {
             guard let id = demo.panes[pane.role], let session = store.snapshot.sessions.first(where: { $0.id == id }) else { continue }
+            if let draft = pane.draft, store.drafts[id] != draft { store.drafts[id] = draft }
             let mode = pane.view == "mighty" ? "mighty" : nil
             if session.agentViewMode != mode || session.graphViewMode != nil {
                 store.updateSession(id) { $0.agentViewMode = mode; $0.graphViewMode = nil }
@@ -324,15 +325,11 @@ enum HelpCapture {
                 }
                 guard target.window.isVisible else { throw MightyError("the \(shot.screen.rawValue) window is not on screen") }
                 target.window.displayIfNeeded()
-                let url = try store.captureSmokeWindow(target.window, filename: "help-shots/\(language)/\(shot.id)-\(theme).png")
+                let url = try draw(target.window, to: output.appendingPathComponent("\(shot.id)-\(theme).png"))
                 if let image = NSBitmapImageRep(data: try Data(contentsOf: url)) {
                     value["pixelWidth"] = image.pixelsWide; value["pixelHeight"] = image.pixelsHigh
                 }
                 if target.window === main, let content = main.contentView?.bounds.size { value["windowContent"] = [content.width, content.height] }
-                // A trial, not a help picture: the same view drawn into a bitmap twice its size.
-                if [.overview, .agentBasic, .terminalPane].contains(shot.screen), (target.window.screen?.backingScaleFactor ?? 1) < 2 {
-                    value["doubleScaleTrial"] = (try? drawDoubled(target.window, to: url.deletingLastPathComponent().appendingPathComponent("trials/\(shot.id)-\(theme)@2x.png")))?.lastPathComponent ?? "failed"
-                }
                 value["status"] = "ok"
                 results.append(Shot(entry: value, failed: false))
             } catch {
@@ -371,16 +368,20 @@ enum HelpCapture {
         class_replaceMethod(type(of: main), selector, imp_implementationWithBlock(keep), method_getTypeEncoding(method))
     }
 
-    /// The window's views drawn into a bitmap of twice their point size.
-    private static func drawDoubled(_ window: NSWindow, to url: URL) throws -> URL {
-        guard let view = window.contentView?.superview ?? window.contentView else { throw MightyError("no content view") }
+    /// The window's views drawn into a bitmap at least twice their point size, so a
+    /// picture is as sharp as on a Retina screen even where the runner's screen is 1x:
+    /// text and shapes are drawn again at that size. The terminal's own surface is
+    /// copied as it is on screen, so on a 1x screen it is enlarged instead.
+    private static func draw(_ window: NSWindow, to url: URL) throws -> URL {
+        guard let view = window.contentView?.superview ?? window.contentView else { throw MightyError("the window has no content view") }
         view.layoutSubtreeIfNeeded()
         let bounds = view.bounds
-        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * 2), pixelsHigh: Int(bounds.height * 2), bitsPerSample: 8,
-                                            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { throw MightyError("no bitmap") }
+        let scale = max(2, window.backingScaleFactor)
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int((bounds.width * scale).rounded()), pixelsHigh: Int((bounds.height * scale).rounded()), bitsPerSample: 8,
+                                            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { throw MightyError("could not make the bitmap") }
         bitmap.size = bounds.size
         view.cacheDisplay(in: bounds, to: bitmap)
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw MightyError("no PNG") }
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { throw MightyError("could not make the PNG") }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try png.write(to: url, options: .atomic)
         return url
@@ -437,10 +438,8 @@ enum HelpCapture {
             }
             store.resumePicker = ResumePickerRequest(workspace: space, provider: "claude", stage: screen == .resumeChoice ? .choice : .list)
             let sheet = try await attachedSheet(main, store: store)
-            if screen == .resumeList {
-                let first = demo.profile.resumeSessions.first?.sessionId ?? ""
-                try await wait("the session list", store: store, timeout: 10) { node(sheet, identifier: "resume-row-\(first)") != nil }
-            }
+            // The records were read above; the sheet reads them again for its rows.
+            if screen == .resumeList { try await Task.sleep(for: .milliseconds(1_500)) }
             return Target(window: sheet) { store.resumePicker = nil }
         case .agentBasic, .agentMighty, .agentTimeline, .composer, .backgroundWork, .planCard, .questionCard, .permissionCard, .terminalPane, .resultCard:
             let role = screen.paneRole!
@@ -448,29 +447,26 @@ enum HelpCapture {
             try check(screen, id: id, demo: demo, store: store)
             if screen == .agentTimeline { store.updateSession(id) { $0.graphViewMode = .timeline } }
             if screen == .backgroundWork { store.setAgentViewMode(id, mode: "default") }
+            // The diagram aims at the next-request block while a draft is typed; these
+            // screens show the requests themselves.
+            if [.agentMighty, .agentTimeline, .backgroundWork].contains(screen) { store.drafts[id] = "" }
             store.setPaneFocus(true, sessionId: id)
-            try await Task.sleep(for: .milliseconds(600))
-            if screen == .agentMighty || screen == .agentTimeline {
-                try await wait("the Mighty view", store: store, timeout: 6) { node(main, identifier: "mighty-view-\(screen == .agentMighty ? "diagram" : "timeline")-\(id)") != nil }
-            }
-            if screen == .resultCard {
-                try await wait("the result card's file list", store: store, timeout: 8) { node(main, prefix: "mighty-result-file-") != nil }
-            }
+            // SwiftUI builds its accessibility tree only for an assistive client, which
+            // a CI runner has none of; these screens are checked by their state above
+            // and given time to draw (the result card opens its file list by itself).
+            try await Task.sleep(for: .milliseconds(screen == .resultCard || screen == .agentMighty ? 1_500 : 800))
             return Target(window: main) {
                 if screen == .agentTimeline { store.updateSession(id) { $0.graphViewMode = nil } }
                 if screen == .backgroundWork { store.setAgentViewMode(id, mode: "mighty") }
             }
         case .agentMightyOverview:
+            // The whole diagram: the same pane in the taller window shots.json gives it.
             let id = try demo.pane("mighty")
+            try check(.agentMighty, id: id, demo: demo, store: store)
+            store.drafts[id] = ""
             store.setPaneFocus(true, sessionId: id)
-            try await wait("the diagram zoom buttons", store: store, timeout: 6) { node(main, identifier: "mighty-zoom-out-\(id)") != nil }
-            for _ in 0..<4 {
-                guard let zoomOut = node(main, identifier: "mighty-zoom-out-\(id)") else { throw MightyError("the diagram has no zoom-out button") }
-                press(zoomOut)
-                try await Task.sleep(for: .milliseconds(150))
-            }
-            try await Task.sleep(for: .milliseconds(400))
-            return Target(window: main) { if let reset = node(main, identifier: "mighty-zoom-reset-\(id)") { press(reset) } }
+            try await Task.sleep(for: .milliseconds(1_500))
+            return Target(window: main)
         case .composerSettings:
             let id = try demo.pane("mighty")
             store.setPaneFocus(true, sessionId: id)
@@ -484,11 +480,8 @@ enum HelpCapture {
             let id = try demo.pane("mighty")
             store.setPaneFocus(true, sessionId: id)
             try await Task.sleep(for: .milliseconds(400))
-            // The context ring opens it, as a click would; the state alone is the fallback.
-            if let ring = node(main, identifier: "context-\(id)") { press(ring) } else { store.sessionInfoSessionID = id }
-            func details() -> NSWindow? {
-                NSApp.windows.first { $0 !== main && $0.isVisible && node($0, identifier: "session-info-\(id)") != nil } ?? popover(excluding: main)
-            }
+            store.sessionInfoSessionID = id
+            func details() -> NSWindow? { popover(excluding: main) }
             try await wait("the session details", store: store, timeout: 6) { store.sessionInfoSessionID == id && details() != nil }
             try await Task.sleep(for: .milliseconds(500))
             guard let window = details() else { throw MightyError("the session details did not open") }
@@ -551,7 +544,9 @@ enum HelpCapture {
         let waiting = store.toolPermissions[id]?.first
         switch screen {
         case .agentMighty, .agentTimeline, .resultCard:
-            guard session.agentViewMode == "mighty", session.graphRuns?.contains(where: { $0.status == "completed" && !$0.resultEntries.isEmpty }) == true else { throw MightyError("the Mighty pane has no finished request") }
+            guard session.agentViewMode == "mighty", let finished = session.graphRuns?.last(where: { $0.status == "completed" && !$0.resultEntries.isEmpty }) else { throw MightyError("the Mighty pane has no finished request") }
+            let root = store.snapshot.workspaces.first { $0.id == session.workspaceId }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+            if screen == .resultCard, ReferenceLinkSupport.resultFiles(in: finished.resultEntries.map(\.text), root: root).isEmpty { throw MightyError("the result names no file in its workspace") }
         case .backgroundWork:
             guard session.backgroundWork?.waitingOnBackground == true, session.todoProgress != nil else { throw MightyError("the pane has no background work or checklist") }
         case .planCard:
@@ -581,39 +576,5 @@ enum HelpCapture {
 
     private static func popover(excluding main: NSWindow) -> NSWindow? {
         NSApp.windows.first { $0 !== main && $0.isVisible && NSStringFromClass(type(of: $0)).contains("Popover") }
-    }
-
-    // MARK: Accessibility
-
-    /// The first element with the identifier (or prefix), searched like the GUI smoke's
-    /// `smokeAccessibilityElement`: AppKit can leave SwiftUI hosting wrappers out of the
-    /// accessibility tree, so the native subviews (and a window's content view) are
-    /// walked too. Hidden views are skipped.
-    private static func node(_ element: Any, identifier: String? = nil, prefix: String? = nil) -> NSObject? {
-        var visited = Set<ObjectIdentifier>()
-        func find(_ element: Any, depth: Int) -> NSObject? {
-            if let view = element as? NSView, view.isHiddenOrHasHiddenAncestor { return nil }
-            guard depth < 128, visited.count < 20_000, let object = element as? NSObject,
-                  visited.insert(ObjectIdentifier(object)).inserted else { return nil }
-            func value(_ key: String) -> Any? { object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil }
-            if let id = value("accessibilityIdentifier") as? String, (identifier.map { id == $0 } ?? false) || (prefix.map { id.hasPrefix($0) } ?? false) {
-                return object
-            }
-            var children = value("accessibilityChildren") as? [Any] ?? []
-            if let view = element as? NSView { children.append(contentsOf: view.subviews) }
-            if let window = element as? NSWindow, let content = window.contentView { children.append(content) }
-            for child in children {
-                if let found = find(child, depth: depth + 1) { return found }
-            }
-            return nil
-        }
-        return find(element, depth: 0)
-    }
-
-    private static func press(_ object: NSObject) {
-        let selector = NSSelectorFromString("accessibilityPerformPress")
-        guard object.responds(to: selector), let implementation = object.method(for: selector) else { return }
-        typealias Press = @convention(c) (AnyObject, Selector) -> Bool
-        _ = unsafeBitCast(implementation, to: Press.self)(object, selector)
     }
 }
