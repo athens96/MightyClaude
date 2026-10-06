@@ -16,9 +16,15 @@ From the top, the sidebar has:
 
 When a workspace is expanded, its last row is {{ui:workspace.addPane}}. Right-click a pane row for {{ui:menu.rename}} and {{ui:menu.closePane}}.
 
+### Resize the sidebar {#sidebar-resize}
+Drag the border between the sidebar and the work area to change the sidebar's width ({{ui:sidebar.resize}}).
+- The border turns the accent colour when you point at it. Drag it left or right to set the width. The width stays within set limits and is kept after you reopen the app.
+- Double-click the border to go back to the default width.
+- Drag the border all the way to the left to collapse the sidebar. When you bring it back, it has the width it had before the drag.
+
 ### Collapse the sidebar {#sidebar-collapse}
 Collapse the sidebar to give the work area more room.
-1. Click the collapse button at the top of the sidebar or press {{kbd:⌃⌘S}}. The View menu in the menu bar also has {{ui:sidebar.collapse}}.
+1. Click the sidebar button at the top-left of the work area's header or press {{kbd:⌃⌘S}}. The {{ui:phone.dashboard.title}} screen and the first screen have the same button in the same place. The View menu in the menu bar also has {{ui:sidebar.collapse}}.
 2. Use the same button or {{kbd:⌃⌘S}} to bring it back ({{ui:sidebar.expand}}).
 
 The sidebar stays collapsed after you reopen the app. Pressing {{kbd:⌘K}} while it is collapsed opens it and jumps to search.

@@ -1649,6 +1649,8 @@
   "sidebar.resize": "Resize sidebar",
   "sidebar.collapse": "Collapse sidebar",
   "sidebar.expand": "Expand sidebar",
+  "sidebar.resizeValue": "{value} points",
+  "sidebar.resizeTooltip": "Drag to resize · double-click for the default width · drag all the way to hide",
   "terminal.accessibility": "Interactive terminal",
   "terminal.exited": "Shell exited ({code}).",
   "terminal.failed": "Could not start the terminal.",

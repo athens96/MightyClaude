@@ -1649,6 +1649,8 @@
   "sidebar.resize": "サイドバーのサイズを調整",
   "sidebar.collapse": "サイドバーを折りたたむ",
   "sidebar.expand": "サイドバーを展開",
+  "sidebar.resizeValue": "{value}ポイント",
+  "sidebar.resizeTooltip": "ドラッグで幅を調整 · ダブルクリックで既定の幅 · 端までドラッグで非表示",
   "terminal.accessibility": "対話型ターミナル",
   "terminal.exited": "シェルが終了しました ({code})。",
   "terminal.failed": "ターミナルを起動できませんでした。",

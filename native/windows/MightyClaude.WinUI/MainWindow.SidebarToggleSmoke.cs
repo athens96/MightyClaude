@@ -87,7 +87,26 @@ public sealed partial class MainWindow
                 $"folding with focus in the search must move focus to the shown sidebar button; got collapsed={service.Snapshot.SidebarCollapsed}, focus on {(focusedAfter is FrameworkElement f ? f.GetType().Name + " '" + AutomationProperties.GetAutomationId(f) + "'" : focusedAfter?.GetType().Name ?? "nothing")}");
             await ToggleSidebar();
             await WaitUI(() => !service.Snapshot.SidebarCollapsed && sidebarSurface.Visibility == Visibility.Visible, () => $"the sidebar must unfold again after the focus check; got collapsed={service.Snapshot.SidebarCollapsed}, {sidebarSurface.Visibility}");
-            return new() { ["shortcutBound"] = true, ["toggleCollapses"] = true, ["contentTakesSpace"] = true, ["toggleRestoresWidth"] = true, ["statePersists"] = true, ["automationNameFollows"] = true, ["focusLeavesFoldedSidebar"] = true };
+
+            // The grip, through the handlers its Thumb calls (no mouse): a drag inside the bounds only moves the
+            // column; one past the fold threshold folds the sidebar, and neither it nor the release saves a width,
+            // so the width from before the drag comes back with the unfold.
+            var column = root.ColumnDefinitions[0];
+            await SidebarGripDragged(-20);
+            Require(!service.Snapshot.SidebarCollapsed && Math.Abs(column.Width.Value - (width - 20)) < 0.5 && service.Snapshot.SidebarWidth == width,
+                $"a grip drag inside the bounds must move the column to {width - 20} without saving; got collapsed={service.Snapshot.SidebarCollapsed}, column {column.Width.Value:F1}, saved {service.Snapshot.SidebarWidth}");
+            await SidebarGripDragged(DesignMetrics.Layout.SidebarFoldThreshold - column.Width.Value - 1);
+            await SidebarGripReleased(canceled: false);
+            root.UpdateLayout();
+            Require(service.Snapshot.SidebarCollapsed && sidebarSurface.Visibility == Visibility.Collapsed && sidebarGripHost?.Visibility == Visibility.Collapsed && column.ActualWidth < 0.5,
+                $"a grip drag under the fold threshold {DesignMetrics.Layout.SidebarFoldThreshold} must fold the sidebar and its grip; got collapsed={service.Snapshot.SidebarCollapsed}, {sidebarSurface.Visibility}, grip {sidebarGripHost?.Visibility.ToString() ?? "none"}, width {column.ActualWidth:F1}");
+            Require(service.Snapshot.SidebarWidth == width, $"folding by drag must keep the width from before the drag, {width}; got {service.Snapshot.SidebarWidth}");
+            stored = await Saved(true);
+            Require(stored.SidebarCollapsed && stored.SidebarWidth == width, $"the fold by drag must be saved with the earlier width: expected collapsed=True width={width}; got collapsed={stored.SidebarCollapsed} width={stored.SidebarWidth}");
+            await ToggleSidebar();
+            await WaitUI(() => !service.Snapshot.SidebarCollapsed && Math.Abs(column.ActualWidth - width) < 1,
+                () => $"unfolding after a fold by drag must bring the sidebar back {width} wide; got collapsed={service.Snapshot.SidebarCollapsed}, width {column.ActualWidth:F1}");
+            return new() { ["shortcutBound"] = true, ["toggleCollapses"] = true, ["contentTakesSpace"] = true, ["toggleRestoresWidth"] = true, ["statePersists"] = true, ["automationNameFollows"] = true, ["focusLeavesFoldedSidebar"] = true, ["foldByDragKeepsWidth"] = true };
         }
         finally
         {

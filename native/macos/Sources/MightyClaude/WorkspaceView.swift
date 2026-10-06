@@ -11,10 +11,7 @@ struct WorkspaceView: View {
     @StateObject private var accountUsage = AccountUsageStatusController()
 
     var body: some View {
-        NavigationSplitView(columnVisibility: columnVisibility) {
-            sidebar
-                .navigationSplitViewColumnWidth(min: SidebarFold.minimumWidth, ideal: store.snapshot.sidebarWidth, max: 360)
-        } detail: {
+        SidebarSplit(sidebar: sidebar, detail:
             VStack(spacing: 0) {
                 if let warning = store.resourceWarning { resourceWarningBanner(warning) }
                 if let error = store.error { errorBanner(error) }
@@ -30,10 +27,7 @@ struct WorkspaceView: View {
             .background(Palette.canvas)
             // The hidden title bar still reserves its height as a top safe area. The
             // traffic lights sit over the sidebar, so the detail column can use that band.
-            .ignoresSafeArea(.container, edges: .top)
-        }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
+            .ignoresSafeArea(.container, edges: .top))
         .toolbar(.hidden, for: .windowToolbar)
         .task(id: store.activeWorkspace.map { $0.id + "|" + $0.path }) {
             await gitState.observe(store.activeWorkspace)
@@ -82,13 +76,6 @@ struct WorkspaceView: View {
                 Button(L("resume.cancel"), role: .cancel) { store.pendingRemoval = nil }
             }
         } message: { Text(L("workspace.remove.message")) }
-    }
-
-    /// Folded (⌃⌘S or the header's sidebar button) is `.detailOnly`: no icon rail, the
-    /// content takes the window. The state lives in the snapshot, so it survives a restart.
-    private var columnVisibility: Binding<NavigationSplitViewVisibility> {
-        Binding(get: { store.sidebarCollapsed ? .detailOnly : .all },
-                set: { store.setSidebarCollapsed($0 == .detailOnly) })
     }
 
     private var sidebar: some View {
@@ -150,17 +137,9 @@ struct WorkspaceView: View {
                     .buttonStyle(.plain).help(L("settings.settingsWindowTitle")).accessibilityLabel(L("settings.settingsWindowTitle"))
             }.padding(16)
         }
-        // A solid D surface over the split view's vibrancy, so the wallpaper never
-        // decides the sidebar's contrast.
+        // A solid D surface, never vibrancy, so the wallpaper never decides the sidebar's
+        // contrast; it runs up under the hidden title bar and the traffic lights.
         .background(Palette.sidebar.ignoresSafeArea())
-        .background(GeometryReader { proxy in
-            Color.clear.preference(key: SidebarWidthKey.self, value: proxy.size.width)
-        })
-        .onPreferenceChange(SidebarWidthKey.self) { width in
-            if let width = SidebarFold.widthToSave(measured: Double(width), saved: store.snapshot.sidebarWidth, collapsed: store.sidebarCollapsed) {
-                store.snapshot.sidebarWidth = width
-            }
-        }
     }
 
     /// The dashboard entry at the top of the sidebar, with what waits on the user, what runs and
@@ -484,6 +463,95 @@ extension View {
     func leadingPastTrafficLights(_ base: CGFloat) -> some View { modifier(TrafficLightClearance(base: base)) }
 }
 
+/// The sidebar at its saved width, its border handle, and the content beside it. Folded, the
+/// sidebar and the handle leave and the content takes the window. While the border is dragged
+/// the width lives here, so only this view redraws per step; the saved width changes once, at the end.
+private struct SidebarSplit<Sidebar: View, Detail: View>: View {
+    @EnvironmentObject private var store: AppStore
+    let sidebar: Sidebar
+    let detail: Detail
+    @ViewState private var liveWidth: Double?
+
+    var body: some View {
+        let width = CGFloat(liveWidth ?? store.snapshot.sidebarWidth)
+        HStack(spacing: 0) {
+            if !store.sidebarCollapsed {
+                sidebar.frame(width: width).transition(.move(edge: .leading))
+            }
+            detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .overlay(alignment: .leading) {
+            if !store.sidebarCollapsed {
+                SidebarResizeHandle(width: width, liveWidth: $liveWidth)
+                    .padding(.leading, max(0, width - SidebarResizeHandle.hitWidth / 2))
+                    // Full height, like the sidebar surface it resizes.
+                    .ignoresSafeArea(.container, edges: .top)
+                    .transition(.move(edge: .leading))
+            }
+        }
+    }
+}
+
+/// The sidebar's trailing border, drawn as a hairline over a hit strip that straddles it, like the pane
+/// dock's dividers (`PaneDockView`): dragging resizes the sidebar between `SidebarFold`'s bounds, dragging
+/// it narrower than the fold threshold folds it away (keeping the saved width), a double-click puts the
+/// default width back. The width is saved only when a drag ends.
+private struct SidebarResizeHandle: View {
+    static let hitWidth: CGFloat = 6
+    @EnvironmentObject private var store: AppStore
+    let width: CGFloat
+    @Binding var liveWidth: Double?
+    /// The sidebar's width when the current drag began; nil while not dragging.
+    @ViewState private var origin: Double?
+    @ViewState private var hovered = false
+
+    var body: some View {
+        let active = hovered || origin != nil
+        Rectangle().fill(Color.clear)
+            .frame(width: Self.hitWidth)
+            .frame(maxHeight: .infinity)
+            .overlay { Rectangle().fill(active ? Palette.accent : Palette.border).frame(width: active ? 2 : 1) }
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                hovered = hovering
+                // A drag keeps its cursor when the pointer runs ahead of the border.
+                if hovering || origin == nil { (hovering ? NSCursor.resizeLeftRight : NSCursor.arrow).set() }
+            }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    guard !store.sidebarCollapsed else { return }
+                    let start = origin ?? Double(width)
+                    origin = start
+                    switch SidebarFold.drag(startWidth: start, translation: Double(value.translation.width)) {
+                    case .width(let next): liveWidth = next
+                    case .fold:
+                        origin = nil; liveWidth = nil
+                        NSCursor.arrow.set()
+                        withAnimation(.easeInOut(duration: 0.2)) { store.applySidebarDrag(.fold) }
+                    }
+                }
+                .onEnded { value in
+                    guard let start = origin else { return }
+                    origin = nil; liveWidth = nil
+                    if !hovered { NSCursor.arrow.set() }
+                    store.applySidebarDrag(SidebarFold.drag(startWidth: start, translation: Double(value.translation.width)))
+                })
+            .onTapGesture(count: 2) { store.resetSidebarWidth() }
+            .accessibilityElement()
+            .accessibilityLabel(L("sidebar.resize"))
+            .accessibilityValue(L("sidebar.resizeValue", ["value": "\(Int(width.rounded()))"]))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: store.stepSidebarWidth(1)
+                case .decrement: store.stepSidebarWidth(-1)
+                @unknown default: break
+                }
+            }
+            .accessibilityIdentifier("sidebar-resize")
+            .help(L("sidebar.resizeTooltip"))
+    }
+}
+
 /// The "Add Pane" menu's items, shared by the sidebar's last row and the dashboard's
 /// workspace header: new agent panes (Claude and Codex then ask whether to continue
 /// an earlier session, `AppStore.addAgentPane`), a terminal, a browser tab, and
@@ -599,9 +667,4 @@ private struct SidebarRowHighlight: ViewModifier {
             .overlay { if selected { shape.strokeBorder(Color.black.opacity(0.07), lineWidth: 0.5).allowsHitTesting(false) } }
             .onHover { hovering = $0 }
     }
-}
-
-private struct SidebarWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 252
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

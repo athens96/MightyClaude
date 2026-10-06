@@ -1649,6 +1649,8 @@
   "sidebar.resize": "사이드바 크기 조절",
   "sidebar.collapse": "사이드바 접기",
   "sidebar.expand": "사이드바 펼치기",
+  "sidebar.resizeValue": "{value}포인트",
+  "sidebar.resizeTooltip": "끌어서 폭 조절 · 두 번 클릭해 기본 폭 · 끝까지 끌면 숨김",
   "terminal.accessibility": "대화형 터미널",
   "terminal.exited": "셸이 종료되었습니다 ({code}).",
   "terminal.failed": "터미널을 시작하지 못했습니다.",
